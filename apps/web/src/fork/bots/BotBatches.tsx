@@ -87,7 +87,6 @@ import {
   LibraryTable,
   TickStrip,
 } from "../project-library/LibraryData";
-import { LibraryBackLink } from "../project-library/LibraryPageFrame";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { useLibraryPermission } from "../project-library/state";
 import {
@@ -291,7 +290,7 @@ function BatchesList({
       ? null
       : (allBots.find((candidate) => candidate.id === pickedBot)?.name ?? "Deleted bot");
   const botsById = new Map(allBots.map((candidate) => [candidate.id, candidate]));
-  const rowProps = { showBot: bot === null, botsById, botSearch: bot?.id, now };
+  const rowProps = { showBot: bot === null, botsById, now };
 
   let body: ReactNode;
   if (listed === null)
@@ -612,15 +611,12 @@ function BatchRow({
   batch,
   showBot,
   botsById,
-  botSearch,
   now,
 }: {
   readonly batch: BotBatch;
   readonly showBot: boolean;
   /** The listed bots, so a row's tile wears its bot's own glyph. */
   readonly botsById: ReadonlyMap<string, BotDefinition>;
-  /** The bot page the row was opened from, kept so the batch page leads back to it. */
-  readonly botSearch: string | undefined;
   readonly now: number;
 }) {
   const state = batchState(batch);
@@ -642,7 +638,7 @@ function BatchRow({
             <div className="flex min-w-0 items-center gap-2">
               <Link
                 to="/loom/bots"
-                search={{ batch: batch.id, ...(botSearch ? { bot: botSearch } : {}) }}
+                search={{ batch: batch.id }}
                 className={cn(LIBRARY_ROW_TARGET, "truncate font-medium")}
               >
                 {batch.sourceSummary}
@@ -752,7 +748,6 @@ function OlderBatches({
   changes,
   showBot,
   botsById,
-  botSearch,
   now,
 }: {
   readonly environmentId: EnvironmentId;
@@ -763,7 +758,6 @@ function OlderBatches({
   readonly changes: BotBatchChanges;
   readonly showBot: boolean;
   readonly botsById: ReadonlyMap<string, BotDefinition>;
-  readonly botSearch: string | undefined;
   readonly now: number;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -791,14 +785,7 @@ function OlderBatches({
   return (
     <>
       {shown.map((batch) => (
-        <BatchRow
-          key={batch.id}
-          batch={batch}
-          showBot={showBot}
-          botsById={botsById}
-          botSearch={botSearch}
-          now={now}
-        />
+        <BatchRow key={batch.id} batch={batch} showBot={showBot} botsById={botsById} now={now} />
       ))}
       {shown.length === 0 && batches.length > 0 ? (
         <TableNoteRow>No matches among {plural(batches.length, "older batch")}.</TableNoteRow>
@@ -814,7 +801,6 @@ function OlderBatches({
             changes={changes}
             showBot={showBot}
             botsById={botsById}
-            botSearch={botSearch}
             now={now}
           />
         ) : (
@@ -830,44 +816,22 @@ function OlderBatches({
 /** One batch as its own page. */
 export function BatchPage({ batchId }: { readonly batchId: string }) {
   const host = useBotsHost();
-  const nav = useBotsNavigation();
-  const fromBot = nav.search.bot;
-  const back = (
-    <LibraryBackLink
-      to="/loom/bots"
-      search={{ tab: "runs", scope: "batches", ...(fromBot ? { bot: fromBot } : {}) }}
-    >
-      Batches
-    </LibraryBackLink>
-  );
   if (host.environmentId === null || !host.batchesSupported)
     return (
-      <div className="flex flex-col">
-        {back}
-        <LibraryNotice icon={InfoIcon}>
-          Batches need a newer server. Update {host.environment?.label ?? "the bots host"} to see
-          this batch.
-        </LibraryNotice>
-      </div>
+      <LibraryNotice icon={InfoIcon}>
+        Batches need a newer server. Update {host.environment?.label ?? "the bots host"} to see this
+        batch.
+      </LibraryNotice>
     );
-  return (
-    <BatchPageContent
-      key={batchId}
-      environmentId={host.environmentId}
-      batchId={batchId}
-      back={back}
-    />
-  );
+  return <BatchPageContent key={batchId} environmentId={host.environmentId} batchId={batchId} />;
 }
 
 function BatchPageContent({
   environmentId,
   batchId,
-  back,
 }: {
   readonly environmentId: EnvironmentId;
   readonly batchId: string;
-  readonly back: ReactNode;
 }) {
   const host = useBotsHost();
   const changes = useBotBatchChanges(environmentId, host.connected);
@@ -879,32 +843,27 @@ function BatchPageContent({
     if (fetched) rememberRuns(fetched.items.flatMap((item) => (item.run ? [item.run] : [])));
   }, [fetched]);
   if (fetched === null)
-    return (
-      <div className="flex flex-col">
-        {back}
-        {query.error === null ? (
-          <BatchPageSkeleton />
-        ) : botsErrorReason(query.failure) === "not_found" ? (
-          <LibraryEmpty
-            icon={LayersIcon}
-            title="This batch is no longer stored"
-            action={
-              <Button
-                shape="pill"
-                size="sm"
-                variant="outline"
-                render={<Link to="/loom/bots" search={{ tab: "runs", scope: "all" }} />}
-              >
-                Open Runs
-              </Button>
-            }
+    return query.error === null ? (
+      <BatchPageSkeleton />
+    ) : botsErrorReason(query.failure) === "not_found" ? (
+      <LibraryEmpty
+        icon={LayersIcon}
+        title="This batch is no longer stored"
+        action={
+          <Button
+            shape="pill"
+            size="sm"
+            variant="outline"
+            render={<Link to="/loom/bots" search={{ tab: "runs", scope: "all" }} />}
           >
-            Bots keep each bot's newest 50 batches. The runs this one started are still under Runs.
-          </LibraryEmpty>
-        ) : (
-          <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
-        )}
-      </div>
+            Open Runs
+          </Button>
+        }
+      >
+        Bots keep each bot's newest 50 batches. The runs this one started are still under Runs.
+      </LibraryEmpty>
+    ) : (
+      <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
     );
   const { batch, items } = applyBatchItemChanges(fetched, changes);
   return (
@@ -912,7 +871,6 @@ function BatchPageContent({
       environmentId={environmentId}
       batch={batch}
       items={items}
-      back={back}
       refresh={query.refresh}
       staleError={query.error}
     />
@@ -949,14 +907,12 @@ function BatchDetail({
   environmentId,
   batch,
   items,
-  back,
   refresh,
   staleError,
 }: {
   readonly environmentId: EnvironmentId;
   readonly batch: BotBatch;
   readonly items: ReadonlyArray<BotBatchItem>;
-  readonly back: ReactNode;
   readonly refresh: () => void;
   /** A failed refetch over data already shown. */
   readonly staleError: string | null;
@@ -1048,71 +1004,68 @@ function BatchDetail({
 
   return (
     <div style={projectColorStyle(botColor({ id: batch.botId }))} className="flex flex-col gap-6">
-      <div className="flex flex-col">
-        {back}
-        <LibraryHero
-          tile={<BotTile bot={bot ?? { id: batch.botId }} size="lg" />}
-          title={batch.sourceSummary}
-          meta={
-            <>
-              <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
-              <span>
-                {bot ? (
-                  <Link to="/loom/bots" search={{ bot: bot.id }} className={INLINE_LINK}>
-                    {batch.botName}
-                  </Link>
-                ) : (
-                  <span className="font-medium text-foreground">{batch.botName}</span>
-                )}{" "}
-                v{batch.botVersion}
-                {newerVersion !== null ? `, v${newerVersion} saved since` : ""}
-              </span>
-              <span>
-                Started {runTime(batch.createdAt, now)} {batchOrigin(batch)}
-              </span>
-              <span>{BATCH_SOURCE_LABELS[batch.sourceType]}</span>
-            </>
-          }
-          actions={
-            <>
-              {running ? (
-                <Button
-                  shape="pill"
-                  size="sm"
-                  variant="outline"
-                  disabled={!canCancel || busy}
-                  onClick={() => void cancel()}
-                >
-                  <SquareIcon />
-                  Cancel batch
-                </Button>
-              ) : null}
-              {retryable ? (
-                <RetryControl
-                  plan={plan}
-                  label={choice.label}
-                  count={choice.count}
-                  includeAttention={includeAttention || plan.failed === 0}
-                  onIncludeAttention={setIncludeAttention}
-                  newerVersion={newerVersion}
-                  useLatest={useLatest}
-                  onUseLatest={setUseLatest}
-                  disabled={!canRetry || busy || botGone || archived}
-                  onRetry={() => void retry()}
-                />
-              ) : null}
-              <BatchMoreMenu
-                batch={batch}
-                bot={bot}
-                startable={startable}
-                canStart={canStart}
-                onRefresh={refresh}
+      <LibraryHero
+        tile={<BotTile bot={bot ?? { id: batch.botId }} size="lg" />}
+        title={batch.sourceSummary}
+        meta={
+          <>
+            <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
+            <span>
+              {bot ? (
+                <Link to="/loom/bots" search={{ bot: bot.id }} className={INLINE_LINK}>
+                  {batch.botName}
+                </Link>
+              ) : (
+                <span className="font-medium text-foreground">{batch.botName}</span>
+              )}{" "}
+              v{batch.botVersion}
+              {newerVersion !== null ? `, v${newerVersion} saved since` : ""}
+            </span>
+            <span>
+              Started {runTime(batch.createdAt, now)} {batchOrigin(batch)}
+            </span>
+            <span>{BATCH_SOURCE_LABELS[batch.sourceType]}</span>
+          </>
+        }
+        actions={
+          <>
+            {running ? (
+              <Button
+                shape="pill"
+                size="sm"
+                variant="outline"
+                disabled={!canCancel || busy}
+                onClick={() => void cancel()}
+              >
+                <SquareIcon />
+                Cancel batch
+              </Button>
+            ) : null}
+            {retryable ? (
+              <RetryControl
+                plan={plan}
+                label={choice.label}
+                count={choice.count}
+                includeAttention={includeAttention || plan.failed === 0}
+                onIncludeAttention={setIncludeAttention}
+                newerVersion={newerVersion}
+                useLatest={useLatest}
+                onUseLatest={setUseLatest}
+                disabled={!canRetry || busy || botGone || archived}
+                onRetry={() => void retry()}
               />
-            </>
-          }
-          footer={<BatchBoard batch={batch} items={items} now={now} onOpenRun={openRun} />}
-        />
-      </div>
+            ) : null}
+            <BatchMoreMenu
+              batch={batch}
+              bot={bot}
+              startable={startable}
+              canStart={canStart}
+              onRefresh={refresh}
+            />
+          </>
+        }
+        footer={<BatchBoard batch={batch} items={items} now={now} onOpenRun={openRun} />}
+      />
       <div className="flex flex-col gap-2 empty:hidden">
         {accessNotice}
         {running && batch.pausedUntil ? (

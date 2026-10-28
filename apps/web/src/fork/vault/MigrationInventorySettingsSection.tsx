@@ -5,6 +5,7 @@ import {
   LoomSettingsNotice,
   LoomSettingsDetails,
   LoomSettingsField,
+  LoomSettingsPanel,
 } from "~/fork/settings/parts";
 import { OriginalRouteReview } from "./OriginalRouteReview";
 import { migrationInventory as atoms } from "./migrationState";
@@ -132,158 +133,159 @@ function Inventory({
   };
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
-      <div className="space-y-1">
-        <h3 className="text-base font-medium">Project dependency inventory</h3>
-        <p className="max-w-prose text-muted-foreground">
-          Inspect registered projects before replacing development access.
-        </p>
-      </div>
-      <p className="text-xs text-muted-foreground">Inspecting projects on {computer}</p>
-      <LoomSettingsDetails title="What the inventory inspects">
-        <p>
-          Only selected local Git configuration is inspected. Personal stores, global configuration,
-          included files, SSH aliases, environment overrides, account identity and external
-          consumers are not inspected. Endpoints are hints; access has not been verified.
-        </p>
-      </LoomSettingsDetails>
-      <p className="max-w-prose text-sm text-muted-foreground">
-        Reviewing a plan never changes repository settings or grants access. Verification is
-        required before any cutover.
-      </p>
-      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
-      <LoomSettingsActions>
-        <Button size="sm-multiline" disabled={busy} onClick={() => inspectInventory(null)}>
-          Inspect project dependencies
-        </Button>
-        {inventory?.nextCursor ? (
-          <Button
-            size="sm-multiline"
-            variant="outline"
-            disabled={busy}
-            onClick={() => inspectInventory(inventory.nextCursor)}
-          >
-            Next projects
-          </Button>
-        ) : null}
-      </LoomSettingsActions>
-      {busy ? (
-        <LoomSettingsNotice role="status">Updating migration planning…</LoomSettingsNotice>
-      ) : null}
-      {inventory ? (
-        <>
+      <LoomSettingsPanel
+        title="Project dependency inventory"
+        description="Inspect registered projects before replacing development access."
+      >
+        <p className="text-xs text-muted-foreground">Inspecting projects on {computer}</p>
+        <LoomSettingsDetails title="What the inventory inspects">
           <p>
-            Inspected {inventory.projects.length} projects on this page at{" "}
-            {new Date(inventory.checkedAt).toLocaleString()}.{" "}
-            {inventory.nextCursor
-              ? "More projects remain."
-              : "End of registered project inventory."}
+            Only selected local Git configuration is inspected. Personal stores, global
+            configuration, included files, SSH aliases, environment overrides, account identity and
+            external consumers are not inspected. Endpoints are hints; access has not been verified.
           </p>
-          {inventory.projects.length === 0 ? <p>No registered projects on this page.</p> : null}
-          {inventory.projects.map((project) => (
-            <section
-              key={project.projectId}
-              aria-label={`Dependencies for ${project.title}`}
-              className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
+        </LoomSettingsDetails>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Reviewing a plan never changes repository settings or grants access. Verification is
+          required before any cutover.
+        </p>
+        {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+        <LoomSettingsActions>
+          <Button size="sm-multiline" disabled={busy} onClick={() => inspectInventory(null)}>
+            Inspect project dependencies
+          </Button>
+          {inventory?.nextCursor ? (
+            <Button
+              size="sm-multiline"
+              variant="outline"
+              disabled={busy}
+              onClick={() => inspectInventory(inventory.nextCursor)}
             >
-              <h3 className="font-medium">{project.title}</h3>
-              {project.state === "unavailable" ? (
-                <p>
-                  Local Git metadata is unavailable. The project may be missing, inaccessible or not
-                  a Git checkout. Refresh after correcting it.
-                </p>
-              ) : (
-                <>
-                  <dl className="grid min-w-0 gap-4 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
-                    <div className="min-w-0 space-y-1">
-                      <dt className="text-xs text-muted-foreground">Local SSH command</dt>
-                      <dd>{project.localSshCommand ? "Configured" : "Not found"}</dd>
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <dt className="text-xs text-muted-foreground">Credential helper</dt>
-                      <dd>{project.localCredentialHelper ? "Configured" : "Not found"}</dd>
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <dt className="text-xs text-muted-foreground">URL rewrite</dt>
-                      <dd>
-                        {project.localUrlRewrite
-                          ? "Configured; replacement needs separate review"
-                          : "Not found"}
-                      </dd>
-                    </div>
-                  </dl>
-                  {project.dependencies.length === 0 ? (
+              Next projects
+            </Button>
+          ) : null}
+        </LoomSettingsActions>
+        {busy ? (
+          <LoomSettingsNotice role="status">Updating migration planning…</LoomSettingsNotice>
+        ) : null}
+        {inventory ? (
+          <>
+            <p>
+              Inspected {inventory.projects.length} projects on this page at{" "}
+              {new Date(inventory.checkedAt).toLocaleString()}.{" "}
+              {inventory.nextCursor
+                ? "More projects remain."
+                : "End of registered project inventory."}
+            </p>
+            {inventory.projects.length === 0 ? <p>No registered projects on this page.</p> : null}
+            <div className="flex min-w-0 flex-col divide-y divide-border/60">
+              {inventory.projects.map((project) => (
+                <section
+                  key={project.projectId}
+                  aria-label={`Dependencies for ${project.title}`}
+                  className="flex min-w-0 flex-col gap-4 py-5 first:pt-0 last:pb-0"
+                >
+                  <h4 className="text-sm font-medium">{project.title}</h4>
+                  {project.state === "unavailable" ? (
                     <p>
-                      No remote URLs in the inspected local configuration. Included and global
-                      settings may add others.
+                      Local Git metadata is unavailable. The project may be missing, inaccessible or
+                      not a Git checkout. Refresh after correcting it.
                     </p>
-                  ) : null}
-                  {project.dependencies.map((dep) => (
-                    <div
-                      key={`${dep.remote}:${dep.direction}:${dep.position}`}
-                      className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/30 p-3"
-                    >
-                      <h4 className="font-medium">
-                        {dep.remote}: {dep.direction} URL {dep.position + 1}
-                      </h4>
-                      <dl className="grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
+                  ) : (
+                    <>
+                      <dl className="grid min-w-0 gap-4 text-sm grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
                         <div className="min-w-0 space-y-1">
-                          <dt className="text-xs text-muted-foreground">Transport and host</dt>
+                          <dt className="text-xs text-muted-foreground">Local SSH command</dt>
+                          <dd>{project.localSshCommand ? "Configured" : "Not found"}</dd>
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <dt className="text-xs text-muted-foreground">Credential helper</dt>
+                          <dd>{project.localCredentialHelper ? "Configured" : "Not found"}</dd>
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <dt className="text-xs text-muted-foreground">URL rewrite</dt>
                           <dd>
-                            {dep.transport}: {dep.hostname ?? "unrecognized endpoint"}
-                            {dep.port ? `:${dep.port}` : ""}
+                            {project.localUrlRewrite
+                              ? "Configured; replacement needs separate review"
+                              : "Not found"}
                           </dd>
                         </div>
-                        <div className="min-w-0 space-y-1">
-                          <dt className="text-xs text-muted-foreground">Repository</dt>
-                          <dd>{dep.repository ?? "Repository path not reported"}</dd>
-                        </div>
                       </dl>
-                      {dep.embeddedAuthentication ? (
+                      {project.dependencies.length === 0 ? (
                         <p>
-                          Embedded authentication or URL parameters were omitted. Review them
-                          separately before cutover.
+                          No remote URLs in the inspected local configuration. Included and global
+                          settings may add others.
                         </p>
                       ) : null}
-                      <LoomSettingsActions>
-                        <Button
-                          size="sm-multiline"
-                          variant="outline"
-                          aria-label={`Plan replacement for ${dep.remote} ${dep.direction} ${dep.position + 1}`}
-                          disabled={
-                            busy ||
-                            !canWrite ||
-                            project.localUrlRewrite ||
-                            dep.transport === "other" ||
-                            !dep.repository
-                          }
-                          onClick={() => {
-                            setChoice({
-                              projectId: project.projectId,
-                              title: project.title,
-                              dependency: dep,
-                            });
-                            setResult(null);
-                            setConfirmed(false);
-                            setError(null);
-                          }}
+                      {project.dependencies.map((dep) => (
+                        <div
+                          key={`${dep.remote}:${dep.direction}:${dep.position}`}
+                          className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/30 p-3"
                         >
-                          Plan replacement
-                        </Button>
-                      </LoomSettingsActions>
-                    </div>
-                  ))}
-                  {project.omittedDependencies > 0 ? (
-                    <LoomSettingsNotice role="status">
-                      {project.omittedDependencies} additional or unsupported entries were omitted.
-                      This inventory is incomplete.
-                    </LoomSettingsNotice>
-                  ) : null}
-                </>
-              )}
-            </section>
-          ))}
-        </>
-      ) : null}
+                          <h5 className="text-sm font-medium">
+                            {dep.remote}: {dep.direction} URL {dep.position + 1}
+                          </h5>
+                          <dl className="grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))]">
+                            <div className="min-w-0 space-y-1">
+                              <dt className="text-xs text-muted-foreground">Transport and host</dt>
+                              <dd>
+                                {dep.transport}: {dep.hostname ?? "unrecognized endpoint"}
+                                {dep.port ? `:${dep.port}` : ""}
+                              </dd>
+                            </div>
+                            <div className="min-w-0 space-y-1">
+                              <dt className="text-xs text-muted-foreground">Repository</dt>
+                              <dd>{dep.repository ?? "Repository path not reported"}</dd>
+                            </div>
+                          </dl>
+                          {dep.embeddedAuthentication ? (
+                            <p>
+                              Embedded authentication or URL parameters were omitted. Review them
+                              separately before cutover.
+                            </p>
+                          ) : null}
+                          <LoomSettingsActions>
+                            <Button
+                              size="sm-multiline"
+                              variant="outline"
+                              aria-label={`Plan replacement for ${dep.remote} ${dep.direction} ${dep.position + 1}`}
+                              disabled={
+                                busy ||
+                                !canWrite ||
+                                project.localUrlRewrite ||
+                                dep.transport === "other" ||
+                                !dep.repository
+                              }
+                              onClick={() => {
+                                setChoice({
+                                  projectId: project.projectId,
+                                  title: project.title,
+                                  dependency: dep,
+                                });
+                                setResult(null);
+                                setConfirmed(false);
+                                setError(null);
+                              }}
+                            >
+                              Plan replacement
+                            </Button>
+                          </LoomSettingsActions>
+                        </div>
+                      ))}
+                      {project.omittedDependencies > 0 ? (
+                        <LoomSettingsNotice role="status">
+                          {project.omittedDependencies} additional or unsupported entries were
+                          omitted. This inventory is incomplete.
+                        </LoomSettingsNotice>
+                      ) : null}
+                    </>
+                  )}
+                </section>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </LoomSettingsPanel>
       {choice && !result ? (
         <ReplacementDraft
           key={`${choice.projectId}:${choice.dependency.remote}:${choice.dependency.direction}:${choice.dependency.position}`}
@@ -308,12 +310,9 @@ function Inventory({
         />
       ) : null}
       {result ? (
-        <section
-          aria-label="Replacement plan review"
-          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
-        >
+        <LoomSettingsPanel title="Replacement plan review">
           <div className="space-y-1">
-            <h3 className="font-medium">{result.plan.projectTitle}</h3>
+            <h4 className="text-sm font-medium">{result.plan.projectTitle}</h4>
             <p className="text-muted-foreground">Replacement plan: {result.plan.state}</p>
           </div>
           <p>
@@ -435,7 +434,7 @@ function Inventory({
               Close replacement review
             </Button>
           </LoomSettingsActions>
-        </section>
+        </LoomSettingsPanel>
       ) : null}
       <LoomSettingsDetails title="Recent replacement plans">
         <LoomSettingsActions>
@@ -536,12 +535,9 @@ function ReplacementDraft({
     ) ?? [];
   const item = items.find((item) => item.id === selected);
   return (
-    <section
-      aria-label="Choose development replacement"
-      className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
-    >
+    <LoomSettingsPanel title="Choose development replacement">
       <div className="space-y-1">
-        <h3 className="text-base font-medium">Replacement for {choice.title}</h3>
+        <h4 className="text-sm font-medium">Replacement for {choice.title}</h4>
         <p className="text-sm text-muted-foreground">
           {choice.dependency.remote}. Draft selection, not yet prepared for review.
         </p>
@@ -641,6 +637,6 @@ function ReplacementDraft({
           Cancel replacement selection
         </Button>
       </LoomSettingsActions>
-    </section>
+    </LoomSettingsPanel>
   );
 }

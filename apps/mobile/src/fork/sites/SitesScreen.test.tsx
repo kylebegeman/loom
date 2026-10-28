@@ -98,6 +98,9 @@ vi.mock("../../components/ui/SegmentedControl", () => ({
     </>
   ),
 }));
+vi.mock("../../features/settings/components/SettingsSection", () => ({
+  SettingsSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+}));
 vi.mock("../library/libraryProjectColors", () => ({
   LibraryProjectTile: () => null,
   useLibraryProjectColorValue: () => () => "#3a67d0",
@@ -117,7 +120,7 @@ vi.mock("../../components/ui/Button", () => ({
     </button>
   ),
 }));
-vi.mock("../library/LibraryScreens", () => ({
+vi.mock("../library/LibraryPage", () => ({
   LibraryPage: ({
     children,
     actions,

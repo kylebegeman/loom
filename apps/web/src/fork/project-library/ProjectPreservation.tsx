@@ -8,9 +8,14 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { randomUUID } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
-import { LibraryDialog, LibraryErrorNotice, LibraryStateBadge } from "./LibraryControls";
+import {
+  LIBRARY_SURFACE,
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryStateBadge,
+} from "./LibraryControls";
 import { ComputerLabel, PathLabel } from "./ProjectIdentity";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { ProjectOperationHistory } from "./ProjectOperations";
@@ -180,7 +185,7 @@ export function ProjectPreservationCenter({
               <article
                 key={entry.copy.id}
                 aria-label={entry.copy.rootPath}
-                className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-xs/5"
+                className={cn("flex min-w-0 flex-col gap-3 p-4", LIBRARY_SURFACE)}
               >
                 <div className="flex min-w-0 items-start gap-3">
                   <div className="min-w-0 flex-1 space-y-0.5">

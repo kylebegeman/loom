@@ -17,6 +17,8 @@ import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { cn } from "../../lib/cn";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotPage } from "./BotControls";
@@ -63,7 +65,7 @@ function ReplayScreen({
   const collection = useBotsCollection(environmentId);
   const bot = collection.bots.find((entry) => entry.id === params.botId);
   return (
-    <BotPage title="Replay bot" back={navigation.canGoBack()}>
+    <BotPage title="Replay bot">
       {!capabilities.connected ? (
         <Text>Computer offline. Reconnect to start or cancel a replay.</Text>
       ) : null}
@@ -96,7 +98,7 @@ function HistoryScreen({ params }: { params: Params }) {
   const collection = useBotsCollection(environmentId);
   const bot = collection.bots.find((candidate) => candidate.id === params.botId);
   return (
-    <BotPage title={bot ? `${bot.name} history` : "Bot history"} back={navigation.canGoBack()}>
+    <BotPage title={bot ? `${bot.name} history` : "Bot history"}>
       {!capabilities.connected ? (
         <Text>Computer offline. Reconnect to refresh or change this bot.</Text>
       ) : null}
@@ -284,104 +286,119 @@ function BotHistory({
       ) : null}
       {versions.isPending && !versions.data ? <Text>Loading versions…</Text> : null}
       {versions.data && rows.length === 0 ? <Text>No saved versions yet.</Text> : null}
-      {rows.map((version, index) => {
-        const previous = rows[index + 1]?.version ?? null;
-        const isStable = bot.stableVersion === version.version;
-        const editable = connected && !busy && bot.archivedAt === null;
-        return (
-          <View key={version.version} className="gap-3 rounded-xl bg-grouped-card p-4">
-            <Text className="font-t3-semibold">
-              v{version.version}
-              {version.version === bot.version ? " · Current" : ""}
-              {isStable ? " · Stable" : ""}
-            </Text>
-            <VersionSummary version={version} />
-            <View className="flex-row flex-wrap gap-2">
-              {previous !== null ? (
-                <Button
-                  label={compare === version.version ? "Hide changes" : `Compare with v${previous}`}
-                  onPress={() => setCompare(compare === version.version ? null : version.version)}
-                />
-              ) : null}
-              <Button
-                label="Replay"
-                disabled={!editable || !canReplay}
-                accessibilityLabel={`Replay v${version.version}`}
-                onPress={() => setReplayVersion(version.version)}
-              />
-              <Button
-                label={isStable ? "Clear stable" : "Mark stable"}
-                disabled={!editable || !canSetStable}
-                accessibilityLabel={`${isStable ? "Clear stable" : "Mark stable"} v${version.version}`}
-                onPress={() =>
-                  void act(async () => {
-                    const result = await stable({
-                      environmentId,
-                      input: { botId: bot.id, version: isStable ? null : version.version },
-                    });
-                    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-                    refreshBot();
-                  })
-                }
-              />
-              {version.version !== bot.version ? (
-                <Button
-                  label="Restore"
-                  accessibilityLabel={`Restore v${version.version}`}
-                  disabled={!editable || !canRestore}
-                  onPress={() =>
-                    setConfirm({ version: version.version, expectedVersion: bot.version })
-                  }
-                />
-              ) : null}
-            </View>
-            {confirm?.version === version.version ? (
-              <View className="gap-2">
-                <Text>
-                  Restore v{version.version} as v{confirm.expectedVersion + 1}? Existing history is
-                  kept.
+      {rows.length ? (
+        <SettingsSection>
+          {rows.map((version, index) => {
+            const previous = rows[index + 1]?.version ?? null;
+            const isStable = bot.stableVersion === version.version;
+            const editable = connected && !busy && bot.archivedAt === null;
+            return (
+              <View
+                key={version.version}
+                className={cn("gap-3 p-4", index > 0 && "border-t border-border-subtle")}
+              >
+                <Text className="font-t3-semibold">
+                  v{version.version}
+                  {version.version === bot.version ? " · Current" : ""}
+                  {isStable ? " · Stable" : ""}
                 </Text>
-                {confirm.expectedVersion !== bot.version ? (
-                  <Text accessibilityRole="alert">
-                    This bot changed after you opened the confirmation. Cancel and review the latest
-                    version before restoring.
-                  </Text>
+                <VersionSummary version={version} />
+                <View className="flex-row flex-wrap gap-2">
+                  {previous !== null ? (
+                    <Button
+                      label={
+                        compare === version.version ? "Hide changes" : `Compare with v${previous}`
+                      }
+                      onPress={() =>
+                        setCompare(compare === version.version ? null : version.version)
+                      }
+                    />
+                  ) : null}
+                  <Button
+                    label="Replay"
+                    disabled={!editable || !canReplay}
+                    accessibilityLabel={`Replay v${version.version}`}
+                    onPress={() => setReplayVersion(version.version)}
+                  />
+                  <Button
+                    label={isStable ? "Clear stable" : "Mark stable"}
+                    disabled={!editable || !canSetStable}
+                    accessibilityLabel={`${isStable ? "Clear stable" : "Mark stable"} v${version.version}`}
+                    onPress={() =>
+                      void act(async () => {
+                        const result = await stable({
+                          environmentId,
+                          input: { botId: bot.id, version: isStable ? null : version.version },
+                        });
+                        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                        refreshBot();
+                      })
+                    }
+                  />
+                  {version.version !== bot.version ? (
+                    <Button
+                      label="Restore"
+                      accessibilityLabel={`Restore v${version.version}`}
+                      disabled={!editable || !canRestore}
+                      onPress={() =>
+                        setConfirm({ version: version.version, expectedVersion: bot.version })
+                      }
+                    />
+                  ) : null}
+                </View>
+                {confirm?.version === version.version ? (
+                  <View className="gap-2">
+                    <Text>
+                      Restore v{version.version} as v{confirm.expectedVersion + 1}? Existing history
+                      is kept.
+                    </Text>
+                    {confirm.expectedVersion !== bot.version ? (
+                      <Text accessibilityRole="alert">
+                        This bot changed after you opened the confirmation. Cancel and review the
+                        latest version before restoring.
+                      </Text>
+                    ) : null}
+                    <Button
+                      label="Confirm restore"
+                      disabled={!editable || !canRestore || confirm.expectedVersion !== bot.version}
+                      onPress={() =>
+                        void act(async () => {
+                          const result = await restore({
+                            environmentId,
+                            input: {
+                              botId: bot.id,
+                              version: version.version,
+                              expectedVersion: confirm.expectedVersion,
+                            },
+                          });
+                          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                          setConfirm(null);
+                          setBefore(undefined);
+                          refreshVersions();
+                          refreshBot();
+                        })
+                      }
+                    />
+                    <Button
+                      label="Cancel restore"
+                      disabled={busy}
+                      onPress={() => setConfirm(null)}
+                    />
+                  </View>
                 ) : null}
-                <Button
-                  label="Confirm restore"
-                  disabled={!editable || !canRestore || confirm.expectedVersion !== bot.version}
-                  onPress={() =>
-                    void act(async () => {
-                      const result = await restore({
-                        environmentId,
-                        input: {
-                          botId: bot.id,
-                          version: version.version,
-                          expectedVersion: confirm.expectedVersion,
-                        },
-                      });
-                      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-                      setConfirm(null);
-                      setBefore(undefined);
-                      refreshVersions();
-                      refreshBot();
-                    })
-                  }
-                />
-                <Button label="Cancel restore" disabled={busy} onPress={() => setConfirm(null)} />
+                {compare === version.version && previous !== null ? (
+                  <VersionCompare
+                    environmentId={environmentId}
+                    botId={bot.id}
+                    before={previous}
+                    after={version.version}
+                  />
+                ) : null}
               </View>
-            ) : null}
-            {compare === version.version && previous !== null ? (
-              <VersionCompare
-                environmentId={environmentId}
-                botId={bot.id}
-                before={previous}
-                after={version.version}
-              />
-            ) : null}
-          </View>
-        );
-      })}
+            );
+          })}
+        </SettingsSection>
+      ) : null}
       <View className="flex-row flex-wrap gap-2">
         {before !== undefined ? (
           <Button
@@ -534,170 +551,172 @@ function BotReplayView({
     setBusy(false);
   };
   return (
-    <View className="gap-3 rounded-xl bg-grouped-card p-4">
-      <Text className="text-lg font-t3-semibold">
-        Replay {bot.name}
-        {current?.source.kind === "draft" || (!current && draft)
-          ? " draft"
-          : ` v${current?.source.kind === "version" ? current.source.version : version}`}
-      </Text>
-      <Text>
-        Runs earlier inputs again and compares the results. Replays count toward the bot's budget.
-      </Text>
-      {error || replayQuery.error || runsQuery.error ? (
-        <Text accessibilityRole="alert">{error ?? replayQuery.error ?? runsQuery.error}</Text>
-      ) : null}
-      <Button
-        label="Refresh replay"
-        disabled={!connected || busy}
-        onPress={() => {
-          refreshReplay();
-          refreshRuns();
-        }}
-      />
-      {id && !current && replayQuery.isPending ? <Text>Loading replay…</Text> : null}
-      {current ? (
-        <>
-          <Text accessibilityLiveRegion="polite">
-            {current.status === "running"
-              ? "Replaying"
-              : current.status === "cancelled"
-                ? "Cancelled"
-                : "Done"}
-            . {formatReplaySummary(current.summary)}
-          </Text>
-          {current.items.map((item) => (
-            <View key={item.originalRunId} className="gap-2 rounded-xl bg-subtle p-3">
-              <Text className="font-t3-semibold">
-                {item.comparison === "pending"
-                  ? "Waiting"
-                  : item.comparison.charAt(0).toUpperCase() + item.comparison.slice(1)}
-              </Text>
-              {item.reason ? <Text accessibilityRole="alert">{item.reason}</Text> : null}
-              <RunOutcome
-                title="Before"
-                run={runById.get(item.originalRunId)}
-                runId={item.originalRunId}
-                environmentId={environmentId}
-                exact={capabilities.runDetailsSupported}
-                connected={connected}
-                missing="Original result is not loaded. Load older runs to look for it."
-              />
-              <RunOutcome
-                title="After"
-                run={item.replayRunId ? runById.get(item.replayRunId) : undefined}
-                runId={item.replayRunId}
-                environmentId={environmentId}
-                exact={capabilities.runDetailsSupported}
-                connected={connected}
-                missing={
-                  item.replayRunId
-                    ? "Result is not loaded. Load older runs to look for it."
-                    : "Not started"
-                }
-              />
-            </View>
-          ))}
-          {current.status === "running" ? (
-            <Button
-              label="Cancel replay"
-              tone="danger"
-              disabled={!connected || !canCancel || busy}
-              onPress={() =>
-                void perform(async () => {
-                  const result = await cancel({ environmentId, input: { replayId: current.id } });
-                  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-                  setStarted(result.value);
-                  refreshReplay();
-                })
-              }
-            />
-          ) : null}
-        </>
-      ) : !id ? (
-        <>
-          {runsQuery.isPending && !runsQuery.data ? (
-            <Text>Loading runs…</Text>
-          ) : candidates.length === 0 ? (
-            <Text>No finished runs to replay yet.</Text>
-          ) : (
-            <>
-              <Text>Choose up to {BOTS_REPLAY_MAX_RUNS} runs. Rated runs are chosen first.</Text>
-              {candidates.map((run) => (
-                <Pressable
-                  key={run.id}
-                  accessibilityRole="checkbox"
-                  accessibilityLabel={`${run.status}, v${run.botVersion}, ${new Date(run.createdAt).toLocaleString()}`}
-                  accessibilityState={{
-                    checked: chosen.includes(run.id),
-                    disabled:
-                      busy || (!chosen.includes(run.id) && chosen.length >= BOTS_REPLAY_MAX_RUNS),
-                  }}
-                  disabled={
-                    busy || (!chosen.includes(run.id) && chosen.length >= BOTS_REPLAY_MAX_RUNS)
+    <SettingsSection>
+      <View className="gap-3 p-4">
+        <Text className="text-lg font-t3-semibold">
+          Replay {bot.name}
+          {current?.source.kind === "draft" || (!current && draft)
+            ? " draft"
+            : ` v${current?.source.kind === "version" ? current.source.version : version}`}
+        </Text>
+        <Text>
+          Runs earlier inputs again and compares the results. Replays count toward the bot's budget.
+        </Text>
+        {error || replayQuery.error || runsQuery.error ? (
+          <Text accessibilityRole="alert">{error ?? replayQuery.error ?? runsQuery.error}</Text>
+        ) : null}
+        <Button
+          label="Refresh replay"
+          disabled={!connected || busy}
+          onPress={() => {
+            refreshReplay();
+            refreshRuns();
+          }}
+        />
+        {id && !current && replayQuery.isPending ? <Text>Loading replay…</Text> : null}
+        {current ? (
+          <>
+            <Text accessibilityLiveRegion="polite">
+              {current.status === "running"
+                ? "Replaying"
+                : current.status === "cancelled"
+                  ? "Cancelled"
+                  : "Done"}
+              . {formatReplaySummary(current.summary)}
+            </Text>
+            {current.items.map((item) => (
+              <View key={item.originalRunId} className="gap-2 rounded-xl bg-subtle p-3">
+                <Text className="font-t3-semibold">
+                  {item.comparison === "pending"
+                    ? "Waiting"
+                    : item.comparison.charAt(0).toUpperCase() + item.comparison.slice(1)}
+                </Text>
+                {item.reason ? <Text accessibilityRole="alert">{item.reason}</Text> : null}
+                <RunOutcome
+                  title="Before"
+                  run={runById.get(item.originalRunId)}
+                  runId={item.originalRunId}
+                  environmentId={environmentId}
+                  exact={capabilities.runDetailsSupported}
+                  connected={connected}
+                  missing="Original result is not loaded. Load older runs to look for it."
+                />
+                <RunOutcome
+                  title="After"
+                  run={item.replayRunId ? runById.get(item.replayRunId) : undefined}
+                  runId={item.replayRunId}
+                  environmentId={environmentId}
+                  exact={capabilities.runDetailsSupported}
+                  connected={connected}
+                  missing={
+                    item.replayRunId
+                      ? "Result is not loaded. Load older runs to look for it."
+                      : "Not started"
                   }
-                  onPress={() =>
-                    setSelection(
-                      chosen.includes(run.id)
-                        ? chosen.filter((entry) => entry !== run.id)
-                        : [...chosen, run.id],
-                    )
-                  }
-                  className="min-h-12 gap-1 rounded-xl bg-subtle p-3"
-                >
-                  <Text>
-                    {chosen.includes(run.id) ? "Selected · " : ""}
-                    {run.status} · v{run.botVersion}
-                    {run.rating ? ` · ${run.rating === "up" ? "Good" : "Bad"}` : ""}
-                  </Text>
-                  <Text className="text-sm text-foreground-muted">
-                    {Object.entries(run.inputs)
-                      .map(([name, value]) => `${name}: ${value}`)
-                      .join(", ") || "No inputs"}
-                  </Text>
-                  <Text className="text-xs text-foreground-muted">
-                    {new Date(run.finishedAt ?? run.createdAt).toLocaleString()}
-                  </Text>
-                </Pressable>
-              ))}
+                />
+              </View>
+            ))}
+            {current.status === "running" ? (
               <Button
-                label={`Replay ${chosen.length} ${chosen.length === 1 ? "run" : "runs"}`}
-                tone="primary"
-                disabled={
-                  !connected || !canReplay || busy || !chosen.length || bot.archivedAt !== null
-                }
+                label="Cancel replay"
+                tone="danger"
+                disabled={!connected || !canCancel || busy}
                 onPress={() =>
                   void perform(async () => {
-                    const result = await replay({
-                      environmentId,
-                      input: {
-                        botId: bot.id,
-                        ...(draft ? { draft } : { version }),
-                        runIds: chosen,
-                      },
-                    });
+                    const result = await cancel({ environmentId, input: { replayId: current.id } });
                     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-                    setRetained(runs);
                     setStarted(result.value);
+                    refreshReplay();
                   })
                 }
               />
-            </>
-          )}
-        </>
-      ) : null}
-      {runsQuery.data?.hasMore ? (
-        <Button
-          label="Load older runs"
-          disabled={!connected || busy || runsQuery.isPending || !runsQuery.data.runs.length}
-          onPress={() => {
-            setRetained(runs);
-            setBefore(runsQuery.data?.runs.at(-1)?.createdAt);
-          }}
-        />
-      ) : null}
-      <Button label="Close replay" disabled={busy} onPress={onClose} />
-    </View>
+            ) : null}
+          </>
+        ) : !id ? (
+          <>
+            {runsQuery.isPending && !runsQuery.data ? (
+              <Text>Loading runs…</Text>
+            ) : candidates.length === 0 ? (
+              <Text>No finished runs to replay yet.</Text>
+            ) : (
+              <>
+                <Text>Choose up to {BOTS_REPLAY_MAX_RUNS} runs. Rated runs are chosen first.</Text>
+                {candidates.map((run) => (
+                  <Pressable
+                    key={run.id}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={`${run.status}, v${run.botVersion}, ${new Date(run.createdAt).toLocaleString()}`}
+                    accessibilityState={{
+                      checked: chosen.includes(run.id),
+                      disabled:
+                        busy || (!chosen.includes(run.id) && chosen.length >= BOTS_REPLAY_MAX_RUNS),
+                    }}
+                    disabled={
+                      busy || (!chosen.includes(run.id) && chosen.length >= BOTS_REPLAY_MAX_RUNS)
+                    }
+                    onPress={() =>
+                      setSelection(
+                        chosen.includes(run.id)
+                          ? chosen.filter((entry) => entry !== run.id)
+                          : [...chosen, run.id],
+                      )
+                    }
+                    className="min-h-12 gap-1 rounded-xl bg-subtle p-3"
+                  >
+                    <Text>
+                      {chosen.includes(run.id) ? "Selected · " : ""}
+                      {run.status} · v{run.botVersion}
+                      {run.rating ? ` · ${run.rating === "up" ? "Good" : "Bad"}` : ""}
+                    </Text>
+                    <Text className="text-sm text-foreground-muted">
+                      {Object.entries(run.inputs)
+                        .map(([name, value]) => `${name}: ${value}`)
+                        .join(", ") || "No inputs"}
+                    </Text>
+                    <Text className="text-xs text-foreground-muted">
+                      {new Date(run.finishedAt ?? run.createdAt).toLocaleString()}
+                    </Text>
+                  </Pressable>
+                ))}
+                <Button
+                  label={`Replay ${chosen.length} ${chosen.length === 1 ? "run" : "runs"}`}
+                  tone="primary"
+                  disabled={
+                    !connected || !canReplay || busy || !chosen.length || bot.archivedAt !== null
+                  }
+                  onPress={() =>
+                    void perform(async () => {
+                      const result = await replay({
+                        environmentId,
+                        input: {
+                          botId: bot.id,
+                          ...(draft ? { draft } : { version }),
+                          runIds: chosen,
+                        },
+                      });
+                      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                      setRetained(runs);
+                      setStarted(result.value);
+                    })
+                  }
+                />
+              </>
+            )}
+          </>
+        ) : null}
+        {runsQuery.data?.hasMore ? (
+          <Button
+            label="Load older runs"
+            disabled={!connected || busy || runsQuery.isPending || !runsQuery.data.runs.length}
+            onPress={() => {
+              setRetained(runs);
+              setBefore(runsQuery.data?.runs.at(-1)?.createdAt);
+            }}
+          />
+        ) : null}
+        <Button label="Close replay" disabled={busy} onPress={onClose} />
+      </View>
+    </SettingsSection>
   );
 }
 

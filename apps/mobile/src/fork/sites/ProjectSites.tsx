@@ -5,6 +5,7 @@ import { SITES_FEATURE } from "@t3tools/contracts/fork";
 import { SITE_HEALTH_STATES, siteHealth, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentServerConfig } from "../../state/entities";
@@ -30,23 +31,17 @@ export function ProjectSites({
   if (!supported) return null;
   const linked = snapshot?.sites.filter((site) => site.projectIds?.includes(projectId)) ?? [];
   return (
-    <View className="gap-2">
-      <Text
-        accessibilityRole="header"
-        className="px-1 text-sm font-t3-medium text-foreground-muted"
-      >
-        Sites
-      </Text>
+    <SettingsSection title="Sites">
       {query.error ? (
-        <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
+        <Text accessibilityRole="alert" className="px-4 pt-4 text-sm text-danger-foreground">
           {query.error}
         </Text>
       ) : null}
       {query.isPending && !query.data ? (
-        <Text className="text-sm text-foreground-muted">Loading sites…</Text>
+        <Text className="p-4 text-sm text-foreground-muted">Loading sites…</Text>
       ) : null}
       {linked.length && snapshot ? (
-        <View className="overflow-hidden rounded-2xl border border-border">
+        <View>
           {linked.map((site, index) => {
             const health = SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state];
             return (
@@ -77,11 +72,11 @@ export function ProjectSites({
           })}
         </View>
       ) : query.data ? (
-        <Text className="text-sm text-foreground-muted">
+        <Text className="p-4 text-sm text-foreground-muted">
           No sites linked. Register a site or link an existing one in Sites.
         </Text>
       ) : null}
       <Button label="Open Sites" tone="text" onPress={() => navigation.navigate("Sites")} />
-    </View>
+    </SettingsSection>
   );
 }

@@ -68,7 +68,6 @@ import {
   LibraryTable,
   TickStrip,
 } from "../project-library/LibraryData";
-import { LibraryBackLink } from "../project-library/LibraryPageFrame";
 import { useLibraryPermission } from "../project-library/state";
 import { ProjectWash } from "../project-library/ProjectCollection";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
@@ -902,61 +901,45 @@ function PipelineDetail({
   const { list, pipelines } = usePipelines(environmentId, true, host.connected);
   useRefreshOnReconnect(host.connected, list.refresh);
   const pipeline = pipelines.find((candidate) => candidate.id === pipelineId);
-  const back = (
-    <LibraryBackLink to="/loom/bots" search={PIPELINES_TAB}>
-      Pipelines
-    </LibraryBackLink>
-  );
   if (pipeline === undefined) {
     if (list.error && !list.data)
-      return (
-        <div className="flex flex-col">
-          {back}
-          <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
-        </div>
-      );
+      return <LibraryErrorNotice error={list.error} onRetry={list.refresh} />;
     if (!list.data)
       return (
         <div role="status" aria-label="Loading the pipeline" className="flex flex-col gap-8">
-          {back}
           <Skeleton shape="card" className="h-44 w-full" />
           <Skeleton className="h-40 w-full" />
         </div>
       );
     return (
-      <div className="flex flex-col">
-        {back}
-        <LibraryEmpty
-          icon={WorkflowIcon}
-          title="This pipeline no longer exists"
-          action={
-            <Button
-              shape="pill"
-              size="sm"
-              variant="outline"
-              render={<Link to="/loom/bots" search={PIPELINES_TAB} />}
-            >
-              Back to pipelines
-            </Button>
-          }
-        >
-          It was deleted, or the link names a pipeline this computer never had. Its past runs stay
-          under Recent runs.
-        </LibraryEmpty>
-      </div>
+      <LibraryEmpty
+        icon={WorkflowIcon}
+        title="This pipeline no longer exists"
+        action={
+          <Button
+            shape="pill"
+            size="sm"
+            variant="outline"
+            render={<Link to="/loom/bots" search={PIPELINES_TAB} />}
+          >
+            Back to pipelines
+          </Button>
+        }
+      >
+        It was deleted, or the link names a pipeline this computer never had. Its past runs stay
+        under Recent runs.
+      </LibraryEmpty>
     );
   }
-  return <PipelineOverview environmentId={environmentId} pipeline={pipeline} back={back} />;
+  return <PipelineOverview environmentId={environmentId} pipeline={pipeline} />;
 }
 
 function PipelineOverview({
   environmentId,
   pipeline,
-  back,
 }: {
   readonly environmentId: EnvironmentId;
   readonly pipeline: BotPipeline;
-  readonly back: ReactNode;
 }) {
   const nav = useBotsNavigation();
   const { host, bots: allBots, list: botList } = useBots();
@@ -978,102 +961,99 @@ function PipelineOverview({
   const runReason = actionReason(host.connected, access.canRunPipelines, "run pipelines");
   return (
     <div style={pipelineColorStyle(pipeline.id)} className="flex flex-col gap-10">
-      <div className="flex flex-col">
-        {back}
-        <LibraryHero
-          tile={<PipelineTile pipelineId={pipeline.id} size="2xl" />}
-          title={pipeline.name}
-          meta={
-            <>
-              {attention ? (
-                <LibraryStateBadge tone={attention.tone}>{attention.label}</LibraryStateBadge>
-              ) : null}
-              <span>{plural(pipeline.steps.length, "step")}</span>
-              <span>
-                {pipeline.parameters.length
-                  ? plural(pipeline.parameters.length, "input")
-                  : "No inputs"}
-              </span>
-              <span>v{pipeline.version}</span>
-              {pipeline.createdBy === "agent" ? <span>Made by an agent</span> : null}
-              <span>Edited {runTime(pipeline.updatedAt)}</span>
-            </>
-          }
-          actions={
-            <>
-              {editReason === null ? (
-                <Button
-                  shape="pill"
-                  size="sm"
-                  variant="outline"
-                  render={<Link to="/loom/bots" search={{ editPipeline: pipeline.id }} />}
-                >
+      <LibraryHero
+        tile={<PipelineTile pipelineId={pipeline.id} size="2xl" />}
+        title={pipeline.name}
+        meta={
+          <>
+            {attention ? (
+              <LibraryStateBadge tone={attention.tone}>{attention.label}</LibraryStateBadge>
+            ) : null}
+            <span>{plural(pipeline.steps.length, "step")}</span>
+            <span>
+              {pipeline.parameters.length
+                ? plural(pipeline.parameters.length, "input")
+                : "No inputs"}
+            </span>
+            <span>v{pipeline.version}</span>
+            {pipeline.createdBy === "agent" ? <span>Made by an agent</span> : null}
+            <span>Edited {runTime(pipeline.updatedAt)}</span>
+          </>
+        }
+        actions={
+          <>
+            {editReason === null ? (
+              <Button
+                shape="pill"
+                size="sm"
+                variant="outline"
+                render={<Link to="/loom/bots" search={{ editPipeline: pipeline.id }} />}
+              >
+                <PencilIcon />
+                Edit
+              </Button>
+            ) : (
+              <WithReason reason={editReason}>
+                <Button shape="pill" size="sm" variant="outline" disabled>
                   <PencilIcon />
                   Edit
                 </Button>
-              ) : (
-                <WithReason reason={editReason}>
-                  <Button shape="pill" size="sm" variant="outline" disabled>
-                    <PencilIcon />
-                    Edit
-                  </Button>
-                </WithReason>
-              )}
-              <WithReason reason={runReason}>
-                <Button
-                  shape="pill"
-                  size="sm"
-                  disabled={!access.canRunPipelines}
-                  onClick={() => nav.overlay({ runPipeline: pipeline.id })}
-                >
-                  <PlayIcon />
-                  Run
-                </Button>
               </WithReason>
-              <PipelineMenu
-                environmentId={environmentId}
-                pipeline={pipeline}
-                connected={host.connected}
-                size="icon-sm"
-                onDeleted={() => nav.show(PIPELINES_TAB)}
-              />
-            </>
-          }
-          footer={
-            <LibraryVitals>
-              <LibraryVital label="Recent runs">
-                <TickStrip ticks={runTicks(runs, PAGE_TICKS)} label={ticksLabel(runs)} />
-              </LibraryVital>
-              <LibraryVital label="Passed">
-                {record.finished ? `${record.passed} of ${record.finished}` : "No runs yet"}
-              </LibraryVital>
-              <LibraryVital label="Typical run">
-                {record.typicalMs === null ? "Not yet" : formatSpan(record.typicalMs)}
-              </LibraryVital>
-              <LibraryVital label="Last run">
-                {last ? (
-                  <Link
-                    to="/loom/bots"
-                    search={{ pipelineRun: last.id }}
-                    className="rounded-sm underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-                  >
-                    {runTime(last.createdAt)}
-                  </Link>
-                ) : (
-                  "Never"
-                )}
-              </LibraryVital>
-              {usageText(usage) ? (
-                <LibraryVital label="This week">{usageText(usage)}</LibraryVital>
-              ) : null}
-            </LibraryVitals>
-          }
-        >
-          {pipeline.description.trim() ? (
-            <p className="max-w-2xl text-sm text-muted-foreground">{pipeline.description}</p>
-          ) : null}
-        </LibraryHero>
-      </div>
+            )}
+            <WithReason reason={runReason}>
+              <Button
+                shape="pill"
+                size="sm"
+                disabled={!access.canRunPipelines}
+                onClick={() => nav.overlay({ runPipeline: pipeline.id })}
+              >
+                <PlayIcon />
+                Run
+              </Button>
+            </WithReason>
+            <PipelineMenu
+              environmentId={environmentId}
+              pipeline={pipeline}
+              connected={host.connected}
+              size="icon-sm"
+              onDeleted={() => nav.show(PIPELINES_TAB)}
+            />
+          </>
+        }
+        footer={
+          <LibraryVitals>
+            <LibraryVital label="Recent runs">
+              <TickStrip ticks={runTicks(runs, PAGE_TICKS)} label={ticksLabel(runs)} />
+            </LibraryVital>
+            <LibraryVital label="Passed">
+              {record.finished ? `${record.passed} of ${record.finished}` : "No runs yet"}
+            </LibraryVital>
+            <LibraryVital label="Typical run">
+              {record.typicalMs === null ? "Not yet" : formatSpan(record.typicalMs)}
+            </LibraryVital>
+            <LibraryVital label="Last run">
+              {last ? (
+                <Link
+                  to="/loom/bots"
+                  search={{ pipelineRun: last.id }}
+                  className="rounded-sm underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                >
+                  {runTime(last.createdAt)}
+                </Link>
+              ) : (
+                "Never"
+              )}
+            </LibraryVital>
+            {usageText(usage) ? (
+              <LibraryVital label="This week">{usageText(usage)}</LibraryVital>
+            ) : null}
+          </LibraryVitals>
+        }
+      >
+        {pipeline.description.trim() ? (
+          <p className="max-w-2xl text-sm text-muted-foreground">{pipeline.description}</p>
+        ) : null}
+      </LibraryHero>
       <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-10">
           <LibrarySection title="Steps" icon={WorkflowIcon} count={pipeline.steps.length}>

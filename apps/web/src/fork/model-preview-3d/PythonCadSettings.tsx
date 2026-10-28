@@ -48,7 +48,6 @@ export function PythonCadSettings({
   return (
     <>
       <SettingsRow
-        className="px-0 sm:px-0"
         title="Python CAD interpreter"
         description="Unset uses Loom's managed environment. Python models use the .b3d.py file extension and a model() function."
       >

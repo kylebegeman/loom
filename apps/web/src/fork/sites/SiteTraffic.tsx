@@ -10,7 +10,11 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { LibraryFigure, LibraryGroupHeading } from "../project-library/LibraryControls";
+import {
+  LIBRARY_OUTLINE,
+  LibraryFigure,
+  LibraryGroupHeading,
+} from "../project-library/LibraryControls";
 import { LIBRARY_CELL, LibraryBar, LibraryTable, Sparkline } from "../project-library/LibraryData";
 
 const COMPACT = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
@@ -68,7 +72,7 @@ export function SiteTraffic({ analytics }: { readonly analytics: SiteAnalytics }
   return (
     <section
       aria-label="Traffic over time"
-      className="flex min-w-0 flex-col rounded-xl border border-border"
+      className={cn(LIBRARY_OUTLINE, "flex min-w-0 flex-col")}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-4 pt-4">
         <dl className="flex min-w-0 flex-wrap gap-x-5 gap-y-3">
@@ -515,7 +519,7 @@ const SKELETON_ROWS = ["first", "second", "third"];
 export function SiteTrafficSkeleton() {
   return (
     <div role="status" aria-label="Loading traffic" className="flex flex-col gap-8">
-      <div className="flex flex-col gap-5 rounded-xl border border-border p-4">
+      <div className={cn(LIBRARY_OUTLINE, "flex flex-col gap-5 p-4")}>
         <div className="flex gap-5">
           {SKELETON_ROWS.map((row) => (
             <div key={row} className="flex flex-col gap-1.5">

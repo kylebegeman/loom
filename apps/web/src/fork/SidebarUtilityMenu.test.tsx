@@ -100,15 +100,10 @@ const activeLabel = () =>
 const backButton = () =>
   Array.from(container.querySelectorAll("button")).find((entry) => entry.textContent === "Back");
 
-it.each([
-  ["Settings", "/settings", "/settings/connections"],
-  ["Pull requests", "/pull-requests", "/pull-requests"],
-  ["Usage", "/usage", "/usage"],
-])("returns from %s to the previous conversation", async (label, path, detail) => {
+it("returns from Pull requests to the previous conversation", async () => {
   const router = await renderMenu("/draft/retained?view=diff#latest");
-  await act(async () => button(label)!.click());
-  expect(router.state.location.pathname).toBe(path);
-  await act(async () => router.navigate({ href: detail }));
+  await act(async () => button("Pull requests")!.click());
+  expect(router.state.location.pathname).toBe("/pull-requests");
   expect(backButton()).toBeDefined();
   expect(button("Settings")).toBeNull();
   expect(button("Projects")).toBeNull();
@@ -118,6 +113,15 @@ it.each([
   expect(router.state.location.href).toBe("/draft/retained?view=diff#latest");
   expect(button("Settings")).not.toBeNull();
 });
+
+it.each(["/settings/connections", "/usage"])(
+  "keeps the destination row under the %s modal",
+  async (path) => {
+    await renderMenu(path);
+    expect(backButton()).toBeUndefined();
+    expect(button("Projects")).not.toBeNull();
+  },
+);
 
 it("keeps highlighted navigation across Projects, Sites and Bots", async () => {
   const router = await renderMenu("/projects");

@@ -90,6 +90,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/chat": MessageSquareTextIcon,
   "/settings/diffs": FileDiffIcon,
   "/settings/projects": PanelsTopLeftIcon,
+  "/settings/project-files": PanelsTopLeftIcon, // fork: project-home
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
@@ -113,6 +114,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
 const SETTINGS_DETAIL_PAGE_PARENTS: Readonly<Record<string, SettingsPath>> = {
   "/settings/diagnostics": "/settings/maintenance",
   "/settings/open-source-licenses": "/settings/about",
+  "/settings/project-files": "/settings/projects", // fork: project-home
 };
 
 // Attached only to the highlighted result, so it runs whenever the highlight lands on a row.

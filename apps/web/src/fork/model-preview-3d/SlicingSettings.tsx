@@ -253,7 +253,6 @@ export function SlicingSettings({
       </LoomSettingsNotice>
       <LoomSettingsDetails title="Slicer executables on this environment">
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Slicer applications"
           description="Slicing runs on this host. Loom estimates and exports projects; open them in the slicer to review and print."
         >
@@ -288,7 +287,6 @@ export function SlicingSettings({
         </SettingsRow>
       </LoomSettingsDetails>
       <SettingsRow
-        className="px-0 sm:px-0"
         title="Slicer profile mapping"
         description="Choose the printer, process and filament presets used for its estimates."
       >
@@ -519,7 +517,6 @@ export function SlicingSettings({
         </div>
       </SettingsRow>
       <SettingsRow
-        className="px-0 sm:px-0"
         title="Slicing timeout"
         description="30 to 1800 seconds per slice. Longer jobs stop at this limit."
         control={
@@ -547,7 +544,6 @@ export function SlicingSettings({
         }
       />
       <SettingsRow
-        className="px-0 sm:px-0"
         title="Estimate currency"
         description="Three-letter currency code, such as USD or EUR. Cost uses saved material prices or an explicitly priced user profile."
         control={

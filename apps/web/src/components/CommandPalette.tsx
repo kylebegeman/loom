@@ -65,7 +65,6 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useProjectHomePaletteContext } from "~/fork/project-home/useProjectHomePaletteContext"; // fork: project-home
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
@@ -603,15 +602,12 @@ function OpenCommandPaletteDialog(props: {
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
   const { environmentLabelById, projectEnvironmentLocationById } = useEnvironmentLookups();
   const projectGroups = useSortedProjectGroups(environmentLabelById);
-  const projectHomeContext = useProjectHomePaletteContext(); // fork: project-home
-  const contextualProjectRef =
-    projectHomeContext?.projectRef ?? // fork: project-home
-    resolveThreadActionProjectRef({
-      activeDraftThread,
-      activeThread: activeThread ?? undefined,
-      defaultProjectRef,
-      handleNewThread,
-    });
+  const contextualProjectRef = resolveThreadActionProjectRef({
+    activeDraftThread,
+    activeThread: activeThread ?? undefined,
+    defaultProjectRef,
+    handleNewThread,
+  });
   const projectPickerEntries = buildSidebarProjectPickerEntries({
     groups: projectGroups,
     preferredProjectRef: contextualProjectRef,
@@ -901,13 +897,7 @@ function OpenCommandPaletteDialog(props: {
           const startRef = contextualRefBelongsToGroup // fork: library-palette
             ? contextualProjectRef // fork: library-palette
             : scopeProjectRef(project.environmentId, project.id); // fork: library-palette
-          await handleNewThread(
-            // fork: library-palette
-            startRef, // fork: library-palette
-            projectHomeContext && contextualRefBelongsToGroup // fork: project-home
-              ? { environmentSelection: "manual" }
-              : undefined,
-          );
+          await handleNewThread(startRef); // fork: library-palette
         },
       }),
     );
@@ -1472,13 +1462,6 @@ function OpenCommandPaletteDialog(props: {
         shortcutCommand: "chat.newLocal",
         run: async () => {
           if (await tryLibraryConversation()) return; // fork: library-palette
-          // fork: project-home starts on its exact displayed checkout.
-          if (projectHomeContext) {
-            await handleNewThread(projectHomeContext.projectRef, {
-              environmentSelection: "manual",
-            });
-            return;
-          }
           await startNewThreadFromContext({
             activeDraftThread,
             activeThread: activeThread ?? undefined,
@@ -1861,7 +1844,6 @@ function OpenCommandPaletteDialog(props: {
   });
 
   const contextualProjectGroup =
-    projectHomeContext?.group ?? // fork: project-home
     (contextualProjectRef
       ? projectGroupByTargetKey.get(
           `${contextualProjectRef.environmentId}:${contextualProjectRef.projectId}`,
@@ -1870,30 +1852,6 @@ function OpenCommandPaletteDialog(props: {
     projectGroups[0] ??
     null;
   if (contextualProjectGroup) {
-    // fork: project-home adds a project overview beside existing scoped settings.
-    actionItems.push({
-      kind: "action",
-      value: "action:loom:project-home:open",
-      searchTerms: ["project", "home", "overview", "conversations", "computers", "working folders"],
-      title: "Open computer folder details",
-      description: contextualProjectGroup.displayName,
-      icon: <FolderIcon className={ITEM_ICON_CLASS} />,
-      run: async () => {
-        await navigate({
-          to: "/projects/$projectKey",
-          params: { projectKey: contextualProjectGroup.projectKey },
-          search: contextualProjectRef
-            ? {
-                computer: contextualProjectRef.environmentId,
-                checkoutId: contextualProjectRef.projectId,
-              }
-            : {
-                computer: contextualProjectGroup.environmentId,
-                checkoutId: contextualProjectGroup.id,
-              },
-        });
-      },
-    });
     actionItems.push({
       kind: "action",
       value: "action:project-settings",
@@ -1901,6 +1859,8 @@ function OpenCommandPaletteDialog(props: {
         "storage", // fork: project-home
         "retention", // fork: project-home
         "ephemeral", // fork: project-home
+        "prepare", // fork: project-home
+        "computers", // fork: project-home
         "project",
         "settings",
         "name",
@@ -1913,18 +1873,13 @@ function OpenCommandPaletteDialog(props: {
         "remove",
         "t3.json",
       ],
-      title: "Project settings", // fork: project-home
+      title: "Project settings",
       description: contextualProjectGroup.displayName,
       icon: <FolderIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
-        // fork: project-home
         await navigate({
-          to: "/settings/projects", // fork: project-home
-          search: {
-            project: projectHomeContext?.settingsProjectKey ?? contextualProjectGroup.projectKey,
-            machine: undefined,
-            checkout: undefined,
-          },
+          to: "/projects/$projectKey",
+          params: { projectKey: contextualProjectGroup.projectKey },
         });
       },
     });

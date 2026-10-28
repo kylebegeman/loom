@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { FlatList, Platform, Pressable, View } from "react-native";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_FEATURE,
@@ -22,12 +22,21 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { RowPressable } from "../../components/ui/RowPressable";
 import * as Dialog from "../../components/ui/Dialog";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
+import { MOBILE_SHAPE } from "../../lib/designTokens";
 import { cn } from "../../lib/cn";
 import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { BotChoice, BotInput, BotNotice, BotPage, BotSection, BotToggle } from "./BotControls";
+import {
+  BOT_LIST_SCROLL_VIEW,
+  BotChoice,
+  BotInput,
+  BotNotice,
+  BotPage,
+  BotSection,
+  BotToggle,
+} from "./BotControls";
 import { useBotActionLifetime } from "./useBotActionLifetime";
 import { BotSuggestions } from "./BotSuggestions";
 import { BotRunHistory } from "./BotRunDetailScreen";
@@ -82,6 +91,8 @@ export function BotsRouteScreen({
     />
   );
 }
+
+const groupRadius = Platform.OS === "android" ? MOBILE_SHAPE.group.android : MOBILE_SHAPE.group.ios;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -321,7 +332,7 @@ function BotsCatalog({
               onRetry={collection.query.error ? collection.refresh : undefined}
             />
             {!filtered.length ? (
-              <Text className="px-1 text-sm text-foreground-muted">
+              <Text className="px-2 text-sm text-foreground-muted">
                 {filter
                   ? "No bots match this search."
                   : "Every bot is archived. Show archived bots or create a new one."}
@@ -343,18 +354,21 @@ function BotsCatalog({
       <FlatList
         data={showList ? filtered : []}
         keyExtractor={(bot) => bot.id}
+        renderScrollComponent={BOT_LIST_SCROLL_VIEW}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 16, paddingBottom: 48 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 48 }}
         ListHeaderComponent={header}
         renderItem={({ item: bot, index }) => (
           <View
-            className={cn(
-              "overflow-hidden border-x border-border",
-              index === 0 && "rounded-t-2xl border-t",
-              index === filtered.length - 1 && "rounded-b-2xl border-b",
-            )}
+            className="overflow-hidden border-continuous bg-grouped-card"
+            style={{
+              borderTopLeftRadius: index === 0 ? groupRadius : 0,
+              borderTopRightRadius: index === 0 ? groupRadius : 0,
+              borderBottomLeftRadius: index === filtered.length - 1 ? groupRadius : 0,
+              borderBottomRightRadius: index === filtered.length - 1 ? groupRadius : 0,
+            }}
           >
             {index > 0 ? <View className="ms-16 h-px bg-border-subtle" /> : null}
             <RowPressable
@@ -591,85 +605,87 @@ function BotDetail({
         )
       ) : (
         <>
-          <View className="gap-4 rounded-3xl border border-border bg-card p-5">
-            <View className="flex-row items-start gap-4">
-              <BotTile botId={bot.id} size="xl" />
-              <View className="min-w-0 flex-1 gap-1.5">
-                <Text
-                  accessibilityRole="header"
-                  className="text-2xl font-t3-semibold text-foreground"
-                >
-                  {bot.name}
-                </Text>
-                <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
-                  {bot.archivedAt ? <LibraryStateBadge tone="neutral" label="Archived" /> : null}
-                  {bot.origin?.kind === "starter" ? (
-                    <LibraryStateBadge tone="neutral" label="Starter" />
-                  ) : null}
-                  {bot.library == null ? null : (
-                    <LibraryStateBadge tone="neutral" label="From the Library" />
-                  )}
-                  <Text className="text-xs tabular-nums text-foreground-muted">
-                    {botVersionLabel(bot)} · {capabilities.label}
+          <BotsOutline>
+            <View className="gap-4 p-5">
+              <View className="flex-row items-start gap-4">
+                <BotTile botId={bot.id} size="xl" />
+                <View className="min-w-0 flex-1 gap-1.5">
+                  <Text
+                    accessibilityRole="header"
+                    className="text-2xl font-t3-semibold text-foreground"
+                  >
+                    {bot.name}
                   </Text>
+                  <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
+                    {bot.archivedAt ? <LibraryStateBadge tone="neutral" label="Archived" /> : null}
+                    {bot.origin?.kind === "starter" ? (
+                      <LibraryStateBadge tone="neutral" label="Starter" />
+                    ) : null}
+                    {bot.library == null ? null : (
+                      <LibraryStateBadge tone="neutral" label="From the Library" />
+                    )}
+                    <Text className="text-xs tabular-nums text-foreground-muted">
+                      {botVersionLabel(bot)} · {capabilities.label}
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
-            {bot.description ? (
-              <Text className="text-sm text-foreground-muted">{bot.description}</Text>
-            ) : null}
-            <View className="flex-row flex-wrap gap-2">
-              <Button
-                label="Run bot"
-                tone="primary"
-                icon="play"
-                disabled={runDisabled}
-                onPress={() =>
-                  navigation.navigate("BotsRun", {
-                    environmentId,
-                    botId,
-                    ...(callerThreadId ? { callerThreadId } : {}),
-                  })
-                }
-              />
-              {capabilities.batchesSupported ? (
-                <Button
-                  label="Run on many"
-                  icon="square.on.square"
-                  disabled={runDisabled}
-                  onPress={() => navigation.navigate("BotsBatches", { environmentId, botId })}
-                />
+              {bot.description ? (
+                <Text className="text-sm text-foreground-muted">{bot.description}</Text>
               ) : null}
-              <Button
-                label="Edit bot"
-                icon="pencil"
-                disabled={disabled || !canEdit}
-                onPress={() => navigation.navigate("BotsEdit", { environmentId, botId })}
-              />
+              <View className="flex-row flex-wrap gap-2">
+                <Button
+                  label="Run bot"
+                  tone="primary"
+                  icon="play"
+                  disabled={runDisabled}
+                  onPress={() =>
+                    navigation.navigate("BotsRun", {
+                      environmentId,
+                      botId,
+                      ...(callerThreadId ? { callerThreadId } : {}),
+                    })
+                  }
+                />
+                {capabilities.batchesSupported ? (
+                  <Button
+                    label="Run on many"
+                    icon="square.on.square"
+                    disabled={runDisabled}
+                    onPress={() => navigation.navigate("BotsBatches", { environmentId, botId })}
+                  />
+                ) : null}
+                <Button
+                  label="Edit bot"
+                  icon="pencil"
+                  disabled={disabled || !canEdit}
+                  onPress={() => navigation.navigate("BotsEdit", { environmentId, botId })}
+                />
+              </View>
+              <View className="border-t border-border-subtle pt-4">
+                <BotSpecGrid
+                  rows={[
+                    ["Model", bot.modelSelection.model],
+                    ["Permissions", RUNTIME_MODE_LABELS[bot.runtimeMode]],
+                    ["Mode", bot.interactionMode === "plan" ? "Plan only" : "Do the work"],
+                    ["Runs in", workspaceLabel(bot.workspace)],
+                    ["Time limit", `${bot.timeoutMinutes} minutes`],
+                    ["Runs at once", String(bot.maxConcurrentRuns)],
+                    ["Output", bot.output === "verdict" ? "Structured verdict" : "Text"],
+                    [
+                      "Inputs",
+                      bot.parameters
+                        .map(
+                          (parameter) =>
+                            `${parameter.label}${parameter.required ? "" : " (optional)"}`,
+                        )
+                        .join(", ") || "None",
+                    ],
+                  ]}
+                />
+              </View>
             </View>
-            <View className="border-t border-border-subtle pt-4">
-              <BotSpecGrid
-                rows={[
-                  ["Model", bot.modelSelection.model],
-                  ["Permissions", RUNTIME_MODE_LABELS[bot.runtimeMode]],
-                  ["Mode", bot.interactionMode === "plan" ? "Plan only" : "Do the work"],
-                  ["Runs in", workspaceLabel(bot.workspace)],
-                  ["Time limit", `${bot.timeoutMinutes} minutes`],
-                  ["Runs at once", String(bot.maxConcurrentRuns)],
-                  ["Output", bot.output === "verdict" ? "Structured verdict" : "Text"],
-                  [
-                    "Inputs",
-                    bot.parameters
-                      .map(
-                        (parameter) =>
-                          `${parameter.label}${parameter.required ? "" : " (optional)"}`,
-                      )
-                      .join(", ") || "None",
-                  ],
-                ]}
-              />
-            </View>
-          </View>
+          </BotsOutline>
           <BotInstructions instructions={bot.instructions} />
           {manage.length ? (
             <BotsSection title="Manage">
@@ -756,28 +772,32 @@ function CatalogSkeleton() {
 function BotDetailSkeleton() {
   return (
     <View accessible accessibilityLabel="Loading bot" className="gap-6">
-      <View className="gap-4 rounded-3xl border border-border p-5">
-        <View className="flex-row items-center gap-4">
-          <View className="size-14 rounded-2xl bg-row-hover" />
-          <View className="flex-1 gap-2">
-            <View className="h-6 w-40 rounded-md bg-row-hover" />
-            <View className="h-3 w-32 rounded-md bg-row-hover" />
+      <BotsOutline>
+        <View className="gap-4 p-5">
+          <View className="flex-row items-center gap-4">
+            <View className="size-14 rounded-2xl bg-row-hover" />
+            <View className="flex-1 gap-2">
+              <View className="h-6 w-40 rounded-md bg-row-hover" />
+              <View className="h-3 w-32 rounded-md bg-row-hover" />
+            </View>
+          </View>
+          <View className="flex-row gap-2">
+            <View className="h-12 w-28 rounded-full bg-row-hover" />
+            <View className="h-12 w-24 rounded-full bg-row-hover" />
+          </View>
+          <View className="flex-row flex-wrap gap-y-4 border-t border-border-subtle pt-4">
+            {["model", "mode", "workspace", "limit"].map((cell) => (
+              <View key={cell} className="w-1/2 gap-1.5 pe-3">
+                <View className="h-3 w-16 rounded-md bg-row-hover" />
+                <View className="h-3.5 w-24 rounded-md bg-row-hover" />
+              </View>
+            ))}
           </View>
         </View>
-        <View className="flex-row gap-2">
-          <View className="h-12 w-28 rounded-full bg-row-hover" />
-          <View className="h-12 w-24 rounded-full bg-row-hover" />
-        </View>
-        <View className="flex-row flex-wrap gap-y-4 border-t border-border-subtle pt-4">
-          {["model", "mode", "workspace", "limit"].map((cell) => (
-            <View key={cell} className="w-1/2 gap-1.5 pe-3">
-              <View className="h-3 w-16 rounded-md bg-row-hover" />
-              <View className="h-3.5 w-24 rounded-md bg-row-hover" />
-            </View>
-          ))}
-        </View>
-      </View>
-      <View className="h-16 w-full rounded-2xl border border-border" />
+      </BotsOutline>
+      <BotsOutline>
+        <View className="h-16" />
+      </BotsOutline>
       <BotRowsSkeleton label="Loading runs" />
     </View>
   );

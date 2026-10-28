@@ -29,7 +29,8 @@ import {
   ServerIcon,
   StarIcon,
 } from "lucide-react";
-import { Button } from "~/components/ui/button";
+import { Badge } from "~/components/ui/badge";
+import { Button, InlineButton } from "~/components/ui/button";
 import {
   Menu,
   MenuGroup,
@@ -46,6 +47,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryHero, LibraryVital, LibraryVitals } from "../project-library/LibraryCollection";
 import {
   LIBRARY_OUTLINE,
+  LIBRARY_SURFACE,
   LibraryEmpty,
   LibraryErrorNotice,
   LibraryNotice,
@@ -212,15 +214,14 @@ export function SiteDetail({
         meta={
           <>
             <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
-            <a
-              href={site.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm font-mono text-foreground/80 underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            <InlineButton
+              tone="muted"
+              className="min-w-0 max-w-full"
+              render={<a href={site.url} target="_blank" rel="noreferrer" />}
             >
-              <span className="truncate">{siteHost(site.url)}</span>
+              <span className="truncate font-mono font-normal">{siteHost(site.url)}</span>
               <ExternalLinkIcon aria-hidden className="size-3 shrink-0 opacity-70" />
-            </a>
+            </InlineButton>
             <span className="inline-flex items-center gap-1.5">
               <ClockIcon aria-hidden className="size-3.5 opacity-70" />
               {lastChecked ? (
@@ -1086,12 +1087,9 @@ function VisitSources({
       <span>Counting visits from</span>
       {site.origins.length ? (
         site.origins.map((origin) => (
-          <span
-            key={origin}
-            className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-foreground/80 dark:bg-accent"
-          >
-            {siteHost(origin)}
-          </span>
+          <Badge key={origin} variant="secondary">
+            <span className="font-mono font-normal">{siteHost(origin)}</span>
+          </Badge>
         ))
       ) : (
         <span>no origins yet</span>
@@ -1116,7 +1114,7 @@ const SKELETON_TABS = ["overview", "preview", "traffic", "checks"];
 export function SiteDetailSkeleton() {
   return (
     <div role="status" aria-label="Loading site" className="flex min-w-0 flex-col gap-6">
-      <div className="overflow-hidden rounded-3xl border border-border bg-card">
+      <div className={cn(LIBRARY_SURFACE, "overflow-hidden")}>
         <div className="flex items-start gap-5 p-5 sm:p-6">
           <Skeleton shape="card" className="size-16 shrink-0" />
           <div className="flex min-w-0 flex-1 flex-col gap-3 pt-1">
@@ -1124,7 +1122,7 @@ export function SiteDetailSkeleton() {
             <Skeleton className="h-3.5 w-80 max-w-full" />
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-border/70 px-5 py-3 sm:px-6">
+        <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-border/60 px-5 py-3 sm:px-6">
           {SKELETON_VITALS.map((vital) => (
             <div key={vital} className="flex flex-col gap-1.5">
               <Skeleton className="h-3 w-20" />
@@ -1133,7 +1131,7 @@ export function SiteDetailSkeleton() {
           ))}
         </div>
       </div>
-      <div className="flex w-fit items-center gap-1 rounded-full bg-muted p-1 dark:bg-accent">
+      <div className="flex w-fit items-center gap-0.5 rounded-full bg-input/40 p-1">
         {SKELETON_TABS.map((tab) => (
           <Skeleton key={tab} shape="pill" className="h-8 w-20" />
         ))}

@@ -26,6 +26,8 @@ import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { openThreadUrlExternally } from "../preview-links/navigation";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { cn } from "../../lib/cn";
 import { BotNotice, BotPage, BotSection } from "./BotControls";
 import { BotPipelineEditor } from "./BotPipelineEditor";
 import { BotParameterFields, RunChoice } from "./BotRunScreen";
@@ -279,77 +281,79 @@ function PipelineRunDetail({
   const active = isActiveBotPipelineRunStatus(run.status);
   const resumable = run.status === "stopped" || run.status === "failed";
   return (
-    <BotSection
-      title={run.pipelineName}
-      description={`Version ${run.pipelineVersion} · ${runTime(run.createdAt)}`}
-    >
-      <Text className="font-t3-semibold">
-        {PIPELINE_STATUS[run.status]}
-        {run.finalVerdict ? ` · ${VERDICT_LABELS[run.finalVerdict]}` : ""}
-        {run.cursorStepId && active ? ` · ${run.cursorStepId}` : ""}
-      </Text>
-      {run.retryAt ? <Text>Tries again at {runTime(run.retryAt)}.</Text> : null}
-      <BotNotice error={error ?? run.error ?? query.error} />
-      <View className="flex-row flex-wrap gap-2">
-        {active ? (
-          <Button
-            label="Cancel pipeline"
-            tone="danger"
-            disabled={busy || !caps.connected || !cancelAllowed}
-            onPress={() =>
-              void act(async () => {
-                if (
-                  !(await confirmBotAutomation(
-                    "Cancel pipeline?",
-                    "The running step and pipeline will stop. Completed steps stay in its history.",
-                    "Cancel pipeline",
-                  )) ||
-                  !activeLifetime.current
-                )
-                  return;
-                commandValue(await cancel({ environmentId, input: { pipelineRunId: run.id } }));
-              })
-            }
-          />
-        ) : null}
-        {resumable ? (
-          <Button
-            label={
-              run.status === "failed" ? "Retry failed step" : "Retry stopped step and continue"
-            }
-            tone="primary"
-            disabled={busy || !caps.connected || !resumeAllowed}
-            onPress={() =>
-              void act(async () => {
-                commandValue(await resume({ environmentId, input: { pipelineRunId: run.id } }));
-              })
-            }
-          />
-        ) : null}
-        {!active ? (
-          <Button
-            label="Run pipeline again"
-            disabled={busy || !caps.connected || !runAllowed}
-            onPress={() => onRunAgain(run.pipelineId)}
-          />
-        ) : null}
-        <Button
-          label="Refresh run"
-          disabled={!caps.connected || query.isPending}
-          onPress={query.refresh}
-        />
-        <Button label="Close run" onPress={onClose} />
-      </View>
-      {resumable ? (
-        <Text>
-          Retry runs the stopped step again in the same round, using this run's pinned bot versions,
-          then continues.
+    <>
+      <BotSection
+        title={run.pipelineName}
+        description={`Version ${run.pipelineVersion} · ${runTime(run.createdAt)}`}
+      >
+        <Text className="font-t3-semibold">
+          {PIPELINE_STATUS[run.status]}
+          {run.finalVerdict ? ` · ${VERDICT_LABELS[run.finalVerdict]}` : ""}
+          {run.cursorStepId && active ? ` · ${run.cursorStepId}` : ""}
         </Text>
-      ) : null}
+        {run.retryAt ? <Text>Tries again at {runTime(run.retryAt)}.</Text> : null}
+        <BotNotice error={error ?? run.error ?? query.error} />
+        <View className="flex-row flex-wrap gap-2">
+          {active ? (
+            <Button
+              label="Cancel pipeline"
+              tone="danger"
+              disabled={busy || !caps.connected || !cancelAllowed}
+              onPress={() =>
+                void act(async () => {
+                  if (
+                    !(await confirmBotAutomation(
+                      "Cancel pipeline?",
+                      "The running step and pipeline will stop. Completed steps stay in its history.",
+                      "Cancel pipeline",
+                    )) ||
+                    !activeLifetime.current
+                  )
+                    return;
+                  commandValue(await cancel({ environmentId, input: { pipelineRunId: run.id } }));
+                })
+              }
+            />
+          ) : null}
+          {resumable ? (
+            <Button
+              label={
+                run.status === "failed" ? "Retry failed step" : "Retry stopped step and continue"
+              }
+              tone="primary"
+              disabled={busy || !caps.connected || !resumeAllowed}
+              onPress={() =>
+                void act(async () => {
+                  commandValue(await resume({ environmentId, input: { pipelineRunId: run.id } }));
+                })
+              }
+            />
+          ) : null}
+          {!active ? (
+            <Button
+              label="Run pipeline again"
+              disabled={busy || !caps.connected || !runAllowed}
+              onPress={() => onRunAgain(run.pipelineId)}
+            />
+          ) : null}
+          <Button
+            label="Refresh run"
+            disabled={!caps.connected || query.isPending}
+            onPress={query.refresh}
+          />
+          <Button label="Close run" onPress={onClose} />
+        </View>
+        {resumable ? (
+          <Text>
+            Retry runs the stopped step again in the same round, using this run's pinned bot
+            versions, then continues.
+          </Text>
+        ) : null}
+      </BotSection>
       <BotSection title="Step attempts">
         {attempts.length === 0 ? <Text>No steps have started yet.</Text> : null}
         {attempts.map((attempt) => (
-          <View key={attempt.seq} className="gap-2 rounded-xl bg-grouped-card p-3">
+          <View key={attempt.seq} className="gap-2 rounded-xl border border-border-subtle p-3">
             <Text className="font-t3-semibold">
               {attempt.stepId} · Round {attempt.round} · {attempt.outcome?.status ?? attempt.state}
               {attempt.outcome?.verdict ? ` · ${VERDICT_LABELS[attempt.outcome.verdict]}` : ""}
@@ -398,7 +402,7 @@ function PipelineRunDetail({
           {query.data.report.truncated ? <Text>The report was cut to its size limit.</Text> : null}
         </BotSection>
       ) : null}
-    </BotSection>
+    </>
   );
 }
 
@@ -554,36 +558,43 @@ function PipelinesScreen({
           ) : !query.error && pipelines.length === 0 ? (
             <Text>No pipelines here yet. Add steps to connect bots into a workflow.</Text>
           ) : null}
-          {pipelines.map((pipeline) => (
-            <View key={pipeline.id} className="gap-3 rounded-xl border border-border-subtle p-4">
-              <Text accessibilityRole="header" className="text-lg font-t3-semibold">
-                {pipeline.name}
-              </Text>
-              {pipeline.description ? <Text>{pipeline.description}</Text> : null}
-              <Text className="text-sm text-foreground-muted">
-                Version {pipeline.version} · {pipeline.steps.map((step) => step.id).join(" → ")}
-              </Text>
-              <View className="flex-row flex-wrap gap-2">
-                <Button
-                  label={`Run ${pipeline.name}`}
-                  tone="primary"
-                  disabled={!caps.connected || !runAllowed}
-                  onPress={() => setRunning(pipeline)}
-                />
-                <Button
-                  label={`Edit ${pipeline.name}`}
-                  disabled={!caps.connected || !saveAllowed}
-                  onPress={() => setEditing({ pipeline })}
-                />
-                <Button
-                  label={`Delete ${pipeline.name}`}
-                  tone="danger"
-                  disabled={busy || !caps.connected || !deleteAllowed}
-                  onPress={() => void deletePipeline(pipeline)}
-                />
-              </View>
-            </View>
-          ))}
+          {pipelines.length ? (
+            <SettingsSection>
+              {pipelines.map((pipeline, index) => (
+                <View
+                  key={pipeline.id}
+                  className={cn("gap-3 p-4", index > 0 && "border-t border-border-subtle")}
+                >
+                  <Text accessibilityRole="header" className="text-lg font-t3-semibold">
+                    {pipeline.name}
+                  </Text>
+                  {pipeline.description ? <Text>{pipeline.description}</Text> : null}
+                  <Text className="text-sm text-foreground-muted">
+                    Version {pipeline.version} · {pipeline.steps.map((step) => step.id).join(" → ")}
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    <Button
+                      label={`Run ${pipeline.name}`}
+                      tone="primary"
+                      disabled={!caps.connected || !runAllowed}
+                      onPress={() => setRunning(pipeline)}
+                    />
+                    <Button
+                      label={`Edit ${pipeline.name}`}
+                      disabled={!caps.connected || !saveAllowed}
+                      onPress={() => setEditing({ pipeline })}
+                    />
+                    <Button
+                      label={`Delete ${pipeline.name}`}
+                      tone="danger"
+                      disabled={busy || !caps.connected || !deleteAllowed}
+                      onPress={() => void deletePipeline(pipeline)}
+                    />
+                  </View>
+                </View>
+              ))}
+            </SettingsSection>
+          ) : null}
           {selectedRun ? (
             <PipelineRunDetail
               key={selectedRun}
@@ -610,7 +621,7 @@ function PipelinesScreen({
               <Text>No pipeline runs yet.</Text>
             ) : null}
             {runs.map((run) => (
-              <View key={run.id} className="gap-2 rounded-xl bg-grouped-card p-3">
+              <View key={run.id} className="gap-2 rounded-xl border border-border-subtle p-3">
                 <Text className="font-t3-semibold">
                   {run.pipelineName} · {PIPELINE_STATUS[run.status]}
                   {run.finalVerdict ? ` · ${VERDICT_LABELS[run.finalVerdict]}` : ""}

@@ -2,8 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { isAppModalPage, isSidebarUtilityPage } from "./mainAppLocation";
 
 describe("sidebar return destination", () => {
-  it("does not remember Computers as the thread destination for Back", () => {
-    expect(isSidebarUtilityPage("/computers")).toBe(true);
+  it("does not remember Computers or Pull requests as the thread destination for Back", () => {
     expect(isAppModalPage("/settings/connections")).toBe(true);
     expect(isSidebarUtilityPage("/pull-requests")).toBe(true);
   });

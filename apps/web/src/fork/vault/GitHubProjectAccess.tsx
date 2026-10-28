@@ -36,6 +36,7 @@ import { randomUUID } from "~/lib/utils";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
 import { useVaultTime } from "./useVaultTime";
+import { VaultFold } from "./VaultFold";
 import { runVault } from "./state";
 import { collectGitHubProjectInventory } from "./github-project-inventory";
 
@@ -528,16 +529,21 @@ function ProjectAccess({
             const existing =
               current.find((entry) => entry.projectId === selection.projectId)?.repositories ?? [];
             return (
-              <details key={selection.projectId} open={selections.length === 1}>
-                <summary className="cursor-pointer break-words text-sm">
-                  <span className="font-medium">{project.label}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {selection.repositories.length > 0
-                      ? selection.repositories.join(", ")
-                      : "Select repositories"}
-                  </span>
-                </summary>
-                <fieldset className="mt-3 min-w-0" disabled={locked}>
+              <VaultFold
+                key={selection.projectId}
+                open={selections.length === 1}
+                title={
+                  <>
+                    <span className="block break-words">{project.label}</span>
+                    <span className="mt-1 block break-words text-xs font-normal text-muted-foreground">
+                      {selection.repositories.length > 0
+                        ? selection.repositories.join(", ")
+                        : "Select repositories"}
+                    </span>
+                  </>
+                }
+              >
+                <fieldset className="min-w-0" disabled={locked}>
                   <legend className="sr-only">Repositories for {project.label}</legend>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {connection.repositories.map((repository) => {
@@ -587,7 +593,7 @@ function ProjectAccess({
                     </p>
                   ) : null}
                 </fieldset>
-              </details>
+              </VaultFold>
             );
           })}
           {current.length > 0 ? (
@@ -599,9 +605,8 @@ function ProjectAccess({
           <p className="text-sm text-muted-foreground">
             New access lasts until you revoke it. Threads still follow their configured permissions.
           </p>
-          <details>
-            <summary className="cursor-pointer text-sm">Optional access duration</summary>
-            <div className="mt-2">
+          <VaultFold title="Optional access duration">
+            <div>
               <label htmlFor={`${field}-duration`} className="flex flex-col gap-1 text-sm">
                 New access lasts
                 <Select
@@ -624,7 +629,7 @@ function ProjectAccess({
                 </Select>
               </label>
             </div>
-          </details>
+          </VaultFold>
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
@@ -705,14 +710,13 @@ function ProjectAccess({
             </p>
           ) : null}
           {pending.preview.unknowns.length > 0 ? (
-            <details>
-              <summary className="cursor-pointer text-sm">Limits of this review</summary>
-              <ul className="mt-2 flex flex-col gap-2 text-xs text-muted-foreground">
+            <VaultFold title="Limits of this review">
+              <ul className="flex flex-col gap-2 text-xs text-muted-foreground">
                 {pending.preview.unknowns.map((unknown) => (
                   <li key={unknown}>{unknown}</li>
                 ))}
               </ul>
-            </details>
+            </VaultFold>
           ) : null}
           <div className="flex flex-wrap gap-2">
             {stale ? (
@@ -755,11 +759,8 @@ function ProjectAccess({
         </section>
       ) : null}
       {otherGrants.length > 0 ? (
-        <details>
-          <summary className="cursor-pointer text-sm text-muted-foreground">
-            Other saved grants ({otherGrants.length})
-          </summary>
-          <div className="mt-2 flex flex-col gap-2 text-sm">
+        <VaultFold title={`Other saved grants (${otherGrants.length})`}>
+          <div className="flex flex-col gap-2 text-sm">
             <p className="text-muted-foreground">
               Review custom, scheduled or inherited grants in Vault project access &amp; approvals.
             </p>
@@ -769,13 +770,10 @@ function ProjectAccess({
               </p>
             ))}
           </div>
-        </details>
+        </VaultFold>
       ) : null}
-      <details>
-        <summary className="cursor-pointer text-sm text-muted-foreground">
-          Project access history
-        </summary>
-        <div className="mt-2 flex flex-col gap-2 text-xs text-muted-foreground">
+      <VaultFold title="Project access history">
+        <div className="flex flex-col gap-2 text-xs text-muted-foreground">
           {history.length === 0 ? (
             <p>No recent project-access changes for this connection.</p>
           ) : (
@@ -790,7 +788,7 @@ function ProjectAccess({
             operations.
           </p>
         </div>
-      </details>
+      </VaultFold>
     </section>
   );
 }

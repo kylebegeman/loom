@@ -17,6 +17,7 @@ import { applyRunChanges, type LibraryWorkflowTone } from "@t3tools/client-runti
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   BadgeCheckIcon,
+  HistoryIcon,
   PencilIcon,
   RefreshCwIcon,
   RotateCcwIcon,
@@ -59,6 +60,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import {
   LIBRARY_OUTLINE,
   LibraryDialog,
+  LibraryEmpty,
   LibraryErrorNotice,
   LibraryNotice,
   LibraryStateBadge,
@@ -506,11 +508,14 @@ export function ReplayLaunchDialog({
             ))}
           </div>
         ) : runsQuery.error && !runsQuery.data ? null : visible.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          <LibraryEmpty
+            icon={HistoryIcon}
+            title={candidates.length === 0 ? "No finished runs here" : "No runs match"}
+          >
             {candidates.length === 0
-              ? "No finished runs on this page. Try an older page, or run the bot first."
-              : "No runs match these filters on this page."}
-          </p>
+              ? "Try an older page, or run the bot first."
+              : "Nothing on this page matches these filters."}
+          </LibraryEmpty>
         ) : (
           <fieldset className="flex min-w-0 flex-col gap-2" disabled={busy}>
             <legend className="mb-2 text-xs text-muted-foreground">

@@ -81,7 +81,6 @@ import {
   LibraryStateBadge,
   LibraryStateDot,
 } from "../project-library/LibraryControls";
-import { LibraryBackLink } from "../project-library/LibraryPageFrame";
 import { BotTargetField } from "./BotAnywhere";
 import { Choice, ParameterRow } from "./BotEditor";
 import { BotTile, runTime } from "./BotIdentity";
@@ -190,22 +189,11 @@ function BuilderLoader({
         refreshList={list.refresh}
       />
     );
-  const back = (
-    <LibraryBackLink to="/loom/bots" search={PIPELINES_TAB}>
-      Pipelines
-    </LibraryBackLink>
-  );
   if (list.error && !list.data)
-    return (
-      <div className="flex flex-col">
-        {back}
-        <LibraryErrorNotice error={list.error} onRetry={list.refresh} />
-      </div>
-    );
+    return <LibraryErrorNotice error={list.error} onRetry={list.refresh} />;
   if (!list.data)
     return (
       <div role="status" aria-label="Loading the pipeline" className="flex flex-col gap-4">
-        {back}
         <Skeleton className="h-10 w-1/2" />
         {["first", "second", "third"].map((key) => (
           <Skeleton key={key} shape="card" className="h-16 w-full max-w-3xl" />
@@ -213,25 +201,22 @@ function BuilderLoader({
       </div>
     );
   return (
-    <div className="flex flex-col">
-      {back}
-      <LibraryEmpty
-        icon={WorkflowIcon}
-        title="This pipeline no longer exists"
-        action={
-          <Button
-            shape="pill"
-            size="sm"
-            variant="outline"
-            render={<Link to="/loom/bots" search={PIPELINES_TAB} />}
-          >
-            Back to pipelines
-          </Button>
-        }
-      >
-        It was deleted, or the link names a pipeline this computer never had.
-      </LibraryEmpty>
-    </div>
+    <LibraryEmpty
+      icon={WorkflowIcon}
+      title="This pipeline no longer exists"
+      action={
+        <Button
+          shape="pill"
+          size="sm"
+          variant="outline"
+          render={<Link to="/loom/bots" search={PIPELINES_TAB} />}
+        >
+          Back to pipelines
+        </Button>
+      }
+    >
+      It was deleted, or the link names a pipeline this computer never had.
+    </LibraryEmpty>
   );
 }
 
@@ -610,55 +595,48 @@ function PipelineBuilder({
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
-      <div className="flex flex-col">
-        <LibraryBackLink to="/loom/bots" search={backSearch}>
-          {opened === null ? "Pipelines" : opened.name}
-        </LibraryBackLink>
-        {/* The name is an editable field, so the page's heading is for screen readers only. */}
-        <h1 className="sr-only">{opened === null ? "New pipeline" : `Edit ${opened.name}`}</h1>
-        <header className="flex items-start gap-4">
-          <PipelineTile pipelineId={id} size="xl" neutral={id === ""} />
-          <div className="grid min-w-0 flex-1 gap-1.5">
-            <input
-              id="pipeline-name"
-              aria-label="Pipeline name"
-              aria-invalid={nameProblems.length ? true : undefined}
-              placeholder="Name this pipeline"
-              value={draft.name}
-              maxLength={120}
-              autoFocus={isNew}
-              onChange={(event) => changeName(event.target.value)}
-              onBlur={() => setNameTouched(true)}
-              className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-md bg-transparent px-1.5 text-2xl leading-tight font-semibold tracking-tight outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-            />
-            <FieldProblems problems={nameProblems} />
-            <textarea
-              aria-label="Description"
-              placeholder="What it does, in a sentence. Shown on its card and its page."
-              value={draft.description}
-              maxLength={1000}
-              rows={1}
-              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-              className="field-sizing-content -mx-1.5 w-full max-w-2xl resize-none rounded-md bg-transparent px-1.5 py-0.5 text-sm text-muted-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-            />
-            <PipelineIdLine
-              locked={!isNew}
-              id={draft.id}
-              editing={idEdited || idProblems.length > 0}
-              problems={idProblems}
-              onEdit={() => setIdEdited(true)}
-              onChange={(next) => {
-                setIdEdited(true);
-                setDraft({ ...draft, id: next });
-              }}
-              onReset={() => {
-                setIdEdited(false);
-                setDraft({ ...draft, id: slugFromName(draft.name) });
-              }}
-            />
-          </div>
-        </header>
-      </div>
+      <header className="flex items-start gap-4">
+        <PipelineTile pipelineId={id} size="xl" neutral={id === ""} />
+        <div className="grid max-w-2xl min-w-0 flex-1 gap-2">
+          <Input
+            id="pipeline-name"
+            size="lg"
+            aria-label="Pipeline name"
+            aria-invalid={nameProblems.length ? true : undefined}
+            placeholder="Name this pipeline"
+            value={draft.name}
+            maxLength={120}
+            autoFocus={isNew}
+            onChange={(event) => changeName(event.target.value)}
+            onBlur={() => setNameTouched(true)}
+          />
+          <FieldProblems problems={nameProblems} />
+          <Textarea
+            size="sm"
+            aria-label="Description"
+            placeholder="What it does, in a sentence. Shown on its card and its page."
+            value={draft.description}
+            maxLength={1000}
+            rows={2}
+            onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+          />
+          <PipelineIdLine
+            locked={!isNew}
+            id={draft.id}
+            editing={idEdited || idProblems.length > 0}
+            problems={idProblems}
+            onEdit={() => setIdEdited(true)}
+            onChange={(next) => {
+              setIdEdited(true);
+              setDraft({ ...draft, id: next });
+            }}
+            onReset={() => {
+              setIdEdited(false);
+              setDraft({ ...draft, id: slugFromName(draft.name) });
+            }}
+          />
+        </div>
+      </header>
 
       {stale && !saving && latest !== undefined ? (
         <LibraryNotice
@@ -1006,25 +984,36 @@ function AddStepMenu({
   );
 }
 
-function CardToggle({
+/** One card of the flow; its header opens the body, and opening one card closes the others. */
+function FlowCard({
+  label,
   open,
-  controls,
   onToggle,
+  header,
   children,
 }: {
+  readonly label: string;
   readonly open: boolean;
-  readonly controls: string;
   readonly onToggle: () => void;
+  readonly header: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-expanded={open}
-      aria-controls={controls}
-      onClick={onToggle}
-      className="flex min-w-0 flex-1 items-start gap-3 rounded-lg p-1 text-start outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+    <Collapsible
+      open={open}
+      onOpenChange={onToggle}
+      render={<section aria-label={label} className="rounded-xl border border-border bg-card" />}
     >
+      {header}
+      {/* No height animation: opening a card scrolls it into place while the last one closes. */}
+      <CollapsiblePanel animate={false}>{children}</CollapsiblePanel>
+    </Collapsible>
+  );
+}
+
+function CardToggle({ open, children }: { readonly open: boolean; readonly children: ReactNode }) {
+  return (
+    <CollapsibleTrigger className="flex min-w-0 flex-1 items-start gap-3 rounded-lg p-1 text-start outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
       {children}
       <ChevronDownIcon
         aria-hidden
@@ -1033,7 +1022,7 @@ function CardToggle({
           open && "rotate-180",
         )}
       />
-    </button>
+    </CollapsibleTrigger>
   );
 }
 
@@ -1061,78 +1050,77 @@ function InputsCard({
   const errors = problems.filter((problem) => problem.severity === "error").length;
   return (
     <li id={`step-${INPUTS_KEY}`} className="scroll-mt-4">
-      <section aria-label="Inputs" className="rounded-xl border border-border bg-card">
-        <div className="p-2">
-          <CardToggle open={open} controls="step-body-inputs" onToggle={onToggle}>
-            <span
-              aria-hidden
-              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent"
-            >
-              <TextCursorInputIcon className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">Starts with</span>
-              <span className="block truncate font-mono text-xs text-muted-foreground">
-                {draft.parameters.length
-                  ? draft.parameters.map((parameter) => parameter.name || "unnamed").join(", ")
-                  : "No inputs, so every run starts the same way"}
+      <FlowCard
+        label="Inputs"
+        open={open}
+        onToggle={onToggle}
+        header={
+          <div className="p-2">
+            <CardToggle open={open}>
+              <span
+                aria-hidden
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent"
+              >
+                <TextCursorInputIcon className="size-4" />
               </span>
-            </span>
-            {problems.length ? (
-              <LibraryStateBadge tone={errors ? "danger" : "warning"}>
-                {errors ? plural(errors, "problem") : plural(problems.length, "warning")}
-              </LibraryStateBadge>
-            ) : null}
-          </CardToggle>
-        </div>
-        {open ? (
-          <div
-            id="step-body-inputs"
-            className="flex flex-col gap-3 border-t border-border px-3 pt-3 pb-4 sm:px-4"
-          >
-            <p className="text-xs text-muted-foreground">
-              What a person or a trigger fills in for each run. A step reads one as{" "}
-              <code className="font-mono">{"{{input.name}}"}</code>.
-            </p>
-            <FieldProblems
-              problems={problems.filter((problem) => problem.field === "parameters")}
-            />
-            {draft.parameters.map((parameter, index) => {
-              const readers = usage.get(parameter.name.trim()) ?? [];
-              return (
-                <div key={parameter.key} className="grid gap-1.5">
-                  <ParameterRow
-                    parameter={parameter}
-                    onChange={onChange}
-                    onRemove={() => onRemove(parameter)}
-                    onMove={(by) => onMove(parameter.key, by)}
-                    canMoveUp={index > 0}
-                    canMoveDown={index < draft.parameters.length - 1}
-                  />
-                  <FieldProblems
-                    problems={problems.filter(
-                      (problem) =>
-                        problem.field === `parameters.${parameter.key}` ||
-                        problem.field.startsWith(`parameters.${parameter.key}.`),
-                    )}
-                  />
-                  <p className="ps-1 text-xs text-muted-foreground">
-                    {readers.length ? `Read by ${readers.join(", ")}.` : "No step reads it yet."}
-                  </p>
-                </div>
-              );
-            })}
-            <WithReason
-              reason={full ? `A pipeline takes up to ${BOTS_MAX_PARAMETERS} inputs.` : null}
-            >
-              <Button shape="pill" size="xs" variant="outline" disabled={full} onClick={onAdd}>
-                <PlusIcon />
-                Add input
-              </Button>
-            </WithReason>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Starts with</span>
+                <span className="block truncate font-mono text-xs text-muted-foreground">
+                  {draft.parameters.length
+                    ? draft.parameters.map((parameter) => parameter.name || "unnamed").join(", ")
+                    : "No inputs, so every run starts the same way"}
+                </span>
+              </span>
+              {problems.length ? (
+                <LibraryStateBadge tone={errors ? "danger" : "warning"}>
+                  {errors ? plural(errors, "problem") : plural(problems.length, "warning")}
+                </LibraryStateBadge>
+              ) : null}
+            </CardToggle>
           </div>
-        ) : null}
-      </section>
+        }
+      >
+        <div className="flex flex-col gap-3 border-t border-border px-3 pt-3 pb-4 sm:px-4">
+          <p className="text-xs text-muted-foreground">
+            What a person or a trigger fills in for each run. A step reads one as{" "}
+            <code className="font-mono">{"{{input.name}}"}</code>.
+          </p>
+          <FieldProblems problems={problems.filter((problem) => problem.field === "parameters")} />
+          {draft.parameters.map((parameter, index) => {
+            const readers = usage.get(parameter.name.trim()) ?? [];
+            return (
+              <div key={parameter.key} className="grid gap-1.5">
+                <ParameterRow
+                  parameter={parameter}
+                  onChange={onChange}
+                  onRemove={() => onRemove(parameter)}
+                  onMove={(by) => onMove(parameter.key, by)}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < draft.parameters.length - 1}
+                />
+                <FieldProblems
+                  problems={problems.filter(
+                    (problem) =>
+                      problem.field === `parameters.${parameter.key}` ||
+                      problem.field.startsWith(`parameters.${parameter.key}.`),
+                  )}
+                />
+                <p className="ps-1 text-xs text-muted-foreground">
+                  {readers.length ? `Read by ${readers.join(", ")}.` : "No step reads it yet."}
+                </p>
+              </div>
+            );
+          })}
+          <WithReason
+            reason={full ? `A pipeline takes up to ${BOTS_MAX_PARAMETERS} inputs.` : null}
+          >
+            <Button shape="pill" size="xs" variant="outline" disabled={full} onClick={onAdd}>
+              <PlusIcon />
+              Add input
+            </Button>
+          </WithReason>
+        </div>
+      </FlowCard>
     </li>
   );
 }
@@ -1195,126 +1183,124 @@ function StepItem({
         ) : null}
       </Connector>
       <li id={`step-${step.key}`} className="scroll-mt-4">
-        <section
-          aria-label={`Step ${index + 1}, ${id}`}
-          className="rounded-xl border border-border bg-card"
-        >
-          <div className="flex items-start gap-1 p-2">
-            <CardToggle open={open} controls={`step-body-${step.key}`} onToggle={onToggle}>
-              <BotTile
-                bot={bot ?? { id: step.botId }}
-                size="md"
-                status={errors ? <LibraryStateDot tone="danger" /> : null}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
-                  <span className="truncate font-mono text-sm font-medium">{id}</span>
-                  {bot === undefined && step.botId !== "" && !botsLoaded ? (
-                    <Skeleton className="h-3.5 w-20" />
-                  ) : (
-                    <span className="truncate text-sm text-muted-foreground">
-                      {bot?.name ?? (step.botId ? `Missing bot ${step.botId}` : "No bot")}
-                    </span>
-                  )}
-                  {step.forEach ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      <LayersIcon aria-hidden className="size-3.5" />
-                      Per item
-                    </span>
-                  ) : null}
-                  {bot !== undefined && bot.archivedAt !== null ? (
-                    <LibraryStateBadge tone="warning">Archived bot</LibraryStateBadge>
-                  ) : null}
-                </span>
-                {open ? null : (
-                  <>
-                    <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
-                      {mapping.length
-                        ? mapping.map((entry) => `${entry.name} ← ${entry.from}`).join(" · ")
-                        : "Gets nothing"}
-                    </span>
-                    {gates.length ? (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {gates.join(". ")}.
+        <FlowCard
+          label={`Step ${index + 1}, ${id}`}
+          open={open}
+          onToggle={onToggle}
+          header={
+            <div className="flex items-start gap-1 p-2">
+              <CardToggle open={open}>
+                <BotTile
+                  bot={bot ?? { id: step.botId }}
+                  size="md"
+                  status={errors ? <LibraryStateDot tone="danger" /> : null}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="text-xs text-muted-foreground tabular-nums">{index + 1}</span>
+                    <span className="truncate font-mono text-sm font-medium">{id}</span>
+                    {bot === undefined && step.botId !== "" && !botsLoaded ? (
+                      <Skeleton className="h-3.5 w-20" />
+                    ) : (
+                      <span className="truncate text-sm text-muted-foreground">
+                        {bot?.name ?? (step.botId ? `Missing bot ${step.botId}` : "No bot")}
+                      </span>
+                    )}
+                    {step.forEach ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <LayersIcon aria-hidden className="size-3.5" />
+                        Per item
                       </span>
                     ) : null}
-                  </>
-                )}
-              </span>
-              {problems.length ? (
-                <LibraryStateBadge tone={errors ? "danger" : "warning"}>
-                  {errors ? plural(errors, "problem") : plural(problems.length, "warning")}
-                </LibraryStateBadge>
-              ) : null}
-            </CardToggle>
-            <div className="flex shrink-0 items-center pt-1">
-              <Button
-                id={`move-up-${step.key}`}
-                shape="pill"
-                size="icon-xs"
-                variant="ghost"
-                aria-label={`Move ${id} up`}
-                disabled={index === 0}
-                onClick={() => onMove(-1)}
-              >
-                <ArrowUpIcon />
-              </Button>
-              <Button
-                id={`move-down-${step.key}`}
-                shape="pill"
-                size="icon-xs"
-                variant="ghost"
-                aria-label={`Move ${id} down`}
-                disabled={index === draft.steps.length - 1}
-                onClick={() => onMove(1)}
-              >
-                <ArrowDownIcon />
-              </Button>
-              <Menu>
-                <MenuTrigger
-                  render={
-                    <Button
-                      shape="pill"
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={`More for ${id}`}
-                    />
-                  }
+                    {bot !== undefined && bot.archivedAt !== null ? (
+                      <LibraryStateBadge tone="warning">Archived bot</LibraryStateBadge>
+                    ) : null}
+                  </span>
+                  {open ? null : (
+                    <>
+                      <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
+                        {mapping.length
+                          ? mapping.map((entry) => `${entry.name} ← ${entry.from}`).join(" · ")
+                          : "Gets nothing"}
+                      </span>
+                      {gates.length ? (
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {gates.join(". ")}.
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </span>
+                {problems.length ? (
+                  <LibraryStateBadge tone={errors ? "danger" : "warning"}>
+                    {errors ? plural(errors, "problem") : plural(problems.length, "warning")}
+                  </LibraryStateBadge>
+                ) : null}
+              </CardToggle>
+              <div className="flex shrink-0 items-center pt-1">
+                <Button
+                  id={`move-up-${step.key}`}
+                  shape="pill"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Move ${id} up`}
+                  disabled={index === 0}
+                  onClick={() => onMove(-1)}
                 >
-                  <EllipsisIcon />
-                </MenuTrigger>
-                <MenuPopup side="bottom" align="end">
-                  <MenuItem variant="destructive" onClick={onRemove}>
-                    <Trash2Icon />
-                    Remove step
-                  </MenuItem>
-                </MenuPopup>
-              </Menu>
+                  <ArrowUpIcon />
+                </Button>
+                <Button
+                  id={`move-down-${step.key}`}
+                  shape="pill"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Move ${id} down`}
+                  disabled={index === draft.steps.length - 1}
+                  onClick={() => onMove(1)}
+                >
+                  <ArrowDownIcon />
+                </Button>
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        shape="pill"
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`More for ${id}`}
+                      />
+                    }
+                  >
+                    <EllipsisIcon />
+                  </MenuTrigger>
+                  <MenuPopup side="bottom" align="end">
+                    <MenuItem variant="destructive" onClick={onRemove}>
+                      <Trash2Icon />
+                      Remove step
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
+              </div>
             </div>
+          }
+        >
+          <div className="border-t border-border px-3 pt-4 pb-4 sm:px-4">
+            <StepEditor
+              environmentId={environmentId}
+              draft={draft}
+              step={step}
+              index={index}
+              bot={bot}
+              botOf={botOf}
+              botsLoaded={botsLoaded}
+              allBots={allBots}
+              problems={problems}
+              onChange={onChange}
+              onChangeId={onChangeId}
+              onChangeBot={onChangeBot}
+            />
           </div>
-          {open ? (
-            <div
-              id={`step-body-${step.key}`}
-              className="border-t border-border px-3 pt-4 pb-4 sm:px-4"
-            >
-              <StepEditor
-                environmentId={environmentId}
-                draft={draft}
-                step={step}
-                index={index}
-                bot={bot}
-                botOf={botOf}
-                botsLoaded={botsLoaded}
-                allBots={allBots}
-                problems={problems}
-                onChange={onChange}
-                onChangeId={onChangeId}
-                onChangeBot={onChangeBot}
-              />
-            </div>
-          ) : null}
-        </section>
+        </FlowCard>
       </li>
     </>
   );

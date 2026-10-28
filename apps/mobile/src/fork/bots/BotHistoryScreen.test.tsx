@@ -23,6 +23,7 @@ vi.mock("@effect/atom-react", () => ({
   useAtomValue: (permission: string) => harness.permissions.has(permission),
 }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Pressable: ({
     children,

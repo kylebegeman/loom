@@ -57,6 +57,7 @@ import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
 import {
   LIBRARY_ROW,
+  LIBRARY_SURFACE,
   LibraryErrorNotice,
   LibrarySection,
   LibraryStateBadge,
@@ -70,13 +71,7 @@ import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
 import { CopiesSummary, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import {
-  HeroTexture,
-  ProjectColorPicker,
-  ProjectGlow,
-  ProjectTile,
-  projectColorStyle,
-} from "./ProjectIdentity";
+import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations, RecentConversations } from "./ProjectConversations";
 import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
 import { PROJECT_VIEWS, projectViewSearch, type ProjectViewName } from "./projectViews";
@@ -95,7 +90,6 @@ import {
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;
 const LONG_BRIEF_LINES = 4;
-/** A fine dot grid fading out from the hero's far corner, for texture behind the title. */
 type LibraryProjectView = ReturnType<typeof useLibraryProject>;
 type ConversationRequest = {
   readonly quick?: ConversationQuickStart | undefined;
@@ -671,9 +665,7 @@ function ProjectHero({
   };
   return (
     <header className="flex flex-col gap-4">
-      <div className="relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-xs/5 sm:p-7">
-        <ProjectGlow strength="strong" />
-        <HeroTexture />
+      <div className={cn(LIBRARY_SURFACE, "p-5 sm:p-6")}>
         <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
           <Popover>
             <PopoverTrigger

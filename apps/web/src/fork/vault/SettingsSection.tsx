@@ -5,7 +5,9 @@ import {
   LoomSettingsNotice,
   LoomSettingsDetails,
   LoomSettingsField,
+  LoomSettingsPanel,
 } from "~/fork/settings/parts";
+import { VaultFold } from "./VaultFold";
 import { VaultQueryFeedback } from "./SettingsFeedback";
 import { Checkbox } from "~/components/ui/checkbox";
 import { VaultOwnerSettings } from "./OwnerSettingsSection";
@@ -202,7 +204,7 @@ function VaultItems({
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
       <div
-        className="rounded-md border border-dashed border-border p-4"
+        className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-muted-foreground"
         onDragOver={(event) => {
           event.preventDefault();
         }}
@@ -227,7 +229,8 @@ function VaultItems({
         Drop a file here to add it to Vault, or choose Add item. Files stay on this device until you
         save.
       </div>
-      <details
+      <VaultFold
+        title="Vault records and advanced controls"
         open={
           !collapsible ||
           expanded ||
@@ -235,47 +238,39 @@ function VaultItems({
           editing !== null ||
           (cursors.length === 1 && page?.items.length === 0)
         }
-        onToggle={(event) => setExpanded(event.currentTarget.open)}
+        onOpenChange={setExpanded}
       >
-        <summary className="cursor-pointer text-sm font-medium">
-          Vault records and advanced controls
-        </summary>
-        <div className="mt-4 flex flex-col gap-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0 space-y-1">
-              <h3 className="text-base font-medium">Development records</h3>
-              <p className="max-w-prose text-sm text-muted-foreground">
-                Store and manage development access for this environment.
-              </p>
-            </div>
-            <LoomSettingsActions>
-              {sshEnabled ? (
-                <Button
-                  size="sm-multiline"
-                  variant="outline"
-                  disabled={!canSave || busy || status?.state !== "ready"}
-                  onClick={() => setSshItem(null)}
-                >
-                  Create SSH key
-                </Button>
-              ) : null}
+        <LoomSettingsPanel
+          title="Development records"
+          description="Store and manage development access for this environment."
+        >
+          <LoomSettingsActions>
+            {sshEnabled ? (
               <Button
                 size="sm-multiline"
-                disabled={!canSave || status?.state !== "ready" || busy}
-                onClick={() => setEditing("new")}
+                variant="outline"
+                disabled={!canSave || busy || status?.state !== "ready"}
+                onClick={() => setSshItem(null)}
               >
-                Add item
+                Create SSH key
               </Button>
-              <Button
-                size="sm-multiline"
-                variant="ghost"
-                disabled={busy || statusResult.waiting}
-                onClick={refresh}
-              >
-                Refresh records
-              </Button>
-            </LoomSettingsActions>
-          </div>
+            ) : null}
+            <Button
+              size="sm-multiline"
+              disabled={!canSave || status?.state !== "ready" || busy}
+              onClick={() => setEditing("new")}
+            >
+              Add item
+            </Button>
+            <Button
+              size="sm-multiline"
+              variant="ghost"
+              disabled={busy || statusResult.waiting}
+              onClick={refresh}
+            >
+              Refresh records
+            </Button>
+          </LoomSettingsActions>
           <VaultQueryFeedback
             result={statusResult}
             loading="Checking Vault connection…"
@@ -314,9 +309,12 @@ function VaultItems({
                         : "No development records yet. Add an item or create a dedicated SSH key to get started."}
                     </LoomSettingsNotice>
                   )}
-                  <div className="flex flex-col divide-y divide-border">
+                  <div className="flex flex-col divide-y divide-border/60">
                     {page.items.map((item) => (
-                      <div key={item.id} className="flex min-w-0 flex-col gap-4 py-4">
+                      <div
+                        key={item.id}
+                        className="flex min-w-0 flex-col gap-4 py-4 first:pt-0 last:pb-0"
+                      >
                         <div className="flex min-w-0 flex-col gap-3">
                           <div className="min-w-0">
                             <p className="break-words text-sm font-medium">{item.label}</p>
@@ -451,8 +449,8 @@ function VaultItems({
               ) : null}
             </>
           )}
-        </div>
-      </details>
+        </LoomSettingsPanel>
+      </VaultFold>
       {sshItem !== undefined ? (
         <VaultSshDialog
           key={`${environmentId}:${sshItem ?? "new"}`}

@@ -127,27 +127,29 @@ function SelectionPage({
               No matching retained selections on this page. Continue if more pages are available.
             </p>
           ) : null}
-          {page.items.map((pin) => (
-            <div
-              key={pin.id}
-              className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 p-3 text-sm wrap-anywhere"
-            >
-              <p>
-                {pin.profileLabel} · Profile version {pin.profileVersion} · {pin.runState}
-              </p>
-              <p>
-                Thread {pin.threadId} · Run {pin.runId}
-              </p>
-              <p>
-                {pin.bindings.map((b) => `${b.name}: item version ${b.itemVersion}`).join(", ")}
-              </p>
-              <p>
-                {pin.canRetire
-                  ? "Stopped selection. Review it before retiring its current binding snapshot."
-                  : "This selection cannot currently be retired."}
-              </p>
-            </div>
-          ))}
+          <div className="flex min-w-0 flex-col divide-y divide-border/60">
+            {page.items.map((pin) => (
+              <div
+                key={pin.id}
+                className="flex min-w-0 flex-col gap-3 py-3 text-sm wrap-anywhere first:pt-0 last:pb-0"
+              >
+                <p>
+                  {pin.profileLabel} · Profile version {pin.profileVersion} · {pin.runState}
+                </p>
+                <p>
+                  Thread {pin.threadId} · Run {pin.runId}
+                </p>
+                <p>
+                  {pin.bindings.map((b) => `${b.name}: item version ${b.itemVersion}`).join(", ")}
+                </p>
+                <p>
+                  {pin.canRetire
+                    ? "Stopped selection. Review it before retiring its current binding snapshot."
+                    : "This selection cannot currently be retired."}
+                </p>
+              </div>
+            ))}
+          </div>
           <LoomSettingsActions>
             <Button
               size="sm-multiline"

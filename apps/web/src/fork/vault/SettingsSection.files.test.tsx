@@ -107,6 +107,10 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
 }
+const recordsOpen = () =>
+  Array.from(container.querySelectorAll("button"))
+    .find((button) => button.textContent === "Vault records and advanced controls")
+    ?.getAttribute("aria-expanded");
 function drop(file: NodeBuffer.File) {
   const event = new Event("drop", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "dataTransfer", { value: { files: [file] } });
@@ -118,7 +122,7 @@ function drop(file: NodeBuffer.File) {
 }
 it("opens empty records and lets the palette add request choose a file without changing Kind first", async () => {
   await render();
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(recordsOpen()).toBe("true");
   openVaultAdd(EnvironmentId.make("selected-host"));
   await render();
   expect(container.textContent).toContain("Add Vault item");
@@ -152,9 +156,9 @@ it("opens collapsed records on drop and preloads the secure file without saving 
     { id: "a".repeat(32), label: "Existing", kind: "secret", state: "active", version: 1 },
   ];
   await render();
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(recordsOpen()).toBe("false");
   await act(async () => drop(new NodeBuffer.File(["fixture-data"], "service.json")));
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(recordsOpen()).toBe("true");
   expect(state.save).not.toHaveBeenCalled();
   await submit();
   expect(state.save.mock.calls[0]?.[1]).toMatchObject({
@@ -167,7 +171,7 @@ it("reveals a rejected drop error even when records began collapsed", async () =
   ];
   await render();
   await act(async () => drop(new NodeBuffer.File([new Uint8Array(512 * 1024 + 1)], "too-large")));
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(recordsOpen()).toBe("true");
   expect(container.textContent).toContain("Choose a file no larger than 512 KB.");
   expect(state.save).not.toHaveBeenCalled();
   expect(container.querySelector("form")).toBeNull();

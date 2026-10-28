@@ -112,7 +112,6 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
   const canEdit = useAtomValue(codeGraph.updateSettings.permissionAtom(environmentId));
   const canOperate = useAtomValue(codeGraph.deleteGraph.permissionAtom(environmentId));
   const save = useAction();
-  const [saved, setSaved] = useState(false);
   const [commandText, setCommandText] = useState<string | null>(null);
   const failure = failureOf(result);
   if (failure)
@@ -134,16 +133,12 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
     );
   const disabled = !canEdit || save.busy;
 
-  const update = async (patch: CodeGraphSettingsPatch) => {
-    setSaved(false);
-    const done = await save.act(async () => {
+  const update = (patch: CodeGraphSettingsPatch) =>
+    save.act(async () => {
       await runCommand(codeGraph.updateSettings, { environmentId, input: patch });
       appAtomRegistry.refresh(settingsAtom);
       appAtomRegistry.refresh(listAtom);
     });
-    setSaved(done);
-    return done;
-  };
   const shownCommand = commandText ?? settings.command.join(" ");
   const availability = graphs?.[0]?.availability;
 
@@ -154,7 +149,6 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
         description="Keep existing code maps current as agents work."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Update graphs automatically"
           description="After a turn changes files in a project's main checkout, and when you open a project whose graph is out of date. Never builds a first graph."
           control={
@@ -167,16 +161,12 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
           }
         />
       </LoomSettingsPanel>
-      <LoomSettingsNotice role={save.busy || saved ? "status" : undefined}>
-        {save.busy ? "Saving changes..." : saved ? "Changes saved." : "Changes save automatically."}
-      </LoomSettingsNotice>
       {save.error && <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>}
       <LoomSettingsPanel
         title="Project graphs"
         description="Manage stored graphs and agent access for each project."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Stored graphs"
           description={
             graphs?.length === 0
@@ -218,7 +208,6 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
       </LoomSettingsPanel>
       <LoomSettingsDetails title="Graphify command and installation">
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Graphify command"
           description="How Loom starts Graphify on this environment's host. Loom never installs it."
         >
@@ -229,10 +218,7 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
               placeholder="graphify"
               disabled={disabled}
               value={shownCommand}
-              onChange={(event) => {
-                setCommandText(event.target.value);
-                setSaved(false);
-              }}
+              onChange={(event) => setCommandText(event.target.value)}
               onBlur={() => {
                 const next = parseCommand(shownCommand);
                 if (next.length === 0) return;

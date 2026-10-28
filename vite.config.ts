@@ -653,7 +653,7 @@ export default defineConfig({
       {
         // fork: ext-lint -- Fork web code gets mobile's ratchet: it keeps its manual memo hooks
         // until each package moves them to the compiler.
-        files: ["apps/web/src/fork/**/*.{ts,tsx}", "apps/web/src/routes/settings.loom*.tsx"],
+        files: ["apps/web/src/fork/**/*.{ts,tsx}"],
         rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
       },
       {

@@ -7,23 +7,15 @@ import {
 import { LibraryWorkflows, LibraryPreservationCenter } from "./LibraryWorkflows";
 import { ProjectSites } from "../sites/ProjectSites";
 import { useAtomValue } from "@effect/atom-react";
-import {
-  useIsFocused,
-  useFocusEffect,
-  useNavigation,
-  useRoute,
-  type StaticScreenProps,
-} from "@react-navigation/native";
+import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   filterProjectEntries,
   libraryActiveCopies,
   libraryStartIntent,
   libraryStartRepositoryProjects,
   libraryResourceLocation,
-  needsLibrarySignIn,
   projectEntries,
   sortProjectEntries,
-  supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
@@ -33,25 +25,19 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useResolveClassNames } from "uniwind";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
-import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { Button } from "../../components/ui/Button";
 import { RowPressable } from "../../components/ui/RowPressable";
-import { AppBar } from "../../components/ui/AppBar";
-import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { relativeTime } from "../../lib/time";
-import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyboardCommands";
 import {
   library,
   refreshLibraryProject,
@@ -59,88 +45,17 @@ import {
   useLibraryAuthority,
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
-import { LibrarySignInAgainButton, LibrarySignInSection } from "./LibrarySignInStatus";
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryRestingProjects } from "./LibraryTidy";
 import { LibraryProjectTile } from "./libraryProjectColors";
 import { LibraryBriefProposalsRow } from "./LibraryBriefProposalsRow";
 import { LibraryHistorySearchEntry } from "./LibraryHistorySearch";
 import { LibraryTimelinePreview } from "./LibraryTimeline";
+import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryPage";
 
 const RECENT_CONVERSATIONS = 5;
 const ANY_COLOR: ReadonlySet<LibraryProjectColor> = new Set();
 const ago = (iso: string) => `${relativeTime(iso)} ago`;
-
-export function LibraryPage(props: {
-  title: string;
-  children: ReactNode;
-  back?: boolean;
-  scroll?: boolean;
-  actions?: Parameters<typeof AppBar>[0]["actions"];
-}) {
-  const navigation = useNavigation();
-  const focused = useIsFocused();
-  const route = useRoute();
-  useHardwareKeyboardCommand(
-    "newTask",
-    useCallback(() => {
-      if (!focused) return false;
-      const params = route.params;
-      // A project in view only leads the picker, as on web; the others and No project follow it.
-      if (params && "projectId" in params && typeof params.projectId === "string")
-        navigation.navigate("NewTaskProject", { libraryProjectId: params.projectId });
-      else navigation.navigate("NewTaskProject");
-      return true;
-    }, [focused, route.params, navigation]),
-  );
-  const insets = useSafeAreaInsets();
-  return (
-    <View className="flex-1 bg-screen">
-      <AppBar
-        title={props.title}
-        onBack={props.back ? () => navigation.goBack() : undefined}
-        actions={props.actions}
-      />
-      {props.scroll === false ? (
-        props.children
-      ) : (
-        <ScreenScrollView
-          className="flex-1"
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-          contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={{
-            padding: 16,
-            gap: 20,
-            paddingBottom: Math.max(insets.bottom, 24) + 24,
-          }}
-        >
-          {props.children}
-        </ScreenScrollView>
-      )}
-    </View>
-  );
-}
-
-export function LibraryNotice(props: {
-  error?: string | null;
-  detail?: string | null;
-  onRetry?: () => void;
-}) {
-  return (
-    <View className="gap-2">
-      {props.detail ? <Text className="text-sm text-foreground-muted">{props.detail}</Text> : null}
-      {props.error ? (
-        <Text accessibilityLiveRegion="polite" className="text-sm text-danger-foreground">
-          {props.error}
-        </Text>
-      ) : null}
-      {needsLibrarySignIn(props.error) ? <LibrarySignInAgainButton /> : null}
-      {props.onRetry ? <Button label="Reload library" tone="text" onPress={props.onRetry} /> : null}
-    </View>
-  );
-}
 
 export function LibraryRouteScreen() {
   const navigation = useNavigation();
@@ -182,7 +97,6 @@ export function LibraryRouteScreen() {
   return (
     <LibraryPage
       title="Projects"
-      back={navigation.canGoBack()}
       actions={
         authority.environmentId
           ? [
@@ -369,99 +283,6 @@ function LibraryProjectRow(props: {
         </View>
       </View>
     </RowPressable>
-  );
-}
-
-export function LibraryAuthorityScreen() {
-  const authority = useLibraryAuthority();
-  const { environments } = useEnvironments();
-  const navigation = useNavigation();
-  const info = useAtomQueryRunner(library.info, { refresh: true, reportFailure: false });
-  const [pending, setPending] = useState<string | null>(null),
-    [error, setError] = useState<string | null>(null);
-  return (
-    <LibraryPage title="Connect your library" back={navigation.canGoBack()}>
-      <Text className="text-sm text-foreground-muted">
-        Choose where Loom keeps your shared library once. Projects can use any connected execution
-        computer later.
-      </Text>
-      {authority.environmentId ? (
-        <Text className="text-sm text-foreground">
-          Current library: {authority.label}. Changing it opens another library; it does not move
-          saved projects.
-        </Text>
-      ) : null}
-      <LibrarySignInSection />
-      <SettingsSection title="Library server">
-        {environments.map((environment, index) => {
-          const connected =
-            environment.entry.enabled && environment.connection.phase === "connected";
-          const supported = supportsLoomFeature(
-            environment.serverConfig?.environment.capabilities,
-            "project-library",
-          );
-          return (
-            <ListChoiceRow
-              key={environment.environmentId}
-              label={environment.label}
-              selected={authority.environmentId === environment.environmentId}
-              separated={index > 0}
-              disabled={!connected || !supported || pending !== null}
-              description={
-                !connected
-                  ? "Offline"
-                  : !supported
-                    ? "Update this server to support the library"
-                    : "Connected"
-              }
-              onPress={() => {
-                setPending(environment.environmentId);
-                setError(null);
-                void (async () => {
-                  try {
-                    const result = await info({
-                      environmentId: environment.environmentId,
-                      input: {},
-                    });
-                    if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-                    if (result.value.isAuthority !== true)
-                      throw new Error(
-                        "Choose your Library server. This computer runs work and does not own the shared catalog.",
-                      );
-                    await authority.select(environment.environmentId);
-                    navigation.navigate("Library");
-                  } catch (cause) {
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : "The library connection could not be saved.",
-                    );
-                  } finally {
-                    setPending(null);
-                  }
-                })();
-              }}
-            />
-          );
-        })}
-      </SettingsSection>
-      {error ? <LibraryNotice error={error} /> : null}
-      <Button
-        label={authority.environmentId ? "Sign in to another library" : "Sign in to library"}
-        tone={authority.environmentId ? "secondary" : "primary"}
-        onPress={() => navigation.navigate("LibrarySignIn", {})}
-      />
-      <Button
-        label="Manage computer connections"
-        tone="text"
-        onPress={() => navigation.navigate("Connections")}
-      />
-      <Button
-        label="T3 Connect account settings"
-        tone="text"
-        onPress={() => navigation.navigate("SettingsAuth")}
-      />
-    </LibraryPage>
   );
 }
 

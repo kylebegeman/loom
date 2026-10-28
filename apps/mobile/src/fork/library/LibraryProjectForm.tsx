@@ -24,7 +24,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryProfileSection } from "./LibraryProfileSection";
 import { LibraryBriefSuggestionsSetting } from "./LibraryBriefSuggestions";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import {
   library,
   refreshLibraryProject,

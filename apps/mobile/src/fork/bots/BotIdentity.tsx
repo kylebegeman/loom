@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import {
   BOT_RUN_STATES,
   BOT_VERDICT_STATES,
@@ -9,6 +9,7 @@ import {
 import type { BotRunStatus, BotVerdictValue } from "@t3tools/contracts/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { useLibraryProjectColorValue } from "../library/libraryProjectColors";
 import { LibraryStateBadge } from "../library/LibraryStateBadge";
@@ -55,7 +56,9 @@ export function BotTile({
     >
       <SymbolView name={BOT_GLYPH} size={tile.icon} tintColor={color} />
       {status ? (
-        <View className="absolute -end-0.5 -bottom-0.5 rounded-full bg-screen p-0.5">{status}</View>
+        <View className="absolute -end-0.5 -bottom-0.5 rounded-full bg-grouped-card p-0.5">
+          {status}
+        </View>
       ) : null}
     </View>
   );
@@ -75,7 +78,7 @@ export function BotVerdictBadge({ verdict }: { readonly verdict: BotVerdictValue
   return <LibraryStateBadge tone={state.tone} label={state.label} />;
 }
 
-/** A section heading in the grouped-list voice Sites and the Library use. */
+/** ListSection's heading over cards and the controls around them, which one card can't hold. */
 export function BotsSection({
   title,
   detail,
@@ -87,15 +90,22 @@ export function BotsSection({
   readonly trailing?: ReactNode;
   readonly children: ReactNode;
 }) {
+  const inset = Platform.OS === "android" ? "px-4" : "px-2";
   return (
-    <View className="gap-2.5">
-      <View className="min-h-8 flex-row items-center justify-between gap-3 px-1">
-        <Text accessibilityRole="header" className="text-sm font-t3-medium text-foreground-muted">
+    <View className="gap-2">
+      <View className="flex-row items-center justify-between gap-3">
+        <Text
+          accessibilityRole="header"
+          textRole="footnote"
+          className={cn("min-w-0 shrink font-t3-medium text-foreground-muted", inset)}
+        >
           {title}
         </Text>
-        <View className="flex-row items-center gap-2">
+        <View className="flex-row items-center">
           {detail ? (
-            <Text className="text-xs tabular-nums text-foreground-muted">{detail}</Text>
+            <Text textRole="footnote" className={cn("tabular-nums text-foreground-muted", inset)}>
+              {detail}
+            </Text>
           ) : null}
           {trailing}
         </View>
@@ -105,12 +115,12 @@ export function BotsSection({
   );
 }
 
-/** One outline group without a fill; rows inside divide themselves with hairlines. */
+/** One grouped card; rows inside divide themselves with hairlines. */
 export function BotsOutline({ children }: { readonly children: ReactNode }) {
-  return <View className="overflow-hidden rounded-2xl border border-border">{children}</View>;
+  return <SettingsSection>{children}</SettingsSection>;
 }
 
-/** A list with nothing in it yet: a dashed outline the rows will fill, and the way to start. */
+/** A list with nothing in it yet: the card the rows will fill, and the way to start. */
 export function BotsEmptyList({
   message,
   action,
@@ -119,10 +129,12 @@ export function BotsEmptyList({
   readonly action?: ReactNode;
 }) {
   return (
-    <View className="gap-2 rounded-2xl border border-dashed border-border px-4 py-4">
-      <Text className="text-sm text-foreground-muted">{message}</Text>
-      {action}
-    </View>
+    <SettingsSection>
+      <View className="gap-2 px-4 py-4">
+        <Text className="text-sm text-foreground-muted">{message}</Text>
+        {action}
+      </View>
+    </SettingsSection>
   );
 }
 
@@ -135,27 +147,25 @@ export function BotRowsSkeleton({
   readonly rows?: number;
 }) {
   return (
-    <View
-      accessible
-      accessibilityLabel={label}
-      className="overflow-hidden rounded-2xl border border-border"
-    >
-      {Array.from({ length: rows }, (_, index) => (
-        <View
-          key={index}
-          className={cn(
-            "flex-row items-center gap-3 px-4 py-3.5",
-            index > 0 && "border-t border-border-subtle",
-          )}
-        >
-          <View className="size-10 rounded-xl bg-row-hover" />
-          <View className="flex-1 gap-2">
-            <View className="h-3.5 w-2/5 rounded-md bg-row-hover" />
-            <View className="h-3 w-3/5 rounded-md bg-row-hover" />
+    <View accessible accessibilityLabel={label}>
+      <SettingsSection>
+        {Array.from({ length: rows }, (_, index) => (
+          <View
+            key={index}
+            className={cn(
+              "flex-row items-center gap-3 px-4 py-3.5",
+              index > 0 && "border-t border-border-subtle",
+            )}
+          >
+            <View className="size-10 rounded-xl bg-row-hover" />
+            <View className="flex-1 gap-2">
+              <View className="h-3.5 w-2/5 rounded-md bg-row-hover" />
+              <View className="h-3 w-3/5 rounded-md bg-row-hover" />
+            </View>
+            <View className="h-5 w-16 rounded-full bg-row-hover" />
           </View>
-          <View className="h-5 w-16 rounded-full bg-row-hover" />
-        </View>
-      ))}
+        ))}
+      </SettingsSection>
     </View>
   );
 }

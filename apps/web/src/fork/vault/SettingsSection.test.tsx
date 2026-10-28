@@ -121,8 +121,11 @@ it("recovers a failed record query without leaving a loading message", () => {
 it("requires deletion confirmation and keeps a failed mutation visible inside the open dialog", async () => {
   state.run.mockRejectedValueOnce(new Error("This item changed. Refresh it before deleting."));
   act(() => root.render(<VaultSettingsSection />));
-  const details = container.querySelector("details")!;
-  details.open = true;
+  act(() =>
+    [...container.querySelectorAll<HTMLElement>("summary, button")]
+      .find((element) => element.textContent === "Item details and maintenance")!
+      .click(),
+  );
   act(() => button("Delete").click());
   const dialog = container.querySelector('[role="dialog"]')!;
   expect(state.run).not.toHaveBeenCalled();

@@ -72,7 +72,7 @@ export function BotParameterEditor({
   readonly disabled?: boolean;
 }) {
   return (
-    <View className="gap-3 rounded-2xl bg-grouped-card p-4">
+    <View className="gap-3 rounded-xl border border-border-subtle p-3">
       <BotInput
         label="Input name"
         value={parameter.name}
@@ -160,7 +160,7 @@ function VaultSlotEditor({
   readonly disabled: boolean;
 }) {
   return (
-    <View className="gap-3 rounded-2xl bg-grouped-card p-4">
+    <View className="gap-3 rounded-xl border border-border-subtle p-3">
       <BotInput
         label="Vault slot name"
         value={slot.name}

@@ -42,7 +42,11 @@ it("keeps portable requirements selectable when clipboard access is unavailable"
       />,
     ),
   );
-  act(() => container.querySelector("button")!.click());
+  act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Copy requirements")!
+      .click(),
+  );
   await act(async () => {});
   expect(container.querySelector('[role="status"]')?.textContent).toBe(
     "Copy unavailable. Select and copy the declaration above.",

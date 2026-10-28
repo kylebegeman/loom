@@ -62,7 +62,7 @@ export function BotSuggestions({
     }
   };
   const row = (suggestion: BotSuggestion, isDismissed: boolean) => (
-    <View key={suggestion.id} className="gap-3 rounded-2xl bg-grouped-card p-4">
+    <View key={suggestion.id} className="gap-3 rounded-xl border border-border-subtle p-3">
       <Text className="text-sm text-foreground-muted">
         {suggestion.startedBy === "agent" ? "Agents started" : "You started"} {suggestion.count}{" "}
         similar threads in the last two weeks.

@@ -252,12 +252,9 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
           </form>
         </LoomSettingsPanel>
       ) : (
-        <section
-          aria-label="Development import review"
-          className="flex min-w-0 flex-col gap-5 rounded-lg border border-border/60 p-5 sm:p-6"
-        >
+        <LoomSettingsPanel title="Development import review">
           <div className="space-y-1">
-            <h3 className="font-medium">{result.plan.label}</h3>
+            <h4 className="text-sm font-medium">{result.plan.label}</h4>
             <p className="text-muted-foreground">
               {result.plan.kind} · {result.plan.state}
             </p>
@@ -390,7 +387,7 @@ function Imports({ environmentId }: { environmentId: EnvironmentId }) {
               cutover. Archiving preserves encrypted history; restore through Vault management.
             </p>
           ) : null}
-        </section>
+        </LoomSettingsPanel>
       )}
       {busy ? <LoomSettingsNotice role="status">Updating import review…</LoomSettingsNotice> : null}
       <LoomSettingsDetails title="Recent secret and note import reviews">

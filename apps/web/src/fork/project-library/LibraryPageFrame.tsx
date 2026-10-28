@@ -1,8 +1,14 @@
 import { Link, type LinkProps } from "@tanstack/react-router";
 import { ArrowLeftIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { Button } from "~/components/ui/button";
+import { Button, InlineButton } from "~/components/ui/button";
 import { SidebarInset } from "~/components/ui/sidebar";
+import {
+  WorkspaceBreadcrumb,
+  WorkspaceBreadcrumbItem,
+  WorkspaceBreadcrumbSeparator,
+  WorkspaceBreadcrumbText,
+} from "~/components/WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
 import {
   WorkspacePageContainer,
@@ -16,6 +22,7 @@ const PROJECTS_SECTION = { label: "Projects", to: "/projects" } as const;
 
 export function LibraryPageFrame({
   title,
+  heading = false,
   section = PROJECTS_SECTION,
   offlineNotice,
   libraryStatus = true,
@@ -24,6 +31,8 @@ export function LibraryPageFrame({
   children,
 }: {
   readonly title?: string;
+  /** The current crumb is the page's h1, for pages with no heading of their own. */
+  readonly heading?: boolean;
   /** The page's place in the Library, first in the breadcrumb. */
   readonly section?: { readonly label: string; readonly to: "/projects" | "/sites" | "/loom/bots" };
   /** What still works while the Library server is away. */
@@ -45,21 +54,27 @@ export function LibraryPageFrame({
   return (
     <SidebarInset style={style} className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
-        {title ? (
-          <Button size="xs" variant="link" render={<Link to={section.to} />}>
-            {section.label}
-          </Button>
-        ) : (
-          <span className="text-sm font-medium">{section.label}</span>
-        )}
-        {title ? (
-          <>
-            <span aria-hidden="true" className="text-icon-muted">
-              /
-            </span>
-            <span className="min-w-0 truncate text-sm font-medium">{title}</span>
-          </>
-        ) : null}
+        <WorkspaceBreadcrumb ariaLabel={`${section.label} breadcrumb`}>
+          {title ? (
+            <>
+              <WorkspaceBreadcrumbItem>
+                <Button size="xs" variant="link" render={<Link to={section.to} />}>
+                  {section.label}
+                </Button>
+              </WorkspaceBreadcrumbItem>
+              <WorkspaceBreadcrumbSeparator />
+            </>
+          ) : null}
+          <WorkspaceBreadcrumbItem current>
+            {heading ? (
+              <h1>
+                <WorkspaceBreadcrumbText>{title || section.label}</WorkspaceBreadcrumbText>
+              </h1>
+            ) : (
+              <WorkspaceBreadcrumbText>{title || section.label}</WorkspaceBreadcrumbText>
+            )}
+          </WorkspaceBreadcrumbItem>
+        </WorkspaceBreadcrumb>
       </WorkspacePageHeader>
       <main className="min-h-0 flex-1 overflow-y-auto">
         <WorkspacePageContainer width={width}>
@@ -84,12 +99,11 @@ export function LibraryBackLink({
   ...link
 }: Pick<LinkProps, "to" | "params" | "search"> & { readonly children: ReactNode }) {
   return (
-    <Link
-      {...link}
-      className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <ArrowLeftIcon aria-hidden className="size-4" />
-      {children}
-    </Link>
+    <div className="mb-3 text-sm">
+      <InlineButton tone="muted" render={<Link {...link} />}>
+        <ArrowLeftIcon aria-hidden className="size-4" />
+        {children}
+      </InlineButton>
+    </div>
   );
 }

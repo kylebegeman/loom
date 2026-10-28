@@ -22,6 +22,8 @@ import { useBotActionLifetime } from "./useBotActionLifetime";
 import * as Option from "effect/Option";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { cn } from "../../lib/cn";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -59,7 +61,7 @@ function FiringRows({
     <Text>This trigger has not fired yet.</Text>
   ) : (
     firings.map((firing) => (
-      <View key={firing.id} className="gap-1 rounded-xl bg-grouped-card p-3">
+      <View key={firing.id} className="gap-1 rounded-xl border border-border-subtle p-3">
         <Text>
           {firing.outcome === "run" ? "Ran" : "Skipped"}: {firing.eventSummary}
         </Text>
@@ -188,12 +190,20 @@ function TriggerTest({
     if (active.current) setBusy(false);
   };
   return (
-    <BotSection
-      title="Test event"
-      description="Enter the event fields. This starts a real run, bypassing trigger filters and limits."
-    >
+    <View className="gap-3 rounded-xl border border-border-subtle p-3">
+      <View className="gap-1">
+        <Text accessibilityRole="header" className="font-t3-semibold">
+          Test event
+        </Text>
+        <Text className="text-sm text-foreground-muted">
+          Enter the event fields. This starts a real run, bypassing trigger filters and limits.
+        </Text>
+      </View>
       {fields.map((field, index) => (
-        <View key={field.key} className="gap-2 rounded-xl bg-grouped-card p-3">
+        <View
+          key={field.key}
+          className={cn("gap-2", index > 0 && "border-t border-border-subtle pt-3")}
+        >
           {trigger.event.kind === "webhook" ? (
             <BotInput
               label={`Event field ${index + 1}`}
@@ -256,7 +266,7 @@ function TriggerTest({
       />
       <BotNotice error={error} />
       {firing ? <FiringRows environmentId={environmentId} firings={[firing]} /> : null}
-    </BotSection>
+    </View>
   );
 }
 
@@ -313,157 +323,163 @@ function TriggerCard({
     if (active.current) setBusy(false);
   };
   return (
-    <View className="gap-3 rounded-xl border border-border-subtle p-4">
-      <Text accessibilityRole="header" className="text-lg font-t3-semibold">
-        {trigger.name}
-      </Text>
-      <Text>
-        {bot?.name ?? "Deleted bot"}
-        {trigger.pipelineId
-          ? ` · Pipeline ${trigger.pipelineId}`
-          : ` · ${trigger.followLatest ? "Latest" : trigger.followStable ? "Stable" : `Version ${trigger.pinnedVersion}`}`}
-      </Text>
-      <Text>
-        {triggerSummary(
-          trigger.event,
-          (id) =>
-            projects.find((project) => project.id === id && project.environmentId === environmentId)
-              ?.title ?? id,
-        )}
-      </Text>
-      <Text className="text-xs text-foreground-muted">
-        At most {trigger.dailyLimit} a day, {trigger.cooldownMinutes} minutes apart.
-        {trigger.nextFireAt ? ` Next: ${time(trigger.nextFireAt)}.` : ""}
-        {trigger.lastFiredAt ? ` Last ran: ${time(trigger.lastFiredAt)}.` : ""}
-      </Text>
-      <BotToggle
-        label={trigger.enabled ? "Armed" : "Disarmed"}
-        value={trigger.enabled}
-        disabled={!canAct || !enabledAllowed}
-        onChange={(enabled) =>
-          void act(async () => {
-            const result = await setEnabled({
-              environmentId,
-              input: { triggerId: trigger.id, enabled },
-            });
-            commandValue(result);
-          })
-        }
-      />
-      <View className="flex-row flex-wrap gap-2">
-        <Button label="Edit" disabled={!canAct || !editAllowed || !bot} onPress={onEdit} />
-        <Button
-          label={testing ? "Close test" : "Test"}
-          disabled={!capabilities.connected || !testAllowed || !bot}
-          onPress={() => setTesting(!testing)}
-        />
-        <Button
-          label={history ? "Hide history" : "Firing history"}
-          onPress={() => setHistory(!history)}
-        />
-        <Button
-          label="Delete"
-          tone="danger"
-          disabled={!canAct || !deleteAllowed}
-          onPress={() =>
+    <SettingsSection>
+      <View className="gap-3 p-4">
+        <Text accessibilityRole="header" className="text-lg font-t3-semibold">
+          {trigger.name}
+        </Text>
+        <Text>
+          {bot?.name ?? "Deleted bot"}
+          {trigger.pipelineId
+            ? ` · Pipeline ${trigger.pipelineId}`
+            : ` · ${trigger.followLatest ? "Latest" : trigger.followStable ? "Stable" : `Version ${trigger.pinnedVersion}`}`}
+        </Text>
+        <Text>
+          {triggerSummary(
+            trigger.event,
+            (id) =>
+              projects.find(
+                (project) => project.id === id && project.environmentId === environmentId,
+              )?.title ?? id,
+          )}
+        </Text>
+        <Text className="text-xs text-foreground-muted">
+          At most {trigger.dailyLimit} a day, {trigger.cooldownMinutes} minutes apart.
+          {trigger.nextFireAt ? ` Next: ${time(trigger.nextFireAt)}.` : ""}
+          {trigger.lastFiredAt ? ` Last ran: ${time(trigger.lastFiredAt)}.` : ""}
+        </Text>
+        <BotToggle
+          label={trigger.enabled ? "Armed" : "Disarmed"}
+          value={trigger.enabled}
+          disabled={!canAct || !enabledAllowed}
+          onChange={(enabled) =>
             void act(async () => {
-              if (
-                !(await confirmBotAutomation(
-                  `Delete ${trigger.name}?`,
-                  "Its firing history, webhook address and secret will be deleted.",
-                  "Delete",
-                )) ||
-                !active.current
-              )
-                return;
-              const result = await remove({ environmentId, input: { triggerId: trigger.id } });
+              const result = await setEnabled({
+                environmentId,
+                input: { triggerId: trigger.id, enabled },
+              });
               commandValue(result);
             })
           }
         />
-      </View>
-      {bot &&
-      !trigger.followLatest &&
-      !trigger.followStable &&
-      bot.version !== trigger.pinnedVersion &&
-      !trigger.pipelineId ? (
-        <>
-          <Text>
-            This trigger runs version {trigger.pinnedVersion}; {bot.name} is now version{" "}
-            {bot.version}.
-          </Text>
+        <View className="flex-row flex-wrap gap-2">
+          <Button label="Edit" disabled={!canAct || !editAllowed || !bot} onPress={onEdit} />
           <Button
-            label={`Use version ${bot.version}`}
-            disabled={!canAct || !repinAllowed}
+            label={testing ? "Close test" : "Test"}
+            disabled={!capabilities.connected || !testAllowed || !bot}
+            onPress={() => setTesting(!testing)}
+          />
+          <Button
+            label={history ? "Hide history" : "Firing history"}
+            onPress={() => setHistory(!history)}
+          />
+          <Button
+            label="Delete"
+            tone="danger"
+            disabled={!canAct || !deleteAllowed}
             onPress={() =>
               void act(async () => {
-                const result = await repin({ environmentId, input: { triggerId: trigger.id } });
+                if (
+                  !(await confirmBotAutomation(
+                    `Delete ${trigger.name}?`,
+                    "Its firing history, webhook address and secret will be deleted.",
+                    "Delete",
+                  )) ||
+                  !active.current
+                )
+                  return;
+                const result = await remove({ environmentId, input: { triggerId: trigger.id } });
                 commandValue(result);
               })
             }
           />
-        </>
-      ) : null}
-      {address ? (
-        <View className="gap-2">
-          <Text selectable>{address.address}</Text>
-          {address.note ? (
-            <Text className="text-xs text-foreground-muted">{address.note}</Text>
-          ) : null}
-          {trigger.event.kind === "merge-conflict" ? (
+        </View>
+        {bot &&
+        !trigger.followLatest &&
+        !trigger.followStable &&
+        bot.version !== trigger.pinnedVersion &&
+        !trigger.pipelineId ? (
+          <>
             <Text>
-              Set LOOM_BOTS_CONFLICT_HOOK to this address before running fork integration.
+              This trigger runs version {trigger.pinnedVersion}; {bot.name} is now version{" "}
+              {bot.version}.
             </Text>
-          ) : null}
-          <View className="flex-row flex-wrap gap-2">
             <Button
-              label={copied ? "Copied address" : "Copy address"}
-              disabled={!address.copyable}
-              onPress={() => {
-                void tryCopyTextWithHaptic(address.address, { target: "trigger address" }).then(
-                  (ok) => {
-                    if (!active.current) return;
-                    setCopied(ok);
-                    if (!ok) setError("Could not copy the address.");
-                  },
-                );
-              }}
-            />
-            <Button
-              label="Rotate address"
-              disabled={!canAct || !rotateAllowed}
+              label={`Use version ${bot.version}`}
+              disabled={!canAct || !repinAllowed}
               onPress={() =>
                 void act(async () => {
-                  if (
-                    !(await confirmBotAutomation(
-                      "Rotate webhook address?",
-                      "The current address stops working immediately.",
-                      "Rotate",
-                    )) ||
-                    !active.current
-                  )
-                    return;
-                  const result = await rotate({ environmentId, input: { triggerId: trigger.id } });
+                  const result = await repin({ environmentId, input: { triggerId: trigger.id } });
                   commandValue(result);
-                  if (active.current) setCopied(false);
                 })
               }
             />
+          </>
+        ) : null}
+        {address ? (
+          <View className="gap-2">
+            <Text selectable>{address.address}</Text>
+            {address.note ? (
+              <Text className="text-xs text-foreground-muted">{address.note}</Text>
+            ) : null}
+            {trigger.event.kind === "merge-conflict" ? (
+              <Text>
+                Set LOOM_BOTS_CONFLICT_HOOK to this address before running fork integration.
+              </Text>
+            ) : null}
+            <View className="flex-row flex-wrap gap-2">
+              <Button
+                label={copied ? "Copied address" : "Copy address"}
+                disabled={!address.copyable}
+                onPress={() => {
+                  void tryCopyTextWithHaptic(address.address, { target: "trigger address" }).then(
+                    (ok) => {
+                      if (!active.current) return;
+                      setCopied(ok);
+                      if (!ok) setError("Could not copy the address.");
+                    },
+                  );
+                }}
+              />
+              <Button
+                label="Rotate address"
+                disabled={!canAct || !rotateAllowed}
+                onPress={() =>
+                  void act(async () => {
+                    if (
+                      !(await confirmBotAutomation(
+                        "Rotate webhook address?",
+                        "The current address stops working immediately.",
+                        "Rotate",
+                      )) ||
+                      !active.current
+                    )
+                      return;
+                    const result = await rotate({
+                      environmentId,
+                      input: { triggerId: trigger.id },
+                    });
+                    commandValue(result);
+                    if (active.current) setCopied(false);
+                  })
+                }
+              />
+            </View>
           </View>
-        </View>
-      ) : null}
-      {testing ? (
-        <TriggerTest
-          environmentId={environmentId}
-          trigger={trigger}
-          canTest={capabilities.connected && testAllowed}
-        />
-      ) : null}
-      {history ? (
-        <TriggerFirings environmentId={environmentId} trigger={trigger} changes={changes} />
-      ) : null}
-      <BotNotice error={error} />
-    </View>
+        ) : null}
+        {testing ? (
+          <TriggerTest
+            environmentId={environmentId}
+            trigger={trigger}
+            canTest={capabilities.connected && testAllowed}
+          />
+        ) : null}
+        {history ? (
+          <TriggerFirings environmentId={environmentId} trigger={trigger} changes={changes} />
+        ) : null}
+        <BotNotice error={error} />
+      </View>
+    </SettingsSection>
   );
 }
 

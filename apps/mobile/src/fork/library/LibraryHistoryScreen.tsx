@@ -20,7 +20,7 @@ import { LibraryArchiveFeedRow } from "./LibraryArchiveFeed";
 import { libraryArchiveRowItemId, libraryArchiveRows } from "./libraryArchive";
 import { LibraryReplicationNotice } from "./LibraryReplicationNotice";
 import { LibraryBriefSuggestionOffer, LibrarySuggestBriefUpdates } from "./LibraryBriefSuggestions";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import { library, useLibraryAuthority } from "./libraryState";
 
 type LibraryHistoryParams = {

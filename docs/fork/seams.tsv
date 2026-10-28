@@ -242,16 +242,14 @@ apps/mobile/src/features/projects/AddProjectDestinationRoute.tsx	project-home	2
 apps/mobile/src/features/projects/AddProjectScreen.tsx	project-home	23
 apps/mobile/src/features/workspace-handoff/WorkspaceHandoffScreen.tsx	project-home	1
 apps/web/src/components/ChatView.tsx	project-home	1
-apps/web/src/components/CommandPalette.tsx	project-home	13
+apps/web/src/components/CommandPalette.tsx	project-home	5
 apps/web/src/components/LegacySidebar.tsx	project-home	2
 apps/web/src/components/LegacySidebar.tsx	library-projects	3
 apps/web/src/components/Sidebar.tsx	project-home	1
 apps/web/src/hooks/useThreadActionMenu.ts	project-home	2
-apps/web/src/routes/projects.$projectKey.tsx	project-home	5
 apps/web/src/routes/projects.storage.tsx	project-home	1
 apps/mobile/src/persistence/mobile-preferences.ts	project-home	4
 apps/web/src/components/sidebar/mainAppLocation.ts	project-home	2
-apps/web/src/components/settings/settingsScopeNavigation.test.ts	project-home	9
 apps/mobile/src/features/projects/AddProjectScreen.test.ts	project-home	20
 apps/mobile/src/features/projects/AddProjectScreen.test.ts	fleet-connections	13
 apps/mobile/src/lib/storage.test.ts	project-home	2
@@ -280,9 +278,9 @@ apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
 apps/web/src/components/settings/ProjectsSettings.tsx	project-home	2
 apps/web/src/components/settings/ProjectsSettings.tsx	library-projects	3
-apps/web/src/components/settings/settingsSearch.ts	project-home	3
+apps/web/src/components/settings/settingsSearch.ts	project-home	7
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	3
-apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	21
+apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	22
 apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	44
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	11
 apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	respectful-notifications	26
@@ -299,7 +297,7 @@ apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
 apps/web/src/components/CommandPalette.logic.test.ts	bots	2
 apps/web/src/components/CommandPalette.logic.test.ts	fleet-connections	2
 apps/web/src/components/CommandPalette.logic.ts	library-palette	4
-apps/web/src/components/CommandPalette.tsx	library-palette	48
+apps/web/src/components/CommandPalette.tsx	library-palette	49
 apps/web/src/components/CommandPalette.tsx	sites	9
 scripts/build-cli-archive.ts	library-semantic-search	3
 apps/server/package.json	-	"onnxruntime-web": "1.30.0"
@@ -374,7 +372,6 @@ apps/web/src/components/settings/SourceControlSettings.tsx	github-host-setup	11
 apps/web/src/components/settings/StorageSettings.tsx	project-lifecycle	16
 apps/web/src/components/settings/settingsSearch.ts	ext-keybindings	5
 apps/web/src/components/settings/settingsSearch.ts	github-host-setup	1
-apps/web/src/components/sidebar/mainAppLocation.ts	fleet-connections	1
 apps/web/src/components/ui/button.tsx	iris-pill	7
 apps/web/src/components/ui/toggle-group.tsx	iris-pill	7
 apps/web/src/routes/_chat.index.tsx	fleet-connections	8
@@ -1488,3 +1485,5 @@ docs/user/updating.md	client-computer	1
 apps/mobile/src/features/projects/AddProjectScreen.tsx	library-only	3
 apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3
+
+apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	2

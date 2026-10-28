@@ -47,9 +47,14 @@ import { Switch } from "~/components/ui/switch";
 import { Toggle } from "~/components/ui/toggle";
 import { useProjects } from "~/state/entities";
 import { cn } from "~/lib/utils";
-import { LibraryDialog, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import {
+  LIBRARY_SURFACE,
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibrarySection,
+} from "./LibraryControls";
 import { ComputerReadiness } from "./ProfileReadiness";
-import { ComputerLabel, ProjectGlow } from "./ProjectIdentity";
+import { ComputerLabel } from "./ProjectIdentity";
 
 const SETUP_ICON_TILE =
   "inline-flex shrink-0 items-center justify-center bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16";
@@ -66,13 +71,7 @@ function SetupCard({
   readonly children: ReactNode;
 }) {
   return (
-    <section
-      aria-label={title}
-      className={cn(
-        "space-y-3 rounded-2xl border border-border bg-card p-4 shadow-xs/5 sm:p-5",
-        className,
-      )}
-    >
+    <section aria-label={title} className={cn("space-y-3 p-4 sm:p-5", LIBRARY_SURFACE, className)}>
       <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
         <span aria-hidden className={cn(SETUP_ICON_TILE, "size-6 rounded-md")}>
           <Icon className="size-3" />
@@ -93,8 +92,7 @@ const SETUP_PARTS = [
 /** What setup holds, shown before there is any, so the first edit has a reason. */
 function EmptySetup({ onSetUp }: { readonly onSetUp: (() => void) | null }) {
   return (
-    <div className="relative isolate overflow-hidden rounded-2xl border border-dashed border-border bg-card p-5 sm:p-7">
-      <ProjectGlow />
+    <div className={cn("p-5 sm:p-6", LIBRARY_SURFACE)}>
       <div className="max-w-xl space-y-1.5">
         <p className="text-lg font-semibold tracking-tight">
           Make every computer ready the same way
@@ -262,7 +260,7 @@ export function ProjectProfile({
       {(tools.length || secrets.length) && computersWithCopies.length ? (
         <div className="space-y-2 pt-3">
           <h3 className="text-sm font-semibold tracking-tight">On each computer</h3>
-          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-xs/5">
+          <ul className={cn("divide-y divide-border/50 overflow-hidden", LIBRARY_SURFACE)}>
             {computersWithCopies.map((environmentId) => (
               <li
                 key={environmentId}

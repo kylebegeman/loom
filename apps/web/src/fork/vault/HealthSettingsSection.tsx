@@ -23,6 +23,7 @@ import {
   vaultHealthVisibleState,
   vaultHealthInboxGroups,
 } from "@t3tools/client-runtime/fork";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -147,164 +148,166 @@ function Inbox({
     );
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
-      <div className="space-y-1">
-        <h3 className="text-base font-medium">Maintenance inbox</h3>
-        <p className="max-w-prose text-muted-foreground">
-          Review expiry and failed development access. Provider outages do not revoke credentials.
-          Only explicitly enabled rules run in the background.
-        </p>
-      </div>
-      <LoomSettingsActions>
-        <Button
-          size="sm-multiline"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            setError(null);
-            setNotice(null);
-            appAtomRegistry.refresh(atom);
-          }}
-        >
-          Refresh health
-        </Button>
-        <Button size="sm-multiline" variant="outline" onClick={() => setHistory(!history)}>
-          {history ? "Hide resolved and dismissed" : "Show resolved and dismissed"}
-        </Button>
-      </LoomSettingsActions>
-      <VaultQueryFeedback
-        result={result}
-        loading="Loading Vault health…"
-        error="Could not load Vault health. Check the backend and retry."
-        onRetry={() => appAtomRegistry.refresh(atom)}
-      />
-      {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
-      {busy ? <LoomSettingsNotice role="status">Updating Vault health…</LoomSettingsNotice> : null}
-      {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
-      {snapshot?.issues.filter((i) => history || !["dismissed", "resolved"].includes(i.state))
-        .length === 0 ? (
-        <LoomSettingsNotice>
-          {history
-            ? "No maintenance issues in the retained history."
-            : "No active maintenance issues. Saved health rules continue to monitor the records you selected."}
-        </LoomSettingsNotice>
-      ) : null}
-      {snapshot
-        ? vaultHealthInboxGroups(snapshot, history).map((group) => (
-            <div key={group.id} className="flex flex-col gap-3">
-              {group.label ? (
-                <>
-                  <h3 className="font-medium">Outage reports: {group.label}</h3>
-                  <p>
-                    {group.issues.length} affected items. Reports share a destination; they may have
-                    different causes. Review and update each item separately.
-                  </p>
-                </>
-              ) : null}
-              {group.issues.map((issue) => (
-                <section
-                  key={issue.id}
-                  className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-5 sm:p-6"
-                  aria-label={`${issue.itemLabel} ${issue.category}`}
-                >
-                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <h4 className="wrap-anywhere text-sm font-medium">{issue.itemLabel}</h4>
-                      <p className="text-sm text-muted-foreground">{issue.category}</p>
-                    </div>
-                    <span className="rounded-md bg-muted px-2 py-1 text-xs">
-                      {vaultHealthVisibleState(issue, now)}
-                    </span>
-                  </div>
-                  <p>{vaultHealthMessage(issue)}</p>
-                  <LoomSettingsActions>
-                    <Button
-                      size="sm-multiline"
-                      variant="outline"
-                      onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
+      <LoomSettingsPanel
+        title="Maintenance inbox"
+        description="Review expiry and failed development access. Provider outages do not revoke credentials. Only explicitly enabled rules run in the background."
+      >
+        <LoomSettingsActions>
+          <Button
+            size="sm-multiline"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setError(null);
+              setNotice(null);
+              appAtomRegistry.refresh(atom);
+            }}
+          >
+            Refresh health
+          </Button>
+          <Button size="sm-multiline" variant="outline" onClick={() => setHistory(!history)}>
+            {history ? "Hide resolved and dismissed" : "Show resolved and dismissed"}
+          </Button>
+        </LoomSettingsActions>
+        <VaultQueryFeedback
+          result={result}
+          loading="Loading Vault health…"
+          error="Could not load Vault health. Check the backend and retry."
+          onRetry={() => appAtomRegistry.refresh(atom)}
+        />
+        {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
+        {busy ? (
+          <LoomSettingsNotice role="status">Updating Vault health…</LoomSettingsNotice>
+        ) : null}
+        {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
+        {snapshot?.issues.filter((i) => history || !["dismissed", "resolved"].includes(i.state))
+          .length === 0 ? (
+          <LoomSettingsNotice>
+            {history
+              ? "No maintenance issues in the retained history."
+              : "No active maintenance issues. Saved health rules continue to monitor the records you selected."}
+          </LoomSettingsNotice>
+        ) : null}
+        {snapshot
+          ? vaultHealthInboxGroups(snapshot, history).map((group) => (
+              <div key={group.id} className="flex flex-col gap-3">
+                {group.label ? (
+                  <>
+                    <h4 className="text-sm font-medium">Outage reports: {group.label}</h4>
+                    <p>
+                      {group.issues.length} affected items. Reports share a destination; they may
+                      have different causes. Review and update each item separately.
+                    </p>
+                  </>
+                ) : null}
+                <div className="flex min-w-0 flex-col divide-y divide-border/60">
+                  {group.issues.map((issue) => (
+                    <section
+                      key={issue.id}
+                      className="flex min-w-0 flex-col gap-4 py-4 first:pt-0 last:pb-0"
+                      aria-label={`${issue.itemLabel} ${issue.category}`}
                     >
-                      Review access
-                    </Button>
-                    <Button
-                      size="sm-multiline"
-                      variant="outline"
-                      onClick={() => setContextIssue(contextIssue === issue.id ? null : issue.id)}
-                    >
-                      {contextIssue === issue.id
-                        ? "Hide project references"
-                        : "Show project references"}
-                    </Button>
-                  </LoomSettingsActions>
-                  {contextIssue === issue.id ? (
-                    <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
-                  ) : null}
-                  <p className="text-xs text-muted-foreground">
-                    {issue.occurrences} occurrences. Last seen{" "}
-                    {new Date(issue.lastSeenAt).toLocaleString()}.
-                  </p>
-                  <LoomSettingsActions>
-                    <Button
-                      size="sm-multiline"
-                      variant="outline"
-                      disabled={locked}
-                      onClick={() =>
-                        void act(async () => {
-                          const result = await runVault(atoms.recheck, {
-                            environmentId,
-                            input: { itemId: issue.itemId },
-                          });
-                          setNotice(vaultHealthRecheckMessage(result.outcome));
-                        })
-                      }
-                    >
-                      Recheck
-                    </Button>
-                    {issue.state === "snoozed" ? (
-                      <Button
-                        size="sm-multiline"
-                        variant="outline"
-                        disabled={locked}
-                        onClick={() => void issueAction(issue, "unsnooze")}
-                      >
-                        Unsnooze
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm-multiline"
-                        variant="outline"
-                        disabled={locked}
-                        onClick={() => void issueAction(issue, "snooze")}
-                      >
-                        Snooze 1 day
-                      </Button>
-                    )}
-                    {["dismissed", "resolved"].includes(issue.state) ? (
-                      <Button
-                        size="sm-multiline"
-                        variant="outline"
-                        disabled={locked}
-                        onClick={() => void issueAction(issue, "reopen")}
-                      >
-                        Reopen
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm-multiline"
-                        variant="outline"
-                        disabled={locked}
-                        onClick={() => void issueAction(issue, "dismiss")}
-                      >
-                        Dismiss
-                      </Button>
-                    )}
-                  </LoomSettingsActions>
-                </section>
-              ))}
-            </div>
-          ))
-        : null}
-      {snapshot?.omittedIssues ? (
-        <p>{snapshot.omittedIssues} older issues omitted by retention.</p>
-      ) : null}
+                      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-1">
+                          <h4 className="wrap-anywhere text-sm font-medium">{issue.itemLabel}</h4>
+                          <p className="text-sm text-muted-foreground">{issue.category}</p>
+                        </div>
+                        <Badge variant="secondary">{vaultHealthVisibleState(issue, now)}</Badge>
+                      </div>
+                      <p>{vaultHealthMessage(issue)}</p>
+                      <LoomSettingsActions>
+                        <Button
+                          size="sm-multiline"
+                          variant="outline"
+                          onClick={() => openVaultAccess({ environmentId, itemId: issue.itemId })}
+                        >
+                          Review access
+                        </Button>
+                        <Button
+                          size="sm-multiline"
+                          variant="outline"
+                          onClick={() =>
+                            setContextIssue(contextIssue === issue.id ? null : issue.id)
+                          }
+                        >
+                          {contextIssue === issue.id
+                            ? "Hide project references"
+                            : "Show project references"}
+                        </Button>
+                      </LoomSettingsActions>
+                      {contextIssue === issue.id ? (
+                        <VaultHealthContext environmentId={environmentId} itemId={issue.itemId} />
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        {issue.occurrences} occurrences. Last seen{" "}
+                        {new Date(issue.lastSeenAt).toLocaleString()}.
+                      </p>
+                      <LoomSettingsActions>
+                        <Button
+                          size="sm-multiline"
+                          variant="outline"
+                          disabled={locked}
+                          onClick={() =>
+                            void act(async () => {
+                              const result = await runVault(atoms.recheck, {
+                                environmentId,
+                                input: { itemId: issue.itemId },
+                              });
+                              setNotice(vaultHealthRecheckMessage(result.outcome));
+                            })
+                          }
+                        >
+                          Recheck
+                        </Button>
+                        {issue.state === "snoozed" ? (
+                          <Button
+                            size="sm-multiline"
+                            variant="outline"
+                            disabled={locked}
+                            onClick={() => void issueAction(issue, "unsnooze")}
+                          >
+                            Unsnooze
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm-multiline"
+                            variant="outline"
+                            disabled={locked}
+                            onClick={() => void issueAction(issue, "snooze")}
+                          >
+                            Snooze 1 day
+                          </Button>
+                        )}
+                        {["dismissed", "resolved"].includes(issue.state) ? (
+                          <Button
+                            size="sm-multiline"
+                            variant="outline"
+                            disabled={locked}
+                            onClick={() => void issueAction(issue, "reopen")}
+                          >
+                            Reopen
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm-multiline"
+                            variant="outline"
+                            disabled={locked}
+                            onClick={() => void issueAction(issue, "dismiss")}
+                          >
+                            Dismiss
+                          </Button>
+                        )}
+                      </LoomSettingsActions>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            ))
+          : null}
+        {snapshot?.omittedIssues ? (
+          <p>{snapshot.omittedIssues} older issues omitted by retention.</p>
+        ) : null}
+      </LoomSettingsPanel>
       <LoomSettingsPanel
         title="Expiry and validation rules"
         description="Choose a record to review or update its rule. Expiry warnings start seven days before the declared date."

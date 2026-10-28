@@ -66,22 +66,17 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
     );
   const { settings, storage } = view;
 
-  const update = async (patch: AppleBuildSettingsPatch) => {
-    setNotice(null);
-    const saved = await save.act(async () => {
+  const update = (patch: AppleBuildSettingsPatch) =>
+    save.act(async () => {
       await runAppleCommand(apple.updateSettings, { environmentId, input: patch });
       appAtomRegistry.refresh(settingsAtom);
     });
-    if (saved) setNotice("Changes saved.");
-    return saved;
-  };
   const toggle = (
     key: "agentToolsEnabled" | "useXcbeautify" | "openLaunchedSimulatorInDevicePanel",
     title: string,
     description: string,
   ) => (
     <SettingsRow
-      className="px-0 sm:px-0"
       title={title}
       description={description}
       control={
@@ -137,7 +132,6 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
           "Pipe xcodebuild output through xcbeautify when it is installed.",
         )}
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Collect test diagnostics"
           description="Gathering diagnostics after a failed test can add minutes."
           control={
@@ -162,7 +156,6 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
         description="Keep build output and run history within predictable limits."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Derived data"
           description={`Loom's own folder keeps its builds apart from a running Xcode. ${formatBytes(storage.derivedDataBytes)} in Loom's folder.`}
           control={
@@ -188,9 +181,13 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
           }
         />
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Runs kept per project"
           description={`Keep ${KEEP_MIN} to ${KEEP_MAX} runs. Older logs and result bundles are deleted. ${storage.runCount} runs use ${formatBytes(storage.runsBytes)}.`}
+          status={
+            !keepProblem && keep !== null && keepValue !== String(settings.keepRunsPerProject)
+              ? "Saves when you leave this field."
+              : undefined
+          }
           control={
             <Input
               aria-label="Runs kept per project"
@@ -201,10 +198,7 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
               max={KEEP_MAX}
               disabled={!canEdit || save.busy}
               value={keepValue}
-              onChange={(event) => {
-                setKeep(event.target.value);
-                setNotice(null);
-              }}
+              onChange={(event) => setKeep(event.target.value)}
               aria-invalid={keepProblem}
               onBlur={() => {
                 if (keepProblem) return;
@@ -223,13 +217,6 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
           </LoomSettingsNotice>
         )}
       </LoomSettingsPanel>
-      <LoomSettingsNotice role="status">
-        {save.busy
-          ? "Saving changes..."
-          : keep !== null && keepValue !== String(settings.keepRunsPerProject)
-            ? "Your run limit saves when you leave the field."
-            : (notice ?? "Changes save automatically. Numbers save when you leave the field.")}
-      </LoomSettingsNotice>
       {save.error && (
         <LoomSettingsNotice role="alert">
           {save.error} Try the change again. For the run limit, leave the field again to retry.
@@ -237,7 +224,6 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
       )}
       <LoomSettingsDetails title="Clear build storage and history">
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Run history"
           description="Clearing is refused while a run is going."
           control={
@@ -261,6 +247,7 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
             </LoomSettingsActions>
           }
         />
+        {notice && <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice>}
         {clear.error && <LoomSettingsNotice role="alert">{clear.error}</LoomSettingsNotice>}
       </LoomSettingsDetails>
     </LoomSettingsContent>

@@ -545,7 +545,6 @@
   "apps/web/src/fork/project-checkout/ProjectCheckoutSettings.tsx": 1,
   "apps/web/src/fork/project-checkout/useProjectStorageRollout.ts": 2,
   "apps/web/src/fork/project-home/useProjectHomeClock.ts": 1,
-  "apps/web/src/fork/project-home/useProjectHomeNewThreadShortcuts.ts": 1,
   "apps/web/src/fork/project-library/ConversationPalette.tsx": 1,
   "apps/web/src/fork/project-library/EmptyConversationOffer.tsx": 1,
   "apps/web/src/fork/project-library/ExistingFolderStorage.tsx": 1,

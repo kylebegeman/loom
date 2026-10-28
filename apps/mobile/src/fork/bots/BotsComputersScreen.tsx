@@ -65,7 +65,7 @@ function ComputersScreen({ params }: { params: Params }) {
   const collection = useBotsCollection(environmentId);
   const bot = collection.bots.find((entry) => entry.id === params.botId);
   return (
-    <BotPage title={bot ? `${bot.name} computers` : "Bot computers"} back={navigation.canGoBack()}>
+    <BotPage title={bot ? `${bot.name} computers` : "Bot computers"}>
       <Text className="text-foreground-muted">
         Share bots through your Library and choose which computers can run them. Credential bindings
         stay on each computer.
@@ -335,7 +335,10 @@ function SharingPanel({
         <View className="gap-2">
           <Text className="font-t3-semibold">Readiness</Text>
           {targets.data.targets.map((target) => (
-            <View key={target.environmentId} className="gap-1 rounded-xl bg-grouped-card p-3">
+            <View
+              key={target.environmentId}
+              className="gap-1 rounded-xl border border-border-subtle p-3"
+            >
               <Text className="font-t3-medium">
                 {target.label}
                 {target.isThisComputer ? " · This computer" : ""}
@@ -365,7 +368,7 @@ function SharingPanel({
               !!bindings.error ||
               bot.archivedAt !== null;
             return (
-              <View key={slot.name} className="gap-2 rounded-xl bg-grouped-card p-4">
+              <View key={slot.name} className="gap-2 rounded-xl border border-border-subtle p-3">
                 <Text className="font-t3-medium">{slot.label}</Text>
                 <Text className="text-sm text-foreground-muted">
                   {slot.action}
@@ -459,7 +462,7 @@ function RemoteDeliveries({
         <Text>No remote runs in the recent history.</Text>
       ) : null}
       {runs.map((run) => (
-        <View key={run.id} className="gap-2 rounded-xl bg-grouped-card p-4">
+        <View key={run.id} className="gap-2 rounded-xl border border-border-subtle p-3">
           <Text className="font-t3-semibold">
             {run.botName} · {run.status.replaceAll("_", " ")}
           </Text>

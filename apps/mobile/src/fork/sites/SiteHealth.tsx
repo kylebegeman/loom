@@ -66,38 +66,14 @@ export function SiteStateDot({ tone }: { readonly tone: LibraryWorkflowTone }) {
   return <View className={cn("size-2 shrink-0 rounded-full", DOT_FILL[tone])} />;
 }
 
-/** A section heading in the grouped-list voice the rest of the app uses. */
-export function SitesSection({
-  title,
-  detail,
-  children,
-}: {
-  readonly title: string;
-  readonly detail?: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <View className="gap-2.5">
-      <View className="flex-row items-baseline justify-between gap-3 px-1">
-        <Text accessibilityRole="header" className="text-sm font-t3-medium text-foreground-muted">
-          {title}
-        </Text>
-        {detail ? (
-          <Text className="text-xs tabular-nums text-foreground-muted">{detail}</Text>
-        ) : null}
-      </View>
-      {children}
-    </View>
-  );
-}
-
-/** One service and the endpoint checks that watch it, in an outline group without a fill. */
+/** One service and the endpoint checks that watch it, as rows in its section's group. */
 export function SiteServiceGroup({
   service,
   checks,
   staleAfterSeconds,
   now,
   canManage,
+  separated = false,
   usedBy,
   onEditService,
   onAddCheck,
@@ -108,6 +84,8 @@ export function SiteServiceGroup({
   readonly staleAfterSeconds: number;
   readonly now: number;
   readonly canManage: boolean;
+  /** Divides this service from the one above it in the same group. */
+  readonly separated?: boolean;
   /** Shown in the shared registry, where a service is read apart from its sites. */
   readonly usedBy?: ReactNode;
   readonly onEditService: () => void;
@@ -119,7 +97,7 @@ export function SiteServiceGroup({
   return (
     <View
       accessibilityLabel={`${service.name}, ${state.label}`}
-      className="overflow-hidden rounded-2xl border border-border"
+      className={cn(separated && "border-t border-border")}
     >
       <View className="flex-row items-start gap-2 py-3 ps-4 pe-1">
         <View className="min-w-0 flex-1 gap-1">

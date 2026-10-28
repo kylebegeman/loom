@@ -1,4 +1,3 @@
-import { useNavigation } from "@react-navigation/native";
 import type { ComponentProps, ReactNode } from "react";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,9 +5,21 @@ import { AppBar } from "../../components/ui/AppBar";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
-import { ListToggleRow } from "../../components/ui/ListToggleRow";
-import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
+import { ScreenContent } from "../../components/ui/ScreenContent";
+import {
+  ScreenScrollView,
+  ScreenScrollViewBottomInset,
+  ScreenScrollViewSurface,
+} from "../../components/ui/ScreenScrollView";
+import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { useCompactWorkspaceTabs } from "../../features/workspace/useSystemWorkspaceTabBar";
+import { cn } from "../../lib/cn";
+import { useWorkspacePageBack } from "../library/workspacePageBack";
+import { useDeviceType } from "../../native/native-layout-metrics";
 
+/** SettingsScreen's surface, plus the header menus, Home fallback and unscrolled lists it lacks. */
 export function BotPage({
   title,
   children,
@@ -24,44 +35,53 @@ export function BotPage({
   readonly menus?: ComponentProps<typeof AppBar>["menus"];
   readonly scroll?: boolean;
 }) {
-  const navigation = useNavigation();
+  const pageBack = useWorkspacePageBack();
   const insets = useSafeAreaInsets();
+  const deviceType = useDeviceType();
+  const compactTabs = useCompactWorkspaceTabs();
+  const { layout } = useAdaptiveWorkspaceLayout();
+  const surface = deviceType === "duo-folded" ? "bg-screen" : "bg-sheet";
   return (
-    <View className="flex-1 bg-screen">
+    <View collapsable={false} className={cn("flex-1", surface)}>
       <AppBar
         title={title}
-        onBack={
-          back
-            ? () => {
-                if (navigation.canGoBack()) navigation.goBack();
-                else navigation.navigate("Home");
-              }
-            : undefined
-        }
+        sidebar={false}
+        hideBottomBorder
+        onBack={back ? pageBack : undefined}
         actions={actions}
         menus={menus}
       />
-      {scroll ? (
-        <ScreenScrollView
-          className="flex-1"
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-          contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={{
-            padding: 16,
-            gap: 20,
-            paddingBottom: Math.max(insets.bottom, 24) + 24,
-          }}
-        >
-          {children}
-        </ScreenScrollView>
-      ) : (
-        children
-      )}
+      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+        <ScreenScrollViewSurface value={surface}>
+          <ScreenContent insetHorizontal={Platform.OS === "android" && layout.usesSplitView}>
+            {scroll ? (
+              <ScreenScrollView
+                className="flex-1"
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                contentInsetAdjustmentBehavior="automatic"
+                contentContainerClassName="gap-6 px-5 pt-4"
+                contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+              >
+                {children}
+              </ScreenScrollView>
+            ) : (
+              children
+            )}
+          </ScreenContent>
+        </ScreenScrollViewSurface>
+      </ScreenScrollViewBottomInset>
     </View>
   );
 }
+
+function renderBotListScrollView(props: ComponentProps<typeof ScreenScrollView>) {
+  return <ScreenScrollView {...props} />;
+}
+
+/** For a `scroll={false}` page's list, so it takes the page surface under the iOS header. */
+export const BOT_LIST_SCROLL_VIEW = Platform.OS === "ios" ? renderBotListScrollView : undefined;
 
 export function BotNotice({
   error,
@@ -101,13 +121,9 @@ export function BotSection({
   readonly children: ReactNode;
 }) {
   return (
-    <View className="gap-3">
-      <Text accessibilityRole="header" className="text-lg font-t3-semibold text-foreground">
-        {title}
-      </Text>
-      {description ? <Text className="text-sm text-foreground-muted">{description}</Text> : null}
-      {children}
-    </View>
+    <SettingsSection title={title} footer={description}>
+      <View className="gap-3 p-4">{children}</View>
+    </SettingsSection>
   );
 }
 
@@ -212,13 +228,24 @@ export function BotToggle({
   readonly disabled?: boolean;
   readonly description?: string;
 }) {
+  // A field, not a list row: it lines up with the inputs beside it in a section's padded card.
   return (
-    <ListToggleRow
-      label={label}
-      value={value}
-      onValueChange={onChange}
-      disabled={disabled}
-      description={description}
-    />
+    <View className={cn("min-h-11 flex-row items-center gap-3", disabled && "opacity-45")}>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text className="text-sm font-t3-medium text-foreground">{label}</Text>
+        {description ? (
+          <Text textRole="footnote" className="text-foreground-muted">
+            {description}
+          </Text>
+        ) : null}
+      </View>
+      <ThemedSwitch
+        accessibilityLabel={label}
+        accessibilityHint={description}
+        disabled={disabled}
+        value={value}
+        onValueChange={onChange}
+      />
+    </View>
   );
 }

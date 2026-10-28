@@ -14,6 +14,7 @@ import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { CommandPaletteResults } from "~/components/CommandPaletteResults";
 import type { CommandPaletteActionItem } from "~/components/CommandPalette.logic";
+import { Button } from "~/components/ui/button";
 import { CommandDialog, CommandDialogPopup } from "~/components/ui/command";
 import { needsLibrarySignIn } from "@t3tools/client-runtime/fork";
 import { LibrarySignInLink } from "./LibrarySignInLink";
@@ -219,8 +220,9 @@ export function LibraryPaletteView({
       escapeLabel={escapeLabel}
       inputAccessory={
         onBack ? (
-          <button
-            type="button"
+          <Button
+            variant="ghost-muted"
+            size="icon-sm"
             aria-label="Back"
             disabled={busy}
             onMouseDown={(event) => event.preventDefault()}
@@ -228,10 +230,10 @@ export function LibraryPaletteView({
               onBack();
               event.currentTarget.parentElement?.querySelector("input")?.focus();
             }}
-            className="absolute start-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+            className="absolute start-3 top-1/2 -translate-y-1/2"
           >
-            <ArrowLeftIcon className="size-4" />
-          </button>
+            <ArrowLeftIcon />
+          </Button>
         ) : undefined
       }
       inputProps={{

@@ -13,11 +13,8 @@ import { BotsComputersRouteScreen } from "./fork/bots/BotsComputersScreen";
 import { SitesRouteScreen } from "./fork/sites/SitesScreen";
 import { PreviewLinksRouteScreen } from "./fork/preview-links/PreviewLinksScreen"; // fork: preview-links
 // fork: library
-import {
-  LibraryRouteScreen,
-  LibraryProjectRouteScreen,
-  LibraryAuthorityScreen,
-} from "./fork/library/LibraryScreens";
+import { LibraryRouteScreen, LibraryProjectRouteScreen } from "./fork/library/LibraryScreens";
+import { LibraryAuthorityScreen } from "./fork/library/LibraryPage";
 import {
   LibraryCreateRouteScreen,
   LibraryEditRouteScreen,
@@ -650,103 +647,103 @@ const RootStackConfig = createWorkspaceStackNavigator({
     Bots: createNativeStackScreen({
       screen: BotsRouteScreen,
       linking: "bots",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsDetail: createNativeStackScreen({
       screen: BotDetailRouteScreen,
       linking: "bots/:environmentId/bot/:botId",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsCreate: createNativeStackScreen({
       screen: BotCreateRouteScreen,
       linking: "bots/:environmentId/new",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsEdit: createNativeStackScreen({
       screen: BotEditRouteScreen,
       linking: "bots/:environmentId/bot/:botId/edit",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsRun: createNativeStackScreen({
       screen: BotRunRouteScreen,
       linking: "bots/:environmentId/bot/:botId/run",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsRunDetail: createNativeStackScreen({
       screen: BotRunDetailRouteScreen,
       linking: "bots/:environmentId/run/:runId",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsRuns: createNativeStackScreen({
       screen: BotsRunsRouteScreen,
       linking: "bots/:environmentId/runs",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsInbox: createNativeStackScreen({
       screen: BotsInboxRouteScreen,
       linking: "bots/:environmentId/inbox",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsBatches: createNativeStackScreen({
       screen: BotBatchesRouteScreen,
       linking: "bots/:environmentId/batches",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsTriggers: createNativeStackScreen({
       screen: BotTriggersRouteScreen,
       linking: "bots/:environmentId/triggers",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsPipelines: createNativeStackScreen({
       screen: BotPipelinesRouteScreen,
       linking: "bots/:environmentId/pipelines",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsHistory: createNativeStackScreen({
       screen: BotHistoryRouteScreen,
       linking: "bots/:environmentId/history",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsReplay: createNativeStackScreen({
       screen: BotsReplayRouteScreen,
       linking: "bots/:environmentId/bot/:botId/replay",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsUsage: createNativeStackScreen({
       screen: BotsUsageRouteScreen,
       linking: "bots/:environmentId/usage",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsComputers: createNativeStackScreen({
       screen: BotsComputersRouteScreen,
       linking: "bots/:environmentId/computers",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     Sites: createNativeStackScreen({
       screen: SitesRouteScreen,
       linking: "sites",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     // fork: library
     Library: createNativeStackScreen({
       screen: LibraryRouteScreen,
       linking: "library",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibrarySettings: createNativeStackScreen({
       screen: LibraryAuthorityScreen,
       linking: "library/settings",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     IdentitySignIn: createNativeStackScreen({
       screen: ComputerIdentityRouteScreen,
       linking: "identity/sign-in",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibrarySignIn: createNativeStackScreen({
       screen: LibraryIdentityRouteScreen,
       linking: "library/sign-in",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryAttachment: createNativeStackScreen({
       screen: AttachmentFileScreen,
@@ -756,47 +753,48 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibraryCreate: createNativeStackScreen({
       screen: LibraryCreateRouteScreen,
       linking: "library/new",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryProject: createNativeStackScreen({
       screen: LibraryProjectRouteScreen,
       linking: "library/projects/:projectId",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryEdit: createNativeStackScreen({
       screen: LibraryEditRouteScreen,
       linking: "library/projects/:projectId/edit",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryStart: createNativeStackScreen({
       screen: LibraryStartRouteScreen,
       linking: "library/projects/:projectId/new-conversation",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryTidy: createNativeStackScreen({
       screen: LibraryTidyRouteScreen,
       linking: "library/projects/:projectId/tidy",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryHistory: createNativeStackScreen({
       screen: LibraryHistoryRouteScreen,
       linking: "library/projects/:projectId/history/:archiveId",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryTimeline: createNativeStackScreen({
       screen: LibraryTimelineRouteScreen,
       linking: "library/projects/:projectId/timeline",
+      // Its filter row sits above the list, outside any scroll inset, so the header stays opaque.
       options: SOLID_HEADER_OPTIONS,
     }),
     LibrarySearch: createNativeStackScreen({
       screen: LibrarySearchRouteScreen,
       linking: "library/search",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     LibraryBriefReview: createNativeStackScreen({
       screen: LibraryBriefReviewRouteScreen,
       linking: "library/projects/:projectId/brief-suggestions",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     ...(__DEV__
       ? {
@@ -1000,22 +998,22 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ProjectPreparation: createNativeStackScreen({
       screen: ProjectPreparationRouteScreen,
       linking: "projects/:environmentId/:projectId/prepare",
-      options: SOLID_HEADER_OPTIONS,
+      options: GLASS_HEADER_OPTIONS,
     }),
     ProjectStorageInventory: createNativeStackScreen({
       screen: ProjectStorageInventoryRouteScreen,
       linking: "project-storage",
-      options: SOLID_HEADER_OPTIONS,
+      options: SETTINGS_PAGE_OPTIONS,
     }),
     ProjectHome: createNativeStackScreen({
       screen: ProjectHomeRouteScreen,
       linking: "projects/:environmentId/:projectId",
-      options: SOLID_HEADER_OPTIONS,
+      options: GLASS_HEADER_OPTIONS,
     }),
     WorkspaceHandoff: createNativeStackScreen({
       screen: WorkspaceHandoffScreen,
       linking: "handoff/:environmentId/:threadId",
-      options: SOLID_HEADER_OPTIONS,
+      options: GLASS_HEADER_OPTIONS,
     }),
     ThreadTerminal: createNativeStackScreen({
       screen: ThreadTerminalRouteScreen,

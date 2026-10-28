@@ -29,7 +29,6 @@ import { Route as ChatUsageRouteImport } from './routes/_chat.usage'
 import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
-import { Route as ChatComputersRouteImport } from './routes/_chat.computers'
 import { Route as LibraryConversationsConversationIdRouteImport } from './routes/library.conversations.$conversationId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
 import { Route as ChatSettingsVaultRouteImport } from './routes/_chat.settings.vault'
@@ -41,6 +40,7 @@ import { Route as ChatSettingsSnapShotRouteImport } from './routes/_chat.setting
 import { Route as ChatSettingsScheduledTasksRouteImport } from './routes/_chat.settings.scheduled-tasks'
 import { Route as ChatSettingsProvidersRouteImport } from './routes/_chat.settings.providers'
 import { Route as ChatSettingsProjectsRouteImport } from './routes/_chat.settings.projects'
+import { Route as ChatSettingsProjectFilesRouteImport } from './routes/_chat.settings.project-files'
 import { Route as ChatSettingsOpenSourceLicensesRouteImport } from './routes/_chat.settings.open-source-licenses'
 import { Route as ChatSettingsMaintenanceRouteImport } from './routes/_chat.settings.maintenance'
 import { Route as ChatSettingsLoomRouteImport } from './routes/_chat.settings.loom'
@@ -161,11 +161,6 @@ const ChatNewRoute = ChatNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ChatRoute,
 } as any)
-const ChatComputersRoute = ChatComputersRouteImport.update({
-  id: '/computers',
-  path: '/computers',
-  getParentRoute: () => ChatRoute,
-} as any)
 const LibraryConversationsConversationIdRoute =
   LibraryConversationsConversationIdRouteImport.update({
     id: '/conversations/$conversationId',
@@ -224,6 +219,12 @@ const ChatSettingsProjectsRoute = ChatSettingsProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => ChatSettingsRoute,
 } as any)
+const ChatSettingsProjectFilesRoute =
+  ChatSettingsProjectFilesRouteImport.update({
+    id: '/project-files',
+    path: '/project-files',
+    getParentRoute: () => ChatSettingsRoute,
+  } as any)
 const ChatSettingsOpenSourceLicensesRoute =
   ChatSettingsOpenSourceLicensesRouteImport.update({
     id: '/open-source-licenses',
@@ -338,7 +339,6 @@ export interface FileRoutesByFullPath {
   '/pair': typeof PairRoute
   '/sites': typeof SitesRoute
   '/welcome': typeof WelcomeRoute
-  '/computers': typeof ChatComputersRoute
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/settings': typeof ChatSettingsRouteWithChildren
@@ -369,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/settings/loom': typeof ChatSettingsLoomRoute
   '/settings/maintenance': typeof ChatSettingsMaintenanceRoute
   '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
+  '/settings/project-files': typeof ChatSettingsProjectFilesRoute
   '/settings/projects': typeof ChatSettingsProjectsRoute
   '/settings/providers': typeof ChatSettingsProvidersRoute
   '/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute
@@ -389,7 +390,6 @@ export interface FileRoutesByTo {
   '/pair': typeof PairRoute
   '/sites': typeof SitesRoute
   '/welcome': typeof WelcomeRoute
-  '/computers': typeof ChatComputersRoute
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/settings': typeof ChatSettingsRouteWithChildren
@@ -421,6 +421,7 @@ export interface FileRoutesByTo {
   '/settings/loom': typeof ChatSettingsLoomRoute
   '/settings/maintenance': typeof ChatSettingsMaintenanceRoute
   '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
+  '/settings/project-files': typeof ChatSettingsProjectFilesRoute
   '/settings/projects': typeof ChatSettingsProjectsRoute
   '/settings/providers': typeof ChatSettingsProvidersRoute
   '/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute
@@ -444,7 +445,6 @@ export interface FileRoutesById {
   '/pair': typeof PairRoute
   '/sites': typeof SitesRoute
   '/welcome': typeof WelcomeRoute
-  '/_chat/computers': typeof ChatComputersRoute
   '/_chat/new': typeof ChatNewRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/_chat/settings': typeof ChatSettingsRouteWithChildren
@@ -476,6 +476,7 @@ export interface FileRoutesById {
   '/_chat/settings/loom': typeof ChatSettingsLoomRoute
   '/_chat/settings/maintenance': typeof ChatSettingsMaintenanceRoute
   '/_chat/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute
+  '/_chat/settings/project-files': typeof ChatSettingsProjectFilesRoute
   '/_chat/settings/projects': typeof ChatSettingsProjectsRoute
   '/_chat/settings/providers': typeof ChatSettingsProvidersRoute
   '/_chat/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute
@@ -500,7 +501,6 @@ export interface FileRouteTypes {
     | '/pair'
     | '/sites'
     | '/welcome'
-    | '/computers'
     | '/new'
     | '/pull-requests'
     | '/settings'
@@ -531,6 +531,7 @@ export interface FileRouteTypes {
     | '/settings/loom'
     | '/settings/maintenance'
     | '/settings/open-source-licenses'
+    | '/settings/project-files'
     | '/settings/projects'
     | '/settings/providers'
     | '/settings/scheduled-tasks'
@@ -551,7 +552,6 @@ export interface FileRouteTypes {
     | '/pair'
     | '/sites'
     | '/welcome'
-    | '/computers'
     | '/new'
     | '/pull-requests'
     | '/settings'
@@ -583,6 +583,7 @@ export interface FileRouteTypes {
     | '/settings/loom'
     | '/settings/maintenance'
     | '/settings/open-source-licenses'
+    | '/settings/project-files'
     | '/settings/projects'
     | '/settings/providers'
     | '/settings/scheduled-tasks'
@@ -605,7 +606,6 @@ export interface FileRouteTypes {
     | '/pair'
     | '/sites'
     | '/welcome'
-    | '/_chat/computers'
     | '/_chat/new'
     | '/_chat/pull-requests'
     | '/_chat/settings'
@@ -637,6 +637,7 @@ export interface FileRouteTypes {
     | '/_chat/settings/loom'
     | '/_chat/settings/maintenance'
     | '/_chat/settings/open-source-licenses'
+    | '/_chat/settings/project-files'
     | '/_chat/settings/projects'
     | '/_chat/settings/providers'
     | '/_chat/settings/scheduled-tasks'
@@ -808,13 +809,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatNewRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/_chat/computers': {
-      id: '/_chat/computers'
-      path: '/computers'
-      fullPath: '/computers'
-      preLoaderRoute: typeof ChatComputersRouteImport
-      parentRoute: typeof ChatRoute
-    }
     '/library/conversations/$conversationId': {
       id: '/library/conversations/$conversationId'
       path: '/conversations/$conversationId'
@@ -890,6 +884,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/settings/projects'
       preLoaderRoute: typeof ChatSettingsProjectsRouteImport
+      parentRoute: typeof ChatSettingsRoute
+    }
+    '/_chat/settings/project-files': {
+      id: '/_chat/settings/project-files'
+      path: '/project-files'
+      fullPath: '/settings/project-files'
+      preLoaderRoute: typeof ChatSettingsProjectFilesRouteImport
       parentRoute: typeof ChatSettingsRoute
     }
     '/_chat/settings/open-source-licenses': {
@@ -1054,6 +1055,7 @@ interface ChatSettingsRouteChildren {
   ChatSettingsLoomRoute: typeof ChatSettingsLoomRoute
   ChatSettingsMaintenanceRoute: typeof ChatSettingsMaintenanceRoute
   ChatSettingsOpenSourceLicensesRoute: typeof ChatSettingsOpenSourceLicensesRoute
+  ChatSettingsProjectFilesRoute: typeof ChatSettingsProjectFilesRoute
   ChatSettingsProjectsRoute: typeof ChatSettingsProjectsRoute
   ChatSettingsProvidersRoute: typeof ChatSettingsProvidersRoute
   ChatSettingsScheduledTasksRoute: typeof ChatSettingsScheduledTasksRoute
@@ -1085,6 +1087,7 @@ const ChatSettingsRouteChildren: ChatSettingsRouteChildren = {
   ChatSettingsLoomRoute: ChatSettingsLoomRoute,
   ChatSettingsMaintenanceRoute: ChatSettingsMaintenanceRoute,
   ChatSettingsOpenSourceLicensesRoute: ChatSettingsOpenSourceLicensesRoute,
+  ChatSettingsProjectFilesRoute: ChatSettingsProjectFilesRoute,
   ChatSettingsProjectsRoute: ChatSettingsProjectsRoute,
   ChatSettingsProvidersRoute: ChatSettingsProvidersRoute,
   ChatSettingsScheduledTasksRoute: ChatSettingsScheduledTasksRoute,
@@ -1102,7 +1105,6 @@ const ChatSettingsRouteWithChildren = ChatSettingsRoute._addFileChildren(
 )
 
 interface ChatRouteChildren {
-  ChatComputersRoute: typeof ChatComputersRoute
   ChatNewRoute: typeof ChatNewRoute
   ChatPullRequestsRoute: typeof ChatPullRequestsRoute
   ChatSettingsRoute: typeof ChatSettingsRouteWithChildren
@@ -1113,7 +1115,6 @@ interface ChatRouteChildren {
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
-  ChatComputersRoute: ChatComputersRoute,
   ChatNewRoute: ChatNewRoute,
   ChatPullRequestsRoute: ChatPullRequestsRoute,
   ChatSettingsRoute: ChatSettingsRouteWithChildren,

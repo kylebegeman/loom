@@ -1,7 +1,6 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { ChevronDownIcon } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
-import { AdvancedSettings } from "~/components/settings/AdvancedSettings";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import {
   SettingsScopeProvider,
   useSettingsScope,
@@ -15,9 +14,11 @@ import {
 import {
   SettingsPageContainer,
   useSettingsSearchTarget,
+  useSettingsSearchTargetId,
 } from "~/components/settings/settingsLayout";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import {
   Menu,
   MenuPopup,
@@ -94,14 +95,41 @@ export function VaultSettingsPage() {
         .map((topic) => (
           <ForkSettingsTopic key={topic.id} topic={topic} />
         ))}
-      <AdvancedSettings targetIds={advanced.map(targetIdOf)}>
-        <div className="flex min-w-0 flex-col gap-8 pt-6">
-          {advanced.map((topic) => (
-            <ForkSettingsTopic key={topic.id} topic={topic} />
-          ))}
-        </div>
-      </AdvancedSettings>
+      {advanced.length > 0 ? <AdvancedTopics topics={advanced} /> : null}
     </SettingsPageContainer>
+  );
+}
+
+// Upstream's AdvancedSettings folds rows inside a group; whole topics fold like an outside-header section.
+function AdvancedTopics({ topics }: { topics: readonly ForkSettingsSection[] }) {
+  const [open, setOpen] = useState(false);
+  const searchTargetId = useSettingsSearchTargetId();
+  const [seenSearchTargetId, setSeenSearchTargetId] = useState<string | null>(null);
+  if (seenSearchTargetId !== searchTargetId) {
+    setSeenSearchTargetId(searchTargetId);
+    if (topics.some((topic) => targetIdOf(topic) === searchTargetId)) setOpen(true);
+  }
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="space-y-6">
+        <h2 className="flex min-h-7 items-center px-3 sm:px-4">
+          <CollapsibleTrigger className="group flex min-h-7 items-center gap-2 rounded-md text-sm font-normal text-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+            Advanced
+            <ChevronRightIcon
+              aria-hidden
+              className="size-4 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"
+            />
+          </CollapsibleTrigger>
+        </h2>
+        <CollapsiblePanel>
+          <div className="flex min-w-0 flex-col gap-8">
+            {topics.map((topic) => (
+              <ForkSettingsTopic key={topic.id} topic={topic} />
+            ))}
+          </div>
+        </CollapsiblePanel>
+      </div>
+    </Collapsible>
   );
 }
 
@@ -245,24 +273,24 @@ function ForkSettingsTopic({
       ref={targetRef}
       tabIndex={-1}
       aria-labelledby={`${targetId}-title`}
-      className="min-w-0 space-y-3 outline-none"
+      className="min-w-0 space-y-2.5 outline-none"
     >
       <header data-settings-scroll-target className="space-y-1 px-3 sm:px-4">
         <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-2">
-          <h2 id={`${targetId}-title`} className="text-base font-semibold text-foreground">
+          <h2
+            id={`${targetId}-title`}
+            className="flex min-h-7 items-center text-base font-semibold text-foreground"
+          >
             {topic.title}
           </h2>
           {topic.scope === "device" ? <Badge variant="secondary">This device</Badge> : null}
         </div>
-        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+        <p className="max-w-2xl text-xs leading-normal text-balance text-muted-foreground">
           {topic.description}
+          {topic.scope === "mixed"
+            ? " Preview preferences stay on this device. Tool configuration applies to the selected computer."
+            : null}
         </p>
-        {topic.scope === "mixed" ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Preview preferences stay on this device. Tool configuration applies to the selected
-            computer.
-          </p>
-        ) : null}
         {scopeLine}
       </header>
       <div className="min-w-0 wrap-anywhere">

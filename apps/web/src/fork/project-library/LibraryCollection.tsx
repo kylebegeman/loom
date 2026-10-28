@@ -2,7 +2,8 @@ import { Link, type LinkProps } from "@tanstack/react-router";
 import { LayoutGridIcon, ListIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import { HeroTexture, ProjectGlow } from "./ProjectIdentity";
+import { cn } from "~/lib/utils";
+import { LIBRARY_SURFACE } from "./LibraryControls";
 
 export type LibraryLayout = "cards" | "list";
 
@@ -40,7 +41,7 @@ export function LibraryLayoutToggle({
  * `ProjectWash` and a stretched `LibraryCardTarget`, so the whole card opens its item.
  */
 export const LIBRARY_CARD =
-  "group/card relative isolate flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5 has-focus-visible:border-(--project-color)/35";
+  "group/card relative isolate flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card/40 p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5 has-focus-visible:border-(--project-color)/35";
 
 /** The grid Library cards share, so Projects, Bots and Sites wrap at the same widths. */
 export const LIBRARY_CARD_GRID = "grid gap-3 sm:grid-cols-2 xl:grid-cols-3";
@@ -62,10 +63,7 @@ export function LibraryCardTarget({
   );
 }
 
-/**
- * The one filled surface on a Library item's page, after the Projects hero: the item's color
- * pooled in one corner, a dot grid fading out of the other, its mark, name, state and actions.
- */
+/** The one filled surface on a Library item's page: its mark, name, state and actions. */
 export function LibraryHero({
   tile,
   title,
@@ -85,9 +83,7 @@ export function LibraryHero({
   readonly footer?: ReactNode;
 }) {
   return (
-    <header className="relative isolate overflow-hidden rounded-3xl border border-border bg-card shadow-xs/5">
-      <ProjectGlow strength="strong" />
-      <HeroTexture />
+    <header className={cn("overflow-hidden", LIBRARY_SURFACE)}>
       <div className="flex flex-col gap-4 p-5 sm:p-6">
         <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
           {tile}
@@ -106,11 +102,7 @@ export function LibraryHero({
         {/* Indented to the title, past a 2xl tile and its gap. */}
         {children ? <div className="min-w-0 sm:ps-21">{children}</div> : null}
       </div>
-      {footer ? (
-        <div className="border-t border-border/70 bg-background/40 px-5 py-3 sm:px-6 dark:bg-background/20">
-          {footer}
-        </div>
-      ) : null}
+      {footer ? <div className="border-t border-border/60 px-5 py-3 sm:px-6">{footer}</div> : null}
     </header>
   );
 }

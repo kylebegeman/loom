@@ -120,6 +120,7 @@ vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: { startProjectClone: "startProjectClone" },
 }));
 vi.mock("../library/libraryState", () => ({ library: { inspectFolder: "inspectFolder" } }));
+vi.mock("../library/workspacePageBack", () => ({ useWorkspacePageBack: () => undefined }));
 vi.mock("../../state/projects", () => ({ projectEnvironment: { create: "create" } }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: string) =>

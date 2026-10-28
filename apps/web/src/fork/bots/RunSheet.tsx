@@ -28,6 +28,7 @@ import {
   UndoIcon,
   XIcon,
 } from "lucide-react";
+import { Alert, AlertDescription } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import {
   Menu,
@@ -492,12 +493,7 @@ function RunDetail({
           {
             label: "Batch",
             value: (
-              <Link
-                to="/loom/bots"
-                // From a bot's page, so the batch page leads back to that bot's batches.
-                search={{ batch: run.batchId, ...(page.bot ? { bot: page.bot } : {}) }}
-                className={TEXT_LINK}
-              >
+              <Link to="/loom/bots" search={{ batch: run.batchId }} className={TEXT_LINK}>
                 Open batch
               </Link>
             ),
@@ -911,27 +907,32 @@ function RunError({ error }: { readonly error: string }) {
   const [open, setOpen] = useState(false);
   const long = error.length > LONG_ERROR_CHARS || error.split("\n").length > LONG_ERROR_LINES;
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5 rounded-xl bg-destructive/8 px-3.5 py-3">
-      <p
-        className={cn(
-          "font-mono text-xs leading-relaxed whitespace-pre-wrap text-destructive-foreground wrap-anywhere",
-          long && !open && "line-clamp-6",
-        )}
-      >
-        {error}
-      </p>
-      {long ? (
-        <Button
-          shape="pill"
-          size="micro"
-          variant="ghost-muted"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+    // A group, not an alert: opening the sheet should not read a stack trace aloud.
+    <Alert variant="error" role="group" aria-label="Run error">
+      <AlertDescription>
+        <p
+          className={cn(
+            "font-mono text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere",
+            long && !open && "line-clamp-6",
+          )}
         >
-          {open ? "Show less" : "Show the whole error"}
-        </Button>
-      ) : null}
-    </div>
+          {error}
+        </p>
+        {long ? (
+          <div>
+            <Button
+              shape="pill"
+              size="micro"
+              variant="ghost-muted"
+              aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+            >
+              {open ? "Show less" : "Show the whole error"}
+            </Button>
+          </div>
+        ) : null}
+      </AlertDescription>
+    </Alert>
   );
 }
 

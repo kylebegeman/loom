@@ -32,7 +32,7 @@ const dayLabel = (day: string) => DAY_LABEL.format(new Date(`${day}T00:00:00Z`))
 const plural = (count: number, noun: string) =>
   `${formatCount(count)} ${noun}${count === 1 ? "" : "s"}`;
 
-/** A site's traffic in one outlined group: figures, one daily series, and ranked breakdowns. */
+/** A site's traffic inside its section's group: figures, one daily series, and ranked breakdowns. */
 export function SiteTraffic({
   analytics,
   origins,
@@ -47,7 +47,7 @@ export function SiteTraffic({
   const quiet = !analytics.pageviews && !analytics.events;
   const ratios = siteTrafficRatios(analytics);
   return (
-    <View className="gap-5 rounded-2xl border border-border p-4">
+    <View className="gap-5 p-4">
       <View className="flex-row">
         <Figure label="Page views" value={analytics.pageviews} first />
         <Figure label="Visitors" value={analytics.visitors} />
@@ -279,11 +279,7 @@ const SKELETON_COLUMNS = Array.from({ length: 30 }, (_, index) => ({
 /** The traffic group's shape while its numbers load, so nothing jumps when they arrive. */
 export function SiteTrafficSkeleton() {
   return (
-    <View
-      accessible
-      accessibilityLabel="Loading traffic"
-      className="gap-5 rounded-2xl border border-border p-4"
-    >
+    <View accessible accessibilityLabel="Loading traffic" className="gap-5 p-4">
       <View className="flex-row gap-3">
         {[0, 1, 2].map((index) => (
           <View key={index} className="flex-1 gap-2">

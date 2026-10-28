@@ -310,16 +310,19 @@ function RunLog({
         <>
           <LibraryErrorNotice error={first.error} onRetry={first.refresh} />
           {runs.length === 0 && filtered ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-border px-4 py-3">
-              <p className="min-w-0 flex-1 basis-48 text-sm text-muted-foreground">
-                {hasMore
-                  ? "No runs match these filters in the newest runs."
-                  : "No runs match these filters."}
-              </p>
-              <Button shape="pill" size="xs" variant="outline" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            </div>
+            <LibraryEmpty
+              icon={ListFilterIcon}
+              title="No runs match"
+              action={
+                <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            >
+              {hasMore
+                ? "Nothing in the newest runs matches these filters."
+                : "Nothing matches these filters."}
+            </LibraryEmpty>
           ) : runs.length === 0 && !hasMore ? (
             <RunsEmpty
               bot={bot}

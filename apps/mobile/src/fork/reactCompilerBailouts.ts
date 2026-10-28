@@ -14,7 +14,6 @@ export const FORK_KNOWN_BAILOUTS: Record<string, string> = {
   "src/fork/library/LibraryCopySection.tsx": "try/finally, throw inside try, dynamic import",
   "src/fork/library/LibraryProjectForm.tsx": "try/finally, throw inside try",
   "src/fork/library/LibraryReplicationNotice.tsx": "try/finally, throw inside try",
-  "src/fork/library/LibraryScreens.tsx": "try/finally, throw inside try",
   "src/fork/library/LibraryStartScreen.tsx": "try/finally, try without catch",
   "src/fork/project-checkout/ProjectCheckoutSection.tsx": "try/finally, throw inside try",
   "src/fork/project-home/ProjectPreparationRouteScreen.tsx": "try/finally, throw inside try",

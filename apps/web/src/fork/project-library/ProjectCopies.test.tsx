@@ -83,6 +83,7 @@ vi.mock("~/components/ui/menu", () => ({
   MenuTrigger: "div",
 }));
 vi.mock("./LibraryControls", () => ({
+  LIBRARY_SURFACE: "",
   LibraryPanel: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   LibrarySection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   LibraryStateBadge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -93,7 +94,6 @@ vi.mock("./ProjectIdentity", () => ({
   ComputerIcon: () => null,
   ComputerTile: () => null,
   PathLabel: () => null,
-  ProjectGlow: () => null,
 }));
 vi.mock("./ProfileReadiness", () => ({ CopyProfileSetup: () => null }));
 vi.mock("./ExistingFolderStorage", () => ({ ExistingFolderStorage: () => null }));

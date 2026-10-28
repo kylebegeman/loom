@@ -12,7 +12,7 @@ export function BrowseProjectsButton({
   readonly label?: string;
 }) {
   return (
-    <Button size={size} variant={variant} render={<Link to="/library" />}>
+    <Button size={size} variant={variant} render={<Link to="/projects" />}>
       {label}
     </Button>
   );

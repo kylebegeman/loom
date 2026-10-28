@@ -23,7 +23,8 @@ import {
   PlusIcon,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "~/components/ui/button";
+import { Badge } from "~/components/ui/badge";
+import { Button, InlineButton } from "~/components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -590,13 +591,7 @@ function ServiceUsers({
       Used by
       {shown.map((site, index) => (
         <span key={site.id} className="min-w-0 truncate">
-          <button
-            type="button"
-            onClick={() => onOpenSite(site.id)}
-            className="rounded-sm font-medium text-foreground/85 underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            {site.name}
-          </button>
+          <InlineButton onClick={() => onOpenSite(site.id)}>{site.name}</InlineButton>
           {index < shown.length - 1 ? "," : null}
         </span>
       ))}
@@ -667,16 +662,9 @@ function CheckRow({
       <td className={cn(LIBRARY_CELL, "hidden sm:table-cell")}>
         {last ? (
           <span className="inline-flex items-center gap-2 text-xs tabular-nums">
-            <span
-              className={cn(
-                "rounded-md px-1.5 py-0.5 font-mono text-2xs font-medium",
-                last.ok
-                  ? "bg-success/10 text-success-foreground"
-                  : "bg-destructive/10 text-destructive-foreground",
-              )}
-            >
-              {last.status ?? "No answer"}
-            </span>
+            <Badge variant={last.ok ? "success" : "error"} size="sm">
+              <span className="font-mono">{last.status ?? "No answer"}</span>
+            </Badge>
             <span className="text-muted-foreground">{formatDuration(last.duration_ms)}</span>
           </span>
         ) : (

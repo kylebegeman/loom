@@ -217,8 +217,8 @@ function RunHistory({
         showsHorizontalScrollIndicator={false}
         accessibilityLabel="Filter runs by verdict"
         className="grow-0"
-        style={{ marginHorizontal: -16 }}
-        contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
+        style={{ marginHorizontal: -20 }}
+        contentContainerStyle={{ gap: 8, paddingHorizontal: 20 }}
       >
         {VERDICT_FILTERS.map((value) => {
           const current = value === verdict;
@@ -635,7 +635,7 @@ function RunDetail({
                 <BotsEmptyList message="No findings. The verdict summary says it all." />
               )}
               {run.verdict.findingsTruncated ? (
-                <Text className="px-1 text-xs text-foreground-muted">
+                <Text textRole="footnote" className="px-4 text-foreground-muted">
                   More findings are available in the thread.
                 </Text>
               ) : null}
@@ -675,7 +675,7 @@ function RunDetail({
             </BotsSection>
           ) : null}
           {run.usage ? (
-            <Text className="px-1 text-xs tabular-nums text-foreground-muted">
+            <Text className="px-2 text-xs tabular-nums text-foreground-muted">
               {run.usage.inputTokens.toLocaleString()} input tokens ·{" "}
               {run.usage.outputTokens.toLocaleString()} output tokens · Usage {run.usage.status}
             </Text>

@@ -8,7 +8,6 @@ import { Button } from "~/components/ui/button";
 import { useThreadShell } from "~/state/entities";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryNotice } from "../../project-library/LibraryControls";
-import { LibraryBackLink } from "../../project-library/LibraryPageFrame";
 import { BotEditorForm, BotEditorSkeleton } from "../BotEditor";
 import { BotTile } from "../BotIdentity";
 import { bots, useBots } from "../state";
@@ -18,7 +17,7 @@ type Loaded =
   | { readonly _tag: "ready"; readonly result: BotDraftResult }
   | { readonly _tag: "failed"; readonly message: string };
 
-/** The editor's title block while there is no draft to edit yet, so the page keeps its shape. */
+/** The editor's header while there is no draft to edit yet, so the page keeps its shape. */
 function DraftHeader({
   environmentId,
   threadId,
@@ -28,27 +27,19 @@ function DraftHeader({
 }) {
   const thread = useThreadShell({ environmentId, threadId });
   return (
-    <>
-      <LibraryBackLink to="/loom/bots" search={{}}>
-        Bots
-      </LibraryBackLink>
-      <header className="flex min-w-0 items-start gap-4">
-        <BotTile bot={{ id: "new-bot" }} size="lg" />
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-semibold tracking-tight">New bot from a thread</h1>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            From{" "}
-            <Link
-              to="/$environmentId/$threadId"
-              params={{ environmentId, threadId }}
-              className="rounded-sm text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-            >
-              {thread?.title ?? "its thread"}
-            </Link>
-          </p>
-        </div>
-      </header>
-    </>
+    <header className="flex min-w-0 items-center gap-3">
+      <BotTile bot={{ id: "new-bot" }} size="md" />
+      <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+        From{" "}
+        <Link
+          to="/$environmentId/$threadId"
+          params={{ environmentId, threadId }}
+          className="rounded-sm text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          {thread?.title ?? "its thread"}
+        </Link>
+      </p>
+    </header>
   );
 }
 

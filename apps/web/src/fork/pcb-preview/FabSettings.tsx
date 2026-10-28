@@ -29,7 +29,6 @@ export function FabSettings({ environmentId }: { environmentId: EnvironmentId })
   return (
     <>
       <SettingsRow
-        className="px-0 sm:px-0"
         title="Fabrication profile"
         description="Choose the default fabrication limits for this environment."
         control={

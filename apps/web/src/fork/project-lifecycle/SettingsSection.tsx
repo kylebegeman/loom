@@ -156,7 +156,6 @@ function SettingsForm({
           description="Give each checkout its own space for temporary files and build output."
         >
           <SettingsRow
-            className="px-0 sm:px-0"
             title="Give each checkout a lane"
             description="Lanes are removed when their threads settle or are archived."
             control={

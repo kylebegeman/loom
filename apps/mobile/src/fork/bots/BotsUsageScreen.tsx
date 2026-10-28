@@ -80,11 +80,8 @@ function UsageScreen({ params }: { params: Params }) {
   const selectedBot = collection.bots.find((bot) => bot.id === params.botId);
   const budgetEntries = Object.entries(data?.budgets ?? {});
   return (
-    <BotPage
-      title={selectedBot ? `${selectedBot.name} usage` : "Bots usage"}
-      back={navigation.canGoBack()}
-    >
-      <Text className="text-foreground-muted">
+    <BotPage title={selectedBot ? `${selectedBot.name} usage` : "Bots usage"}>
+      <Text className="px-2 text-sm text-foreground-muted">
         Runs, outcomes and tokens across the bots on {capabilities.label}. Budgets always use a
         rolling 24 hour window.
       </Text>
@@ -129,7 +126,7 @@ function UsageScreen({ params }: { params: Params }) {
                   description="A reached run or token limit blocks new runs, including replays."
                 >
                   {budgetEntries.map(([botId, budget]) => (
-                    <View key={botId} className="gap-2 rounded-xl bg-grouped-card p-4">
+                    <View key={botId} className="gap-2 rounded-xl border border-border-subtle p-3">
                       <Text className="font-t3-semibold">
                         {collection.bots.find((bot) => bot.id === botId)?.name ??
                           data.rows.find((row) => row.botId === botId)?.botName ??
@@ -167,7 +164,7 @@ function UsageScreen({ params }: { params: Params }) {
                   {data.pipelines.map((pipeline) => (
                     <View
                       key={pipeline.pipelineId}
-                      className="gap-1 rounded-xl bg-grouped-card p-4"
+                      className="gap-1 rounded-xl border border-border-subtle p-3"
                     >
                       <Text className="font-t3-semibold">{pipeline.pipelineName}</Text>
                       <Text>
@@ -239,7 +236,7 @@ function UsageRow({
   const [expanded, setExpanded] = useState(false);
   const verdicts = row.pass + row.fail + row.needsAttention > 0;
   return (
-    <View className="gap-2 rounded-xl bg-grouped-card p-4">
+    <View className="gap-2 rounded-xl border border-border-subtle p-3">
       <Text className="font-t3-semibold">{row.botName}</Text>
       <Text>
         {formatCount(row.runs)} runs

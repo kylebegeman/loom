@@ -40,7 +40,9 @@ import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
 import { LibraryHero, LibraryVital, LibraryVitals } from "../project-library/LibraryCollection";
 import {
+  LibraryEmpty,
   LibraryErrorNotice,
+  LibraryNotice,
   LibrarySection,
   LibrarySpecSheet,
   LibraryStateBadge,
@@ -300,21 +302,22 @@ function BotHero({ bot, newest }: { readonly bot: BotDefinition; readonly newest
         ) : null}
       </LibraryHero>
       {archived ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 py-3 dark:bg-accent/50">
-          <p className="flex items-center gap-2.5 text-sm text-muted-foreground">
-            <ArchiveIcon aria-hidden className="size-4 shrink-0" />
-            Archived. Its runs stay readable; restore it to run it again or add triggers.
-          </p>
-          <Button
-            shape="pill"
-            size="sm"
-            variant="outline"
-            disabled={!access.canSave}
-            onClick={() => void lifecycle.setArchived(bot, false)}
-          >
-            Restore
-          </Button>
-        </div>
+        <LibraryNotice
+          icon={ArchiveIcon}
+          action={
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              disabled={!access.canSave}
+              onClick={() => void lifecycle.setArchived(bot, false)}
+            >
+              Restore
+            </Button>
+          }
+        >
+          Archived. Its runs stay readable; restore it to run it again or add triggers.
+        </LibraryNotice>
       ) : null}
     </div>
   );
@@ -700,23 +703,26 @@ function BotRecentRuns({
       ) : newest.runs.length ? (
         <RunRows runs={newest.runs.slice(0, RECENT_RUNS)} showBot={false} />
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border px-4 py-3">
-          <p className="text-sm text-muted-foreground">
-            {bot.name} has not run yet. Its runs, findings and replies collect here.
-          </p>
-          {archived ? null : (
-            <Button
-              shape="pill"
-              size="sm"
-              variant="outline"
-              disabled={!access.canRun}
-              onClick={() => nav.overlay({ run: bot.id })}
-            >
-              <PlayIcon />
-              Run {bot.name}
-            </Button>
-          )}
-        </div>
+        <LibraryEmpty
+          icon={ActivityIcon}
+          title={`${bot.name} has not run yet`}
+          action={
+            archived ? null : (
+              <Button
+                shape="pill"
+                size="sm"
+                variant="outline"
+                disabled={!access.canRun}
+                onClick={() => nav.overlay({ run: bot.id })}
+              >
+                <PlayIcon />
+                Run {bot.name}
+              </Button>
+            )
+          }
+        >
+          Its runs, findings and replies collect here.
+        </LibraryEmpty>
       )}
     </LibrarySection>
   );

@@ -252,10 +252,9 @@ function ManyDialog({ botId }: { readonly botId: string }) {
       environmentId={environmentId}
       bot={bot}
       onStarted={(batch) => {
-        const from = nav.search.bot;
         // Closing first replaces the wizard's entry, so Back from the batch never reopens it.
         nav.close();
-        nav.open({ batch: batch.id, ...(from ? { bot: from } : {}) });
+        nav.open({ batch: batch.id });
       }}
       onClose={close}
     />

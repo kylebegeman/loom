@@ -16,6 +16,7 @@ import {
   vaultHealthVisibleState,
   VAULT_OWNER_SETUP_HELP,
 } from "@t3tools/client-runtime/fork";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { connectionAtomRuntime } from "~/connection/runtime";
@@ -23,6 +24,7 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
 import { randomUUID } from "~/lib/utils";
 import { forkSettingsTarget } from "../settings/navigation";
+import { LoomSettingsDetails, LoomSettingsNotice, LoomSettingsPanel } from "../settings/parts";
 import type { ForkSettingsTopicId } from "../settings/registry";
 import { VaultSshDialog } from "./SshDialog";
 import { vault } from "./state";
@@ -102,19 +104,16 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
     setBusy(false);
   };
   return (
-    <section
-      aria-label="Owner access"
-      className="flex min-w-0 flex-col gap-4 rounded-lg border p-4"
+    <LoomSettingsPanel
+      title="Owner access"
+      description={
+        snapshot
+          ? summary.description
+          : "Load this environment's access settings before making changes."
+      }
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="max-w-prose">
-          <h3 className="font-medium">{snapshot ? summary.title : "Owner access"}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {snapshot
-              ? summary.description
-              : "Load this environment's access settings before making changes."}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {snapshot ? <Badge variant="secondary">{summary.title}</Badge> : null}
         <Button
           size="sm"
           variant="outline"
@@ -131,20 +130,18 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
         </Button>
       </div>
       {result.waiting || result._tag === "Initial" || (!fresh && result._tag !== "Failure") ? (
-        <p role="status" className="text-sm">
-          Loading owner access…
-        </p>
+        <LoomSettingsNotice role="status">Loading owner access…</LoomSettingsNotice>
       ) : null}
       {result._tag === "Failure" || error ? (
-        <p role="alert" className="text-sm">
+        <LoomSettingsNotice role="alert">
           {error ??
             "Could not load owner access. Check this environment's Vault connection, then refresh."}
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {snapshot && !policy ? (
-        <p className="text-sm">
+        <LoomSettingsNotice>
           This server has not reported owner access. Update the server to enable it.
-        </p>
+        </LoomSettingsNotice>
       ) : null}
       {policy ? (
         <div className="flex max-w-prose flex-col gap-3">
@@ -188,11 +185,7 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
           ) : null}
         </div>
       ) : null}
-      {notice ? (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
-      ) : null}
+      {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
       <ConnectionOverview
         environmentId={environmentId}
         ownerEnabled={summary.enabled && !!snapshot}
@@ -204,11 +197,8 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
       {supportsLoomFeature(capabilities, "vault-health") ? (
         <OwnerHealth environmentId={environmentId} />
       ) : null}
-      <details>
-        <summary className="cursor-pointer text-sm font-medium">
-          Connection setup and repair
-        </summary>
-        <dl className="mt-3 flex max-w-prose flex-col gap-3 text-sm">
+      <LoomSettingsDetails title="Connection setup and repair">
+        <dl className="flex max-w-prose flex-col gap-3 text-sm">
           {VAULT_OWNER_SETUP_HELP.map((help) => (
             <div key={help.id}>
               <dt className="font-medium">{help.title}</dt>
@@ -216,13 +206,13 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
             </div>
           ))}
         </dl>
-      </details>
+      </LoomSettingsDetails>
       <p className="max-w-prose text-sm text-muted-foreground">
         Project profiles are optional shortcuts for choosing connections. Owner access does not
         require a profile. The destination still needs to accept the credential, and SSH needs
         verified host trust and a working execution broker.
       </p>
-    </section>
+    </LoomSettingsPanel>
   );
 }
 
@@ -240,13 +230,14 @@ function ConnectionOverview({
     statusResult._tag === "Success" && !statusResult.waiting ? statusResult.value : null;
   if (!status)
     return (
-      <p role={statusResult._tag === "Failure" ? "alert" : "status"} className="text-sm">
+      <LoomSettingsNotice role={statusResult._tag === "Failure" ? "alert" : "status"}>
         {statusResult._tag === "Failure"
           ? "Could not check the Vault connection. Refresh Vault below."
           : "Checking the Vault connection…"}
-      </p>
+      </LoomSettingsNotice>
     );
-  if (status.state !== "ready") return <p className="text-sm">{vaultStatusMessage(status)}</p>;
+  if (status.state !== "ready")
+    return <LoomSettingsNotice>{vaultStatusMessage(status)}</LoomSettingsNotice>;
   return (
     <ConnectedItems
       environmentId={environmentId}
@@ -290,11 +281,11 @@ function ConnectedItems({
         ) : null}
       </div>
       {!page ? (
-        <p role={result._tag === "Failure" ? "alert" : "status"} className="text-sm">
+        <LoomSettingsNotice role={result._tag === "Failure" ? "alert" : "status"}>
           {result._tag === "Failure"
             ? "Could not load connections. Refresh Vault below."
             : "Loading connections…"}
-        </p>
+        </LoomSettingsNotice>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No development connections on this page. Create an SSH key below or connect GitHub in{" "}

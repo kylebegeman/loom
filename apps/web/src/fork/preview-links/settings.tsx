@@ -177,7 +177,6 @@ function EnvironmentPreviewLinks({
         description="Configure link addresses and defaults for this computer."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Share ports as links"
           description="Open this computer's dev servers from any device through your own domain. Each link opens only in a browser that entered from Loom or signed in to your Library."
           control={
@@ -189,7 +188,7 @@ function EnvironmentPreviewLinks({
             />
           }
         />
-        <SettingsRow className="px-0 sm:px-0" title="Link address">
+        <SettingsRow title="Link address">
           <div className="grid min-w-0 gap-4 pt-3 pb-2 sm:grid-cols-2">
             <LoomSettingsField
               label="Link domain"
@@ -223,7 +222,6 @@ function EnvironmentPreviewLinks({
           </div>
         </SettingsRow>
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Default lifetime"
           description="How long a new link stays open. You can extend or end it later."
           control={
@@ -251,7 +249,6 @@ function EnvironmentPreviewLinks({
       </LoomSettingsPanel>
       <LoomSettingsDetails title="Cloudflare connection and gateway">
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Gateway port"
           description="The loopback port the tunnel forwards to. The tunnel's public hostname must use the same port."
           control={
@@ -270,7 +267,6 @@ function EnvironmentPreviewLinks({
           }
         />
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Connector token"
           description="The token from your Cloudflare tunnel. It stays on this computer and is never shown again."
         >
@@ -364,7 +360,6 @@ function EnvironmentPreviewLinks({
         description="Review open links or end access for preview browsers."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Open links"
           description={
             openCount === 0

@@ -71,6 +71,7 @@ vi.mock("../../state/query", () => ({
   }),
 }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: ({
     accessibilityLabel,

@@ -12,7 +12,7 @@ import { useProjects, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotPage, BotNotice } from "./BotControls";
-import { BotTile, BotsSection } from "./BotIdentity";
+import { BotTile, BotsOutline, BotsSection } from "./BotIdentity";
 import { bots, useBotsCapabilities, useBotsCollection } from "./state";
 import { useBotActionLifetime } from "./useBotActionLifetime";
 import {
@@ -59,7 +59,7 @@ export function RunChoice({
         <Text className="text-sm text-foreground-muted">{selected.detail}</Text>
       ) : null}
       {expanded ? (
-        <View className="overflow-hidden rounded-2xl border border-border-subtle">
+        <View className="overflow-hidden rounded-xl border border-border-subtle">
           {choices.map((choice, index) => (
             <ListChoiceRow
               key={choice.value}
@@ -370,18 +370,20 @@ function BotRunForm({
         </Text>
       </View>
       <BotsSection title="Inputs">
-        {bot.parameters.length ? (
-          <View className="gap-4">
-            <BotParameterFields
-              parameters={bot.parameters}
-              values={values}
-              onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
-              disabled={busy}
-            />
+        <BotsOutline>
+          <View className="gap-4 p-4">
+            {bot.parameters.length ? (
+              <BotParameterFields
+                parameters={bot.parameters}
+                values={values}
+                onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
+                disabled={busy}
+              />
+            ) : (
+              <Text className="text-sm text-foreground-muted">This bot takes no inputs.</Text>
+            )}
           </View>
-        ) : (
-          <Text className="px-1 text-sm text-foreground-muted">This bot takes no inputs.</Text>
-        )}
+        </BotsOutline>
       </BotsSection>
       {callerThreadId ? (
         <View className="gap-3">

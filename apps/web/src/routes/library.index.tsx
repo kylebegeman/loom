@@ -1,3 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { LibraryProjectsPage } from "~/fork/project-library/LibraryProjectsPage";
-export const Route = createFileRoute("/library/")({ component: LibraryProjectsPage });
+import { createFileRoute, redirect } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/library/")({
+  beforeLoad: () => {
+    throw redirect({ to: "/projects", replace: true });
+  },
+});

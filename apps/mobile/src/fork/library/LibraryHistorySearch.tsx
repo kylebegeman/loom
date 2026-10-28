@@ -25,7 +25,7 @@ import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import { useDebouncedValue } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import { library } from "./libraryState";
 import { useLibraryActivity } from "./useLibraryActivity";
 

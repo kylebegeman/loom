@@ -295,18 +295,19 @@ require the Library connection. Loom never silently switches to another Library 
 The thread list keeps existing work on connected computers accessible. Its project filter
 narrows that list without opening a separate project catalog.
 
-Open computer folder details to browse its threads. Expand a project for a short
-thread preview, or open its home for **Open**, **Snoozed**, **History**, and **All** views.
-Title search includes every thread, even when another view is selected. Clear search
-to return to that view. **Open in Threads** switches to the thread navigator scoped
-to the project.
+On mobile, expand a project for a short thread preview, or open its home for **Open**,
+**Snoozed**, **History**, and **All** views. Title search includes every thread, even when
+another view is selected. Clear search to return to that view. **Open in Threads** switches
+to the thread navigator scoped to the project.
 
 Choose the connected computer and checkout before starting a new task. That choice
 does not move existing work, and an offline or read-only computer requires reconnection
 or another explicit choice.
 
-Expand **Working files** in Project home to review its locations on each computer.
-To add a working copy elsewhere, choose **Prepare on another computer** there.
+On web and desktop, open **Project settings** from the command palette or **Settings → Projects**
+to review a project's folder locations on each computer. To add a working copy elsewhere,
+choose **Prepare on another computer** beside **Folder locations**. On mobile, expand
+**Working files** in the project's home and choose **Prepare another computer**.
 Review the source computer's actual Git origin, choose the destination computer, and
 review its destination folder before cloning. A fork is prepared from its own origin,
 not from the upstream repository it may be grouped with. The destination uses its
@@ -518,9 +519,9 @@ be settled for the settlement rule; inactivity uses the most recent conversation
 Folders opened manually and older clones stay on disk until you explicitly review and let
 Loom manage them. Enabling cleanup does not adopt existing folders.
 
-To manage an existing folder, review its working copy in Project home, or select the project
-and open **Settings → Projects → Working files** on web or desktop,
-or **Settings → Computer folders** on mobile. Review the folder
+To manage an existing folder, select the project and open **Settings → Projects → Working files**
+on web or desktop. On mobile, review its working copy in the project's home or
+**Settings → Computer folders**. Review the folder
 on each computer, choose **Keep files here** or **Free space when settled**, then confirm.
 Loom registers the existing folder without moving its files or changing its project history.
 Only primary Git repositories with their own Git directory and an origin remote can be adopted;
@@ -547,8 +548,8 @@ files stored at a particular location on a computer. The same project can have w
 more than one computer; each location has its own keep/remove choice. These choices affect those
 working files, while the project and its conversations stay in Loom.
 
-Use **Manage working files** from Projects, or **Settings → Projects → Files on computers**
-on web and desktop and **Settings → Files on computers** on iPhone, to
+Use **Settings → Projects → Manage working files** on web and desktop, or
+**Settings → Files on computers** on iPhone, to
 review the working-file locations already registered in Loom. Each project lists its locations
 on your computers. Select the locations you want to change and check their current files.
 Choose **Keep files here**, **Free space when settled**, or **Use computer default** for each

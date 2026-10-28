@@ -19,6 +19,7 @@ import { useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
 import { useWorkspaceState } from "../../state/workspace";
+import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { ProjectFolderLocation } from "../project-navigation/ProjectFolderLocation";
 import { ProjectStorageRolloutQueue } from "../project-checkout/storageRollout/ProjectStorageRolloutQueue";
 import { useProjectStorageRollout } from "../project-checkout/storageRollout/useProjectStorageRollout";
@@ -35,6 +36,7 @@ function renderInventoryScrollView(props: ComponentProps<typeof ScreenScrollView
 /** Only explicitly selected known working-file locations are reviewed; opening this list changes nothing. */
 export function ProjectStorageInventoryRouteScreen() {
   const navigation = useNavigation();
+  const back = useWorkspacePageBack();
   const insets = useSafeAreaInsets();
   const projects = useProjects();
   const grouping = useMobileProjectGroupingSettings();
@@ -73,8 +75,7 @@ export function ProjectStorageInventoryRouteScreen() {
     <View className="flex-1 bg-screen">
       <AppBar
         title="Files on computers"
-        onBack={() => navigation.goBack()}
-        backInSplitView={{ accessibilityLabel: "Back to projects", icon: "arrow.left" }}
+        onBack={back}
         search={{
           value: query,
           placeholder: "Search projects, computers or locations",

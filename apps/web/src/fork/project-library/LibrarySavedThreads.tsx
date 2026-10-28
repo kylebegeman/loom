@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
+import { InlineButton } from "~/components/ui/button";
 import { libraryOutsideArchivedProjects } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
@@ -72,33 +73,37 @@ export function LibrarySavedThreads({
   });
   if (!threads.length) return null;
   return (
-    <section className="space-y-1 py-3" aria-label="Saved conversations">
+    <section className="space-y-0.5 py-2" aria-label="Saved conversations">
       {showHeading ? (
-        <h2 className="px-2 text-xs font-medium text-muted-foreground">Saved conversations</h2>
+        <h2 className="px-(--sidebar-row-content-inset) py-1 text-xs font-medium text-sidebar-muted-foreground">
+          Saved conversations
+        </h2>
       ) : null}
       {threads.map((thread) => (
         <Link
           key={thread.id}
           to="/library/conversations/$conversationId"
           params={{ conversationId: thread.id }}
-          className="flex items-start gap-2 rounded-md px-2 py-3 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="flex items-start gap-2 rounded-md px-(--sidebar-row-content-inset) py-(--sidebar-content-inset) text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          <MessageSquareIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <MessageSquareIcon
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 text-sidebar-muted-foreground"
+          />
           <div className="min-w-0">
             <p className="truncate text-sm">{thread.title || "Untitled conversation"}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="mt-0.5 truncate text-xs text-secondary-label">
               {titles.get(thread.projectId) ?? "Project"}
             </p>
           </div>
         </Link>
       ))}
       {index.data?.nextOffset !== null ? (
-        <Link
-          to="/projects"
-          className="block px-2 py-2 text-xs text-muted-foreground underline underline-offset-4"
-        >
-          Browse earlier conversations by project
-        </Link>
+        <p className="px-(--sidebar-row-content-inset) py-2 text-xs">
+          <InlineButton tone="muted" render={<Link to="/projects" />}>
+            Browse earlier conversations by project
+          </InlineButton>
+        </p>
       ) : null}
     </section>
   );

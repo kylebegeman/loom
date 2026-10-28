@@ -25,6 +25,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -42,6 +43,7 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { randomUUID } from "~/lib/utils";
 import { GitHubProjectAccess } from "./GitHubProjectAccess";
 import { GitHubReadiness } from "./GitHubReadiness";
+import { VaultFold } from "./VaultFold";
 import { runVault } from "./state";
 
 const isRepository = Schema.is(VaultGitHubRepository);
@@ -335,12 +337,9 @@ function Manager({
       ) : null}
       {items.filter((info) => info.item.state === "active").map(connection)}
       {archived.length > 0 ? (
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">
-            Disconnected connections ({archived.length})
-          </summary>
-          <div className="mt-3 flex flex-col gap-4">{archived.map(connection)}</div>
-        </details>
+        <VaultFold title={`Disconnected connections (${archived.length})`}>
+          {archived.map(connection)}
+        </VaultFold>
       ) : null}
       {cursor || page?.nextCursor ? (
         <LoomSettingsActions>
@@ -459,9 +458,8 @@ function ConnectionEditor({
         {ownerTrusted ? VAULT_GITHUB_OWNER_REPOSITORY_LIMIT : VAULT_GITHUB_REPOSITORY_LIMIT}{" "}
         repositories before saving.
       </p>
-      <details>
-        <summary className="cursor-pointer text-sm">Advanced connection settings</summary>
-        <div className="mt-3 flex min-w-0 flex-col gap-3">
+      <LoomSettingsDetails title="Advanced connection settings">
+        <div className="flex min-w-0 flex-col gap-3">
           <label htmlFor={`${field}-name`} className="flex flex-col gap-1 text-sm">
             Connection name
             <Input
@@ -522,7 +520,7 @@ function ConnectionEditor({
             issued by GitHub.
           </p>
         </div>
-      </details>
+      </LoomSettingsDetails>
       <LoomSettingsActions>
         <Button type="submit" size="sm-multiline" disabled={disabled}>
           {busy ? "Verifying and saving…" : "Verify and save connection"}
@@ -567,15 +565,14 @@ function Connection({
   const [confirm, setConfirm] = useState<"archive" | "delete" | null>(null);
   const active = info.item.state === "active";
   return (
-    <LoomSettingsPanel title={info.item.label}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="wrap-anywhere font-medium">{info.item.label}</h3>
-          <p className="wrap-anywhere text-sm text-muted-foreground">
-            {info.account} · {info.mechanism === "app" ? "GitHub App" : "Fine-grained token"}
-          </p>
-        </div>
-        <span className="text-sm">{active ? "Connection saved" : "Disconnected"}</span>
+    <LoomSettingsPanel
+      title={info.item.label}
+      description={`${info.account} · ${info.mechanism === "app" ? "GitHub App" : "Fine-grained token"}`}
+    >
+      <div>
+        <Badge variant={active ? "secondary" : "outline"}>
+          {active ? "Connection saved" : "Disconnected"}
+        </Badge>
       </div>
       <div className="flex flex-col gap-1 text-sm">
         <p className="text-muted-foreground">Repositories on this connection</p>
@@ -651,11 +648,8 @@ function Connection({
                   </div>
                 ))}
           </section>
-          <details>
-            <summary className="cursor-pointer text-sm">
-              Connection checks and terminal readiness
-            </summary>
-            <div className="mt-3 flex min-w-0 flex-col gap-3">
+          <VaultFold title="Connection checks and terminal readiness">
+            <div className="flex min-w-0 flex-col gap-3">
               <p className="text-sm text-muted-foreground">
                 {ownerTrusted
                   ? "Saving verifies GitHub API access. Check an active agent thread to verify its terminal access."
@@ -703,7 +697,7 @@ function Connection({
                 ownerMode={ownerTrusted}
               />
             </div>
-          </details>
+          </VaultFold>
           <section
             aria-label={`Connection lifecycle for ${info.item.label}`}
             className="flex flex-col gap-2"

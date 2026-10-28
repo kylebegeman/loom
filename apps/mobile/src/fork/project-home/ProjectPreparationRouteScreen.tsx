@@ -41,6 +41,7 @@ import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { LibraryFolderPicker } from "../library/LibraryFolderPicker";
 import { library } from "../library/libraryState";
+import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { preparationReceiptKey } from "./projectPreparationReceipt";
 import { useProjectPreparationReceipt } from "./useProjectPreparationReceipt";
 import { uuidv4 } from "../../lib/uuid";
@@ -84,6 +85,7 @@ function ProjectPreparationContent(props: {
   readonly initialDestinationEnvironmentId: EnvironmentId | null;
 }) {
   const navigation = useNavigation();
+  const back = useWorkspacePageBack();
   const insets = useSafeAreaInsets();
   const sourceProject = useProject({
     environmentId: props.sourceEnvironmentId,
@@ -411,11 +413,7 @@ function ProjectPreparationContent(props: {
   };
   return (
     <View className="flex-1 bg-screen">
-      <AppBar
-        title="Prepare another computer"
-        onBack={() => navigation.goBack()}
-        backInSplitView={{ accessibilityLabel: "Back to project", icon: "arrow.left" }}
-      />
+      <AppBar title="Prepare another computer" onBack={back} />
       <ScreenScrollView
         className="flex-1"
         contentInsetAdjustmentBehavior="automatic"

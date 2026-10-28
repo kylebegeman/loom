@@ -1,4 +1,9 @@
-import { LoomSettingsActions, LoomSettingsNotice } from "../settings/parts";
+import {
+  LoomSettingsActions,
+  LoomSettingsDetails,
+  LoomSettingsNotice,
+  LoomSettingsPanel,
+} from "../settings/parts";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -82,206 +87,205 @@ function Inbox({ environmentId, canWrite }: { environmentId: EnvironmentId; canW
     setBusy(false);
   };
   return (
-    <section
-      aria-label="Vault approvals"
-      className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-5 sm:p-6"
-    >
-      <h3 className="text-base font-medium">Temporary access requests</h3>
-      <p className="text-sm text-muted-foreground">
-        These requests authorize one thread for 5 or 15 minutes. For ongoing GitHub access,
-        configure projects in GitHub for agents. Approvals do not restart an operation.
-      </p>
-      <div>
-        <Button size="sm-multiline" variant="outline" onClick={refresh} disabled={busy}>
-          Refresh requests
-        </Button>
-      </div>
-      {result._tag === "Initial" ? (
-        <LoomSettingsNotice role="status">Loading requests…</LoomSettingsNotice>
-      ) : null}
-      {busy ? <LoomSettingsNotice role="status">Saving access decision…</LoomSettingsNotice> : null}
-      {error || result._tag === "Failure" ? (
-        <LoomSettingsNotice role="alert">
-          {error ?? (result._tag === "Failure" ? String(Cause.squash(result.cause)) : null)}
-        </LoomSettingsNotice>
-      ) : null}
-      {pending && error ? (
+    <section aria-label="Vault approvals" className="min-w-0">
+      <LoomSettingsPanel
+        title="Temporary access requests"
+        description="These requests authorize one thread for 5 or 15 minutes. For ongoing GitHub access, configure projects in GitHub for agents. Approvals do not restart an operation."
+      >
         <div>
-          <Button
-            size="sm-multiline"
-            onClick={() => void submit(pending)}
-            disabled={busy || !canWrite}
-          >
-            Retry decision
+          <Button size="sm-multiline" variant="outline" onClick={refresh} disabled={busy}>
+            Refresh requests
           </Button>
         </div>
-      ) : null}
-      {data?.retention && filter === "all" ? (
-        <p className="text-sm text-muted-foreground">
-          Requests are retained for 24 hours, up to 128 entries. Automatic resumption and allow-once
-          access remain disabled.
-        </p>
-      ) : null}
-      {data ? (
-        <div className="flex flex-col items-start gap-2">
-          <p role="status" className="text-sm">
-            {review.pendingCount === 0
-              ? "No pending temporary requests."
-              : `${review.pendingCount} pending temporary ${review.pendingCount === 1 ? "request" : "requests"}.`}
-          </p>
-          {review.totalCount > review.pendingCount ? (
+        {result._tag === "Initial" ? (
+          <LoomSettingsNotice role="status">Loading requests…</LoomSettingsNotice>
+        ) : null}
+        {busy ? (
+          <LoomSettingsNotice role="status">Saving access decision…</LoomSettingsNotice>
+        ) : null}
+        {error || result._tag === "Failure" ? (
+          <LoomSettingsNotice role="alert">
+            {error ?? (result._tag === "Failure" ? String(Cause.squash(result.cause)) : null)}
+          </LoomSettingsNotice>
+        ) : null}
+        {pending && error ? (
+          <div>
             <Button
               size="sm-multiline"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
+              onClick={() => void submit(pending)}
+              disabled={busy || !canWrite}
             >
-              {filter === "pending"
-                ? `Show request history (${review.totalCount - review.pendingCount})`
-                : "Hide request history"}
+              Retry decision
             </Button>
-          ) : null}
-          {filter === "pending" && review.pendingCount === 0 && review.totalCount > 0 ? (
-            <p className="text-sm">
-              Previous decisions and cancelled requests are in request history.
+          </div>
+        ) : null}
+        {data?.retention && filter === "all" ? (
+          <p className="text-sm text-muted-foreground">
+            Requests are retained for 24 hours, up to 128 entries. Automatic resumption and
+            allow-once access remain disabled.
+          </p>
+        ) : null}
+        {data ? (
+          <div className="flex flex-col items-start gap-2">
+            <p role="status" className="text-sm">
+              {review.pendingCount === 0
+                ? "No pending temporary requests."
+                : `${review.pendingCount} pending temporary ${review.pendingCount === 1 ? "request" : "requests"}.`}
             </p>
-          ) : null}
-        </div>
-      ) : null}
-      {data && review.totalCount === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Temporary requests appear here when an agent asks for access to a specific operation.
-          Saved project access is managed above.
-        </p>
-      ) : null}
-      {data &&
-        review.requests.map((r) => {
-          const state = vaultApprovalState(r, now);
-          const labels = vaultApprovalReviewLabels(
-            r,
-            data.reviewContext?.find((c) => c.requestId === r.id),
-          );
-          const decide = (
-            decision: VaultApprovalChange["decision"],
-            durationMs: 300000 | 900000 = 300000,
-          ) =>
-            void submit({
-              id: r.id,
-              operationId: randomUUID().replaceAll("-", ""),
-              expectedRevision: r.revision,
-              expectedPolicyRevision: data.policyRevision,
-              decision,
-              durationMs,
-            });
-          return (
-            <article
-              key={r.id}
-              aria-labelledby={`vault-request-${r.id}`}
-              className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3 text-sm leading-relaxed wrap-anywhere sm:p-4"
-            >
-              <h4 id={`vault-request-${r.id}`} className="break-words font-medium">
-                {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
-              </h4>
-              <p className="break-words text-sm">
-                {labels.thread} · {labels.project}
-              </p>
-              {state === "pending" && labels.warning ? (
-                <p role="status" className="text-sm">
-                  {labels.warning}
-                </p>
-              ) : null}
-              <p className="break-words text-sm">
-                {r.destination ?? "Any destination (unrestricted)"}
-              </p>
-              <details>
-                <summary className="cursor-pointer text-sm text-muted-foreground">
-                  Request details
-                </summary>
-                <div className="mt-2 flex flex-col gap-2">
-                  <p className="break-all text-sm">
-                    Thread {r.threadId} · Project {r.projectId}
-                    <br />
-                    Record {r.itemId} · version {r.itemVersion}
-                    <br />
-                    Destination {r.destination ?? "Any destination (unrestricted)"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {vaultApprovalNotificationMessage(
-                      data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
-                      state,
-                    )}
-                  </p>
-                  {r.waitingOperation ? (
-                    <p className="break-all text-sm">
-                      Waiting operation {r.waitingOperation.operationId}
-                      <br />
-                      Run {r.waitingOperation.runId}. Explicit retry and a fresh access check are
-                      required.
-                    </p>
-                  ) : (
-                    <p className="text-sm">No run-bound operation correlation was captured.</p>
-                  )}
-                </div>
-              </details>
+            {review.totalCount > review.pendingCount ? (
+              <Button
+                size="sm-multiline"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setFilter(filter === "pending" ? "all" : "pending")}
+              >
+                {filter === "pending"
+                  ? `Show request history (${review.totalCount - review.pendingCount})`
+                  : "Hide request history"}
+              </Button>
+            ) : null}
+            {filter === "pending" && review.pendingCount === 0 && review.totalCount > 0 ? (
               <p className="text-sm">
-                Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
-                Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
+                Previous decisions and cancelled requests are in request history.
               </p>
-              <LoomSettingsActions>
-                {state === "pending" ? (
-                  <>
-                    <Button
-                      size="sm-multiline"
-                      disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
-                      aria-label={`Approve for 5 minutes: ${labels.accessibleContext}`}
-                      onClick={() => decide("approve")}
-                    >
-                      Approve for 5 minutes
-                    </Button>
-                    <Button
-                      size="sm-multiline"
-                      variant="outline"
-                      disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
-                      aria-label={`Approve for 15 minutes: ${labels.accessibleContext}`}
-                      onClick={() => decide("approve", 900000)}
-                    >
-                      Approve for 15 minutes
-                    </Button>
-                    <Button
-                      size="sm-multiline"
-                      variant="outline"
-                      disabled={!canWrite || busy || pending !== null}
-                      aria-label={`Deny for ${labels.accessibleContext}`}
-                      onClick={() => decide("deny")}
-                    >
-                      Deny
-                    </Button>
-                    <Button
-                      size="sm-multiline"
-                      variant="ghost"
-                      disabled={!canWrite || busy || pending !== null}
-                      aria-label={`Cancel request for ${labels.accessibleContext}`}
-                      onClick={() => decide("cancel")}
-                    >
-                      Cancel request
-                    </Button>
-                  </>
-                ) : null}
-                {r.grantId && (state === "approved" || state === "expired") ? (
-                  <Button
-                    size="sm-multiline"
-                    variant="outline"
-                    disabled={!canWrite || busy || pending !== null}
-                    aria-label={`Revoke approval for ${labels.accessibleContext}`}
-                    onClick={() => decide("revoke")}
-                  >
-                    Revoke approval
-                  </Button>
-                ) : null}
-              </LoomSettingsActions>
-            </article>
-          );
-        })}
+            ) : null}
+          </div>
+        ) : null}
+        {data && review.totalCount === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Temporary requests appear here when an agent asks for access to a specific operation.
+            Saved project access is managed above.
+          </p>
+        ) : null}
+        {data && review.requests.length > 0 ? (
+          <div className="flex min-w-0 flex-col divide-y divide-border/60">
+            {review.requests.map((r) => {
+              const state = vaultApprovalState(r, now);
+              const labels = vaultApprovalReviewLabels(
+                r,
+                data.reviewContext?.find((c) => c.requestId === r.id),
+              );
+              const decide = (
+                decision: VaultApprovalChange["decision"],
+                durationMs: 300000 | 900000 = 300000,
+              ) =>
+                void submit({
+                  id: r.id,
+                  operationId: randomUUID().replaceAll("-", ""),
+                  expectedRevision: r.revision,
+                  expectedPolicyRevision: data.policyRevision,
+                  decision,
+                  durationMs,
+                });
+              return (
+                <article
+                  key={r.id}
+                  aria-labelledby={`vault-request-${r.id}`}
+                  className="flex min-w-0 flex-col gap-4 py-4 text-sm leading-relaxed wrap-anywhere first:pt-0 last:pb-0"
+                >
+                  <h4 id={`vault-request-${r.id}`} className="break-words text-sm font-medium">
+                    {labels.item} · {VAULT_ACTION_LABELS[r.action]} · {state}
+                  </h4>
+                  <p className="break-words text-sm">
+                    {labels.thread} · {labels.project}
+                  </p>
+                  {state === "pending" && labels.warning ? (
+                    <p role="status" className="text-sm">
+                      {labels.warning}
+                    </p>
+                  ) : null}
+                  <p className="break-words text-sm">
+                    {r.destination ?? "Any destination (unrestricted)"}
+                  </p>
+                  <LoomSettingsDetails title="Request details">
+                    <div className="flex flex-col gap-2">
+                      <p className="break-all text-sm">
+                        Thread {r.threadId} · Project {r.projectId}
+                        <br />
+                        Record {r.itemId} · version {r.itemVersion}
+                        <br />
+                        Destination {r.destination ?? "Any destination (unrestricted)"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {vaultApprovalNotificationMessage(
+                          data.notificationOutcomes?.find((outcome) => outcome.requestId === r.id),
+                          state,
+                        )}
+                      </p>
+                      {r.waitingOperation ? (
+                        <p className="break-all text-sm">
+                          Waiting operation {r.waitingOperation.operationId}
+                          <br />
+                          Run {r.waitingOperation.runId}. Explicit retry and a fresh access check
+                          are required.
+                        </p>
+                      ) : (
+                        <p className="text-sm">No run-bound operation correlation was captured.</p>
+                      )}
+                    </div>
+                  </LoomSettingsDetails>
+                  <p className="text-sm">
+                    Requested by {r.requestedBy}. {r.decidedBy ? `Decided by ${r.decidedBy}.` : ""}{" "}
+                    Expires {new Date(r.approvedUntil ?? r.requestExpiresAt).toLocaleString()}.
+                  </p>
+                  <LoomSettingsActions>
+                    {state === "pending" ? (
+                      <>
+                        <Button
+                          size="sm-multiline"
+                          disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
+                          aria-label={`Approve for 5 minutes: ${labels.accessibleContext}`}
+                          onClick={() => decide("approve")}
+                        >
+                          Approve for 5 minutes
+                        </Button>
+                        <Button
+                          size="sm-multiline"
+                          variant="outline"
+                          disabled={!canWrite || busy || pending !== null || labels.approvalBlocked}
+                          aria-label={`Approve for 15 minutes: ${labels.accessibleContext}`}
+                          onClick={() => decide("approve", 900000)}
+                        >
+                          Approve for 15 minutes
+                        </Button>
+                        <Button
+                          size="sm-multiline"
+                          variant="outline"
+                          disabled={!canWrite || busy || pending !== null}
+                          aria-label={`Deny for ${labels.accessibleContext}`}
+                          onClick={() => decide("deny")}
+                        >
+                          Deny
+                        </Button>
+                        <Button
+                          size="sm-multiline"
+                          variant="ghost"
+                          disabled={!canWrite || busy || pending !== null}
+                          aria-label={`Cancel request for ${labels.accessibleContext}`}
+                          onClick={() => decide("cancel")}
+                        >
+                          Cancel request
+                        </Button>
+                      </>
+                    ) : null}
+                    {r.grantId && (state === "approved" || state === "expired") ? (
+                      <Button
+                        size="sm-multiline"
+                        variant="outline"
+                        disabled={!canWrite || busy || pending !== null}
+                        aria-label={`Revoke approval for ${labels.accessibleContext}`}
+                        onClick={() => decide("revoke")}
+                      >
+                        Revoke approval
+                      </Button>
+                    ) : null}
+                  </LoomSettingsActions>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+      </LoomSettingsPanel>
     </section>
   );
 }

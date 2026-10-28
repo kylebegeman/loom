@@ -22,7 +22,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
-import { LibraryEmpty } from "../project-library/LibraryControls";
+import { LIBRARY_OUTLINE, LibraryEmpty } from "../project-library/LibraryControls";
 import { SITE_PREVIEW_SANDBOX, siteFrameUrl } from "./framing";
 import { SiteMark, siteHost, sitePath } from "./SiteHealth";
 
@@ -205,7 +205,7 @@ export function SitePreview({
     <div className="flex min-w-0 flex-col gap-2.5">
       <section
         aria-label={`Live preview of ${host}`}
-        className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-border"
+        className={cn(LIBRARY_OUTLINE, "flex min-w-0 flex-col overflow-hidden")}
       >
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-2">
           <Button

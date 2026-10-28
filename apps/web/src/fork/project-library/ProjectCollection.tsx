@@ -41,7 +41,7 @@ import {
   ProjectTile,
   projectColorStyle,
 } from "./ProjectIdentity";
-import { LibraryStateBadge } from "./LibraryControls";
+import { LIBRARY_SURFACE, LibraryStateBadge } from "./LibraryControls";
 import { projectLibrary, useLibraryPermission } from "./state";
 import { TidyChip } from "./TidyProjectDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
@@ -90,7 +90,7 @@ function ProjectCard({
   return (
     <li
       style={projectColorStyle(entry.color)}
-      className="group/card relative isolate flex min-h-44 flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5 has-focus-visible:border-(--project-color)/35"
+      className="group/card relative isolate flex min-h-44 flex-col gap-3 rounded-xl border border-border/60 bg-card/40 p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5 has-focus-visible:border-(--project-color)/35"
     >
       <ProjectWash />
       <ProjectOpenLink entry={entry} onOpen={onOpen} />
@@ -215,7 +215,7 @@ export function ProjectCompactCards(props: CollectionProps) {
         <li
           key={entry.project.id}
           style={projectColorStyle(entry.color)}
-          className="group/card relative isolate flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card py-2 ps-2.5 pe-2 transition-[border-color] duration-200 hover:border-(--project-color)/35 has-focus-visible:border-(--project-color)/35"
+          className="group/card relative isolate flex min-w-0 items-center gap-2.5 rounded-xl border border-border/60 bg-card/40 py-2 ps-2.5 pe-2 transition-[border-color] duration-200 hover:border-(--project-color)/35 has-focus-visible:border-(--project-color)/35"
         >
           <ProjectWash />
           <ProjectOpenLink entry={entry} onOpen={props.onOpen} />
@@ -260,7 +260,7 @@ export function ProjectWash() {
 
 export function ProjectRows(props: CollectionProps) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card">
+    <div className={cn("overflow-hidden", LIBRARY_SURFACE)}>
       <div
         aria-hidden
         className={cn(
@@ -542,7 +542,7 @@ export function ProjectCollectionSkeleton({ view }: { readonly view: "cards" | "
       {Array.from({ length: 6 }, (_, index) => (
         <div
           key={index}
-          className="flex min-h-44 flex-col gap-3 rounded-xl border border-border p-3.5"
+          className="flex min-h-44 flex-col gap-3 rounded-xl border border-border/60 p-3.5"
         >
           <div className="flex items-center gap-3">
             <Skeleton shape="card" className="size-11" />
@@ -563,7 +563,7 @@ export function ProjectCollectionSkeleton({ view }: { readonly view: "cards" | "
     <div
       role="status"
       aria-label="Loading projects"
-      className="divide-y divide-border rounded-xl border border-border"
+      className="divide-y divide-border/50 rounded-xl border border-border/60"
     >
       {Array.from({ length: 5 }, (_, index) => (
         <div key={index} className="flex items-center gap-3 px-3.5 py-2.5">

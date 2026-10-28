@@ -40,7 +40,6 @@ function Tool({
 }) {
   return (
     <SettingsRow
-      className="px-0 sm:px-0"
       title={name}
       description={
         <span className="wrap-anywhere">
@@ -87,10 +86,9 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
     <LoomSettingsContent className="flex flex-col gap-5">
       <LoomSettingsPanel
         title="Preview behavior"
-        description="Preferences apply immediately on this device."
+        description="These preferences stay on this device."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="When an agent changes a design"
           description="Offer changed designs or open them in the PCB panel. Saved on this device."
           control={
@@ -115,7 +113,6 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
           }
         />
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Length units"
           description="Drawing coordinates, marks and board sizes. Saved on this device. Agents always use millimetres."
           control={
@@ -145,7 +142,6 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
         description="Save an optional electronics app link for this device."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Electronics app URL"
           description="Optional deep link for opening designs. Saved on this device."
         >

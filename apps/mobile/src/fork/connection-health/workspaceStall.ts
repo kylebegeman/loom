@@ -6,8 +6,14 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { useEffect, useState } from "react";
 
-import type { WorkspaceConnectionStatusPresentation } from "../../features/home/workspace-connection-status";
 import type { WorkspaceEnvironment, WorkspaceState } from "../../state/workspaceModel";
+
+// The status presentation's shape, spelled here because that module imports this one.
+interface StalledWorkspaceStatus {
+  readonly label: string;
+  readonly accessibilityLabel?: string;
+  readonly showsProgress: false;
+}
 
 const failing = (environment: WorkspaceEnvironment) => ({
   phase: environment.connectionState,
@@ -35,7 +41,7 @@ export function stalledWorkspaceStatus(
   state: WorkspaceState,
   now: number,
   compact: boolean,
-): WorkspaceConnectionStatusPresentation | null {
+): StalledWorkspaceStatus | null {
   const connecting = state.connectingEnvironments;
   if (
     state.networkStatus === "offline" ||

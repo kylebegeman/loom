@@ -67,6 +67,7 @@ import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
 import {
   LIBRARY_ROW,
+  LIBRARY_SURFACE,
   LibraryErrorNotice,
   LibraryFilterChip,
   LibraryGroupHeading,
@@ -316,7 +317,7 @@ export function LibraryProjectsPage() {
         />
       ) : null}
       {!catalog.authorityId ? (
-        <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
+        <section className={cn("space-y-4 p-5", LIBRARY_SURFACE)}>
           <LibrarySetup />
           <p className="max-w-xl text-xs text-muted-foreground">
             Your existing threads and folders stay available while you connect the shared Library.
@@ -441,85 +442,77 @@ export function LibraryProjectsPage() {
               })}
             </div>
           ) : catalog.query.error ? null : narrowed ? (
-            <div className="rounded-xl border border-dashed border-border">
-              <Empty size="compact">
-                <EmptyHeader>
-                  <EmptyTitle>No {showArchived ? "archived " : ""}projects match</EmptyTitle>
-                  <EmptyDescription>
-                    Search looks at names, briefs, repositories, folders and computers
-                    {searchesHistory && query.trim() ? ". Conversation matches appear below." : "."}
-                  </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent className="flex-row justify-center">
-                  {otherMatches ? (
-                    <Button
-                      shape="pill"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setShowArchived(!showArchived)}
-                    >
-                      Show {otherMatches} {showArchived ? "current" : "archived"}
-                    </Button>
-                  ) : null}
-                  <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                </EmptyContent>
-              </Empty>
-            </div>
-          ) : showArchived ? (
-            <div className="rounded-xl border border-dashed border-border">
-              <Empty size="compact">
-                <EmptyHeader>
-                  <EmptyTitle>No archived projects</EmptyTitle>
-                  <EmptyDescription>
-                    Archiving keeps a project’s context and conversations. Restore it whenever you
-                    need it.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </div>
-          ) : archivedCount ? (
-            <div className="rounded-xl border border-dashed border-border">
-              <Empty size="compact">
-                <EmptyHeader>
-                  <EmptyTitle>Everything is archived</EmptyTitle>
-                  <EmptyDescription>
-                    Open Archived to restore a project, or start something new.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-border">
-              <Empty>
-                <EmptyHeader>
-                  <EmptyMedia>
-                    <StarterTiles />
-                  </EmptyMedia>
-                  <EmptyTitle>Bring your work together</EmptyTitle>
-                  <EmptyDescription>
-                    A project holds a brief, its repositories and every conversation about it. Give
-                    each one a color so it’s easy to spot, then choose a computer when you start
-                    working.
-                  </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent className="flex-row justify-center">
-                  <Button shape="pill" onClick={createProject} disabled={!createAvailable}>
-                    <PlusIcon />
-                    Create your first project
-                  </Button>
+            <Empty size="compact">
+              <EmptyHeader>
+                <EmptyTitle>No {showArchived ? "archived " : ""}projects match</EmptyTitle>
+                <EmptyDescription>
+                  Search looks at names, briefs, repositories, folders and computers
+                  {searchesHistory && query.trim() ? ". Conversation matches appear below." : "."}
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent className="flex-row justify-center">
+                {otherMatches ? (
                   <Button
                     shape="pill"
-                    variant="outline"
-                    disabled={!importAvailable}
-                    onClick={() => setImporting({})}
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowArchived(!showArchived)}
                   >
-                    Add existing folder
+                    Show {otherMatches} {showArchived ? "current" : "archived"}
                   </Button>
-                </EmptyContent>
-              </Empty>
-            </div>
+                ) : null}
+                <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : showArchived ? (
+            <Empty size="compact">
+              <EmptyHeader>
+                <EmptyTitle>No archived projects</EmptyTitle>
+                <EmptyDescription>
+                  Archiving keeps a project’s context and conversations. Restore it whenever you
+                  need it.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : archivedCount ? (
+            <Empty size="compact">
+              <EmptyHeader>
+                <EmptyTitle>Everything is archived</EmptyTitle>
+                <EmptyDescription>
+                  Open Archived to restore a project, or start something new.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia>
+                  <StarterTiles />
+                </EmptyMedia>
+                <EmptyTitle>Bring your work together</EmptyTitle>
+                <EmptyDescription>
+                  A project holds a brief, its repositories and every conversation about it. Give
+                  each one a color so it’s easy to spot, then choose a computer when you start
+                  working.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent className="flex-row justify-center">
+                <Button shape="pill" onClick={createProject} disabled={!createAvailable}>
+                  <PlusIcon />
+                  Create your first project
+                </Button>
+                <Button
+                  shape="pill"
+                  variant="outline"
+                  disabled={!importAvailable}
+                  onClick={() => setImporting({})}
+                >
+                  Add existing folder
+                </Button>
+              </EmptyContent>
+            </Empty>
           )}
           <LibraryHistorySearch
             authorityId={catalog.authorityId}

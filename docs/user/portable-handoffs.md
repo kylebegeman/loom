@@ -49,8 +49,8 @@ native context can differ, so the provider may still reject an input.
 
 In Loom, use **Move work** from a thread's menu or the command palette.
 Choose the destination computer and a project for the same repository. If it has no matching
-project yet, use **Prepare project** from Move work, or **Prepare on another computer** in
-Project home, to review the source origin and destination folder and create its working copy.
+project yet, use **Prepare project** from Move work, or **Prepare on another computer** in the
+project's settings, to review the source origin and destination folder and create its working copy.
 You do not need to add the project separately. Preparing a copy does not move the conversation.
 
 Connect both computers before continuing. If one is still trying to connect, Move work offers

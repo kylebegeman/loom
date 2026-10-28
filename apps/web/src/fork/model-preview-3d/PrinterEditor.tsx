@@ -255,7 +255,7 @@ export function PrinterEditor({
               {printer.zones.map((zone, index) => (
                 <div
                   key={zone.id}
-                  className="flex min-w-0 flex-col gap-4 rounded-md border border-border p-3"
+                  className="flex min-w-0 flex-col gap-4 rounded-lg border border-border/60 p-3"
                 >
                   <label className="flex min-w-0 flex-col gap-2 text-sm">
                     Zone name

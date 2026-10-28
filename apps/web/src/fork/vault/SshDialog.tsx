@@ -333,13 +333,10 @@ function SshDetails({
       <div className="flex flex-col gap-1">
         <h3 className="break-words text-sm font-medium">{info.item.label}</h3>
         <p className="break-all text-sm">{info.destination}</p>
-        {info.item.state !== "active" ? (
-          <p className="text-xs text-muted-foreground">Archived</p>
-        ) : null}
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">Record details</summary>
-          <p className="mt-1">Version {info.item.version}</p>
-        </details>
+        <p className="text-xs text-muted-foreground">
+          Version {info.item.version}
+          {info.item.state !== "active" ? " · Archived" : ""}
+        </p>
       </div>
       {failure(result) ? (
         <LoomSettingsNotice role="alert">{failure(result)}</LoomSettingsNotice>

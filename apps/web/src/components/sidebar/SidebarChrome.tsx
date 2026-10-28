@@ -204,8 +204,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/usage" });
   };
 
-  // fork: bots
-  if (/^\/(?:settings|pull-requests|usage)(?:\/|$)/.test(pathname))
+  // fork: bots -- Projects, Sites and Bots keep the destination row; Settings and Usage are modals.
+  if (/^\/pull-requests(?:\/|$)/.test(pathname))
     return (
       <SidebarMenu className="flex-row items-center">
         <SidebarMenuItem className="min-w-0 flex-1">

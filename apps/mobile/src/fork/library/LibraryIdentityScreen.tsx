@@ -12,7 +12,7 @@ import { connectionAtomRuntime } from "../../connection/runtime";
 import { openSettings } from "../../features/settings/settings-navigation";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import { identityAddressNeedsCheck } from "./libraryIdentity";
 import { useLibraryAuthority } from "./libraryState";
 import {

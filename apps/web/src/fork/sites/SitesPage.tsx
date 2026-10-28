@@ -45,14 +45,8 @@ import {
   SlidersHorizontalIcon,
   WrenchIcon,
 } from "lucide-react";
-import { Button } from "~/components/ui/button";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "~/components/ui/empty";
+import { Badge } from "~/components/ui/badge";
+import { Button, InlineButton } from "~/components/ui/button";
 import {
   Menu,
   MenuCheckboxItem,
@@ -742,36 +736,37 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
       offlineNotice={OFFLINE_NOTICE}
       style={projectColorStyle(SITES_COLOR)}
     >
-      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
-        <div className="min-w-0 space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Sites</h1>
-          <div className="flex max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
-            {snapshot && status ? (
-              <>
-                <LibraryStateBadge tone={status.tone}>{status.label}</LibraryStateBadge>
-                <span>
-                  {plural(snapshot.sites.length, "site")} · {plural(status.watched, "check")} on{" "}
-                  {plural(snapshot.services.length, "service")}
-                </span>
-                {snapshot.checks.length ? (
-                  <TickStrip
-                    label={`${status.passing} of ${status.watched} checks passing`}
-                    ticks={orderChecksForAttention(snapshot.checks, snapshot.staleAfterSeconds, now)
-                      .slice(0, MAX_HEADER_TICKS)
-                      .map((check) => ({
-                        key: check.id,
-                        tone: SITE_CHECK_STATES[
-                          siteCheckState(check, snapshot.staleAfterSeconds, now)
-                        ].tone,
-                      }))}
-                  />
-                ) : null}
-                {updated}
-              </>
-            ) : (
-              "Your websites, whether they are up, and the visits they receive."
-            )}
-          </div>
+      {/* The frame's header names the page, so the heading here is for assistive tech only. */}
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="sr-only">Sites</h1>
+        <div className="flex min-w-0 max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
+          {snapshot && status ? (
+            <>
+              <LibraryStateBadge tone={status.tone}>{status.label}</LibraryStateBadge>
+              <span>
+                {plural(snapshot.sites.length, "site")} · {plural(status.watched, "check")} on{" "}
+                {plural(snapshot.services.length, "service")}
+              </span>
+              {snapshot.checks.length ? (
+                <TickStrip
+                  label={`${status.passing} of ${status.watched} checks passing`}
+                  ticks={orderChecksForAttention(snapshot.checks, snapshot.staleAfterSeconds, now)
+                    .slice(0, MAX_HEADER_TICKS)
+                    .map((check) => ({
+                      key: check.id,
+                      tone: SITE_CHECK_STATES[
+                        siteCheckState(check, snapshot.staleAfterSeconds, now)
+                      ].tone,
+                    }))}
+                />
+              ) : null}
+              {updated}
+            </>
+          ) : (
+            <p className="text-sm">
+              Your websites, whether they are up, and the visits they receive.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <ActionHint hint={manageReason}>
@@ -1013,15 +1008,18 @@ function AttentionStrip({ items }: { readonly items: readonly SitesAttentionItem
       <ul aria-label="Needs attention" className="flex min-w-0 flex-wrap gap-x-5 gap-y-1">
         {shown.map((item) => (
           <li key={item.key} className="min-w-0 max-w-full">
-            <Link
-              to="/sites"
-              search={item.search}
-              className="inline-flex max-w-full min-w-0 items-center gap-2 rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            <InlineButton
+              className="min-w-0 max-w-full"
+              render={<Link to="/sites" search={item.search} />}
             >
-              <LibraryStateDot tone={item.tone} />
-              <span className="shrink-0 font-medium text-foreground">{item.title}</span>
-              <span className="min-w-0 truncate text-muted-foreground">{item.detail}</span>
-            </Link>
+              <span className="flex min-w-0 items-center gap-2">
+                <LibraryStateDot tone={item.tone} />
+                <span className="shrink-0">{item.title}</span>
+                <span className="min-w-0 truncate font-normal text-muted-foreground">
+                  {item.detail}
+                </span>
+              </span>
+            </InlineButton>
           </li>
         ))}
       </ul>
@@ -1151,11 +1149,7 @@ function FilterMenu({
       <MenuTrigger render={<Button shape="pill" size="sm" variant="outline" />}>
         <ListFilterIcon />
         Filters
-        {active ? (
-          <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground">
-            {active}
-          </span>
-        ) : null}
+        {active ? <Badge variant="secondary">{active}</Badge> : null}
       </MenuTrigger>
       <MenuPopup side="bottom" align="start">
         <MenuGroup>
@@ -1319,21 +1313,17 @@ function SitesCollection({
   );
   if (!shown.length) {
     return (
-      <div className="rounded-xl border border-dashed border-border">
-        <Empty size="compact">
-          <EmptyHeader>
-            <EmptyTitle>No sites match</EmptyTitle>
-            <EmptyDescription>
-              Search looks at names, addresses, IDs and the projects each site serves.
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button shape="pill" size="sm" variant="outline" onClick={onClearFilters}>
-              Clear filters
-            </Button>
-          </EmptyContent>
-        </Empty>
-      </div>
+      <LibraryEmpty
+        icon={ListFilterIcon}
+        title="No sites match"
+        action={
+          <Button shape="pill" size="sm" variant="outline" onClick={onClearFilters}>
+            Clear filters
+          </Button>
+        }
+      >
+        Search looks at names, addresses, IDs and the projects each site serves.
+      </LibraryEmpty>
     );
   }
   return preferences.view === "list" ? (
@@ -1690,25 +1680,19 @@ function ServicesView({
   }
   if (!services.length) {
     return (
-      <div className="rounded-xl border border-dashed border-border">
-        <Empty size="compact">
-          <EmptyHeader>
-            <EmptyTitle>
-              {filter === "failing" ? "Nothing is failing" : "No paused services"}
-            </EmptyTitle>
-            <EmptyDescription>
-              {filter === "failing"
-                ? "Every watched service answered as expected on its last check."
-                : "Every service is watched. Pause one from its menu to stop its checks."}
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button shape="pill" size="sm" variant="outline" onClick={() => onFilter("all")}>
-              Show all services
-            </Button>
-          </EmptyContent>
-        </Empty>
-      </div>
+      <LibraryEmpty
+        icon={ServerIcon}
+        title={filter === "failing" ? "Nothing is failing" : "No paused services"}
+        action={
+          <Button shape="pill" size="sm" variant="outline" onClick={() => onFilter("all")}>
+            Show all services
+          </Button>
+        }
+      >
+        {filter === "failing"
+          ? "Every watched service answered as expected on its last check."
+          : "Every service is watched. Pause one from its menu to stop its checks."}
+      </LibraryEmpty>
     );
   }
   return (
@@ -1744,7 +1728,10 @@ function SitesSkeleton({ view }: { readonly view: "cards" | "list" }) {
       {view === "cards" ? (
         <div className={LIBRARY_CARD_GRID}>
           {SKELETON_KEYS.map((key) => (
-            <div key={key} className="overflow-hidden rounded-xl border border-border">
+            <div
+              key={key}
+              className="overflow-hidden rounded-xl border border-border/60 bg-card/40"
+            >
               <Skeleton className="aspect-16/10 w-full" />
               <div className="flex flex-col gap-2.5 p-3.5">
                 <div className="flex flex-col gap-1.5">

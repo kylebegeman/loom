@@ -46,9 +46,9 @@ export function LibraryTabs<V extends string>({
         <div className="-mx-1 min-w-0 max-w-full overflow-x-auto px-1 py-0.5 [scrollbar-width:none]">
           <Tabs.List
             aria-label={label}
-            className="relative isolate flex w-fit items-center gap-0.5 rounded-full bg-muted p-1 dark:bg-accent"
+            className="relative isolate flex w-fit items-center gap-0.5 rounded-full bg-input/40 p-1"
           >
-            <Tabs.Indicator className="absolute top-1/2 left-0 -z-10 h-(--active-tab-height) w-(--active-tab-width) -translate-y-1/2 translate-x-(--active-tab-left) overflow-hidden rounded-full bg-card shadow-sm ring-1 ring-border transition-[translate,width] duration-300 ease-drawer motion-reduce:transition-none">
+            <Tabs.Indicator className="absolute top-1/2 left-0 -z-10 h-(--active-tab-height) w-(--active-tab-width) -translate-y-1/2 translate-x-(--active-tab-left) overflow-hidden rounded-full bg-background shadow-xs/10 transition-[translate,width] duration-300 ease-drawer motion-reduce:transition-none dark:bg-input/72">
               <span aria-hidden className="absolute inset-0 bg-(--project-color)/10" />
             </Tabs.Indicator>
             {tabs.map(({ value, label: tabLabel, icon: Icon, count, urgent }) => (
@@ -64,7 +64,7 @@ export function LibraryTabs<V extends string>({
                 {tabLabel}
                 {count ? (
                   urgent ? (
-                    <span className="inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-warning/16 px-1.5 text-2xs font-semibold tabular-nums text-warning-foreground">
+                    <span className="inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-warning/8 px-1.5 text-2xs font-semibold tabular-nums text-warning-foreground dark:bg-warning/16">
                       {count}
                     </span>
                   ) : (

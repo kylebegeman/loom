@@ -383,7 +383,7 @@ vi.mock("../../features/settings/components/SettingsSwitchRow", () => ({
     </button>
   ),
 }));
-vi.mock("./LibraryScreens", () => ({
+vi.mock("./LibraryPage", () => ({
   LibraryPage: ({ children }: { children: ReactNode }) => <main>{children}</main>,
   LibraryAuthorityScreen: () => null,
   LibraryNotice: ({

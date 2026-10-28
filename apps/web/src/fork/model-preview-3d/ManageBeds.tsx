@@ -81,7 +81,7 @@ export function ManageBeds({
             return (
               <div
                 key={bed.id}
-                className="flex min-w-0 flex-col gap-3 rounded-md border border-border p-3"
+                className="flex min-w-0 flex-col gap-3 rounded-lg border border-border/60 p-3"
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1 basis-32">

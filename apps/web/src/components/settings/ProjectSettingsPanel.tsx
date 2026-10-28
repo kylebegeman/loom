@@ -32,6 +32,7 @@ import { useThreadShells, waitForProjectRemoval } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { BrowseProjectsButton } from "../../fork/project-home/BrowseProjectsButton"; // fork: project-home
+import { PrepareOnAnotherComputerButton } from "../../fork/project-home/PrepareOnAnotherComputerButton"; // fork: project-home
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -571,7 +572,10 @@ function ProjectDetail({
           />
         </SettingsSection>
         {/* fork: project-home */}
-        <SettingsSection title="Folder locations">
+        <SettingsSection
+          title="Folder locations"
+          headerAction={<PrepareOnAnotherComputerButton projects={group.memberProjects} />}
+        >
           {group.memberProjects.map((member) => (
             <SettingsRow
               key={`${member.environmentId}:${member.id}`}

@@ -69,6 +69,14 @@ import {
 const usesBotList = (route: BotsRoute) =>
   route.kind === "index" || route.kind === "bot" || route.kind === "editBot";
 
+/** These open on a hero that carries the page's h1; the rest take it from the breadcrumb. */
+const HERO_ROUTES: ReadonlySet<BotsRoute["kind"]> = new Set([
+  "bot",
+  "pipeline",
+  "pipelineRun",
+  "batch",
+]);
+
 function routeTitle(
   route: BotsRoute,
   botName: string | undefined,
@@ -76,14 +84,17 @@ function routeTitle(
 ): string | undefined {
   switch (route.kind) {
     case "fromThread":
+      return "New bot from a thread";
     case "newBot":
       return "New bot";
     case "editBot":
+      return botName === undefined ? undefined : `Edit ${botName}`;
     case "bot":
       return botName;
     case "newPipeline":
       return "New pipeline";
     case "editPipeline":
+      return pipelineName === undefined ? "Edit pipeline" : `Edit ${pipelineName}`;
     case "pipeline":
       return pipelineName ?? "Pipeline";
     case "pipelineRun":
@@ -187,6 +198,7 @@ export function BotsPage() {
     <LibraryPageFrame
       section={{ label: "Bots", to: "/loom/bots" }}
       libraryStatus={false}
+      heading={!HERO_ROUTES.has(route.kind)}
       style={projectColorStyle(selected ? botColor(selected) : BOTS_COLOR)}
       {...(title ? { title } : {})}
     >
@@ -393,16 +405,13 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
 
   return (
     <>
-      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-4">
-        <div className="min-w-0 space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Bots</h1>
-          <div className="flex min-h-5 max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-            {host.budgetsSupported && allBots.length ? (
-              <BotsUsageClause days={days} />
-            ) : (
-              "Reusable jobs with a fixed brief. Every run starts from the same instructions, inputs and settings."
-            )}
-          </div>
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-4">
+        <div className="flex min-h-5 max-w-2xl min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          {host.budgetsSupported && allBots.length ? (
+            <BotsUsageClause days={days} />
+          ) : (
+            "Reusable jobs with a fixed brief. Every run starts from the same instructions, inputs and settings."
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <ComputersButton />
@@ -505,11 +514,8 @@ function RouteSkeleton({ route }: { readonly route: BotsRoute }) {
   if (route.kind === "index")
     return (
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="space-y-2.5">
-            <Skeleton className="h-7 w-24" />
-            <Skeleton className="h-3.5 w-72 max-w-full" />
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Skeleton className="h-3.5 w-72 max-w-full" />
           <Skeleton shape="pill" className="h-8 w-24" />
         </div>
         <IndexSkeleton tab="bots" view={preferences.view} />
@@ -518,9 +524,9 @@ function RouteSkeleton({ route }: { readonly route: BotsRoute }) {
   if (route.kind === "bot") return <BotPageSkeleton />;
   return (
     <div role="status" aria-label="Loading" className="flex flex-col gap-6">
-      <div className="space-y-2.5">
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-7 w-64 max-w-full" />
+      <div className="flex items-center gap-3">
+        <Skeleton shape="card" className="size-8" />
+        <Skeleton className="h-3.5 w-64 max-w-full" />
       </div>
       <Skeleton shape="card" className="h-64 w-full" />
     </div>

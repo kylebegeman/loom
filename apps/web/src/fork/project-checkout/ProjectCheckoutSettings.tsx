@@ -61,7 +61,16 @@ export function ProjectCheckoutSettings({ projects }: { projects: ReadonlyArray<
       id="project-checkout-storage"
       title="Working files"
       headerAction={
-        <Button size="xs" variant="link" render={<Link to="/projects/storage" />}>
+        <Button
+          size="xs"
+          variant="link"
+          render={
+            <Link
+              to="/settings/project-files"
+              search={{ project: undefined, machine: undefined, checkout: undefined }}
+            />
+          }
+        >
           Review all working files
         </Button>
       }

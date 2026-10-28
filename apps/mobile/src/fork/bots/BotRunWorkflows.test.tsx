@@ -119,6 +119,7 @@ vi.mock("../../state/query", () => ({
   }),
 }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
     <button onClick={onPress}>{children}</button>

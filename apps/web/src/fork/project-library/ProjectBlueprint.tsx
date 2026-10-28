@@ -16,10 +16,10 @@ import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { randomUUID } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { projectLibrary, useLibraryPermission } from "./state";
-import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import { LIBRARY_SURFACE, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 
 const codec = Schema.fromJsonString(LibraryBlueprint);
 const decodeBlueprint = Schema.decodeOption(codec);
@@ -139,7 +139,7 @@ export function ProjectBlueprint({
           </p>
         ) : null
       ) : (
-        <div className="flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
+        <div className={cn("flex min-w-0 flex-col gap-4 p-4 sm:p-5", LIBRARY_SURFACE)}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">Review before applying</p>
             <input

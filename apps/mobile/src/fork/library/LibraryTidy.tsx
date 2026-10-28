@@ -40,7 +40,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryPage";
 import {
   library,
   refreshLibraryProject,

@@ -96,7 +96,7 @@ import { threadEnvironment } from "../../state/threads";
 import { vcsEnvironment } from "../../state/vcs";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
-import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryPage";
 import { library, refreshLibraryWork, useLibraryAuthority } from "./libraryState";
 import { libraryListState, libraryRepositories } from "./libraryLogic";
 import {

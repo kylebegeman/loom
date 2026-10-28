@@ -20,6 +20,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { cn } from "../../lib/cn";
@@ -31,7 +32,7 @@ import { SiteServiceGroup, SiteStateDot, ago } from "./SiteHealth";
 import { SiteTrafficSkeleton } from "./SiteTraffic";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentServerConfig } from "../../state/entities";
-import { LibraryNotice, LibraryPage } from "../library/LibraryScreens";
+import { LibraryNotice, LibraryPage } from "../library/LibraryPage";
 import { useLibraryProjectColorValue } from "../library/libraryProjectColors";
 import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { library, useLibraryAuthority } from "../library/libraryState";
@@ -132,7 +133,6 @@ function SitesScreen({
   return (
     <LibraryPage
       title="Sites"
-      back={navigation.canGoBack()}
       actions={[
         {
           icon: "arrow.clockwise",
@@ -358,8 +358,8 @@ function SiteSwitcher({
       showsHorizontalScrollIndicator={false}
       accessibilityLabel="Registered sites"
       className="grow-0"
-      style={{ marginHorizontal: -16 }}
-      contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
+      style={{ marginHorizontal: -20 }}
+      contentContainerStyle={{ gap: 8, paddingHorizontal: 20 }}
     >
       {snapshot.sites.map((site) => {
         const health = SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state];
@@ -425,61 +425,66 @@ function ServicesRegistry({
     );
   }
   return (
-    <View className="gap-3">
-      <Text className="text-sm text-foreground-muted">
-        Services can back several sites. Register one here, then link it from each site that uses
-        it.
-      </Text>
-      <Button
-        label="Register service"
-        icon="plus"
-        disabled={!canManage}
-        onPress={() => onEdit({ kind: "service" })}
-      />
-      {snapshot.services.map((service) => {
-        const users = snapshot.sites.filter((site) => site.serviceIds.includes(service.id));
-        return (
-          <SiteServiceGroup
-            key={service.id}
-            service={service}
-            checks={snapshot.checks.filter((check) => check.service_id === service.id)}
-            staleAfterSeconds={snapshot.staleAfterSeconds}
-            now={now}
-            canManage={canManage}
-            usedBy={
-              users.length ? (
-                <View className="flex-row flex-wrap items-center gap-1.5">
-                  <Text className="text-xs text-foreground-muted">Used by</Text>
-                  {users.map((site) => (
-                    <Pressable
-                      key={site.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open site ${site.name}`}
-                      onPress={() => onOpenSite(site.id)}
-                      className="min-h-8 flex-row items-center gap-1.5 rounded-full border border-border-subtle px-2.5 active:opacity-70"
-                    >
-                      <SiteStateDot
-                        tone={SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state].tone}
-                      />
-                      <Text
-                        numberOfLines={1}
-                        className="max-w-[160px] text-xs font-t3-medium text-foreground"
+    <View className="gap-6">
+      <View className="gap-3">
+        <Text className="text-sm text-foreground-muted">
+          Services can back several sites. Register one here, then link it from each site that uses
+          it.
+        </Text>
+        <Button
+          label="Register service"
+          icon="plus"
+          disabled={!canManage}
+          onPress={() => onEdit({ kind: "service" })}
+        />
+      </View>
+      <SettingsSection title="Services">
+        {snapshot.services.map((service, index) => {
+          const users = snapshot.sites.filter((site) => site.serviceIds.includes(service.id));
+          return (
+            <SiteServiceGroup
+              key={service.id}
+              service={service}
+              separated={index > 0}
+              checks={snapshot.checks.filter((check) => check.service_id === service.id)}
+              staleAfterSeconds={snapshot.staleAfterSeconds}
+              now={now}
+              canManage={canManage}
+              usedBy={
+                users.length ? (
+                  <View className="flex-row flex-wrap items-center gap-1.5">
+                    <Text className="text-xs text-foreground-muted">Used by</Text>
+                    {users.map((site) => (
+                      <Pressable
+                        key={site.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Open site ${site.name}`}
+                        onPress={() => onOpenSite(site.id)}
+                        className="min-h-8 flex-row items-center gap-1.5 rounded-full border border-border-subtle px-2.5 active:opacity-70"
                       >
-                        {site.name}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : (
-                <Text className="text-xs text-foreground-muted">Not used by any site yet.</Text>
-              )
-            }
-            onEditService={() => onEdit({ kind: "service", row: service })}
-            onAddCheck={() => onEdit({ kind: "check", serviceId: service.id })}
-            onEditCheck={(check) => onEdit({ kind: "check", row: check })}
-          />
-        );
-      })}
+                        <SiteStateDot
+                          tone={SITE_HEALTH_STATES[siteHealth(site, snapshot, now).state].tone}
+                        />
+                        <Text
+                          numberOfLines={1}
+                          className="max-w-[160px] text-xs font-t3-medium text-foreground"
+                        >
+                          {site.name}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Text className="text-xs text-foreground-muted">Not used by any site yet.</Text>
+                )
+              }
+              onEditService={() => onEdit({ kind: "service", row: service })}
+              onAddCheck={() => onEdit({ kind: "check", serviceId: service.id })}
+              onEditCheck={(check) => onEdit({ kind: "check", row: check })}
+            />
+          );
+        })}
+      </SettingsSection>
     </View>
   );
 }
@@ -493,17 +498,19 @@ function SitesSkeleton() {
         <View className="h-12 w-40 rounded-full bg-row-hover" />
       </View>
       <View className="h-9 w-full rounded-full bg-row-hover" />
-      <View className="gap-4 rounded-3xl border border-border p-5">
-        <View className="flex-row items-center gap-4">
-          <View className="size-14 rounded-2xl bg-row-hover" />
-          <View className="flex-1 gap-2">
-            <View className="h-6 w-40 rounded-md bg-row-hover" />
-            <View className="h-3 w-32 rounded-md bg-row-hover" />
+      <SettingsSection>
+        <View className="gap-4 p-4">
+          <View className="flex-row items-center gap-4">
+            <View className="size-14 rounded-2xl bg-row-hover" />
+            <View className="flex-1 gap-2">
+              <View className="h-6 w-40 rounded-md bg-row-hover" />
+              <View className="h-3 w-32 rounded-md bg-row-hover" />
+            </View>
           </View>
+          <View className="h-5 w-48 rounded-full bg-row-hover" />
         </View>
-        <View className="h-5 w-48 rounded-full bg-row-hover" />
-      </View>
-      <View className="overflow-hidden rounded-2xl border border-border">
+      </SettingsSection>
+      <SettingsSection>
         {["first", "second", "third"].map((row, index) => (
           <View
             key={row}
@@ -516,8 +523,10 @@ function SitesSkeleton() {
             <View className="h-5 w-16 rounded-full bg-row-hover" />
           </View>
         ))}
-      </View>
-      <SiteTrafficSkeleton />
+      </SettingsSection>
+      <SettingsSection>
+        <SiteTrafficSkeleton />
+      </SettingsSection>
     </View>
   );
 }

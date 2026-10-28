@@ -3,7 +3,7 @@ import { View } from "react-native";
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { ListRow } from "../../components/ui/ListRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { LibraryPage } from "./LibraryScreens";
+import { LibraryPage } from "./LibraryPage";
 
 /** How a new project starts. The form leads with the part each choice needs. */
 export type LibraryCreateStart = "empty" | "folder" | "repository";

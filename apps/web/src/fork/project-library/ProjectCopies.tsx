@@ -38,6 +38,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import {
+  LIBRARY_SURFACE,
   LibraryErrorNotice,
   LibraryPanel,
   LibrarySection,
@@ -48,7 +49,7 @@ import { useLibraryAttempt } from "./attempts";
 import { ExistingFolderStorage } from "./ExistingFolderStorage";
 import { TemporaryResources } from "./TemporaryResources";
 import { CopyProfileSetup } from "./ProfileReadiness";
-import { ComputerIcon, ComputerTile, PathLabel, ProjectGlow } from "./ProjectIdentity";
+import { ComputerIcon, ComputerTile, PathLabel } from "./ProjectIdentity";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 
 export type CopyRequest = {
@@ -406,9 +407,8 @@ export function ProjectCopies({
               <li
                 key={copy.id}
                 aria-label={`Files on ${label}`}
-                className="relative isolate space-y-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-xs/5 sm:p-5"
+                className={cn("space-y-4 p-4 sm:p-5", LIBRARY_SURFACE)}
               >
-                <ProjectGlow />
                 <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
                   <div className="flex min-w-0 flex-1 basis-60 items-start gap-3">
                     <ComputerTile environmentId={copy.environmentId} />
@@ -847,7 +847,7 @@ export function ProjectHistory({
   const events = libraryProjectTimeline(project, copies);
   const anyRemoved = events.some((event) => event.kind === "copy-removed");
   return (
-    <details className="group/fold overflow-hidden rounded-xl border border-border bg-card">
+    <details className={cn("group/fold overflow-hidden", LIBRARY_SURFACE)}>
       <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3.5 py-1.5 outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <span className="text-sm font-semibold tracking-tight">History</span>
         <span className="text-xs tabular-nums text-muted-foreground">{events.length}</span>

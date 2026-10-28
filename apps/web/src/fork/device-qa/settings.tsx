@@ -82,7 +82,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
   const settings = valueOf(result);
   const canEdit = useAtomValue(deviceQa.updateSettings.permissionAtom(environmentId));
   const save = useAction();
-  const [saved, setSaved] = useState(false);
   const failure = failureOf(result);
   if (failure)
     return (
@@ -103,15 +102,11 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
     );
   const disabled = !canEdit || save.busy;
 
-  const update = async (patch: DeviceQaSettingsPatch) => {
-    setSaved(false);
-    const done = await save.act(async () => {
+  const update = (patch: DeviceQaSettingsPatch) =>
+    save.act(async () => {
       await runCommand(deviceQa.updateSettings, { environmentId, input: patch });
       appAtomRegistry.refresh(settingsAtom);
     });
-    setSaved(done);
-    return done;
-  };
 
   return (
     <LoomSettingsContent className="flex flex-col gap-5">
@@ -120,7 +115,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
         description="Prepare consistent evidence when testing on a device."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Clean status bar"
           description="iOS simulator captures show 9:41, full battery and full signal by default."
           control={
@@ -138,7 +132,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
         description="Control how much test history and captured evidence this environment keeps."
       >
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Runs kept per project"
           description="Keep 5 to 200 runs per project. Older flow runs and their snapshot images are deleted."
           control={
@@ -152,7 +145,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
           }
         />
         <SettingsRow
-          className="px-0 sm:px-0"
           title="Delete old evidence"
           description="Off keeps screenshots and recordings until their thread is deleted."
           control={
@@ -168,7 +160,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
         />
         {settings.evidenceExpireDays !== null && (
           <SettingsRow
-            className="px-0 sm:px-0"
             title="Evidence age limit"
             description="Keep evidence for 1 to 365 days. Checked when the server starts and every six hours."
             control={
@@ -185,7 +176,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
       </LoomSettingsPanel>
       <LoomSettingsDetails title="Device automation executable">
         <SettingsRow
-          className="px-0 sm:px-0"
           title="argent executable"
           description="Unset finds argent on PATH and in npm's global folder."
           control={
@@ -202,13 +192,6 @@ function EnvironmentDeviceQa({ environmentId }: { environmentId: EnvironmentId }
           }
         />
       </LoomSettingsDetails>
-      <LoomSettingsNotice role="status">
-        {save.busy
-          ? "Saving changes..."
-          : saved
-            ? "Changes saved."
-            : "Changes save automatically. Numbers save when you leave the field."}
-      </LoomSettingsNotice>
       {save.error && <LoomSettingsNotice role="alert">{save.error}</LoomSettingsNotice>}
     </LoomSettingsContent>
   );

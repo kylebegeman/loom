@@ -49,6 +49,7 @@ import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/sess
 import { threadListEnvironmentsAtom } from "../../state/server";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
+import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { ProjectCheckoutSection } from "../project-checkout/ProjectCheckoutSection";
 import { ProjectFolderLocation } from "../project-navigation/ProjectFolderLocation";
 import { projectThreadActivity } from "../project-navigation/projectNavigation.logic";
@@ -96,6 +97,7 @@ function ProjectHomeContent(props: {
   readonly projectId: ProjectId;
 }) {
   const navigation = useNavigation();
+  const back = useWorkspacePageBack();
   const insets = useSafeAreaInsets();
   const projects = useProjects();
   const configs = useServerConfigs();
@@ -756,8 +758,7 @@ function ProjectHomeContent(props: {
     <View className="flex-1 bg-screen">
       <AppBar
         title={scope?.title ?? "Project home"}
-        onBack={() => navigation.goBack()}
-        backInSplitView={{ accessibilityLabel: "Back to projects", icon: "arrow.left" }}
+        onBack={back}
         optionsVersion={scope?.title}
         actions={[
           {
@@ -769,21 +770,23 @@ function ProjectHomeContent(props: {
         ]}
       />
       {scope === null ? (
-        <EmptyState
-          variant="plain"
-          title={
-            catalog.isLoadingConnections || !catalog.hasLoadedShellSnapshot
-              ? "Loading project"
-              : "Project unavailable"
-          }
-          detail={
-            catalog.isLoadingConnections || !catalog.hasLoadedShellSnapshot
-              ? "Loading saved project details from your computers."
-              : "This project's record is no longer available. Return to the project library."
-          }
-          actionLabel="Back to projects"
-          onAction={() => navigation.goBack()}
-        />
+        <ScreenScrollView className="flex-1" contentInsetAdjustmentBehavior="automatic">
+          <EmptyState
+            variant="plain"
+            title={
+              catalog.isLoadingConnections || !catalog.hasLoadedShellSnapshot
+                ? "Loading project"
+                : "Project unavailable"
+            }
+            detail={
+              catalog.isLoadingConnections || !catalog.hasLoadedShellSnapshot
+                ? "Loading saved project details from your computers."
+                : "This project's record is no longer available. Return to the project library."
+            }
+            actionLabel="Back to projects"
+            onAction={back}
+          />
+        </ScreenScrollView>
       ) : (
         <LegendList
           data={items}

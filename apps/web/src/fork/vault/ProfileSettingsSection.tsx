@@ -27,6 +27,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -586,7 +587,7 @@ function ProfileManager({
       ) : null}
       {snapshot && !editing ? (
         <div className="space-y-1">
-          <h3 className="text-base font-medium">Saved profiles</h3>
+          <h3 className="text-sm font-semibold">Saved profiles</h3>
           <p className="text-sm text-muted-foreground">
             {snapshot.profiles.length} profiles. Choose a default for new runs or edit a profile's
             requirements.
@@ -616,13 +617,9 @@ function ProfileManager({
             <h3 className="min-w-0 wrap-anywhere text-sm font-medium">{p.label}</h3>
             <div className="flex flex-wrap gap-2">
               {snapshot.activeProfileId === p.id ? (
-                <span className="rounded-md bg-primary/10 px-2 py-1 text-xs text-primary">
-                  Default for new runs
-                </span>
+                <Badge variant="info">Default for new runs</Badge>
               ) : null}
-              {p.state === "archived" ? (
-                <span className="rounded-md bg-muted px-2 py-1 text-xs">Archived</span>
-              ) : null}
+              {p.state === "archived" ? <Badge variant="secondary">Archived</Badge> : null}
             </div>
           </div>
           <p className="wrap-anywhere text-sm leading-relaxed text-muted-foreground">

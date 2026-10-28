@@ -22,7 +22,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { cn, randomUUID } from "~/lib/utils";
-import { LibraryField, LibrarySection } from "./LibraryControls";
+import { LIBRARY_SURFACE, LibraryField, LibrarySection } from "./LibraryControls";
 
 const MAX_RESOURCES = 64;
 
@@ -116,7 +116,7 @@ export function ProjectResources({
         </div>
       ) : null}
       {resources.length ? (
-        <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-xs/5">
+        <ul className={cn("divide-y divide-border/50 overflow-hidden", LIBRARY_SURFACE)}>
           {resources.map((resource) =>
             editingId === resource.id ? (
               <li key={resource.id} className="max-w-2xl px-4 py-3.5">

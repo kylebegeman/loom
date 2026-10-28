@@ -58,7 +58,12 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { cn, randomUUID } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { projectLibrary, useLibraryPermission } from "./state";
-import { LibraryErrorNotice, LibrarySection, LibraryStateBadge } from "./LibraryControls";
+import {
+  LIBRARY_SURFACE,
+  LibraryErrorNotice,
+  LibrarySection,
+  LibraryStateBadge,
+} from "./LibraryControls";
 
 const KIND_ICONS: Record<LibraryWorkstreamReference["kind"], LucideIcon> = {
   thread: MessageSquareIcon,
@@ -173,7 +178,7 @@ export function ProjectWorkstreams({
         </p>
       ) : null}
       {!query.isPending && !query.error && !current.length && editing !== "new" ? (
-        <div className="flex items-start gap-3 rounded-2xl bg-muted/40 p-5 dark:bg-accent/30">
+        <div className="flex items-start gap-3 rounded-xl bg-muted/40 p-5 dark:bg-accent/30">
           <span
             aria-hidden
             className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
@@ -232,7 +237,8 @@ function WorkstreamCard({
     <article
       aria-label={stream.title}
       className={cn(
-        "flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-xs/5 sm:p-5",
+        "flex min-w-0 flex-col gap-3 p-4 sm:p-5",
+        LIBRARY_SURFACE,
         stream.state === "archived" && "bg-transparent shadow-none",
       )}
     >
@@ -431,7 +437,7 @@ function WorkstreamEditor({
   return (
     <form
       aria-label={isNew ? "New workstream" : `Edit ${stream.title}`}
-      className="flex min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5"
+      className={cn("flex min-w-0 flex-col gap-4 p-4 sm:p-5", LIBRARY_SURFACE)}
       onSubmit={(event) => {
         event.preventDefault();
         void persist("active");

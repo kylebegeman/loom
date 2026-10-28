@@ -1,13 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { ProjectStoragePage } from "~/fork/project-home/ProjectStoragePage"; // fork: project-home
 
+// fork: project-home -- Files on computers moved into Settings; old links still land there.
 export const Route = createFileRoute("/projects/storage")({
-  beforeLoad: async ({ context }) => {
-    if (
-      context.authGateState.status !== "authenticated" &&
-      context.authGateState.status !== "hosted-static"
-    )
-      throw redirect({ to: "/pair", replace: true });
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/project-files", replace: true });
   },
-  component: ProjectStoragePage,
 });

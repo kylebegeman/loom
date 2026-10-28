@@ -337,12 +337,7 @@ function PreparationOnComputer({
     : null;
   const navigate = useNavigate();
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const openProject = (projectRef: ScopedProjectRef) => {
-    if (onPrepared) {
-      onPrepared(projectRef);
-      onClose();
-      return;
-    }
+  const openProjectSettings = (projectRef: ScopedProjectRef) => {
     const project = projects.find(
       (candidate) =>
         candidate.environmentId === projectRef.environmentId &&
@@ -351,10 +346,18 @@ function PreparationOnComputer({
     if (!project) return;
     onClose();
     void navigate({
-      to: "/projects/$projectKey",
-      params: { projectKey: deriveLogicalProjectKeyFromSettings(project, groupingSettings) },
-      search: { computer: project.environmentId, checkoutId: project.id },
+      to: "/settings/projects",
+      search: {
+        project: deriveLogicalProjectKeyFromSettings(project, groupingSettings),
+        machine: project.environmentId,
+        checkout: derivePhysicalProjectKey(project),
+      },
     });
+  };
+  const openProject = (projectRef: ScopedProjectRef) => {
+    if (!onPrepared) return openProjectSettings(projectRef);
+    onPrepared(projectRef);
+    onClose();
   };
   const run = async (action: "start" | "cancel" | "retry") => {
     if (pendingRef.current || !connected) return;
@@ -589,23 +592,9 @@ function PreparationOnComputer({
         {attempt && recovery?.state === "inspect" ? (
           <Button
             variant="outline"
-            onClick={() => {
-              onClose();
-              const known = projects.find(
-                (project) =>
-                  project.environmentId === attempt.environmentId &&
-                  project.id === attempt.projectId,
-              );
-              if (known)
-                void navigate({
-                  to: "/settings/projects",
-                  search: {
-                    project: deriveLogicalProjectKeyFromSettings(known, groupingSettings),
-                    machine: known.environmentId,
-                    checkout: derivePhysicalProjectKey(known),
-                  },
-                });
-            }}
+            onClick={() =>
+              openProjectSettings(scopeProjectRef(attempt.environmentId, attempt.projectId))
+            }
             disabled={
               !projects.some(
                 (project) =>

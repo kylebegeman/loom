@@ -176,7 +176,6 @@ function SettingsForm({
             description="Choose how models, measurements and captures appear."
           >
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Units"
               description="Lengths shown in the 3D panel. Models and agent tools stay in millimetres."
               control={
@@ -200,7 +199,6 @@ function SettingsForm({
               }
             />
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Precision"
               description="Decimal places for lengths, changes and areas, shown and copied. Automatic keeps each value's usual form."
               control={
@@ -225,7 +223,6 @@ function SettingsForm({
               }
             />
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Render colors"
               description="Export SCAD as 3MF to preserve model colors."
               control={
@@ -237,7 +234,6 @@ function SettingsForm({
               }
             />
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Show for scale"
               description="An everyday object beside the part, included in captures when visible."
               control={
@@ -267,7 +263,6 @@ function SettingsForm({
             description="Choose the active plate and the defaults used to check printability."
           >
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Bed"
               description="The plate under the model and the size fit checks use."
               control={
@@ -303,7 +298,6 @@ function SettingsForm({
               }
             />
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Bed pattern"
               control={
                 <Select
@@ -333,7 +327,6 @@ function SettingsForm({
             />
             {!!activeBed(settings.buildPlate, { library }).zones?.length && (
               <SettingsRow
-                className="px-0 sm:px-0"
                 title="Show nozzle zones"
                 description="Tint areas that only one nozzle reaches. Fit checks always use nozzle limits."
                 control={
@@ -435,11 +428,7 @@ function SettingsForm({
             title="Agent model workflow"
             description="Choose how agents use models and where STEP files can open."
           >
-            <SettingsRow
-              className="px-0 sm:px-0"
-              title="Fabrication app URL"
-              description="Optional link for STEP files."
-            >
+            <SettingsRow title="Fabrication app URL" description="Optional link for STEP files.">
               <div className="flex min-w-0 flex-col gap-3 pt-3 pb-2">
                 <Input
                   aria-label="Fabrication app URL"
@@ -452,7 +441,6 @@ function SettingsForm({
               </div>
             </SettingsRow>
             <SettingsRow
-              className="px-0 sm:px-0"
               title="Let agents render models and propose variants"
               description="Enable shared tools for model PNG views and parameter proposals in the variant workbench."
               control={
@@ -465,7 +453,6 @@ function SettingsForm({
             />
             {supportsAgentModels && (
               <SettingsRow
-                className="px-0 sm:px-0"
                 title="When an agent writes a model"
                 description="Offer models a turn wrote or changed, or open them in the 3D panel."
                 control={
@@ -530,7 +517,6 @@ function SettingsForm({
               <p className="text-sm text-muted-foreground wrap-anywhere">{info.openscad.path}</p>
             )}
             <SettingsRow
-              className="px-0 sm:px-0"
               title="OpenSCAD executable"
               description="Unset searches PATH and macOS applications."
               control={

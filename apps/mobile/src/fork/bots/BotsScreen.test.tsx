@@ -101,6 +101,7 @@ vi.mock("../library/libraryProjectColors", () => ({
   useLibraryProjectColorValue: () => () => "#000000",
 }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Pressable: ({
     children,
@@ -136,6 +137,7 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("./BotControls", () => ({
+  BOT_LIST_SCROLL_VIEW: undefined,
   BotPage: ({
     children,
     menus,

@@ -1,9 +1,8 @@
 import { useState } from "react";
-import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { SITES_FEATURE, SITES_MANAGEMENT_FEATURE } from "@t3tools/contracts/fork";
 import {
   SITE_HEALTH_STATES,
-  libraryProjectForLocalRefs,
   siteHealth,
   supportsLoomFeature,
   type SiteHealthState,
@@ -13,16 +12,9 @@ import { AppWindowIcon, ArrowRightIcon, GlobeIcon, PlusIcon, RefreshCwIcon } fro
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useEnvironmentQuery } from "~/state/query";
-import {
-  LibraryPanel,
-  LibraryStateBadge,
-  LibraryStateDot,
-} from "../project-library/LibraryControls";
-import {
-  projectLibrary,
-  useLibraryAuthority,
-  useLibraryPermission,
-} from "../project-library/state";
+import { LibraryCardTarget } from "../project-library/LibraryCollection";
+import { LibraryPanel, LibraryStateBadge } from "../project-library/LibraryControls";
+import { useLibraryAuthority, useLibraryPermission } from "../project-library/state";
 import { SiteEditor } from "./SiteEditor";
 import { SiteMark, siteHost } from "./SiteHealth";
 import { sites } from "./state";
@@ -75,55 +67,6 @@ function PreviewLink({ siteId, name }: { readonly siteId: string; readonly name:
   );
 }
 
-/** The sites a local project serves, as small links beside its other ways in. */
-function ProjectSites({
-  projectId,
-  environmentId,
-}: {
-  readonly projectId: string;
-  readonly environmentId: EnvironmentId;
-}) {
-  const { supported, query, linked } = useProjectSites(projectId, environmentId);
-  if (!supported) return null;
-  if (!linked.length) {
-    if (!query.error || query.data) return null;
-    return (
-      <p role="alert" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        This project&apos;s sites could not load.
-        <Button
-          shape="pill"
-          size="xs"
-          variant="ghost"
-          disabled={query.isPending}
-          onClick={query.refresh}
-        >
-          <RefreshCwIcon />
-          Try again
-        </Button>
-      </p>
-    );
-  }
-  return (
-    <ul aria-label="Sites this project serves" className="flex flex-wrap items-center gap-1.5">
-      {linked.map(({ site, state }) => (
-        <li key={site.id} className="flex min-w-0 items-center">
-          <Link
-            to="/sites"
-            search={{ siteId: site.id }}
-            className="inline-flex h-7 min-w-0 max-w-72 items-center gap-1.5 rounded-full border border-border ps-2 pe-2.5 text-xs outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            <LibraryStateDot tone={SITE_HEALTH_STATES[state].tone} />
-            <span className="truncate font-medium">{site.name}</span>
-            <span className="truncate font-mono text-muted-foreground">{siteHost(site.url)}</span>
-            <span className="sr-only">, {SITE_HEALTH_STATES[state].label}</span>
-          </Link>
-          <PreviewLink siteId={site.id} name={site.name} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** The Library overview's glance at the sites this project serves, and the way to add one. */
 export function SitesSummary({
   projectId,
@@ -168,11 +111,10 @@ export function SitesSummary({
               key={site.id}
               className="relative flex min-w-0 items-center gap-2.5 py-2 ps-3 pe-2 transition-colors duration-150 hover:bg-accent/50"
             >
-              <Link
+              <LibraryCardTarget
+                label={`Open ${site.name}`}
                 to="/sites"
                 search={{ siteId: site.id }}
-                aria-label={`Open ${site.name}`}
-                className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               />
               <span className="pointer-events-none flex">
                 <SiteMark url={site.url} />
@@ -239,19 +181,4 @@ export function SitesSummary({
       ) : null}
     </LibraryPanel>
   );
-}
-
-/** A local project's sites, through the Library project its copies belong to. */
-export function LocalProjectSites({
-  projectRefs,
-}: {
-  readonly projectRefs: readonly ScopedProjectRef[];
-}) {
-  const authority = useLibraryAuthority();
-  const target = authority.authorityId ? { environmentId: authority.authorityId, input: {} } : null;
-  const copies = useEnvironmentQuery(target ? projectLibrary.copies(target) : null);
-  const projectId = libraryProjectForLocalRefs([], projectRefs, copies.data ?? []);
-  // A project outside the Library has no sites to show, and Sites stays one click away in the nav.
-  if (!authority.authorityId || !projectId) return null;
-  return <ProjectSites environmentId={authority.authorityId} projectId={projectId} />;
 }

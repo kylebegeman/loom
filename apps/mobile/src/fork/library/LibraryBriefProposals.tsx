@@ -34,7 +34,7 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { pendingProposals } from "./LibraryBriefProposalsRow";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import {
   library,
   refreshLibraryProject,

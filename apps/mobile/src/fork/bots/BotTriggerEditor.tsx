@@ -300,7 +300,10 @@ export function BotTriggerEditor({
                   value: "",
                 };
                 return (
-                  <View key={parameter.name} className="gap-3 rounded-xl bg-grouped-card p-3">
+                  <View
+                    key={parameter.name}
+                    className="gap-3 rounded-xl border border-border-subtle p-3"
+                  >
                     <BotChoice
                       label={`${parameter.label}${parameter.required && parameter.default === undefined ? " (required)" : ""}`}
                       value={entry.mode}

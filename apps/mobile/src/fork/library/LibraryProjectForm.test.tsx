@@ -53,7 +53,7 @@ vi.mock("./libraryProjectColors", () => ({ useLibraryProjectColorValue: () => ()
 vi.mock("./LibraryProfileSection", () => ({ LibraryProfileSection: () => null }));
 vi.mock("./LibraryFolderPicker", () => ({ LibraryFolderPicker: () => null }));
 vi.mock("./LibraryBriefSuggestions", () => ({ LibraryBriefSuggestionsSetting: () => null }));
-vi.mock("./LibraryScreens", () => ({
+vi.mock("./LibraryPage", () => ({
   LibraryPage: ({ children }: { children: ReactNode }) => <main>{children}</main>,
   LibraryNotice: ({ error, detail }: { error?: string | null; detail?: string | null }) => (
     <div>{error ?? detail}</div>

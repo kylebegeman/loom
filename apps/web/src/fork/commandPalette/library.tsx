@@ -343,7 +343,7 @@ export function useLibraryPaletteContext(
     },
     blocker,
     openLibrary: async () => {
-      await navigate({ to: "/library" });
+      await navigate({ to: "/projects" });
     },
     searchHistory: canSearch
       ? async () => {
@@ -356,7 +356,7 @@ export function useLibraryPaletteContext(
                 params: { projectId },
                 search: { view: "conversations" },
               })
-            : navigate({ to: "/library" }));
+            : navigate({ to: "/projects" }));
         }
       : null,
   };
@@ -399,7 +399,7 @@ export function useLibraryShortcuts() {
         if (action === "projects")
           openCommandPalette({ submenu: "action:loom:library:go-to-project" });
         // Both walk through setup when no Library is connected yet.
-        else if (action === "library") void navigate({ to: "/library" });
+        else if (action === "library") void navigate({ to: "/projects" });
         else if (action === "new-conversation") openLibraryAction("new-conversation");
       }),
     );

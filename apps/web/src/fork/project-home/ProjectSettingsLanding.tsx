@@ -29,7 +29,16 @@ export function ProjectSettingsLanding() {
           title="Files on computers"
           description="Choose whether each project's working files stay on a computer after you settle work."
           control={
-            <Button size="sm" variant="outline" render={<Link to="/projects/storage" />}>
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link
+                  to="/settings/project-files"
+                  search={{ project: undefined, machine: undefined, checkout: undefined }}
+                />
+              }
+            >
               Manage working files
             </Button>
           }

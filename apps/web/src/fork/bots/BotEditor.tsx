@@ -66,7 +66,6 @@ import {
   LibraryStateBadge,
 } from "../project-library/LibraryControls";
 import { LibraryEditorBar, useUnsavedChangesGuard } from "../project-library/LibraryEditor";
-import { LibraryBackLink } from "../project-library/LibraryPageFrame";
 import { readinessText } from "./BotAnywhere";
 import { BotTile, StarterBadge } from "./BotIdentity";
 import { BotModelPicker, useBotModelChoices } from "./BotModelPicker";
@@ -630,9 +629,11 @@ function InstructionsEditor({
   };
   return (
     <div className="flex flex-col gap-2">
-      <textarea
+      <Textarea
         ref={field}
         id={fieldIds.instructions}
+        size="lg"
+        rows={8}
         aria-label="Instructions"
         value={value}
         placeholder={
@@ -640,7 +641,6 @@ function InstructionsEditor({
         }
         onChange={(event) => onChange(event.target.value)}
         {...invalidProps(problem)}
-        className="field-sizing-content max-h-160 min-h-72 w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 font-mono text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/72 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/24 focus-visible:ring-inset aria-invalid:border-destructive/36 disabled:opacity-64 dark:bg-input/32"
       />
       <FieldProblem problem={problem} />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
@@ -1161,16 +1161,10 @@ export function BotEditorForm({
 
   return (
     <div className="flex min-w-0 flex-col" onKeyDown={onKeyDown}>
-      <LibraryBackLink to="/loom/bots" search={back}>
-        {bot ? bot.name : "Bots"}
-      </LibraryBackLink>
-      <header className="flex min-w-0 flex-wrap items-start gap-x-4 gap-y-3">
-        <BotTile bot={base ?? { id: current.id.trim() || "new-bot" }} size="lg" />
+      <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-3">
+        <BotTile bot={base ?? { id: current.id.trim() || "new-bot" }} size="md" />
         <div className="min-w-0 flex-1 basis-64">
-          <h1 className="truncate text-xl font-semibold tracking-tight">
-            {bot ? `Edit ${bot.name}` : fromThread ? "New bot from a thread" : "New bot"}
-          </h1>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             {base ? (
               <>
                 <span className="tabular-nums">Editing v{base.version}</span>

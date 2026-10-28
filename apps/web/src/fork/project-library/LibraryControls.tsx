@@ -1,6 +1,16 @@
-import type { ReactNode, Ref } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import { SearchIcon, XIcon, type LucideIcon } from "lucide-react";
+import { Alert, AlertAction, AlertDescription } from "~/components/ui/alert";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "~/components/ui/empty";
 import { needsLibrarySignIn, type LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
 import { cn } from "~/lib/utils";
 import { LibrarySignInLink } from "./LibrarySignInLink";
@@ -119,17 +129,25 @@ export function LibraryErrorNotice({
   /** Runs before opening the Library sign-in, so a dialog can close first. */
   readonly onLeave?: () => void;
 }) {
-  return error ? (
-    <div role="alert" className="flex flex-wrap items-center gap-3 py-2 text-sm text-destructive">
-      <p>{error}</p>
-      {needsLibrarySignIn(error) ? <LibrarySignInLink onClick={onLeave} /> : null}
-      {onRetry ? (
-        <Button shape="pill" size="xs" variant="outline" onClick={onRetry}>
-          Try again
-        </Button>
+  if (!error) return null;
+  const signIn = needsLibrarySignIn(error);
+  return (
+    <Alert variant="error">
+      <AlertDescription>
+        <p>{error}</p>
+      </AlertDescription>
+      {signIn || onRetry ? (
+        <AlertAction>
+          {signIn ? <LibrarySignInLink onClick={onLeave} /> : null}
+          {onRetry ? (
+            <Button shape="pill" size="xs" variant="outline" onClick={onRetry}>
+              Try again
+            </Button>
+          ) : null}
+        </AlertAction>
       ) : null}
-    </div>
-  ) : null;
+    </Alert>
+  );
 }
 
 /**
@@ -200,6 +218,9 @@ function LibraryHeading({
   );
 }
 
+/** The filled card surface Library pages share, matching a settings group. */
+export const LIBRARY_SURFACE = "rounded-xl border border-border/60 bg-card/40 shadow-xs/5";
+
 /**
  * One titled card in the project page's side rail. The body sets its own padding, so lists run edge to
  * edge under the header while prose keeps the card's inset.
@@ -218,10 +239,7 @@ export function LibraryPanel({
   readonly children: ReactNode;
 }) {
   return (
-    <section
-      aria-label={title}
-      className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs/5"
-    >
+    <section aria-label={title} className={cn("overflow-hidden", LIBRARY_SURFACE)}>
       <div className="flex min-h-12 items-center justify-between gap-3 py-2 ps-3 pe-2">
         <LibraryHeading title={title} icon={icon} count={count} size="panel" />
         {action}
@@ -231,13 +249,16 @@ export function LibraryPanel({
   );
 }
 
-const STATE_PILL: Record<LibraryWorkflowTone, string> = {
-  neutral: "bg-muted text-muted-foreground dark:bg-accent",
-  active: "bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16",
-  success: "bg-success/12 text-success-foreground",
-  warning: "bg-warning/14 text-warning-foreground",
-  danger: "bg-destructive/10 text-destructive-foreground dark:bg-destructive/16",
-};
+const STATE_BADGE = {
+  neutral: "secondary",
+  active: "label",
+  success: "success",
+  warning: "warning",
+  danger: "error",
+} as const satisfies Record<LibraryWorkflowTone, string>;
+
+/** Badge's `label` variant tints itself from `--label`; active states take the page's color. */
+const ACTIVE_LABEL = { "--label": "var(--project-color)" } as CSSProperties;
 
 const STATE_DOT: Record<LibraryWorkflowTone, string> = {
   neutral: "bg-muted-foreground/45",
@@ -247,7 +268,7 @@ const STATE_DOT: Record<LibraryWorkflowTone, string> = {
   danger: "bg-destructive",
 };
 
-/** The one pill every Library state uses, so Ready, Active and Failed read alike everywhere. */
+/** The one badge every Library state uses, so Ready, Active and Failed read alike everywhere. */
 export function LibraryStateBadge({
   tone,
   icon: Icon,
@@ -258,23 +279,18 @@ export function LibraryStateBadge({
   readonly children: ReactNode;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-2xs font-medium",
-        STATE_PILL[tone],
-      )}
-    >
+    <Badge variant={STATE_BADGE[tone]} {...(tone === "active" ? { style: ACTIVE_LABEL } : {})}>
       {Icon ? (
-        <Icon aria-hidden className="-ms-0.5 size-3" />
+        <Icon aria-hidden />
       ) : (
         <span aria-hidden className={cn("size-1.5 rounded-full", STATE_DOT[tone])} />
       )}
       {children}
-    </span>
+    </Badge>
   );
 }
 
-/** The state's color alone, for rows and tiles too small for a pill. Always paired with a label. */
+/** The state's color alone, for rows and tiles too small for a badge. Always paired with a label. */
 export function LibraryStateDot({
   tone,
   className,
@@ -291,7 +307,7 @@ export function LibraryStateDot({
  * A surface drawn with its outline alone, for grouping that should not compete with the page's
  * one filled hero.
  */
-export const LIBRARY_OUTLINE = "rounded-xl border border-border";
+export const LIBRARY_OUTLINE = "rounded-xl border border-border/60";
 
 /**
  * One headline number in a row of figures, divided by hairlines rather than boxed. Large values
@@ -329,19 +345,17 @@ export function LibraryNotice({
   readonly children: ReactNode;
 }) {
   return (
-    <div
+    <Alert
+      variant={tone === "danger" ? "error" : tone === "warning" ? "warning" : "default"}
       role={tone === "danger" ? "alert" : "status"}
-      className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-4 py-3 text-sm",
-        tone === "neutral" && "bg-muted/50 text-muted-foreground dark:bg-accent/50",
-        tone === "warning" && "bg-warning/10 text-warning-foreground",
-        tone === "danger" && "bg-destructive/8 text-destructive-foreground",
-      )}
     >
-      <Icon aria-hidden className="size-4 shrink-0" />
-      <div className="min-w-0 flex-1">{children}</div>
-      {action}
-    </div>
+      <Icon aria-hidden />
+      <AlertDescription>
+        {/* AlertDescription is a flex column; one block keeps mixed inline copy flowing. */}
+        <div>{children}</div>
+      </AlertDescription>
+      {action ? <AlertAction>{action}</AlertAction> : null}
+    </Alert>
   );
 }
 
@@ -358,22 +372,18 @@ export function LibraryEmpty({
   readonly action?: ReactNode;
 }) {
   return (
-    <section
-      aria-label={title}
-      className="relative isolate flex flex-col items-center gap-3.5 overflow-hidden rounded-xl border border-dashed border-border px-6 py-10 text-center"
-    >
-      <span
-        aria-hidden
-        className="inline-flex size-10 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16"
-      >
-        <Icon className="size-5" />
-      </span>
-      <div className="max-w-md space-y-1">
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-        <div className="text-sm text-muted-foreground">{children}</div>
-      </div>
-      {action}
-    </section>
+    <Empty size="compact" role="region" aria-label={title}>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Icon aria-hidden />
+        </EmptyMedia>
+        <EmptyTitle role="heading" aria-level={2}>
+          {title}
+        </EmptyTitle>
+        <EmptyDescription>{children}</EmptyDescription>
+      </EmptyHeader>
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
+    </Empty>
   );
 }
 

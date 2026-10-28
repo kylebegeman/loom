@@ -39,7 +39,7 @@ import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import { useEnvironmentQuery } from "../../state/query";
 import { PullRequestGlyph } from "../../features/pull-requests/pullRequestGlyphs";
-import { LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import { library } from "./libraryState";
 import { useLibraryActivity, useOpenLibraryTimelineLink } from "./useLibraryActivity";

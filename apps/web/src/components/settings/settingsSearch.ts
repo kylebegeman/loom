@@ -20,6 +20,7 @@ export type SettingsPath =
   | "/settings/vault" // fork: ext-settings
   | "/settings/tools" // fork: ext-settings
   | "/settings/projects"
+  | "/settings/project-files" // fork: project-home
   | "/settings/general"
   | "/settings/diagnostics"
   | "/settings/appearance"
@@ -87,6 +88,7 @@ export interface SettingsSearchAvailability {
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/diagnostics": "Diagnostics",
   "/settings/projects": "Projects", // fork: project-home
+  "/settings/project-files": "Files on computers", // fork: project-home
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/chat": "Chat",
@@ -283,6 +285,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Project overview",
     to: "/settings/projects",
     searchTerms: ["name icon emoji image checkout remove delete"],
+  },
+  // fork: project-home
+  {
+    id: "project-files",
+    title: "Files on computers",
+    to: "/settings/project-files",
+    searchTerms: [
+      "working files storage disk space keep free release settled checkout locations retention",
+    ],
   },
   {
     id: "default-model",
@@ -1183,6 +1194,7 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/diagnostics": "environment",
   "/settings/projects": "project",
+  "/settings/project-files": null, // fork: project-home
   "/settings/general": null,
   "/settings/appearance": null,
   "/settings/chat": null,

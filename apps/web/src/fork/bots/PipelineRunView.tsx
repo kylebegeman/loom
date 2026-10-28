@@ -65,7 +65,6 @@ import {
   LibraryStateDot,
 } from "../project-library/LibraryControls";
 import { TickStrip } from "../project-library/LibraryData";
-import { LibraryBackLink } from "../project-library/LibraryPageFrame";
 import { useLibraryPermission } from "../project-library/state";
 import { BotTile, VerdictChip, runDuration, runTime } from "./BotIdentity";
 import {
@@ -164,56 +163,32 @@ function RunDetail({
     applied === null
       ? undefined
       : pipelines.find((candidate) => candidate.id === applied.run.pipelineId);
-  const back =
-    pipeline !== undefined ? (
-      <LibraryBackLink to="/loom/bots" search={{ pipeline: pipeline.id }}>
-        {pipeline.name}
-      </LibraryBackLink>
-    ) : applied !== null && !pipelinesLoaded ? (
-      <LibraryBackLink to="/loom/bots" search={{ pipeline: applied.run.pipelineId }}>
-        {applied.run.pipelineName}
-      </LibraryBackLink>
-    ) : (
-      <LibraryBackLink to="/loom/bots" search={PIPELINES_TAB}>
-        Pipelines
-      </LibraryBackLink>
-    );
   // Offline, the list may never arrive, so the run shows without claiming anything about it.
   const pipelinesSettled = pipelinesLoaded || pipelineList.error !== null || !host.connected;
 
   if (query.data === null || applied === null || (!query.error && !pipelinesSettled)) {
     if (query.error && isNotFound(query.failure))
       return (
-        <div className="flex flex-col">
-          {back}
-          <LibraryEmpty
-            icon={WorkflowIcon}
-            title="This run no longer exists"
-            action={
-              <Button
-                shape="pill"
-                size="sm"
-                variant="outline"
-                render={<Link to="/loom/bots" search={PIPELINES_TAB} />}
-              >
-                Back to pipelines
-              </Button>
-            }
-          >
-            Old runs are cleared over time, or the link names a run this computer never had.
-          </LibraryEmpty>
-        </div>
+        <LibraryEmpty
+          icon={WorkflowIcon}
+          title="This run no longer exists"
+          action={
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              render={<Link to="/loom/bots" search={PIPELINES_TAB} />}
+            >
+              Back to pipelines
+            </Button>
+          }
+        >
+          Old runs are cleared over time, or the link names a run this computer never had.
+        </LibraryEmpty>
       );
-    if (query.error)
-      return (
-        <div className="flex flex-col">
-          {back}
-          <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
-        </div>
-      );
+    if (query.error) return <LibraryErrorNotice error={query.error} onRetry={query.refresh} />;
     return (
       <div role="status" aria-label="Loading the pipeline run" className="flex flex-col gap-8">
-        {back}
         <Skeleton shape="card" className="h-44 w-full" />
         <div className="flex max-w-3xl flex-col gap-3">
           {["first", "second", "third"].map((key) => (
@@ -236,7 +211,6 @@ function RunDetail({
           <LibraryErrorNotice error={pipelineList.error} onRetry={pipelineList.refresh} />
         )
       }
-      back={back}
     />
   );
 }
@@ -249,7 +223,6 @@ function RunOverview({
   pipeline,
   pipelinesLoaded,
   pipelinesNotice,
-  back,
 }: {
   readonly environmentId: EnvironmentId;
   readonly run: BotPipelineRun;
@@ -261,7 +234,6 @@ function RunOverview({
   readonly pipelinesLoaded: boolean;
   /** Why the pipeline list could not load, with a retry. */
   readonly pipelinesNotice: ReactNode;
-  readonly back: ReactNode;
 }) {
   const nav = useBotsNavigation();
   const { host, bots: allBots } = useBots();
@@ -336,93 +308,90 @@ function RunOverview({
 
   return (
     <div style={pipelineColorStyle(run.pipelineId)} className="flex flex-col gap-10">
-      <div className="flex flex-col">
-        {back}
-        <LibraryHero
-          tile={<PipelineTile pipelineId={run.pipelineId} size="2xl" />}
-          title={run.pipelineName}
-          meta={
-            <>
-              <PipelineRunStateBadge run={run} />
-              <span>Run {runTime(run.createdAt)}</span>
-              <span>v{run.pipelineVersion}</span>
-              {run.startedBy === "agent" ? <span>Started by an agent</span> : null}
-              {project ? <span>In {project.title}</span> : null}
-            </>
-          }
-          actions={
-            <>
-              {active ? (
-                <WithReason reason={actionReason(host.connected, canCancel, "cancel runs")}>
-                  <Button
-                    shape="pill"
-                    size="sm"
-                    variant="outline"
-                    disabled={!canCancel || busy}
-                    onClick={() => void stop()}
-                  >
-                    <SquareIcon />
-                    Cancel run
-                  </Button>
-                </WithReason>
-              ) : null}
-              {resumable ? (
-                <WithReason reason={actionReason(host.connected, canResume, "resume runs")}>
-                  <Button
-                    shape="pill"
-                    size="sm"
-                    disabled={!canResume || busy}
-                    onClick={() => void pickUp()}
-                  >
-                    <PlayIcon />
-                    {run.cursorStepId ? `Resume at ${run.cursorStepId}` : "Resume"}
-                  </Button>
-                </WithReason>
-              ) : null}
-              {pipeline !== undefined && !active ? (
-                <WithReason reason={runReason}>
-                  <Button
-                    shape="pill"
-                    size="sm"
-                    variant={resumable ? "outline" : "default"}
-                    disabled={!access.canRunPipelines}
-                    onClick={() => runAgain(pipeline)}
-                  >
-                    <RotateCcwIcon />
-                    Run again
-                  </Button>
-                </WithReason>
-              ) : null}
-            </>
-          }
-          footer={
-            <LibraryVitals>
-              <LibraryVital label="Steps">
-                <span className="inline-flex items-center gap-2">
-                  {stepTicks.length ? (
-                    <TickStrip ticks={stepTicks} label={`${done} of ${steps.length} steps done`} />
-                  ) : null}
-                  <span className="tabular-nums">
-                    {done} of {steps.length} done
-                  </span>
+      <LibraryHero
+        tile={<PipelineTile pipelineId={run.pipelineId} size="2xl" />}
+        title={run.pipelineName}
+        meta={
+          <>
+            <PipelineRunStateBadge run={run} />
+            <span>Run {runTime(run.createdAt)}</span>
+            <span>v{run.pipelineVersion}</span>
+            {run.startedBy === "agent" ? <span>Started by an agent</span> : null}
+            {project ? <span>In {project.title}</span> : null}
+          </>
+        }
+        actions={
+          <>
+            {active ? (
+              <WithReason reason={actionReason(host.connected, canCancel, "cancel runs")}>
+                <Button
+                  shape="pill"
+                  size="sm"
+                  variant="outline"
+                  disabled={!canCancel || busy}
+                  onClick={() => void stop()}
+                >
+                  <SquareIcon />
+                  Cancel run
+                </Button>
+              </WithReason>
+            ) : null}
+            {resumable ? (
+              <WithReason reason={actionReason(host.connected, canResume, "resume runs")}>
+                <Button
+                  shape="pill"
+                  size="sm"
+                  disabled={!canResume || busy}
+                  onClick={() => void pickUp()}
+                >
+                  <PlayIcon />
+                  {run.cursorStepId ? `Resume at ${run.cursorStepId}` : "Resume"}
+                </Button>
+              </WithReason>
+            ) : null}
+            {pipeline !== undefined && !active ? (
+              <WithReason reason={runReason}>
+                <Button
+                  shape="pill"
+                  size="sm"
+                  variant={resumable ? "outline" : "default"}
+                  disabled={!access.canRunPipelines}
+                  onClick={() => runAgain(pipeline)}
+                >
+                  <RotateCcwIcon />
+                  Run again
+                </Button>
+              </WithReason>
+            ) : null}
+          </>
+        }
+        footer={
+          <LibraryVitals>
+            <LibraryVital label="Steps">
+              <span className="inline-flex items-center gap-2">
+                {stepTicks.length ? (
+                  <TickStrip ticks={stepTicks} label={`${done} of ${steps.length} steps done`} />
+                ) : null}
+                <span className="tabular-nums">
+                  {done} of {steps.length} done
                 </span>
+              </span>
+            </LibraryVital>
+            {run.finalVerdict !== null ? (
+              <LibraryVital label="Verdict">
+                <VerdictChip verdict={run.finalVerdict} />
               </LibraryVital>
-              {run.finalVerdict !== null ? (
-                <LibraryVital label="Verdict">
-                  <VerdictChip verdict={run.finalVerdict} />
-                </LibraryVital>
-              ) : null}
-              {rounds > 1 ? <LibraryVital label="Rounds">{rounds}</LibraryVital> : null}
-              <LibraryVital label={took === null ? "Started" : "Took"}>
-                {took ?? runTime(run.createdAt)}
-              </LibraryVital>
-              {run.status === "waiting" && run.retryAt !== null ? (
-                <LibraryVital label="Tries again">{runTime(run.retryAt)}</LibraryVital>
-              ) : null}
-            </LibraryVitals>
-          }
-        />
-      </div>
+            ) : null}
+            {rounds > 1 ? <LibraryVital label="Rounds">{rounds}</LibraryVital> : null}
+            <LibraryVital label={took === null ? "Started" : "Took"}>
+              {took ?? runTime(run.createdAt)}
+            </LibraryVital>
+            {run.status === "waiting" && run.retryAt !== null ? (
+              <LibraryVital label="Tries again">{runTime(run.retryAt)}</LibraryVital>
+            ) : null}
+          </LibraryVitals>
+        }
+      />
 
       {run.error !== null || run.stoppedRunId !== null ? (
         <LibraryNotice
