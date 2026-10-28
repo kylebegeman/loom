@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, StorageCleanupReportEntry, ThreadId } from "@t3tools/contracts";
 import {
   AdoptableLeaseKind,
   LaneFreeScope,
@@ -12,6 +12,7 @@ import { Tool, Toolkit } from "effect/ai";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import * as StorageCleanup from "../../storageCleanup.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { ProjectLifecycleService } from "./ProjectLifecycleService.ts";
 
@@ -89,6 +90,17 @@ export const ProjectLifecycleToolkit = Toolkit.make(
     .annotate(Tool.Title, "Lane: discard unrecorded folder")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, true),
+  Tool.make("loom_project_lifecycle_release_checkout", {
+    description:
+      "Remove a thread's worktree checkout once its work has landed on the default branch and the thread is idle, ending its idle provider sessions. Otherwise the checkout stays and the result's reason says why. The thread stays, and its next message restores the checkout. Use only when the user asks.",
+    parameters: Schema.Struct({ threadId: ThreadId }),
+    success: StorageCleanupReportEntry,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService, StorageCleanup.StorageCleanup],
+  })
+    .annotate(Tool.Title, "Lane: release checkout")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
 );
 
 const callerThread = Effect.gen(function* () {
@@ -161,6 +173,11 @@ export const projectLifecycleHandlers = McpToolAccess.toLayer(
               Effect.flatMap((service) => service.discardUnrecorded(input.path)),
             ),
           ),
+        ),
+      ),
+      loom_project_lifecycle_release_checkout: McpToolAccess.writes((input) =>
+        StorageCleanup.StorageCleanup.pipe(
+          Effect.flatMap((cleanup) => cleanup.releaseCheckout(input.threadId)),
         ),
       ),
     };

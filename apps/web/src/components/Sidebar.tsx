@@ -7,6 +7,8 @@ import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewC
 import { useSidebarLibraryScope } from "~/fork/project-library/useSidebarLibraryScope"; // fork: library-projects
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
+import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
+import { releaseThreadCheckout } from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { useNoProjectStart } from "~/fork/project-library/useNoProjectStart"; // fork: no-project-first
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
@@ -2455,6 +2457,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
+              hasWorktree: thread.worktreePath != null, // fork: project-lifecycle
               canShareWithGuest: appAtomRegistry.get(
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
@@ -2465,6 +2468,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   "workspace-handoff",
                 ),
                 saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
+                // fork: project-lifecycle
+                checkoutRelease: supportsLoomFeature(
+                  serverConfigs.get(thread.environmentId)?.environment.capabilities,
+                  CHECKOUT_RELEASE_FEATURE,
+                ),
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: supportsSnooze,
@@ -2614,6 +2622,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
+            return;
+          case "release-checkout": // fork: project-lifecycle
+            await releaseThreadCheckout(threadRef);
             return;
           case "archive": {
             if (confirmThreadArchive) {

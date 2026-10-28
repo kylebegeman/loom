@@ -27,9 +27,13 @@ const state = vi.hoisted(() => ({
   dialogs: [] as { onConfirm: () => void }[],
   alerts: [] as {
     title: string;
+    message?: string;
     buttons?: { text: string; onPress?: () => void }[];
   }[],
   afterRequest: undefined as (() => void) | undefined,
+  // fork: project-lifecycle
+  loomFeatures: [] as string[],
+  releaseEntry: { outcome: "removed", reason: "" } as { outcome: string; reason: string },
 }));
 
 vi.mock("react", () => ({
@@ -47,8 +51,8 @@ vi.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light" },
 }));
 vi.mock("../../components/ui/Dialog", () => ({
-  alert: (title: string, _message: string, buttons?: { text: string; onPress?: () => void }[]) =>
-    state.alerts.push({ title, buttons }),
+  alert: (title: string, message: string, buttons?: { text: string; onPress?: () => void }[]) =>
+    state.alerts.push({ title, message, buttons }),
   confirm: (dialog: { onConfirm: () => void }) => state.dialogs.push(dialog),
 }));
 vi.mock("../archive/useArchivedThreadSnapshots", () => ({
@@ -86,6 +90,7 @@ vi.mock("../../state/atom-registry", () => ({
                         threadPinning: true,
                         threadPinReorder: true,
                         threadTitleRegeneration: true,
+                        loomFeatures: state.loomFeatures, // fork: project-lifecycle
                       },
                     },
                   },
@@ -95,6 +100,17 @@ vi.mock("../../state/atom-registry", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => command,
+}));
+// fork: project-lifecycle
+vi.mock("../../fork/project-lifecycle/state", () => ({
+  lanes: {
+    releaseCheckout: async (request: { environmentId: string; input: { threadId: string } }) => {
+      state.requests.push({ action: "releaseCheckout", ...request });
+      if (state.failedAction === "releaseCheckout")
+        return AsyncResult.failure(Cause.fail(new Error("Lane is busy")));
+      return AsyncResult.success(state.releaseEntry);
+    },
+  },
 }));
 vi.mock("../../state/use-thread-outbox", () => ({ queuedThreadKeysAtom: "queued-thread-keys" }));
 vi.mock("../../state/thread-order", () => ({
@@ -148,7 +164,7 @@ vi.mock("../../state/threads", () => ({
 }));
 
 import { dismissThreadUndoNotice, readThreadUndoNotice } from "./thread-undo-notice";
-import { useThreadListActions } from "./useThreadListActions";
+import { useReleaseThreadCheckout, useThreadListActions } from "./useThreadListActions";
 
 const primaryEnvironmentId = EnvironmentId.make("primary");
 const otherEnvironmentId = EnvironmentId.make("other");
@@ -189,6 +205,8 @@ beforeEach(() => {
   state.dialogs = [];
   state.alerts = [];
   state.afterRequest = undefined;
+  state.loomFeatures = ["checkout-release"]; // fork: project-lifecycle
+  state.releaseEntry = { outcome: "removed", reason: "Removed the landed worktree." }; // fork: project-lifecycle
 });
 
 afterEach(() => {
@@ -476,5 +494,68 @@ describe("thread archive guard", () => {
     expect(state.requests).toEqual([]);
     expect(state.archivedRefreshes).toEqual([]);
     expect(state.alerts.at(-1)?.title).toBe("Could not archive thread");
+  });
+});
+
+// fork: project-lifecycle
+describe("checkout release", () => {
+  const runningRuntime = {
+    status: "running",
+    activeRunId: RunId.make("active-run"),
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    providerName: "codex",
+    lastError: null,
+    updatedAt: "2026-09-02T00:00:00.000Z",
+  } as const;
+
+  it("releases the checkout and says the next message restores it", async () => {
+    const thread = makeThread();
+    expect(await useReleaseThreadCheckout()(thread)).toBe(true);
+    expect(state.requests).toEqual([
+      {
+        action: "releaseCheckout",
+        environmentId: primaryEnvironmentId,
+        input: { threadId: thread.id },
+      },
+    ]);
+    expect(state.alerts.at(-1)).toMatchObject({
+      title: "Checkout released",
+      message: "Its next message restores the checkout.",
+    });
+  });
+
+  it.each([
+    ["kept", "Checkout kept"],
+    ["failed", "Could not release checkout"],
+  ])("reports a %s checkout with the server's reason", async (outcome, title) => {
+    state.releaseEntry = { outcome, reason: "The branch has commits that have not landed." };
+    expect(await useReleaseThreadCheckout()(makeThread())).toBe(false);
+    expect(state.alerts.at(-1)).toMatchObject({
+      title,
+      message: "The branch has commits that have not landed.",
+    });
+  });
+
+  it("reports a rejected command with its message", async () => {
+    state.failedAction = "releaseCheckout";
+    expect(await useReleaseThreadCheckout()(makeThread())).toBe(false);
+    expect(state.alerts.at(-1)).toMatchObject({
+      title: "Could not release checkout",
+      message: "Lane is busy",
+    });
+  });
+
+  it("does not send a release for a working thread, an older host or a read-only connection", async () => {
+    const release = useReleaseThreadCheckout();
+    expect(await release(makeThread({ runtime: runningRuntime }))).toBe(false);
+    expect(await release(makeThread({ environmentId: otherEnvironmentId }))).toBe(false);
+    state.loomFeatures = [];
+    expect(await release(makeThread())).toBe(false);
+    expect(state.requests).toEqual([]);
+    expect(state.alerts.map(({ title }) => title)).toEqual([
+      "Could not release checkout",
+      "Could not release checkout",
+      "Could not release checkout",
+    ]);
   });
 });

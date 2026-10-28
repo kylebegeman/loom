@@ -1,12 +1,31 @@
 import type { MenuAction } from "@react-native-menu/menu";
 import { projectHomeThreadActions } from "./projectHomeThreadActions";
 
-/** Project rows retain lifecycle controls and the existing reviewed Move work entry point. */
+/** Project rows retain lifecycle controls, the reviewed Move work entry point and checkout release. */
 export function projectHomeThreadMenuActions(
-  input: Parameters<typeof projectHomeThreadActions>[0] & { readonly handoffSupported: boolean },
+  input: Parameters<typeof projectHomeThreadActions>[0] & {
+    readonly handoffSupported: boolean;
+    /** The host supports checkout release and the thread has a worktree. */
+    readonly checkoutReleaseSupported: boolean;
+    readonly running: boolean;
+  },
 ): ReadonlyArray<MenuAction> {
   const actions = projectHomeThreadActions(input);
-  return input.connected && input.permitted && input.handoffSupported
-    ? [...actions, { id: "move-work", title: "Move work", image: "arrow.left.arrow.right" }]
-    : actions;
+  if (!input.connected || !input.permitted) return actions;
+  return [
+    ...actions,
+    ...(input.handoffSupported
+      ? [{ id: "move-work", title: "Move work", image: "arrow.left.arrow.right" }]
+      : []),
+    ...(input.checkoutReleaseSupported
+      ? [
+          {
+            id: "release-checkout",
+            title: "Release checkout",
+            image: "folder",
+            attributes: { disabled: input.running },
+          },
+        ]
+      : []),
+  ];
 }

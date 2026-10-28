@@ -18,6 +18,7 @@ import {
   ProjectId,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
+import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork";
 import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,7 +34,11 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentPresentations } from "../../state/presentation";
-import { useThreadListActions } from "../../features/home/useThreadListActions";
+import {
+  useReleaseThreadCheckout,
+  useThreadListActions,
+} from "../../features/home/useThreadListActions";
+import { threadCanArchive } from "../../features/home/threadArchive";
 import { Button } from "../../components/ui/Button";
 import { AppBar } from "../../components/ui/AppBar";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
@@ -238,6 +243,7 @@ function ProjectHomeContent(props: {
       params: { environmentId: thread.environmentId, threadId: thread.id },
     });
   const { settleThread, unsettleThread, unsnoozeThread } = useThreadListActions();
+  const releaseCheckout = useReleaseThreadCheckout();
   const openSettings = () => {
     if (!onlineProject) return;
     navigation.navigate("SettingsProjectOverview", {
@@ -584,6 +590,13 @@ function ProjectHomeContent(props: {
           configs.get(thread.environmentId)?.environment.capabilities,
           "workspace-handoff",
         ),
+        checkoutReleaseSupported:
+          thread.worktreePath != null &&
+          supportsLoomFeature(
+            configs.get(thread.environmentId)?.environment.capabilities,
+            CHECKOUT_RELEASE_FEATURE,
+          ),
+        running: !threadCanArchive(thread.runtime),
       });
       return (
         <View className="flex-row items-center">
@@ -641,6 +654,7 @@ function ProjectHomeContent(props: {
                 if (nativeEvent.event === "settle") void settleThread(thread);
                 if (nativeEvent.event === "reopen") void unsettleThread(thread);
                 if (nativeEvent.event === "wake") void unsnoozeThread(thread);
+                if (nativeEvent.event === "release-checkout") void releaseCheckout(thread);
                 if (
                   nativeEvent.event === "move-work" &&
                   readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope)

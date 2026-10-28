@@ -104,6 +104,7 @@ import * as Effect from "effect/Effect";
 
 import packageJson from "../../package.json" with { type: "json" };
 import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
+import * as StorageCleanup from "../storageCleanup.ts";
 import { LOOM_SERVER_FEATURES } from "./features.ts";
 import { makeForkRpcAuth } from "./rpcAuthorization.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
@@ -170,7 +171,10 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof LibraryPushRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof PcbPreviewRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectLifecycleRpcGroup>>
-  | Rpc.ToHandler<RpcGroup.Rpcs<typeof AgentReceiptsRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof AgentReceiptsRpcGroup>>,
+  never,
+  // Checkout release belongs to the server's StorageCleanup, provided beside layerWsRpc.
+  StorageCleanup.StorageCleanup
 > =>
   Layer.mergeAll(
     ProjectWorkflowsRpcGroup.toLayer(

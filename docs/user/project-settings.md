@@ -513,6 +513,16 @@ uses it, or a conversation's latest checkpoint is missing or older than the bran
 conversation recreates the branch from its latest checkpoint. Turn the rule off in
 **Settings → Worktrees → Cleanup**, or for one project with **Off** or **Custom**.
 
+<!-- fork: project-lifecycle -->
+
+To free a landed conversation's checkout while you keep talking to it, choose **Release checkout**
+from the thread's menu on web, desktop or mobile, or ask an agent to do it. It applies the same
+checks as the landed rule without waiting for the conversation to settle or for the thread to be
+unpinned, then removes the worktree and, under the same conditions as the landed rule, its branch.
+Its lane frees up an hour later. Your next message recreates the checkout and resumes the
+conversation. If the thread is running or the checkout cannot be removed safely, Loom keeps it and
+tells you why.
+
 Enable **Release settled project checkouts** or **Release inactive project checkouts**
 to set this computer's defaults for managed primary project folders. Every conversation must
 be settled for the settlement rule; inactivity uses the most recent conversation activity.

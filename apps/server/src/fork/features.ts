@@ -14,6 +14,7 @@ import {
   LIBRARY_PUSH_ACTIVITY_FEATURE,
   LIBRARY_WORKTREE_STARTS_FEATURE,
   LIBRARY_LAUNCH_FILES_FEATURE,
+  CHECKOUT_RELEASE_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
@@ -102,6 +103,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "pcb-preview",
   "pcb-enclosure-fit",
   "project-lifecycle",
+  CHECKOUT_RELEASE_FEATURE,
   "workspace-handoff",
   "github-host-setup",
   "apple-build-tooling",

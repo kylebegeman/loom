@@ -15,11 +15,13 @@ import type {
   ServerSettings,
   ServerSettingsError,
   TerminalSummary,
+  ThreadId, // fork: project-lifecycle
   WorktreeCleanupRules,
   StorageCleanupReport,
   StorageCleanupReportEntry,
   StorageCleanupGitMirror, // fork: library-launch-files
 } from "@t3tools/contracts";
+import { ProjectLifecycleError } from "@t3tools/contracts/fork"; // fork: project-lifecycle
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
@@ -129,6 +131,8 @@ const REGENERABLE_IGNORED_NAMES = [
   ".build",
   ".generated",
   ".vite-hooks",
+  ".astro",
+  ".tanstack",
   ".DS_Store",
   "*.tsbuildinfo",
 ];
@@ -228,6 +232,8 @@ export const landedIgnoredFileBlocker = Effect.fn("StorageCleanup.landedIgnoredF
 // fork: project-lifecycle -- "landed" protects ignored files except regenerable output.
 type LocalFileRules = {
   readonly worktreeKeepWhen: WorktreeCleanupRules["worktreeKeepWhen"] | "landed";
+  /** The linked worktree whose own top-level .t3/ dev home the landed rule may delete. */
+  readonly devHomeRoot?: string;
 };
 
 // fork: library-launch-files
@@ -236,6 +242,7 @@ const removedMirrorBytes = (mirrors: ReadonlyArray<StorageCleanupGitMirror> | un
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
 const isGitCommandError = Schema.is(GitCommandError);
+const isProjectLifecycleError = Schema.is(ProjectLifecycleError); // fork: project-lifecycle
 
 function cleanupFailureReason(error: { readonly message: string }) {
   return isGitCommandError(error)
@@ -296,32 +303,43 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
   );
 }
 
-/** Only a complete subagent chain within this worktree shares ownership. */
-function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineage">>(
+// fork: project-lifecycle -- generalized from one owner to the set of chain owners.
+/**
+ * The top-level holders, when every other holder is in a complete subagent chain within this
+ * worktree that reaches one of them under the same root; otherwise undefined.
+ */
+function worktreeOwners<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineage">>(
   threads: ReadonlyArray<T>,
 ) {
-  if (threads.length === 1) return threads[0];
+  if (threads.length === 1) return threads;
   const byId = new Map(threads.map((thread) => [thread.id, thread]));
-  const tops = threads.filter((thread) => !byId.has(thread.lineage.parentThreadId!));
-  if (tops.length !== 1) return undefined;
-  const owner = tops[0]!;
+  const owners = threads.filter((thread) => !byId.has(thread.lineage.parentThreadId!));
+  if (owners.length === 0) return undefined;
+  const ownerIds = new Set(owners.map((owner) => owner.id));
   for (const thread of threads) {
+    const chain: T[] = [];
     let current = thread;
-    const seen = new Set<string>();
-    while (current.id !== owner.id) {
-      if (
-        seen.has(current.id) ||
-        current.lineage.relationshipToParent !== "subagent" ||
-        current.lineage.rootThreadId !== owner.lineage.rootThreadId
-      )
+    while (!ownerIds.has(current.id)) {
+      if (chain.includes(current) || current.lineage.relationshipToParent !== "subagent")
         return undefined;
-      seen.add(current.id);
+      chain.push(current);
       const parent = byId.get(current.lineage.parentThreadId!);
       if (parent === undefined) return undefined;
       current = parent;
     }
+    const root = current.lineage.rootThreadId;
+    if (chain.some((link) => link.lineage.rootThreadId !== root)) return undefined;
   }
-  return owner;
+  return owners;
+}
+
+/** Only a complete subagent chain within this worktree shares ownership. */
+function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineage">>(
+  threads: ReadonlyArray<T>,
+) {
+  // fork: project-lifecycle
+  const owners = worktreeOwners(threads);
+  return owners?.length === 1 ? owners[0] : undefined;
 }
 
 /** Squash/rebase merges require the merged PR to name this exact head commit. */
@@ -355,6 +373,10 @@ export class StorageCleanup extends Context.Service<
     readonly removeOrphan: (
       worktreePath: string,
     ) => Effect.Effect<StorageCleanupReport, ServerSettingsError>;
+    // fork: project-lifecycle -- the user's release of a thread's landed checkout.
+    readonly releaseCheckout: (
+      threadId: ThreadId,
+    ) => Effect.Effect<StorageCleanupReportEntry, ProjectLifecycleError>;
     readonly latestReport: Effect.Effect<StorageCleanupReport | null>;
     readonly reports: Stream.Stream<StorageCleanupReport | null>;
     readonly drain: Effect.Effect<void>;
@@ -912,7 +934,17 @@ const make = Effect.gen(function* () {
     if (ignored.stdoutTruncated) return "ignored files exceed the inspection limit";
     // fork: project-lifecycle
     if (rules.worktreeKeepWhen === "landed") {
-      const entry = yield* landedIgnoredFileBlocker(cwd, ignored.stdout).pipe(
+      // A linked worktree's own top-level .t3/ is T3 Code's dev home (see
+      // packages/shared/src/devHome.ts): a sandbox seeded from real state that never feeds back,
+      // nested test repositories included.
+      const listing =
+        rules.devHomeRoot === cwd
+          ? ignored.stdout
+              .split("\0")
+              .filter((entry) => entry !== ".t3/")
+              .join("\0")
+          : ignored.stdout;
+      const entry = yield* landedIgnoredFileBlocker(cwd, listing).pipe(
         Effect.provideService(GitVcsDriver.GitVcsDriver, git),
         Effect.provideService(FileSystem.FileSystem, fs), // fork: file-placement
         Effect.provideService(Path.Path, path), // fork: file-placement
@@ -1221,12 +1253,54 @@ const make = Effect.gen(function* () {
     Effect.catch((error) => Effect.succeed(`branch kept (${cleanupFailureReason(error)})`)),
   );
 
+  // fork: project-lifecycle -- a checkout release ends the live provider sessions working in the
+  // worktree, which the thread's next message resumes. None ends while a thread using it runs.
+  const releaseIdleSessions = Effect.fn("StorageCleanup.releaseIdleSessions")(function* (
+    worktreePath: string,
+    now: number,
+  ) {
+    const rows = yield* sql<{ payload_json: string }>`
+      SELECT payload_json FROM orchestration_v2_projection_provider_sessions
+      WHERE status != 'stopped'
+    `.pipe(NodeSqliteClient.readOnly);
+    const sessions = yield* Effect.filter(
+      yield* Effect.forEach(rows, (row) => decodeCleanupSession(row.payload_json)),
+      (session) => {
+        const cwd = path.resolve(session.cwd);
+        return cwd === worktreePath || inside(worktreePath, cwd)
+          ? providerSessions.isLive(session.id)
+          : Effect.succeed(false);
+      },
+    );
+    for (const session of sessions) {
+      const users = yield* sql<{ threadId: ThreadId }>`
+        SELECT DISTINCT thread_id AS "threadId" FROM orchestration_v2_projection_provider_threads
+        WHERE provider_session_id = ${session.id} AND thread_id IS NOT NULL
+      `.pipe(NodeSqliteClient.readOnly);
+      for (const user of users) {
+        const shell = yield* projections.getThreadShell(user.threadId);
+        if (shell !== null && !threadWorkspaceIdle(shell, now))
+          return "a thread using its provider session is running";
+      }
+    }
+    for (const session of sessions)
+      yield* providerSessions.release({
+        providerSessionId: session.id,
+        reason: "manual_shutdown",
+        detail: "Checkout released.",
+      });
+    return null;
+  });
+
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
     serverSettings: ServerSettings,
     now: number,
     entries: StorageCleanupReportEntry[],
+    // fork: project-lifecycle -- a checkout release judges only this thread's worktree.
+    releaseThreadId?: ThreadId,
   ) {
-    if (!anyWorktreePolicy(serverSettings, worktreeCleanupEnabled)) return;
+    const releasing = releaseThreadId !== undefined; // fork: project-lifecycle
+    if (!releasing && !anyWorktreePolicy(serverSettings, worktreeCleanupEnabled)) return; // fork: project-lifecycle
     const roots: Array<string> = [];
     for (const directory of managedWorktreesDirectories(
       serverSettings,
@@ -1368,14 +1442,20 @@ const make = Effect.gen(function* () {
                 resolveWorktreeCleanup(serverSettings, deleted.projectId).worktreeOnDelete &&
                 worktreeOwner([deleted, ...group]) === deleted,
             ) ??
-          worktreeOwner(group) ??
+          worktreeOwners(group)?.[0] ?? // fork: project-lifecycle
           group[0]!,
       ),
       ...deletedThreads.filter((thread) => !groups.has(path.resolve(thread.worktreePath!))),
     ];
-    for (const thread of candidates) {
+    // fork: project-lifecycle
+    const judged = releasing
+      ? snapshot.threads.filter(
+          (thread) => thread.id === releaseThreadId && thread.worktreePath !== null,
+        )
+      : candidates;
+    for (const thread of judged) {
       const settings = resolveWorktreeCleanup(serverSettings, thread.projectId);
-      if (!worktreeCleanupEnabled(settings)) continue;
+      if (!releasing && !worktreeCleanupEnabled(settings)) continue; // fork: project-lifecycle
       const worktreePath = path.resolve(thread.worktreePath!);
       const group = groups.get(worktreePath) ?? [];
       const activityAt = Math.max(...group.map(storageCleanupActivityAt));
@@ -1397,16 +1477,16 @@ const make = Effect.gen(function* () {
       };
       const keep = (reason: string) => entries.push({ ...entry, reason: sentence(reason) });
       yield* Effect.gen(function* () {
-        if (!(yield* fs.exists(worktreePath))) return;
-        // fork: project-lifecycle -- landed work needs every holder settled or archived. A subagent
-        // chain follows its owner, as settled retention does. Deleted holders are gone from the
-        // group, so a deleted thread's worktree qualifies.
-        const chainOwner = worktreeOwner(group);
-        const deciders = chainOwner === undefined ? group : [chainOwner];
+        if (!(yield* fs.exists(worktreePath)))
+          return releasing ? keep("checkout is already released") : undefined; // fork: project-lifecycle
+        // fork: project-lifecycle -- landed work needs every owner settled or archived. Subagent
+        // chains follow their owners, as settled retention does. Deleted holders are gone from the
+        // group, so a deleted thread's worktree qualifies. A release needs neither.
+        const deciders = worktreeOwners(group) ?? group;
         const unfinished = deciders.filter(
           (holder) => holder.settledOverride !== "settled" && holder.archivedAt == null,
         ).length;
-        const landing = settings.worktreeOnLand && unfinished === 0;
+        const landing = releasing || (settings.worktreeOnLand && unfinished === 0);
         const unfinishedReason =
           deciders.length > 1
             ? `${unfinished} of ${deciders.length} threads are not settled or archived`
@@ -1418,19 +1498,21 @@ const make = Effect.gen(function* () {
         const libraryReason = yield* libraryCleanupBlocker(worktreePath, now);
         if (libraryReason !== null) return keep(libraryReason);
         if (deleted && !settings.worktreeOnDelete && !landing) return keep("no rules apply"); // fork: project-lifecycle
-        // fork: project-lifecycle -- holders all settled on this branch release a shared worktree.
+        // fork: project-lifecycle -- owners all settled on this branch release a shared worktree.
         const settled =
           !deleted &&
+          !releasing &&
           settings.worktreeOnSettle &&
+          deciders.every((holder) => holder.settledOverride === "settled") &&
           group.every(
             (holder) =>
-              holder.settledOverride === "settled" &&
               storageCleanupThreadIdle(holder, now) &&
               holder.branch === thread.branch &&
               holder.projectId === thread.projectId,
           );
-        // fork: project-lifecycle
-        if (group.some((holder) => holder.pinnedAt != null)) return keep("thread is pinned");
+        // fork: project-lifecycle -- releasing is the user's explicit request.
+        if (!releasing && group.some((holder) => holder.pinnedAt != null))
+          return keep("thread is pinned");
         if (members.length > 1 && !settled && !landing && worktreeOwner(members) === undefined)
           // fork: project-lifecycle -- landed shared worktrees are released once every holder is done.
           return keep(`shared by ${members.length} threads`);
@@ -1484,14 +1566,15 @@ const make = Effect.gen(function* () {
           else if (checked.success.landed) landedOn = checked.success.branch;
           else landingReason = `has commits not on ${checked.success.branch}`;
         }
-        // fork: project-lifecycle -- otherwise only the deletion rule handles deleted threads.
-        if (deleted && !settings.worktreeOnDelete && landedOn === null)
+        // fork: project-lifecycle -- otherwise only the deletion rule handles deleted threads, and
+        // only landed work is released.
+        if (((deleted && !settings.worktreeOnDelete) || releasing) && landedOn === null)
           return keep(landingReason ?? "no rules apply");
         // Settlement never discards local data, even if older cleanup rules allow it.
         const fileRules = settled
           ? { ...settings, worktreeKeepWhen: "any-local-files" as const }
           : landedOn !== null && settings.worktreeKeepWhen !== "any-local-files" // fork: project-lifecycle
-            ? { worktreeKeepWhen: "landed" as const } // fork: project-lifecycle
+            ? { worktreeKeepWhen: "landed" as const, devHomeRoot: worktreePath } // fork: project-lifecycle
             : settings;
         const changes = yield* localChangesReason(worktreePath, fileRules);
         if (changes !== null) return keep(changes);
@@ -1555,7 +1638,7 @@ const make = Effect.gen(function* () {
           settledElapsed; // fork: project-lifecycle
         let removalReason =
           landedOn !== null // fork: project-lifecycle
-            ? `landed on ${landedOn}`
+            ? `${releasing ? "checkout released; " : ""}landed on ${landedOn}` // fork: project-lifecycle
             : deleted
               ? "thread was deleted"
               : settled // fork: project-lifecycle
@@ -1638,7 +1721,8 @@ const make = Effect.gen(function* () {
           const latestGroup = latestShells.filter((shell) => shell !== null);
           const latestOwner = worktreeOwner(deleted ? [thread, ...latestGroup] : latestGroup);
           // fork: project-lifecycle
-          if (latestGroup.some((shell) => shell.pinnedAt != null)) return "thread is pinned";
+          if (!releasing && latestGroup.some((shell) => shell.pinnedAt != null))
+            return "thread is pinned";
           if (
             latestGroup.length !== group.length ||
             // fork: project-lifecycle -- settled or landed holders need no single owner.
@@ -1647,13 +1731,15 @@ const make = Effect.gen(function* () {
               (latestOwner?.id !== thread.id || latestOwner?.branch !== thread.branch)) ||
             latestGroup.some((shell) => {
               const previous = group.find((member) => member.id === shell.id);
+              const decides = deciders.some((decider) => decider.id === shell.id); // fork: project-lifecycle
               return (
                 previous === undefined ||
                 shell.branch !== thread.branch ||
                 shell.projectId !== previous.projectId || // fork: project-lifecycle
-                (settled && shell.settledOverride !== "settled") || // fork: project-lifecycle
+                (settled && decides && shell.settledOverride !== "settled") || // fork: project-lifecycle
                 (landedOn !== null && // fork: project-lifecycle
-                  deciders.some((decider) => decider.id === shell.id) && // fork: project-lifecycle
+                  !releasing && // fork: project-lifecycle
+                  decides && // fork: project-lifecycle
                   shell.settledOverride !== "settled" && // fork: project-lifecycle
                   shell.archivedAt == null) || // fork: project-lifecycle
                 !Equal.equals(shell.settledAt, previous.settledAt) ||
@@ -1690,6 +1776,11 @@ const make = Effect.gen(function* () {
           }
           return null;
         });
+        // fork: project-lifecycle
+        if (releasing) {
+          const busy = yield* releaseIdleSessions(worktreePath, now);
+          if (busy !== null) return keep(busy);
+        }
         const blocked = yield* blockedSinceCheck();
         if (blocked !== null) return keep(blocked);
         const bytes = yield* measureWorktree(worktreePath);
@@ -1780,6 +1871,7 @@ const make = Effect.gen(function* () {
         ),
       );
     }
+    if (releasing) return; // fork: project-lifecycle
     yield* reportOrphanWorktrees(
       roots,
       yield* projectStore.list({ includeDeleted: true }),
@@ -2458,6 +2550,34 @@ const make = Effect.gen(function* () {
       ),
     );
   });
+  // fork: project-lifecycle -- a manual result replaces its path's row in the latest report.
+  const publishManualEntry = Effect.fn("StorageCleanup.publishManualEntry")(function* (
+    entry: StorageCleanupReportEntry,
+    startedAt: string,
+  ) {
+    const previous = yield* SubscriptionRef.get(reportRef);
+    const updated = [entry, ...(previous?.entries ?? []).filter((row) => row.path !== entry.path)];
+    const report: StorageCleanupReport = {
+      trigger: "manual",
+      startedAt,
+      finishedAt: DateTime.formatIso(yield* DateTime.now),
+      entries: updated,
+      counts: {
+        removed: updated.filter((row) => row.outcome === "removed").length,
+        kept: updated.filter((row) => row.outcome === "kept").length,
+        failed: updated.filter((row) => row.outcome === "failed").length,
+      },
+      omittedCount: previous?.omittedCount ?? 0,
+      bytesFreed: updated.reduce(
+        (sum, row) => sum + (row.outcome === "removed" ? (row.bytes ?? 0) : 0),
+        removedMirrorBytes(previous?.gitMirrors), // fork: library-launch-files
+      ),
+      // fork: library-launch-files
+      ...(previous?.gitMirrors === undefined ? {} : { gitMirrors: previous.gitMirrors }),
+    };
+    yield* SubscriptionRef.set(reportRef, report);
+    return report;
+  });
   // fork: project-lifecycle
   const removeOrphan = Effect.fn("StorageCleanup.removeOrphan")(
     function* (target: string) {
@@ -2521,29 +2641,47 @@ const make = Effect.gen(function* () {
           }),
         ),
       );
-      const previous = yield* SubscriptionRef.get(reportRef);
-      const updated = [entry, ...(previous?.entries ?? []).filter((row) => row.path !== cwd)];
-      const report: StorageCleanupReport = {
-        trigger: "manual",
-        startedAt: now,
-        finishedAt: DateTime.formatIso(yield* DateTime.now),
-        entries: updated,
-        counts: {
-          removed: updated.filter((row) => row.outcome === "removed").length,
-          kept: updated.filter((row) => row.outcome === "kept").length,
-          failed: updated.filter((row) => row.outcome === "failed").length,
-        },
-        omittedCount: previous?.omittedCount ?? 0,
-        bytesFreed: updated.reduce(
-          (sum, row) => sum + (row.outcome === "removed" ? (row.bytes ?? 0) : 0),
-          removedMirrorBytes(previous?.gitMirrors), // fork: library-launch-files
-        ),
-        // fork: library-launch-files
-        ...(previous?.gitMirrors === undefined ? {} : { gitMirrors: previous.gitMirrors }),
-      };
-      yield* SubscriptionRef.set(reportRef, report);
-      return report;
+      return yield* publishManualEntry(entry, now);
     },
+    Effect.provideService(FileSystem.FileSystem, fs),
+    Effect.provideService(Path.Path, path),
+    Effect.provideService(ServerConfig.ServerConfig, config),
+  );
+  // fork: project-lifecycle -- the landing rule for one thread's worktree, on the user's request.
+  const releaseCheckout = Effect.fn("StorageCleanup.releaseCheckout")(
+    function* (threadId: ThreadId) {
+      const startedAt = DateTime.formatIso(yield* DateTime.now);
+      const thread = yield* projections.getThreadShell(threadId);
+      if (thread === null)
+        return yield* new ProjectLifecycleError({
+          reason: "not-found",
+          message: "This thread no longer exists.",
+        });
+      const noCheckout = new ProjectLifecycleError({
+        reason: "not-found",
+        message: "This thread has no checkout to release.",
+      });
+      if (thread.worktreePath === null) return yield* noCheckout;
+      const entries: StorageCleanupReportEntry[] = [];
+      yield* cleanWorktrees(
+        yield* settingsService.getSettings,
+        yield* Clock.currentTimeMillis,
+        entries,
+        threadId,
+      );
+      const entry = entries.find((row) => row.threadId === threadId);
+      if (entry === undefined) return yield* noCheckout;
+      yield* publishManualEntry(entry, startedAt);
+      return entry;
+    },
+    Effect.mapError((error) =>
+      isProjectLifecycleError(error)
+        ? error
+        : new ProjectLifecycleError({
+            reason: "command-failed",
+            message: `Could not release this checkout (${cleanupFailureReason(error)}).`,
+          }),
+    ),
     Effect.provideService(FileSystem.FileSystem, fs),
     Effect.provideService(Path.Path, path),
     Effect.provideService(ServerConfig.ServerConfig, config),
@@ -2552,6 +2690,7 @@ const make = Effect.gen(function* () {
   return StorageCleanup.of({
     // fork: project-lifecycle
     removeOrphan,
+    releaseCheckout,
     requestSweep: worker.requestSweep,
     runNow: worker.runNow,
     latestReport: SubscriptionRef.get(reportRef),

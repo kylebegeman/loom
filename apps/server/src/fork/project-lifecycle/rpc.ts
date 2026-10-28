@@ -4,13 +4,16 @@ import {
   type LaneLeaseKind,
   type ProjectLifecycleSettings,
 } from "@t3tools/contracts/fork";
+import type { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as StorageCleanup from "../../storageCleanup.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { ProjectLifecycleService } from "./ProjectLifecycleService.ts";
 
 export const makeProjectLifecycleRpcHandlers = Effect.fn("ProjectLifecycle.makeRpcHandlers")(
   function* (auth: ForkRpcAuth) {
     const service = yield* ProjectLifecycleService;
+    const storageCleanup = yield* StorageCleanup.StorageCleanup;
     return {
       [L.getSettings]: () => auth.effect(L.getSettings, service.getSettings),
       [L.updateSettings]: (input: ProjectLifecycleSettings) =>
@@ -28,6 +31,8 @@ export const makeProjectLifecycleRpcHandlers = Effect.fn("ProjectLifecycle.makeR
       [L.removeShell]: () => auth.effect(L.removeShell, service.removeShell()),
       [L.releaseLease]: (input: { laneId: string; kind: LaneLeaseKind; ref: string }) =>
         auth.effect(L.releaseLease, service.releaseLease(input.laneId, input.kind, input.ref)),
+      [L.releaseCheckout]: (input: { threadId: ThreadId }) =>
+        auth.effect(L.releaseCheckout, storageCleanup.releaseCheckout(input.threadId)),
     };
   },
 );

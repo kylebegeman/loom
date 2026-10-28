@@ -4,6 +4,7 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { ProjectId, ThreadId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
+import { StorageCleanupReportEntry } from "../settings.ts";
 
 export const PROJECT_LIFECYCLE_WS_METHODS = {
   getSettings: "loom.project-lifecycle.getSettings",
@@ -17,7 +18,14 @@ export const PROJECT_LIFECYCLE_WS_METHODS = {
   installShell: "loom.project-lifecycle.installShell",
   removeShell: "loom.project-lifecycle.removeShell",
   releaseLease: "loom.project-lifecycle.releaseLease",
+  releaseCheckout: "loom.project-lifecycle.releaseCheckout",
 } as const;
+
+/**
+ * Releasing a thread's checkout removes its landed, clean worktree, branch and lane while the thread
+ * stays open; its next message restores the checkout.
+ */
+export const CHECKOUT_RELEASE_FEATURE = "checkout-release";
 
 const Gigabytes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4000 }));
 
@@ -198,5 +206,10 @@ export const ProjectLifecycleRpcGroup = RpcGroup.make(
     PROJECT_LIFECYCLE_WS_METHODS.releaseLease,
     Schema.Struct({ ...LaneRef.fields, kind: LaneLeaseKind, ref: Schema.String }),
     ProjectLifecycleLane,
+  ),
+  rpc(
+    PROJECT_LIFECYCLE_WS_METHODS.releaseCheckout,
+    Schema.Struct({ threadId: ThreadId }),
+    StorageCleanupReportEntry,
   ),
 );

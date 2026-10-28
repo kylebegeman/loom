@@ -7,6 +7,8 @@ const access = {
   settlementSupported: true,
   snoozeSupported: true,
   handoffSupported: true,
+  checkoutReleaseSupported: false,
+  running: false,
 };
 
 describe("project row operation access", () => {
@@ -33,5 +35,27 @@ describe("project row operation access", () => {
         (action) => action.id,
       ),
     ).toEqual(["settle"]);
+  });
+  it("offers Release checkout for idle worktree threads and disables it while running", () => {
+    const release = { ...access, checkoutReleaseSupported: true };
+    expect(
+      projectHomeThreadMenuActions({ ...release, activity: "settled" }).map((action) => action.id),
+    ).toEqual(["reopen", "move-work", "release-checkout"]);
+    expect(
+      projectHomeThreadMenuActions({ ...release, activity: "ready" }).find(
+        (action) => action.id === "release-checkout",
+      )?.attributes?.disabled,
+    ).toBe(false);
+    expect(
+      projectHomeThreadMenuActions({ ...release, activity: "working", running: true }).find(
+        (action) => action.id === "release-checkout",
+      )?.attributes?.disabled,
+    ).toBe(true);
+    expect(
+      projectHomeThreadMenuActions({ ...release, activity: "settled", connected: false }),
+    ).toEqual([]);
+    expect(
+      projectHomeThreadMenuActions({ ...release, activity: "settled", permitted: false }),
+    ).toEqual([]);
   });
 });

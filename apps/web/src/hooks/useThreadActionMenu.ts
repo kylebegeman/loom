@@ -3,6 +3,8 @@ import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/sta
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
 import { appAtomRegistry } from "~/rpc/atomRegistry"; // fork: workspace-handoff
 import { environmentServerConfigsAtom } from "~/state/server"; // fork: workspace-handoff
+import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
+import { releaseThreadCheckout } from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { openGuestShareDialog } from "../components/chat/guestShareDialogState";
@@ -126,14 +128,14 @@ export function useThreadActionMenu(input: {
       const thread = readThreadShell(threadRef);
       if (!thread) return;
       const now = new Date();
+      // fork: workspace-handoff
+      const capabilities = appAtomRegistry
+        .get(environmentServerConfigsAtom)
+        .get(threadRef.environmentId)?.environment.capabilities;
       const supports = {
         saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
-        // fork: workspace-handoff
-        workspaceHandoff: supportsLoomFeature(
-          appAtomRegistry.get(environmentServerConfigsAtom).get(threadRef.environmentId)
-            ?.environment.capabilities,
-          "workspace-handoff",
-        ),
+        workspaceHandoff: supportsLoomFeature(capabilities, "workspace-handoff"), // fork: workspace-handoff
+        checkoutRelease: supportsLoomFeature(capabilities, CHECKOUT_RELEASE_FEATURE), // fork: project-lifecycle
         settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
         autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
         snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
@@ -153,6 +155,7 @@ export function useThreadActionMenu(input: {
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
+        hasWorktree: thread.worktreePath != null, // fork: project-lifecycle
         supports,
         snoozePresets,
         canShareWithGuest,
@@ -293,6 +296,9 @@ export function useThreadActionMenu(input: {
           return;
         case "copy-thread-id":
           copyThreadIdToClipboard(thread.id, { threadId: thread.id });
+          return;
+        case "release-checkout": // fork: project-lifecycle
+          await releaseThreadCheckout(threadRef);
           return;
         case "archive": {
           if (confirmThreadArchive) {

@@ -356,7 +356,7 @@ apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	8
 apps/server/src/server.ts	file-placement	7
 apps/server/src/storageCleanup.ts	project-checkout-management	10
-apps/server/src/storageCleanup.ts	project-lifecycle	78
+apps/server/src/storageCleanup.ts	project-lifecycle	99
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
@@ -810,7 +810,7 @@ packages/shared/package.json	-	"./fork/provider-processes"
 packages/shared/src/projectSettings.ts	project-lifecycle	6
 packages/shared/src/serverSettings.ts	project-lifecycle	2
 packages/shared/src/serverSettings.ts	file-placement	2
-docs/user/project-settings.md	project-lifecycle	6
+docs/user/project-settings.md	project-lifecycle	7
 packages/shared/src/projectSettings.test.ts	project-lifecycle	4
 packages/shared/src/serverSettings.test.ts	project-lifecycle	3
 packages/shared/src/serverSettings.test.ts	file-placement	1
@@ -1469,7 +1469,7 @@ apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
 docs/user/project-settings.md	path-picker	5
 apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-picker	2
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 259362
 apps/desktop/src/app/DesktopWebLinks.ts	client-computer	5
 apps/desktop/src/app/DesktopWebLinks.test.ts	client-computer	2
 apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5
@@ -1490,3 +1490,11 @@ apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3
 
 apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	2
+apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	6
+apps/web/src/components/threadActionMenu.logic.test.ts	project-lifecycle	1
+apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	5
+apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	2
+apps/web/src/components/Sidebar.tsx	project-lifecycle	5
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	5
+apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
+apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6

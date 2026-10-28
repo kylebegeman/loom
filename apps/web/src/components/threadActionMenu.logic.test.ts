@@ -89,3 +89,44 @@ it("offers queue recovery only for held work and disables it for read-only conne
     )?.disabled,
   ).toBe(true);
 });
+
+// fork: project-lifecycle
+describe("release checkout", () => {
+  const ids = (state: ThreadActionMenuState) =>
+    buildThreadActionMenuItems(state).map((item) => item.id);
+  const releaseItem = (state: ThreadActionMenuState) =>
+    buildThreadActionMenuItems(state).find((item) => item.id === "release-checkout");
+  const supported = { ...baseState.supports, checkoutRelease: true };
+
+  it("appears just above archive only when the host supports it and the thread has a checkout", () => {
+    expect(ids({ ...baseState, supports: supported, hasWorktree: true }).slice(-3)).toEqual([
+      "release-checkout",
+      "archive",
+      "delete",
+    ]);
+    expect(ids({ ...baseState, supports: supported, hasWorktree: false })).not.toContain(
+      "release-checkout",
+    );
+    expect(ids({ ...baseState, hasWorktree: true })).not.toContain("release-checkout");
+  });
+
+  it("keeps a single separator before the lifecycle group", () => {
+    const items = buildThreadActionMenuItems({
+      ...baseState,
+      supports: supported,
+      hasWorktree: true,
+    });
+    expect(
+      items
+        .filter((item) => item.id === "release-checkout" || item.id === "archive")
+        .map((item) => item.separatorBefore),
+    ).toEqual([true, false]);
+  });
+
+  it("is disabled while the thread runs or without operate permission", () => {
+    const state = { ...baseState, supports: supported, hasWorktree: true };
+    expect(releaseItem(state)?.disabled).toBe(false);
+    expect(releaseItem({ ...state, isRunning: true })?.disabled).toBe(true);
+    expect(releaseItem({ ...state, canOperate: false })?.disabled).toBe(true);
+  });
+});

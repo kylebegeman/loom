@@ -27,6 +27,7 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "release-checkout" // fork: project-lifecycle
   | "archive"
   | "delete";
 
@@ -85,9 +86,11 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
+  readonly hasWorktree?: boolean; // fork: project-lifecycle
   readonly supports: {
     readonly workspaceHandoff?: boolean;
     readonly saveAsBot?: boolean; // fork: bots
+    readonly checkoutRelease?: boolean; // fork: project-lifecycle
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
@@ -112,6 +115,10 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "copy-thread-id",
   ].includes(action);
 }
+
+// fork: project-lifecycle
+const canReleaseCheckout = (state: ThreadActionMenuState) =>
+  state.supports.checkoutRelease === true && state.hasWorktree === true;
 
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
@@ -236,12 +243,24 @@ export function buildThreadActionMenuItems(
       ],
     },
     { id: "project-settings", label: "Project settings", icon: "settings" },
+    // fork: project-lifecycle
+    ...(canReleaseCheckout(state)
+      ? [
+          {
+            id: "release-checkout" as const,
+            label: "Release checkout",
+            icon: "git-branch",
+            disabled: state.isRunning,
+            separatorBefore: true,
+          },
+        ]
+      : []),
     {
       id: "archive",
       label: "Archive thread",
       icon: "archive",
       disabled: state.isRunning,
-      separatorBefore: true,
+      separatorBefore: !canReleaseCheckout(state), // fork: project-lifecycle
     },
     {
       id: "delete",
