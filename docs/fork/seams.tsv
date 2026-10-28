@@ -229,7 +229,7 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	everyda
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library	3
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	3
 apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	3
-apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	43
+apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	34
 apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	7
 apps/mobile/src/features/home/home-list-filter-menu.ts	fleet-connections	2
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
@@ -340,7 +340,7 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	3
-apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	26
+apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	19
 apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
 apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
@@ -1315,7 +1315,7 @@ apps/server/src/mcp/toolkits/orchestrator/handlers.ts	bots	3
 apps/server/src/orchestration-v2/ClaudeAutomaticDelivery.integration.test.ts	file-placement	1
 apps/server/src/orchestration-v2/ProjectSettingsUpgrade.integration.test.ts	project-lifecycle	2
 apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.regression.test.ts	detached-session-recovery	1
-apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts	detached-session-recovery	12
+apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts	detached-session-recovery	13
 apps/server/src/orchestration-v2/ProviderTurnControlService.test.ts	detached-session-recovery	1
 apps/server/src/orchestration-v2/RuntimePolicy.test.ts	library-launch-files	3
 apps/server/src/orchestration-v2/TurnStartReads.test.ts	goal-history	1
@@ -1459,7 +1459,7 @@ apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
 docs/user/project-settings.md	path-picker	5
 apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-picker	2
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 258899
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262295
 apps/desktop/src/app/DesktopWebLinks.ts	client-computer	5
 apps/desktop/src/app/DesktopWebLinks.test.ts	client-computer	2
 apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5

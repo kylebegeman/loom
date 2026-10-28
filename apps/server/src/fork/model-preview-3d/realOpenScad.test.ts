@@ -118,6 +118,7 @@ const callerLayer = Layer.succeed(
           providerInstanceId: ProviderInstanceId.make("codex"),
           runtimeMode: "full-access",
           interactionMode: "default",
+          linkOrigin: undefined,
         }),
       ),
   }),

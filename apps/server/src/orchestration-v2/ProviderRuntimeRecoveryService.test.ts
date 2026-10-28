@@ -474,6 +474,8 @@ it.effect("recovery closes a secret card's form but leaves a link card open", ()
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          // fork: detached-session-recovery
+          getProviderSessionsForRecovery: () => Effect.succeed([]),
           getRecoveryThreadIds: () => Effect.succeed([threadId]),
           getRuntimeRecoveryProjection: () => Effect.succeed(projection),
         }),
