@@ -104,11 +104,14 @@ export function SavedSecretAnswer({
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="sm-multiline"
+          className="max-w-full"
           disabled={disabled || !allowed || result.waiting}
           onClick={() => (exact && !open ? void answerWithItem(exact) : setOpen(!open))}
         >
-          {exact && !open ? `Use saved item: ${exact.label}` : "Use saved item"}
+          <span className="min-w-0 wrap-anywhere">
+            {exact && !open ? `Use saved item: ${exact.label}` : "Use saved item"}
+          </span>
         </Button>
         {exact && !open ? (
           <Button
@@ -148,11 +151,13 @@ export function SavedSecretAnswer({
               key={item.id}
               type="button"
               variant="outline"
-              size="sm"
+              size="sm-multiline"
               disabled={disabled || !allowed || search !== query.trim()}
               onClick={() => void answerWithItem(item)}
             >
-              {item.label} · {VAULT_KIND_LABELS[item.kind]}
+              <span className="min-w-0 wrap-anywhere">
+                {item.label} · {VAULT_KIND_LABELS[item.kind]}
+              </span>
             </Button>
           ))}
           {page?.nextCursor ? (
