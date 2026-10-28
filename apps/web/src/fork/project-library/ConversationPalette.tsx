@@ -51,6 +51,7 @@ export interface ConversationAutoStart {
   readonly launch: ConversationQuickStart;
   /** Called once the conversation starts, or its settings are shown instead. */
   readonly settle: () => void;
+  readonly renderPending?: ((message: string) => ReactNode) | undefined;
 }
 
 export const ConversationAutoStartContext = createContext<ConversationAutoStart | null>(null);
@@ -115,23 +116,20 @@ type Page =
   | "title"
   | "context";
 
-export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
-  const [page, setPage] = useState<Page>("start");
-  const [search, setSearch] = useState("");
-  const [optionId, setOptionId] = useState<string | null>(null);
+export function useConversationAutoStart(s: Setup) {
   const auto = use(ConversationAutoStartContext);
   const settled = useRef(false);
   // Outlives the decision, so settings that no longer match the row say so until the user edits.
   const [promise, setPromise] = useState(auto?.launch ?? null);
-  const autoStart = auto ? conversationAutoStart(s, auto.launch) : null;
+  const autoStart = s.open && auto ? conversationAutoStart(s, auto.launch) : null;
   // A decided start reads as starting until the submit marks the setup busy.
   const waiting = autoStart === "wait" || autoStart === "start";
   // The ref keeps a start that was already decided from running twice before the host clears it.
   const finish = (start: boolean) => {
     if (!auto || settled.current) return;
     settled.current = true;
-    auto.settle();
-    if (start) void s.submit();
+    if (start) void s.submit().finally(auto.settle);
+    else auto.settle();
   };
   const decide = useEffectEvent((start: boolean) => finish(start));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- settles the promised conversation start once the auto-start decision resolves
@@ -143,6 +141,20 @@ export function ConversationPalette({ setup: s }: { readonly setup: Setup }) {
     finish(false);
     setPromise(null);
   };
+  return { waiting, promise, leave, renderPending: auto?.renderPending };
+}
+
+export function ConversationPalette({
+  setup: s,
+  launch,
+}: {
+  readonly setup: Setup;
+  readonly launch: ReturnType<typeof useConversationAutoStart>;
+}) {
+  const [page, setPage] = useState<Page>("start");
+  const [search, setSearch] = useState("");
+  const [optionId, setOptionId] = useState<string | null>(null);
+  const { waiting, promise, leave } = launch;
   const go = (next: Page) => {
     leave();
     setSearch("");

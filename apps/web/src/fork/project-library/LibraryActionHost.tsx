@@ -22,7 +22,7 @@ import {
   type LibraryThreadSummary,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { useNavigate } from "@tanstack/react-router";
@@ -185,6 +185,9 @@ export function LibraryActionHost({
   const [initialFolder, setInitialFolder] = useState("");
   // A start a project row or a folder just added promised, `pending` until it runs or its settings
   // show instead. `run` remounts the settings so they begin from its defaults.
+  const scratchStarting = useRef(false);
+  const [scratchPending, setScratchPending] = useState(false);
+  const [scratchError, setScratchError] = useState<string | null>(null);
   const [quick, setQuick] = useState<{
     readonly projectId: string;
     readonly launch: ConversationQuickStart;
@@ -333,8 +336,28 @@ export function LibraryActionHost({
             enterLabel: "Start",
             icon: <MessageSquareDashedIcon className="size-4 text-muted-foreground" />,
             select: () => {
-              onClose();
-              void noProject.start();
+              if (scratchStarting.current) return;
+              scratchStarting.current = true;
+              setScratchPending(true);
+              setScratchError(null);
+              void noProject
+                .start()
+                .then((started) => {
+                  if (started === false)
+                    setScratchError(`Could not start on ${noProject.label}. Try again.`);
+                  else onClose();
+                })
+                .catch((error: unknown) => {
+                  setScratchError(
+                    error instanceof Error
+                      ? error.message
+                      : `Could not start on ${noProject.label}. Try again.`,
+                  );
+                })
+                .finally(() => {
+                  scratchStarting.current = false;
+                  setScratchPending(false);
+                });
             },
           },
         ]
@@ -378,6 +401,126 @@ export function LibraryActionHost({
   const gitChoice = gitRepositoryChoice(gitUrl);
   // A conversation clones its files when it starts; a new project from a Git URL clones on save.
   const cloneAfterSave = home === "new" && draft.repository !== "";
+  const projectPicker = (launchMessage?: string) => (
+    <LibraryPaletteView
+      title="New conversation"
+      placeholder="Search projects or choose an action..."
+      query={search}
+      onQueryChange={setSearch}
+      onClose={onClose}
+      busy={loadingProject || launchMessage !== undefined || scratchPending}
+      message={
+        launchMessage ??
+        (scratchPending
+          ? `Starting on ${noProject?.label ?? "the selected computer"}...`
+          : loadingProject
+            ? "Loading project..."
+            : catalog.query.isPending
+              ? "Loading projects..."
+              : undefined)
+      }
+      // A suggested project that no longer loads is only left out, not an error.
+      error={
+        scratchError ??
+        catalog.query.error ??
+        (step === "conversation" ? library.project.error : null)
+      }
+      items={
+        !library.authorityId
+          ? [...noProjectItems, connectLibrary]
+          : loadingProject
+            ? noProjectItems
+            : [
+                ...suggested,
+                ...noProjectItems,
+                ...repositoryProjects.map((entry) =>
+                  projectRow(entry, {
+                    id: `repository:${entry.id}`,
+                    title: `Continue ${entry.title}`,
+                    description: "This repository is already part of this project",
+                    terms: [search],
+                    icon: <ProjectTile project={entry} size="sm" />,
+                    next: true,
+                  }),
+                ),
+                ...(intent.kind !== "search"
+                  ? [
+                      {
+                        id: "resource-intent",
+                        title:
+                          intent.kind === "folder"
+                            ? `Use folder: ${intent.title}`
+                            : repositoryProjects.length
+                              ? `Create another project from ${intent.title}`
+                              : `Start from repository: ${intent.title}`,
+                        description: intent.kind === "folder" ? intent.path : intent.url,
+                        terms: [search],
+                        icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
+                        next: true,
+                        select: () => {
+                          if (intent.kind === "folder") {
+                            setInitialFolder(intent.path);
+                            show("import");
+                          } else
+                            startDraft({
+                              ...BLANK_DRAFT,
+                              title: intent.title,
+                              repository: intent.url,
+                            });
+                        },
+                      },
+                    ]
+                  : []),
+                ...projectRows.filter((row) => !suggested.includes(row)),
+                ...(intent.kind === "search"
+                  ? [
+                      {
+                        id: "new-project",
+                        title: search.trim()
+                          ? visited.create
+                            ? "Continue new project"
+                            : `New project: ${search.trim()}`
+                          : "New project",
+                        terms: [search],
+                        description: visited.create
+                          ? "Return to your project draft"
+                          : "Start something new",
+                        icon: <PlusIcon className="size-4 text-(--project-green)" />,
+                        next: true,
+                        select: () => {
+                          if (visited.create) show("create");
+                          else startDraft({ ...BLANK_DRAFT, title: search.trim() });
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  id: "import",
+                  title: "Add existing folder",
+                  description: "Browse files on a connected computer",
+                  icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
+                  next: true,
+                  select: () => {
+                    setInitialFolder("");
+                    show("import");
+                  },
+                },
+                ...(catalog.query.error
+                  ? [
+                      {
+                        id: "retry",
+                        title: "Try again",
+                        select: () => {
+                          catalog.query.refresh();
+                          library.refresh();
+                        },
+                      },
+                    ]
+                  : []),
+              ]
+      }
+    />
+  );
   return (
     <>
       {home === "new" && (!library.authorityId || step === "new") ? (
@@ -438,119 +581,7 @@ export function LibraryActionHost({
           ]}
         />
       ) : null}
-      {home === "project" && (!library.authorityId || needsProject) ? (
-        <LibraryPaletteView
-          title="New conversation"
-          placeholder="Search projects or choose an action..."
-          query={search}
-          onQueryChange={setSearch}
-          onClose={onClose}
-          busy={loadingProject}
-          message={
-            loadingProject
-              ? "Loading project..."
-              : catalog.query.isPending
-                ? "Loading projects..."
-                : undefined
-          }
-          // A suggested project that no longer loads is only left out, not an error.
-          error={catalog.query.error ?? (step === "conversation" ? library.project.error : null)}
-          items={
-            !library.authorityId
-              ? [...noProjectItems, connectLibrary]
-              : loadingProject
-                ? noProjectItems
-                : [
-                    ...suggested,
-                    ...noProjectItems,
-                    ...repositoryProjects.map((entry) =>
-                      projectRow(entry, {
-                        id: `repository:${entry.id}`,
-                        title: `Continue ${entry.title}`,
-                        description: "This repository is already part of this project",
-                        terms: [search],
-                        icon: <ProjectTile project={entry} size="sm" />,
-                        next: true,
-                      }),
-                    ),
-                    ...(intent.kind !== "search"
-                      ? [
-                          {
-                            id: "resource-intent",
-                            title:
-                              intent.kind === "folder"
-                                ? `Use folder: ${intent.title}`
-                                : repositoryProjects.length
-                                  ? `Create another project from ${intent.title}`
-                                  : `Start from repository: ${intent.title}`,
-                            description: intent.kind === "folder" ? intent.path : intent.url,
-                            terms: [search],
-                            icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
-                            next: true,
-                            select: () => {
-                              if (intent.kind === "folder") {
-                                setInitialFolder(intent.path);
-                                show("import");
-                              } else
-                                startDraft({
-                                  ...BLANK_DRAFT,
-                                  title: intent.title,
-                                  repository: intent.url,
-                                });
-                            },
-                          },
-                        ]
-                      : []),
-                    ...projectRows.filter((row) => !suggested.includes(row)),
-                    ...(intent.kind === "search"
-                      ? [
-                          {
-                            id: "new-project",
-                            title: search.trim()
-                              ? visited.create
-                                ? "Continue new project"
-                                : `New project: ${search.trim()}`
-                              : "New project",
-                            terms: [search],
-                            description: visited.create
-                              ? "Return to your project draft"
-                              : "Start something new",
-                            icon: <PlusIcon className="size-4 text-(--project-green)" />,
-                            next: true,
-                            select: () => {
-                              if (visited.create) show("create");
-                              else startDraft({ ...BLANK_DRAFT, title: search.trim() });
-                            },
-                          },
-                        ]
-                      : []),
-                    {
-                      id: "import",
-                      title: "Add existing folder",
-                      description: "Browse files on a connected computer",
-                      icon: <FolderPlusIcon className="size-4 text-(--project-teal)" />,
-                      next: true,
-                      select: () => {
-                        setInitialFolder("");
-                        show("import");
-                      },
-                    },
-                    ...(catalog.query.error
-                      ? [
-                          {
-                            id: "retry",
-                            title: "Try again",
-                            select: () => {
-                              catalog.query.refresh();
-                              library.refresh();
-                            },
-                          },
-                        ]
-                      : []),
-                  ]
-          }
-        />
-      ) : null}
+      {home === "project" && (!library.authorityId || needsProject) ? projectPicker() : null}
       {library.authorityId && visited.create ? (
         <ProjectEditorDialog
           key={newProjectDraftKey(draft)}
@@ -599,6 +630,7 @@ export function LibraryActionHost({
             quickProject?.pending && step === "conversation"
               ? {
                   launch: quickProject.launch,
+                  renderPending: projectPicker,
                   settle: () =>
                     setQuick((previous) => (previous ? { ...previous, pending: false } : null)),
                 }
@@ -611,7 +643,7 @@ export function LibraryActionHost({
             open={step === "conversation"}
             project={project}
             initialHostId={quickProject?.launch.environmentId ?? defaults?.environmentId}
-            initialCopyId={defaults?.workingCopyId}
+            initialCopyId={quickProject?.launch.workingCopyId ?? defaults?.workingCopyId}
             initialResourceId={defaults?.resourceId}
             initialResourceIds={defaults?.resourceIds}
             initialModelSelection={defaults?.modelSelection}

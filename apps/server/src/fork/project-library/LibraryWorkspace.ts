@@ -3593,9 +3593,20 @@ const make = Effect.gen(function* () {
       );
     yield* rebind(moved);
     const applied = yield* input.move.pipe(
-      Effect.onError(() => rebind(folder).pipe(Effect.ignore)),
+      Effect.onError((cause) =>
+        Effect.gen(function* () {
+          if (Cause.hasInterruptsOnly(cause)) {
+            // Provider detachment can interrupt a handoff after metadata commits.
+            const thread = yield* projections
+              .getThreadShell(input.threadId)
+              .pipe(Effect.orElseSucceed(() => undefined));
+            if (thread === undefined || thread?.worktreePath === moved.cwd) return;
+          }
+          yield* rebind(current);
+        }).pipe(Effect.uninterruptible, Effect.ignore),
+      ),
     );
-    if (!applied) yield* rebind(folder);
+    if (!applied) yield* rebind(current);
     return applied;
   });
 

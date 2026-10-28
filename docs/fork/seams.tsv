@@ -703,11 +703,11 @@ apps/server/src/serverRuntimeStartup.ts	brand	1
 packages/provider-opencode/src/server/OpenCodeServerLedger.ts	brand	1
 packages/shared/src/relayClient.ts	brand	1
 apps/server/src/serviceLauncher.test.ts	brand	1
-apps/web/src/components/CommandPalette.tsx	no-project-first	6
+apps/web/src/components/CommandPalette.tsx	no-project-first	8
 apps/web/src/components/ProjectEnvironmentBadge.tsx	no-project-first	2
 apps/web/src/components/chat/DraftHeroHeadline.tsx	no-project-first	10
 apps/web/src/hooks/useLogicalProjectEnvironments.ts	no-project-first	2
-apps/web/src/hooks/useScratchProject.ts	no-project-first	4
+apps/web/src/hooks/useScratchProject.ts	no-project-first	7
 apps/web/src/hooks/useScratchProject.test.ts	no-project-first	3
 apps/web/src/components/Sidebar.tsx	no-project-first	5
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
@@ -811,7 +811,7 @@ packages/shared/src/serverSettings.test.ts	project-lifecycle	3
 packages/shared/src/serverSettings.test.ts	file-placement	1
 apps/web/src/components/settings/scopedSettings.test.ts	project-lifecycle	12
 apps/server/src/orchestration-v2/ThreadManagementService.ts	library-projects	5
-apps/server/src/mcp/WorktreeMcpService.ts	library-projects	4
+apps/server/src/mcp/WorktreeMcpService.ts	library-projects	15
 apps/web/src/components/BranchToolbarBranchSelector.tsx	library-projects	2
 apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	3
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	library-projects	22
@@ -1498,3 +1498,4 @@ packages/client-runtime/src/state/peerPairingCode.ts	brand	1
 packages/contracts/src/preview.ts	brand	1
 apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
 apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2
+apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13

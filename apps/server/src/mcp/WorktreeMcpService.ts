@@ -17,7 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import * as LibraryFolderGuard from "../fork/project-library/LibraryFolderGuard.ts"; // fork: library-projects
+import { libraryWorktreeHandoff } from "../fork/project-library/libraryWorktreeHandoff.ts"; // fork: library-projects
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -63,7 +63,7 @@ const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
   const setupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
-  const libraryFolders = yield* Effect.serviceOption(LibraryFolderGuard.LibraryFolderGuard); // fork: library-projects
+  const libraryWorktrees = yield* libraryWorktreeHandoff; // fork: library-projects
 
   // Serialize handoffs per thread to avoid creating two worktrees and orphaning one.
   const handoffThreadsInFlight = new Set<string>();
@@ -151,25 +151,18 @@ const make = Effect.gen(function* () {
       );
 
     const projection = yield* loadThread(scope);
-    // fork: library-projects -- checked first so a bound conversation hears why, and before
-    // the worktree and branch exist, since the bind dispatch would refuse only after both.
-    if (Option.isSome(libraryFolders)) {
-      yield* libraryFolders.value
-        .assertMayLeaveFolder(scope.thread.threadId)
-        .pipe(
-          Effect.mapError((error) =>
-            error.reason === "blocked"
-              ? failure("invalid_request", error.message)
-              : failure(
-                  "operation_failed",
-                  `Unable to check the thread's Library project: ${error.message}`,
-                ),
-          ),
-        );
-    } // fork: library-projects
-    if (projection.thread.worktreePath !== null) {
-      return yield* alreadyInWorktree(projection.thread.worktreePath);
+    const libraryHandoff = yield* libraryWorktrees(scope.thread.threadId); // fork: library-projects
+    const sourceWorktreePath = projection.thread.worktreePath; // fork: library-projects
+    // fork: library-projects
+    if (sourceWorktreePath !== null && sourceWorktreePath !== libraryHandoff?.cwd) {
+      return yield* alreadyInWorktree(sourceWorktreePath);
     }
+    // fork: library-projects
+    if (libraryHandoff && !libraryHandoff.canCreate)
+      return yield* failure(
+        "invalid_request",
+        "Choose a single repository before moving this Library conversation into a worktree.",
+      );
     if (projection.thread.archivedAt !== null) {
       return yield* failure(
         "invalid_request",
@@ -178,7 +171,7 @@ const make = Effect.gen(function* () {
     }
 
     const project = yield* loadProject(scope, projection.thread.projectId);
-    const projectCwd = project.workspaceRoot;
+    const projectCwd = libraryHandoff?.cwd ?? project.workspaceRoot; // fork: library-projects
 
     const localStatus = yield* gitWorkflow
       .localStatus({ cwd: projectCwd })
@@ -285,8 +278,18 @@ const make = Effect.gen(function* () {
         const recheckAndBind = Effect.gen(function* () {
           // A concurrent UI binding may have landed during git work; do not orphan a second worktree.
           const recheck = yield* loadThread(scope);
-          if (recheck.thread.worktreePath !== null) {
-            return yield* alreadyInWorktree(recheck.thread.worktreePath);
+          // fork: library-projects
+          if (
+            recheck.thread.worktreePath !== sourceWorktreePath ||
+            recheck.thread.projectId !== projection.thread.projectId
+          ) {
+            // fork: library-projects
+            return yield* recheck.thread.worktreePath !== null
+              ? alreadyInWorktree(recheck.thread.worktreePath)
+              : failure(
+                  "invalid_request",
+                  "The conversation folder changed while the worktree was being created. Try again.",
+                );
           }
           if (recheck.thread.archivedAt !== null) {
             return yield* failure(
@@ -294,14 +297,15 @@ const make = Effect.gen(function* () {
               `Thread '${scope.thread.threadId}' was archived while the worktree was being created; the handoff was rolled back.`,
             );
           }
-          yield* threadManagement
+          // fork: library-projects
+          const move = threadManagement
             .dispatch({
               type: "thread.metadata.update",
               commandId: ids.commandId,
               threadId: scope.thread.threadId,
               branch: worktree.worktree.refName,
               worktreePath,
-              expectedWorktreePath: null,
+              expectedWorktreePath: sourceWorktreePath, // fork: library-projects
             })
             .pipe(
               Effect.catchCause((cause) =>
@@ -315,6 +319,10 @@ const make = Effect.gen(function* () {
                     ),
               ),
             );
+          // fork: library-projects
+          yield* libraryHandoff
+            ? libraryHandoff.bind(worktreePath, move.pipe(Effect.as(true)))
+            : move;
         }).pipe(
           // Do not remove on interruption alone; the thread binding may already have committed.
           Effect.onError((cause) =>
@@ -436,9 +444,15 @@ const make = Effect.gen(function* () {
 
       const defaultStartFromOrigin = yield* readDefaultStartFromOrigin;
 
+      // fork: library-projects
+      const libraryHandoff = yield* libraryWorktrees(scope.thread.threadId);
+      const worktreePath =
+        projection.thread.worktreePath === libraryHandoff?.cwd
+          ? null
+          : projection.thread.worktreePath;
       const result: WorktreeMcpStatusResult = {
-        attached: projection.thread.worktreePath !== null,
-        worktreePath: projection.thread.worktreePath,
+        attached: worktreePath !== null, // fork: library-projects
+        worktreePath, // fork: library-projects
         branch: projection.thread.branch,
         projectWorkspaceRoot: project.workspaceRoot,
         defaultStartFromOrigin,
