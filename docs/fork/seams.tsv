@@ -1509,7 +1509,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 263691
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 264086
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
