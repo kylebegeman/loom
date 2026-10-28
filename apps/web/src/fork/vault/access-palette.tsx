@@ -15,7 +15,8 @@ export const vaultAccessPaletteSource: ForkCommandPaletteSource = {
             description: "Save a secret, note or file in this computer's Vault",
             searchTerms: ["vault", "save", "file", "key", "secret", "add"],
             icon: <KeyRoundIcon className="size-4" />,
-            run: async () => openVaultAdd(activeThreadRef?.environmentId),
+            run: async () =>
+              openVaultAdd(activeThreadRef ? { environmentId: activeThreadRef.environmentId } : {}),
           },
         ]
       : []),

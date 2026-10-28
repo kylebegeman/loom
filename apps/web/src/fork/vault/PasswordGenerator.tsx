@@ -20,6 +20,7 @@ import {
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { cryptoRandom } from "../utilities/runtime";
 import { onOpenVaultPasswordGenerator, openVaultPasswordGenerator } from "./password-navigation";
+import { openVaultAdd } from "./add-navigation";
 
 export function VaultPasswordSettingsSection() {
   return (
@@ -179,6 +180,18 @@ function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
                 </Button>
                 <Button variant="ghost" size="sm" disabled={copying} onClick={clear}>
                   Clear password
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={copying}
+                  onClick={() => {
+                    openVaultAdd({ kind: "secret", value: password });
+                    clear();
+                    onClose();
+                  }}
+                >
+                  Save to Vault as…
                 </Button>
               </div>
             </div>

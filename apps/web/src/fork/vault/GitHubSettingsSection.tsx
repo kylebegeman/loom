@@ -15,7 +15,7 @@ import { VaultQueryFeedback } from "./SettingsFeedback";
 import { useId, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import type { VaultGitHubInfo } from "@t3tools/contracts/fork";
+import type { VaultGitHubInfo, VaultItemSummary } from "@t3tools/contracts/fork";
 import {
   createVaultGitHubAtoms,
   createVaultAccessAtoms,
@@ -45,6 +45,14 @@ import { GitHubProjectAccess } from "./GitHubProjectAccess";
 import { GitHubReadiness } from "./GitHubReadiness";
 import { VaultFold } from "./VaultFold";
 import { runVault } from "./state";
+import { useEnvironmentQuery } from "~/state/query";
+import {
+  Dialog,
+  DialogPopup,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "~/components/ui/dialog";
 
 const isRepository = Schema.is(VaultGitHubRepository);
 const atoms = createVaultGitHubAtoms(connectionAtomRuntime);
@@ -362,6 +370,100 @@ function Manager({
         </LoomSettingsActions>
       ) : null}
     </div>
+  );
+}
+
+export function VaultGitHubAddDialog({
+  environmentId,
+  initialLabel,
+  onSaved,
+  onClose,
+}: {
+  environmentId: EnvironmentId;
+  initialLabel: string;
+  onSaved: (item: VaultItemSummary) => void;
+  onClose: () => void;
+}) {
+  const configs = useServerConfigs();
+  const supportsOwner = supportsLoomFeature(
+    configs.get(environmentId)?.environment.capabilities,
+    "vault-owner-trusted",
+  );
+  const policy = useEnvironmentQuery(
+    supportsOwner ? access.snapshot({ environmentId, input: {} }) : null,
+  );
+  const ownerTrusted = policy.data?.ownerPolicy?.mode === "owner-trusted";
+  const allowed = useAtomValue(atoms.save.permissionAtom(environmentId));
+  const [draft, setDraft] = useState<VaultGitHubDraft>(() => ({
+    id: id(),
+    expectedVersion: 0,
+    label: initialLabel || "GitHub",
+    repositories: "",
+    type: "token",
+    appId: "",
+    installationId: "",
+    secret: "",
+  }));
+  const [operationId, setOperationId] = useState(id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const blocked = busy || !allowed || (supportsOwner && (!policy.isSuccess || policy.isPending));
+  const save = async () => {
+    if (blocked) return;
+    const input = makeVaultGitHubSave(draft, operationId, ownerTrusted);
+    if (!input) {
+      setError("Enter a connection name, a GitHub credential and its allowed repositories.");
+      return;
+    }
+    setBusy(true);
+    setError(
+      await perform(async () => {
+        const saved = await runVault(atoms.save, { environmentId, input });
+        setDraft((previous) => ({ ...previous, secret: "" }));
+        onSaved(saved.item);
+      }),
+    );
+    setBusy(false);
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !busy) onClose();
+      }}
+    >
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Connect GitHub</DialogTitle>
+          <DialogDescription>
+            Save a dedicated GitHub connection in this computer's Vault.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex max-h-[70vh] min-w-0 flex-col gap-4 overflow-y-auto px-6 pb-5">
+          {error || policy.error ? (
+            <LoomSettingsNotice role="alert">{error ?? policy.error}</LoomSettingsNotice>
+          ) : null}
+          {policy.error ? (
+            <Button size="sm" variant="outline" onClick={policy.refresh}>
+              Retry access check
+            </Button>
+          ) : null}
+          <ConnectionEditor
+            draft={draft}
+            ownerTrusted={ownerTrusted}
+            disabled={blocked}
+            busy={busy}
+            onChange={(next) => {
+              setDraft(next);
+              setOperationId(id());
+              setError(null);
+            }}
+            onSave={() => void save()}
+            onCancel={onClose}
+          />
+        </div>
+      </DialogPopup>
+    </Dialog>
   );
 }
 

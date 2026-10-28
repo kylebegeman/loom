@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: (atom: unknown) => (state.values.has(atom) ? state.values.get(atom) : atom),
+  useAtomRefresh: () => () => {},
 }));
 vi.mock("~/rpc/atomRegistry", () => ({
   appAtomRegistry: {
@@ -31,6 +32,18 @@ vi.mock("~/state/entities", () => ({
     ]),
 }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => true }));
+vi.mock("~/state/environments", () => ({
+  usePrimaryEnvironmentId: () => "selected-host",
+  useEnvironments: () => ({
+    environments: [
+      {
+        environmentId: "selected-host",
+        label: "Test computer",
+        connection: { phase: "connected" },
+      },
+    ],
+  }),
+}));
 vi.mock("~/components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({ environment: { environmentId: "selected-host" } }),
 }));
@@ -46,6 +59,7 @@ vi.mock("./state", () => ({
 }));
 vi.mock("./OwnerSettingsSection", () => ({ VaultOwnerSettings: () => null }));
 vi.mock("./SshDialog", () => ({ VaultSshDialog: () => null }));
+vi.mock("./GitHubSettingsSection", () => ({ VaultGitHubAddDialog: () => null }));
 vi.mock("~/components/ui/input", () => ({
   Input: (props: InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }));
@@ -81,6 +95,7 @@ vi.mock("~/components/ui/select", () => {
 });
 vi.mock("~/components/ui/checkbox", () => ({ Checkbox: () => null }));
 import { VaultSettingsSection } from "./SettingsSection";
+import { VaultAddHost } from "./VaultAddHost";
 import { openVaultAdd, vaultAddTarget } from "./add-navigation";
 let root: Root;
 let container: HTMLDivElement;
@@ -98,7 +113,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 async function render() {
-  await act(async () => root.render(<VaultSettingsSection />));
+  await act(async () =>
+    root.render(
+      <>
+        <VaultSettingsSection />
+        <VaultAddHost />
+      </>,
+    ),
+  );
 }
 async function submit() {
   await act(async () =>
@@ -123,7 +145,7 @@ function drop(file: NodeBuffer.File) {
 it("opens empty records and lets the palette add request choose a file without changing Kind first", async () => {
   await render();
   expect(recordsOpen()).toBe("true");
-  openVaultAdd(EnvironmentId.make("selected-host"));
+  openVaultAdd({ environmentId: EnvironmentId.make("selected-host") });
   await render();
   expect(container.textContent).toContain("Add Vault item");
   const choose = Array.from(container.querySelectorAll("button")).find(

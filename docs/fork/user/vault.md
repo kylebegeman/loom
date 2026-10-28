@@ -51,6 +51,9 @@ the list. Search checks metadata only, never saved values. Choose **Recently upd
 start with the latest changes. Older computers retain their original paged list until updated.
 
 Choose **Add item**, or **Add to Vault...** in the command palette, and enter a name and value.
+The dialog opens over your current view. If a credential picker has no matching item, choose
+**Add** there to create it and fill the picker without leaving the form. SSH keys and GitHub
+connections open their dedicated creation dialogs.
 To save a file, choose **Choose file** beside the value or drop one onto the Vault page on web/desktop.
 Loom selects Secure file and uses the filename as the initial name. Secret values are hidden by
 default. Multiline entry is explicitly visible, for keys and notes. File imports support files
@@ -955,6 +958,8 @@ Open **Settings > Vault > Password generator**, or choose **Generate a Vault pas
 the command palette. On mobile, open a computer's settings and find **Vault password tools**.
 Generation works on the current device without a Vault backend or an active connection once
 settings is accessible. Choose the length and characters, generate, and copy when ready.
+Choose **Save to Vault as…** to name and save the generated value on a connected computer.
+The add dialog receives the value directly; the generator clears its own view.
 
 Passwords start hidden and are not saved automatically. Changing the options, closing the tool
 or leaving the window/app clears the result from the view. Copy uses the system clipboard;
