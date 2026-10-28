@@ -1476,3 +1476,16 @@ apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3
 
 apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	2
+apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx	brand	1
+apps/mobile/src/features/threads/ThreadQueueControl.tsx	brand	1
+apps/server/src/cli/environment.ts	brand	2
+apps/server/src/peer/PeerLinks.ts	brand	3
+apps/web/src/components/EnvironmentContextChip.tsx	brand	1
+apps/web/src/components/chat/QueuedRunsControl.browser.test.tsx	brand	1
+apps/web/src/components/chat/QueuedRunsControl.tsx	brand	1
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	brand	1
+apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	brand	2
+apps/web/src/components/ui/standalone-page.tsx	brand	2
+apps/web/src/hooks/useStartTriage.ts	brand	1
+packages/client-runtime/src/state/peerPairingCode.ts	brand	1
+packages/contracts/src/preview.ts	brand	1

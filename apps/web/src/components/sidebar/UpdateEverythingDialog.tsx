@@ -164,7 +164,8 @@ function UpdateEverythingDialogContent({
         <AlertDialogDescription>
           {version !== null ? (
             <>
-              T3 Code <span className="font-mono text-xs">{version}</span>
+              {/* fork: brand */}
+              Loom <span className="font-mono text-xs">{version}</span>
             </>
           ) : null}
           {version !== null && providerCount > 0 ? " · " : null}
@@ -179,7 +180,8 @@ function UpdateEverythingDialogContent({
           <div className="grid grid-cols-[minmax(4rem,max-content)_max-content_minmax(min-content,1fr)_max-content] gap-x-4 text-sm">
             <div className="col-span-full grid grid-cols-subgrid border-b pb-1.5 text-muted-foreground text-xs">
               <span>Machine</span>
-              <span>T3 Code</span>
+              {/* fork: brand */}
+              <span>Loom</span>
               <span>Providers</span>
               <span />
             </div>

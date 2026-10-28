@@ -392,7 +392,7 @@ const make = Effect.gen(function* () {
     if (Option.isNone(descriptor)) {
       return yield* new PeerLinkError({
         reason: "not_a_t3_environment",
-        message: `Nothing at ${primary} answered as a T3 Code environment.`,
+        message: `Nothing at ${primary} answered as a Loom environment.`, // fork: brand
       });
     }
     return { primary, peer: descriptor.value, origins };
@@ -423,7 +423,8 @@ const make = Effect.gen(function* () {
     if (!linkLimitsHold(peer)) {
       return yield* new PeerLinkError({
         reason: "incompatible",
-        message: `${peer.label} runs a T3 Code version that cannot keep a linked agent's limits. Update it, then link again.`,
+        // fork: brand
+        message: `${peer.label} runs a Loom version that cannot keep a linked agent's limits. Update it, then link again.`,
       });
     }
     const issued = yield* signIn(primary, input, `T3 Code · ${self.label}`);
@@ -579,7 +580,8 @@ const make = Effect.gen(function* () {
       if (!fenced) {
         return yield* new PeerLinkError({
           reason: "incompatible",
-          message: `${link.label} runs a T3 Code version that cannot keep a linked agent's limits. Update it, then link again.`,
+          // fork: brand
+          message: `${link.label} runs a Loom version that cannot keep a linked agent's limits. Update it, then link again.`,
         });
       }
       return { link, url: url.value, token: new TextDecoder().decode(stored.value) };
