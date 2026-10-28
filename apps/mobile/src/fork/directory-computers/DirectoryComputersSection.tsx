@@ -46,7 +46,7 @@ import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 const directoryComputers = createDirectoryComputersAtoms(connectionAtomRuntime);
 
 const FOOTER =
-  "Computers your Library knows about that are not on this device yet. Connect signs in with Loom Identity, or asks for a pairing code when a computer does not offer it.";
+  "Computers your Library knows about. Connect signs in with Loom Identity, or asks for a pairing code when a computer does not offer it. Forget clears the Library entry and leaves your files and saved connection in place.";
 
 const SIGN_IN_PROGRESS = { "signing-in": "Signing in...", verifying: "Verifying..." } as const;
 
@@ -328,7 +328,8 @@ export function DirectoryComputersSection({
       )}
       {old.machines.length > 0 ? (
         <>
-          {old.environments.length === 0 ? (
+          {content.kind !== "computers" ||
+          !content.computers.some(({ row }) => oldIds.has(row.environmentId)) ? (
             <Text className="px-4 pt-4 text-sm text-foreground-muted">Old machines</Text>
           ) : null}
           {old.machines.map((machine) => (

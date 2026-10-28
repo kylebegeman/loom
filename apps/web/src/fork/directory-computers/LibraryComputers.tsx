@@ -60,7 +60,7 @@ function cancelSignIn(httpBaseUrl: string) {
 }
 
 /**
- * Computers the Library's directory lists that this device has not saved. Hidden until a Library
+ * Computers the Library's directory lists, including connections saved on this device. Hidden until a Library
  * is chosen. The list reads when the section opens and on Refresh, never on a timer.
  */
 export function LibraryComputers({ onPair }: { readonly onPair: PairLibraryComputer }) {
