@@ -26,3 +26,36 @@ export function newScheduledTaskFailures<Task extends ScheduledTaskRun>(
     ),
   };
 }
+
+const SEEN_KEY = "loom:scheduled-task-alerts:seen:v1";
+type MarkStorage = Pick<Storage, "getItem" | "setItem">;
+
+export function readScheduledTaskRunMarks(
+  environmentId: string,
+  storage: () => MarkStorage = () => localStorage,
+): ScheduledTaskRunMarks | null {
+  try {
+    const raw = storage().getItem(`${SEEN_KEY}:${environmentId}`);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const entries = Object.entries(parsed);
+    if (!entries.every((entry): entry is [string, string] => typeof entry[1] === "string"))
+      return null;
+    return new Map(entries);
+  } catch {
+    return null;
+  }
+}
+
+export function writeScheduledTaskRunMarks(
+  environmentId: string,
+  marks: ScheduledTaskRunMarks,
+  storage: () => MarkStorage = () => localStorage,
+): void {
+  try {
+    storage().setItem(`${SEEN_KEY}:${environmentId}`, JSON.stringify(Object.fromEntries(marks)));
+  } catch {
+    /* In-memory marks still prevent repeats when browser storage is unavailable. */
+  }
+}

@@ -39,6 +39,7 @@ const harness = await vi.hoisted(async () => {
     secure: new Map<string, string>(),
     /** Every Library call and the removal, in order. Status reads are left out. */
     calls: [] as Array<string>,
+    registeredKinds: undefined as ReadonlyArray<string> | undefined,
     // Reset before each test; a test that holds one open replaces it. A null status fails the read.
     status: (): Promise<{
       readonly devices: ReadonlyArray<{ readonly id: string }>;
@@ -72,10 +73,13 @@ vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   runAtomCommand: async (
     _registry: unknown,
     command: { readonly tag: string },
-    request: { readonly input: { readonly id?: string } },
+    request: {
+      readonly input: { readonly id?: string; readonly allowedKinds?: ReadonlyArray<string> };
+    },
   ) => {
     if (command.tag === "register") {
       harness.calls.push("register");
+      harness.registeredKinds = request.input.allowedKinds;
       const id = await harness.register();
       return {
         _tag: "Success",
@@ -206,6 +210,7 @@ beforeEach(() => {
   harness.registry = AtomRegistry.make();
   harness.secure.clear();
   harness.calls = [];
+  harness.registeredKinds = undefined;
   harness.status = () => Promise.resolve(null);
   harness.register = () => Promise.resolve(AGAIN_ROW);
   harness.token = () => Promise.resolve({ type: "ios", data: TOKEN });
@@ -367,5 +372,20 @@ describe("the Library's served builds", () => {
     expect(heldAtRemoval).toEqual(refusal);
     expect(tokenAsked).toBe(false);
     expect(harness.calls).toEqual([`remove ${LIBRARY}`]);
+  });
+});
+
+describe("notification kinds", () => {
+  it("saves a changed preference and refreshes the Library registration", async () => {
+    await start(record(KEPT_ROW));
+    await sync.setLibraryPushKinds(harness.registry, ["approval"]);
+    await until(
+      harness.registry,
+      store.libraryPushRecordAtom,
+      (stored) => stored.loaded && stored.record?.registration?.allowedKinds?.join() === "approval",
+    );
+    expect(storedRecord()?.allowedKinds).toEqual(["approval"]);
+    expect(harness.registeredKinds).toEqual(["approval"]);
+    expect(harness.calls).toEqual(["register"]);
   });
 });

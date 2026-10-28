@@ -1,7 +1,6 @@
 /**
- * A Library's Vault approval alert opens the computer's settings, whose Vault access section lists
- * the request (the link is built in apps/server/src/fork/library-push/apnsPayloads.ts). Only that
- * one in-app route is accepted from a payload.
+ * Libraries from before thread approval cards link Vault requests to computer settings.
+ * Keep accepting that route while newer notifications open the requesting thread.
  */
 export function computerSettingsDeepLink(value: string): string | null {
   if (value.trim() !== value || value.includes("?") || value.includes("#")) return null;
@@ -16,4 +15,26 @@ export function computerSettingsDeepLink(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+export function libraryPushDeepLink(value: string): string | null {
+  const computer = computerSettingsDeepLink(value);
+  if (computer !== null) return computer;
+  if (value.trim() !== value || value.includes("#")) return null;
+  const bot = /^\/bots\/([^/?]+)\/inbox$/.exec(value);
+  if (bot?.[1]) {
+    try {
+      const environmentId = decodeURIComponent(bot[1]);
+      return environmentId.length === 0 ? null : `/bots/${encodeURIComponent(environmentId)}/inbox`;
+    } catch {
+      return null;
+    }
+  }
+  if (!value.startsWith("/settings/scheduled-tasks?")) return null;
+  const query = new URLSearchParams(value.slice(value.indexOf("?") + 1));
+  if (query.size !== 2 || !query.has("environmentId") || !query.has("taskId")) return null;
+  const environmentId = query.get("environmentId");
+  const taskId = query.get("taskId");
+  if (!environmentId || !taskId) return null;
+  return `/settings/scheduled-tasks?environmentId=${encodeURIComponent(environmentId)}&taskId=${encodeURIComponent(taskId)}`;
 }
