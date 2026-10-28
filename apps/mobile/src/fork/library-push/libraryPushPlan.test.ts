@@ -231,6 +231,7 @@ describe("planLibraryPushRegistration step two", () => {
       { appVersion: null },
       { bundleId: "com.kylebegeman.loom.preview" },
       { apsEnvironment: "sandbox" },
+      { allowedKinds: ["approval"] },
     ];
     for (const change of changes) {
       expect(planLibraryPushRegistration(registration(), device(change), NOW)).toBe("register");

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  ScheduledTaskId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2PendingRuntimeRequestSummary,
   type OrchestrationV2ThreadShell,
@@ -171,7 +172,20 @@ describe("agentAlertStep", () => {
     ).toEqual([null, "completed", null, null]);
   });
 
-  it("leaves settled, archived, subagent and bot threads alone", () => {
+  it("alerts bot approvals and questions while keeping their outcomes quiet", () => {
+    const bot = { id: ThreadId.make("bot-run-1") };
+    expect(
+      alertsFor([
+        running(bot),
+        waitingOn("command", "request-1", bot),
+        waitingOn("user_input", "request-2", bot),
+        ended("completed", 0, bot),
+        ended("failed", 0, bot),
+      ]),
+    ).toEqual([null, "approval", "input", null, null]);
+  });
+
+  it("leaves settled, archived and subagent threads alone", () => {
     const quiet: ReadonlyArray<Partial<OrchestrationV2ThreadShell>> = [
       { settledOverride: "settled" },
       { archivedAt: at(NOW) },
@@ -182,7 +196,6 @@ describe("agentAlertStep", () => {
           relationshipToParent: "subagent",
         },
       },
-      { id: ThreadId.make("bot-run-1") },
     ];
     for (const overrides of quiet) {
       expect(alertsFor([running(overrides), ended("completed", 0, overrides)])).toEqual([
@@ -203,7 +216,7 @@ const harness = Effect.fn("test.harness")(function* (
 ) {
   yield* TestClock.setTime(NOW);
   const shells = new Map(initial.map((thread) => [thread.id, thread]));
-  const posts: Array<LibraryPushActivityRequest> = [];
+  const posts: Array<Extract<LibraryPushActivityRequest, { threadId: ThreadId }>> = [];
   const unheard: Array<ThreadId> = [];
   const alerts = yield* makeAgentAlerts({
     environmentId: ENVIRONMENT_ID,
@@ -357,6 +370,12 @@ describe("remoteAgentAlertPost", () => {
 
   it.effect("reads a missing sign-in as refused and a failed request as unreachable", () =>
     Effect.gen(function* () {
+      expect(
+        yield* remoteAgentAlertPost(respond(new Response(null, { status: 400 })))({
+          kind: "scheduled-failed",
+          taskId: ScheduledTaskId.make("task-1"),
+        }),
+      ).toBe("unsupported-kind");
       const failing = (reason: "blocked" | "io") =>
         remoteAgentAlertPost(libraryAnswering(() => Effect.fail(new LibraryError({ reason }))))(
           ACTIVITY,

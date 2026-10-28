@@ -1,6 +1,8 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryPushApsEnvironment,
+  LibraryPushActivityKind,
+  normalizeLibraryPushKinds,
   LibraryPushBundleId,
   LibraryPushDeviceRowId,
   LibraryPushErrorReason,
@@ -33,6 +35,7 @@ export const LibraryPushRegistration = Schema.Struct({
   appVersion: Schema.NullOr(Schema.String),
   /** Enough of the token to notice that iOS issued a new one. The full token is never stored. */
   tokenSuffix: Schema.String,
+  allowedKinds: Schema.optionalKey(Schema.Array(LibraryPushActivityKind)),
 });
 export type LibraryPushRegistration = typeof LibraryPushRegistration.Type;
 
@@ -45,6 +48,7 @@ export const LibraryPushRecord = Schema.Struct({
   libraryEnvironmentId: EnvironmentId,
   account: Schema.NullOr(LoomIdentityAccount),
   optedIn: Schema.Boolean,
+  allowedKinds: Schema.optionalKey(Schema.Array(LibraryPushActivityKind)),
   registration: Schema.NullOr(LibraryPushRegistration),
   refusal: Schema.NullOr(
     Schema.Struct({
@@ -81,6 +85,7 @@ export interface LibraryPushLibrary {
   readonly advertised: boolean | null;
   /** Whether it also sends agent alerts (`library-push-activity`); null while unknown. */
   readonly alerts: boolean | null;
+  readonly kindPreferences?: boolean;
   /** The session holds the scope register and unregister need. */
   readonly canChange: boolean;
   readonly account: LoomIdentityAccount | null;
@@ -115,6 +120,7 @@ const sameLibrary = (a: LibraryPushLibrary | null, b: LibraryPushLibrary | null)
     a.connected === b.connected &&
     a.advertised === b.advertised &&
     a.alerts === b.alerts &&
+    a.kindPreferences === b.kindPreferences &&
     a.canChange === b.canChange &&
     sameAccount(a.account, b.account));
 
@@ -214,6 +220,7 @@ export interface LibraryPushDeviceState {
   readonly apsEnvironment: LibraryPushApsEnvironment;
   readonly appVersion: string | null;
   readonly tokenSuffix: string;
+  readonly allowedKinds?: ReadonlyArray<LibraryPushActivityKind>;
 }
 
 /** Re-registering at least daily keeps the Library's row alive and corrects a restored Library. */
@@ -232,7 +239,9 @@ export function planLibraryPushRegistration(
     registration.bundleId !== device.bundleId ||
     registration.apsEnvironment !== device.apsEnvironment ||
     registration.appVersion !== device.appVersion ||
-    registration.tokenSuffix !== device.tokenSuffix;
+    registration.tokenSuffix !== device.tokenSuffix ||
+    normalizeLibraryPushKinds(registration.allowedKinds).join() !==
+      normalizeLibraryPushKinds(device.allowedKinds).join();
   // A short Library sign-in cap can end the row before a day passes, so refresh by halfway.
   const refreshAt = Math.min(
     registration.registeredAt + LIBRARY_PUSH_REFRESH_MS,

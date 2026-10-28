@@ -8,6 +8,8 @@ import {
 } from "@t3tools/contracts";
 import {
   type LibraryPushActivityReply,
+  type LibraryPushActivityKind,
+  libraryPushAllowsKind,
   type LibraryPushActivityRequest,
   type LibraryPushDeliveryReason,
   type LibraryPushDevice,
@@ -427,6 +429,7 @@ const make = Effect.gen(function* () {
             bundleId: request.bundleId,
             apsEnvironment: request.apsEnvironment,
             appVersion: request.appVersion ?? null,
+            ...(request.allowedKinds === undefined ? {} : { allowedKinds: request.allowedKinds }),
             // Apple prints tokens in either case; one form makes the latest-wins check exact.
             token: Redacted.make(token.toLowerCase()),
           },
@@ -496,7 +499,11 @@ const make = Effect.gen(function* () {
    * Picks the alert recipients' live devices and takes the computer's slot and each device's,
    * all under the lock. Every accepted alert counts against the computer, sent or not.
    */
-  const planAlert = (alertRecipients: ReadonlyArray<string>, environmentId: EnvironmentId) =>
+  const planAlert = (
+    alertRecipients: ReadonlyArray<string>,
+    environmentId: EnvironmentId,
+    kind: LibraryPushActivityKind,
+  ) =>
     lock.withPermits(1)(
       Effect.gen(function* () {
         const nowMs = yield* Clock.currentTimeMillis;
@@ -510,8 +517,10 @@ const make = Effect.gen(function* () {
         const targets = pruned.registry.devices.filter((row) =>
           alertRecipients.includes(row.subject),
         );
-        const sends = targets.filter((row) =>
-          takeSlot(deviceAlerts, row.id, nowMs, ALERTS_PER_DEVICE),
+        const sends = targets.filter(
+          (row) =>
+            libraryPushAllowsKind(row.allowedKinds, kind) &&
+            takeSlot(deviceAlerts, row.id, nowMs, ALERTS_PER_DEVICE),
         );
         return { targets, sends } satisfies SendPlan;
       }),
@@ -634,13 +643,13 @@ const make = Effect.gen(function* () {
   ) {
     if (recipients === null) return yield* refuse("off");
     if (sender === null) return yield* refuse("misconfigured");
-    const plan = yield* planAlert(recipients, environmentId);
+    const plan = yield* planAlert(recipients, environmentId, request.kind);
     const devices = plan.targets.length;
     if (plan.sends.length === 0) return { sent: 0, devices } satisfies LibraryPushActivityReply;
     const results = yield* sendAll(
       sender.send,
       plan.sends,
-      agentAlertRequest({ environmentId, threadId: request.threadId, kind: request.kind }),
+      agentAlertRequest({ environmentId, ...request }),
     );
     yield* settle(plan, results);
     return {

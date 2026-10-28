@@ -9,6 +9,7 @@ import {
   AuthSettingsWriteScope,
   EnvironmentId,
   ThreadId,
+  ScheduledTaskId,
 } from "@t3tools/contracts";
 import type { LibraryPushRegisterRequest } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -795,6 +796,30 @@ describe("LibraryPushService agent alerts", () => {
       expect((yield* push.status(identity(env, "alice"))).devices[0]?.lastDelivery).toMatchObject({
         outcome: "sent",
       });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("honors each phone's allowed kinds and keeps old registrations opted in", () =>
+    Effect.gen(function* () {
+      const { env, push, apns } = yield* ready(ALERTS_FOR_ALICE);
+      const alice = identity(env, "alice");
+      yield* push.register(alice, registration({ allowedKinds: ["approval"] }));
+      expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "completed" })).toEqual({
+        sent: 0,
+        devices: 1,
+      });
+      expect(apns.sent).toHaveLength(0);
+      expect(yield* push.alert(STUDIO, { threadId: THREAD, kind: "approval" })).toEqual({
+        sent: 1,
+        devices: 1,
+      });
+      yield* push.register(alice, registration());
+      expect(
+        yield* push.alert(STUDIO, {
+          kind: "scheduled-failed",
+          taskId: ScheduledTaskId.make("task-1"),
+        }),
+      ).toEqual({ sent: 1, devices: 1 });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

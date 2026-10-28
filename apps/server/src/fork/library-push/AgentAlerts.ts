@@ -7,7 +7,7 @@ import type {
 import {
   isBotRunThreadId,
   LIBRARY_PUSH_ACTIVITY_ROUTE,
-  type LibraryPushActivityKind,
+  type LibraryPushThreadActivityKind,
   LibraryPushActivityReply,
   type LibraryPushActivityRequest,
 } from "@t3tools/contracts/fork";
@@ -48,8 +48,11 @@ export type AgentAlertOutcome =
   | "dropped"
   | "unsupported"
   | "refused"
-  | "unreachable";
-type AgentAlertPost = (request: LibraryPushActivityRequest) => Effect.Effect<AgentAlertOutcome>;
+  | "unreachable"
+  | "unsupported-kind";
+type AgentAlertPost = (
+  request: Extract<LibraryPushActivityRequest, { threadId: ThreadId }>,
+) => Effect.Effect<AgentAlertOutcome>;
 
 /**
  * How long this computer stops posting after each outcome. Nothing is queued or retried, since a
@@ -63,6 +66,7 @@ const PAUSE_MS: Readonly<Record<AgentAlertOutcome, number>> = {
   dropped: 0,
   // A Library from before alerts, or with them off, answers the same way until it is redeployed.
   unsupported: 30 * 60_000,
+  "unsupported-kind": 0,
   // A refused sign-in or a computer missing from the directory needs someone to act first.
   refused: 30 * 60_000,
   unreachable: 60_000,
@@ -77,7 +81,7 @@ interface SeenThread {
 }
 
 interface Attention {
-  readonly kind: LibraryPushActivityKind;
+  readonly kind: LibraryPushThreadActivityKind;
   readonly key: string;
   readonly atMs: number | null;
 }
@@ -127,23 +131,27 @@ const attentionOf = (
 
 /**
  * One look at a thread. The phases and the settled rule are the relay's, so every surface agrees on
- * what needs the user. Only top-level user threads alert, and a snoozed or settled thread keeps its
+ * what needs the user. Bot runs alert only for approvals and input; snoozed or settled threads keep
  * completions quiet by the same rule as desktop alerts.
  */
 export const agentAlertStep = (
   previous: SeenThread | undefined,
   shell: OrchestrationV2ThreadShell,
   input: { readonly environmentId: EnvironmentId; readonly nowMs: number },
-): { readonly seen: SeenThread; readonly alert: LibraryPushActivityKind | null } => {
+): { readonly seen: SeenThread; readonly alert: LibraryPushThreadActivityKind | null } => {
   const awareness =
-    shell.archivedAt !== null || shell.deletedAt !== null || isBotRunThreadId(shell.id)
+    shell.archivedAt !== null || shell.deletedAt !== null
       ? null
       : projectThreadAwarenessV2({
           environmentId: input.environmentId,
           project: NO_PROJECT,
           thread: shell,
         });
-  const attention = awareness === null ? null : attentionOf(awareness.phase, shell);
+  const candidate = awareness === null ? null : attentionOf(awareness.phase, shell);
+  const attention =
+    isBotRunThreadId(shell.id) && candidate?.kind !== "approval" && candidate?.kind !== "input"
+      ? null
+      : candidate;
   if (attention === null) {
     const working = awareness?.phase === "starting" || awareness?.phase === "running";
     // The key stays, so settling and unsettling a thread never repeats its last alert.
@@ -257,13 +265,15 @@ export const postLibraryActivity = (
     )
     .pipe(
       Effect.flatMap((response) =>
-        response.status >= 200 && response.status < 300
-          ? // A proxy's sign-in page or an older Library's app shell can also answer 200.
-            response.json.pipe(
-              Effect.flatMap(decodeReply),
-              Effect.orElseSucceed((): MissingReply => "unsupported"),
-            )
-          : Effect.succeed(outcomeOfStatus(response.status)),
+        response.status === 400 && request.kind === "scheduled-failed"
+          ? Effect.succeed("unsupported-kind" as const)
+          : response.status >= 200 && response.status < 300
+            ? // A proxy's sign-in page or an older Library's app shell can also answer 200.
+              response.json.pipe(
+                Effect.flatMap(decodeReply),
+                Effect.orElseSucceed((): MissingReply => "unsupported"),
+              )
+            : Effect.succeed(outcomeOfStatus(response.status)),
       ),
       Effect.catchTags({
         LibraryError: (error) =>
@@ -278,7 +288,9 @@ const acceptedOutcome = (reply: LibraryPushActivityReply): AgentAlertOutcome =>
   reply.devices === 0 ? "unheard" : "sent";
 
 export const remoteAgentAlertPost =
-  (library: RemoteLibrary): AgentAlertPost =>
+  (
+    library: RemoteLibrary,
+  ): ((request: LibraryPushActivityRequest) => Effect.Effect<AgentAlertOutcome>) =>
   (request) =>
     postLibraryActivity(library, request).pipe(
       Effect.map((answer) => (typeof answer === "string" ? answer : acceptedOutcome(answer))),

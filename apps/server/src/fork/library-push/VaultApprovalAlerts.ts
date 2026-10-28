@@ -26,7 +26,12 @@ const make = Effect.gen(function* () {
 
   // Untraced: the send runs under the span of `pending`, which forks it. The connection is read
   // per request, unlike agent alerts, so a computer signed in after start alerts too.
-  const send = Effect.fnUntraced(function* (request: LibraryPushActivityRequest) {
+  const send = Effect.fnUntraced(function* (
+    request: Extract<
+      LibraryPushActivityRequest,
+      { kind: "vault-approval" | "input" | "approval" | "failed" | "limited" | "completed" }
+    >,
+  ) {
     const connection = yield* library.current;
     const answer =
       connection.kind === "remote"
