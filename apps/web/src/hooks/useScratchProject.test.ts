@@ -12,7 +12,8 @@ function scratchEnvironment(environmentId: EnvironmentId, scratchWorkspaceRoot: 
   return {
     environmentId,
     connection: { phase: "connected" },
-    serverConfig: { scratchWorkspaceRoot },
+    serverConfig: { scratchWorkspaceRoot, environment: { capabilities: {} } }, // fork: no-project-first
+    entry: { target: { label: environmentId } }, // fork: no-project-first
   } as never;
 }
 
@@ -44,6 +45,6 @@ describe("scratchEnvironmentId", () => {
     expect(actions(local, null).scratchEnvironmentId(remote)).toBe(remote);
     expect(actions(null, null).scratchEnvironmentId(remote)).toBe(remote);
     expect(actions(null, null, null).scratchEnvironmentId(remote)).toBe(other);
-    expect(actions(local, null).scratchEnvironmentId(null)).toBeNull();
+    expect(actions(local, null).scratchEnvironmentId(null)).toBe(other); // fork: no-project-first
   });
 });

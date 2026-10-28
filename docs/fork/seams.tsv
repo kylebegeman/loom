@@ -705,6 +705,7 @@ apps/web/src/components/ProjectEnvironmentBadge.tsx	no-project-first	2
 apps/web/src/components/chat/DraftHeroHeadline.tsx	no-project-first	10
 apps/web/src/hooks/useLogicalProjectEnvironments.ts	no-project-first	2
 apps/web/src/hooks/useScratchProject.ts	no-project-first	4
+apps/web/src/hooks/useScratchProject.test.ts	no-project-first	3
 apps/web/src/components/Sidebar.tsx	no-project-first	5
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	no-project-first	2
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	no-project-first	8

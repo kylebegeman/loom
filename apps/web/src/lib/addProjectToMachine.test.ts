@@ -20,6 +20,9 @@ vi.mock("../state/projectClones", async () => {
   const clones = Atom.make([]);
   return { environmentProjectClonesAtom: () => clones, silenceProjectCloneToasts: () => {} };
 });
+vi.mock("../components/sourceControlAppAccessToast", () => ({
+  suggestAppAccessForRemote: async () => {},
+}));
 vi.mock("../state/projects", () => ({
   projectEnvironment: {
     readFile: (request: unknown) => ({ readFile: request }),
