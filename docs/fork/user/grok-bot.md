@@ -7,7 +7,9 @@ coding provider. Selecting a Grok model does not connect the hosted Bot.
 
 Use an HTTPS MCP address reachable from the Bot's actual caller, ending in `/mcp`.
 The address copied from Computers uses your current route; verify that a hosted
-caller can reach it. Loom Reach currently blocks `/mcp`, the MCP OAuth routes and
+caller can reach it. Check the environment's `/.well-known/t3/environment` metadata:
+launching requires `capabilities.supportsExecution` to be true. A Library-only server
+can supply history while refusing agent execution. Loom Reach currently blocks `/mcp`, the MCP OAuth routes and
 the sign-in page. A working Reach connection is not an MCP endpoint. Use an existing
 public HTTPS environment route, such as T3 Connect when configured, or a private
 HTTPS route whose reachability from the Bot computer has been independently proved.
