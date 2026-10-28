@@ -271,7 +271,11 @@ it.effect(
         expect(yield* readCard).toMatchObject({ requestId: request.id, state: "pending" });
       }),
     ).pipe(
-      Effect.provide(persistence),
-      Effect.provide(Layer.mock(VaultCore.VaultCore)({ inspect: () => Effect.succeed(null) })),
+      Effect.provide(
+        Layer.merge(
+          persistence,
+          Layer.mock(VaultCore.VaultCore)({ inspect: () => Effect.succeed(null) }),
+        ),
+      ),
     ),
 );
