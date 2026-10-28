@@ -1042,12 +1042,12 @@ describe("ProjectLifecycleService", () => {
           ...spaces,
           folder: {
             ...spaces.folder,
-            detach: (paths, device) =>
+            detach: (paths, device, force) =>
               busy
                 ? Effect.fail(
                     new ProjectLifecycleError({ reason: "busy", message: "Files are open." }),
                   )
-                : spaces.folder.detach(paths, device),
+                : spaces.folder.detach(paths, device, force),
           },
         }),
       });
@@ -1115,12 +1115,12 @@ describe("ProjectLifecycleService", () => {
           ...spaces,
           folder: {
             ...spaces.folder,
-            detach: (paths, device) =>
+            detach: (paths, device, force) =>
               alive(holder)
                 ? Effect.fail(
                     new ProjectLifecycleError({ reason: "busy", message: "Files are open." }),
                   )
-                : spaces.folder.detach(paths, device),
+                : spaces.folder.detach(paths, device, force),
           },
         }),
       });
@@ -1133,6 +1133,35 @@ describe("ProjectLifecycleService", () => {
       t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
       expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
       expect(alive(holder)).toBe(false);
+      expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("unmounts a released lane that only processes lsof cannot see hold open", () =>
+    Effect.gen(function* () {
+      const forced: Array<string> = [];
+      const t = yield* setupWith({
+        wrapSpaces: (spaces) => ({
+          ...spaces,
+          folder: {
+            ...spaces.folder,
+            // Like syspolicyd, which keeps scanning a lane's binaries for hours.
+            detach: (paths, device, force) => {
+              if (!force)
+                return Effect.fail(
+                  new ProjectLifecycleError({ reason: "busy", message: "Files are open." }),
+                );
+              forced.push(paths.spacePath);
+              return spaces.folder.detach(paths, device, force);
+            },
+          },
+        }),
+      });
+      t.threads.push(thread("worker"));
+      const lane = yield* t.service.ensureForThread(ThreadId.make("worker"));
+      t.threads[0] = thread("worker", { settledAt: DateTime.nowUnsafe() });
+      expect(laneOf(yield* t.service.tick(), t.checkout)).toBeUndefined();
+      expect(forced).toEqual([`${lane.laneDir}/space`]);
       expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
     }).pipe(Effect.scoped),
   );

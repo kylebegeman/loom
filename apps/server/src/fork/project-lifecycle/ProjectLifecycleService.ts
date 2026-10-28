@@ -1037,18 +1037,35 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     return lane === undefined ? null : buildEnvironmentOf(lane, yield* getSettings);
   });
 
-  const detach = (lane: LaneRow) =>
-    opsFor(lane)
-      .detach(lanePaths(lane), lane.device)
+  const isBusy = (cause: ProjectLifecycleError) => cause.reason === "busy";
+
+  /**
+   * macOS services such as syspolicyd keep files in a space open for hours, and lsof cannot
+   * show them. Once lsof finds none of this user's processes holding it, the space unmounts.
+   */
+  const unmount = (ops: SpaceOps, paths: LanePaths, device: string | null) =>
+    ops
+      .detach(paths, device, false)
       .pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            liveOf(lane.id).mounted = false;
-          }),
+        Effect.catchIf(isBusy, (cause) =>
+          leaseOps
+            .mountHolders(paths.spacePath)
+            .pipe(
+              Effect.flatMap((holders) =>
+                holders?.length === 0 ? ops.detach(paths, device, true) : Effect.fail(cause),
+              ),
+            ),
         ),
       );
 
-  const isBusy = (cause: ProjectLifecycleError) => cause.reason === "busy";
+  const detach = (lane: LaneRow) =>
+    unmount(opsFor(lane), lanePaths(lane), lane.device).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          liveOf(lane.id).mounted = false;
+        }),
+      ),
+    );
 
   const detachWaiting = (lane: LaneRow, removing: boolean, now: number) => {
     const blocked = liveOf(lane.id).detachBlocked;
@@ -1413,11 +1430,14 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         "no-room",
         `This machine has ${host.free === null ? "unknown" : formatGb(host.free)} free and keeps a ${settings.reserveGb} GB reserve, so the lane cannot grow. Free space in the lane instead.`,
       );
-    const { device } = yield* opsFor(lane)
-      .resize(lanePaths(lane), target, lane.device)
-      .pipe(detaching(lane, false));
+    // Resizing detaches first; detaching here lets a space only system services hold resize too.
+    const { device } = yield* detach(lane).pipe(
+      Effect.andThen(opsFor(lane).resize(lanePaths(lane), target, lane.device)),
+      detaching(lane, false),
+    );
     const next = { ...lane, capBytes: target, device };
     lanes.set(lane.id, next);
+    liveOf(lane.id).mounted = true;
     yield* store.updateLane(lane.id, { capBytes: target, device }).pipe(Effect.orDie);
     yield* writeAtomically(`${lane.laneDir}/LANE.md`, laneMarkdown(next, rootOf(settings))).pipe(
       Effect.ignore,
@@ -1666,7 +1686,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         if ((yield* checkoutPathsWithin(target.path)).length > 0)
           return yield* error("busy", CHECKOUT_PROTECTION_MESSAGE);
         const paths = lanePaths({ laneDir: target.path });
-        if (yield* exists(paths.imagePath)) yield* spaces.image.detach(paths, null);
+        if (yield* exists(paths.imagePath)) yield* unmount(spaces.image, paths, null);
         yield* node("remove unrecorded lane", async () => {
           await NodeFSP.chmod(paths.spacePath, 0o755).catch(() => undefined);
           await NodeFSP.rm(target.path, { recursive: true, force: true });

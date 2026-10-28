@@ -183,7 +183,7 @@ describe.runIf(
           imagePath: NodePath.join(laneDir, "space.asif"),
         };
         yield* Effect.addFinalizer(() =>
-          image.detach(lane, null).pipe(
+          image.detach(lane, null, false).pipe(
             Effect.ignore,
             Effect.andThen(
               Effect.sync(() => {
@@ -224,7 +224,7 @@ describe.runIf(
         yield* assertHidden();
         expect(NodeFS.statSync(NodePath.join(lane.spacePath, "tmp", "blob")).size).toBe(50_000_000);
 
-        yield* image.detach(lane, created.device);
+        yield* image.detach(lane, created.device, false);
         expect(yield* image.isMounted(lane)).toBe(false);
         expect(() => NodeFS.writeFileSync(NodePath.join(lane.spacePath, "stray"), "x")).toThrow();
 

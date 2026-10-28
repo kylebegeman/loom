@@ -17,7 +17,10 @@ export const SPACE_FOLDERS = ["tmp", "build", "data"] as const;
 
 type Op<A> = Effect.Effect<A, ProjectLifecycleError>;
 
-/** One lane space backend. `device` identifies an attached image for detaching. */
+/**
+ * One lane space backend. `device` identifies an attached image for detaching, and `force`
+ * unmounts it despite open files.
+ */
 export interface SpaceOps {
   readonly backend: LaneBackend;
   readonly isMounted: (lane: LanePaths) => Effect.Effect<boolean>;
@@ -32,7 +35,7 @@ export interface SpaceOps {
     capBytes: number,
     volumeName: string,
   ) => Op<{ readonly device: string | null }>;
-  readonly detach: (lane: LanePaths, device: string | null) => Op<void>;
+  readonly detach: (lane: LanePaths, device: string | null, force: boolean) => Op<void>;
   readonly resize: (
     lane: LanePaths,
     capBytes: number,
@@ -154,10 +157,14 @@ export const makeSpaceOps = Effect.gen(function* () {
   const detach = Effect.fn("ProjectLifecycleSpace.detach")(function* (
     lane: LanePaths,
     knownDevice: string | null,
+    force: boolean,
   ) {
     if (!(yield* isMounted(lane))) return;
     const device = (yield* deviceOf(lane)) ?? knownDevice;
-    const unmount = yield* run("diskutil", ["unmount", lane.spacePath]);
+    const unmount = yield* run(
+      "diskutil",
+      force ? ["unmount", "force", lane.spacePath] : ["unmount", lane.spacePath],
+    );
     if (unmount.code !== 0) {
       const output = `${unmount.stdout}\n${unmount.stderr}`.trim();
       return yield* unmountBusy(output)
@@ -216,7 +223,7 @@ export const makeSpaceOps = Effect.gen(function* () {
       capBytes: number,
       device: string | null,
     ) {
-      yield* detach(lane, device);
+      yield* detach(lane, device, false);
       yield* runOk("diskutil", ["image", "resize", "--size", sizeArg(capBytes), lane.imagePath]);
       return yield* mount(lane);
     }),
@@ -245,7 +252,7 @@ export const makeSpaceOps = Effect.gen(function* () {
       prepareFolder(lane).pipe(Effect.as({ device: null })),
     attach: (lane: LanePaths, _capBytes: number, _volumeName: string) =>
       prepareFolder(lane).pipe(Effect.as({ device: null })),
-    detach: (_lane: LanePaths, _device: string | null) => Effect.void,
+    detach: (_lane: LanePaths, _device: string | null, _force: boolean) => Effect.void,
     resize: (_lane: LanePaths, _capBytes: number, _device: string | null) =>
       Effect.succeed({ device: null }),
     usage: (lane: LanePaths) =>
