@@ -13,7 +13,9 @@ expectedVersion 0 creates and positive versions replace. Stable operation IDs an
 fingerprints make retries idempotent. Reusing an ID for different input conflicts. A subsequent
 mutation supersedes the previous receipt; this is not yet a permanent operation/audit ledger.
 
-Renaming can omit value. Kind changes require explicit value replacement. Archive retains the
+Renaming can omit value. Generic saves refuse SSH key and service-connection creation, value
+replacement and kind changes; their domain managers retain access to the core save method.
+Other kind changes require explicit value replacement. Archive retains the
 value and forbids replacement until restored. Delete writes a tombstone and clears the current
 value; encrypted prior versions remain until backend retention destroys them. Deletion does
 not claim provider-side revocation or secure erasure of backups.

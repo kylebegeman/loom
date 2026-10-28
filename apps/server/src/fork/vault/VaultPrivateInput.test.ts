@@ -48,7 +48,7 @@ function withService<A, E>(
       projects: ProjectId[];
     },
   ) => Effect.Effect<A, E>,
-  options: { loseResponse?: boolean; missingThread?: boolean } = {},
+  options: { loseResponse?: boolean; missingThread?: boolean; current?: VaultItemSummary } = {},
 ) {
   const state = {
     transferred: 0,
@@ -67,6 +67,7 @@ function withService<A, E>(
       getThreadShell: () => Effect.succeed(options.missingThread ? null : ({ projectId } as never)),
     }),
     Layer.mock(VaultCore)({
+      inspect: () => Effect.succeed(options.current ?? null),
       status: Effect.succeed({
         backend: "openbao",
         state: "ready",
@@ -160,4 +161,33 @@ it.effect("rechecks a changed permission before committing the private value", (
       expect(state.committed).toBe(false);
     }),
   ),
+);
+
+it.effect("refuses managed kinds before consuming private input", () =>
+  Effect.gen(function* () {
+    for (const kind of ["ssh-key", "service-connection"] as const) {
+      for (const current of [undefined, { ...item, kind }]) {
+        yield* withService(
+          (service, state) =>
+            Effect.gen(function* () {
+              const result = yield* service
+                .store({ ...request, kind }, threadId, Effect.void)
+                .pipe(Effect.result);
+              expect(result._tag).toBe("Failure");
+              expect(state.transferred).toBe(0);
+            }),
+          current === undefined ? {} : { current },
+        );
+      }
+      yield* withService(
+        (service, state) =>
+          Effect.gen(function* () {
+            const result = yield* service.store(request, threadId, Effect.void).pipe(Effect.result);
+            expect(result._tag).toBe("Failure");
+            expect(state.transferred).toBe(0);
+          }),
+        { current: { ...item, kind } },
+      );
+    }
+  }),
 );

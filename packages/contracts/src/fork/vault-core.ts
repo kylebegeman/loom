@@ -41,6 +41,10 @@ export const VaultCoreStatus = Schema.Struct({
 });
 export type VaultCoreStatus = typeof VaultCoreStatus.Type;
 const messages = {
+  "managed-ssh-key":
+    "Use Manage SSH key to change this connection. The generic editor can only rename it.",
+  "managed-service-connection":
+    "Use GitHub for agents to change this connection. The generic editor can only rename it.",
   configuration: "Configure this environment's OpenBao connection and private service token file.",
   locked: "OpenBao is sealed. Unlock the backend before using Loom Vault.",
   denied:

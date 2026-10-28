@@ -122,6 +122,8 @@ const backendFailure = (error: VaultError): VaultConnectionReport =>
             "not-found": "missing",
             conflict: "version-conflict",
             "invalid-input": "invalid-input",
+            "managed-ssh-key": "incompatible",
+            "managed-service-connection": "incompatible",
             archived: "inactive",
           } as const
         )[error.reason],

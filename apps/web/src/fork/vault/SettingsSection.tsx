@@ -13,12 +13,15 @@ import { Checkbox } from "~/components/ui/checkbox";
 import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
-import { useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { forkSettingsTarget } from "../settings/navigation";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultFileContent,
-  VaultItemKind,
+  type VaultItemKind,
   type VaultItemSummary,
   type VaultItemPage,
   type VaultError,
@@ -27,6 +30,9 @@ import {
   loomFeaturesOf,
   vaultStatusMessage,
   VAULT_KIND_LABELS,
+  VAULT_GENERIC_ITEM_KINDS,
+  VAULT_REVEAL_DURATION_MS,
+  vaultItemActions,
 } from "@t3tools/client-runtime/fork";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -119,6 +125,9 @@ function VaultItems({
   const sshEnabled = loomFeaturesOf(configs.get(environmentId)?.environment.capabilities).includes(
     "vault-ssh-management",
   );
+  const githubEnabled = loomFeaturesOf(
+    configs.get(environmentId)?.environment.capabilities,
+  ).includes("vault-github");
   const [sshItem, setSshItem] = useState<string | null | undefined>(undefined);
   const statusAtom = vault.status({ environmentId, input: {} });
   const statusResult = useAtomValue(statusAtom);
@@ -146,6 +155,34 @@ function VaultItems({
   };
   const [deleting, setDeleting] = useState<VaultItemSummary | null>(null);
   const [revealed, setRevealed] = useState<{ id: string; value: string } | null>(null);
+  const revealGeneration = useRef(0);
+  const clearRevealed = useCallback(() => {
+    revealGeneration.current++;
+    setRevealed(null);
+  }, []);
+  const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: "Vault value",
+    onError: () => setError("The value could not be copied. Try again."),
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears revealed values and invalidates pending reveals when the window leaves the foreground
+  useEffect(() => {
+    const hidden = () => {
+      if (document.hidden) clearRevealed();
+    };
+    window.addEventListener("blur", clearRevealed);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      revealGeneration.current++;
+      window.removeEventListener("blur", clearRevealed);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }, [clearRevealed]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- limits each revealed value's lifetime with a timer that is cleared on replacement and unmount
+  useEffect(() => {
+    if (revealed === null) return;
+    const timer = window.setTimeout(clearRevealed, VAULT_REVEAL_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [revealed, clearRevealed]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refresh = () => {
@@ -179,10 +216,12 @@ function VaultItems({
         setRevealed(null);
         return;
       }
+      const generation = ++revealGeneration.current;
       const result = await runVault(vault.reveal, {
         environmentId,
         input: { id: item.id, expectedVersion: item.version },
       });
+      if (generation !== revealGeneration.current || document.hidden) return;
       const value = Redacted.value(result.value);
       if (item.kind === "secure-file") {
         const decoded = decodeFile(value);
@@ -337,18 +376,34 @@ function VaultItems({
                                 Manage SSH key
                               </Button>
                             ) : null}
-                            <Button
-                              size="sm-multiline"
-                              variant="ghost"
-                              disabled={!canReveal || busy}
-                              onClick={() => void reveal(item)}
-                            >
-                              {item.kind === "secure-file"
-                                ? "Download"
-                                : revealed?.id === item.id
-                                  ? "Hide value"
-                                  : "Reveal value"}
-                            </Button>
+                            {githubEnabled && item.kind === "service-connection" ? (
+                              <Link
+                                {...forkSettingsTarget("vault-github")}
+                                search={{
+                                  machine: environmentId,
+                                  project: undefined,
+                                  checkout: undefined,
+                                }}
+                                hashScrollIntoView={false}
+                                className="text-primary underline underline-offset-4"
+                              >
+                                GitHub for agents
+                              </Link>
+                            ) : null}
+                            {vaultItemActions(item.kind).revealValue ? (
+                              <Button
+                                size="sm-multiline"
+                                variant="ghost"
+                                disabled={!canReveal || busy}
+                                onClick={() => void reveal(item)}
+                              >
+                                {item.kind === "secure-file"
+                                  ? "Download"
+                                  : revealed?.id === item.id
+                                    ? "Hide value"
+                                    : "Reveal value"}
+                              </Button>
+                            ) : null}
                             {item.state === "active" && (
                               <Button
                                 size="sm-multiline"
@@ -414,9 +469,20 @@ function VaultItems({
                           </LoomSettingsDetails>
                         </div>
                         {revealed?.id === item.id && (
-                          <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm">
-                            {revealed.value}
-                          </pre>
+                          <div className="flex min-w-0 flex-col gap-2">
+                            <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-sm">
+                              {revealed.value}
+                            </pre>
+                            <LoomSettingsActions>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => copyToClipboard(revealed.value, undefined)}
+                              >
+                                {isCopied ? "Copied" : "Copy value"}
+                              </Button>
+                            </LoomSettingsActions>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -465,6 +531,15 @@ function VaultItems({
           environmentId={environmentId}
           item={editing === "new" ? null : editing}
           initialFile={fileDraft}
+          onCreateSsh={
+            sshEnabled
+              ? () => {
+                  closeEditor();
+                  setSshItem(null);
+                }
+              : undefined
+          }
+          githubEnabled={githubEnabled}
           onClose={closeEditor}
           onSaved={() => {
             closeEditor();
@@ -520,15 +595,20 @@ function VaultEditor({
   environmentId,
   item,
   initialFile,
+  onCreateSsh,
+  githubEnabled,
   onSaved,
   onClose,
 }: {
   environmentId: EnvironmentId;
   item: VaultItemSummary | null;
   initialFile: { name: string; value: string } | null;
+  onCreateSsh: (() => void) | undefined;
+  githubEnabled: boolean;
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const managed = item !== null && !vaultItemActions(item.kind).replaceValue;
   const fieldId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
   const [id] = useState(() => item?.id ?? newId());
@@ -596,9 +676,11 @@ function VaultEditor({
         <DialogHeader>
           <DialogTitle>{item ? "Edit Vault item" : "Add Vault item"}</DialogTitle>
           <DialogDescription>
-            {item
-              ? "Rename this item without changing its value, or replace the value explicitly."
-              : "Save development access separately from your personal accounts."}
+            {managed
+              ? "Rename this item here. Manage its connection in the dedicated settings."
+              : item
+                ? "Rename this item without changing its value, or replace the value explicitly."
+                : "Save development access separately from your personal accounts."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -622,34 +704,55 @@ function VaultEditor({
               }}
             />
           </LoomSettingsField>
-          <LoomSettingsField label={<span id={`${fieldId}-kind`}>Kind</span>}>
-            <Select
-              value={kind}
-              onValueChange={(next) => {
-                if (next !== null) {
-                  setKind(next);
-                  setReplace(true);
-                  setMultiline(next === "ssh-key" || next === "secure-note");
-                  setValue("");
-                  setFileName(null);
-                  changed();
-                }
-              }}
-              disabled={busy || (item !== null && !replace)}
-            >
-              <SelectTrigger aria-labelledby={`${fieldId}-kind`}>
-                <SelectValue>{VAULT_KIND_LABELS[kind]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {VaultItemKind.literals.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {VAULT_KIND_LABELS[value]}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </LoomSettingsField>
-          {item && (
+          {!item ? (
+            <LoomSettingsActions>
+              {onCreateSsh ? (
+                <Button type="button" size="sm" variant="outline" onClick={onCreateSsh}>
+                  Create SSH key
+                </Button>
+              ) : null}
+              {githubEnabled ? (
+                <Link
+                  {...forkSettingsTarget("vault-github")}
+                  search={{ machine: environmentId, project: undefined, checkout: undefined }}
+                  hashScrollIntoView={false}
+                  className="text-primary underline underline-offset-4"
+                >
+                  Connect GitHub
+                </Link>
+              ) : null}
+            </LoomSettingsActions>
+          ) : null}
+          {!managed ? (
+            <LoomSettingsField label={<span id={`${fieldId}-kind`}>Kind</span>}>
+              <Select
+                value={kind}
+                onValueChange={(next) => {
+                  if (next !== null) {
+                    setKind(next);
+                    setReplace(true);
+                    setMultiline(next === "secure-note");
+                    setValue("");
+                    setFileName(null);
+                    changed();
+                  }
+                }}
+                disabled={busy || (item !== null && !replace)}
+              >
+                <SelectTrigger aria-labelledby={`${fieldId}-kind`}>
+                  <SelectValue>{VAULT_KIND_LABELS[kind]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {VAULT_GENERIC_ITEM_KINDS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {VAULT_KIND_LABELS[value]}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LoomSettingsField>
+          ) : null}
+          {item && !managed && (
             <label className="flex items-start gap-2 text-sm leading-6">
               <Checkbox
                 checked={replace}
