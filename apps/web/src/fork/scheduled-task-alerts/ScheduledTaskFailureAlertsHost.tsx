@@ -1,10 +1,11 @@
+import { useAtomValue } from "@effect/atom-react";
 import { trackThreadNotification } from "~/components/ThreadNotificationCoordinator";
 import { useClientSettings } from "~/hooks/useSettings";
-import { useEnvironmentIds } from "~/state/environments";
+import { environmentSummaries } from "~/state/presentation";
 import { ScheduledTaskFailureAlerts } from "./ScheduledTaskFailureAlerts";
 
 export function ScheduledTaskFailureAlertsHost() {
-  const environmentIds = useEnvironmentIds();
+  const environmentIds = useAtomValue(environmentSummaries.environmentIdsAtom);
   const enabled = useClientSettings(
     (settings) => settings.notificationMode !== "off" || settings.inAppNotificationsEnabled,
   );

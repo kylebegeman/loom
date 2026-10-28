@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { projectStorageRolloutKey } from "@t3tools/client-runtime/fork";
-import { derivePhysicalProjectKey } from "~/logicalProject";
+import { derivePhysicalProjectKey } from "@t3tools/client-runtime/state/project-grouping";
 
 /** Only saved project records, never a filesystem scan or a claim that a path still exists. */
 type InventoryProject = Pick<

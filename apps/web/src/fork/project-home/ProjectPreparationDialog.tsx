@@ -56,7 +56,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
-} from "~/logicalProject";
+} from "@t3tools/client-runtime/state/project-grouping";
 import { useClientSettings } from "~/hooks/useSettings";
 import { newProjectId } from "~/lib/utils";
 import {

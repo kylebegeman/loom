@@ -3,7 +3,7 @@ import type {
   EnvironmentThreadShell,
   EnvironmentProject,
 } from "@t3tools/client-runtime/state/shell";
-import { getThreadSortTimestamp } from "~/lib/threadSort";
+import { getThreadSortTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import { filterSidebarV2VisibleThreads } from "../Sidebar.logic";
 import type { ServerProvider } from "@t3tools/contracts";

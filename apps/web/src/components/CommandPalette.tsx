@@ -80,7 +80,6 @@ import {
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
-  MonitorIcon, // fork: fleet-connections
   PaletteIcon,
   RotateCcwIcon,
   SettingsIcon,
