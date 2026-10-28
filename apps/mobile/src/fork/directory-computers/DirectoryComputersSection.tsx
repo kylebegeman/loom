@@ -21,7 +21,7 @@ import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { environmentCatalog } from "../../connection/catalog";
 import { connectionAtomRuntime } from "../../connection/runtime";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentPresentation } from "../../state/presentation";

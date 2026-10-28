@@ -6,9 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeThreadShellFixture } from "../../test-fixtures";
 
 vi.mock("react-native", () => ({ View: ({ children }: { children: ReactNode }) => children }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
-vi.mock("../../state/use-thread-detail", () => ({ useThreadVisibleTurnItems: () => [] }));
-vi.mock("../../state/threads", () => ({ threadEnvironment: { updateMetadata: null } }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: unknown) => (atom === "visible-turn-items" ? [] : null),
+}));
+vi.mock("../../state/threads", () => ({
+  threadEnvironment: { updateMetadata: null },
+  environmentThreadDetails: { visibleTurnItemsAtom: () => "visible-turn-items" },
+}));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => async () => null }));
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,

@@ -8,7 +8,7 @@ import { Platform, RefreshControl, View } from "react-native";
 import { useAuth } from "@clerk/expo";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { hasCloudPublicConfig } from "../../features/cloud/publicConfig";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

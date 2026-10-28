@@ -8,8 +8,8 @@ import { View } from "react-native";
 import { AppText } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { useComputerConnectionHealth } from "../../fork/connection-health/useComputerConnectionHealth";
-import { useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { threadOutboxDeliveryAtom } from "../../state/thread-outbox-delivery";
+import { environmentThreadDetails } from "../../state/threads";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
 import {
   resolveThreadRecoveryPresentation,
@@ -38,7 +38,7 @@ export function ThreadRecoveryNotice(props: {
   readonly continuableRun?: ContinuableRunAction | null;
 }) {
   const delivery = useAtomValue(threadOutboxDeliveryAtom);
-  const items = useThreadVisibleTurnItems(props.threadRef);
+  const items = useAtomValue(environmentThreadDetails.visibleTurnItemsAtom(props.threadRef));
   const computer = useComputerConnectionHealth(props.threadRef.environmentId);
   const presentation = resolveThreadRecoveryPresentation({
     connectionState: props.connectionState,

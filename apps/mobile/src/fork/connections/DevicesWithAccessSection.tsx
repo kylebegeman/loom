@@ -7,7 +7,7 @@ import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 
 const authEnvironment = createAuthEnvironmentAtoms(connectionAtomRuntime);
 

@@ -1,5 +1,6 @@
 // fork: attention-status
-import { useEnvironmentConnectionState } from "../../state/environments";
+import { environmentCatalog } from "../../connection/catalog";
+import { useEnvironmentQuery } from "../../state/query";
 // fork: bots
 import { buildThreadBotsMenuItems } from "../../fork/bots/threadMenu";
 // fork: project-home - Thread rows offer "Move work" on hosts that support workspace handoff.
@@ -704,7 +705,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const status = resolveThreadListV2Status(thread);
   const isUnread = status === "ready" && threadHasUnseenCompletion(thread);
   // fork: attention-status
-  const connected = useEnvironmentConnectionState(thread.environmentId).data?.phase === "connected";
+  const connected =
+    useEnvironmentQuery(environmentCatalog.stateAtom(thread.environmentId)).data?.phase ===
+    "connected";
   const workingLabel = STATUS_LABEL_BY_STATUS[status];
   const showsWoke = status === "ready" && props.wokeAt !== null;
   // fork: attention-status

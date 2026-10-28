@@ -14,7 +14,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ConnectionFormField } from "../../features/connection/ConnectionFormField";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 
 const naming = createComputerNamingAtoms(connectionAtomRuntime);
 

@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
+import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsRow } from "../../features/settings/components/SettingsRow";
 import { SettingsScreen } from "../../features/settings/components/SettingsScreen";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
