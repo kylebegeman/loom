@@ -1478,6 +1478,7 @@ apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	clien
 apps/web/src/state/shell.ts	client-computer	8
 apps/web/src/state/shell.test.ts	client-computer	7
 docs/user/updating.md	client-computer	1
+docs/user/faq.md	fleet-connections	1
 apps/mobile/src/features/projects/AddProjectScreen.tsx	library-only	3
 apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3

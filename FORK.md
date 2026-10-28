@@ -184,6 +184,7 @@ The renderer follows the web app's React version, which comes from the workspace
 
 | File                                                           | Packet                | Why                                                                          |
 | -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
 | `apps/server/src/project/AgentSessionScanner.ts`               | `file-placement`      | Exclude canonical aliases of managed worktree roots during session import.   |
 | `apps/server/src/project/AgentSessionScanner.test.ts`          | `file-placement`      | Cover session import exclusion through symlinked roots.                      |
 | `apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx`  | `project-lifecycle`   | Isolate native checkout status in the route recovery test.                   |
