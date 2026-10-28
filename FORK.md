@@ -184,6 +184,7 @@ The renderer follows the web app's React version, which comes from the workspace
 
 | File                                                           | Packet                | Why                                                                          |
 | -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx`  | `project-lifecycle`   | Isolate native checkout status in the route recovery test.                   |
 | `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`       | `project-lifecycle`   | Show released checkout state in the native conversation header.              |
 | `apps/mobile/src/features/threads/thread-list-v2-items.tsx`    | `project-lifecycle`   | Show checkout state and route the applicable checkout action.                |
 | `apps/web/src/components/Sidebar.tsx`                          | `project-lifecycle`   | Release or restore the selected checkout using lifecycle status.             |
