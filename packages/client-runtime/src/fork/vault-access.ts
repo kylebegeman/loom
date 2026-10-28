@@ -1,6 +1,10 @@
 import {
   VAULT_ACCESS_WS_METHODS as V,
   VAULT_APPROVAL_RETENTION_MS,
+  VaultError,
+  type VaultApprovalCardData,
+  type VaultApprovalChange,
+  type VaultApprovalInbox,
   type VaultApprovalNotificationOutcome,
   type VaultApprovalRequest,
   type VaultApprovalReviewContext,
@@ -10,31 +14,166 @@ import {
   type VaultGrant,
   type VaultOwnerPolicy,
 } from "@t3tools/contracts/fork";
-import { Atom } from "effect/reactivity";
+import { Atom, AsyncResult, type AtomRegistry } from "effect/reactivity";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  executeAtomQuery,
+  type AtomCommandResult,
 } from "../state/runtime.ts";
 const vaultPolicyChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
+const isVaultError = Schema.is(VaultError);
+
+type VaultApprovalCardChoice = Pick<VaultApprovalChange, "operationId" | "decision" | "durationMs">;
+export type VaultApprovalCardDecisionResult = {
+  readonly card: VaultApprovalCardData | null;
+  readonly message: string | null;
+};
+const cardFromRequest = (
+  card: VaultApprovalCardData,
+  request: VaultApprovalRequest,
+  context?: VaultApprovalReviewContext,
+): VaultApprovalCardData => ({
+  ...card,
+  revision: request.revision,
+  itemLabel: context?.itemLabel ?? card.itemLabel,
+  action: request.action,
+  destination: request.destination,
+  state: request.state,
+  requestExpiresAt: request.requestExpiresAt,
+  approvedUntil: request.approvedUntil,
+});
+export function reviewVaultApprovalCard(
+  card: VaultApprovalCardData,
+  inbox: VaultApprovalInbox,
+  choice: VaultApprovalCardChoice,
+): VaultApprovalCardDecisionResult & { readonly input: VaultApprovalChange | null } {
+  const request = inbox.requests.find((candidate) => candidate.id === card.requestId);
+  if (!request)
+    return {
+      card: null,
+      message: "This request is no longer available. Ask for a new request.",
+      input: null,
+    };
+  const context = inbox.reviewContext?.find((entry) => entry.requestId === request.id);
+  const current = cardFromRequest(card, request, context);
+  if (
+    request.revision !== card.revision ||
+    request.state !== card.state ||
+    request.action !== card.action ||
+    request.destination !== card.destination ||
+    request.requestExpiresAt !== card.requestExpiresAt ||
+    request.approvedUntil !== card.approvedUntil ||
+    current.itemLabel !== card.itemLabel
+  )
+    return {
+      card: current,
+      message: "This request changed. Review its current status before choosing again.",
+      input: null,
+    };
+  const revoking = choice.decision === "revoke";
+  if (
+    revoking
+      ? !request.grantId || !["approved", "expired"].includes(request.state)
+      : request.state !== "pending"
+  )
+    return { card: current, message: "This request no longer accepts that decision.", input: null };
+  if (choice.decision === "approve" && context?.state !== "current")
+    return {
+      card: current,
+      message:
+        "The request context could not be confirmed. Check the item in Vault, or deny or cancel this request.",
+      input: null,
+    };
+  return {
+    card: current,
+    message: null,
+    input: {
+      id: card.requestId,
+      expectedRevision: card.revision,
+      expectedPolicyRevision: inbox.policyRevision,
+      operationId: choice.operationId,
+      decision: choice.decision,
+      durationMs: choice.durationMs,
+    },
+  };
+}
 
 export function createVaultAccessAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  const approvalInbox = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:vault:approvals",
+    tag: V.approvalInbox,
+    refreshTrigger: ({ environmentId }) => vaultPolicyChanges(environmentId),
+  });
+  const approvalChange = createEnvironmentRpcCommand(runtime, {
+    label: "loom:vault:approval-decide",
+    tag: V.approvalChange,
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        const signal = vaultPolicyChanges(environmentId);
+        registry.set(signal, registry.get(signal) + 1);
+      }),
+  });
   return {
-    approvalInbox: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "loom:vault:approvals",
-      tag: V.approvalInbox,
-    }),
+    approvalInbox,
+    approvalChange,
+    approvalCardChange: {
+      label: "loom:vault:approval-card-decide",
+      permissionAtom: approvalChange.permissionAtom,
+      requiredScopes: approvalChange.requiredScopes,
+      run: async (
+        registry: AtomRegistry.AtomRegistry,
+        target: {
+          readonly environmentId: EnvironmentId;
+          readonly input: { readonly card: VaultApprovalCardData } & VaultApprovalCardChoice;
+        },
+      ): Promise<AtomCommandResult<VaultApprovalCardDecisionResult, unknown>> => {
+        const load = () =>
+          executeAtomQuery(
+            registry,
+            approvalInbox({ environmentId: target.environmentId, input: {} }),
+            {
+              refresh: true,
+              reportFailure: false,
+              reportDefect: false,
+            },
+          );
+        const fresh = await load();
+        if (fresh._tag === "Failure") return AsyncResult.failure(fresh.cause);
+        const reviewed = reviewVaultApprovalCard(target.input.card, fresh.value, target.input);
+        if (!reviewed.input)
+          return AsyncResult.success({ card: reviewed.card, message: reviewed.message });
+        const result = await approvalChange.run(registry, {
+          environmentId: target.environmentId,
+          input: reviewed.input,
+        });
+        if (result._tag === "Success")
+          return AsyncResult.success({
+            card: cardFromRequest(target.input.card, result.value),
+            message: null,
+          });
+        const error = Cause.squash(result.cause);
+        if (!isVaultError(error) || error.reason !== "conflict")
+          return AsyncResult.failure(result.cause);
+        const latest = await load();
+        if (latest._tag === "Failure") return AsyncResult.failure(latest.cause);
+        const changed = reviewVaultApprovalCard(target.input.card, latest.value, target.input);
+        return AsyncResult.success({
+          card: changed.card,
+          message: "Access changed while saving. Review the current request before choosing again.",
+        });
+      },
+    },
     approvalCreate: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:approval-request",
       tag: V.approvalCreate,
-    }),
-    approvalChange: createEnvironmentRpcCommand(runtime, {
-      label: "loom:vault:approval-decide",
-      tag: V.approvalChange,
     }),
     snapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:grants",
