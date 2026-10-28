@@ -1,6 +1,12 @@
+import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
+import { connectionAtomRuntime } from "../../connection/runtime";
+import { VaultAddSheet } from "./VaultAddSheet";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, ScrollView, Switch, View } from "react-native";
 import {
+  createVaultCoreAtoms,
   VAULT_PASSWORD_CHARACTER_SETS,
   VAULT_PASSWORD_DEFAULTS,
   VAULT_PASSWORD_MIN_LENGTH,
@@ -13,8 +19,15 @@ import { Sheet } from "../../components/ui/Sheet";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { copyLocalVaultPassword, generateLocalVaultPassword } from "./password-platform";
 
-export function VaultPasswordGeneratorSection() {
+const core = createVaultCoreAtoms(connectionAtomRuntime);
+const denied = Atom.make(false);
+
+export function VaultPasswordGeneratorSection({
+  environmentId,
+  connected = false,
+}: { environmentId?: EnvironmentId; connected?: boolean } = {}) {
   const [open, setOpen] = useState(false);
+  const [saveValue, setSaveValue] = useState<string | null>(null);
   return (
     <>
       <SettingsSection title="Vault password tools">
@@ -26,12 +39,42 @@ export function VaultPasswordGeneratorSection() {
           <Button label="Generate password" onPress={() => setOpen(true)} />
         </View>
       </SettingsSection>
-      {open && <PasswordGenerator onClose={() => setOpen(false)} />}
+      {open && (
+        <PasswordGenerator
+          environmentId={environmentId}
+          connected={connected}
+          onSave={(value) => {
+            setSaveValue(value);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+      {saveValue !== null && environmentId ? (
+        <VaultAddSheet
+          environmentId={environmentId}
+          connected={connected}
+          value={saveValue}
+          onSaved={() => setSaveValue(null)}
+          onClose={() => setSaveValue(null)}
+        />
+      ) : null}
     </>
   );
 }
 
-function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
+function PasswordGenerator({
+  environmentId,
+  connected,
+  onSave,
+  onClose,
+}: {
+  environmentId: EnvironmentId | undefined;
+  connected: boolean;
+  readonly onSave: (value: string) => void;
+  readonly onClose: () => void;
+}) {
+  const canSave = useAtomValue(environmentId ? core.save.permissionAtom(environmentId) : denied);
   const [options, setOptions] = useState<VaultPasswordOptions>({ ...VAULT_PASSWORD_DEFAULTS });
   const [length, setLength] = useState(String(VAULT_PASSWORD_DEFAULTS.length));
   const [password, setPassword] = useState<string | null>(null);
@@ -151,6 +194,16 @@ function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
                 disabled={copying}
                 onPress={() => void copy()}
               />
+              {environmentId ? (
+                <Button
+                  label="Save to Vault as…"
+                  disabled={copying || !connected || !canSave}
+                  onPress={() => {
+                    onSave(password);
+                    clear();
+                  }}
+                />
+              ) : null}
               <Button label="Clear password" disabled={copying} tone="text" onPress={clear} />
             </View>
           </View>
