@@ -28,7 +28,7 @@ export const VaultCoreToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_items", {
     description:
-      "List safe Vault item metadata. Values are never returned. Threads see items allowed by owner access or their inspect grants; full-access clients retain administrator visibility. When owner access does not cover this turn, the call fails with the cause and repair instead of returning an empty page. Cursor pagination is bounded; includeArchived shows archived items.",
+      "Search safe Vault item metadata with query (name, kind, item ID or Vault reference) and kind before paging. Values are never searched or returned. Use sort:label for names or sort:updated for newest changes; pass nextCursor unchanged with the same filters. includeArchived also includes archived items. Threads see only metadata allowed by owner access or inspect grants; a blocked turn fails with its repair. Full-access clients retain administrator visibility.",
     parameters: VaultItemList,
     success: VaultItemPage,
     failure,

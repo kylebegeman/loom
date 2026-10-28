@@ -40,28 +40,15 @@ const make = Effect.gen(function* () {
   return VaultReferences.of({
     search: Effect.fn("VaultReferences.search")(function* (input, threadId) {
       if (!isSearch(input)) return yield* new VaultError({ reason: "invalid-input" });
-      const query = input.query.trim().toLocaleLowerCase();
-      const items: VaultReference[] = [];
-      let cursor = input.cursor;
-      // Scan at most 100 records per request; sparse matches continue through the returned cursor.
-      for (let page = 0; page < 4; page++) {
-        const request = { cursor, includeArchived: input.includeArchived };
-        const result = yield* threadId
-          ? access.listForThread(request, threadId)
-          : core.list(request);
-        for (const item of result.items)
-          if (
-            (!input.kind || item.kind === input.kind) &&
-            (!query ||
-              (query.startsWith("loom-vault:")
-                ? vaultReferenceText(environmentId, item.id).toLocaleLowerCase().startsWith(query)
-                : item.label.toLocaleLowerCase().includes(query) || item.id.includes(query)))
-          )
-            items.push(reference(item));
-        cursor = result.nextCursor;
-        if (!cursor || items.length > 0) break;
-      }
-      return { items, nextCursor: cursor };
+      const request = {
+        cursor: input.cursor,
+        includeArchived: input.includeArchived,
+        query: input.query,
+        ...(input.kind === null ? {} : { kind: input.kind }),
+        sort: "label" as const,
+      };
+      const result = yield* threadId ? access.listForThread(request, threadId) : core.list(request);
+      return { items: result.items.map(reference), nextCursor: result.nextCursor };
     }),
     describe: Effect.fn("VaultReferences.describe")(function* (id, threadId) {
       if (!/^[a-f0-9]{32}$/.test(id)) return yield* new VaultError({ reason: "invalid-input" });

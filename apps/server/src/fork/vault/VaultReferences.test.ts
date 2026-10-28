@@ -106,7 +106,7 @@ it.effect(
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );
 it.effect(
-  "bounds sparse scans and preserves continuation cursors, propagating backend errors",
+  "passes filtered pages and continuation cursors through, propagating backend errors",
   () =>
     Effect.gen(function* () {
       let calls = 0,
@@ -134,12 +134,12 @@ it.effect(
         ),
       );
       const first = yield* r.search({ ...search, query: "absent" }, ThreadId.make("caller"));
-      expect(calls).toBe(4);
+      expect(calls).toBe(1);
       expect(first.items).toEqual([]);
-      expect(first.nextCursor).toBe("4".padStart(32, "0"));
+      expect(first.nextCursor).toBe("1".padStart(32, "0"));
       const next = yield* r.search({ ...search, cursor: first.nextCursor });
-      expect(calls).toBe(8);
-      expect(next.nextCursor).toBe("8".padStart(32, "0"));
+      expect(calls).toBe(2);
+      expect(next.nextCursor).toBe("2".padStart(32, "0"));
       failed = true;
       expect((yield* r.search(search).pipe(Effect.flip)).reason).toBe("unavailable");
     }),

@@ -16,6 +16,7 @@ import {
   LIBRARY_LAUNCH_FILES_FEATURE,
   CHECKOUT_RELEASE_FEATURE,
   CHECKOUT_RESTORE_FEATURE,
+  VAULT_ITEM_SEARCH_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
@@ -29,6 +30,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "project-workflows",
   "core",
   "vault-core",
+  VAULT_ITEM_SEARCH_FEATURE,
   "vault-owner-trusted",
   "vault-connection-resolution",
   "vault-test-accounts",
