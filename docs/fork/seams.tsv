@@ -467,7 +467,7 @@ packages/provider-core/src/server/mcpSession.ts	ext-vault-terminal	3
 packages/provider-core/src/server/McpProviderSessions.ts	ext-vault-terminal	8
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	ext-vault-terminal	1
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	ext-vault-terminal	3
-apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	ext-vault-terminal	3
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	ext-vault-terminal	1
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	ext-vault-terminal	1
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	switchboard	1
 apps/web/src/components/sidebar/SidebarChrome.tsx	bots	14
