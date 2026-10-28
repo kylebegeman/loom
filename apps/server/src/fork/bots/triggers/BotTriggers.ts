@@ -3,6 +3,7 @@ import { intakeTriggerProblem, intakeReport } from "../../workflows/intake.ts";
 import { ScheduledTaskWebhookDeliveryId, type RuntimeMode } from "@t3tools/contracts";
 import {
   botTriggerHookId,
+  BOT_TRIGGER_RETIRED_MESSAGE,
   BOT_TRIGGER_HOOK_PREFIX,
   isBotTriggerHookId,
   BotsError,
@@ -61,6 +62,12 @@ const BATCH_NEEDS_LATEST =
   "A batch runs the bot's latest version; pin this trigger to it or let it follow the latest.";
 const BOTH_FOLLOWS = "A trigger follows either the latest or the stable version, not both.";
 const PIPELINE_PER_FILE = "A pipeline runs once per event, not once per conflicting file.";
+const REFUSAL_REASONS = {
+  disabled: "trigger is disabled",
+  retired: "trigger is retired",
+  rejected_signature: "signature did not match",
+  rate_limited: "too many deliveries",
+} as const;
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
 
@@ -92,11 +99,6 @@ const versionRun = (trigger: TriggerTarget) =>
 const usesHook = (event: BotTriggerEvent) =>
   event.kind === "webhook" || event.kind === "merge-conflict";
 
-const sha256 = (text: string) =>
-  Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))).pipe(
-    Effect.map((digest) => Buffer.from(digest).toString("hex")),
-  );
-
 /** The bot's inputs from an event's fields; a field the event lacks is left out. */
 const mapInputs = (
   mapping: BotTriggerMapping,
@@ -108,25 +110,6 @@ const mapInputs = (
     if (value !== undefined) inputs[name] = value;
   }
   return inputs;
-};
-
-/** The merge conflict report `scripts/fork/loom.sh` posts: `{ tag, branch, files }`. */
-const readConflictReport = (bodyText: string) => {
-  try {
-    const parsed = JSON.parse(bodyText) as unknown;
-    if (parsed === null || typeof parsed !== "object") return null;
-    const { tag, branch, files } = parsed as Record<string, unknown>;
-    if (typeof tag !== "string" || !Array.isArray(files)) return null;
-    return {
-      tag,
-      branch: typeof branch === "string" ? branch : "",
-      files: [
-        ...new Set(files.filter((file): file is string => typeof file === "string")),
-      ].toSorted(),
-    };
-  } catch {
-    return null;
-  }
 };
 
 interface Outcome {
@@ -162,6 +145,7 @@ export const make = Effect.gen(function* () {
   /** The trigger as clients see it; the hook address only when `withWebhook`. */
   const view = Effect.fnUntraced(function* (stored: StoredTrigger) {
     const { trigger, webhookToken } = stored;
+    if (trigger.event.kind === "merge-conflict") return { ...trigger, enabled: false };
     if (webhookToken === null) return trigger;
     const hookId = encodeURIComponent(botTriggerHookId(trigger.id));
     const base = (yield* readOrigin).relayHookBaseUrl;
@@ -177,9 +161,14 @@ export const make = Effect.gen(function* () {
 
   const write = Effect.fnUntraced(function* (stored: StoredTrigger) {
     yield* store.upsert(stored).pipe(Effect.catch(storageError));
-    cache.set(stored.trigger.id, stored);
+    const lastDeliveryRefusal = cache.get(stored.trigger.id)?.trigger.lastDeliveryRefusal;
+    const current =
+      lastDeliveryRefusal === undefined
+        ? stored
+        : { ...stored, trigger: { ...stored.trigger, lastDeliveryRefusal } };
+    cache.set(stored.trigger.id, current);
     if (stored.trigger.event.kind === "schedule") yield* PubSub.publish(scheduleChanged, undefined);
-    const trigger = yield* view(stored);
+    const trigger = yield* view(current);
     yield* publish({ _tag: "trigger", trigger });
     return trigger;
   });
@@ -297,8 +286,8 @@ export const make = Effect.gen(function* () {
         "invalid",
         "A pipeline trigger names the bot of the pipeline's first step.",
       );
-    if (pipeline !== null && input.event.kind === "merge-conflict")
-      return yield* fail("invalid", PIPELINE_PER_FILE);
+    if (input.event.kind === "merge-conflict")
+      return yield* fail("invalid", BOT_TRIGGER_RETIRED_MESSAGE);
     const mappingError = checkTriggerMapping(pipeline ?? bot, input.event, input.mapping);
     if (mappingError !== null) return yield* fail("invalid", mappingError);
 
@@ -339,6 +328,9 @@ export const make = Effect.gen(function* () {
       createdAt: existing?.trigger.createdAt ?? now,
       updatedAt: now,
       lastFiredAt: existing?.trigger.lastFiredAt ?? null,
+      ...(existing?.trigger.lastDeliveryRefusal === undefined
+        ? {}
+        : { lastDeliveryRefusal: existing.trigger.lastDeliveryRefusal }),
       ...(input.event.kind === "schedule"
         ? { nextFireAt: yield* nextFireFor(input.event, input.enabled) }
         : {}),
@@ -372,6 +364,8 @@ export const make = Effect.gen(function* () {
     caller: BotCaller,
   ) {
     const stored = yield* requireStored(triggerId);
+    if (enabled && stored.trigger.event.kind === "merge-conflict")
+      return yield* fail("invalid", BOT_TRIGGER_RETIRED_MESSAGE);
     if (enabled) yield* checkArming(stored.trigger, stored, caller);
     const { trigger } = stored;
     return yield* write({
@@ -594,7 +588,11 @@ export const make = Effect.gen(function* () {
   /** Fires every enabled trigger whose event and filters match. Used by the event reactor. */
   const handleEvent = Effect.fn("BotTriggers.handleEvent")(function* (event: TriggerEvent) {
     for (const stored of cache.values())
-      if (stored.trigger.enabled && eventPasses(stored.trigger, event))
+      if (
+        stored.trigger.enabled &&
+        stored.trigger.event.kind !== "merge-conflict" &&
+        eventPasses(stored.trigger, event)
+      )
         yield* fireStored(stored, event, false).pipe(
           Effect.catchCause((cause) => Effect.logWarning("Bot trigger firing failed", { cause })),
         );
@@ -603,20 +601,55 @@ export const make = Effect.gen(function* () {
   /** Fires a trigger with sample fields, past its filters, dedupe and limits. */
   const test = Effect.fn("BotTriggers.test")(function* (input: BotsTestTriggerInput) {
     const stored = yield* requireStored(input.triggerId);
+    if (stored.trigger.event.kind === "merge-conflict")
+      return yield* fail("invalid", BOT_TRIGGER_RETIRED_MESSAGE);
     const key = `test:${yield* randomUuidV4}`;
-    const event: TriggerEvent =
-      stored.trigger.event.kind === "merge-conflict"
-        ? {
-            kind: "merge-conflict",
-            key,
-            summary: "Test firing",
-            fields: input.fields,
-            items: [input.fields],
-          }
-        : { kind: stored.trigger.event.kind, key, summary: "Test firing", fields: input.fields };
+    const event: TriggerEvent = {
+      kind: stored.trigger.event.kind,
+      key,
+      summary: "Test firing",
+      fields: input.fields,
+    };
     const firing = yield* fireStored(stored, event, true);
     if (firing === null) return yield* fail("storage", "Loom could not record the test firing.");
     return firing;
+  });
+
+  const recordRefusal = Effect.fn("BotTriggers.recordDeliveryRefusal")(function* (
+    trigger: BotTrigger,
+    reason: keyof typeof REFUSAL_REASONS,
+  ) {
+    const now = yield* DateTime.now;
+    const recorded = yield* store
+      .recordDeliveryRefusal({
+        id: yield* randomUuidV4,
+        triggerId: trigger.id,
+        eventKey: `refused:${Math.floor(DateTime.toEpochMillis(now) / 60_000)}`,
+        eventSummary: "Webhook delivery refused",
+        firedAt: DateTime.formatIso(now),
+        outcome: "skipped",
+        runId: null,
+        reason: REFUSAL_REASONS[reason],
+      })
+      .pipe(Effect.catch(storageError));
+    const current = cache.get(trigger.id);
+    if (current !== undefined) {
+      const latest = current.trigger.lastDeliveryRefusal;
+      const issue =
+        latest !== undefined &&
+        (latest.at > recorded.issue.at ||
+          (latest.at === recorded.issue.at && latest.count > recorded.issue.count))
+          ? latest
+          : recorded.issue;
+      const updated = {
+        ...current,
+        trigger: { ...current.trigger, lastDeliveryRefusal: issue },
+      };
+      cache.set(trigger.id, updated);
+      yield* publish({ _tag: "trigger", trigger: yield* view(updated) });
+    }
+    yield* store.pruneFirings(trigger.id).pipe(Effect.ignore({ log: true }));
+    yield* publish({ _tag: "firing", firing: recorded.firing });
   });
 
   const deliver = Effect.fn("BotTriggers.webhook")(function* (
@@ -631,7 +664,13 @@ export const make = Effect.gen(function* () {
     )
       return { _tag: "not_found" };
     const { trigger } = stored;
-    if (!trigger.enabled) return { _tag: "disabled" };
+    if (!trigger.enabled || trigger.event.kind === "merge-conflict") {
+      yield* recordRefusal(
+        trigger,
+        trigger.event.kind === "merge-conflict" ? "retired" : "disabled",
+      );
+      return { _tag: "disabled" };
+    }
     if (
       trigger.event.kind === "webhook" &&
       trigger.event.signature !== undefined &&
@@ -642,30 +681,22 @@ export const make = Effect.gen(function* () {
           headers: request.headers,
           body: request.body,
         }))
-    )
+    ) {
+      yield* recordRefusal(trigger, "rejected_signature");
       return { _tag: "rejected_signature" };
+    }
 
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const recent = (deliveries.get(trigger.id) ?? []).filter((at) => nowMs - at < 60_000);
     if (recent.length >= WEBHOOK_RATE_LIMIT_PER_MINUTE) {
       deliveries.set(trigger.id, recent);
+      yield* recordRefusal(trigger, "rate_limited");
       return { _tag: "rate_limited", outcome: "rate_limited" };
     }
     deliveries.set(trigger.id, [...recent, nowMs]);
 
     let event: TriggerEvent;
-    if (trigger.event.kind === "merge-conflict") {
-      const report = readConflictReport(request.bodyText);
-      const files = report?.files ?? [];
-      const tag = report?.tag ?? "unknown";
-      event = {
-        kind: "merge-conflict",
-        key: `${tag}:${yield* sha256(files.join("\n"))}`,
-        summary: `${files.length} conflicting file${files.length === 1 ? "" : "s"} merging ${tag}`,
-        fields: { tag, branch: report?.branch ?? "" },
-        items: files.map((file) => ({ tag, branch: report?.branch ?? "", file })),
-      };
-    } else {
+    {
       const deliveryKey = webhookEventKey(request);
       const intake =
         trigger.pipelineId === WORKFLOW_IDS.intake

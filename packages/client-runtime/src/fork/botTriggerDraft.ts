@@ -1,5 +1,6 @@
 import {
   BOT_TRIGGER_EVENT_FIELDS,
+  BOT_TRIGGER_RETIRED_MESSAGE,
   BOTS_TRIGGER_DEFAULT_COOLDOWN_MINUTES,
   BOTS_TRIGGER_DEFAULT_DAILY_LIMIT,
   BOTS_TRIGGER_MIN_INTERVAL_MS,
@@ -19,7 +20,7 @@ export const TRIGGER_KIND_LABELS: Record<BotTriggerEventKind, string> = {
   "pull-request-checks-failing": "Pull request checks fail",
   "pull-request-opened": "Pull request opens",
   "thread-settled": "Thread settles",
-  "merge-conflict": "Upstream merge conflicts",
+  "merge-conflict": "Retired merge-conflict trigger",
   webhook: "Webhook request",
   schedule: "Schedule",
 };
@@ -209,7 +210,7 @@ const eventFromDraft = (draft: TriggerDraft): BotTriggerEvent | string => {
         ? "Choose the project whose threads start this bot."
         : { kind: "thread-settled", projectId: draft.projectId as ProjectId };
     case "merge-conflict":
-      return { kind: "merge-conflict" };
+      return BOT_TRIGGER_RETIRED_MESSAGE;
     case "webhook":
       if (!draft.signed) return { kind: "webhook" };
       if (draft.signatureHeader.trim() === "") return "Name the header that carries the signature.";
@@ -276,8 +277,6 @@ export const triggerInputFromDraft = (
   if (draft.name.trim() === "") return { error: "Name the trigger." };
   const event = eventFromDraft(draft);
   if (typeof event === "string") return { error: event };
-  if (draft.pipelineId !== "" && event.kind === "merge-conflict")
-    return { error: "A pipeline runs once per event, not once per conflicting file." };
   const mapping = mappingFromDraft(target, draft);
   if (typeof mapping === "string") return { error: mapping };
   const mappingError = checkTriggerMapping(target, event, mapping);

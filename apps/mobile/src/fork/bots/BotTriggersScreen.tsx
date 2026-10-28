@@ -5,6 +5,7 @@ import { View } from "react-native";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_TRIGGER_FIRINGS_MAX_LIMIT,
+  botTriggerDeliveryRefusalText,
   type BotDefinition,
   type BotTrigger,
   type BotTriggerFiring,
@@ -304,6 +305,7 @@ function TriggerCard({
   const [busy, setBusy] = useState(false),
     [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const retired = trigger.event.kind === "merge-conflict";
   const canAct = capabilities.connected && !busy;
   const address = trigger.webhook
     ? webhookAddress(trigger.webhook, connection?.httpBaseUrl ?? null)
@@ -348,27 +350,40 @@ function TriggerCard({
           {trigger.nextFireAt ? ` Next: ${time(trigger.nextFireAt)}.` : ""}
           {trigger.lastFiredAt ? ` Last ran: ${time(trigger.lastFiredAt)}.` : ""}
         </Text>
-        <BotToggle
-          label={trigger.enabled ? "Armed" : "Disarmed"}
-          value={trigger.enabled}
-          disabled={!canAct || !enabledAllowed}
-          onChange={(enabled) =>
-            void act(async () => {
-              const result = await setEnabled({
-                environmentId,
-                input: { triggerId: trigger.id, enabled },
-              });
-              commandValue(result);
-            })
-          }
-        />
-        <View className="flex-row flex-wrap gap-2">
-          <Button label="Edit" disabled={!canAct || !editAllowed || !bot} onPress={onEdit} />
-          <Button
-            label={testing ? "Close test" : "Test"}
-            disabled={!capabilities.connected || !testAllowed || !bot}
-            onPress={() => setTesting(!testing)}
+        {trigger.lastDeliveryRefusal ? (
+          <Text className="text-sm text-foreground-muted">
+            {botTriggerDeliveryRefusalText(trigger.lastDeliveryRefusal)}
+          </Text>
+        ) : null}
+        {retired ? (
+          <Text>Retired</Text>
+        ) : (
+          <BotToggle
+            label={trigger.enabled ? "Armed" : "Disarmed"}
+            value={trigger.enabled}
+            disabled={!canAct || !enabledAllowed}
+            onChange={(enabled) =>
+              void act(async () => {
+                const result = await setEnabled({
+                  environmentId,
+                  input: { triggerId: trigger.id, enabled },
+                });
+                commandValue(result);
+              })
+            }
           />
+        )}
+        <View className="flex-row flex-wrap gap-2">
+          {!retired ? (
+            <Button label="Edit" disabled={!canAct || !editAllowed || !bot} onPress={onEdit} />
+          ) : null}
+          {!retired ? (
+            <Button
+              label={testing ? "Close test" : "Test"}
+              disabled={!capabilities.connected || !testAllowed || !bot}
+              onPress={() => setTesting(!testing)}
+            />
+          ) : null}
           <Button
             label={history ? "Hide history" : "Firing history"}
             onPress={() => setHistory(!history)}
@@ -394,7 +409,8 @@ function TriggerCard({
             }
           />
         </View>
-        {bot &&
+        {!retired &&
+        bot &&
         !trigger.followLatest &&
         !trigger.followStable &&
         bot.version !== trigger.pinnedVersion &&
@@ -416,16 +432,11 @@ function TriggerCard({
             />
           </>
         ) : null}
-        {address ? (
+        {address && !retired ? (
           <View className="gap-2">
             <Text selectable>{address.address}</Text>
             {address.note ? (
               <Text className="text-xs text-foreground-muted">{address.note}</Text>
-            ) : null}
-            {trigger.event.kind === "merge-conflict" ? (
-              <Text>
-                Set LOOM_BOTS_CONFLICT_HOOK to this address before running fork integration.
-              </Text>
             ) : null}
             <View className="flex-row flex-wrap gap-2">
               <Button
