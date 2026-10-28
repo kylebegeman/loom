@@ -51,6 +51,7 @@ import {
 } from "../../apps/server/src/mcp/toolkits/pullRequests/tools.ts";
 import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.ts";
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
+import { AttentionToolkit } from "../../apps/server/src/fork/attention/mcp.ts"; // fork: attention-status
 import { ProjectLifecycleToolkit } from "../../apps/server/src/fork/project-lifecycle/mcp.ts"; // fork: project-lifecycle
 import { DirectoryToolkit } from "../../apps/server/src/fork/directory/mcp.ts"; // fork: directory-computers
 import { VaultCoreToolkit } from "../../apps/server/src/fork/vault/mcp.ts"; // fork: vault-core
@@ -305,6 +306,7 @@ export const normalizeToolInput = (name: string, input: unknown) =>
 // McpHttpServer advertises each tool's JSON schema, and Claude Code passes the MCP name,
 // description, and schema through unchanged.
 const t3SourceTools: ReadonlyArray<Tool.Any> = [
+  AttentionToolkit, // fork: attention-status
   ProjectLifecycleToolkit, // fork: project-lifecycle
   DirectoryToolkit, // fork: directory-computers
   BotsToolkit, // fork: bots-triggers

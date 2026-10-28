@@ -1,3 +1,4 @@
+import * as AttentionRetry from "./attention/AttentionRetry.ts";
 import * as SkillRegistry from "./skill-registry/SkillRegistryService.ts";
 import * as SkillStore from "./skill-registry/SkillStore.ts";
 import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
@@ -351,6 +352,7 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  AttentionRetry.layer.pipe(Layer.provide(RuntimeLayer.layerThreadManagementProvided)),
   SkillRegistry.layer.pipe(
     Layer.provide(SkillStore.layer),
     Layer.provide(RuntimeLayer.layerProjectService),

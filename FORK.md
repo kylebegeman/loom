@@ -202,6 +202,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
 | `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
 | `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                    | `attention-status`    | Use the guarded failed-run retry tool in agent evals.                        |
 | `evals/mcp-tool-use/run.ts`                                    | `vault-core`          | Use the real Vault item query tools in agent evals.                          |
 | `evals/mcp-tool-use/run.ts`                                    | `vault-references`    | Include saved-reference tools for private-request guidance.                  |
 | `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
@@ -534,6 +535,8 @@ cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
 `ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
 recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
 (1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
+
+The `attention-status` seams in `evals/mcp-tool-use/run.ts` (2) include the retry toolkit in model-facing tests. The fork retry service shares guarded manual continuation across RPC and MCP.
 
 The `attention-status` seams give Loom one list of work that needs the user (approvals,
 questions, paused queues, failed or limited runs) on web, desktop, mobile and agents. The rule

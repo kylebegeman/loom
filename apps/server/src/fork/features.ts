@@ -1,4 +1,5 @@
 import {
+  ATTENTION_RETRY_FEATURE,
   VAULT_SECRET_FEATURE,
   DIRECTORY_FEATURE,
   LIBRARY_DECISIONS_FEATURE,
@@ -26,6 +27,7 @@ import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
+  ATTENTION_RETRY_FEATURE,
   VAULT_SECRET_FEATURE,
   "skill-registry",
   "project-profiles",

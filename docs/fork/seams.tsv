@@ -1527,3 +1527,4 @@ apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1
 evals/mcp-tool-use/run.ts	vault-core	2
 evals/mcp-tool-use/run.ts	vault-references	2
 packages/client-runtime/package.json	-	"./fork/vault-secret"
+evals/mcp-tool-use/run.ts	attention-status	2
