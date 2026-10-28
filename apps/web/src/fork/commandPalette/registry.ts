@@ -1,3 +1,4 @@
+import { skillsPaletteSource } from "../skill-registry/palette";
 import {
   projectProfilesPaletteSource,
   useProfilePaletteContext,
@@ -75,6 +76,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  skillsPaletteSource,
   projectProfilesPaletteSource,
 
   vaultPasswordPaletteSource,

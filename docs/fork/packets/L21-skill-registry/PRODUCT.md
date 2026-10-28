@@ -5,11 +5,10 @@ Scoped by Kyle in the 2026-09-24 brief, questions answered the same day.
 
 ## Current decision
 
-Kyle confirmed on 2026-09-27: park L21 and revisit after Orchestrator V2 ships. Preserve the
-full product scope, with no deadline. Review actual released provider/account contracts and
-any upstream skill-management functionality before deciding the remaining implementation.
-Earlier provider APIs, settings paths and test-thread mechanics below are reference designs,
-not settled V2 contracts. The composer skill picker remains available for invocation.
+Kyle authorized the complete manager on 2026-10-28, superseding the V2 deferral.
+The implementation uses the current provider-instance catalogs and native supported
+settings APIs. Scope remains web, desktop and remote, without a mobile management UI
+or cross-computer skill distribution.
 
 ## Problem
 
@@ -117,7 +116,7 @@ button re-reads it.
   could not be cloned: <git message without credentials>", "No skills found in this
   repository."
 - Installing, updating, removing: row-level progress, then a toast.
-- Write conflicts: "SKILL.md changed on disk since you opened it. Reload or overwrite."
+- Write conflicts: "SKILL.md changed on disk. Reload it before saving."
 - Upstream server: launcher entry disabled with "Needs a Loom server".
 
 ## Surfaces and connection modes

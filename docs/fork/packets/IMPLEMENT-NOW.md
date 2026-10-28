@@ -282,11 +282,8 @@ provider settings were created or changed during this decision.
 The previous review retained these product ideas, but that did not establish immediate
 implementation readiness. Confirmed deferrals:
 
-- **L21 Skill registry: confirmed deferred by Kyle on 2026-09-27.** Retain its full
-  management/creation scope and revisit after V2 ships. Review released provider/account
-  reports, enablement and test-thread behavior before choosing contracts. The existing `$`
-  picker covers invocation, not this management UI. Do not build a partial file browser in
-  the meantime; there is no deadline.
+- **L21 Skill registry: full scope authorized on 2026-10-28 and implemented against V2.** See [L21](./L21-skill-registry/) and [user help](../user/skills.md).
+
 - **L26 Code graph: deferred by Kyle on 2026-09-27, included on 2026-10-09** once V2
   shipped in nightly (selected queue, order 8), and built on V2 events with the full code
   map, change-impact, agent-query and automatic-update scope.

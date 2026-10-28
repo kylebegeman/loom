@@ -1,3 +1,4 @@
+import { skillsPanel } from "../skill-registry/panel";
 import { projectEnvPanel } from "../project-profiles/panel";
 import { miniOffloadPanel } from "../mini-offload/panel";
 import { pcbPreviewPanel } from "../pcb-preview/panel";
@@ -10,6 +11,7 @@ import type { ForkPanelDefinition, ForkRightPanelSurface } from "./types";
 
 /** One line per packet panel. Order is launcher order. */
 export const FORK_PANELS: ReadonlyArray<ForkPanelDefinition> = [
+  skillsPanel,
   projectEnvPanel,
   miniOffloadPanel,
   modelPreview3dPanel,

@@ -1,3 +1,4 @@
+import { SkillsShortcuts } from "./skill-registry/Shortcuts";
 import { ProjectProfileHost } from "./project-profiles/ProjectProfileHost";
 
 import { VaultPasswordGeneratorHost } from "./vault/PasswordGenerator";
@@ -26,6 +27,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   readonly id: string;
   readonly Component: ComponentType;
 }> = [
+  { id: "skill-registry-shortcuts", Component: SkillsShortcuts },
   { id: "project-profile-host", Component: ProjectProfileHost },
 
   { id: "vault-passwords", Component: VaultPasswordGeneratorHost },

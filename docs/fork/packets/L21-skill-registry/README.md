@@ -1,16 +1,7 @@
 # L21: Skill registry and creation lab
 
-Status: Deferred until Orchestrator V2 ships. Kyle confirmed on 2026-09-27.
-
-Retain the complete skill inventory, management and creation-lab proposal below. Revisit
-released provider/account discovery, skill enablement and test-thread behavior before
-finalizing implementation contracts. There is no deadline and this does not block other
-work. Do not build a partial replacement or a speculative V2 adapter while waiting.
-
-The existing composer `$` picker covers invoking skills, not the management UI proposed
-here. Deferral preserves that distinction. The technical, seam, implementation and testing
-files are historical V1 designs, not instructions to begin work. See the
-[current queue](../IMPLEMENT-NOW.md#additional-proposals-to-keep-parked).
+Status: Implemented against Orchestrator V2 after Kyle authorized the full scope on
+2026-10-28. See [user help](../../user/skills.md).
 
 One place to see every agent skill on an environment: which providers and accounts can use
 it, where it lives on disk, whether it is shared through a symlink, whether it is on or off,
@@ -73,25 +64,13 @@ installer, update or remove what Loom installed, and create a new skill: scaffol
 
 ## Packet seams
 
-None. See [SEAMS.md](./SEAMS.md).
+Two narrow exports in ClaudeSkills.ts reuse native settings precedence. See [SEAMS.md](./SEAMS.md).
 
 ## Optional integrations
 
 - If L16 is present, its Codex tools page also toggles Codex skills; both call Codex's
   `skills/config/write`, so they agree. Nothing is required from L16.
 - If L22 is present, nothing changes: instruction modes are not skills.
-
-## Size estimate
-
-Large: about 3,900 to 4,500 lines including tests. Server inventory and scanner 700, git
-source, targets, suggestions and installs 800, Claude settings and Codex toggles 300, lab file IO and validation
-300, RPC and storage 300; web panel 1,200; tests 700.
-
-## How an agent starts
-
-Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
-folder: PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING, REFERENCES. Work against scratch
-skill folders under the worktree's `.t3/`, not Kyle's real `~/.claude*` and `~/.codex*`.
 
 ## Documents
 

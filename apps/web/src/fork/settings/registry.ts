@@ -1,5 +1,6 @@
 /** Topic metadata only: settings search loads this at startup, so components live in pages.tsx. */
 export type ForkSettingsTopicId =
+  | "skill-registry"
   | "project-profiles"
   | "project-lifecycle"
   | "mini-offload"
@@ -44,6 +45,15 @@ export interface ForkSettingsSection {
 }
 
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  {
+    id: "skill-registry",
+    title: "Skills",
+    description:
+      "Manage provider skills, install complete skill folders from git, and create or test skills in the Lab.",
+    home: "/settings/tools",
+    keywords: "skills sources lab git install providers accounts enable disable",
+    scope: "computer",
+  },
   {
     id: "project-profiles",
     title: "Project profile",

@@ -1,5 +1,6 @@
 /** Loom keybinding commands (`loom.<slug>.<action>`). Spread into STATIC_KEYBINDING_COMMANDS. */
 export const FORK_KEYBINDING_COMMANDS = [
+  "loom.skill-registry.toggle",
   "loom.pcb-preview.toggle",
   "loom.file-outline.toggle",
   "loom.thread-inspector.toggle",
@@ -25,6 +26,7 @@ export const isForkKeybindingCommand = (command: string): command is ForkKeybind
 
 /** Display names for slugs the Keybindings page cannot title-case from the id. */
 export const FORK_KEYBINDING_FEATURE_NAMES: Readonly<Record<string, string>> = {
+  "skill-registry": "Skills",
   "pcb-preview": "PCB Preview",
   "model-preview-3d": "3D Model",
   "device-qa": "Device QA",

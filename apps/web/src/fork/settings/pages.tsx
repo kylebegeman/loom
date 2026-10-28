@@ -1,3 +1,4 @@
+import { SkillsSettingsSection } from "../skill-registry/settings";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState, type ComponentType, type ReactNode } from "react";
@@ -57,6 +58,7 @@ import {
 } from "./registry";
 
 const TOPIC_COMPONENTS: Readonly<Record<ForkSettingsTopicId, ComponentType>> = {
+  "skill-registry": SkillsSettingsSection,
   "project-profiles": ProfileSettingsSection,
   "project-lifecycle": ProjectLifecycleSettingsSection,
   "mini-offload": MiniOffloadSettingsSection,

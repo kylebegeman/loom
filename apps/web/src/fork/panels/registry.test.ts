@@ -36,6 +36,7 @@ describe("fork right panels", () => {
   // A packet module that opens its panel imports this registry, which imports every panel.
   // Loaded first, it must not leave its panel definition reading an id that is not set yet.
   it.each([
+    ["skill-registry/state", () => import("../skill-registry/state")],
     ["code-graph/state", () => import("../code-graph/state")],
     ["utilities/open", () => import("../utilities/open")],
   ])("loads %s before the registry", async (_name, load) => {
