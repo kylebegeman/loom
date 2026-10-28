@@ -1495,6 +1495,9 @@ apps/web/src/components/ui/standalone-page.tsx	brand	2
 apps/web/src/hooks/useStartTriage.ts	brand	1
 packages/client-runtime/src/state/peerPairingCode.ts	brand	1
 packages/contracts/src/preview.ts	brand	1
+apps/server/src/device/AgentDeviceShim.ts	brand	4
+apps/server/src/device/AgentDeviceTarget.test.ts	brand	2
+apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
 apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2
 apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13
