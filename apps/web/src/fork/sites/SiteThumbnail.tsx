@@ -61,6 +61,7 @@ function subscribeLiveFrames(listener: () => void) {
 function useLiveFrameTurn() {
   const [token] = useState(() => Symbol("site-thumbnail"));
   const [settled, setSettled] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests a slot from the module live frame queue until settled and releases it on unmount
   useEffect(() => {
     if (settled) return;
     requestLiveFrame(token);
@@ -107,6 +108,7 @@ export function useSeen() {
   const [element, setElement] = useState<Element | null>(null);
   // Without an observer there is no way to wait, so everything counts as seen.
   const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- shared intersection observer that marks the card seen once it scrolls on screen
   useEffect(() => {
     if (seen || !element) return;
     return observeSeen(element, () => setSeen(true));
@@ -183,6 +185,7 @@ function ThumbnailFrame({
 }) {
   const [loaded, setLoaded] = useState(false);
   const settle = useEffectEvent(onSettled);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that settles the live iframe after it loads or gives up waiting
   useEffect(() => {
     const timer = window.setTimeout(
       () => settle(),

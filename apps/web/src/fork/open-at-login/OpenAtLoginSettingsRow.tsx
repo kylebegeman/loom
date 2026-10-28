@@ -23,6 +23,7 @@ export function OpenAtLoginSettingsRow() {
   const [state, setState] = useState<DesktopOpenAtLoginState | null>(null);
   const [pending, setPending] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the open-at-login state from the desktop bridge when it becomes available
   useEffect(() => {
     if (!bridge) return;
     let cancelled = false;

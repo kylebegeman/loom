@@ -66,6 +66,7 @@ export function useLibraryAuthority() {
       ? projectLibrary.info({ environmentId: primaryId, input: {} })
       : null,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- initializes the local storage library authority once the primary server reports it is one
   useEffect(() => {
     // A designated authority can initialize an empty choice, never replace a saved one.
     if (!authorityId && primaryId && primaryInfo.data?.isAuthority === true)

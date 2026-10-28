@@ -193,6 +193,7 @@ export function Parameters({
       setCollapsed((state) => ({ ...state, [group]: false }));
     }
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the requested parameter row into view and focuses its dom control
   useEffect(() => {
     if (!focus) return;
     const row = [...(scroll.current?.querySelectorAll<HTMLElement>("[data-parameter]") ?? [])].find(

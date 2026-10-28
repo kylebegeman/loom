@@ -68,6 +68,7 @@ export function useScaleReference(
   const latest = useRef({ settings, reference, getSettings });
   const request = useRef(0);
   const pendingSave = useRef<Promise<void> | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest settings and reference into a ref read by async save callbacks
   useLayoutEffect(() => {
     latest.current = { settings, reference, getSettings };
   });
@@ -143,6 +144,7 @@ export function useBuildPlate(environmentId: EnvironmentId, settings: ModelPrevi
   const latest = useRef({ settings, plate });
   const request = useRef(0);
   const queue = useRef(Promise.resolve());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest settings and plate into a ref read by queued save operations
   useLayoutEffect(() => {
     latest.current = { settings, plate };
   });

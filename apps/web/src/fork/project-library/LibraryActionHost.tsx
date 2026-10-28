@@ -87,6 +87,7 @@ function newProjectIcon(target: NewProjectTarget) {
 /** Library setup occupies the original command popup, including actions launched inside it. */
 export function useLibraryPaletteSession() {
   const session = useLibraryPaletteStore((state) => state.session);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to library actions on the module bus and clears the palette session on unmount
   useEffect(() => {
     const stopListening = onLibraryAction((action, projectId, defaults, suggest) => {
       // A project cannot exist without a Library, so those actions start by connecting one.
@@ -140,7 +141,7 @@ export function useLibraryPaletteTakeover() {
     finishLibraryPaletteClose();
     return false;
   });
-  // oxlint-disable-next-line t3code/react-effect-budget -- Palette requests arrive on a module bus; the mounted palette claims them for the Library.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- claims command palette requests from the module bus for the library and releases them on unmount
   useEffect(() => claimCommandPaletteRequests(claim), [claim]);
 }
 

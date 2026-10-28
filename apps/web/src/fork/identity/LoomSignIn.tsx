@@ -64,6 +64,7 @@ function LoomSignInTarget({
   const ownedSignIn = useRef<string | null>(null);
   const ownedAbort = useRef<AbortController | null>(null);
   const connect = useAtomCommand(connectLoomIdentity, { reportFailure: false });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels this component's pending Loom sign-in through the desktop bridge or browser on unmount or base url change
   useEffect(
     () => () => {
       attempt.current += 1;
@@ -75,6 +76,7 @@ function LoomSignInTarget({
     },
     [baseUrl],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches Loom identity metadata from the server, aborting on change or unmount
   useEffect(() => {
     let target = baseUrl;
     try {

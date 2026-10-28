@@ -76,6 +76,7 @@ const sameOptions = (a: UtilityOptionValues, b: UtilityOptionValues) => {
 function useSettledDraft(draft: UtilityDraft): UtilityDraft {
   const large = draft.text.length + draft.second.length > LARGE_INPUT_CHARS;
   const [debounced, setDebounced] = useState(draft);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounce timer that settles large drafts before the tool reprocesses them
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(draft), large ? LARGE_INPUT_DEBOUNCE_MS : 0);
     return () => clearTimeout(timer);

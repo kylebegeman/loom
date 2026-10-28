@@ -89,6 +89,7 @@ export function EnclosureTab({
   const sequence = useRef(0),
     opened = useRef<PcbEnclosureResult | null>(null),
     alive = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async enclosure work skips updates after unmount
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -145,6 +146,7 @@ export function EnclosureTab({
   );
   const preview = asyncValue(previewResult);
   const previewKey = JSON.stringify({ input, sourceHash });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces a server enclosure preview job while the inputs settle
   useEffect(() => {
     if (!allowed || !executionAllowed || !valid) {
       return;
@@ -183,6 +185,7 @@ export function EnclosureTab({
       value.assembly?.path ?? value.files.find((f) => f.language === "openscad")?.path;
     if (destination) open(destination);
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs the after-generate handler once per enclosure job the server finishes
   useEffect(() => {
     if (finished && opened.current !== finished) {
       opened.current = finished;

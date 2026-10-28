@@ -147,6 +147,7 @@ function ProjectAccess({
   const [busy, setBusy] = useState(false);
   const [scan, setScan] = useState<AbortController | null>(null);
   const [scanWarnings, setScanWarnings] = useState<readonly string[]>([]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight repository scan when it is replaced or on unmount
   useEffect(() => () => scan?.abort(), [scan]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

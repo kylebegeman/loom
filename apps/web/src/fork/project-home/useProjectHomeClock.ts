@@ -17,6 +17,7 @@ export function useProjectHomeClock(threads: readonly EnvironmentThreadShell[]) 
     }
     return deadline;
   }, [threads, now]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- arms a timer for the next snooze deadline and clears it on change or unmount
   useEffect(() => {
     void now;
     if (!Number.isFinite(nextWake)) return;

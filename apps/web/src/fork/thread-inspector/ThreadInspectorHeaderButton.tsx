@@ -34,6 +34,7 @@ function HeaderButton({ threadRef }: { threadRef: ScopedThreadRef }) {
 
   // A card left open by another thread's button, or by a shortcut with no button mounted,
   // must not appear on its own. Keyed by thread, so this runs on every thread switch.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the inspector card store's open card on mount and unmount for each thread
   useEffect(() => {
     close();
     return close;

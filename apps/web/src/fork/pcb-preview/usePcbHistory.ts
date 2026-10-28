@@ -36,11 +36,13 @@ export function usePcbHistory(input: {
   const [generation, setGeneration] = useState(0);
   const request = useRef(0);
   const latestPages = useRef(pages);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest history pages into a ref read by async page loads
   useEffect(() => {
     latestPages.current = pages;
   }, [pages]);
   const busy = useRef(false);
   const previousKey = useRef(`${threadRef.environmentId}\0${threadRef.threadId}\0${path}`);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches the design history from the server when the design or its checkpoints change and drops stale responses
   useEffect(() => {
     const key = `${threadRef.environmentId}\0${threadRef.threadId}\0${path}`;
     const changed = previousKey.current !== key;

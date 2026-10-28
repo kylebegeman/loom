@@ -37,6 +37,7 @@ export function VaultPasswordSettingsSection() {
 
 export function VaultPasswordGeneratorHost() {
   const [open, setOpen] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for password generator open requests and unsubscribes on unmount
   useEffect(() => onOpenVaultPasswordGenerator(() => setOpen(true)), []);
   if (!open) return null;
   return <PasswordGenerator onClose={() => setOpen(false)} />;
@@ -57,6 +58,7 @@ function PasswordGenerator({ onClose }: { readonly onClose: () => void }) {
     setCopied(false);
     setError(null);
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window blur and visibilitychange listeners that clear the generated password
   useEffect(() => {
     const hidden = () => {
       if (document.hidden) clear();

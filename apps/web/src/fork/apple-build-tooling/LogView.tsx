@@ -15,6 +15,7 @@ export function LogView({ environmentId, runId }: { environmentId: EnvironmentId
   const scroller = useRef<HTMLPreElement>(null);
   const pinned = useRef(true);
   const text = view?.text;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the log element scrolled to the bottom as new output arrives while pinned
   useEffect(() => {
     const element = scroller.current;
     if (text !== undefined && element && pinned.current) element.scrollTop = element.scrollHeight;

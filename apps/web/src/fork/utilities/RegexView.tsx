@@ -37,6 +37,7 @@ export function RegexView({ pattern, flags, text }: RegexRequest) {
   const [slow, setSlow] = useState<RegexRequest | null>(null);
   const [showAll, setShowAll] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the regex web worker runner on mount and disposes it on unmount
   useEffect(() => {
     const created = createRegexRunner(() => new RegexWorker(), REGEX_TIMEOUT_MS);
     runner.current = created;
@@ -46,6 +47,7 @@ export function RegexView({ pattern, flags, text }: RegexRequest) {
     };
   }, []);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces pattern runs through the regex web worker and cancels stale ones
   useEffect(() => {
     if (pattern === "") return;
     const request = { pattern, flags, text };

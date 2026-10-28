@@ -14,6 +14,7 @@ export function AppleBuildToolingShortcuts() {
     loomFeaturesOf(configs.get(threadRef.environmentId)?.environment.capabilities).includes(
       FEATURE,
     );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the fork command bus for apple build shortcuts and unsubscribes on unmount
   useEffect(() => {
     if (!available || !threadRef) return;
     const unsubscribe = [

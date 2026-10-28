@@ -33,6 +33,7 @@ function usePickerAgentModels(threadRef: ScopedThreadRef) {
   );
   const [retry, setRetry] = useState(0);
   const lookupKey = `${key}:${runId ?? "latest"}:${retry}`;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the turn's changed models from the server for the picker and ignores late replies
   useEffect(() => {
     if (!available) return;
     let cancelled = false;
@@ -57,6 +58,7 @@ function usePickerAgentModels(threadRef: ScopedThreadRef) {
       cancelled = true;
     };
   }, [available, key, lookupKey, runId, threadRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the picker's turn filter in the shared model marks store on unmount
   useEffect(
     () => () => {
       useAgentModelMarks.getState().setPickerTurn(key, null);

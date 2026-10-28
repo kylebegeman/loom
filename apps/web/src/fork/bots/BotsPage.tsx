@@ -148,6 +148,7 @@ export function BotsPage() {
   const refreshStarters = starters.refresh;
   const refreshRuns = newestRuns.refresh;
   const wasConnected = useRef(host.connected);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches bots, starters and runs from the server when the host connection comes back
   useEffect(() => {
     if (host.connected && !wasConnected.current) {
       refreshList();
@@ -160,6 +161,7 @@ export function BotsPage() {
   // Saving, deleting or restoring a bot can change its starter's state.
   const botChanges = changes.bots;
   const seenBotChanges = useRef(botChanges);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches starters when the watched bot change stream reports a save, delete or restore
   useEffect(() => {
     if (seenBotChanges.current === botChanges) return;
     seenBotChanges.current = botChanges;

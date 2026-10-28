@@ -83,6 +83,7 @@ function FromThreadDraft({
     );
   };
   const draftOnOpen = useEffectEvent(fetchDraft);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests a bot draft from the server on mount and invalidates the in-flight request on unmount
   useEffect(() => {
     draftOnOpen();
     return () => {

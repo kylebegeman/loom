@@ -42,6 +42,7 @@ function LocalUpdateInstall() {
   const version = state?.downloadedVersion ?? null;
   const installable = bridge !== undefined && version !== null;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the app-registry install prompt once the desktop update is no longer installable
   useEffect(() => {
     if (prompted && !installable) closeLocalUpdateInstall();
   }, [prompted, installable]);
@@ -130,6 +131,7 @@ function InstallWhenIdle({
   const run = useUpdateEverythingRun();
   const ready = idle && !updateRunBusy(run);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- retry timer that asks the desktop bridge to install the armed update once the app is idle
   useEffect(() => {
     if (!ready) return;
     let current = true;

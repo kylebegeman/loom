@@ -68,5 +68,6 @@ export function useEmptyConversationLeave(
       ]);
     },
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the navigation beforeRemove event and unsubscribes on unmount
   useEffect(() => navigation.addListener("beforeRemove", (event) => leave(event)), [navigation]);
 }

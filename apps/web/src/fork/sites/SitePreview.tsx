@@ -157,6 +157,7 @@ export function SitePreview({
   const moved = loads > 1;
   const typed = path ?? sitePath(site.url);
   // Measured, not animated: the frame rescales only when the stage itself changes size.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resize observer that measures the preview stage width to scale the frame
   useLayoutEffect(() => {
     const element = stageRef.current;
     if (!framed || !element) return;
@@ -166,6 +167,7 @@ export function SitePreview({
     });
   }, [framed]);
   // A refused or stuck frame never says so, so a long wait is the only signal there is.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that flags the iframe as slow when it has not loaded in time
   useEffect(() => {
     if (!framed || loaded) return;
     const timer = window.setTimeout(() => setSlowFrame(frameKey), SLOW_LOAD_MS);

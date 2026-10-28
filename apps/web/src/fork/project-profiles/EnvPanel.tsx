@@ -200,6 +200,7 @@ function ProjectEnv({ threadRef }: ForkPanelProps) {
   });
   const completedAt = thread?.latestRun?.completedAt;
   const refreshBudget = budget.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the server budget report whenever the thread's latest run completes
   useEffect(() => {
     if (completedAt) refreshBudget();
   }, [completedAt, refreshBudget]);

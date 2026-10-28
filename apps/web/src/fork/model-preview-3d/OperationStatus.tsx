@@ -12,6 +12,7 @@ export type OperationProgress = {
 export function OperationStatus({ label, detail, completed, total }: OperationProgress) {
   const [started] = useState(() => Date.now());
   const [seconds, setSeconds] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ticks the elapsed seconds on an interval while the operation runs
   useEffect(() => {
     const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);

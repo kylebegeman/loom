@@ -92,6 +92,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
   // Brings the matched item into view without moving the page again as history refreshes. The
   // first scroll lands on estimated row heights, often a screen short, so it scrolls once more
   // when the hit is laid out and the rows before it have been measured.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the native list to the matched row once it is laid out and measured
   useEffect(() => {
     if (!matchedRowId) return;
     const measured = laidOut === matchedRowId;
@@ -108,6 +109,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
   // Scrolling does not move a screen reader, so its focus moves to the hit once the row is laid
   // out and the push has finished; the screen change that ends a push would take it back earlier.
   const [appeared, setAppeared] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the navigation transitionEnd event and unsubscribes on unmount
   useEffect(
     () =>
       navigation.addListener("transitionEnd", (event) => {
@@ -117,6 +119,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
   );
   const matchLabel = useRef<ComponentRef<typeof View>>(null);
   const focusedOn = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves screen reader focus to the matched row once it is laid out and the push transition ends
   useEffect(() => {
     if (!appeared || !matchedRowId || laidOut !== matchedRowId) return;
     if (focusedOn.current === matchedRowId || !matchLabel.current) return;
@@ -133,6 +136,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
   const connected = host?.entry.enabled === true && host.connection.phase === "connected";
   const insets = useSafeAreaInsets();
   const refresh = query.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the saved conversation from the server when the library's refresh sequence changes
   useEffect(() => {
     if (refreshSequence !== null && authority.connected && authority.canRead) refresh();
   }, [refreshSequence, authority.connected, authority.canRead, refresh]);

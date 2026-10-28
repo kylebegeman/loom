@@ -129,6 +129,7 @@ export function TidyProjectDialog({
         ),
     ),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads working copy health from each server and drops stale results on change
   useEffect(() => {
     let cancelled = false;
     // An unreadable copy simply has no health, which keeps it out of the safe list.

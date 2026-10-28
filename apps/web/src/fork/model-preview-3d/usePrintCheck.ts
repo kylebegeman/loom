@@ -76,6 +76,7 @@ function leaseKey(input: PrintCheckInput) {
 /** Cancels each panel lease independently while the host can retain a shared agent check. */
 export function usePrintCheck(input: PrintCheckInput) {
   const latest = useRef(input);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest input in a ref for the debounced print check
   useLayoutEffect(() => {
     latest.current = input;
   }, [input]);
@@ -168,6 +169,7 @@ export function usePrintCheck(input: PrintCheckInput) {
     },
     [stopRequest],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces the server print check on input changes and releases the request on cleanup
   useEffect(() => {
     stopRequest();
     if (input.active && input.enabled && input.geometryRevision && input.format !== "step")

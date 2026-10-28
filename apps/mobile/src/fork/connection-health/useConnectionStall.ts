@@ -20,6 +20,7 @@ export function useConnectionStall(
   const [reached, setReached] = useState<{ readonly stallAt: number; readonly at: number } | null>(
     null,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that marks the connection stalled when the stall deadline passes
   useEffect(() => {
     if (stallAt === null) return;
     const timer = setTimeout(

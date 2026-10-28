@@ -42,6 +42,7 @@ export function PanelPickerCommandHost() {
     threadRef ? selectActiveRightPanel(state.byThreadKey, threadRef) === "preview" : false,
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the panel picker fork command and a window keydown shortcut, removing both on unmount
   useEffect(() => {
     if (!threadRef) return;
     const open = () => {

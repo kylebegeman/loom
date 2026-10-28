@@ -897,6 +897,7 @@ function AccessCheck({
   const [report, setReport] = useState<VaultReadinessReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [controller, setController] = useState<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight readiness request when it is replaced or on unmount
   useEffect(() => () => controller?.abort(), [controller]);
   const [error, setError] = useState<string | null>(null);
   const checkedTime = useVaultTime([

@@ -101,6 +101,7 @@ function LibraryNotificationsContent() {
   const libraryId = library?.id ?? null;
   // The Library may have dropped this iPhone since it registered, or changed which builds it
   // serves; the record follows, so the phone registers again or stops asking.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reconciles the stored push registration with the library's push status from the server
   useEffect(() => {
     if (libraryId === null || !AsyncResult.isSuccess(statusResult) || statusResult.waiting) return;
     void reconcileLibraryPushStatus(

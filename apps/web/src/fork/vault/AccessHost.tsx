@@ -9,6 +9,7 @@ import { onOpenVaultAccess } from "./access-navigation";
 import { forkSettingsTarget } from "../settings/navigation";
 export function VaultAccessHost() {
   const navigate = useNavigate();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for vault access open requests and unsubscribes on unmount
   useEffect(
     () =>
       onOpenVaultAccess((target) => {
@@ -19,6 +20,7 @@ export function VaultAccessHost() {
       }),
     [navigate],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for vault ssh open requests and unsubscribes on unmount
   useEffect(
     () =>
       onOpenVaultSsh((environmentId) => {
@@ -29,6 +31,7 @@ export function VaultAccessHost() {
       }),
     [navigate],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for vault profiles open requests and unsubscribes on unmount
   useEffect(
     () =>
       onOpenVaultProfiles(({ environmentId, section }) => {
@@ -39,6 +42,7 @@ export function VaultAccessHost() {
       }),
     [navigate],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for vault health open requests and unsubscribes on unmount
   useEffect(
     () =>
       onOpenVaultHealth((environmentId) => {
@@ -49,6 +53,7 @@ export function VaultAccessHost() {
       }),
     [navigate],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for vault migration open requests and unsubscribes on unmount
   useEffect(
     () =>
       onOpenVaultMigration((environmentId, section) => {
@@ -61,6 +66,7 @@ export function VaultAccessHost() {
       }),
     [navigate],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for vault test accounts open requests and unsubscribes on unmount
   useEffect(
     () =>
       onOpenVaultTestAccounts((environmentId) => {

@@ -219,18 +219,22 @@ function RunLog({
         })
       : [];
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records fetched runs in the module-level run cache so they can be opened later
   useEffect(() => {
     if (first.data) rememberRuns(first.data.runs);
   }, [first.data]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records fetched older runs in the module-level run cache so they can be opened later
   useEffect(() => {
     if (older.data) rememberRuns(older.data.runs);
   }, [older.data]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records fetched recent runs in the module-level run cache so they can be opened later
   useEffect(() => {
     if (recent.data) rememberRuns(recent.data.runs);
   }, [recent.data]);
 
   const refreshFirst = first.refresh;
   const wasConnected = useRef(host.connected);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the first runs page from the server when the environment connection comes back
   useEffect(() => {
     // Changes missed while away never arrive, so the list starts over from the server.
     if (host.connected && !wasConnected.current) refreshFirst();

@@ -38,6 +38,7 @@ export function HistoryStrip({
   onClose: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the viewed checkpoint chip into view in the DOM
   useEffect(() => {
     container.current
       ?.querySelector(`[data-checkpoint="${CSS.escape(viewing ?? "now")}"]`)

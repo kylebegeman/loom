@@ -39,6 +39,7 @@ export function useProjectNotesMenuItems(
   trigger: ComposerTrigger | null,
 ): readonly ForkComposerCommandItem[] {
   const supported = useProfilesSupported(context.environmentId) && context.projectId !== null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes project notes support to the composer bridge module store and resets it on unmount
   useEffect(() => {
     setProjectNotesSupported(supported);
     return () => setProjectNotesSupported(false);

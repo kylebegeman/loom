@@ -17,6 +17,7 @@ export function useParameterHistory(key: string, source: string | null, initial:
     active = { source, history: createHistory(initial) };
     setState(active);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- saves the parameter history to the module-level session cache
   useEffect(() => {
     if (state.source) sessions.set(key, state);
     if (sessions.size > 40) sessions.delete(sessions.keys().next().value!);

@@ -28,6 +28,7 @@ export function useThreadAttention() {
 export function ThreadAttentionButton() {
   const { threads, goNext } = useThreadAttention();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener that jumps to the next thread needing attention on its shortcut
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || event.isComposing || isCommandPaletteOpen())

@@ -32,6 +32,7 @@ export function ForkGlobalShortcuts() {
     threadRef ? selectActiveRightPanel(state.byThreadKey, threadRef) === "preview" : false,
   );
   useLibraryShortcuts();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener that dispatches fork keybinding commands
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;

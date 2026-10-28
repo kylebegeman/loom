@@ -11,6 +11,7 @@ export function useConnectionStalled(
 ): boolean {
   const stallAt = connection === null ? null : connectionStallAt(connection);
   const [reached, setReached] = useState<number | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- one-shot timer that re-renders when the connection reaches its stall deadline
   useEffect(() => {
     if (stallAt === null) return;
     const timer = window.setTimeout(() => setReached(stallAt), Math.max(0, stallAt - Date.now()));

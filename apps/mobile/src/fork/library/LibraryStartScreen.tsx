@@ -403,6 +403,7 @@ function LibraryStartContent(props: {
     ((pending !== null && !instantLaunch) || folderPending) && launchedThread === null,
     () => undefined,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- replaces the navigation route with the launched thread once the launch settles
   useEffect(() => {
     if (launchedThread && pending === null)
       navigation.dispatch(StackActions.replace("Thread", launchedThread));
@@ -1362,6 +1363,7 @@ function LibraryStartContent(props: {
     autoStart.current = false;
     if (ready) void start();
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- auto-starts the launch once the server queries it waits on have settled
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- The tapped row asked for this launch; it runs once what it waits on has settled.
     if (!autoStartWaiting) decideAutoStart(autoStartReady);

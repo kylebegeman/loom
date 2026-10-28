@@ -32,6 +32,7 @@ export function ModelPreview3dShortcuts() {
   );
   const request = events._tag === "Success" ? events.value : null,
     handled = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- runs each server editor action request once against the right panel store and acknowledges it to the server
   useEffect(() => {
     if (!threadRef || !request || handled.current === request.requestId) return;
     handled.current = request.requestId;
@@ -68,6 +69,7 @@ export function ModelPreview3dShortcuts() {
         }).catch(() => undefined),
       );
   }, [request, threadRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to fork command palette commands for opening and capturing the model preview and unsubscribes on unmount
   useEffect(() => {
     if (!available || !threadRef) return;
     const open = onForkCommand("loom.model-preview-3d.open", () =>

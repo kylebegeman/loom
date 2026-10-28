@@ -160,9 +160,11 @@ export function useParameterLinks(render: LinkRender) {
     [error, setError] = useState<{ key: string; message: string } | null>(null),
     control = useRef<AbortController | null>(null),
     latestRender = useRef(render);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest render function in a ref for async link runs
   useLayoutEffect(() => {
     latestRender.current = render;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight linked parameter run on unmount
   useEffect(() => () => control.current?.abort(), []);
 
   const run = useCallback(

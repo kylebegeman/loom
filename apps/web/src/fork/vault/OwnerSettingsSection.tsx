@@ -59,6 +59,7 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const field = useId();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the vault access snapshot from the server and aborts it on change
   useEffect(() => {
     const controller = new AbortController();
     void executeAtomQuery(appAtomRegistry, access.snapshot(request), {

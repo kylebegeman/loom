@@ -748,6 +748,7 @@ function AccessCheck({
 }) {
   const registry = useContext(RegistryContext);
   const [controller, setController] = useState<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight access request when it is replaced or on unmount
   useEffect(() => () => controller?.abort(), [controller]);
   const [principal, setPrincipal] = useState(""),
     [itemId, setItemId] = useState(initialItemId),

@@ -41,6 +41,7 @@ export function useThreadArchiveFallback(input: {
         })
       : null,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- redirects the router to the saved conversation once its archive loads from the server
   useEffect(() => {
     if (canUseArchive && archive.data)
       void navigate({

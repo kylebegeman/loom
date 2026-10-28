@@ -85,6 +85,7 @@ export function ConnectionsScreen() {
   // above this screen, so coming back here, or leaving, means that form has closed.
   const [directoryAddress] = useState(() => directoryPairingAddress(onChangeConnectionPairingUrl));
   useFocusEffect(directoryAddress.close);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the directory pairing address subscription on unmount
   useEffect(() => directoryAddress.close, [directoryAddress]);
   const pairDirectoryComputer = useCallback(
     (pairing: DirectoryPairing) => {

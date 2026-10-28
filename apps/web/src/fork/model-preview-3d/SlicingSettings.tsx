@@ -119,10 +119,12 @@ export function SlicingSettings({
   const app = mapping?.app ?? chosenApp;
   const machine = mapping?.machine.name;
   const latest = useRef({ value, bedId, app });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest value, bed and app in a ref for async profile callbacks
   useLayoutEffect(() => {
     latest.current = { value, bedId, app };
   });
   /* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies -- Profile queries own their loading state and imports invalidate their cache. */
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches slicer profiles from the server for the app and machine and ignores late replies
   useEffect(() => {
     let active = true;
     setLoading(true);

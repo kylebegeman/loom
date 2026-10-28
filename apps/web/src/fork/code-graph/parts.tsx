@@ -144,6 +144,7 @@ export const plural = (count: number, word: string) =>
 /** The current time, refreshed every `intervalMs`. */
 export function useNow(intervalMs: number) {
   const [now, setNow] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- interval timer that ticks the current time while mounted
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
@@ -154,6 +155,7 @@ export function useNow(intervalMs: number) {
 /** `value` once it has stopped changing for `delayMs`. */
 export function useSettled<T>(value: T, delayMs: number) {
   const [settled, setSettled] = useState(value);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounce timer that settles the value once it stops changing
   useEffect(() => {
     const timer = window.setTimeout(() => setSettled(value), delayMs);
     return () => window.clearTimeout(timer);

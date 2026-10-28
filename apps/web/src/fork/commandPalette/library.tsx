@@ -320,6 +320,7 @@ export function useLibraryPaletteContext(
   const [openedAt] = useState(() => Date.now());
   const recheck = record.isSuccess && record.data === null && record.dataUpdatedAt < openedAt;
   const refreshRecord = record.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the library record from the server when a recheck is requested
   useEffect(() => {
     if (recheck) refreshRecord();
   }, [recheck, refreshRecord]);
@@ -392,6 +393,7 @@ export function libraryShortcutAction(
 export function useLibraryShortcuts() {
   const { blocker, canStart, liveProjects } = useLibraryPaletteState();
   const navigate = useNavigate();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the library fork shortcut commands and unsubscribes on unmount
   useEffect(() => {
     const unsubscribes = LIBRARY_SHORTCUTS.map((command) =>
       onForkCommand(command, () => {

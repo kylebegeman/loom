@@ -21,6 +21,7 @@ export function CodeGraphOpenWatcher() {
     .capabilities;
   const enabled = loomFeaturesOf(capabilities).includes(FEATURE);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the server the project was opened, throttled by the module-level report log
   useEffect(() => {
     if (!enabled || environmentId === null || projectId === null) return;
     if (!shouldReportProjectOpen(reported, `${environmentId}:${projectId}`, Date.now())) return;

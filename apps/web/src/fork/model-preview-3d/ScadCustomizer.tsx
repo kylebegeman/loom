@@ -198,9 +198,11 @@ export function ScadFile({
       restoreParameters,
     ],
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the parameter session to the host component's callback when it changes
   useEffect(() => {
     if (session) onSession(session);
   }, [session, onSession]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches the file's parameters from the server on each revision and reports refreshing to the host
   useEffect(() => {
     let active = true;
     onRefreshing(true);
@@ -363,6 +365,7 @@ function ScadRender({
       },
     }),
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- forwards the render atom's result, mesh and pending state to the host callbacks
   useEffect(() => {
     onPending(result.waiting || result._tag === "Initial");
     if (result.waiting) return;

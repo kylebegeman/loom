@@ -40,6 +40,7 @@ export function ComputerNameSection({
   const name = draft ?? liveLabel ?? query.data?.label ?? "";
   const observedLabel = useRef(liveLabel);
   const refreshNaming = query.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches naming metadata from the server when another client renames the host
   useEffect(() => {
     if (!supported || !connected || !allowed || liveLabel === undefined) return;
     const previous = observedLabel.current;

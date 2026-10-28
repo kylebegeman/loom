@@ -132,6 +132,7 @@ function ConfiguredComputerConnectSection({
   const needsCleanup = actionMatchesAccount && cleanupNeeded;
   const session = useAtomValue(managedRelaySessionAtom);
   const signedInAccount = isSignedIn && userId && session?.accountId === userId;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async link and unlink results arriving after unmount are dropped
   useEffect(() => {
     mounted.current = true;
     return () => {

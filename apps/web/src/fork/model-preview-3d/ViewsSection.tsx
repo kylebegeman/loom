@@ -97,6 +97,7 @@ export function ViewsSection({
       ? data.views.find((view) => thumbnails[thumbnailKey(view, sourceRevision)] === undefined)
       : undefined;
   // One capture per pass keeps the viewport responsive while thumbnails fill in.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- captures one missing view thumbnail from the viewer at a time and ignores late results
   useEffect(() => {
     if (!missing) return;
     let active = true;

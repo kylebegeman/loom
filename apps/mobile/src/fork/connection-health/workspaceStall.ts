@@ -73,6 +73,7 @@ export function stalledWorkspaceStatus(
 export function useWorkspaceStallClock(state: WorkspaceState): number {
   const [now, setNow] = useState(Date.now);
   const next = nextWorkspaceStallAt(state, now);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that advances the clock to the next workspace stall deadline
   useEffect(() => {
     if (next === null) return;
     // Never earlier than `next`, so a timer that fires a millisecond early still counts.

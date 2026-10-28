@@ -35,6 +35,7 @@ export function BotSuggestions({
   const refreshDismissed = dismissed.refresh;
   const focused = useIsFocused();
   const seen = useRef({ changes, focused });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches suggestions from the server when bot changes arrive or the screen regains navigation focus
   useEffect(() => {
     const changed = seen.current.changes !== changes || (!seen.current.focused && focused);
     seen.current = { changes, focused };

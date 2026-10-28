@@ -81,6 +81,7 @@ export function BotSuggestionsSection() {
   // Saving a bot can use up a suggestion, so each bot change refetches the open list.
   const refreshOpen = open.refresh;
   const seenChanges = useRef(changes.bots);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches open suggestions when the watched bot change stream advances
   useEffect(() => {
     if (seenChanges.current === changes.bots) return;
     seenChanges.current = changes.bots;

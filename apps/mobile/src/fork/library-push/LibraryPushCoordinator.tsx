@@ -12,6 +12,7 @@ export function LibraryPushCoordinator() {
 /** Subscribes through the registry, so Library traffic never re-renders the app root. */
 function LibraryPushSync() {
   const registry = useContext(RegistryContext);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts library push sync against the atom registry and stops it on unmount
   useEffect(() => startLibraryPushSync(registry), [registry]);
   return null;
 }

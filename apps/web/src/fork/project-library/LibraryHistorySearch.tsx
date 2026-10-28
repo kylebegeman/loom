@@ -65,6 +65,7 @@ export function LibraryHistorySearch({
   const inputRef = sharedInputRef ?? ownInputRef;
   const supported = supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE);
   // The command palette's Search project history lands here, whether or not this page was open.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for command palette history search requests and unsubscribes on unmount
   useEffect(() => {
     if (!supported) return;
     const focus = () => {

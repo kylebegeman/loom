@@ -50,6 +50,7 @@ export function usePcbWorkbench(
   const latest = useRef<PcbWorkspace>(EMPTY),
     queue = useRef<Promise<unknown>>(Promise.resolve());
   const data = local && (!value || local.version >= value.version) ? local : (value ?? EMPTY);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mirrors the latest workspace data into a ref read by queued async saves
   useLayoutEffect(() => {
     latest.current = data;
   }, [data]);

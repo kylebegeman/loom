@@ -138,6 +138,7 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
       if (generation.current === own) setError(message(cause));
     }
   }, [threadRef.environmentId, threadRef.threadId, path]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the assembly from the server while active and drops stale replies on change or unmount
   useEffect(() => {
     if (active) queueMicrotask(() => void refresh());
     return () => {
@@ -209,6 +210,7 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
         input: { file: { threadId: threadRef.threadId, path }, requestId: id },
       }).catch(() => {});
   }, [threadRef.environmentId, threadRef.threadId, path]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the server assembly check when inactive or on unmount
   useEffect(() => {
     if (!active) queueMicrotask(cancel);
     return () => {

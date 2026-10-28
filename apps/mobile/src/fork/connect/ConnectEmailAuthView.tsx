@@ -42,12 +42,14 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
   const mounted = useRef(true);
   const busy = useRef(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async sign-in errors arriving after unmount are dropped
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the resend cooldown timer after a code is sent and clears it on change
   useEffect(() => {
     if (sentAt === null) return;
     const timer = setTimeout(() => setCanResend(true), RESEND_DELAY_MS);
@@ -272,6 +274,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
   const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async sign-in errors arriving after unmount are dropped
   useEffect(() => {
     mounted.current = true;
     return () => {

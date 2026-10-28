@@ -417,6 +417,7 @@ function LibraryProjectForm({
   });
   // Runs after the chosen folder's state has rendered, so Create saves the resources it filled in.
   // Each tap is decided once, so a later catalog refresh never acts on it again.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- acts on the chosen folder's outcome once its catalog state has rendered, once per request
   useEffect(() => {
     if (!folderOutcome || folderOutcome.kind === "wait") return;
     if (decidedFolderRequest.current === folderRequest) return;

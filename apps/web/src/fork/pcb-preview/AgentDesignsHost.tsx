@@ -18,12 +18,14 @@ function StreamHost({ threadRef, mode }: { threadRef: ScopedThreadRef; mode: "of
   const event = asyncValue(result),
     handled = useRef(new Set<string>()),
     warned = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies each new agent design event from the server stream once per checkpoint
   useEffect(() => {
     if (!event?.checkpointId || handled.current.has(event.checkpointId)) return;
     handled.current.add(event.checkpointId);
     if (handled.current.size > 200) handled.current.delete(handled.current.values().next().value!);
     applyAgentDesigns(threadRef, event, mode);
   }, [event, threadRef, mode]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- logs a console warning once when the server turn design stream fails
   useEffect(() => {
     if (result._tag === "Failure" && !warned.current) {
       warned.current = true;

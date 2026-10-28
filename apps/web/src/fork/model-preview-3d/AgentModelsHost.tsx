@@ -28,6 +28,7 @@ function AgentModelsStream({
     }),
   );
   const event = Option.getOrNull(AsyncResult.value(result));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens agent-changed models in the right panel store once per new checkpoint from the server stream
   useEffect(() => {
     if (!event?.checkpointId || event.threadId !== threadRef.threadId) return;
     const key = scopedThreadKey(threadRef);
@@ -39,6 +40,7 @@ function AgentModelsStream({
     handledCheckpoints.set(key, handled);
     applyAgentModels(threadRef, event, mode);
   }, [event, mode, threadRef]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- logs a failed model change subscription to the console
   useEffect(() => {
     if (result._tag === "Failure")
       console.warn("Loom could not follow this thread's model changes", Cause.squash(result.cause));
@@ -51,6 +53,7 @@ function ConfiguredAgentModelsHost({ threadRef }: { threadRef: ScopedThreadRef }
   );
   const settings = Option.getOrNull(AsyncResult.value(result));
   const mode = settings?.agentModels;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears this thread's agent model marks in the store when agent models are turned off
   useEffect(() => {
     if (mode === "off") useAgentModelMarks.getState().clear(scopedThreadKey(threadRef));
   }, [mode, threadRef]);

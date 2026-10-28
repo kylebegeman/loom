@@ -74,6 +74,7 @@ export function VaultOwnerSettings({
   const showRecords = advanced || firstItems.data?.items.length === 0;
   const [help, setHelp] = useState(false);
   const [repair, setRepair] = useState<"broker" | "health" | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches the vault access snapshot from the server while connected and aborts it on change or unmount
   useEffect(() => {
     if (!supported || !connected) return;
     const controller = new AbortController();

@@ -56,6 +56,7 @@ const SIGN_IN_PROGRESS = { "signing-in": "Signing in...", verifying: "Verifying.
 export function useDirectoryComputers() {
   const [shownAt, setShownAt] = useState(Date.now);
   useFocusEffect(useCallback(() => setShownAt(Date.now()), []));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- AppState listener that restamps the shown time when the app returns to the foreground
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") setShownAt(Date.now());
@@ -144,6 +145,7 @@ function useDirectoryConnect(
   } | null>(null);
   const running = useRef<AbortController | null>(null);
   // Leaving the screen closes an open provider sheet and drops the result.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts an in-flight directory connect and its provider sheet on unmount
   useEffect(() => () => running.current?.abort(), []);
 
   const connect = (row: DirectoryCatalogRow) => {

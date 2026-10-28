@@ -111,7 +111,9 @@ export function useProjectStorageRollout(inventory: readonly ProjectStorageInven
       },
     });
   }, [registry, preview, adopt, setRetention]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs rollout targets into the external storage rollout controller
   useEffect(() => controller.syncTargets(targets), [controller, targets]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the external storage rollout controller on change or unmount
   useEffect(() => () => controller.cancel(), [controller]);
   const snapshot = useSyncExternalStore(
     controller.subscribe,

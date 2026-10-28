@@ -195,6 +195,7 @@ export function Board3D({
     viewer = useRef<ModelViewer | null>(null);
   const notified = useRef<typeof asset>(null);
   const notifyBuilt = useEffectEvent((hash: string) => onBuilt?.(hash));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- notifies the parent once per 3d model asset after the server export finishes building it
   useEffect(() => {
     if (!asset?.file || result.waiting || notified.current === asset) return;
     notified.current = asset;
@@ -212,6 +213,7 @@ export function Board3D({
     loadedModel.current = null;
     loadedParts.current = null;
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- creates the three.js viewer for the asset, loads its model, and disposes the viewer on change or unmount
   useEffect(() => {
     if (!host.current || !asset) return;
     const abort = new AbortController();
@@ -292,6 +294,7 @@ export function Board3D({
   const loading =
     result.waiting || result._tag === "Initial" || (!!asset && loaded !== asset && !error);
   const ready = !!asset && loaded === asset && !loading && !error && !asyncError(result);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reclassifies the loaded three.js model when the inspected component references change
   useEffect(() => {
     if (!ready || !loadedModel.current || !geometry || geometry.references === referenceKey) return;
     const model = loadedModel.current;
@@ -309,17 +312,23 @@ export function Board3D({
     !ready || tool === "none"
       ? null
       : `${tool === "height" ? "Height. Click a point for its height" : `Distance, point ${pending ? 2 : 1} of 2. Click two points`}${lastMeasurement ? `. ${lastMeasurement.kind === "height" ? (lastMeasurement.side === "back" ? "Below board" : "Above board") : "Distance"}: ${formatLength(lastMeasurement.lengthMm, unit)}` : ""}`;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the viewer loading status to the parent callback
   useEffect(() => reportStatus(loading ? "loading" : ready ? "ready" : null), [loading, ready]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the measurement tool hint to the parent callback
   useEffect(() => reportTool(toolText), [toolText]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the accessible name and description into the imperative three.js viewer
   useEffect(() => {
     viewer.current?.describe(name, descriptionId);
   }, [name, descriptionId]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the length unit formatter into the imperative three.js viewer
   useEffect(() => {
     if (ready) viewer.current?.setLengthFormat((mm) => formatLength(mm, unit));
   }, [ready, unit]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies display settings to the board parts in the imperative three.js viewer
   useEffect(() => {
     if (ready && viewer.current && geometry) applyDisplay(viewer.current, geometry.parts, display);
   }, [display, ready, geometry]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sets the three.js viewer pick mode for the active measurement tool and clears it on change or unmount
   useEffect(() => {
     if (!ready || !viewer.current) return;
     const created = viewer.current;
@@ -342,6 +351,7 @@ export function Board3D({
     });
     return () => created.setPickMode(null, null);
   }, [ready, tool, pending, geometry, readOnly, append]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes measurement overlays into the imperative three.js viewer
   useEffect(() => {
     if (!ready || !viewer.current) return;
     viewer.current.setOverlays(

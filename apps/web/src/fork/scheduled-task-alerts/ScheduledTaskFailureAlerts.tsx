@@ -43,6 +43,7 @@ export function ScheduledTaskFailureAlerts({
   // Kept through a reconnect, so a run that failed in between is still news.
   const seen = useRef<ScheduledTaskRunMarks | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays sounds and shows toasts or desktop notifications for newly failed scheduled task runs from the server
   useEffect(() => {
     if (tasks === null) return;
     const { marks, failed } = newScheduledTaskFailures(seen.current, tasks);

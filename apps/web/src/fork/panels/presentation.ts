@@ -34,6 +34,7 @@ export function requestPanelPresentation(threadRef: ScopedThreadRef, maximized: 
   });
 }
 export function useForkPanelPresentation(threadRef: ScopedThreadRef | null, available: boolean) {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window listener for panel maximize requests that applies them to the right panel store
   useEffect(() => {
     const onRequest = (event: Event) => {
       const request = (event as CustomEvent<Request>).detail;

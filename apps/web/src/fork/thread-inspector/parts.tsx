@@ -70,6 +70,7 @@ export function InspectorStatusDot({
 /** Elapsed time since `since`, written straight to the DOM once a second while visible. */
 export function InspectorElapsed({ since }: { since: string }) {
   const textRef = useRef<HTMLSpanElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- interval that writes the elapsed label into the dom while the document is visible
   useEffect(() => {
     const start = Date.parse(since);
     if (Number.isNaN(start)) return;

@@ -80,6 +80,7 @@ export function ParameterEditor({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [query, setQuery] = useState("");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the server parameters atom when the design source hash changes
   useEffect(() => {
     if (!sourceHash) return;
     appAtomRegistry.refresh(

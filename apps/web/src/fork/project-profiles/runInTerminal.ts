@@ -11,6 +11,7 @@ export function useRunProfileCommand(threadRef: ScopedThreadRef) {
   const thread = useQuietThreadShell(threadRef);
   const targetKey = JSON.stringify([threadRef.environmentId, threadRef.threadId]);
   const mountedTarget = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks the mounted thread target in a ref so an in-flight command can detect a thread switch
   useLayoutEffect(() => {
     mountedTarget.current = targetKey;
     return () => {

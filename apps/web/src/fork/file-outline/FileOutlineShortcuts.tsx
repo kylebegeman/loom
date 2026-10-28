@@ -14,6 +14,7 @@ export function FileOutlineShortcuts() {
     selectActiveRightPanelSurface(state.byThreadKey, threadRef),
   );
   const available = surface?.kind === "file" && source?.path === surface.relativePath;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the outline toggle fork command while a matching file surface is shown
   useEffect(() => {
     if (!available) return;
     return onForkCommand("loom.file-outline.toggle", () => useFileOutlineStore.getState().toggle());

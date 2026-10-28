@@ -48,6 +48,7 @@ const CLOCK_INTERVAL_MS = 30_000;
 
 function useClock(): number {
   const [now, setNow] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ticks the clock on an interval and when the app returns to the foreground
   useEffect(() => {
     const tick = () => setNow(Date.now());
     const timer = setInterval(tick, CLOCK_INTERVAL_MS);

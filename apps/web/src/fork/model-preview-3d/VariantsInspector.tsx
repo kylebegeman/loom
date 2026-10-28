@@ -144,6 +144,7 @@ function ComparePane({
   const [mesh, setMesh] = useState<{ url: string; format: "stl" | "3mf" } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- renders the compared variant on the server and cancels that render on change or unmount
   useEffect(() => {
     let active = true;
     const variantId = `compare-${variant.id}`;
@@ -284,6 +285,7 @@ function VariantDetail({
     };
     return (await mutate({ kind: "variant", item })) ? item : null;
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces saving the edited variant draft to the server
   useEffect(() => {
     if (!dirty) return;
     const timeout = setTimeout(() => void persist(), SAVE_DELAY_MS);
@@ -699,6 +701,7 @@ export function VariantsInspector({
   );
   const variantsKey = JSON.stringify(data.variants.map(printKey));
   /* oxlint-disable react/exhaustive-effect-dependencies, react/set-state-in-effect -- Source, values and profiles invalidate cached estimates and release their RPC leases. */
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts server print estimates for the variants and cancels their rpc leases when inputs change or on unmount
   useEffect(() => {
     cancelSlicing();
     if (active && slicingEnabled && session) void estimateVariants(data.variants, true);
@@ -737,6 +740,7 @@ export function VariantsInspector({
   const [queue, setQueue] = useState<readonly string[]>([]);
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0, detail: "" });
   const [adding, setAdding] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the running batch progress to the host activity callback and clears it on unmount
   useEffect(() => {
     onActivity(
       running
@@ -765,6 +769,7 @@ export function VariantsInspector({
     JSON.stringify([variant.id, variant.values, session?.data.sourceRevision]);
   const [camera, setCamera] = useState<ModelCamera | null>(null);
   const latestVariants = useRef(data.variants);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest variants in a ref for async render and thumbnail callbacks
   useEffect(() => {
     latestVariants.current = data.variants;
   }, [data.variants]);
@@ -788,8 +793,9 @@ export function VariantsInspector({
         input: { file: { threadId: threadRef.threadId, path }, variantId: id },
       }).catch(() => undefined);
   }, [threadRef.environmentId, threadRef.threadId, path]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops in-flight variant renders and thumbnail captures on unmount
   useEffect(() => stop, [stop]);
-  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Source replacement cancels the external render process and its thumbnail work.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- stops in-flight variant renders and thumbnail captures when the source revision changes
   useEffect(() => stop, [session?.data.sourceRevision, stop]);
   /** Saves candidates and resolves with the saved variants, or null when nothing was saved. */
   const add = async (candidates: readonly SaveCandidate[]) => {

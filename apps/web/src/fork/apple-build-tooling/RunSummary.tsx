@@ -109,6 +109,7 @@ export function RunSummary({
   // The record changes as the run moves on; fetch the summary again when it does.
   const revision = `${run.status}:${run.phase}`;
   const fetchedAt = useRef(revision);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the run detail atom in the app registry when the run's status or phase changes
   useEffect(() => {
     if (fetchedAt.current === revision) return;
     fetchedAt.current = revision;

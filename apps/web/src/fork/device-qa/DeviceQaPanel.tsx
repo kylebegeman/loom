@@ -401,17 +401,21 @@ function Body({
   const watched = hub.sessions.filter((session) => session.threadId === threadId);
   const device = pickDevice(options, chosen, watched);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the latest local devices in the module device cache
   useEffect(() => {
     if (status) noteLocalDevices(environmentId, status.localDevices);
   }, [environmentId, status]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the active recording in the module recording cache
   useEffect(() => {
     if (evidence) noteRecording(environmentId, evidence.recording);
   }, [environmentId, evidence]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the thread's latest run in the module run cache
   useEffect(() => {
     if (runs) noteRuns(threadRef, runs);
   }, [runs, threadRef]);
   // A device the Device panel hands over while the panel is open is shown at once.
   const chosenKey = chosen ? deviceQaTargetKey(chosen) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the device status atom in the app registry when the Device panel hands over a target
   useEffect(() => {
     if (chosenKey !== null) appAtomRegistry.refresh(statusAtom);
   }, [chosenKey, statusAtom]);

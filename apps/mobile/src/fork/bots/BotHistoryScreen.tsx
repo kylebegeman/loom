@@ -243,6 +243,7 @@ function BotHistory({
   const [replayVersion, setReplayVersion] = useState<number | null>(null);
   const refreshVersions = versions.refresh;
   useBotsReconnect(connected, refreshVersions);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the server's saved versions when the bot's current version changes
   useEffect(() => {
     refreshVersions();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Saved versions are not watched; a changed current version invalidates this page.
@@ -533,9 +534,11 @@ function BotReplayView({
   const refreshRuns = runsQuery.refresh;
   useBotsReconnect(connected, refreshReplay);
   useBotsReconnect(connected, refreshRuns);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the replay from the server when the streamed replay progress changes while connected
   useEffect(() => {
     if (progress && connected) refreshReplay();
   }, [progress, connected, refreshReplay]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches runs from the server when the bots change stream reports pruned history
   useEffect(() => {
     if (changes.pruned && connected) refreshRuns();
   }, [changes.pruned, connected, refreshRuns]);

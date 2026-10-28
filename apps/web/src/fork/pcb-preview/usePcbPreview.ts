@@ -195,15 +195,18 @@ export function usePcbPreview(
   const reviewResult = asyncValue(reviewLoaded);
   const projectLoaded = useAtomValue(pcb.projectSettings({ environmentId, input: { threadId } }));
   const projectSettings = asyncValue(projectLoaded);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the review once project settings load from the server
   useEffect(() => {
     if (projectSettings) refreshReview();
   }, [projectSettings, refreshReview]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the review when server activity reports a newer review run
   useEffect(() => {
     if (activity?.ranAt.review && (!reviewResult || activity.ranAt.review > reviewResult.ranAt))
       refreshReview();
   }, [activity, reviewResult, refreshReview]);
   const loaded = asyncValue(latestState);
   const observedChecks = useRef("");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes checks when server activity reports a newer erc or drc run
   useEffect(() => {
     const stamp = JSON.stringify(activity?.ranAt);
     if (observedChecks.current === stamp) return;

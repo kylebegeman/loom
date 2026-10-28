@@ -25,6 +25,7 @@ function ReserveNotice({
   );
   const below = status?.enabled === true && status.belowReserve;
   const wasBelow = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- raises a toast when the server's disk space status first drops below the reserve
   useEffect(() => {
     if (!status) return;
     if (below && !wasBelow.current) {
@@ -50,6 +51,7 @@ export function ProjectLifecycleHost() {
   const navigate = useNavigate();
   const configs = useServerConfigs();
   const open = useCallback(() => void navigate(forkSettingsTarget(FEATURE)), [navigate]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for open storage settings requests and unsubscribes on unmount
   useEffect(() => onOpenStorageSettings(open), [open]);
   return [...configs]
     .filter(([, config]) => loomFeaturesOf(config.environment.capabilities).includes(FEATURE))

@@ -20,6 +20,7 @@ export function LoomPanelPickerLauncher(
 ) {
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the launcher as the panel picker target and unregisters on unmount
   useEffect(
     () =>
       registerPanelPickerTarget({
@@ -68,6 +69,7 @@ export function LoomPanelPickerButton(
 ) {
   const { onOpenChange, triggerRef } = props;
   const inputRef = useRef<HTMLInputElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the add-panel button as the panel picker target and unregisters on unmount
   useEffect(
     () =>
       registerPanelPickerTarget({

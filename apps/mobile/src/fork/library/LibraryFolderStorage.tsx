@@ -100,6 +100,7 @@ function FolderStorage({
     registry.refresh(query);
   }, [registry, query]);
   useRefreshOnRefocus(refresh);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the folder storage query on mount and resets pending consent and the parent's pending flag on unmount
   useEffect(() => {
     mounted.current = true;
     registry.refresh(query);

@@ -26,6 +26,7 @@ function ResolvedModelTurnChip({ threadRef, runId }: { threadRef: ScopedThreadRe
     }),
   );
   const loggedFailure = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- logs a failed turn model lookup to the console once
   useEffect(() => {
     if (result._tag === "Failure" && !loggedFailure.current) {
       loggedFailure.current = true;

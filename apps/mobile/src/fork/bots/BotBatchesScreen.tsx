@@ -350,6 +350,7 @@ function BatchDetail({
   const counts = page ? batchCountsLine(page.batch.counts) : "";
   const previousCounts = useRef(counts);
   const refreshReport = report.refresh;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the open batch report from the server when the streamed batch counts change
   useEffect(() => {
     if (previousCounts.current === counts) return;
     previousCounts.current = counts;

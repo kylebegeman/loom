@@ -173,10 +173,12 @@ export function useProjectStorageRollout(projectNames: ReadonlyMap<string, strin
     return rollout;
   }, [preview, adopt, setRetention]);
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the current targets into the external rollout controller
   useEffect(() => {
     controller.syncTargets(targets);
   }, [controller, targets]);
   // Cancelling stops unissued work and also survives React StrictMode effect replay.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the external rollout controller's unissued work on unmount
   useEffect(() => () => controller.cancel(), [controller]);
   return { controller, snapshot, targets };
 }

@@ -200,12 +200,14 @@ function ProjectPreparationContent(props: {
     destinationConnected &&
     canClone &&
     (receipt !== null || destinationTracksClones || plan?.kind === "existing");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks mount state so async preparation results arriving after unmount are dropped
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the reviewed source when the source environment disconnects
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- Disconnect invalidates the reviewed origin, including after reconnect.
     if (!sourceConnected) setSource(projectPreparationSource({}));
