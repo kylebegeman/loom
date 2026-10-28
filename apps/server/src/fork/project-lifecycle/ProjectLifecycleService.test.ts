@@ -637,14 +637,21 @@ describe("ProjectLifecycleService", () => {
       t.threads.push(thread("primary"));
       t.threads.push(thread("present", { worktreePath: t.worktree }));
       t.threads.push(thread("missing", { worktreePath: `${t.home}/missing` }));
+      const prunedParent = `${t.home}/pruned-project`;
+      const prunedCheckout = `${prunedParent}/released`;
+      NodeFS.mkdirSync(prunedCheckout, { recursive: true });
+      t.threads.push(thread("pruned-parent", { worktreePath: prunedCheckout }));
+      NodeFS.rmSync(prunedParent, { recursive: true });
       yield* t.service.tick();
       const status = yield* t.service.changes.pipe(Stream.take(1), Stream.runCollect);
-      expect(status[0]).toMatchObject({ releasedCheckouts: [ThreadId.make("missing")] });
+      const releasedCheckouts = [ThreadId.make("missing"), ThreadId.make("pruned-parent")];
+      expect(status[0]).toMatchObject({ releasedCheckouts });
       NodeFS.mkdirSync(`${t.home}/missing`);
+      NodeFS.mkdirSync(prunedCheckout, { recursive: true });
       yield* t.service.tick();
       expect(
         (yield* t.service.changes.pipe(Stream.take(1), Stream.runCollect))[0]?.releasedCheckouts,
-      ).toEqual([ThreadId.make("missing")]);
+      ).toEqual(releasedCheckouts);
       expect((yield* t.service.refreshCheckouts()).releasedCheckouts).toEqual([]);
     }).pipe(Effect.scoped),
   );

@@ -589,7 +589,14 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       (path) => {
         const cached = checkoutCache.get(path);
         if (cached && now - cached.checkedAt < CHECKOUT_CHECK_INTERVAL_MS) return Effect.void;
-        return checkoutDeleted(path).pipe(
+        // Release can prune the parent folder; this status check never authorizes lane cleanup.
+        return Effect.promise(() =>
+          NodeFSP.access(path).then(
+            () => false,
+            (cause: unknown) =>
+              cause instanceof Error && "code" in cause && cause.code === "ENOENT",
+          ),
+        ).pipe(
           Effect.tap((missing) =>
             Effect.sync(() => {
               checkoutCache.set(path, { checkedAt: now, missing });
