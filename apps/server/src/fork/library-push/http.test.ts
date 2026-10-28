@@ -151,6 +151,13 @@ describe("library push activity route", () => {
       expect(sent).toEqual([
         { environmentId: STUDIO, request: { threadId: "thread-1", kind: "completed" } },
       ]);
+      expect(
+        (yield* post(JSON.stringify({ kind: "scheduled-failed", taskId: "task-1" }))).status,
+      ).toBe(200);
+      expect(sent[1]).toEqual({
+        environmentId: STUDIO,
+        request: { kind: "scheduled-failed", taskId: "task-1" },
+      });
     }).pipe(Effect.scoped),
   );
 
