@@ -1505,7 +1505,7 @@ apps/web/src/components/threadActionMenu.logic.test.ts	project-lifecycle	1
 apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	5
 apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	2
 apps/web/src/components/Sidebar.tsx	project-lifecycle	10
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	12
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
 apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262788
@@ -1518,3 +1518,5 @@ apps/mobile/src/features/threads/ThreadRouteScreen.tsx	project-lifecycle	3
 apps/web/src/components/chat/ChatHeader.tsx	project-lifecycle	2
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	project-lifecycle	2
 evals/mcp-tool-use/run.ts	project-lifecycle	2
+evals/mcp-tool-use/run.ts	directory-computers	2
+evals/mcp-tool-use/run.ts	bots-triggers	2

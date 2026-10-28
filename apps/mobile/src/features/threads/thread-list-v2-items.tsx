@@ -1308,6 +1308,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           />
         </View>
       ) : null}
+      {/* fork: project-lifecycle */}
+      {checkoutReleased ? (
+        <Text className="text-xs text-foreground-muted" style={{ paddingLeft: titleTextInset }}>
+          Checkout released
+        </Text>
+      ) : null}
       <View className="mt-1 flex-row items-center gap-2" style={{ paddingLeft: titleTextInset }}>
         {(status === "failed" || status === "limited") && thread.runtime?.lastError ? (
           <Text

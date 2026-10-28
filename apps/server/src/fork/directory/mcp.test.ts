@@ -5,12 +5,16 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
+import { McpSchema, Tool } from "effect/ai";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { DirectoryService } from "./DirectoryService.ts";
 import { DirectoryToolkit, directoryHandlers } from "./mcp.ts";
+
+const decodeToolSchema = Schema.decodeUnknownEffect(McpSchema.ToolJson);
 
 const target = { kind: "environment", environmentId: EnvironmentId.make("old-computer") } as const;
 const setup = Effect.fn("test.directoryMcp")(function* (refused = false) {
@@ -40,7 +44,7 @@ const setup = Effect.fn("test.directoryMcp")(function* (refused = false) {
     ),
   );
   const invoke = (access: AuthMcpClientAccess) =>
-    toolkit.handle("loom_directory_forget", target).pipe(
+    toolkit.handle("loom_directory_forget", { entry: target }).pipe(
       Effect.flatMap(Stream.runCollect),
       Effect.provideService(McpInvocationContext, {
         environmentId: EnvironmentId.make("library"),
@@ -56,6 +60,14 @@ const setup = Effect.fn("test.directoryMcp")(function* (refused = false) {
 });
 
 describe("directory forget MCP", () => {
+  it.effect("advertises an object input schema for MCP registration", () =>
+    Effect.gen(function* () {
+      const schema = yield* decodeToolSchema(
+        Tool.getJsonSchema(DirectoryToolkit.tools.loom_directory_forget),
+      );
+      expect(schema.type).toBe("object");
+    }),
+  );
   it.effect("forgets the requested computer with full access", () =>
     Effect.gen(function* () {
       const { calls, invoke } = yield* setup();

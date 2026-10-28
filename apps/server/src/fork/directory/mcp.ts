@@ -19,7 +19,7 @@ export const DirectoryToolkit = Toolkit.make(
   Tool.make("loom_directory_forget", {
     description:
       "Forget a computer or unattached machine in this Library's directory. Clears its pinned key; a running computer returns on its next report, usually within 15 minutes. Run on the Library authority. Retire an active Reach address first. Requires full access.",
-    parameters: DirectoryForgetRequest,
+    parameters: Schema.Struct({ entry: DirectoryForgetRequest }),
     success: Schema.Void,
     failure: Schema.Union([DirectoryError, OrchestratorMcpFailure]),
     dependencies: [McpInvocationContext, ThreadManagementService],
@@ -49,8 +49,8 @@ export const directoryHandlers = McpToolAccess.toLayer(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return {
-      loom_directory_forget: McpToolAccess.writesEnvironment((input) =>
-        withForkRuntime(Effect.flatMap(DirectoryService, (service) => service.forget(input))).pipe(
+      loom_directory_forget: McpToolAccess.writesEnvironment(({ entry }) =>
+        withForkRuntime(Effect.flatMap(DirectoryService, (service) => service.forget(entry))).pipe(
           Effect.provideService(ForkRuntime, runtime),
         ),
       ),

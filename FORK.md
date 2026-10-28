@@ -181,18 +181,20 @@ The renderer follows the web app's React version, which comes from the workspace
 
 ### Packet seams
 
-| File                                                           | Packet              | Why                                                                          |
-| -------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`       | `project-lifecycle` | Show released checkout state in the native conversation header.              |
-| `apps/mobile/src/features/threads/thread-list-v2-items.tsx`    | `project-lifecycle` | Show checkout state and route the applicable checkout action.                |
-| `apps/web/src/components/Sidebar.tsx`                          | `project-lifecycle` | Release or restore the selected checkout using lifecycle status.             |
-| `apps/web/src/components/chat/ChatHeader.tsx`                  | `project-lifecycle` | Show released checkout state in the conversation header.                     |
-| `apps/web/src/components/sidebar/SidebarThreadRow.tsx`         | `project-lifecycle` | Show the released checkout state beside its conversation.                    |
-| `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle` | Check both checkout actions and permissions.                                 |
-| `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle` | Offer Restore for a released checkout and Release for present files.         |
-| `docs/user/project-settings.md`                                | `project-lifecycle` | Explain release status and manual restore beside the existing release guide. |
-| `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle` | Use the real checkout restore tool schema in agent evals.                    |
-| `packages/client-runtime/src/state/commandPermissions.test.ts` | `project-lifecycle` | Verify restore requires the destination computer’s operate scope.            |
+| File                                                           | Packet                | Why                                                                          |
+| -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`       | `project-lifecycle`   | Show released checkout state in the native conversation header.              |
+| `apps/mobile/src/features/threads/thread-list-v2-items.tsx`    | `project-lifecycle`   | Show checkout state and route the applicable checkout action.                |
+| `apps/web/src/components/Sidebar.tsx`                          | `project-lifecycle`   | Release or restore the selected checkout using lifecycle status.             |
+| `apps/web/src/components/chat/ChatHeader.tsx`                  | `project-lifecycle`   | Show released checkout state in the conversation header.                     |
+| `apps/web/src/components/sidebar/SidebarThreadRow.tsx`         | `project-lifecycle`   | Show the released checkout state beside its conversation.                    |
+| `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
+| `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
+| `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
+| `evals/mcp-tool-use/run.ts`                                    | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
+| `evals/mcp-tool-use/run.ts`                                    | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |
+| `packages/client-runtime/src/state/commandPermissions.test.ts` | `project-lifecycle`   | Verify restore requires the destination computer’s operate scope.            |
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
 (`fork: model-print-check`) so the worker ships beside `bin.mjs`. The single-file executable
