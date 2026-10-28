@@ -844,7 +844,7 @@ it.effect("publishes create, decision, cancellation and expiry without replay du
   withAccess(({ access, notifications }) =>
     Effect.gen(function* () {
       const updates = yield* notifications.changes.pipe(
-        Stream.take(5),
+        Stream.take(6),
         Stream.runCollect,
         Effect.forkChild({ startImmediately: true }),
       );
@@ -864,6 +864,7 @@ it.effect("publishes create, decision, cancellation and expiry without replay du
       expect((yield* Fiber.join(updates)).map(({ state }) => state)).toEqual([
         "pending",
         "approved",
+        "expired",
         "expired",
         "pending",
         "cancelled",

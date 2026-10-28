@@ -62,6 +62,11 @@ Its contract test (1 marker line) checks that the card carries metadata without 
 these cards visible and separate from collapsible work, including after a turn is superseded.
 The mobile activity test (1) covers preserving their detail outside a folded run.
 `apps/server/src/mcp/OrchestratorMcpService.ts` (1) includes their safe fields in thread reads.
+Web `TimelineV2EventRow.tsx` (2) and mobile `ThreadFeed.tsx` (3) mount the fork approval cards.
+The eval runner includes Vault access and Library tools with two `vault-approvals` and two
+`library-projects` marker lines, so scenarios exercise their current tool text.
+The `library-push` seams in mobile `SettingsScheduledTasksRouteScreen.tsx` (8) select the
+alert's computer and bring its failed scheduled task to the top of the list.
 
 Find them with `git grep -n "fork: brand"`; `docs/fork/seams.tsv` is the checked list.
 JSON and binary files cannot carry the marker and are listed separately.

@@ -93,10 +93,11 @@ export const VaultAccessToolkit = Toolkit.make(
   }),
   Tool.make("loom_vault_access_request", {
     description:
-      "Request temporary Vault access for the authenticated thread. An optional waitingOperationId is an opaque correlation reference; the server binds its own current run. Entries and retry evidence are retained for 24 hours; use new IDs after that window. This records a pending request only; it grants nothing and cannot approve itself. Reuse the same id for retries. A human decides in Loom Vault approvals; when this computer's Library sends agent alerts, the owner's iPhone is alerted, and the request status reports whether that alert was delivered. After approval, recheck access before explicitly retrying the operation; no automatic resumption is provided.",
+      "Request temporary Vault access for the authenticated thread. Set wait:true to wait for the human's decision in the requesting thread, bounded by the original ten-minute request deadline. After an approved result, recheck normal access with loom_vault_access_explain before explicitly retrying the operation. A timeout, denial, cancellation or expired grant is not permission. No automatic resumption or self-approval is provided. An optional waitingOperationId is an opaque correlation reference; the server binds its own current run. Requests and retry evidence are retained for 24 hours; reuse the same id for retries within that window. When this computer's Library sends agent alerts, the owner's iPhone is alerted; request status reports whether that alert was delivered.",
     parameters: Schema.Struct({
       ...VaultApprovalCreate.fields,
       threadId: Schema.optional(ThreadId),
+      wait: Schema.optional(Schema.Boolean),
     }),
     success: VaultApprovalRequest,
     failure,
@@ -251,6 +252,7 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
       ),
       loom_vault_access_request: McpToolAccess.writesEnvironment((input, check) =>
         Effect.gen(function* () {
+          const { wait, ...request } = input;
           const caller = yield* McpInvocationContext;
           if (!caller.thread) return yield* new VaultError({ reason: "denied" });
           const context = yield* Effect.context<Effect.Services<typeof check>>();
@@ -262,9 +264,10 @@ export const vaultAccessHandlers = McpToolAccess.toLayer(
           return yield* onHost(
             Effect.flatMap(VaultAccess.VaultAccess, (access) =>
               access.approvalCreate(
-                { ...input, threadId: caller.thread!.threadId },
+                { ...request, threadId: caller.thread!.threadId },
                 `thread:${caller.thread!.threadId}`,
                 authorize,
+                wait,
               ),
             ),
           );

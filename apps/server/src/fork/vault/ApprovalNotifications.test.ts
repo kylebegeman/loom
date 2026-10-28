@@ -239,7 +239,7 @@ it.effect("publishes each approval revision once and ignores stale updates", () 
   Effect.gen(function* () {
     const service = yield* ApprovalNotifications.ApprovalNotifications;
     const observed = yield* service.changes.pipe(
-      Stream.take(3),
+      Stream.take(4),
       Stream.runCollect,
       Effect.forkChild({ startImmediately: true }),
     );
@@ -255,9 +255,10 @@ it.effect("publishes each approval revision once and ignores stale updates", () 
     yield* service.changed(request);
     yield* service.changed(request);
     yield* service.changed(approved);
+    yield* service.changed(approved, true);
     yield* service.changed(request);
     yield* service.changed(next);
-    expect(yield* Fiber.join(observed)).toEqual([request, approved, next]);
+    expect(yield* Fiber.join(observed)).toEqual([request, approved, approved, next]);
   }).pipe(Effect.provide(ApprovalNotifications.stub), Effect.scoped),
 );
 

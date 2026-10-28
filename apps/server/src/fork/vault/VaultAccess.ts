@@ -816,7 +816,7 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       yield* Effect.forEach(
         policy.approvals ?? [],
-        ({ request }) => notifications.changed(approvalView(request, policy, now)),
+        ({ request }) => notifications.changed(approvalView(request, policy, now), true),
         { discard: true },
       );
       const trimmed = yield* trimApprovals(policy, now);

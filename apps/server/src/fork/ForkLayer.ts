@@ -2,6 +2,7 @@ import * as AttentionRetry from "./attention/AttentionRetry.ts";
 import * as SkillRegistry from "./skill-registry/SkillRegistryService.ts";
 import * as SkillStore from "./skill-registry/SkillStore.ts";
 import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
+import * as LibraryMaintenance from "./project-library/LibraryMaintenance.ts";
 import * as ProjectWorkflows from "./project-library/ProjectWorkflows.ts";
 import * as ProjectOperations from "./project-library/ProjectOperations.ts";
 import * as ProjectProfiles from "./project-profiles/ProjectProfileService.ts";
@@ -17,6 +18,7 @@ import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
 import * as OperationAdmission from "./vault/OperationAdmission.ts";
 import * as OperationJournal from "./vault/OperationJournal.ts";
 import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
+import * as ApprovalCards from "./vault/ApprovalCards.ts";
 import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
 import * as MigrationGitMetadata from "./vault/MigrationGitMetadata.ts";
 import * as VaultMigration from "./vault/VaultMigration.ts";
@@ -130,6 +132,7 @@ import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
 import { ReachHttpRoutes } from "./reach/library/http.ts";
 import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
 import { AgentAlertsLive } from "./library-push/AgentAlerts.ts";
+import { ScheduledFailureAlertsLive } from "./library-push/ScheduledFailureAlerts.ts";
 import * as LibraryPushReadiness from "./library-push/LibraryPushReadiness.ts";
 import * as UnheardAlertNotices from "./library-push/UnheardAlertNotices.ts";
 import * as VaultApprovalAlerts from "./library-push/VaultApprovalAlerts.ts";
@@ -169,6 +172,16 @@ const layerApprovalNotifications = ApprovalNotifications.layer.pipe(
 const layerVaultAccess = VaultAccess.layer.pipe(
   Layer.provide(layerApprovalNotifications),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
+);
+const layerApprovalCards = ApprovalCards.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultCore,
+      RuntimeLayer.layerEventSink,
+      ProjectionStore.layer,
+      ThreadCommandExecutor.layer,
+    ),
+  ),
 );
 
 const layerVaultTestAccountWorkloads = VaultTestAccountWorkloads.layer.pipe(
@@ -419,11 +432,15 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultAccess,
   layerVaultJournal,
   layerOperationAdmission,
+  ApprovalCards.reactor.pipe(
+    Layer.provide(Layer.merge(layerApprovalCards, layerApprovalNotifications)),
+  ),
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultSecretRequests.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
   layerLibraryService,
+  LibraryMaintenance.retentionLayer.pipe(Layer.provide(layerLibraryService)),
   layerProjectWorkflows,
   ProjectOperations.layer.pipe(
     Layer.provide(LibraryWorkspaceStore.layer),
@@ -568,6 +585,10 @@ const ForkServicesLive = Layer.mergeAll(
   AgentAlertsLive.pipe(
     Layer.provideMerge(LibraryPushLive),
     Layer.provide(layerUnheardAlertNotices),
+    Layer.provide(FetchHttpClient.layer),
+  ),
+  ScheduledFailureAlertsLive.pipe(
+    Layer.provide(LibraryPushLive),
     Layer.provide(FetchHttpClient.layer),
   ),
   // `loom_push_status` reads the Library's push here, or asks the Library from another computer.

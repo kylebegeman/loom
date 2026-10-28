@@ -19,7 +19,7 @@ export class ApprovalNotifications extends Context.Service<
   ApprovalNotifications,
   {
     readonly pending: (request: VaultApprovalRequest) => Effect.Effect<void>;
-    readonly changed: (request: VaultApprovalRequest) => Effect.Effect<void>;
+    readonly changed: (request: VaultApprovalRequest, republish?: boolean) => Effect.Effect<void>;
     readonly changes: Stream.Stream<VaultApprovalRequest>;
     readonly waitForDecision: (request: VaultApprovalRequest) => Effect.Effect<void>;
     readonly outcomes: (
@@ -54,6 +54,7 @@ const make = Effect.gen(function* () {
   const changes = yield* PubSub.unbounded<VaultApprovalRequest>();
   const changed = Effect.fn("ApprovalNotifications.changed")(function* (
     request: VaultApprovalRequest,
+    republish = false,
   ) {
     const now = yield* Clock.currentTimeMillis;
     const candidate = yield* Deferred.make<void>();
@@ -64,6 +65,14 @@ const make = Effect.gen(function* () {
         ),
       );
       const previous = kept.get(request.id);
+      if (
+        republish &&
+        previous &&
+        previous.request.requestedAt === request.requestedAt &&
+        previous.request.revision === request.revision &&
+        previous.request.state === request.state
+      )
+        return [previous, kept] as const;
       if (
         (now >= request.requestedAt + VAULT_APPROVAL_RETENTION_MS && request.state === "pending") ||
         (previous &&

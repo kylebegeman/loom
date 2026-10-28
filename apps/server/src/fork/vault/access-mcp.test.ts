@@ -149,12 +149,14 @@ it.effect(
       let called = false;
       const serviceContext = yield* Layer.build(
         Layer.mock(VaultAccess)({
-          approvalCreate: (request, actor, authorize) =>
+          approvalCreate: (request, actor, authorize, wait) =>
             Effect.gen(function* () {
               yield* authorize;
               called = true;
               expect(request.threadId).toBe(threadId);
               expect(actor).toBe(`thread:${threadId}`);
+              expect(wait).toBe(true);
+              expect(request).not.toHaveProperty("wait");
               return yield* new VaultError({ reason: "unavailable" });
             }),
         }),
@@ -175,6 +177,7 @@ it.effect(
           itemId: "b".repeat(32),
           action: "use",
           destination: null,
+          wait: true,
         } as never)
         .pipe(
           Effect.flatMap(Stream.runCollect),

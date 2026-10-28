@@ -21,6 +21,7 @@ import { GuestBubbleTint, GuestMessageName } from "./guestMessageStyle";
 import { ThreadGuestPendingMessage, useThreadGuestShare } from "./ThreadGuestShareBar";
 import { LinkRequestCard } from "./LinkRequestCard";
 import { SecretRequestCard } from "./SecretRequestCard";
+import { VaultApprovalCard } from "../../fork/vault/VaultApprovalCard"; // fork: vault-approvals
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import {
   WorktreeWorkingHeader,
@@ -196,6 +197,7 @@ import {
   isContextHandoffActivityGroup,
   isLinkRequestActivityGroup,
   isSecretRequestActivityGroup,
+  isVaultApprovalActivityGroup, // fork: vault-approvals
   type ThreadFeedEntry,
   type ThreadFeedLatestRun,
   messageFoldRunId,
@@ -1457,6 +1459,13 @@ function renderFeedEntry(
     );
   }
 
+  // fork: vault-approvals
+  if (entry.type === "activity-group" && isVaultApprovalActivityGroup(entry)) {
+    const item = entry.activities[0]!.projectedItem.item;
+    if (item.type === "vault_access_request") {
+      return <VaultApprovalCard environmentId={props.environmentId} item={item} />;
+    }
+  }
   if (entry.type === "activity-group" && isSecretRequestActivityGroup(entry)) {
     return (
       <SecretRequestCard
