@@ -29,6 +29,11 @@ export class VaultHealth extends Context.Service<
       input: VaultHealthMutation,
       actor: string,
     ) => Effect.Effect<VaultHealthSnapshot, VaultError>;
+    readonly observeExpiry: (
+      itemId: string,
+      itemVersion: number,
+      expiresAt: number,
+    ) => Effect.Effect<void, VaultError>;
     readonly report: (input: {
       itemId: string;
       itemVersion: number;
@@ -247,6 +252,43 @@ const make = Effect.gen(function* () {
         }),
       );
     }),
+    observeExpiry: Effect.fn("VaultHealth.observeExpiry")(
+      function (itemId, itemVersion, expiresAt) {
+        return mutate((state) =>
+          Effect.gen(function* () {
+            if (!Number.isFinite(expiresAt) || expiresAt < 0) return yield* invalid();
+            const item = yield* core.inspect(itemId);
+            if (
+              !item ||
+              item.state !== "active" ||
+              item.kind !== "service-connection" ||
+              item.version !== itemVersion
+            )
+              return { state, result: undefined };
+            const prior = state.rules.find((rule) => rule.itemId === itemId);
+            if (prior?.expiresAt === expiresAt || (!prior && state.rules.length >= 128))
+              return { state, result: undefined };
+            const rule: VaultHealthRule = prior
+              ? { ...prior, expiresAt }
+              : {
+                  itemId,
+                  expiresAt,
+                  warningDays: 7,
+                  githubRepository: null,
+                  automatic: false,
+                  nextCheckAt: 0,
+                };
+            return {
+              state: {
+                ...state,
+                rules: [...state.rules.filter((candidate) => candidate.itemId !== itemId), rule],
+              },
+              result: undefined,
+            };
+          }),
+        );
+      },
+    ),
     report: Effect.fn("VaultHealth.report")(function (input) {
       return mutate((state, now) =>
         Effect.gen(function* () {

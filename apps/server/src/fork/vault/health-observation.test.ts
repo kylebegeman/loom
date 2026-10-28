@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { VaultError, VaultGitHubError } from "@t3tools/contracts/fork";
+import { VaultError, VaultGitHubError, VaultSshError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as VaultHealth from "./VaultHealth.ts";
@@ -18,6 +18,17 @@ it.effect(
       yield* observeVaultHealth(Effect.succeed({ exitCode: 7 }), "a".repeat(32), 1).pipe(
         Effect.provide(layer),
       );
+      expect(reports).toEqual([]);
+      yield* observeVaultHealth(Effect.succeed({ exitCode: 255 }), "a".repeat(32), 1).pipe(
+        Effect.provide(layer),
+      );
+      expect(reports.map((r) => [r.category, r.healthy])).toEqual([["configuration", false]]);
+      reports.length = 0;
+      yield* observeVaultHealth(
+        Effect.fail(new VaultSshError({ reason: "failed" })),
+        "a".repeat(32),
+        1,
+      ).pipe(Effect.provide(layer), Effect.flip);
       expect(reports.map((r) => [r.category, r.healthy])).toEqual([["configuration", false]]);
       reports.length = 0;
       const error = new VaultGitHubError({ reason: "unavailable" });
@@ -42,6 +53,7 @@ it.effect(
       expect(reports.map((r) => [r.category, r.healthy])).toEqual([
         ["authentication", true],
         ["outage", true],
+        ["configuration", true],
       ]);
     }),
 );

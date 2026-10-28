@@ -39,6 +39,7 @@ import * as GitHubTerminal from "./GitHubTerminal.ts";
 import { githubTerminalArgs } from "./GitHubCommand.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as VaultCore from "./VaultCore.ts";
+import * as VaultHealth from "./VaultHealth.ts";
 import * as VaultConnections from "./VaultConnections.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
@@ -117,6 +118,18 @@ const make = Effect.gen(function* () {
     terminal = yield* GitHubTerminal.GitHubTerminal;
   const connections = yield* VaultConnections.VaultConnections;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
+  const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
+  const observeExpiry = Effect.fn("VaultGitHub.observeExpiry")(function* (
+    info: VaultGitHubInfo,
+    current: GitHubTransport.GitHubSession,
+  ) {
+    if (info.mechanism !== "token" || !current.expiresAt || Option.isNone(health)) return;
+    const expiresAt = Date.parse(current.expiresAt);
+    if (!Number.isFinite(expiresAt)) return;
+    yield* health.value
+      .observeExpiry(info.item.id, info.item.version, expiresAt)
+      .pipe(Effect.ignore);
+  });
   const permits = yield* Semaphore.make(4);
   const load = Effect.fnUntraced(function* (id: string) {
     const item = yield* core.inspect(id);
@@ -172,6 +185,7 @@ const make = Effect.gen(function* () {
     const session = yield* acquireSession(record.stored.credential, [repository.toLowerCase()]);
     if (session.account.toLowerCase() !== record.stored.account.toLowerCase())
       return yield* fail("conflict");
+    yield* observeExpiry(record.info, session);
     return session;
   });
   const runAuthorization = Effect.fnUntraced(function* (
@@ -317,7 +331,9 @@ const make = Effect.gen(function* () {
       )
         return yield* fail("conflict");
       for (const repo of repositories) yield* transport.probe(current, repo);
-      return yield* persist(current.account);
+      const saved = yield* persist(current.account);
+      yield* observeExpiry(saved, current);
+      return saved;
     }, Effect.scoped),
     test: Effect.fn("VaultGitHub.test")(
       function* (input, authorize) {

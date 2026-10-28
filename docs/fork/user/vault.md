@@ -794,6 +794,11 @@ Open **Settings → Vault → Advanced → Health & recovery**, or search for �
 the command palette. On mobile, it is **Vault maintenance** in the computer's settings. Review expiry warnings and failed development access, recheck a configured
 item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
 item's grant and destination. An outage warning does not mean the credential was revoked.
+The header also reports a sealed backend or a service token approaching expiry, even when
+items cannot be read. Refresh health after repairing the backend. Failed remote commands do
+not create connection warnings; a successful connection clears earlier connection failures.
+GitHub token expiry is filled in when GitHub reports it, without changing your other health
+rule settings or enabling background checks.
 
 Outage reports with the same recorded GitHub service or SSH host and port appear together.
 Each item keeps its own recheck, snooze and dismiss actions. A shared destination does not prove
