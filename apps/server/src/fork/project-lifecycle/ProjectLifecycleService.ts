@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -37,6 +38,7 @@ import { DeviceService } from "../../device/DeviceService.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ThreadSettlement from "../../orchestration-v2/ThreadSettlementService.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
+import { restoreWorktree, WorkspacePreparationError } from "../../workspace/restoreWorktree.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { pruneLaneTmp } from "./tmpCleanup.ts";
@@ -105,6 +107,8 @@ import {
 } from "./space.ts";
 import { makePortClaims, portClaimsDir } from "./portClaims.ts";
 import { makeStore, type LaneRow } from "./store.ts";
+
+const isWorkspacePreparationError = Schema.is(WorkspacePreparationError);
 
 const WATCHDOG_INTERVAL = "30 seconds";
 const CHECKOUT_PROTECTION_MESSAGE =
@@ -283,6 +287,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   options: ProjectLifecycleOptions,
 ) {
   const config = yield* ServerConfig;
+  const restoreContext =
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreWorktree>>>();
   const threads = yield* ThreadManagementService;
   const settlement = yield* ThreadSettlement.ThreadSettlementServiceV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
@@ -568,8 +574,46 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     };
   };
 
+  const checkoutCache = new Map<string, { checkedAt: number; missing: boolean }>();
+  const CHECKOUT_CHECK_INTERVAL_MS = 30_000;
+
   const buildStatus = Effect.fn("ProjectLifecycle.buildStatus")(function* (view: Threads | null) {
     const settings = yield* getSettings;
+    const now = yield* Clock.currentTimeMillis;
+    const paths = new Set(
+      view?.threads.flatMap((thread) => (thread.worktreePath ? [thread.worktreePath] : [])) ?? [],
+    );
+    for (const path of checkoutCache.keys()) if (!paths.has(path)) checkoutCache.delete(path);
+    yield* Effect.forEach(
+      paths,
+      (path) => {
+        const cached = checkoutCache.get(path);
+        if (cached && now - cached.checkedAt < CHECKOUT_CHECK_INTERVAL_MS) return Effect.void;
+        // Release can prune the parent folder; this status check never authorizes lane cleanup.
+        return Effect.promise(() =>
+          NodeFSP.access(path).then(
+            () => false,
+            (cause: unknown) =>
+              cause instanceof Error && "code" in cause && cause.code === "ENOENT",
+          ),
+        ).pipe(
+          Effect.tap((missing) =>
+            Effect.sync(() => {
+              checkoutCache.set(path, { checkedAt: now, missing });
+            }),
+          ),
+        );
+      },
+      { concurrency: 4, discard: true },
+    );
+    const releasedCheckouts =
+      view?.threads
+        .filter(
+          (thread) =>
+            thread.worktreePath !== null &&
+            checkoutCache.get(thread.worktreePath)?.missing === true,
+        )
+        .map((thread) => thread.id) ?? [];
     const reserveBytes = settings.reserveGb * GB;
     const root = rootOf(settings);
     const laneBySpace = new Map(
@@ -587,6 +631,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
       lanes: [...lanes.values()].map((lane) =>
         laneView(lane, view === null ? [] : holdersOf(lane, view), root),
       ),
+      releasedCheckouts,
       unrecordedLanes: unrecorded,
       buildSlots: {
         count: slotCount(settings),
@@ -625,6 +670,45 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     publishedKey = key;
     yield* SubscriptionRef.set(status, next);
     return next;
+  });
+
+  const refreshCheckouts = Effect.fn("ProjectLifecycle.refreshCheckouts")(function* () {
+    checkoutCache.clear();
+    return yield* publish();
+  });
+
+  const restoreCheckout = Effect.fn("ProjectLifecycle.restoreCheckout")(function* (
+    threadId: ThreadId,
+  ) {
+    const view = yield* loadThreads.pipe(
+      Effect.mapError(() => error("command-failed", "Could not read threads.")),
+    );
+    const thread = view.threads.find((candidate) => candidate.id === threadId);
+    if (!thread) return yield* error("not-found", "This thread no longer exists.");
+    if (!thread.worktreePath || !thread.branch)
+      return yield* error("not-found", "This thread has no worktree checkout to restore.");
+    if (threadRunning(thread))
+      return yield* error(
+        "busy",
+        "This thread is working. Wait for it to finish before restoring its checkout.",
+      );
+    yield* restoreWorktree({
+      threadId,
+      projectId: thread.projectId,
+      worktreePath: thread.worktreePath,
+      branch: thread.branch,
+    }).pipe(
+      Effect.provide(restoreContext),
+      Effect.mapError((cause) =>
+        error(
+          "command-failed",
+          isWorkspacePreparationError(cause)
+            ? cause.message
+            : "Could not restore this checkout. Check its project and branch before retrying.",
+        ),
+      ),
+      Effect.ensuring(refreshCheckouts().pipe(Effect.ignore({ log: true }))),
+    );
   });
 
   const measureHost = Effect.fn("ProjectLifecycle.measureHost")(function* () {
@@ -991,6 +1075,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const checkout = setupCheckout ?? checkoutOf(thread, view.projects);
     if (project === undefined || checkout === null)
       return yield* error("not-found", "The thread has no project checkout.");
+    checkoutCache.delete(checkout);
     return yield* mutate.withPermits(1)(
       Effect.gen(function* () {
         const current = laneForCheckout(checkout);
@@ -1934,6 +2019,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     /** Lanes folders in use, so placement can refuse destinations inside them. */
     lanesRoots: () => getSettings.pipe(Effect.map((settings) => [rootOf(settings)])),
     currentLaneView,
+    refreshCheckouts,
+    restoreCheckout,
     adoptLease,
     releaseLease,
     installShell,

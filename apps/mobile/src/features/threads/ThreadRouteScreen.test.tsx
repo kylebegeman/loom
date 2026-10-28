@@ -13,6 +13,10 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "uuid" }));
+// fork: project-lifecycle
+vi.mock("../../fork/project-lifecycle/state", () => ({
+  useReleasedCheckoutIds: () => new Set<string>(),
+}));
 vi.mock("../../state/threads", () => ({
   threadEnvironment: {
     resumeThreadQueue: { label: "resume queue", run: state.resume },

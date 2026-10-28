@@ -1,6 +1,7 @@
 import { WORKFLOW_TRIGGER_HINTS } from "@t3tools/contracts/fork";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
+  BOT_TRIGGER_RETIRED_MESSAGE,
   BOTS_TRIGGER_MIN_INTERVAL_MS,
   checkTriggerMapping,
   isBotTriggerField,
@@ -29,10 +30,8 @@ export const TRIGGER_KINDS: readonly BotTriggerEventKind[] = [
   "pull-request-checks-failing",
   "pull-request-opened",
   "thread-settled",
-  "merge-conflict",
 ];
 
-export const PIPELINE_PER_FILE = "A pipeline runs once per event, not once per conflicting file.";
 const MAX_INTERVAL_MINUTES = 31 * 24 * 60;
 const MAX_NAME = 120;
 
@@ -337,11 +336,11 @@ export function triggerStepProblem(
 ): string | null {
   switch (step) {
     case "kind":
-      return draft.pipelineId !== "" && draft.kind === "merge-conflict" ? PIPELINE_PER_FILE : null;
+      return draft.kind === "merge-conflict" ? BOT_TRIGGER_RETIRED_MESSAGE : null;
     case "when":
       return whenProblem(draft, context);
     case "runs":
-      if (draft.pipelineId !== "" && draft.kind === "merge-conflict") return PIPELINE_PER_FILE;
+      if (draft.kind === "merge-conflict") return BOT_TRIGGER_RETIRED_MESSAGE;
       return mappingProblem(context.target, draft);
     case "review":
       if (draft.name.trim() === "") return "Name the trigger.";

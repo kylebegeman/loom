@@ -2,17 +2,27 @@ import { VaultPasswordGeneratorSection } from "./PasswordGeneratorSection";
 import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshSheet } from "./SshSheet";
 import { VaultAccessCheckSheet } from "./AccessSettingsSection";
-import { useState } from "react";
-import { ScrollView, Switch, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import { VaultGitHubSettingsSection } from "./GitHubSettingsSection";
+import { AppState, ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import { VaultFileContent, VaultItemKind, type VaultItemSummary } from "@t3tools/contracts/fork";
+import {
+  VaultFileContent,
+  type VaultItemKind,
+  type VaultItemSummary,
+} from "@t3tools/contracts/fork";
 import {
   createVaultCoreAtoms,
+  createVaultAccessAtoms,
   supportsLoomFeature,
   vaultStatusMessage,
   VAULT_KIND_LABELS,
   VAULT_FILE_LIMIT_BYTES,
+  VAULT_GENERIC_ITEM_KINDS,
+  VAULT_REVEAL_DURATION_MS,
+  vaultItemActions,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Redacted from "effect/Redacted";
@@ -34,6 +44,7 @@ import { uuidv4 } from "../../lib/uuid";
 import { downloadAttachmentForPreview } from "../../lib/attachmentDownload";
 
 const vault = createVaultCoreAtoms(connectionAtomRuntime);
+const access = createVaultAccessAtoms(connectionAtomRuntime);
 const newId = () => uuidv4().replaceAll("-", "");
 const encodeFile = Schema.encodeSync(Schema.fromJsonString(VaultFileContent));
 const decodeFile = Schema.decodeUnknownOption(Schema.fromJsonString(VaultFileContent));
@@ -88,6 +99,8 @@ function VaultItems({
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const sshEnabled = supportsLoomFeature(config?.environment.capabilities, "vault-ssh-management");
+  const githubEnabled = supportsLoomFeature(config?.environment.capabilities, "vault-github");
+  const [githubOpen, setGithubOpen] = useState(false);
   const [sshItem, setSshItem] = useState<string | null | undefined>(undefined);
   const status = useEnvironmentQuery(connected ? vault.status({ environmentId, input: {} }) : null);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -108,6 +121,27 @@ function VaultItems({
   const [checkingItem, setCheckingItem] = useState<string | null>(null);
   const [editing, setEditing] = useState<VaultItemSummary | "new" | null>(null);
   const [revealed, setRevealed] = useState<{ id: string; value: string } | null>(null);
+  const revealGeneration = useRef(0);
+  const clearRevealed = useCallback(() => {
+    revealGeneration.current++;
+    setRevealed(null);
+  }, []);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears revealed values and invalidates pending reveals when the app leaves the foreground
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") clearRevealed();
+    });
+    return () => {
+      revealGeneration.current++;
+      subscription.remove();
+    };
+  }, [clearRevealed]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- limits each revealed value's lifetime with a timer cleared on replacement and unmount
+  useEffect(() => {
+    if (revealed === null) return;
+    const timer = setTimeout(clearRevealed, VAULT_REVEAL_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [revealed, clearRevealed]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refresh = () => {
@@ -147,11 +181,13 @@ function VaultItems({
         setRevealed(null);
         return;
       }
+      const generation = ++revealGeneration.current;
       const result = await revealItem({
         environmentId,
         input: { id: item.id, expectedVersion: item.version },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      if (generation !== revealGeneration.current || AppState.currentState !== "active") return;
       const value = Redacted.value(result.value.value);
       if (item.kind === "secure-file") {
         const decoded = decodeFile(value);
@@ -244,17 +280,29 @@ function VaultItems({
                     }}
                   />
                 ) : null}
-                <Button
-                  label={
-                    item.kind === "secure-file"
-                      ? "Share file"
-                      : revealed?.id === item.id
-                        ? "Hide value"
-                        : "Reveal value"
-                  }
-                  disabled={!connected || !canReveal || busy}
-                  onPress={() => void reveal(item)}
-                />
+                {githubEnabled && item.kind === "service-connection" ? (
+                  <Button
+                    label="GitHub for agents"
+                    disabled={!connected || busy}
+                    onPress={() => {
+                      clearRevealed();
+                      setGithubOpen(true);
+                    }}
+                  />
+                ) : null}
+                {vaultItemActions(item.kind).revealValue ? (
+                  <Button
+                    label={
+                      item.kind === "secure-file"
+                        ? "Share file"
+                        : revealed?.id === item.id
+                          ? "Hide value"
+                          : "Reveal value"
+                    }
+                    disabled={!connected || !canReveal || busy}
+                    onPress={() => void reveal(item)}
+                  />
+                ) : null}
                 {item.state === "active" ? (
                   <Button
                     label="Edit"
@@ -277,7 +325,23 @@ function VaultItems({
                   onPress={() => remove(item)}
                 />
               </View>
-              {revealed?.id === item.id ? <Text selectable>{revealed.value}</Text> : null}
+              {revealed?.id === item.id ? (
+                <View className="gap-2">
+                  <Text selectable>{revealed.value}</Text>
+                  <Button
+                    label="Copy value"
+                    disabled={busy}
+                    onPress={() =>
+                      void act(async () => {
+                        const copied = await Clipboard.setStringAsync(revealed.value, {
+                          android: { isSensitive: true },
+                        });
+                        if (!copied) throw new Error("The value could not be copied. Try again.");
+                      })
+                    }
+                  />
+                </View>
+              ) : null}
             </View>
           ))}
           <View className="flex-row flex-wrap gap-2">
@@ -317,12 +381,35 @@ function VaultItems({
           onClose={() => setSshItem(undefined)}
         />
       ) : null}
+      {githubOpen ? (
+        <VaultGitHubSheet
+          environmentId={environmentId}
+          connected={connected}
+          onClose={() => setGithubOpen(false)}
+        />
+      ) : null}
       {editing !== null ? (
         <VaultEditor
           key={editing === "new" ? "new" : editing.id}
           environmentId={environmentId}
           item={editing === "new" ? null : editing}
           connected={connected}
+          onCreateSsh={
+            sshEnabled
+              ? () => {
+                  setEditing(null);
+                  setSshItem(null);
+                }
+              : undefined
+          }
+          onConnectGitHub={
+            githubEnabled
+              ? () => {
+                  setEditing(null);
+                  setGithubOpen(true);
+                }
+              : undefined
+          }
           onSaved={() => {
             setEditing(null);
             refresh();
@@ -337,15 +424,20 @@ function VaultEditor({
   environmentId,
   item,
   connected,
+  onCreateSsh,
+  onConnectGitHub,
   onSaved,
   onClose,
 }: {
   environmentId: EnvironmentId;
   item: VaultItemSummary | null;
   connected: boolean;
+  onCreateSsh: (() => void) | undefined;
+  onConnectGitHub: (() => void) | undefined;
   onSaved: () => void;
   onClose: () => void;
 }) {
+  const managed = item !== null && !vaultItemActions(item.kind).replaceValue;
   const [id] = useState(() => item?.id ?? newId());
   const [operationId, setOperationId] = useState(newId);
   const [label, setLabel] = useState(item?.label ?? "");
@@ -438,9 +530,11 @@ function VaultEditor({
         contentContainerClassName="gap-4 px-5 pb-8"
       >
         <Text>
-          {item
-            ? "Rename this item without changing its value, or replace the value explicitly."
-            : "Save development access separately from your personal accounts."}
+          {managed
+            ? "Rename this item here. Manage its connection in the dedicated settings."
+            : item
+              ? "Rename this item without changing its value, or replace the value explicitly."
+              : "Save development access separately from your personal accounts."}
         </Text>
         <View className="gap-2">
           <Text>Name</Text>
@@ -456,7 +550,7 @@ function VaultEditor({
             }}
           />
         </View>
-        {item ? (
+        {item && !managed ? (
           <View className="flex-row items-center justify-between">
             <Text>Replace value</Text>
             <Switch
@@ -473,25 +567,35 @@ function VaultEditor({
             />
           </View>
         ) : null}
-        <Text>Kind</Text>
-        <View className="flex-row flex-wrap gap-2">
-          {VaultItemKind.literals.map((next) => (
-            <Button
-              key={next}
-              label={VAULT_KIND_LABELS[next]}
-              tone={next === kind ? "primary" : "secondary"}
-              disabled={busy || (item !== null && !replace)}
-              onPress={() => {
-                setKind(next);
-                setReplace(true);
-                setValue("");
-                setFileName(null);
-                setMultiline(next === "ssh-key" || next === "secure-note");
-                changed();
-              }}
-            />
-          ))}
-        </View>
+        {!item ? (
+          <View className="flex-row flex-wrap gap-2">
+            {onCreateSsh ? <Button label="Create SSH key" onPress={onCreateSsh} /> : null}
+            {onConnectGitHub ? <Button label="Connect GitHub" onPress={onConnectGitHub} /> : null}
+          </View>
+        ) : null}
+        {!managed ? (
+          <>
+            <Text>Kind</Text>
+            <View className="flex-row flex-wrap gap-2">
+              {VAULT_GENERIC_ITEM_KINDS.map((next) => (
+                <Button
+                  key={next}
+                  label={VAULT_KIND_LABELS[next]}
+                  tone={next === kind ? "primary" : "secondary"}
+                  disabled={busy || (item !== null && !replace)}
+                  onPress={() => {
+                    setKind(next);
+                    setReplace(true);
+                    setValue("");
+                    setFileName(null);
+                    setMultiline(next === "secure-note");
+                    changed();
+                  }}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
         {replace ? (
           kind === "secure-file" ? (
             <View className="gap-2">
@@ -545,6 +649,40 @@ function VaultEditor({
             onPress={() => void save()}
           />
         </View>
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+function VaultGitHubSheet({
+  environmentId,
+  connected,
+  onClose,
+}: {
+  environmentId: EnvironmentId;
+  connected: boolean;
+  onClose: () => void;
+}) {
+  const snapshot = useEnvironmentQuery(
+    connected ? access.snapshot({ environmentId, input: {} }) : null,
+  );
+  return (
+    <Sheet title="GitHub for agents" onClose={onClose}>
+      <ScrollView contentContainerClassName="gap-4 px-5 pb-8">
+        {snapshot.data ? (
+          <VaultGitHubSettingsSection
+            environmentId={environmentId}
+            connected={connected}
+            ownerMode={snapshot.data.ownerPolicy?.mode === "owner-trusted"}
+          />
+        ) : (
+          <Text>
+            {!connected
+              ? "Reconnect this computer to manage GitHub."
+              : (snapshot.error ?? "Checking GitHub access…")}
+          </Text>
+        )}
+        {snapshot.error ? <Button label="Retry" onPress={snapshot.refresh} /> : null}
       </ScrollView>
     </Sheet>
   );

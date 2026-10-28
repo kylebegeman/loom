@@ -123,9 +123,16 @@ export const botsPaletteSource: ForkCommandPaletteSource = {
     const { go } = context;
     const saveAsBot = context.saveAsBot;
     return [
-      action("open", "Go to Bots", ["bots", "jobs", "runs", "reusable", "agents"], BotIcon, () =>
-        go({}),
-      ),
+      {
+        ...action(
+          "open",
+          "Go to Bots",
+          ["bots", "jobs", "runs", "reusable", "agents"],
+          BotIcon,
+          () => go({}),
+        ),
+        shortcutCommand: "loom.bots.open",
+      },
       ...(context.needsYou
         ? [
             action(

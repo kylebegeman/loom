@@ -10,7 +10,9 @@ it.effect("detects an external Lab edit and preserves the newer content", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const files = yield* makeSkillFiles;
-      const root = yield* files.fs.makeTempDirectoryScoped();
+      const root = yield* files.fs
+        .makeTempDirectoryScoped()
+        .pipe(Effect.flatMap((directory) => files.fs.realPath(directory)));
       const file = files.path.join(root, "SKILL.md");
       const original =
         "---\nname: sample\ndescription: Test a behavior\n---\nOriginal instructions\n";

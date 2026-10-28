@@ -53,6 +53,9 @@ vi.mock("@t3tools/client-runtime/fork", () => ({
   vaultStatusMessage: () => "Vault is connected.",
   VAULT_KIND_LABELS: { secret: "Secret" },
   VAULT_FILE_LIMIT_BYTES: 512 * 1024,
+  vaultItemActions: () => ({ manager: null, revealValue: true, replaceValue: true }),
+  VAULT_GENERIC_ITEM_KINDS: ["secret"],
+  VAULT_REVEAL_DURATION_MS: 60_000,
 }));
 vi.mock("~/components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({ environment: { environmentId: "development-computer" } }),

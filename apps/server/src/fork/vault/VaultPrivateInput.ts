@@ -13,6 +13,7 @@ import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import { readOpenBaoSettings } from "./OpenBaoSettings.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultCore from "./VaultCore.ts";
+import { guardGenericVaultSave } from "./generic-save.ts";
 
 export class VaultPrivateInput extends Context.Service<
   VaultPrivateInput,
@@ -55,6 +56,7 @@ const make = Effect.gen(function* () {
       const actorId = `thread:${threadId}`;
       const committed = yield* vault.savedPrivate(input, actorId);
       if (committed !== null) return committed;
+      yield* guardGenericVaultSave(vault, input, true);
       const status = yield* vault.status;
       if (status.state !== "ready" || status.origin === null) {
         return yield* new VaultError({

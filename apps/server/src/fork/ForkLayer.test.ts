@@ -14,6 +14,12 @@ import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSettlement from "../orchestration-v2/ThreadSettlementService.ts";
 import { AuthSessionRepository } from "../persistence/AuthSessions.ts";
@@ -35,6 +41,7 @@ vi.mock("../orchestration-v2/runtimeLayer.ts", async () => {
     layerThreadManagementProvided: Layer.mock(ThreadManagement.ThreadManagementService)({}),
     layerThreadSettlement: Layer.mock(ThreadSettlement.ThreadSettlementServiceV2)({}),
     layerProjectService: Layer.empty,
+    layerProjectSetupScriptRunner: Layer.empty,
     layerEventSink: Layer.empty,
   };
 });
@@ -53,6 +60,12 @@ class ForkLifecycle extends Context.Service<
 const lifecycle = layerProjectLifecycle as unknown as typeof ProjectLifecycle.layer;
 const dependencies = Layer.mergeAll(
   SqlitePersistence.layerMemory,
+  Layer.mock(GitWorkflow.GitWorkflowService)({}),
+  Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+  Layer.mock(ProjectService.ProjectService)({}),
+  Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
+  Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+  Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({}),
   ServerConfig.layerTest(process.cwd(), { prefix: "fork-lifecycle-layer-" }),
   Layer.mock(ThreadManagement.ThreadManagementService)({}),
   Layer.mock(ThreadSettlement.ThreadSettlementServiceV2)({}),

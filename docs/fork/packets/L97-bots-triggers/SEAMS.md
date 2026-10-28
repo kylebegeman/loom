@@ -6,9 +6,10 @@ None: all existed (L89's).
 
 ## Packet seams
 
-| File                                             | Marker       | Lines | Why                                                       |
-| ------------------------------------------------ | ------------ | ----- | --------------------------------------------------------- |
-| `apps/server/src/scheduledTasks/webhookRoute.ts` | `fork: bots` | 2     | Route `bot-trigger-` hook ids to the bot trigger service. |
+| File                                             | Marker                | Lines | Why                                                       |
+| ------------------------------------------------ | --------------------- | ----- | --------------------------------------------------------- |
+| `apps/server/src/scheduledTasks/webhookRoute.ts` | `fork: bots`          | 2     | Route `bot-trigger-` hook ids to the bot trigger service. |
+| `evals/mcp-tool-use/run.ts`                      | `fork: bots-triggers` | 2     | Load the real tool schema for focused agent evals.        |
 
 The two lines:
 
@@ -59,9 +60,7 @@ Recorded when the packet landed: `v0.1.1-nightly.20261020.3411`, 68 conflicting 
 - A trigger's `webhook` field is `{ path, url, hasSecret }`: `url` is null until the server knows
   its public origin, so the page builds the address from `path` and the environment's base URL.
   Callers without `orchestration:operate` never receive the field.
-- A merge conflict report runs as one batch per delivery, keyed by the tag and a hash of the file
-  list. Its batch records the trigger, so each item run frames the tag, branch and file as
-  untrusted, also after a restart resumes the batch.
+- Saved merge-conflict triggers remain decodable and deletable but cannot be enabled or fired.
 - A trigger ignores events from before it was saved (`occurredAt`), and a pull request first seen
   before then (`firstSeenSince`), so turning one on does not fire for every pull request already
   linked.

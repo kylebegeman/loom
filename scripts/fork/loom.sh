@@ -424,6 +424,8 @@ run_checks() {
       FAILED_CHECKS+="Listing the packages to typecheck"$'\n'
     fi
     run_check "Typechecking Loom benchmarks" pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
+    # Electron's lazy installer cannot unpack concurrently from multiple test workers.
+    run_check "Preparing the Electron test runtime" in_dir apps/desktop node scripts/ensure-electron-runtime.mjs
     if packages=$(fork_tests | test_package | sort -u) && [ -n "$packages" ]; then
       for package in $packages; do
         run_check "Running the fork's tests in $package" run_fork_tests "$package"

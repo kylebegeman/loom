@@ -213,6 +213,9 @@ turn it on.
 
 ## Notifications from your Library
 
+Use **Send test notification** in the command palette to open your Library's
+notification settings, then choose the registered iPhone to test.
+
 Your Library can send notifications to Loom on your iPhone without a Connect
 account. With agent alerts on, it tells your iPhone when an agent needs your
 approval or an answer, asks for Vault access, fails, reaches a usage limit or
@@ -307,5 +310,12 @@ computer does not move its projects or conversations automatically.
 The desktop sidebar's update control applies to that computer and its local
 backends. Open **Settings > Computers > Fleet updates** to compare runtime
 versions and provider updates across computers. **Review updates** shows the
-planned updates, skipped computers, and restart impact before you run them.
+planned updates, skipped computers, and restart impact before you run them. The
+command palette's **Review updates** opens this section.
 Offline computers retain their last known version until they reconnect.
+
+### Forget an old computer
+
+In Settings > Computers, your Library's list offers **Forget** for computers and unattached machines. Computers that have not reported for 30 days appear under **Old machines**. Forget removes the Library entry and its pinned key; it does not remove your saved connection or files. A running computer returns when it reports again, usually within 15 minutes. Retire an active Reach address before forgetting its computer.
+
+When Library reporting says the signing key changed, use **Forget in your Library** there to accept the computer's next signed report. Agents connected to the Library can use `loom_directory_forget`.

@@ -32,7 +32,7 @@ its more menu has **Add trigger**, **Copy link**, **Archive** and **Delete**.
 **Computers** at the top of the page opens a sheet for running bots across your computers; see
 [Bots on your other computers](#bots-on-your-other-computers).
 
-On mobile, open **Bots** above the thread list or in **Settings > Automations**. Choose the
+On mobile, open **Bots** above the thread list or in **Settings > Agents > Bots**. Choose the
 computer that owns your bots. Open a bot to edit or run it; its management actions include
 versions and replay, triggers, batches, usage, sharing and local Vault bindings. The Bots tools
 menu also opens pipelines and the inbox. A thread's menu offers **Run bot** and **Create bot
@@ -219,8 +219,6 @@ trigger by kind and by whether it is on or **Paused**. Pick what starts it:
   new failing commit.
 - **Pull request opens**: the first time Loom sees a linked pull request open.
 - **Thread settles**: a thread in the chosen project settles. Bot runs never start it.
-- **Upstream merge conflicts**: `scripts/fork/loom.sh integrate` hits conflicts. Each conflicting
-  file runs as one item of a batch.
 - **Webhook request**: any service posts to the trigger's address.
 - **Schedule**: every few minutes, or at a local time of day on chosen weekdays.
 
@@ -240,12 +238,11 @@ lists recent firings with the run each one started.
 **Version** chooses which version of the bot a trigger starts: the version it was saved with,
 **Latest**, or **Stable** (the latest while none is marked). A trigger
 pinned to an older version keeps running it; choose **Use version N** on the trigger to move it to
-the current one. A merge conflict trigger runs a batch, which always uses the latest version, so
-pinned to an older one its firings are skipped.
+the current one.
 
 **What it runs** chooses whether a trigger runs the bot or a pipeline that starts with it; the
-inputs then map to the pipeline's. A pipeline trigger runs the pipeline's own steps and versions, and
-cannot start from merge conflicts. This choice is fixed once the trigger is saved. Deleting a
+inputs then map to the pipeline's. A pipeline trigger runs the pipeline's own steps and versions.
+This choice is fixed once the trigger is saved. Deleting a
 pipeline deletes its triggers.
 
 **Fire once**, under **Test firing** on a trigger, fires it once with event fields you enter. It
@@ -253,7 +250,7 @@ skips the filters and limits, and starts a real run.
 
 ### Webhooks
 
-After saving a webhook or merge conflict trigger, its address is shown on the trigger with
+After saving a webhook trigger, its address is shown on the trigger with
 **Copy**; only people who can run bots see it. To start a bot from GitHub, add a webhook in the
 repository's settings, paste the address as the payload URL, choose `application/json`, and set a
 secret. In the trigger's editor, turn on **Check a signature** with the header
@@ -261,9 +258,10 @@ secret. In the trigger's editor, turn on **Check a signature** with the header
 Linear or a Standard Webhooks sender resends fires once; a service that sends no delivery id fires
 on every request. **New address** replaces the address; the old one stops working.
 
-For merge conflicts, set `LOOM_BOTS_CONFLICT_HOOK` to the address before running
-`scripts/fork/loom.sh integrate`. The script posts the conflicting files and carries on whether or
-not the post succeeds.
+Refused deliveries show **Last delivery refused** on the trigger, with the reason and count.
+Repeated refusals within one minute share a history entry. Loom keeps no request body or secret
+in these entries. Saved merge-conflict triggers show **Retired** and can be deleted; they cannot
+be enabled or fired.
 
 ## Versions and replay
 

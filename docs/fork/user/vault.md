@@ -1,6 +1,8 @@
 # Loom Vault
 
 Vault stores development credentials and secure records separately from your personal accounts.
+SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub for agents**; the generic item editor can only rename them. Revealed values can be copied and clear when you leave the app or after one minute.
+
 An administrator must connect the selected computer to an OpenBao service first.
 
 In web or desktop, open **Settings → Vault** and select the computer you want to manage. The page
@@ -702,7 +704,7 @@ the selected thread's current access policy. Host checks alone do not prove a th
 connection; neither review nor launch preflight tests live GitHub API health or GH CLI
 installation.
 
-Attach the reviewed profile in the composer or scheduled prompt. A new run pins its connection
+Include the reviewed profile reference in the prompt when starting a run. A new run pins its connection
 version and repository. Current access policy, repository allowlist and connection/profile state
 still apply. Replacing credentials requires a new run; changing a profile requires reviewing its
 new version before attaching it to later runs. Configuration or access failures block launch.
@@ -794,6 +796,11 @@ Open **Settings → Vault → Advanced → Health & recovery**, or search for �
 the command palette. On mobile, it is **Vault maintenance** in the computer's settings. Review expiry warnings and failed development access, recheck a configured
 item, snooze it for a day, dismiss a stale warning or reopen it. Review access to inspect the
 item's grant and destination. An outage warning does not mean the credential was revoked.
+The header also reports a sealed backend or a service token approaching expiry, even when
+items cannot be read. Refresh health after repairing the backend. Failed remote commands do
+not create connection warnings; a successful connection clears earlier connection failures.
+GitHub token expiry is filled in when GitHub reports it, without changing your other health
+rule settings or enabling background checks.
 
 Outage reports with the same recorded GitHub service or SSH host and port appear together.
 Each item keeps its own recheck, snooze and dismiss actions. A shared destination does not prove

@@ -6,7 +6,7 @@
 event store ── EventSinkV2.stream({ afterSequence: cursor, eventType }) (unbounded, internal)
    thread.pull-request-link-updated ─▶ checks-failing / pr-opened matcher
    thread.settled                   ─▶ thread-settled matcher
-/api/hooks/bot-trigger-<id>/<token> ─▶ (seam) BotTriggers.webhook ─▶ webhook / merge-conflict
+/api/hooks/bot-trigger-<id>/<token> ─▶ (seam) BotTriggers.webhook ─▶ webhook
 schedule loop (Schedule.ts helpers) ─▶ schedule
 
 matcher ─▶ BotTriggers.fire(trigger, event)
@@ -26,7 +26,7 @@ matcher ─▶ BotTriggers.fire(trigger, event)
   - `{ kind: "pull-request-checks-failing", projectId?, repository?, branchPattern? }`;
   - `{ kind: "pull-request-opened", projectId?, repository?, branchPattern? }`;
   - `{ kind: "thread-settled", projectId }` (required, so a trigger never fires on every thread);
-  - `{ kind: "merge-conflict" }`;
+  - `{ kind: "merge-conflict" }` remains decodable for retired saved triggers;
   - `{ kind: "webhook", signature?: ScheduledTaskWebhookSignature }`
     (`packages/contracts/src/scheduledTask.ts:71`);
   - `{ kind: "schedule", schedule: ScheduledTaskIntervalSchedule | ScheduledTaskFixedTimeSchedule }`
@@ -34,12 +34,12 @@ matcher ─▶ BotTriggers.fire(trigger, event)
 - `BotTriggerMapping = Record<BotParameterName, { field: String } | { value: BotInputValue }>`.
   Fields are dotted paths into the event's fields (below).
 - `BotTrigger = { id, botId, name, event, mapping, enabled, pinnedVersion: Int, followLatest:
-Boolean, cooldownMinutes (0 to 1,440, default 10), dailyLimit (1 to 500, default 20),
-createdBy: BotCreator, createdAt, updatedAt, lastFiredAt, webhookUrl? }`. `webhookUrl` is
+  Boolean, cooldownMinutes (0 to 1,440, default 10), dailyLimit (1 to 500, default 20),
+  createdBy: BotCreator, createdAt, updatedAt, lastFiredAt, webhookUrl? }`. `webhookUrl` is
   computed per request and never stored; the token and secret never leave the server except in
   that URL, shown to callers with `orchestration:operate`.
 - `BotTriggerFiring = { id, triggerId, eventKey, eventSummary, firedAt, outcome: Literals(["run",
-"skipped"]), runId: NullOr(BotRunId), reason: NullOr(String) }`.
+  "skipped"]), runId: NullOr(BotRunId), reason: NullOr(String) }`.
 - `BotRun` gains `triggerId: Schema.optionalKey(Schema.NullOr(BotTriggerId))`. Triggered runs use
   the existing `startedBy` literal of the trigger's creator; a new `"trigger"` literal would break
   older clients' decoding.
@@ -68,7 +68,6 @@ Each kind exposes a fixed set of fields for mapping and for the dedupe key:
 | pull-request-checks-failing | `repository`, `number`, `url`, `title`, `headBranch`, `baseBranch`, `failedChecks` (comma list), `threadId` | `host/repository#number@headSha` (or `@syncedAt` day when no head sha)   |
 | pull-request-opened         | same without `failedChecks`                                                                                 | `host/repository#number`                                                 |
 | thread-settled              | `threadId`, `title`, `branch`, `projectId`                                                                  | `threadId@settledSequence`                                               |
-| merge-conflict              | `tag`, `branch`, `file` (one firing per file)                                                               | `tag:file`                                                               |
 | webhook                     | `body.<path>`, `headers.<name>`, `query.<name>`                                                             | `x-github-delivery`, else the relay delivery id, else a new id each time |
 | schedule                    | `firedAt`                                                                                                   | the due time                                                             |
 
@@ -139,14 +138,16 @@ The URL shown to Kyle is built like a scheduled task's: the relay base from
 `ScheduledTaskWebhookOrigin` (`ScheduledTaskService.ts:84`, `relayHookBaseUrl` at `:72`) when T3
 Connect is on, otherwise the server's own origin.
 
-### Merge conflicts
+### Refused deliveries and retired triggers
 
-A merge-conflict trigger is a webhook trigger with a fixed body shape. `scripts/fork/loom.sh`
-(fork-owned) reads an optional URL from `LOOM_BOTS_CONFLICT_HOOK` (set in the gitignored
-`.env`), and in the conflict branch of `cmd_integrate` (`scripts/fork/loom.sh:541-549`) posts
-`{ "tag", "branch", "files": [...] }` from `git diff --name-only --diff-filter=U` with a 5-second
-timeout, ignoring failures so integrate's own output is unchanged. The trigger fires once per
-file. With L93 present, the files run as one batch named after the tag instead of separate runs.
+Disabled, signature-mismatched and rate-limited deliveries record a skipped firing with fixed,
+value-free text. Migration 16 adds `refusal_count` to firing rows and a latest-refusal summary
+to triggers, so listing triggers requires no per-row history query. A unique event key per
+trigger and UTC minute coalesces refusals atomically; differing causes share a generic reason.
+Unknown hook ids and invalid address tokens leave no rows. These entries create no bot run.
+
+Saved merge-conflict triggers remain readable and deletable. They cannot be saved, enabled,
+tested or delivered. The editors no longer offer the kind.
 
 ## Schedules
 
@@ -184,15 +185,15 @@ retry from the inbox starts it normally. Skips for dedupe never write a run.
 Migration 9 `Triggers` (next free id if another bots migration landed first):
 
 - `fork_bots_triggers(id TEXT PRIMARY KEY, bot_id TEXT NOT NULL, trigger_json TEXT NOT NULL,
-enabled INTEGER NOT NULL, pinned_version INTEGER NOT NULL, follow_latest INTEGER NOT NULL,
-created_by TEXT NOT NULL, creator_runtime_mode TEXT, webhook_token TEXT, webhook_secret TEXT,
-next_fire_at TEXT, last_fired_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`.
+  enabled INTEGER NOT NULL, pinned_version INTEGER NOT NULL, follow_latest INTEGER NOT NULL,
+  created_by TEXT NOT NULL, creator_runtime_mode TEXT, webhook_token TEXT, webhook_secret TEXT,
+  next_fire_at TEXT, last_fired_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`.
 - `fork_bots_trigger_firings(id TEXT PRIMARY KEY, trigger_id TEXT NOT NULL, event_key TEXT NOT
-NULL, event_summary TEXT NOT NULL, fired_at TEXT NOT NULL, outcome TEXT NOT NULL, run_id TEXT,
-reason TEXT, UNIQUE(trigger_id, event_key))`, pruned to 500 per trigger.
+  NULL, event_summary TEXT NOT NULL, fired_at TEXT NOT NULL, outcome TEXT NOT NULL, run_id TEXT,
+  reason TEXT, UNIQUE(trigger_id, event_key))`, pruned to 500 per trigger.
 - `fork_bots_trigger_cursors(event_type TEXT PRIMARY KEY, after_sequence INTEGER NOT NULL)`.
 - `fork_bots_trigger_pr_state(pr_key TEXT PRIMARY KEY, checks_state TEXT, head_sha TEXT,
-seen_open INTEGER NOT NULL, updated_at TEXT NOT NULL)`, pruned after 90 days without updates.
+  seen_open INTEGER NOT NULL, updated_at TEXT NOT NULL)`, pruned after 90 days without updates.
 - `ALTER TABLE fork_bots_runs ADD COLUMN trigger_id TEXT`.
 
 The webhook token and secret are stored like scheduled task hooks store theirs (in the row).

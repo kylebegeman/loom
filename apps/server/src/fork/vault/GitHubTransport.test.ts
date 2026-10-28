@@ -196,3 +196,39 @@ it.effect.each(["lost-body", "invalid-body"] as const)(
       expect(paths.some((path) => path.startsWith("DELETE"))).toBe(false);
     }).pipe(Effect.scoped),
 );
+
+it.effect.each([
+  { header: "2099-01-01 12:30:45 UTC", expected: "2099-01-01T12:30:45.000Z" },
+  { header: "2099-01-01T12:30:45Z", expected: "2099-01-01T12:30:45.000Z" },
+  { header: undefined, expected: null },
+  { header: "not a date", expected: null },
+] as const)(
+  "reads token expiry $header without treating a personal token as disposable",
+  ({ header, expected }) =>
+    Effect.gen(function* () {
+      const requests: string[] = [];
+      const client = HttpClient.make((request) => {
+        requests.push(request.url);
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              { login: "synthetic-user" },
+              { headers: header ? { "github-authentication-token-expiration": header } : {} },
+            ),
+          ),
+        );
+      });
+      const service = yield* Transport.GitHubTransport.pipe(
+        Effect.provide(Transport.layer),
+        Effect.provideService(HttpClient.HttpClient, client),
+      );
+      const session = yield* service.session(
+        { type: "token", token: Redacted.make("synthetic_private_token") },
+        ["owner/repo"],
+      );
+      expect(session.expiresAt).toBe(expected);
+      yield* service.release(session);
+      expect(requests).toEqual(["https://api.github.com/user"]);
+    }).pipe(Effect.scoped),
+);

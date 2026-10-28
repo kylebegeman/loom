@@ -41,15 +41,17 @@ export const observeVaultHealth = Effect.fnUntraced(function* <A, E, R>(
       })
       .pipe(Effect.ignore);
   return yield* effect.pipe(
-    Effect.tap((result) =>
-      typeof result === "object" && result !== null && "exitCode" in result && result.exitCode !== 0
-        ? report("configuration", false)
-        : Effect.forEach(
-            ["authentication", "outage"] as const,
-            (category) => report(category, true),
-            { discard: true },
-          ),
-    ),
+    Effect.tap((result) => {
+      if (typeof result === "object" && result !== null && "exitCode" in result) {
+        if (result.exitCode === 255) return report("configuration", false);
+        if (result.exitCode !== 0) return Effect.void;
+      }
+      return Effect.forEach(
+        ["authentication", "outage", "configuration"] as const,
+        (category) => report(category, true),
+        { discard: true },
+      );
+    }),
     Effect.tapError((error) => {
       if (isGitHub(error)) {
         if (["unavailable", "timeout"].includes(error.reason)) return report("outage", false);

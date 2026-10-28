@@ -1,3 +1,4 @@
+import { CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
 // fork: attention-status
 import { ThreadAttentionButton } from "../fork/attention/ThreadAttention";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner"; // fork: library-projects
@@ -9,7 +10,11 @@ import { parseLibraryProjectScope } from "@t3tools/client-runtime/fork"; // fork
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
 import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
-import { releaseThreadCheckout } from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
+import {
+  releaseThreadCheckout,
+  restoreThreadCheckout,
+  readThreadCheckoutReleased,
+} from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { useNoProjectStart } from "~/fork/project-library/useNoProjectStart"; // fork: no-project-first
 import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
@@ -2622,6 +2627,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               hasWorktree: thread.worktreePath != null, // fork: project-lifecycle
+              // fork: project-lifecycle
+              checkoutReleased: readThreadCheckoutReleased(threadRef),
               canShareWithGuest: appAtomRegistry.get(
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
@@ -2632,6 +2639,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   "workspace-handoff",
                 ),
                 saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
+                // fork: project-lifecycle
+                checkoutRestore: supportsLoomFeature(
+                  serverConfigs.get(thread.environmentId)?.environment.capabilities,
+                  CHECKOUT_RESTORE_FEATURE,
+                ),
                 // fork: project-lifecycle
                 checkoutRelease: supportsLoomFeature(
                   serverConfigs.get(thread.environmentId)?.environment.capabilities,
@@ -2794,6 +2806,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
+            return;
+          // fork: project-lifecycle
+          case "restore-checkout":
+            await restoreThreadCheckout(threadRef);
             return;
           case "release-checkout": // fork: project-lifecycle
             await releaseThreadCheckout(threadRef);

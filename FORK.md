@@ -98,6 +98,7 @@ The shared plumbing packets register into, specified in
 | `packages/client-runtime/src/rpc/protocol.ts`                                                   | `ext-core`                  | Clients speak `LoomWsRpcGroup`.                                                                             |
 | `packages/client-runtime/src/rpc/client.ts`                                                     | `ext-core`                  | Fork streaming tags join the client's stream unions.                                                        |
 | `packages/contracts/package.json` (no marker)                                                   | `ext-core`                  | `./fork` export and schema-free `./fork/model-check-limits` for geometry workers.                           |
+| `apps/mobile/src/features/settings/settings-search.ts`                                          | `ext-settings`              | Include Loom names when searching existing native settings pages.                                           |
 | `apps/web/src/routes/__root.tsx`                                                                | `ext-web-root`              | Mounts `ForkRoot` in the authenticated app shell.                                                           |
 | `apps/web/src/rightPanelStore.ts`                                                               | `ext-panels`                | The generic `"fork"` surface kind and the `openSurface` action.                                             |
 | `apps/web/src/components/RightPanelTabs.tsx`                                                    | `ext-panels`                | Fork panels in the launcher and "+" menu; their tab titles and icons.                                       |
@@ -180,6 +181,27 @@ Upstream moved its own DOM tests to the browser test project and dropped them in
 The renderer follows the web app's React version, which comes from the workspace catalog.
 
 ### Packet seams
+
+| File                                                           | Packet                | Why                                                                          |
+| -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
+| `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
+| `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
+| `apps/server/src/project/AgentSessionScanner.ts`               | `file-placement`      | Exclude canonical aliases of managed worktree roots during session import.   |
+| `apps/server/src/project/AgentSessionScanner.test.ts`          | `file-placement`      | Cover session import exclusion through symlinked roots.                      |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx`  | `project-lifecycle`   | Isolate native checkout status in the route recovery test.                   |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`       | `project-lifecycle`   | Show released checkout state in the native conversation header.              |
+| `apps/mobile/src/features/threads/thread-list-v2-items.tsx`    | `project-lifecycle`   | Show checkout state and route the applicable checkout action.                |
+| `apps/web/src/components/Sidebar.tsx`                          | `project-lifecycle`   | Release or restore the selected checkout using lifecycle status.             |
+| `apps/web/src/components/chat/ChatHeader.tsx`                  | `project-lifecycle`   | Show released checkout state in the conversation header.                     |
+| `apps/web/src/components/sidebar/SidebarThreadRow.tsx`         | `project-lifecycle`   | Show the released checkout state beside its conversation.                    |
+| `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
+| `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
+| `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
+| `evals/mcp-tool-use/run.ts`                                    | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
+| `evals/mcp-tool-use/run.ts`                                    | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |
+| `packages/client-runtime/src/state/commandPermissions.test.ts` | `project-lifecycle`   | Verify restore requires the destination computer’s operate scope.            |
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
 (`fork: model-print-check`) so the worker ships beside `bin.mjs`. The single-file executable
@@ -369,6 +391,8 @@ recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 
 keeps its New thread button enabled when No project or a Library is the only way to start,
 and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
 (2 marker lines) keeps `file:` links on the primary, since their path names that machine.
+Its `client-computer` seams (5 markers; 3 in its browser test) wait for remote discovery before
+opening web links, keep pairing independent of discovery and cancel held links on unmount.
 
 The `library-projects` seams in `WorktreeMcpService.ts` (15 marker lines) coordinate an existing conversation's
 worktree handoff with its Library binding. A copy's root folder is not a separate worktree,
@@ -406,9 +430,9 @@ prunes device QA session folders idle for 14 days before it starts the device da
 `UsageService.ts` (3) deletes usage scan caches from older versions a week after their last
 write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
 `apps/server/src/fork/retention/`. Tests carry the rest: `settings.test.ts` (3),
-`LocalDeviceHost.test.ts` (3), and one each in `EventNdjsonLogger.test.ts`,
-`UsageService.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts` and
-`packages/shared/src/serverSettings.test.ts`.
+`LocalDeviceHost.test.ts` (3), `UsageService.test.ts` (2, including canonical fixture paths),
+and one each in `EventNdjsonLogger.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts`
+and `packages/shared/src/serverSettings.test.ts`.
 
 The `deleted-history` seam frees the space deleted conversations hold. `runtimeLayer.ts` (2
 marker lines) wraps the effect executor so `attachment.cleanup` waits while the Library still
@@ -1274,9 +1298,10 @@ See [Connections help](docs/fork/user/connections.md).
 
 ### Skills manager seams
 
-| File                                               | Marker           | Why                                                                                                   |
-| -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `apps/server/src/provider/Drivers/ClaudeSkills.ts` | `skill-registry` | Reuse Claude's current repository-root and settings precedence when managing native skill enablement. |
+| File                                                    | Marker           | Why                                                                                                   |
+| ------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `apps/server/src/provider/Drivers/ClaudeSkills.ts`      | `skill-registry` | Reuse Claude's current repository-root and settings precedence when managing native skill enablement. |
+| `apps/server/src/provider/Drivers/ClaudeSkills.test.ts` | `skill-registry` | Canonical fixture root for native plugin registry selection, retaining explicit alias cases.          |
 
 ### Hosted Bot compatibility
 

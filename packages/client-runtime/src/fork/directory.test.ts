@@ -10,6 +10,7 @@ import {
   directoryReportingText,
   directoryRoutes,
   directoryUnattachedMachines,
+  directoryOldMachines,
   identityDirectoryAddresses,
 } from "./directory.ts";
 import {
@@ -482,5 +483,17 @@ describe("backgroundCheckFailureText", () => {
       "Preview registration failed at 2026-10-26T09:00:00.000Z: Could not reach the Library to register this computer's previews.",
     ]);
     expect(backgroundCheckFailureText(report)).toEqual([]);
+  });
+});
+
+describe("directoryOldMachines", () => {
+  it("includes computers at the thirty-day boundary and machines without a reporter", () => {
+    const month = 30 * 24 * 60 * MINUTES;
+    const stale = reported(STUDIO, { receivedAt: ago(month) });
+    const fresh = reported(BOOK, { receivedAt: ago(month - 1) });
+    const orphan = machine(DESK);
+    const result = directoryOldMachines(listing([fresh, stale], [machine(STUDIO), orphan]), NOW);
+    expect(result.environments).toEqual([stale]);
+    expect(result.machines).toEqual([orphan]);
   });
 });

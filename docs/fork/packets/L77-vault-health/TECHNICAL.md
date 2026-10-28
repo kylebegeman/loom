@@ -65,7 +65,8 @@ snapshot calls perform no login. Claim CAS is committed before a provider probe.
 rechecks the item version, claim deadline and newer observations, so removed rules, replacements
 or newer resolutions cannot be overwritten by an older probe. The claim accompanies nested
 connector observations; ordinary operations use their start timestamp for the same stale-result check. A sealed/unreachable backend
-leaves the worker unable to check rather than authorizing credential use.
+leaves the worker unable to check rather than authorizing credential use. Clients query backend
+status independently so sealing and service-token expiry remain visible when the inbox cannot load.
 
 Default expiry warning is seven days; the typed rule supports one to ninety. The initial
 notification destination is the inbox, with no external messages. Automatic provider validation
@@ -74,6 +75,13 @@ or the saved SSH connection.
 Unattended checks use that recorded authorization and do not grant agent access. Local client
 management requires access:read/write. CLI/MCP management is limited to authenticated full-access
 administrator clients; an agent thread cannot change global health state or trigger an admin probe.
+
+Generic connector observation reports configuration only for SSH exit 255 or a typed SSH failure;
+other nonzero remote command exits produce no health observation. Success resolves authentication,
+outage and configuration reports. Personal-token sessions learn GitHub's expiration header through
+an item-version-checked health mutation, preserving rule options and writing only when expiry
+changes. Missing headers leave existing expiry intact. Installation-token cleanup is independent
+of expiration metadata, and short-lived installation expiry never becomes the stored App's expiry.
 
 Operation observation is diagnostic. A health-store failure never converts a completed remote
 write into a failure that could cause duplicate retries. Nonzero child exits do not resolve

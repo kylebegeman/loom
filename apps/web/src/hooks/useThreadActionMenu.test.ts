@@ -6,6 +6,8 @@ import {
   ThreadId,
   type ContextMenuItem,
 } from "@t3tools/contracts";
+// fork: project-lifecycle
+import { CHECKOUT_RELEASE_FEATURE, CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -25,6 +27,7 @@ const state = vi.hoisted(() => ({
   completed: deferred<void>(),
   createThread: vi.fn(), // fork: library-projects
   worktreePath: null as string | null, // fork: library-projects
+  checkoutReleased: false, // fork: project-lifecycle
   show: vi.fn<
     (
       items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>,
@@ -45,6 +48,8 @@ vi.mock("~/fork/workspace-handoff/state", () => ({
 // fork: project-lifecycle
 vi.mock("~/fork/project-lifecycle/state", () => ({
   releaseThreadCheckout: async () => recordEffect("release-checkout"),
+  restoreThreadCheckout: async () => recordEffect("restore-checkout"),
+  readThreadCheckoutReleased: () => state.checkoutReleased,
 }));
 // fork: bots
 vi.mock("~/fork/bots/fromThread/state", () => ({
@@ -52,7 +57,22 @@ vi.mock("~/fork/bots/fromThread/state", () => ({
   threadCanBeSavedAsBot: () => false,
 }));
 // fork: workspace-handoff
-vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => new Map() } }));
+vi.mock("~/rpc/atomRegistry", () => ({
+  appAtomRegistry: {
+    // fork: project-lifecycle
+    get: () =>
+      new Map([
+        [
+          "secondary",
+          {
+            environment: {
+              capabilities: { loomFeatures: [CHECKOUT_RELEASE_FEATURE, CHECKOUT_RESTORE_FEATURE] },
+            },
+          },
+        ],
+      ]),
+  },
+}));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} })); // fork: workspace-handoff
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
 vi.mock("react", () => ({
@@ -190,6 +210,7 @@ beforeEach(() => {
   state.completed = deferred<void>();
   // fork: library-projects
   state.worktreePath = null;
+  state.checkoutReleased = false; // fork: project-lifecycle
   state.createThread.mockReset().mockImplementation(async () => recordEffect("draft"));
   state.show.mockReset().mockResolvedValue(null);
 });
@@ -204,6 +225,7 @@ describe("thread menu permissions", () => {
     "archive",
     "workspace-handoff", // fork: workspace-handoff
     "release-checkout", // fork: project-lifecycle
+    "restore-checkout", // fork: project-lifecycle
   ] as const)("%s rechecks after the native menu closes", async (action) => {
     state.granted.add("secondary");
     const choice = deferred<ThreadActionMenuId | null>();
@@ -214,6 +236,20 @@ describe("thread menu permissions", () => {
     await state.completed.promise;
     expect(state.effects).toEqual([]);
   });
+});
+
+// fork: project-lifecycle
+it("offers and executes Restore for a released checkout in the header menu", async () => {
+  state.granted.add("secondary");
+  state.worktreePath = "/project/checkouts/feature";
+  state.checkoutReleased = true;
+  state.show.mockResolvedValue("restore-checkout");
+  createMenu().openMenu(position);
+  const items = state.show.mock.calls[0]![0].map((item) => item.id);
+  expect(items).toContain("restore-checkout");
+  expect(items).not.toContain("release-checkout");
+  await state.completed.promise;
+  expect(state.effects).toEqual(["restore-checkout"]);
 });
 
 // fork: library-projects

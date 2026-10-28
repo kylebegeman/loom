@@ -1,9 +1,20 @@
 import { DIRECTORY_WS_METHODS, type DirectoryReporting } from "@t3tools/contracts/fork";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { createEnvironmentRpcQueryAtomFamily } from "../state/runtime.ts";
+import {
+  createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
+} from "../state/runtime.ts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 const idleReporting = Atom.make(AsyncResult.initial<DirectoryReporting, unknown>());
+export function createDirectoryForgetCommand<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  return createEnvironmentRpcCommand(runtime, {
+    label: "loom:directory:forget",
+    tag: DIRECTORY_WS_METHODS.forget,
+  });
+}
 export function createDirectoryReportingAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -324,6 +335,21 @@ export function directoryUnattachedMachines(
     listing.environments.map((environment) => environment.environmentId),
   );
   return listing.machines.filter((machine) => !environments.has(machine.reportedBy));
+}
+
+const OLD_COMPUTER_AGE_MS = 30 * DAY_MS;
+
+export function directoryOldMachines(listing: DirectoryListing, now: number) {
+  return {
+    environments: directoryEnvironments(listing).filter(
+      (environment) => now - Date.parse(environment.receivedAt) >= OLD_COMPUTER_AGE_MS,
+    ),
+    machines: directoryUnattachedMachines(listing),
+  };
+}
+
+export function directoryForgetConfirmation(label: string): string {
+  return `Forget ${label}? It comes back if it reports again. A running computer usually reports again within 15 minutes.`;
 }
 
 /** A browser signs in through the computer's login page; desktop and mobile sign in natively. */

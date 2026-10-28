@@ -31,8 +31,15 @@ export const makeProjectLifecycleRpcHandlers = Effect.fn("ProjectLifecycle.makeR
       [L.removeShell]: () => auth.effect(L.removeShell, service.removeShell()),
       [L.releaseLease]: (input: { laneId: string; kind: LaneLeaseKind; ref: string }) =>
         auth.effect(L.releaseLease, service.releaseLease(input.laneId, input.kind, input.ref)),
+      [L.restoreCheckout]: (input: { threadId: ThreadId }) =>
+        auth.effect(L.restoreCheckout, service.restoreCheckout(input.threadId)),
       [L.releaseCheckout]: (input: { threadId: ThreadId }) =>
-        auth.effect(L.releaseCheckout, storageCleanup.releaseCheckout(input.threadId)),
+        auth.effect(
+          L.releaseCheckout,
+          storageCleanup
+            .releaseCheckout(input.threadId)
+            .pipe(Effect.tap(() => service.refreshCheckouts())),
+        ),
     };
   },
 );

@@ -7,11 +7,39 @@ import { FORK_COMMAND_PALETTE_SOURCES, forkCommandPaletteItems } from "./registr
 
 // Every source with its feature on and a thread open, so each lists all of its items.
 const context = {
+  libraryPush: true,
   activeThreadRef: scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1")),
-  loomFeatures: ["core", ...FORK_COMMAND_PALETTE_SOURCES.map((source) => source.id)],
+  loomFeatures: [
+    "core",
+    "preview-pages",
+    ...FORK_COMMAND_PALETTE_SOURCES.map((source) => source.id),
+  ],
 };
 
 describe("fork command palette sources", () => {
+  it("offers the applicable checkout action only with its permission and host feature", () => {
+    const source = FORK_COMMAND_PALETTE_SOURCES.find((entry) => entry.id === "project-lifecycle")!;
+    const checkout = { released: false, canRelease: true, canRestore: true };
+    const enabled = {
+      ...context,
+      loomFeatures: [...context.loomFeatures, "checkout-release", "checkout-restore"],
+      checkout,
+    };
+    const ids = (value: Parameters<typeof source.items>[0]) =>
+      source.items(value).map((entry) => entry.value);
+    expect(ids(enabled)).toContain("action:loom:project-lifecycle:release-checkout");
+    expect(ids(enabled)).not.toContain("action:loom:project-lifecycle:restore-checkout");
+    expect(ids({ ...enabled, checkout: { ...checkout, released: true } })).toContain(
+      "action:loom:project-lifecycle:restore-checkout",
+    );
+    expect(
+      ids({ ...enabled, checkout: { ...checkout, released: true, canRestore: false } }),
+    ).not.toContain("action:loom:project-lifecycle:restore-checkout");
+    expect(ids({ ...enabled, loomFeatures: ["project-lifecycle"] })).not.toContain(
+      "action:loom:project-lifecycle:release-checkout",
+    );
+  });
+
   it.each(["model-preview-3d", "pcb-preview"])(
     "hides %s actions without the environment feature or an active thread",
     (id) => {

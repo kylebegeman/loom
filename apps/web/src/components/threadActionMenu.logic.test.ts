@@ -108,6 +108,19 @@ describe("release checkout", () => {
       "release-checkout",
     );
     expect(ids({ ...baseState, hasWorktree: true })).not.toContain("release-checkout");
+    const released = {
+      ...baseState,
+      supports: { ...supported, checkoutRestore: true },
+      hasWorktree: true,
+      checkoutReleased: true,
+    };
+    expect(ids(released)).not.toContain("release-checkout");
+    expect(ids(released)).toContain("restore-checkout");
+    expect(
+      buildThreadActionMenuItems({ ...released, canOperate: false }).find(
+        (item) => item.id === "restore-checkout",
+      )?.disabled,
+    ).toBe(true);
   });
 
   it("keeps a single separator before the lifecycle group", () => {

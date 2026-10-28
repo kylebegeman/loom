@@ -1,14 +1,31 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
-import { DirectoryError, DirectoryListing, DirectoryReporting } from "@t3tools/contracts/fork";
+import {
+  DirectoryError,
+  DirectoryForgetRequest,
+  DirectoryListing,
+  DirectoryReporting,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { DirectoryReporter } from "./DirectoryReporter.ts";
 import { DirectoryService } from "./DirectoryService.ts";
 
 export const DirectoryToolkit = Toolkit.make(
+  Tool.make("loom_directory_forget", {
+    description:
+      "Forget a computer or unattached machine in this Library's directory. Clears its pinned key; a running computer returns on its next report, usually within 15 minutes. Run on the Library authority. Retire an active Reach address first. Requires full access.",
+    parameters: Schema.Struct({ entry: DirectoryForgetRequest }),
+    success: Schema.Void,
+    failure: Schema.Union([DirectoryError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
   Tool.make("loom_directory_computers", {
     description:
       "List the computers and LoomOS machines in this Library's directory: names, versions, platforms, features, routes, providers, key fingerprints and when each last reported. Answered by the Library authority, also when called on another computer. Includes no credentials.",
@@ -32,6 +49,11 @@ export const directoryHandlers = McpToolAccess.toLayer(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return {
+      loom_directory_forget: McpToolAccess.writesEnvironment(({ entry }) =>
+        withForkRuntime(Effect.flatMap(DirectoryService, (service) => service.forget(entry))).pipe(
+          Effect.provideService(ForkRuntime, runtime),
+        ),
+      ),
       loom_directory_computers: McpToolAccess.reads(() =>
         withForkRuntime(Effect.flatMap(DirectoryService, (service) => service.computers)).pipe(
           Effect.provideService(ForkRuntime, runtime),

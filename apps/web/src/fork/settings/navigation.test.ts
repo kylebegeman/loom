@@ -25,9 +25,8 @@ const AVAILABLE = {
 describe("fork settings search", () => {
   it("offers every topic once, on its home page at its own anchor", () => {
     const items = forkSettingsSearchItems();
-    expect(items.map((item) => item.targetId)).toEqual(
-      FORK_SETTINGS_SECTIONS.map((section) => `loom-${section.id}`),
-    );
+    for (const section of FORK_SETTINGS_SECTIONS)
+      expect(items.filter((item) => item.targetId === `loom-${section.id}`)).toHaveLength(1);
     for (const section of FORK_SETTINGS_SECTIONS) {
       expect(items.find((item) => item.targetId === `loom-${section.id}`)?.to).toBe(section.home);
     }
@@ -44,6 +43,14 @@ describe("fork settings search", () => {
     expect(searchSettings("kicad", available).map((item) => item.targetId)).toContain(
       "loom-pcb-preview",
     );
+    for (const [query, targetId] of [
+      ["updates", "fleet-updates"],
+      ["push", "library-push"],
+      ["switchboard", "switchboard"],
+      ["code map", "loom-code-graph"],
+      ["computers from library", "library-computers"],
+    ])
+      expect(searchSettings(query!, available).map((item) => item.targetId)).toContain(targetId);
     expect(searchSettings("panel picker", available)[0]).toMatchObject({
       to: "/settings/general",
     });

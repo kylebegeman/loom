@@ -19,6 +19,7 @@ import {
   createVaultCoreAtoms,
   supportsLoomFeature,
   vaultHealthMessage,
+  vaultHealthBackendMessage,
   vaultHealthRecheckMessage,
   vaultHealthVisibleState,
   vaultHealthInboxGroups,
@@ -83,6 +84,10 @@ function Inbox({
   const atom = atoms.snapshot({ environmentId, input: {} }),
     result = useAtomValue(atom),
     snapshot = result._tag === "Success" && !result.waiting ? result.value : null;
+  const statusAtom = core.status({ environmentId, input: {} });
+  const statusResult = useAtomValue(statusAtom);
+  const backend =
+    statusResult._tag === "Success" && !statusResult.waiting ? statusResult.value : null;
   const [contextIssue, setContextIssue] = useState<string | null>(null);
   const [cursor, setCursor] = useState<string | null>(null),
     [itemId, setItemId] = useState(""),
@@ -148,6 +153,15 @@ function Inbox({
     );
   return (
     <div className="flex min-w-0 flex-col gap-6 text-sm leading-relaxed wrap-anywhere">
+      <VaultQueryFeedback
+        result={statusResult}
+        loading="Checking Vault backend…"
+        error="Could not check the Vault backend. Reconnect and refresh."
+        onRetry={() => appAtomRegistry.refresh(statusAtom)}
+      />
+      {backend ? (
+        <LoomSettingsNotice role="status">{vaultHealthBackendMessage(backend)}</LoomSettingsNotice>
+      ) : null}
       <LoomSettingsPanel
         title="Maintenance inbox"
         description="Review expiry and failed development access. Provider outages do not revoke credentials. Only explicitly enabled rules run in the background."
@@ -161,6 +175,7 @@ function Inbox({
               setError(null);
               setNotice(null);
               appAtomRegistry.refresh(atom);
+              appAtomRegistry.refresh(statusAtom);
             }}
           >
             Refresh health

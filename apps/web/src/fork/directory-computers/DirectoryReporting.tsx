@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { Button } from "~/components/ui/button";
 import { directoryReporting } from "./state";
+import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 
 export function DirectoryReporting({
   environment,
@@ -44,6 +45,13 @@ export function DirectoryReporting({
               {text}
             </p>
           ))}
+          {report.state === "key-changed" ? (
+            <ForgetDirectoryEntry
+              request={{ kind: "environment", environmentId: environment.environmentId }}
+              label={environment.label}
+              title="Forget in your Library"
+            />
+          ) : null}
         </>
       ) : (
         <p role="status" className="text-xs text-muted-foreground">

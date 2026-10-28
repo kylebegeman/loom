@@ -408,7 +408,7 @@ apps/desktop/src/app/DesktopCliCommand.test.ts	brand	15
 apps/desktop/src/app/DesktopCliShim.test.ts	brand	1
 apps/server/src/cli/invocation.ts	brand	3
 apps/server/src/cli/invocation.ts	ext-vault	1
-apps/server/src/cli/invocation.test.ts	brand	7
+apps/server/src/cli/invocation.test.ts	brand	9
 apps/server/src/cli/server.ts	brand	3
 apps/web/src/components/settings/CliCommandSettingsRow.tsx	brand	4
 apps/web/src/components/settings/settingsSearch.ts	brand	2
@@ -744,7 +744,7 @@ apps/server/src/provider/EventNdjsonLogger.test.ts	retention-defaults	2
 apps/server/src/serverSettings.test.ts	retention-defaults	1
 apps/server/src/storageCleanup.test.ts	retention-defaults	2
 apps/server/src/usage/UsageService.ts	retention-defaults	3
-apps/server/src/usage/UsageService.test.ts	retention-defaults	1
+apps/server/src/usage/UsageService.test.ts	retention-defaults	2
 apps/server/src/usage/usageScanCache.ts	retention-defaults	1
 packages/contracts/src/settings.ts	retention-defaults	2
 packages/contracts/src/settings.test.ts	retention-defaults	3
@@ -1332,8 +1332,8 @@ apps/server/src/orchestration-v2/testkit/fixtures/muse_workflow/muse_transcript.
 apps/server/src/orchestration-v2/testkit/fixtures/simple/muse_transcript.ndjson	-	you are running in Loom through the Muse Code harness
 apps/server/src/orchestration-v2/testkit/fixtures/subagent_v2/muse_transcript.ndjson	-	you are running in Loom through the Muse Code harness
 apps/server/src/orchestration-v2/testkit/fixtures/turn_interrupt/muse_transcript.ndjson	-	you are running in Loom through the Muse Code harness
-apps/server/src/project/AgentSessionScanner.test.ts	file-placement	3
-apps/server/src/project/AgentSessionScanner.ts	file-placement	9
+apps/server/src/project/AgentSessionScanner.test.ts	file-placement	7
+apps/server/src/project/AgentSessionScanner.ts	file-placement	12
 apps/server/src/project/ProjectFaviconResolver.test.ts	project-lifecycle	2
 apps/server/src/project/ProjectMutation.test.ts	project-home	1
 apps/server/src/project/ProjectMutation.ts	file-placement	1
@@ -1473,11 +1473,12 @@ apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
 apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
 apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
 apps/web/src/components/CommandPalette.tsx	library-only	1
-apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	1
-apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	5
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	3
 apps/web/src/state/shell.ts	client-computer	8
 apps/web/src/state/shell.test.ts	client-computer	7
 docs/user/updating.md	client-computer	1
+docs/user/faq.md	fleet-connections	1
 apps/mobile/src/features/projects/AddProjectScreen.tsx	library-only	3
 apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3
@@ -1500,17 +1501,26 @@ apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
 apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2
 apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13
 apps/server/src/provider/Drivers/ClaudeSkills.ts	skill-registry	2
-apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	6
+apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	11
 apps/web/src/components/threadActionMenu.logic.test.ts	project-lifecycle	1
-apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	5
-apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	2
-apps/web/src/components/Sidebar.tsx	project-lifecycle	5
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	5
+apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	8
+apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	8
+apps/web/src/components/Sidebar.tsx	project-lifecycle	9
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262788
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 263691
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
 apps/web/src/hooks/useNewConversationShortcut.ts	library-projects	1
 apps/mobile/src/features/threads/useThreadConversationDetails.tsx	library	1
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	project-lifecycle	3
+apps/web/src/components/chat/ChatHeader.tsx	project-lifecycle	2
+apps/web/src/components/sidebar/SidebarThreadRow.tsx	project-lifecycle	3
+evals/mcp-tool-use/run.ts	project-lifecycle	2
+evals/mcp-tool-use/run.ts	directory-computers	2
+evals/mcp-tool-use/run.ts	bots-triggers	2
+apps/mobile/src/features/settings/settings-search.ts	ext-settings	2
+apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	project-lifecycle	1
+apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1

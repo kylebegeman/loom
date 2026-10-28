@@ -15,6 +15,7 @@ import { AsyncResult } from "effect/reactivity";
 import { LoomSettingsContent, LoomSettingsPanel } from "~/fork/settings/parts";
 import { Button } from "~/components/ui/button";
 import { useNowMinute } from "~/hooks/useNowMinute";
+import { SettingsSearchTarget } from "~/components/settings/settingsLayout";
 import { ensureLocalApi } from "~/localApi";
 import { Alert, Muted, failureOf, useAction } from "./parts";
 import { previewLinks, runCommand } from "./state";
@@ -94,41 +95,43 @@ export function EnvironmentPreviewPages({ environmentId }: { environmentId: Envi
   const pages = list?.available ? visiblePreviewPages(list.pages, now) : [];
 
   return (
-    <LoomSettingsContent>
-      <LoomSettingsPanel
-        title="Published pages"
-        description="Pages that agents on this computer published to your Library, such as a rendered page or a Dossier. Each opens only in a browser signed in to your Library."
-      >
-        <div className="flex flex-col gap-2 pb-2">
-          {failure && (
-            <div className="flex flex-col items-start gap-1.5">
-              <Alert>{failure}</Alert>
-              <Button size="xs" variant="outline" disabled={result.waiting} onClick={refresh}>
-                Try again
-              </Button>
-            </div>
-          )}
-          {list === null ? (
-            !failure && <Muted>Loading pages...</Muted>
-          ) : !list.available ? (
-            <Muted>{PREVIEW_PAGES_UNAVAILABLE_TEXT}</Muted>
-          ) : pages.length === 0 ? (
-            <Muted>{PREVIEW_PAGES_EMPTY_TEXT}</Muted>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {pages.map((page) => (
-                <PageRow
-                  key={page.id}
-                  environmentId={environmentId}
-                  page={page}
-                  now={now}
-                  canUpdate={canUpdate}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </LoomSettingsPanel>
-    </LoomSettingsContent>
+    <SettingsSearchTarget id="published-pages">
+      <LoomSettingsContent>
+        <LoomSettingsPanel
+          title="Published pages"
+          description="Pages that agents on this computer published to your Library, such as a rendered page or a Dossier. Each opens only in a browser signed in to your Library."
+        >
+          <div className="flex flex-col gap-2 pb-2">
+            {failure && (
+              <div className="flex flex-col items-start gap-1.5">
+                <Alert>{failure}</Alert>
+                <Button size="xs" variant="outline" disabled={result.waiting} onClick={refresh}>
+                  Try again
+                </Button>
+              </div>
+            )}
+            {list === null ? (
+              !failure && <Muted>Loading pages...</Muted>
+            ) : !list.available ? (
+              <Muted>{PREVIEW_PAGES_UNAVAILABLE_TEXT}</Muted>
+            ) : pages.length === 0 ? (
+              <Muted>{PREVIEW_PAGES_EMPTY_TEXT}</Muted>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {pages.map((page) => (
+                  <PageRow
+                    key={page.id}
+                    environmentId={environmentId}
+                    page={page}
+                    now={now}
+                    canUpdate={canUpdate}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+        </LoomSettingsPanel>
+      </LoomSettingsContent>
+    </SettingsSearchTarget>
   );
 }

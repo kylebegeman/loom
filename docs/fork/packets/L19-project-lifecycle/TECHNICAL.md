@@ -332,3 +332,8 @@ setup and provider readiness. See [WorkspaceHandoffService.ts](../../../../apps/
   terminal; the shell hook covers their shell commands without separate provider environment seams. Candidate upstream PRs:
   per-thread provider environment, a worktree-removal hook, configurable safe ignored paths
   in worktree cleanup.
+
+Worktree release is visible through the lifecycle status, independent of whether manual release
+or retention removed the folder. Existence checks are shared by path and retained for 30 seconds.
+Explicit release and restore invalidate the cache; restore waits for the existing checkpoint and
+setup flow before reporting success.

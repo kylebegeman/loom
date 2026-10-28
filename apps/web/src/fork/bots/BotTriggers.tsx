@@ -23,6 +23,7 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_TRIGGER_FIRINGS_MAX_LIMIT,
+  botTriggerDeliveryRefusalText,
   type BotDefinition,
   type BotTrigger,
   type BotTriggerEventKind,
@@ -258,6 +259,7 @@ function runsLabel(data: TriggerData, trigger: BotTrigger) {
 
 /** When a schedule fires next, or what a trigger that waits for something accepts. */
 function nextLabel(data: TriggerData, trigger: BotTrigger, now: number) {
+  if (trigger.event.kind === "merge-conflict") return "Retired";
   if (!trigger.enabled) return "Paused";
   if (trigger.event.kind === "webhook")
     return trigger.event.signature ? "Signed requests only" : "Any request to its address";
@@ -304,6 +306,8 @@ function TriggerEnabledSwitch({
       description: errorText(squashAtomCommandFailure(result), "Try again."),
     });
   };
+  if (trigger.event.kind === "merge-conflict")
+    return <LibraryStateBadge tone="neutral">Retired</LibraryStateBadge>;
   return (
     <WithReason reason={reason}>
       <Switch
@@ -454,6 +458,12 @@ function TriggerActivity({
   readonly now: number;
 }) {
   const activity = triggerRowActivity(trigger, data.changes.firings.get(trigger.id) ?? []);
+  if (trigger.lastDeliveryRefusal)
+    return (
+      <p className="text-xs text-muted-foreground">
+        {botTriggerDeliveryRefusalText(trigger.lastDeliveryRefusal)}
+      </p>
+    );
   switch (activity.kind) {
     case "never":
       return <p className="text-xs text-muted-foreground">Never fired</p>;
@@ -783,13 +793,16 @@ function AsideRow({
     trigger.enabled && trigger.event.kind === "schedule" && trigger.nextFireAt
       ? Date.parse(trigger.nextFireAt) - now
       : Number.NaN;
-  const when = !trigger.enabled
-    ? "Paused"
-    : !Number.isFinite(next)
-      ? null
-      : next <= 60_000
-        ? "Due"
-        : `in ${spanAhead(next)}`;
+  const when =
+    trigger.event.kind === "merge-conflict"
+      ? "Retired"
+      : !trigger.enabled
+        ? "Paused"
+        : !Number.isFinite(next)
+          ? null
+          : next <= 60_000
+            ? "Due"
+            : `in ${spanAhead(next)}`;
   return (
     <li className={cn(LIBRARY_ROW, "relative flex min-w-0 items-center gap-2.5 py-1.5")}>
       <TriggerKindTile kind={trigger.event.kind} size="sm" muted={!trigger.enabled} />
@@ -994,26 +1007,19 @@ function WebhookAddressSection({
           </p>
         </>
       )}
-      {trigger.event.kind === "merge-conflict" ? (
-        <p className="text-xs text-muted-foreground">
-          Set <span className="font-mono text-foreground">LOOM_BOTS_CONFLICT_HOOK</span> to this
-          address before running the fork integrate script.
-        </p>
-      ) : (
-        <p className="flex items-start gap-2 text-xs text-muted-foreground">
-          <LibraryStateDot
-            tone={signature ? (endpoint?.hasSecret === false ? "danger" : "success") : "neutral"}
-            className="mt-1 size-1.5"
-          />
-          <span>
-            {signature
-              ? endpoint?.hasSecret === false
-                ? "The signature check is on but no secret is stored, so every request is refused. Add the secret in Edit."
-                : `Requests must be signed, in ${signature.header}.`
-              : "Any request to the address fires it. Turn on a signature check in Edit."}
-          </span>
-        </p>
-      )}
+      <p className="flex items-start gap-2 text-xs text-muted-foreground">
+        <LibraryStateDot
+          tone={signature ? (endpoint?.hasSecret === false ? "danger" : "success") : "neutral"}
+          className="mt-1 size-1.5"
+        />
+        <span>
+          {signature
+            ? endpoint?.hasSecret === false
+              ? "The signature check is on but no secret is stored, so every request is refused. Add the secret in Edit."
+              : `Requests must be signed, in ${signature.header}.`
+            : "Any request to the address fires it. Turn on a signature check in Edit."}
+        </span>
+      </p>
       {error ? (
         <p role="alert" className="text-xs text-destructive-foreground">
           {error}
@@ -1605,7 +1611,9 @@ function TriggerSheet({
             </div>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {trigger.enabled ? (
+            {trigger.event.kind === "merge-conflict" ? (
+              <LibraryStateBadge tone="neutral">Retired</LibraryStateBadge>
+            ) : trigger.enabled ? (
               <LibraryStateBadge tone="success">On</LibraryStateBadge>
             ) : (
               <LibraryStateBadge tone="neutral">Paused</LibraryStateBadge>
@@ -1621,25 +1629,27 @@ function TriggerSheet({
               </LibraryStateBadge>
             ) : null}
             <div className="ms-auto flex items-center gap-1.5">
-              {data.environmentId ? (
+              {data.environmentId && trigger.event.kind !== "merge-conflict" ? (
                 <TriggerEnabledSwitch
                   environmentId={data.environmentId}
                   trigger={trigger}
                   reason={data.operateReason}
                 />
               ) : null}
-              <WithReason reason={editReason}>
-                <Button
-                  shape="pill"
-                  size="sm"
-                  variant="outline"
-                  disabled={editReason !== null}
-                  onClick={() => nav.overlay({ editTrigger: trigger.id })}
-                >
-                  <PencilIcon />
-                  Edit
-                </Button>
-              </WithReason>
+              {trigger.event.kind !== "merge-conflict" ? (
+                <WithReason reason={editReason}>
+                  <Button
+                    shape="pill"
+                    size="sm"
+                    variant="outline"
+                    disabled={editReason !== null}
+                    onClick={() => nav.overlay({ editTrigger: trigger.id })}
+                  >
+                    <PencilIcon />
+                    Edit
+                  </Button>
+                </WithReason>
+              ) : null}
               <WithReason reason={data.operateReason}>
                 <Button
                   shape="pill"
@@ -1678,7 +1688,7 @@ function TriggerSheet({
                   : "The bot this trigger runs was deleted, so its firings are skipped."}
               </LibraryNotice>
             ) : null}
-            {outdated && bot ? (
+            {outdated && bot && trigger.event.kind !== "merge-conflict" ? (
               <LibraryNotice
                 icon={TriangleAlertIcon}
                 action={
@@ -1705,18 +1715,25 @@ function TriggerSheet({
               </p>
             ) : null}
             <LibrarySpecSheet label="About this trigger" rows={rows} />
-            {trigger.event.kind === "webhook" || trigger.event.kind === "merge-conflict" ? (
+            {trigger.lastDeliveryRefusal ? (
+              <LibraryNotice tone="warning" icon={TriangleAlertIcon}>
+                {botTriggerDeliveryRefusalText(trigger.lastDeliveryRefusal)}
+              </LibraryNotice>
+            ) : null}
+            {trigger.event.kind === "webhook" ? (
               <WebhookAddressSection data={data} trigger={trigger} />
             ) : null}
             <FiringsSection data={data} trigger={trigger} now={now} />
-            <TestFiringSection
-              key={target === undefined ? "no-target" : "target"}
-              data={data}
-              trigger={trigger}
-              target={target}
-              targetReason={targetReason}
-              now={now}
-            />
+            {trigger.event.kind !== "merge-conflict" ? (
+              <TestFiringSection
+                key={target === undefined ? "no-target" : "target"}
+                data={data}
+                trigger={trigger}
+                target={target}
+                targetReason={targetReason}
+                now={now}
+              />
+            ) : null}
           </div>
         </SheetPanel>
       </SheetPopup>

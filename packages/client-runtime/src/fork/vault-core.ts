@@ -36,8 +36,17 @@ export const vaultStatusMessage = (status: VaultCoreStatus) => {
   const remaining = status.tokenTtlSeconds ?? Infinity;
   if (status.state !== "ready" || remaining >= VAULT_TOKEN_WARNING_SECONDS) return message;
   const hours = Math.floor(remaining / (60 * 60));
-  const left = hours < 1 ? "under an hour" : `about ${hours} hours`;
+  const left = hours < 1 ? "under an hour" : `about ${hours} ${hours === 1 ? "hour" : "hours"}`;
   return `${message} Its service token expires in ${left}. Check the token renewal job on the computer running Loom, or reissue the token before then.`;
+};
+export const vaultHealthBackendMessage = (status: VaultCoreStatus) => {
+  if (status.state === "locked") return "Backend sealed. Unlock OpenBao, then refresh.";
+  if (status.state !== "ready") return vaultStatusMessage(status);
+  const remaining = status.tokenTtlSeconds ?? Infinity;
+  if (remaining >= VAULT_TOKEN_WARNING_SECONDS) return "Backend ready.";
+  const hours = Math.floor(remaining / 3600);
+  const left = hours < 1 ? "under an hour" : `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return `Service token expires in ${left}. Check its renewal on the computer running Loom.`;
 };
 export const vaultItemChanges = Atom.family((_environmentId: EnvironmentId) => Atom.make(0));
 export const refreshVaultItems = (

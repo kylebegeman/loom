@@ -44,6 +44,10 @@ export function createProjectLifecycleAtoms<R, E>(
       label: "loom:lanes-lease-release",
       tag: L.releaseLease,
     }),
+    restoreCheckout: createEnvironmentRpcCommand(runtime, {
+      label: "loom:checkout-restore",
+      tag: L.restoreCheckout,
+    }),
     releaseCheckout: createEnvironmentRpcCommand(runtime, {
       label: "loom:checkout-release",
       tag: L.releaseCheckout,

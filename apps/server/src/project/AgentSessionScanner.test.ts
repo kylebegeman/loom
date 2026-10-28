@@ -935,6 +935,18 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const result = yield* runScan({ claudeHomePath, codexHomePath, configBaseDir });
 
         expect(result.candidates).toEqual([]);
+        // fork: file-placement
+        const configAlias = path.join(linkParent, "config-alias");
+        // fork: file-placement
+        yield* fileSystem.symlink(configBaseDir, configAlias);
+        // fork: file-placement
+        const throughAlias = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          configBaseDir: configAlias,
+        });
+        // fork: file-placement
+        expect(throughAlias.candidates).toEqual([]);
       }),
     );
 
