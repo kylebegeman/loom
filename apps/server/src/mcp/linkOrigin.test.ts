@@ -32,6 +32,10 @@ import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderRepl
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+// fork: file-placement
+import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
+import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -163,15 +167,21 @@ const layerTools = Layer.mergeAll(
   Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
   Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
   Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
+  // fork: file-placement -- folders lost namedProjectsRoot; agent clones run through the tracker.
   Layer.provide(
-    Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/p" }),
+    Layer.mergeAll(
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
+      Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+      Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+      Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
+    ),
   ),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
   Layer.provide(
     Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({
       cloneRepository: (input) =>
         Effect.succeed({
-          cwd: input.destinationPath,
+          cwd: input.destinationPath ?? "", // fork: file-placement
           remoteUrl: "https://github.com/pingdotgg/t3code.git",
           repository: null,
         }),

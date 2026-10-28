@@ -23,6 +23,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer"; // fork: project-lifecycle
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import type * as Scope from "effect/Scope";
@@ -271,8 +272,7 @@ export function autoSettlementSettingsKey(
   ]);
 }
 
-// fork: project-lifecycle -- server.ts starts the worker from layer, so make is not exported.
-const make = Effect.gen(function* () {
+export const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
@@ -739,3 +739,6 @@ const make = Effect.gen(function* () {
     ),
   } satisfies ThreadSettlementServiceV2["Service"];
 });
+
+// fork: project-lifecycle -- project cleanup shares the running worker's service.
+export const layer = Layer.effect(ThreadSettlementServiceV2, make);

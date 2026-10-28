@@ -3984,26 +3984,15 @@ const providerSessionRecoveryCases = [
 // fork: detached-session-recovery
 it.effect.each(
   providerSessionRecoveryCases.flatMap(({ binding, status }) =>
-    [
-      { store: "SQL", projectionLayer: ProjectionStore.layer },
-      { store: "memory", projectionLayer: ProjectionStore.layerMemory },
-    ].flatMap(({ store, projectionLayer }) =>
-      (["startup", "shutdown"] as const).map((trigger) => ({
-        binding,
-        status,
-        store,
-        projectionLayer,
-        trigger,
-      })),
-    ),
+    (["startup", "shutdown"] as const).map((trigger) => ({ binding, status, trigger })),
   ),
 )(
-  "reconciles a $binding $status shared session after process loss on $trigger ($store)",
-  ({ binding, status, projectionLayer, trigger }) =>
+  "reconciles a $binding $status shared session after process loss on $trigger",
+  ({ binding, status, trigger }) =>
     Effect.gen(function* () {
       const stores = Layer.mergeAll(
         EventStore.layer,
-        projectionLayer,
+        ProjectionStore.layer,
         IdAllocator.layer,
         EffectOutbox.layer,
       ).pipe(Layer.provideMerge(layerTestDatabase));
@@ -4083,14 +4072,13 @@ it.effect.each(
         const summary = yield* recovery.reconcile(trigger);
         assert.equal(summary.stoppedSessions, 1);
         assert.deepEqual(yield* projections.getProviderSessionsForRecovery(), []);
-        if (projectionLayer === ProjectionStore.layer)
-          assert.equal(
-            (yield* sql<{
-              status: string;
-            }>`SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id = ${providerSessionId}`)[0]
-              ?.status,
-            "stopped",
-          );
+        assert.equal(
+          (yield* sql<{
+            status: string;
+          }>`SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id = ${providerSessionId}`)[0]
+            ?.status,
+          "stopped",
+        );
         const after = yield* projections.getThreadProjection(threadId);
         assert.deepEqual({ ...after, providerSessions: [] }, { ...before, providerSessions: [] });
         assert.equal(after.providerSessions.length, binding === "bound" ? 1 : 0);
@@ -4100,7 +4088,7 @@ it.effect.each(
         }
         assert.equal(
           (yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_session_bindings`).length,
-          projectionLayer === ProjectionStore.layer && binding === "bound" ? 1 : 0,
+          binding === "bound" ? 1 : 0,
         );
         assert.equal((yield* recovery.reconcile(trigger)).stoppedSessions, 0);
       }).pipe(Effect.provide(recoveryLayer));

@@ -86,6 +86,8 @@ export const workspaceHandoffHandlers = McpToolAccess.toLayer(
               service.prepare({ ...input, ...modes }),
             ),
           ),
+        // The prepared thread does not carry a link origin, so linked callers are refused.
+        { refused: "take over a handed-off workspace in this environment" },
       ),
       loom_workspace_handoff_finish: McpToolAccess.writesThreads(
         (input) => [input.offer.sourceThreadId],

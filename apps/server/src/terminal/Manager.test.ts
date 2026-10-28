@@ -28,6 +28,7 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 import { expect, vi } from "vite-plus/test";
 
 import * as ProcessRunner from "../processRunner.ts";
+import * as ServerConfig from "../config.ts"; // fork: project-lifecycle
 // fork: project-lifecycle
 import {
   markManagedProjectCheckout,

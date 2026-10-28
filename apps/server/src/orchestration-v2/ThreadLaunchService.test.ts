@@ -3004,6 +3004,7 @@ it.effect(
               Layer.mergeAll(
                 Layer.mock(GitVcsDriver.GitVcsDriver)({}),
                 Layer.mock(SecretRequests.SecretRequests)({}),
+                Layer.mock(RemoteDelegation.RemoteDelegation)({}),
                 Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
               ),
             ),

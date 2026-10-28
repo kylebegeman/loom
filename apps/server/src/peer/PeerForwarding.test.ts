@@ -17,6 +17,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as Stream from "effect/Stream"; // fork: file-placement
+import * as Struct from "effect/Struct"; // fork: file-placement
 import { McpSchema, McpServer } from "effect/ai";
 
 import * as ServerConfig from "../config.ts";
@@ -24,6 +26,10 @@ import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
+// fork: file-placement
+import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
+import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
@@ -187,13 +193,27 @@ const boxProjects = (seen: Ref.Ref<Seen>) =>
       cloneRepository: (input) =>
         Ref.update(seen, (current) => ({ ...current, clones: [...current.clones, input] })).pipe(
           Effect.as({
-            cwd: input.destinationPath,
+            cwd: input.destinationPath ?? "", // fork: file-placement
             remoteUrl: "https://github.com/pingdotgg/t3code.git",
             repository: null,
           }),
         ),
     }),
   );
+
+// fork: file-placement -- agent clones start through the clone tracker; B's stand-in clones at once.
+const boxCloneTracker = Layer.unwrap(
+  Effect.gen(function* () {
+    const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    return Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({
+      start: (input) =>
+        repositories
+          .cloneRepository(Struct.omit(input, ["projectId", "title", "createdAt"]))
+          .pipe(Effect.map((cloned) => ({ ...cloned, projectId: input.projectId }))),
+      stream: Stream.empty,
+    });
+  }),
+);
 
 /**
  * The orchestrator and project toolkits on B's real `/mcp`, behind its real
@@ -213,8 +233,14 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       Layer.provide(boxThreads(seen, linkSession)),
       Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
       Layer.provide(boxLaunches(seen)),
+      // fork: file-placement -- folders lost namedProjectsRoot; agent clones run through the tracker.
       Layer.provide(
-        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
+        Layer.mergeAll(
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
+          boxCloneTracker,
+          Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+          Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
+        ),
       ),
       Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
       Layer.provide(boxProjects(seen)),
@@ -264,8 +290,14 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provideMerge(McpServer.McpServer.layer),
     Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
     Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
+    // fork: file-placement -- folders lost namedProjectsRoot; agent clones run through the tracker.
     Layer.provide(
-      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/projects" }),
+      Layer.mergeAll(
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
+        Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+        Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+        Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
+      ),
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({})),

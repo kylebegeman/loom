@@ -42,7 +42,6 @@ const effectFor = (
   attemptCount: 1,
   availableAt: "2026-10-01T00:00:00.000Z",
   leaseOwner: null,
-  leaseExpiresAt: null,
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
   completedAt: null,

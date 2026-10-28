@@ -214,6 +214,9 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
         Effect.provide(
           Layer.mergeAll(
             Layer.mock(ProjectService.ProjectService)({}),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getThreadShell: () => Effect.succeed(null),
+            }),
             Layer.mock(TerminalManager.TerminalManager)({
               open: (input) =>
                 Effect.sync(() => {

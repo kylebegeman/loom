@@ -1,12 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, EventId } from "@t3tools/contracts";
+import { EnvironmentId, EventId, type OrchestrationV2DomainEvent } from "@t3tools/contracts";
 import { type LibraryProject, type LibraryResolvedBinding } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import * as EventStore from "../../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { isWithheldError } from "../deleted-history/deletedHistory.ts";
@@ -57,20 +58,25 @@ const run = <A, E, R>(
     yield* runForkMigrationSet(AgentReceiptsMigrations);
     const archive = yield* archiveFor(project);
     const projections = yield* ProjectionStore.ProjectionStoreV2;
-    yield* projections.apply({
-      id: EventId.make("thread-created"),
-      threadId,
-      type: "thread.created",
-      payload: archive.projection.thread,
-      occurredAt: archive.projection.updatedAt,
-    });
-    yield* projections.apply({
-      id: EventId.make("message-created"),
-      threadId,
-      type: "message.updated",
-      payload: archive.projection.messages[0]!,
-      occurredAt: archive.projection.updatedAt,
-    });
+    const events: ReadonlyArray<OrchestrationV2DomainEvent> = [
+      {
+        id: EventId.make("thread-created"),
+        threadId,
+        type: "thread.created",
+        payload: archive.projection.thread,
+        occurredAt: archive.projection.updatedAt,
+      },
+      {
+        id: EventId.make("message-created"),
+        threadId,
+        type: "message.updated",
+        payload: archive.projection.messages[0]!,
+        occurredAt: archive.projection.updatedAt,
+      },
+    ];
+    // Snapshots read their sequence from the stored events, as the event sink commits them.
+    yield* (yield* EventStore.EventStoreV2).append({ events });
+    yield* Effect.forEach(events, projections.apply, { discard: true });
     const binding = yield* Ref.make<LibraryResolvedBinding | null>(resolved);
     const store = Layer.mock(WorkspaceStore.LibraryWorkspaceStore)({
       getBinding: () => Ref.get(binding),
@@ -91,8 +97,9 @@ const run = <A, E, R>(
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
-        ProjectionStore.layerMemory,
-        SqlitePersistence.layerMemory,
+        Layer.mergeAll(ProjectionStore.layer, EventStore.layer).pipe(
+          Layer.provideMerge(SqlitePersistence.layerMemory),
+        ),
         NodeServices.layer,
       ),
     ),
