@@ -30,6 +30,7 @@ export class LibraryAssetService extends Context.Service<
       readonly contentType: string;
       readonly bytes: Uint8Array;
     }) => Effect.Effect<LibraryAsset, LibraryError>;
+    readonly removeUnused: (digest: string) => Effect.Effect<void, LibraryError>;
     readonly find: (
       sourceEnvironmentId: EnvironmentId,
       attachmentId: string,
@@ -96,11 +97,13 @@ const make = Effect.gen(function* () {
           if (previous.digest !== digest || previous.bytes !== input.bytes.length)
             return yield* new LibraryError({ reason: "request-conflict" });
           yield* objects.get(digest);
+          yield* sql`DELETE FROM fork_library_erased_assets WHERE source_environment_id=${input.sourceEnvironmentId} AND source_attachment_id=${input.attachmentId}`;
           return previous;
         }
         yield* objects.put(digest, input.bytes, input.contentType);
         const createdAt = DateTime.formatIso(yield* DateTime.now);
         yield* sql`INSERT INTO fork_library_assets (source_environment_id,source_attachment_id,digest,filename,content_type,bytes,created_at) VALUES (${input.sourceEnvironmentId},${input.attachmentId},${digest},${input.filename},${input.contentType},${input.bytes.length},${createdAt})`;
+        yield* sql`DELETE FROM fork_library_erased_assets WHERE source_environment_id=${input.sourceEnvironmentId} AND source_attachment_id=${input.attachmentId}`;
         return {
           sourceEnvironmentId: input.sourceEnvironmentId,
           attachmentId: input.attachmentId,
@@ -120,6 +123,23 @@ const make = Effect.gen(function* () {
     mode: objects.mode,
     put,
     find,
+    removeUnused: Effect.fn("LibraryAssetService.removeUnused")(function (digest: string) {
+      return uploads
+        .withPermits(1)(
+          Effect.gen(function* () {
+            if (
+              (yield* sql`SELECT 1 FROM fork_library_assets WHERE digest=${digest} LIMIT 1`).length
+            )
+              return;
+            yield* objects.remove(digest);
+          }),
+        )
+        .pipe(
+          Effect.mapError((cause) =>
+            isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause }),
+          ),
+        );
+    }),
     read: Effect.fn("LibraryAssetService.read")(function (asset) {
       return objects.get(asset.digest);
     }),

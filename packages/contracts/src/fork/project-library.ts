@@ -623,7 +623,26 @@ export const LibraryReplicationStatusRequest = Schema.Struct({
   threadIds: Schema.optional(Schema.Array(ThreadId).check(Schema.isMaxLength(100))),
 });
 export type LibraryReplicationStatusRequest = typeof LibraryReplicationStatusRequest.Type;
+export const LIBRARY_DELETED_FEATURE = "library-deleted";
+export const LibraryDeletedPreferences = Schema.Struct({
+  retentionDays: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
+});
+export type LibraryDeletedPreferences = typeof LibraryDeletedPreferences.Type;
+export const LibrarySetDeletedPreferences = Schema.Struct({
+  requestId: LibraryRequestId,
+  ...LibraryDeletedPreferences.fields,
+});
+export type LibrarySetDeletedPreferences = typeof LibrarySetDeletedPreferences.Type;
+export const LibraryEraseConversation = Schema.Struct({
+  requestId: LibraryRequestId,
+  id: LibraryId,
+});
+export type LibraryEraseConversation = typeof LibraryEraseConversation.Type;
+
 export const LIBRARY_WS_METHODS = {
+  deletedPreferences: "loom.library.deleted-preferences",
+  setDeletedPreferences: "loom.library.set-deleted-preferences",
+  eraseConversation: "loom.library.erase-conversation",
   subscribeRefreshes: "loom.library.subscribe-refreshes",
   replicationStatus: "loom.library.replication-status",
   flushHistory: "loom.library.flush-history",
@@ -662,6 +681,21 @@ export const LIBRARY_WS_METHODS = {
 } as const;
 const error = Schema.Union([LibraryError, EnvironmentAuthorizationError]);
 export const ProjectLibraryRpcGroup = RpcGroup.make(
+  Rpc.make(LIBRARY_WS_METHODS.deletedPreferences, {
+    payload: Schema.Struct({}),
+    success: LibraryDeletedPreferences,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.setDeletedPreferences, {
+    payload: LibrarySetDeletedPreferences,
+    success: LibraryDeletedPreferences,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.eraseConversation, {
+    payload: LibraryEraseConversation,
+    success: Schema.Struct({ id: LibraryId }),
+    error,
+  }),
   Rpc.make(LIBRARY_WS_METHODS.subscribeRefreshes, {
     payload: Schema.Struct({}),
     success: NonNegativeInt,
@@ -701,6 +735,8 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
   }),
   Rpc.make(LIBRARY_WS_METHODS.threadIndex, {
     payload: Schema.Struct({
+      projectId: Schema.optional(LibraryId),
+      deleted: Schema.optional(Schema.Boolean),
       offset: Schema.optional(NonNegativeInt),
       limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
     }),

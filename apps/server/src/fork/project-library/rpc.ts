@@ -55,6 +55,11 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
   });
 
   return {
+    [L.deletedPreferences]: () => auth.effect(L.deletedPreferences, library.deletedPreferences),
+    [L.setDeletedPreferences]: (input: Parameters<typeof library.setDeletedPreferences>[0]) =>
+      auth.effect(L.setDeletedPreferences, library.setDeletedPreferences(input, session)),
+    [L.eraseConversation]: (input: Parameters<typeof library.eraseConversation>[0]) =>
+      auth.effect(L.eraseConversation, library.eraseConversation(input, session)),
     [L.subscribeRefreshes]: () => auth.stream(L.subscribeRefreshes, library.subscribeRefreshes),
     [L.replicationStatus]: (input: LibraryReplicationStatusRequest) =>
       auth.effect(L.replicationStatus, replication.statusFor(input.threadIds)),

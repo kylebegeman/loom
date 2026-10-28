@@ -163,5 +163,14 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE fork_library_workflow_receipts (id TEXT PRIMARY KEY, request_json TEXT NOT NULL, result_json TEXT NOT NULL)`;
       }),
     ],
+    [
+      15,
+      "DeletedConversationRetention",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_library_erased_threads (library_id TEXT PRIMARY KEY, source_environment_id TEXT NOT NULL, source_thread_id TEXT NOT NULL, erased_at TEXT NOT NULL, UNIQUE(source_environment_id,source_thread_id))`;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_library_erased_assets (source_environment_id TEXT NOT NULL, source_attachment_id TEXT NOT NULL, digest TEXT NOT NULL, pending INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(source_environment_id,source_attachment_id))`;
+      }),
+    ],
   ],
 };

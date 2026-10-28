@@ -21,6 +21,7 @@ const catalog = LibraryService.layer.pipe(
   Layer.provide(
     Layer.succeed(LibraryAssetService, {
       mode: "local",
+      removeUnused: () => Effect.void,
       find: () => Effect.fail(new LibraryError({ reason: "not-found" })),
       read: () => Effect.fail(new LibraryError({ reason: "not-found" })),
       put: () => Effect.fail(new LibraryError({ reason: "io" })),
