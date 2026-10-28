@@ -1,3 +1,4 @@
+import { forkSettingsSearchTerms } from "../../fork/connections/settingsSearch"; // fork: ext-settings
 import { foldSearchQuery, rankSearchItems, scoreSearchTerms } from "@t3tools/shared/paletteSearch";
 
 import type { SettingsPageTarget } from "./components/settings-page-targets";
@@ -127,7 +128,13 @@ export function filterSettingsSections<
         rankSearchItems(rows, ({ row, section }, options) =>
           scoreSearchTerms(
             normalizedQuery,
-            [row.label, ...(section ? [section] : []), ...(termsById.get(row.id) ?? [])],
+            [
+              // fork: ext-settings
+              ...forkSettingsSearchTerms(row.id),
+              row.label,
+              ...(section ? [section] : []),
+              ...(termsById.get(row.id) ?? []),
+            ],
             options,
           ),
         ).map(({ item }) => item.row),

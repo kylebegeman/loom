@@ -17,9 +17,9 @@ export function forkSettingsTarget(id: string): { to: ForkSettingsHome; hash: st
   return { to: topic.home, hash: `${TOPIC_ANCHOR_PREFIX}${topic.id}` };
 }
 
-/** One settings search result per topic, so sidebar search and the command palette find them. */
+/** Settings topics and embedded fork sections, shared by sidebar and palette search. */
 export function forkSettingsSearchItems(): ReadonlyArray<SettingsSearchItem> {
-  return FORK_SETTINGS_SECTIONS.map((section) => {
+  const topics = FORK_SETTINGS_SECTIONS.map((section) => {
     const { to, hash } = forkSettingsTarget(section.id);
     return {
       id: hash,
@@ -32,6 +32,44 @@ export function forkSettingsSearchItems(): ReadonlyArray<SettingsSearchItem> {
       ...(section.scope === "project" ? { scope: "checkout" as const } : {}),
     };
   });
+  return [
+    ...topics,
+    {
+      id: "published-pages",
+      targetId: "published-pages",
+      title: "Published pages",
+      to: "/settings/access",
+      searchTerms: ["pages published library rendered dossier"],
+    },
+    {
+      id: "fleet-updates",
+      targetId: "fleet-updates",
+      title: "Fleet updates",
+      to: "/settings/connections",
+      searchTerms: ["updates versions upgrade all computers machines"],
+    },
+    {
+      id: "switchboard",
+      targetId: "switchboard",
+      title: "Route through Switchboard",
+      to: "/settings/providers",
+      searchTerms: ["switchboard routing load balance Claude Codex accounts"],
+    },
+    {
+      id: "library-push",
+      targetId: "library-push",
+      title: "Library push notifications",
+      to: "/settings/connections",
+      searchTerms: ["push notifications phone iPhone alerts test"],
+    },
+    {
+      id: "library-computers",
+      targetId: "library-computers",
+      title: "Computers from your Library",
+      to: "/settings/connections",
+      searchTerms: ["library directory computers machines discover saved"],
+    },
+  ];
 }
 
 /**

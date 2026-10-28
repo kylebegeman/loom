@@ -32,7 +32,7 @@ its more menu has **Add trigger**, **Copy link**, **Archive** and **Delete**.
 **Computers** at the top of the page opens a sheet for running bots across your computers; see
 [Bots on your other computers](#bots-on-your-other-computers).
 
-On mobile, open **Bots** above the thread list or in **Settings > Automations**. Choose the
+On mobile, open **Bots** above the thread list or in **Settings > Agents > Bots**. Choose the
 computer that owns your bots. Open a bot to edit or run it; its management actions include
 versions and replay, triggers, batches, usage, sharing and local Vault bindings. The Bots tools
 menu also opens pipelines and the inbox. A thread's menu offers **Run bot** and **Create bot

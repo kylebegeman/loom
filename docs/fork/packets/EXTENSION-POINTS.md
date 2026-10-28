@@ -1311,6 +1311,8 @@ command workers on Computers, and topics with no upstream home go on the fork's 
 
 ### Registering a section
 
+Native settings search adds names for existing pages through `apps/mobile/src/fork/connections/settingsSearch.ts`, called by the marked `settings-search.ts` seam.
+
 Add an entry to `FORK_SETTINGS_SECTIONS` whose `home` is the page a user would look on first; use
 `/settings/tools` only when no upstream page fits. A new upstream home needs `ForkSettingsTopics`
 on that page and a `ForkSettingsHome` member. Link to a topic with `forkSettingsTarget(id)`, never

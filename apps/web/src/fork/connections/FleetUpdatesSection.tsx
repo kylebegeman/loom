@@ -48,6 +48,7 @@ export function FleetUpdatesSection() {
 
   return (
     <SettingsSection
+      id="fleet-updates"
       title="Fleet updates"
       headerAction={
         <Button

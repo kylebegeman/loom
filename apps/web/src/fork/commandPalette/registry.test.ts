@@ -7,8 +7,13 @@ import { FORK_COMMAND_PALETTE_SOURCES, forkCommandPaletteItems } from "./registr
 
 // Every source with its feature on and a thread open, so each lists all of its items.
 const context = {
+  libraryPush: true,
   activeThreadRef: scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1")),
-  loomFeatures: ["core", ...FORK_COMMAND_PALETTE_SOURCES.map((source) => source.id)],
+  loomFeatures: [
+    "core",
+    "preview-pages",
+    ...FORK_COMMAND_PALETTE_SOURCES.map((source) => source.id),
+  ],
 };
 
 describe("fork command palette sources", () => {

@@ -115,10 +115,10 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
   {
     id: "code-graph",
     scope: "computer",
-    title: "Code graphs",
+    title: "Code map",
     description: "Configure code indexing and manage project graphs.",
     home: "/settings/tools",
-    keywords: "graphify index query search nodes cache command agent graph",
+    keywords: "code map graphify index query search nodes cache command agent graph",
   },
   {
     id: "pcb-preview",

@@ -213,6 +213,9 @@ turn it on.
 
 ## Notifications from your Library
 
+Use **Send test notification** in the command palette to open your Library's
+notification settings, then choose the registered iPhone to test.
+
 Your Library can send notifications to Loom on your iPhone without a Connect
 account. With agent alerts on, it tells your iPhone when an agent needs your
 approval or an answer, asks for Vault access, fails, reaches a usage limit or
@@ -307,5 +310,6 @@ computer does not move its projects or conversations automatically.
 The desktop sidebar's update control applies to that computer and its local
 backends. Open **Settings > Computers > Fleet updates** to compare runtime
 versions and provider updates across computers. **Review updates** shows the
-planned updates, skipped computers, and restart impact before you run them.
+planned updates, skipped computers, and restart impact before you run them. The
+command palette's **Review updates** opens this section.
 Offline computers retain their last known version until they reconnect.
