@@ -21,8 +21,9 @@ const escape = (value: string) =>
 export function signB2ObjectUrl(
   config: B2SigningConfig,
   input: {
-    readonly method: "GET" | "PUT";
+    readonly method: "GET" | "PUT" | "DELETE";
     readonly objectKey: string;
+    readonly query?: Readonly<Record<string, string>>;
     readonly now: string;
     readonly expiresInSeconds: number;
   },
@@ -41,7 +42,12 @@ export function signB2ObjectUrl(
     !config.bucket ||
     !config.keyId ||
     !config.applicationKey ||
-    input.objectKey.split("/").some((part) => part === "." || part === ".." || part.length === 0)
+    (input.objectKey !== "" &&
+      input.objectKey
+        .split("/")
+        .some((part) => part === "." || part === ".." || part.length === 0)) ||
+    (input.objectKey === "" && (input.method !== "GET" || input.query?.versions === undefined)) ||
+    Object.keys(input.query ?? {}).some((key) => key.startsWith("X-Amz-"))
   )
     throw new Error("Invalid object storage signing configuration");
   const timestamp = input.now.replace(/[:-]|\.\d{3}/g, "");
@@ -54,6 +60,7 @@ export function signB2ObjectUrl(
     ["X-Amz-Date", timestamp],
     ["X-Amz-Expires", String(input.expiresInSeconds)],
     ["X-Amz-SignedHeaders", "host"],
+    ...Object.entries(input.query ?? {}),
   ]
     .map(([key, value]) => `${escape(key!)}=${escape(value!)}`)
     .sort()
