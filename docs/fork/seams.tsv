@@ -1524,3 +1524,5 @@ evals/mcp-tool-use/run.ts	bots-triggers	2
 apps/mobile/src/features/settings/settings-search.ts	ext-settings	2
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	project-lifecycle	1
 apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1
+evals/mcp-tool-use/run.ts	vault-core	2
+evals/mcp-tool-use/run.ts	vault-references	2

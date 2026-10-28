@@ -60,7 +60,7 @@ export const VaultProfileToolkit = Toolkit.make(
   }),
   Tool.make("loom_vault_references_search", {
     description:
-      "Search safe Vault references by label or item ID in this environment. Threads see metadata allowed by owner-trusted or restricted policy; values are never returned. When owner access does not cover this turn, the search fails with the cause and repair instead of finding nothing. Results scan bounded pages; continue with nextCursor even if a page has no matches. Set kind:null for any kind, includeArchived:false and cursor:null to start.",
+      "Search safe Vault references by label or item ID in this environment. Threads see metadata allowed by owner-trusted or restricted policy; values are never returned. When owner access does not cover this turn, the search fails with the cause and repair instead of finding nothing. Query and kind filter metadata before paging; continue with nextCursor even if inspect policy leaves a page with no matches. Set kind:null for any kind, includeArchived:false and cursor:null to start.",
     parameters: VaultReferenceSearch,
     success: VaultReferencePage,
     failure,

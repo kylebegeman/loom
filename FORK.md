@@ -202,6 +202,8 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
 | `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
 | `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                    | `vault-core`          | Use the real Vault item query tools in agent evals.                          |
+| `evals/mcp-tool-use/run.ts`                                    | `vault-references`    | Include saved-reference tools for private-request guidance.                  |
 | `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
 | `evals/mcp-tool-use/run.ts`                                    | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
 | `evals/mcp-tool-use/run.ts`                                    | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |

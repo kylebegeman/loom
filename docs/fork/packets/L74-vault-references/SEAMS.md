@@ -36,3 +36,5 @@ optional `ext-turn-input` contributor proposal because a required check cannot b
 `withVaultCompletionOutput` around Command.run. The fork helper redirects this completion
 command's parse/help Console output to stderr; its successful canonical candidates write stdout
 explicitly. Other commands retain their existing output behavior. FORK.md and seams.tsv track it.
+
+`evals/mcp-tool-use/run.ts` includes the real reference toolkit (`vault-references`) for model evaluation.
