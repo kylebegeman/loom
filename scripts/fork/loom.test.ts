@@ -276,6 +276,12 @@ fi
     { mode: 0o755 },
   );
   NodeFS.writeFileSync(log, "");
+  const desktopScripts = NodePath.join(root, "apps", "desktop", "scripts");
+  NodeFS.mkdirSync(desktopScripts, { recursive: true });
+  NodeFS.writeFileSync(
+    NodePath.join(desktopScripts, "ensure-electron-runtime.mjs"),
+    'import fs from "node:fs"; fs.appendFileSync(process.env.LOOM_TEST_LOG, "electron-runtime\\n");',
+  );
   return { root, bin, log };
 }
 
@@ -434,6 +440,7 @@ it("runs lint after installation, then builds, boots and typechecks, and the tes
     ["web-boot"],
     ["exec", "vp", "run", "typecheck"],
     ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
+    ["electron-runtime"],
     [
       "exec",
       "vp",
@@ -486,6 +493,7 @@ it("runs every check after a failing lint and lists the failures at the end", ()
     "web-boot",
     "vp",
     "tsc",
+    "electron-runtime",
     "vp",
     "vp",
     "playwright",
@@ -512,6 +520,7 @@ it("boots no stale web client when the build fails, and still runs the rest", ()
     "vp build",
     "vp run",
     "tsc --noEmit",
+    "electron-runtime",
     "vp test",
     "vp test",
     "playwright install",
