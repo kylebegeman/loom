@@ -99,26 +99,31 @@ Authentication connectors and general credential delivery remain selected work.
 
 ## Review temporary access requests
 
-Open **Settings > Vault > Access > Temporary access requests** on the computer whose credentials
-will be used. The same inbox is available in mobile Vault access settings. Refresh to view
-requests, inspect the thread, record, action and destination scope, then approve for five or
-fifteen minutes, deny, or cancel. A destination shown as unrestricted permits any destination
-for the selected action. Only a connection with access-management permission can decide.
+Temporary access requests appear in the conversation that asked, on web, desktop and mobile.
+Review the item, action and destination, then approve for five or fifteen minutes, deny, or
+cancel. The card updates when another device decides. Approved requests show when access ends
+and offer Revoke. A destination shown as unrestricted permits any destination for the selected
+action. Only a connection with access-management permission can decide.
+
+You can also review requests in **Settings > Vault > Access > Temporary access requests** on
+the computer whose credentials will be used, or its mobile Vault access settings.
 
 Approvals expire automatically at the server. Use **Revoke approval** to revoke active or
 expired approvals visibly. Other independent grants may still permit access. Pending requests
 expire after ten minutes; ask again with a new request if needed. If a decision response is
 uncertain, retry the same decision or refresh its status before deciding again.
 
-Agents request access using the Vault access request tool and can inspect or cancel their own
+Agents request access using the Vault access request tool. With `wait:true`, the call waits for
+a decision until the original ten-minute deadline. Agents can also inspect or cancel their own
 pending request with its status/cancellation tools. A waiting-operation reference is linked to
 the server's current run. If that run changes, request new access for the new work. An approval
 never resumes a command or consumes a one-time permission; recheck access before explicitly
 retrying work. Queue entries and retry evidence last 24 hours, with a 128-entry cap. Use fresh
 request/operation IDs after that window. Encrypted backend history follows its separate retention
 policy. When your Library sends agent alerts, a new request also alerts your iPhone, and tapping
-it opens that computer's settings, where Vault access lists the request; there is no email or
-text message, and work never restarts automatically. Approval does not verify an external login
+it opens the requesting conversation after the Library is updated. Older Libraries open that
+computer's settings instead. There is no email or text message, and work never restarts
+automatically. Approval does not verify an external login
 or override runner permissions. Older servers without approval support do not show this inbox.
 
 ## Import development records

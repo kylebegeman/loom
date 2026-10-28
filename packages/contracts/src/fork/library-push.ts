@@ -31,7 +31,7 @@ const LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH = 256;
  * `limited` is a run that failed on a usage limit. `vault-approval` is a Vault access request from
  * the thread waiting for a decision; a Library from before it answers 400, so that alert is lost.
  */
-export const LIBRARY_PUSH_THREAD_ACTIVITY_KINDS = [
+const LIBRARY_PUSH_THREAD_ACTIVITY_KINDS = [
   "approval",
   "input",
   "failed",
