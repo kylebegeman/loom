@@ -60,12 +60,19 @@ function cancelSignIn(httpBaseUrl: string) {
 }
 
 /**
- * Computers the Library's directory lists, including connections saved on this device. Hidden until a Library
- * is chosen. The list reads when the section opens and on Refresh, never on a timer.
+ * Computers the Library's directory lists, including connections saved on this device.
+ * The list reads when the section opens and on Refresh, never on a timer.
  */
 export function LibraryComputers({ onPair }: { readonly onPair: PairLibraryComputer }) {
   const authority = useLibraryAuthority();
-  if (authority.authorityId === null) return null;
+  if (authority.authorityId === null)
+    return (
+      <SettingsSection id="library-computers" title="Computers from your Library">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+          Connect your Library above to find its computers and manage remembered connections.
+        </p>
+      </SettingsSection>
+    );
   const serverConfig = authority.environment?.serverConfig ?? null;
   return (
     <LibraryComputersSection

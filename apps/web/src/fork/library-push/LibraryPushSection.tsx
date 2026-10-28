@@ -74,7 +74,14 @@ function CopyDeviceId({ id, label }: { id: LibraryPushDeviceRowId; label: string
  */
 export function LibraryPushSection() {
   const authority = useLibraryAuthority();
-  if (authority.authorityId === null) return null;
+  if (authority.authorityId === null)
+    return (
+      <SettingsSection id="library-push" title="Push notifications">
+        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
+          Connect your Library above to manage notifications for your phone.
+        </p>
+      </SettingsSection>
+    );
   const capabilities = authority.environment?.serverConfig?.environment.capabilities ?? null;
   return (
     <LibraryPushBody
