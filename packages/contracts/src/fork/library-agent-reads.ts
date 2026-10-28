@@ -6,6 +6,7 @@ export const LibraryProjectsRead = Schema.Struct({
   includeArchived: Schema.optional(Schema.Boolean),
 });
 export const LibraryConversationsRead = Schema.Struct({
+  deleted: Schema.optional(Schema.Boolean),
   projectId: Schema.optional(LibraryId),
   offset: Schema.optional(NonNegativeInt),
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 200 }))),

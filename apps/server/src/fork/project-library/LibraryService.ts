@@ -1,5 +1,11 @@
 import {
   LibraryComputer,
+  type LibraryDeletedPreferences,
+  LibraryDeletedPreferences as LibraryDeletedPreferencesSchema,
+  type LibrarySetDeletedPreferences,
+  type LibraryEraseConversation,
+  LibraryEraseConversation as LibraryEraseConversationSchema,
+  LibrarySetDeletedPreferences as LibrarySetDeletedPreferencesSchema,
   LibraryDocumentsPublishRequest,
   LibraryDocumentsPublishResult,
   LibraryDecisionsSearchInput,
@@ -43,6 +49,7 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   AuthLibraryRecoveryReadScope,
+  AuthSettingsWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   type EnvironmentId,
@@ -62,6 +69,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryStore from "./LibraryStore.ts";
+import { makeLibraryErasure } from "./LibraryErasure.ts";
 import * as LibraryLocalCatalog from "./LibraryLocalCatalog.ts";
 import { applyHistoryDelta } from "./LibraryHistoryDelta.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
@@ -93,6 +101,16 @@ import {
 export class LibraryService extends Context.Service<
   LibraryService,
   {
+    readonly deletedPreferences: Effect.Effect<LibraryDeletedPreferences, LibraryError>;
+    readonly setDeletedPreferences: (
+      input: LibrarySetDeletedPreferences,
+      session: Pick<AuthenticatedSession, "subject" | "scopes">,
+    ) => Effect.Effect<LibraryDeletedPreferences, LibraryError>;
+    readonly eraseConversation: (
+      input: LibraryEraseConversation,
+      session: Pick<AuthenticatedSession, "subject" | "scopes">,
+    ) => Effect.Effect<{ id: string }, LibraryError>;
+    readonly eraseExpired: Effect.Effect<number, LibraryError>;
     readonly publishDocuments: (
       input: LibraryDocumentsPublishRequest,
     ) => Effect.Effect<LibraryDocumentsPublishResult, LibraryError>;
@@ -157,6 +175,7 @@ export class LibraryService extends Context.Service<
       projectId?: string | undefined;
       offset?: number | undefined;
       limit?: number | undefined;
+      deleted?: boolean | undefined;
     }) => Effect.Effect<LibraryThreadIndex, LibraryError>;
     /**
      * The agent read of the same index. It leaves out deleted conversations, and those of archived
@@ -204,6 +223,10 @@ function compileCodec<A>(codec: Schema.Codec<A, string>) {
   return { decode: Schema.decodeEffect(codec), encode: Schema.encodeEffect(codec) };
 }
 const codecs = {
+  deletedPreferences: compileCodec(Schema.fromJsonString(LibraryDeletedPreferencesSchema)),
+  setDeletedPreferences: compileCodec(Schema.fromJsonString(LibrarySetDeletedPreferencesSchema)),
+  eraseConversation: compileCodec(Schema.fromJsonString(LibraryEraseConversationSchema)),
+  erasedConversation: compileCodec(Schema.fromJsonString(Schema.Struct({ id: Schema.String }))),
   computer: compileCodec(Schema.fromJsonString(LibraryComputer)),
   project: compileCodec(Schema.fromJsonString(LibraryProject)),
   copy: compileCodec(Schema.fromJsonString(LibraryWorkingCopy)),
@@ -277,6 +300,7 @@ const make = Effect.gen(function* () {
   const historySearch = yield* makeLibrarySearch;
   const documents = yield* makeLibraryDocuments;
   if (isAuthority) yield* ServerActivation.forkParked(documents.backfill);
+  const erasure = yield* makeLibraryErasure;
   const lock = yield* Semaphore.make(1);
   const refreshes = yield* SubscriptionRef.make(0);
   if (isAuthority && historySearch.semantic !== null)
@@ -504,6 +528,12 @@ const make = Effect.gen(function* () {
     prepared?: Effect.Effect<string, LibraryError>,
   ) {
     const archiveDigest = prepared ?? versionDigest(archive);
+    if (yield* erasure.isErased(archive.summary.environmentId, archive.summary.threadId))
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: "This conversation was permanently erased from the Library.",
+      });
+    yield* erasure.checkAssets(archive);
     if (archive.window !== undefined) return yield* invalid();
     const { summary, projection } = archive;
     if (
@@ -1042,23 +1072,28 @@ const make = Effect.gen(function* () {
           }
           if (entry.sequence !== cursor + 1)
             return yield* new LibraryError({ reason: "sequence-gap" });
-          const delta = entry.delta;
-          const thread =
-            delta === undefined
-              ? entry.thread
-              : yield* Effect.gen(function* () {
-                  const previous = yield* store.thread(
-                    input.sourceEnvironmentId,
-                    entry.thread.summary.threadId,
-                  );
-                  if (previous === null) return yield* new LibraryError({ reason: "sequence-gap" });
-                  return yield* applyHistoryDelta(
-                    yield* decode(codecs.archive, previous),
-                    entry.thread,
-                    delta,
-                  );
-                });
-          yield* saveThread(thread, input.sourceEnvironmentId, version);
+          if (
+            !(yield* erasure.isErased(input.sourceEnvironmentId, entry.thread.summary.threadId))
+          ) {
+            const delta = entry.delta;
+            const thread =
+              delta === undefined
+                ? entry.thread
+                : yield* Effect.gen(function* () {
+                    const previous = yield* store.thread(
+                      input.sourceEnvironmentId,
+                      entry.thread.summary.threadId,
+                    );
+                    if (previous === null)
+                      return yield* new LibraryError({ reason: "sequence-gap" });
+                    return yield* applyHistoryDelta(
+                      yield* decode(codecs.archive, previous),
+                      entry.thread,
+                      delta,
+                    );
+                  });
+            yield* saveThread(thread, input.sourceEnvironmentId, version);
+          }
           yield* store.putIngestedDigest(
             input.sourceEnvironmentId,
             input.journalId,
@@ -1259,7 +1294,51 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError(io)),
     );
   };
+  const requireOwner = (session: Pick<AuthenticatedSession, "subject" | "scopes">) =>
+    session.scopes.includes(AuthSettingsWriteScope) &&
+    session.subject !== "mcp-client" &&
+    !session.subject.startsWith("loom-host:")
+      ? Effect.void
+      : Effect.fail(
+          new LibraryError({
+            reason: "blocked",
+            detail: "Only the Library owner can erase conversations or change their retention.",
+          }),
+        );
   return LibraryService.of({
+    deletedPreferences: catalogRead(erasure.preferences),
+    setDeletedPreferences: Effect.fn("LibraryService.setDeletedPreferences")(
+      function* (input, session) {
+        yield* requireOwner(session);
+        return yield* mutation(
+          "deleted-preferences",
+          input.requestId,
+          encode(codecs.setDeletedPreferences, input),
+          codecs.deletedPreferences,
+          erasure.setPreferences(input),
+        );
+      },
+    ),
+    eraseConversation: Effect.fn("LibraryService.eraseConversation")(function* (input, session) {
+      yield* requireOwner(session);
+      const result = yield* mutation(
+        "erase-conversation",
+        input.requestId,
+        encode(codecs.eraseConversation, input),
+        codecs.erasedConversation,
+        erasure.erase(input.id),
+      );
+      yield* erasure.cleanup();
+      return result;
+    }),
+    eraseExpired: Effect.gen(function* () {
+      if (!isAuthority) return 0;
+      const expired = yield* erasure.expired;
+      for (const entry of expired) yield* transact(erasure.erase(entry.id));
+      yield* erasure.cleanup();
+      if (expired.length) yield* SubscriptionRef.update(refreshes, (revision) => revision + 1);
+      return expired.length;
+    }),
     publishDocuments: Effect.fn("LibraryService.publishDocuments")(function (input) {
       return transact(
         Effect.gen(function* () {
@@ -1368,11 +1447,16 @@ const make = Effect.gen(function* () {
       );
     }),
     threadIndex: Effect.fn("LibraryService.threadIndex")(function (input) {
-      return threadPage(input, { omitDeleted: false, omitArchivedProjects: false });
+      return threadPage(input, {
+        omitDeleted: input.deleted === false,
+        onlyDeleted: input.deleted === true,
+        omitArchivedProjects: false,
+      });
     }),
     conversations: Effect.fn("LibraryService.conversations")(function (input) {
       return threadPage(input, {
-        omitDeleted: true,
+        omitDeleted: input.deleted !== true,
+        onlyDeleted: input.deleted === true,
         omitArchivedProjects: input.projectId === undefined && input.includeArchived !== true,
       });
     }),

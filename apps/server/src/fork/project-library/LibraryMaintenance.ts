@@ -13,6 +13,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as LibraryStore from "./LibraryStore.ts";
+import * as Library from "./LibraryService.ts";
+import * as Schedule from "effect/Schedule";
+import * as ServerActivation from "../../serverActivation.ts";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { LibraryAsset } from "./assets/LibraryAssetService.ts";
@@ -291,6 +294,24 @@ const make = Effect.gen(function* () {
     (effect) => sql.withTransaction(effect),
     Effect.mapError(mapError),
   );
-  return LibraryMaintenance.of({ manifest, verifyAssets, rotateAuthorityEpoch });
+  return LibraryMaintenance.of({
+    manifest,
+    verifyAssets,
+    rotateAuthorityEpoch,
+  });
 });
 export const layer = Layer.effect(LibraryMaintenance, make).pipe(Layer.provide(LibraryStore.layer));
+
+export const retentionLayer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const library = yield* Library.LibraryService;
+    yield* ServerActivation.forkParked(
+      library.eraseExpired.pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Library conversation cleanup will retry", { reason: cause.reason }),
+        ),
+        Effect.repeat(Schedule.spaced("1 hour")),
+      ),
+    );
+  }),
+);

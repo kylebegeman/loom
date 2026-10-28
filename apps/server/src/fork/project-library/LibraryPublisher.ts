@@ -574,6 +574,15 @@ const make = Effect.gen(function* () {
         HttpClientRequest.post(endpoint("/api/loom/library/history/ingest")),
         body,
       ),
+    ).pipe(
+      Effect.tapError((error) =>
+        error.reason === "archive-unverified"
+          ? sql`DELETE FROM fork_library_source_assets`.pipe(
+              Effect.asVoid,
+              Effect.mapError(() => new LibraryError({ reason: "io" })),
+            )
+          : Effect.void,
+      ),
     );
     return yield* response.json.pipe(
       Effect.flatMap(decodeIngest),

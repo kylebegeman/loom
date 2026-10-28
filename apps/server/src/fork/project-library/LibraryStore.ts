@@ -26,6 +26,7 @@ export class LibraryStoreError extends Schema.TaggedError<LibraryStoreError>()(
 /** Which saved conversations a page leaves out. Catalog reads keep them all. */
 export interface ConversationFilter {
   readonly omitDeleted: boolean;
+  readonly onlyDeleted?: boolean;
   readonly omitArchivedProjects: boolean;
 }
 const EVERY_CONVERSATION: ConversationFilter = { omitDeleted: false, omitArchivedProjects: false };
@@ -151,6 +152,7 @@ export class LibraryStore extends Context.Service<
       sourceSequence: number,
       digest: string,
     ) => Effect.Effect<void, LibraryStoreError>;
+    readonly eraseThread: (id: string) => Effect.Effect<void, LibraryStoreError>;
     readonly importProof: (requestId: string) => Effect.Effect<string | null, LibraryStoreError>;
     readonly putImportProof: (
       requestId: string,
@@ -253,6 +255,7 @@ const make = Effect.gen(function* () {
       ...(filter.omitDeleted
         ? [sql`COALESCE(json_extract(summary_json, '$.deleted'), 0) = 0`]
         : []),
+      ...(filter.onlyDeleted ? [sql`json_extract(summary_json, '$.deleted') = 1`] : []),
       ...(filter.omitArchivedProjects ? [outsideArchivedProjects] : []),
     ]);
   const unpack = Effect.fn("LibraryStore.unpack")(function* (row: PackedRow | null) {
@@ -596,6 +599,22 @@ const make = Effect.gen(function* () {
         }),
       );
     }),
+    eraseThread: Effect.fnUntraced(
+      function* (id) {
+        const pointers = yield* sql<{
+          payload_json: string;
+        }>`SELECT payload_json FROM fork_library_threads WHERE library_id=${id} UNION SELECT payload_json FROM fork_library_thread_versions WHERE library_id=${id}`;
+        yield* sql`DELETE FROM fork_library_search_items WHERE library_id=${id}`;
+        yield* sql`DELETE FROM fork_library_history_items WHERE library_id=${id}`;
+        yield* sql`DELETE FROM fork_library_history_headers WHERE library_id=${id}`;
+        yield* sql`DELETE FROM fork_library_thread_versions WHERE library_id=${id}`;
+        yield* sql`DELETE FROM fork_library_threads WHERE library_id=${id}`;
+        yield* sql`DELETE FROM fork_library_commands WHERE operation='register-thread' AND json_extract(result_json, '$.id')=${id}`;
+        yield* sql`DELETE FROM fork_library_events WHERE json_extract(payload_json, '$.conversation.id')=${id}`;
+        for (const pointer of pointers) yield* release(pointer.payload_json, id);
+      },
+      Effect.mapError((cause) => new LibraryStoreError({ operation: "erase", cause })),
+    ),
     importProof: Effect.fnUntraced(function* (requestId) {
       return yield* run(
         "import-proof",
@@ -606,11 +625,17 @@ const make = Effect.gen(function* () {
       return yield* run(
         "save-history",
         Effect.gen(function* () {
+          const previous = first(
+            yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM fork_library_import_proofs WHERE request_id=${requestId}`,
+          )?.payload_json;
           const packed = yield* pack(payload);
-          return yield* run(
+          yield* run(
             "put-import-proof",
-            sql`INSERT INTO fork_library_import_proofs (request_id, payload_json) VALUES (${requestId}, ${packed})`,
-          ).pipe(Effect.asVoid);
+            sql`INSERT INTO fork_library_import_proofs (request_id, payload_json) VALUES (${requestId}, ${packed}) ON CONFLICT(request_id) DO UPDATE SET payload_json=excluded.payload_json`,
+          );
+          if (previous !== undefined && previous !== packed) yield* release(previous, "");
         }),
       );
     }),
