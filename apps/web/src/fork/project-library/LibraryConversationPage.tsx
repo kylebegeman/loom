@@ -149,20 +149,22 @@ export function LibraryConversationPage({
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <EraseLibraryConversation thread={archive.summary} />
-          <SuggestBriefUpdates
-            summary={archive.summary}
-            projectArchived={library.project.data?.archived ?? false}
-            libraryKeepsProposals={supportsLoomFeature(
-              authority.environment?.serverConfig?.environment.capabilities,
-              LIBRARY_BRIEF_PROPOSALS_FEATURE,
-            )}
-            hostLabel={hostLabel}
-            hostConnected={host?.entry.enabled === true && host.connection.phase === "connected"}
-            hostProposes={supportsLoomFeature(
-              host?.serverConfig?.environment.capabilities,
-              LIBRARY_BRIEF_PROPOSALS_FEATURE,
-            )}
-          />
+          {!archive.summary.deleted ? (
+            <SuggestBriefUpdates
+              summary={archive.summary}
+              projectArchived={library.project.data?.archived ?? false}
+              libraryKeepsProposals={supportsLoomFeature(
+                authority.environment?.serverConfig?.environment.capabilities,
+                LIBRARY_BRIEF_PROPOSALS_FEATURE,
+              )}
+              hostLabel={hostLabel}
+              hostConnected={host?.entry.enabled === true && host.connection.phase === "connected"}
+              hostProposes={supportsLoomFeature(
+                host?.serverConfig?.environment.capabilities,
+                LIBRARY_BRIEF_PROPOSALS_FEATURE,
+              )}
+            />
+          ) : null}
           {!archive.summary.deleted && host?.connection.phase === "connected" ? (
             <Button
               variant="outline"
