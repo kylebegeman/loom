@@ -165,6 +165,7 @@ function LibraryPushBody({
 
   return (
     <SettingsSection
+      id="library-push"
       title="Push notifications"
       headerAction={
         view.refreshable ? (

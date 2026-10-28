@@ -1,3 +1,7 @@
+import { LIBRARY_PUSH_FEATURE } from "@t3tools/contracts/fork";
+import { useLibraryAuthorityId } from "../project-library/state";
+import { connectionsPaletteSource } from "../connections/palette";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { skillsPaletteSource } from "../skill-registry/palette";
 import {
   projectProfilesPaletteSource,
@@ -64,6 +68,7 @@ export interface ForkCommandPaletteContext {
   readonly bots?: BotsPaletteContext | null;
   readonly projectProfile?: ProfilePaletteContext | null;
   readonly checkout?: ReturnType<typeof useCheckoutPaletteContext>;
+  readonly libraryPush?: boolean;
 }
 
 export interface ForkCommandPaletteSource {
@@ -80,6 +85,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  connectionsPaletteSource,
   skillsPaletteSource,
   projectProfilesPaletteSource,
 
@@ -135,8 +141,14 @@ export function useForkCommandPaletteItems(query = ""): {
     activeThreadRef ? state.sources[scopedThreadKey(activeThreadRef)] : undefined,
   );
   useRightPanelStore((state) => selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef));
-  const serverConfig = useServerConfigs().get(
-    activeThreadRef?.environmentId ?? ("" as EnvironmentId),
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const libraryId = useLibraryAuthorityId();
+  const configs = useServerConfigs();
+  const libraryPush =
+    !!libraryId &&
+    loomFeaturesOf(configs.get(libraryId)?.environment.capabilities).includes(LIBRARY_PUSH_FEATURE);
+  const serverConfig = configs.get(
+    activeThreadRef?.environmentId ?? primaryEnvironmentId ?? ("" as EnvironmentId),
   );
   const loomFeatures = loomFeaturesOf(serverConfig?.environment.capabilities);
   const listing = useAtomValue(
@@ -161,6 +173,7 @@ export function useForkCommandPaletteItems(query = ""): {
     bots,
     projectProfile,
     checkout,
+    libraryPush,
   };
   return {
     items: forkCommandPaletteItems(context),

@@ -11,6 +11,7 @@ export const miniOffloadPaletteSource: ForkCommandPaletteSource = {
             kind: "action",
             value: "action:loom:mini-offload:open",
             title: "Open command jobs",
+            shortcutCommand: "loom.mini-offload.open",
             icon: <TerminalIcon className="size-4" />,
             description: "Run builds, tests and scripts on a worker",
             searchTerms: [

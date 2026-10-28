@@ -19,6 +19,7 @@ export const codeGraphPaletteSource: ForkCommandPaletteSource = {
         ...base,
         value: "action:loom:code-graph:open",
         title: "Code map: Open",
+        shortcutCommand: "loom.code-graph.open",
         run: async () => openPanel(activeThreadRef),
       },
       {

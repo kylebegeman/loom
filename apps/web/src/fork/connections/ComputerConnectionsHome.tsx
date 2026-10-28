@@ -41,8 +41,8 @@ export function ComputerConnectionsHome({
   return (
     <>
       <p className="px-3 text-sm leading-relaxed text-muted-foreground sm:px-4">
-        Choose where to work. Each computer keeps its own projects and conversations. Computers
-        linked to your T3 Connect account are available on your other signed-in devices.
+        Choose where to work. Your Library keeps your computers and saved conversations available
+        across devices. Each computer runs its own agents and keeps its working files.
       </p>
       <SettingsSection
         {...searchableSetting("remote-environments")}
