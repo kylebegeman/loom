@@ -1690,6 +1690,7 @@ function PresentedThreadSettingsRouteScreen() {
   const presentation = useExistingThreadSettingsRoutePresentation();
   const session = presentation.session;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- dismisses the native settings route after its owner's presentation session is released
   useEffect(() => {
     if (session) {
       return;

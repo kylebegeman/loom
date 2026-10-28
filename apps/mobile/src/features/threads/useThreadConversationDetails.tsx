@@ -1,3 +1,4 @@
+// fork: library
 import { StackActions, useNavigation } from "@react-navigation/native";
 import type { ModelSelection, RuntimeMode, ServerConfig } from "@t3tools/contracts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
@@ -42,6 +43,7 @@ export function useThreadConversationDetails(props: Props | null) {
   const { session, present, clear } = useExistingThreadSettingsRoutePresentation();
   const ownerId = props ? `details:${props.thread.environmentId}:${props.thread.id}` : null;
   const latest = useRef(props);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps long-lived native settings callbacks reading the current thread selection
   useLayoutEffect(() => {
     latest.current = props;
   });
@@ -181,9 +183,11 @@ export function useThreadConversationDetails(props: Props | null) {
     activeDraftText,
     onPromptChange,
   ]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the active native settings route presentation when its thread or model changes
   useEffect(() => {
     if (active && nextSession) present(nextSession);
   }, [active, nextSession, present]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the native settings presentation when its owning thread changes or unmounts
   useEffect(
     () => () => {
       if (ownerId) clear(ownerId);

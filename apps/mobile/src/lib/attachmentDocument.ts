@@ -115,6 +115,7 @@ export function useAttachmentDocument(input: {
     error: null,
   });
   // fork: library: Library history files load through the caller, not a signed asset URL.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads and releases a captured Library attachment for the native preview when its source changes
   useEffect(() => {
     if (!loadCaptured) return;
     let cancelled = false;

@@ -1298,3 +1298,7 @@ upstream report as entrypoints; neither is bundled into the running application.
 `useNewConversationShortcut.ts` (`library-projects`) registers the hook-backed
 Library start in the global keyboard scope. Its lifecycle reason and the mobile
 Settings/header reasons use upstream's `no-unreasoned-state-sync` rule.
+
+`apps/mobile/src/features/threads/useThreadConversationDetails.tsx` (`library`) owns
+the native settings presentation session. Its registry lifecycle, route transitions
+and captured-attachment resource lifetimes carry the current effect-rule reasons.

@@ -294,6 +294,7 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
         })
       : null,
   );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- routes a disconnected native thread to saved Library history after its lookup resolves
   useEffect(() => {
     if (canUseArchive && saved.data)
       navigation.dispatch(
