@@ -6,6 +6,9 @@ import {
   libraryHistoryOffsetForItem,
   shouldRefreshLibraryArchive,
 } from "@t3tools/client-runtime/fork";
+import { LIBRARY_DELETED_FEATURE } from "@t3tools/contracts/fork";
+import { visibleLibraryArchive } from "./libraryDeleted";
+import { useLibraryErasure } from "./LibraryErasure";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { AccessibilityInfo, Platform, View } from "react-native";
@@ -21,7 +24,7 @@ import { libraryArchiveRowItemId, libraryArchiveRows } from "./libraryArchive";
 import { LibraryReplicationNotice } from "./LibraryReplicationNotice";
 import { LibraryBriefSuggestionOffer, LibrarySuggestBriefUpdates } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryPage";
-import { library, useLibraryAuthority } from "./libraryState";
+import { library, useLibraryAuthority, useLoomFeature } from "./libraryState";
 
 type LibraryHistoryParams = {
   readonly projectId: string;
@@ -61,7 +64,18 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
         })
       : null,
   );
-  const archive = query.data;
+  const archive = visibleLibraryArchive(query.data, query.failure);
+  const erasure = useLibraryErasure(
+    params.archiveId,
+    () => navigation.navigate("LibraryProject", { projectId: params.projectId }),
+    query.refresh,
+  );
+  const supportsDeleted = useLoomFeature(authority.environmentId, LIBRARY_DELETED_FEATURE);
+  const retention = useEnvironmentQuery(
+    supportsDeleted && authority.environmentId
+      ? library.deletedPreferences({ environmentId: authority.environmentId, input: {} })
+      : null,
+  );
   const historyWindow = archive?.window;
   if (seeking && targetPosition !== undefined && historyWindow?.offset === historyOffset) {
     const offset = libraryHistoryOffsetForItem(targetPosition, historyWindow);
@@ -69,7 +83,7 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
     else if (offset !== historyOffset) setHistoryOffset(offset);
   }
   const threads = useEnvironmentQuery(
-    authority.environmentId
+    authority.environmentId && !archive?.summary.deleted
       ? library.threads({
           environmentId: authority.environmentId,
           input: { projectId: archive?.summary.projectId ?? params.projectId },
@@ -159,6 +173,15 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
           error={query.error}
           onRetry={query.refresh}
         />
+        {erasure.error ? <LibraryNotice error={erasure.error} /> : null}
+        {erasure.attempted ? (
+          <Button
+            label={erasure.busy ? "Erasing…" : "Retry erase"}
+            tone="danger"
+            disabled={!erasure.available || erasure.busy}
+            onPress={erasure.retry}
+          />
+        ) : null}
       </LibraryPage>
     );
   const target = authority.environmentId;
@@ -240,22 +263,37 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
             {!authority.connected ? (
               <LibraryNotice detail="Viewing cached library history. Reconnect the library to reload history or open saved attachments." />
             ) : null}
-            <View className="flex-row flex-wrap gap-2">
-              <Button
-                label={`Continue on ${host?.label ?? "original computer"}`}
-                disabled={!connected || !canContinue}
-                onPress={() =>
-                  selectDetail({
-                    name: "Thread",
-                    params: {
-                      environmentId: archive.summary.environmentId,
-                      threadId: archive.summary.threadId,
-                    },
-                  })
+            {archive.summary.deleted ? (
+              <LibraryNotice
+                detail={
+                  retention.data && !retention.error
+                    ? `Recently deleted. Kept in your Library for ${retention.data.retentionDays} ${retention.data.retentionDays === 1 ? "day" : "days"} after deletion.`
+                    : "Recently deleted. Continue as a new conversation before this saved history is erased."
                 }
               />
+            ) : null}
+            <View className="flex-row flex-wrap gap-2">
+              {!archive.summary.deleted ? (
+                <Button
+                  label={`Continue on ${host?.label ?? "original computer"}`}
+                  disabled={!connected || !canContinue}
+                  onPress={() =>
+                    selectDetail({
+                      name: "Thread",
+                      params: {
+                        environmentId: archive.summary.environmentId,
+                        threadId: archive.summary.threadId,
+                      },
+                    })
+                  }
+                />
+              ) : null}
               <Button
-                label="Continue on another computer"
+                label={
+                  archive.summary.deleted
+                    ? "Continue as new conversation"
+                    : "Continue on another computer"
+                }
                 tone="text"
                 disabled={!authority.ready}
                 onPress={() =>
@@ -266,17 +304,39 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
                 }
               />
             </View>
-            <LibrarySuggestBriefUpdates
-              summary={archive.summary}
-              authorityId={target}
-              hostLabel={hostLabel}
-              hostConnected={connected}
-            />
-            <LibraryBriefSuggestionOffer
-              environmentId={archive.summary.environmentId}
-              threadId={archive.summary.threadId}
-              connected={connected}
-            />
+            {archive.summary.deleted && erasure.supported ? (
+              <>
+                <Button
+                  label={erasure.busy ? "Erasing…" : erasure.error ? "Retry erase" : "Erase now"}
+                  tone="danger"
+                  disabled={!erasure.available || erasure.busy}
+                  onPress={() =>
+                    erasure.error ? erasure.retry() : erasure.confirm(archive.summary.title)
+                  }
+                />
+                {erasure.error ? <LibraryNotice error={erasure.error} /> : null}
+                {!erasure.available && !erasure.busy ? (
+                  <Text className="text-sm text-foreground-muted">
+                    Connect as the Library owner to erase this conversation.
+                  </Text>
+                ) : null}
+              </>
+            ) : null}
+            {!archive.summary.deleted ? (
+              <>
+                <LibrarySuggestBriefUpdates
+                  summary={archive.summary}
+                  authorityId={target}
+                  hostLabel={hostLabel}
+                  hostConnected={connected}
+                />
+                <LibraryBriefSuggestionOffer
+                  environmentId={archive.summary.environmentId}
+                  threadId={archive.summary.threadId}
+                  connected={connected}
+                />
+              </>
+            ) : null}
             {query.error ? <LibraryNotice error={query.error} onRetry={query.refresh} /> : null}
           </View>
         }
