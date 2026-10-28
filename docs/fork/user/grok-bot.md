@@ -50,6 +50,11 @@ thread may accept a queued message; follow the returned run rather than resendin
 If the Bot cannot launch at its approved ceiling, repair its connector approval rather
 than switching credentials or requesting Full access by default.
 
+A Supervised conversation may pause for a command approval, including a read-only
+command. Open that conversation in Loom and approve only the command you intend.
+The Bot cannot approve its own permission requests through MCP; it should report the
+pause and continue following the same run after you respond.
+
 Then revoke that Bot's client under Settings > Sharing & access. Ask the same Bot to
 list projects again: it must need authentication. Revoking Loom access is separate
 from disconnecting an app in Grok Bot. Keep the report link and sanitized connection,
