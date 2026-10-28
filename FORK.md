@@ -54,6 +54,15 @@ identifiers.
 
 ## Seams in upstream files
 
+The `vault-approvals` seams in `packages/contracts/src/orchestrationV2.ts` (3 marker lines)
+add the metadata-only Vault approval card to the forward-compatible turn-item union.
+Older clients omit this unknown item while retaining the rest of the thread stream.
+Its contract test (1 marker line) checks that the card carries metadata without secret values.
+`apps/web/src/session-logic.ts` (2) and `apps/mobile/src/lib/threadActivity.ts` (5) keep
+these cards visible and separate from collapsible work, including after a turn is superseded.
+The mobile activity test (1) covers preserving their detail outside a folded run.
+`apps/server/src/mcp/OrchestratorMcpService.ts` (1) includes their safe fields in thread reads.
+
 Find them with `git grep -n "fork: brand"`; `docs/fork/seams.tsv` is the checked list.
 JSON and binary files cannot carry the marker and are listed separately.
 

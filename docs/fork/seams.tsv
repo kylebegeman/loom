@@ -906,6 +906,12 @@ packages/client-runtime/src/state/threadShell.test.ts	attention-status	2
 packages/client-runtime/src/state/threadShell.ts	attention-status	3
 packages/contracts/src/keybindings.ts	attention-status	1
 packages/contracts/src/orchestrationV2.ts	attention-status	1
+packages/contracts/src/orchestrationV2.ts	vault-approvals	3
+packages/contracts/src/orchestrationV2.test.ts	vault-approvals	1
+apps/mobile/src/lib/threadActivity.ts	vault-approvals	5
+apps/mobile/src/lib/threadActivity.test.ts	vault-approvals	1
+apps/web/src/session-logic.ts	vault-approvals	2
+apps/server/src/mcp/OrchestratorMcpService.ts	vault-approvals	1
 packages/contracts/src/orchestratorMcp.ts	attention-status	4
 packages/provider-core/src/server/orchestrationInstructions.ts	attention-status	1
 packages/shared/src/keybindings.ts	attention-status	1

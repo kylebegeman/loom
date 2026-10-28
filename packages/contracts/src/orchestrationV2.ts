@@ -84,6 +84,8 @@ import {
   ToolActivitySource,
 } from "./providerRuntime.ts";
 import { ThreadTokenUsageSnapshot } from "./providerRuntime.ts";
+// fork: vault-approvals
+import { VaultApprovalCardData } from "./fork/vault-access.ts";
 
 export const OrchestrationV2Actor = Schema.Literals(["user", "agent", "system"]);
 export type OrchestrationV2Actor = typeof OrchestrationV2Actor.Type;
@@ -1737,6 +1739,11 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ...OrchestrationV2TurnItemBaseFields,
     ...OrchestrationV2SecretRequestFields,
   }),
+  // fork: vault-approvals
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
+    ...VaultApprovalCardData.fields,
+  }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     ...OrchestrationV2LinkRequestFields,
@@ -2562,6 +2569,11 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     ...OrchestrationV2SecretRequestFields,
+  }),
+  // fork: vault-approvals
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
+    ...VaultApprovalCardData.fields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,

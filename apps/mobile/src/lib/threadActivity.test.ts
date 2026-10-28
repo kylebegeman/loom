@@ -41,41 +41,69 @@ const threadId = ThreadId.make("thread-1");
 const sourceThreadId = ThreadId.make("thread-source");
 const runId = RunId.make("run-1");
 
-it("keeps historical plan detail accessible from its paged turn item", () => {
-  const item = {
-    ...base("historical-plan", "2026-08-29T00:00:00.000Z", 1),
+it.each([
+  {
     type: "proposed_plan",
-    planId: "plan-historical",
-    markdown: "Full historical plan text",
-    streaming: false,
-  } as OrchestrationV2TurnItem;
+    fields: { planId: "plan-historical", markdown: "Full historical plan text", streaming: false },
+    detail: "Full historical plan text",
+  },
+  // fork: vault-approvals
+  {
+    type: "vault_access_request",
+    fields: {
+      requestId: "a".repeat(32),
+      revision: 1,
+      itemLabel: "Deployment key",
+      itemKind: "secret",
+      action: "reveal",
+      destination: "ssh://example.test",
+      state: "pending",
+      requestExpiresAt: 600_000,
+      approvedUntil: null,
+    },
+    detail: "ssh://example.test",
+  },
+])(
+  "keeps historical $type detail accessible from its paged turn item",
+  ({ type, fields, detail }) => {
+    const item = {
+      ...base("historical-plan", "2026-08-29T00:00:00.000Z", 1),
+      type,
+      ...fields,
+    } as OrchestrationV2TurnItem;
 
-  const entries = buildThreadFeed([projected(item, 0)]);
-  const activity = entries.flatMap((entry) =>
-    entry.type === "activity-group" ? entry.activities : [],
-  )[0];
-  expect(activity?.detail).toBe("Full historical plan text");
-  expect(activity?.getFullDetail()).toBe("Full historical plan text");
-  expect(activity?.getCopyText()).toBe("Full historical plan text\n");
-  expect(activity?.prominent).toBe(true);
-  const presented = deriveThreadFeedPresentation(
-    buildThreadFeed([
-      projected(userMessage(), 0),
-      projected(command(), 1),
-      projected(item, 2),
-      projected(assistantMessage(), 3),
-    ]),
-    null,
-    new Set(),
-  );
-  expect(presented.map((entry) => entry.type)).toEqual([
-    "message",
-    "run-fold",
-    "activity-group",
-    "message",
-  ]);
-  expect(presented[2]).toMatchObject({ activities: [{ projectedItem: { item } }] });
-});
+    const entries = buildThreadFeed([projected(item, 0)]);
+    const activity = entries.flatMap((entry) =>
+      entry.type === "activity-group" ? entry.activities : [],
+    )[0];
+    expect(activity?.detail).toBe(detail);
+    if (type === "proposed_plan") {
+      expect(activity?.getFullDetail()).toBe(detail);
+      expect(activity?.getCopyText()).toBe(`${detail}\n`);
+    } else {
+      expect(activity?.getFullDetail()).toContain(detail);
+      expect(activity?.getCopyText()).toContain(detail);
+    }
+    expect(activity?.prominent).toBe(true);
+    const presented = deriveThreadFeedPresentation(
+      buildThreadFeed([
+        projected(userMessage(), 0),
+        projected(command(), 1),
+        projected(item, 2),
+        projected(assistantMessage(), 3),
+      ]),
+      null,
+      new Set(),
+    );
+    expect(presented.map((entry) => entry.type)).toEqual([
+      "message",
+      "run-fold",
+      "activity-group",
+      "message",
+    ]);
+    expect(presented[2]).toMatchObject({ activities: [{ projectedItem: { item } }] });
+  },
+);
 
 it("shows a compact command as one mobile divider before, during, and after compaction", () => {
   const startedAt = "2026-06-20T00:00:01.000Z";

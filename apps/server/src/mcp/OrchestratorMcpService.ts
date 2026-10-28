@@ -960,6 +960,17 @@ function turnItemText(item: OrchestrationV2TurnItem): string | null {
       return `Created thread ${item.targetThreadId} with ${item.targetProviderInstanceId} (${item.targetModel}).`;
     case "secret_request":
       return `Asked the user for ${item.label}: ${item.secretStatus}.`;
+    // fork: vault-approvals
+    case "vault_access_request":
+      return jsonText({
+        requestId: item.requestId,
+        itemLabel: item.itemLabel,
+        action: item.action,
+        destination: item.destination,
+        state: item.state,
+        requestExpiresAt: item.requestExpiresAt,
+        approvedUntil: item.approvedUntil,
+      });
     case "link_request":
       return item.linkStatus === "linked"
         ? `Linked ${item.linkedLabel ?? item.label ?? item.url ?? "an environment"} (${item.linkedAccess}).`
