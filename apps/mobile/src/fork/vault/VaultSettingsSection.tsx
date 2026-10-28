@@ -10,6 +10,8 @@ import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultFileContent,
+  VAULT_ITEM_SEARCH_FEATURE,
+  vaultReferenceText,
   type VaultItemKind,
   type VaultItemSummary,
 } from "@t3tools/contracts/fork";
@@ -22,7 +24,9 @@ import {
   VAULT_FILE_LIMIT_BYTES,
   VAULT_GENERIC_ITEM_KINDS,
   VAULT_REVEAL_DURATION_MS,
+  VAULT_SEARCH_DEBOUNCE_MS,
   vaultItemActions,
+  vaultItemChanges,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Redacted from "effect/Redacted";
@@ -39,7 +43,9 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
+import { useDebouncedValue } from "../../state/queries";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { uuidv4 } from "../../lib/uuid";
 import { downloadAttachmentForPreview } from "../../lib/attachmentDownload";
 
@@ -69,13 +75,12 @@ export function VaultSettingsSection({
     return <VaultPasswordGeneratorSection />;
   return (
     <>
-      <VaultPasswordGeneratorSection />
       {canRead ? (
         <VaultOwnerSettings
           key={`${environmentId}:${canWrite}:${connected}:${supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted")}`}
           environmentId={environmentId}
           connected={connected}
-          advancedItems={
+          items={
             <SettingsSection title="Vault items">
               <VaultItems environmentId={environmentId} connected={connected} />
             </SettingsSection>
@@ -86,6 +91,7 @@ export function VaultSettingsSection({
           <Text>Your access to this computer does not include Vault inspection.</Text>
         </SettingsSection>
       )}
+      <VaultPasswordGeneratorSection />
     </>
   );
 }
@@ -103,16 +109,47 @@ function VaultItems({
   const [githubOpen, setGithubOpen] = useState(false);
   const [sshItem, setSshItem] = useState<string | null | undefined>(undefined);
   const status = useEnvironmentQuery(connected ? vault.status({ environmentId, input: {} }) : null);
+  const searchSupported = supportsLoomFeature(
+    config?.environment.capabilities,
+    VAULT_ITEM_SEARCH_FEATURE,
+  );
+  const [typedQuery, setTypedQuery] = useState("");
+  const query = useDebouncedValue(typedQuery.trim(), VAULT_SEARCH_DEBOUNCE_MS);
+  const [kind, setKind] = useState<VaultItemKind | null>(null);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [archivedCursors, setArchivedCursors] = useState<ReadonlyArray<string | null>>([null]);
   const [cursors, setCursors] = useState<ReadonlyArray<string | null>>([null]);
   const page = useEnvironmentQuery(
     connected && status.data?.state === "ready"
       ? vault.list({
           environmentId,
-          input: { cursor: cursors[cursors.length - 1] ?? null, includeArchived },
+          input: {
+            cursor: cursors[cursors.length - 1] ?? null,
+            includeArchived: searchSupported ? false : includeArchived,
+            ...(searchSupported
+              ? { query, ...(kind ? { kind } : {}), sort: "label" as const }
+              : {}),
+          },
         })
       : null,
   );
+  const archived = useEnvironmentQuery(
+    searchSupported && archivedOpen && connected && status.data?.state === "ready"
+      ? vault.archivedPage({
+          environmentId,
+          input: {
+            cursor: archivedCursors[archivedCursors.length - 1] ?? null,
+            includeArchived: true,
+            query,
+            ...(kind ? { kind } : {}),
+            sort: "label",
+          },
+        })
+      : null,
+  );
+  const searchPending = searchSupported && typedQuery.trim() !== query;
+  const archivedCount = page.data?.archivedCount ?? archived.data?.total;
   const canSave = useAtomValue(vault.save.permissionAtom(environmentId));
   const canChange = useAtomValue(vault.change.permissionAtom(environmentId));
   const canReveal = useAtomValue(vault.reveal.permissionAtom(environmentId));
@@ -144,15 +181,18 @@ function VaultItems({
   }, [revealed, clearRevealed]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const refresh = () => {
     setRevealed(null);
     status.refresh();
-    page.refresh();
+    const signal = vaultItemChanges(environmentId);
+    appAtomRegistry.set(signal, appAtomRegistry.get(signal) + 1);
   };
   const act = async (work: () => Promise<unknown>) => {
     if (busy || !connected) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     await work()
       .catch((cause: unknown) => setError(message(cause)))
       .finally(() => setBusy(false));
@@ -164,7 +204,9 @@ function VaultItems({
         input: { id: item.id, operationId: newId(), expectedVersion: item.version, action },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      refresh();
+      setCursors([null]);
+      setArchivedCursors([null]);
+      clearRevealed();
     });
   const remove = (item: VaultItemSummary) =>
     Dialog.alert(
@@ -209,6 +251,109 @@ function VaultItems({
         if (preview) await preview.share(controller.signal).finally(() => preview.dispose());
       } else setRevealed({ id: item.id, value });
     });
+  const renderItem = (item: VaultItemSummary) => (
+    <View key={item.id} className="gap-2 rounded-2xl bg-subtle p-3">
+      <Text className="font-t3-semibold">{item.label}</Text>
+      <Text className="text-foreground-muted">
+        {VAULT_KIND_LABELS[item.kind]} · Version {item.version}
+        {item.state === "archived" ? " · Archived" : ""}
+      </Text>
+      <View className="flex-row flex-wrap gap-2">
+        <Button
+          label="Copy reference"
+          disabled={busy || !connected}
+          onPress={() =>
+            void act(async () => {
+              const copied = await Clipboard.setStringAsync(
+                vaultReferenceText(environmentId, item.id),
+              );
+              if (!copied) throw new Error("The reference could not be copied. Try again.");
+              setNotice("Reference copied. It contains no credential value.");
+            })
+          }
+        />
+        <Button
+          label="Why this access?"
+          disabled={!connected || busy}
+          onPress={() => {
+            setRevealed(null);
+            setCheckingItem(item.id);
+          }}
+        />
+        {sshEnabled && item.kind === "ssh-key" ? (
+          <Button
+            label="Manage SSH key"
+            disabled={!connected || busy}
+            onPress={() => {
+              setRevealed(null);
+              setSshItem(item.id);
+            }}
+          />
+        ) : null}
+        {githubEnabled && item.kind === "service-connection" ? (
+          <Button
+            label="GitHub for agents"
+            disabled={!connected || busy}
+            onPress={() => {
+              clearRevealed();
+              setGithubOpen(true);
+            }}
+          />
+        ) : null}
+        {vaultItemActions(item.kind).revealValue ? (
+          <Button
+            label={
+              item.kind === "secure-file"
+                ? "Share file"
+                : revealed?.id === item.id
+                  ? "Hide value"
+                  : "Reveal value"
+            }
+            disabled={!connected || !canReveal || busy}
+            onPress={() => void reveal(item)}
+          />
+        ) : null}
+        {item.state === "active" ? (
+          <Button
+            label="Edit"
+            disabled={!connected || !canSave || busy}
+            onPress={() => {
+              setRevealed(null);
+              setEditing(item);
+            }}
+          />
+        ) : null}
+        <Button
+          label={item.state === "active" ? "Archive" : "Restore"}
+          disabled={!connected || !canChange || busy}
+          onPress={() => void change(item, item.state === "active" ? "archive" : "restore")}
+        />
+        <Button
+          label="Delete"
+          tone="text"
+          disabled={!connected || !canChange || busy}
+          onPress={() => remove(item)}
+        />
+      </View>
+      {revealed?.id === item.id ? (
+        <View className="gap-2">
+          <Text selectable>{revealed.value}</Text>
+          <Button
+            label="Copy value"
+            disabled={busy}
+            onPress={() =>
+              void act(async () => {
+                const copied = await Clipboard.setStringAsync(revealed.value, {
+                  android: { isSensitive: true },
+                });
+                if (!copied) throw new Error("The value could not be copied. Try again.");
+              })
+            }
+          />
+        </View>
+      ) : null}
+    </View>
+  );
   return (
     <View className="gap-3">
       <Text className="text-foreground-muted">Development access for this computer</Text>
@@ -236,118 +381,87 @@ function VaultItems({
         />
       </View>
       {error || page.error ? <Text accessibilityRole="alert">{error ?? page.error}</Text> : null}
+      {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
       {status.data?.state === "ready" && (
         <>
-          <View className="flex-row items-center justify-between gap-2">
-            <Text>Include archived items</Text>
-            <Switch
-              accessibilityLabel="Include archived Vault items"
-              value={includeArchived}
-              onValueChange={(next) => {
-                setIncludeArchived(next);
-                setCursors([null]);
-                setRevealed(null);
-              }}
-            />
-          </View>
-          {page.isPending && !page.data ? <Text>Loading Vault items…</Text> : null}
-          {page.data?.items.length === 0 ? (
-            <Text>No items on this page. Add a development credential or check the next page.</Text>
-          ) : null}
-          {page.data?.items.map((item) => (
-            <View key={item.id} className="gap-2 rounded-2xl bg-subtle p-3">
-              <Text className="font-t3-semibold">{item.label}</Text>
-              <Text className="text-foreground-muted">
-                {VAULT_KIND_LABELS[item.kind]} · Version {item.version}
-                {item.state === "archived" ? " · Archived" : ""}
-              </Text>
-              <View className="flex-row flex-wrap gap-2">
-                <Button
-                  label="Why this access?"
-                  disabled={!connected || busy}
-                  onPress={() => {
-                    setRevealed(null);
-                    setCheckingItem(item.id);
-                  }}
-                />
-                {sshEnabled && item.kind === "ssh-key" ? (
+          {searchSupported ? (
+            <View className="gap-3">
+              <TextInput
+                accessibilityLabel="Search Vault items"
+                placeholder="Search names and metadata"
+                value={typedQuery}
+                maxLength={100}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={connected && !busy}
+                onChangeText={(value) => {
+                  setTypedQuery(value);
+                  setCursors([null]);
+                  setArchivedCursors([null]);
+                  clearRevealed();
+                }}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View className="flex-row gap-2">
                   <Button
-                    label="Manage SSH key"
-                    disabled={!connected || busy}
-                    onPress={() => {
-                      setRevealed(null);
-                      setSshItem(item.id);
-                    }}
-                  />
-                ) : null}
-                {githubEnabled && item.kind === "service-connection" ? (
-                  <Button
-                    label="GitHub for agents"
-                    disabled={!connected || busy}
-                    onPress={() => {
-                      clearRevealed();
-                      setGithubOpen(true);
-                    }}
-                  />
-                ) : null}
-                {vaultItemActions(item.kind).revealValue ? (
-                  <Button
-                    label={
-                      item.kind === "secure-file"
-                        ? "Share file"
-                        : revealed?.id === item.id
-                          ? "Hide value"
-                          : "Reveal value"
-                    }
-                    disabled={!connected || !canReveal || busy}
-                    onPress={() => void reveal(item)}
-                  />
-                ) : null}
-                {item.state === "active" ? (
-                  <Button
-                    label="Edit"
-                    disabled={!connected || !canSave || busy}
-                    onPress={() => {
-                      setRevealed(null);
-                      setEditing(item);
-                    }}
-                  />
-                ) : null}
-                <Button
-                  label={item.state === "active" ? "Archive" : "Restore"}
-                  disabled={!connected || !canChange || busy}
-                  onPress={() => void change(item, item.state === "active" ? "archive" : "restore")}
-                />
-                <Button
-                  label="Delete"
-                  tone="text"
-                  disabled={!connected || !canChange || busy}
-                  onPress={() => remove(item)}
-                />
-              </View>
-              {revealed?.id === item.id ? (
-                <View className="gap-2">
-                  <Text selectable>{revealed.value}</Text>
-                  <Button
-                    label="Copy value"
+                    label="All kinds"
+                    accessibilityLabel={kind === null ? "All kinds, selected" : "All kinds"}
+                    tone={kind === null ? "primary" : "secondary"}
                     disabled={busy}
-                    onPress={() =>
-                      void act(async () => {
-                        const copied = await Clipboard.setStringAsync(revealed.value, {
-                          android: { isSensitive: true },
-                        });
-                        if (!copied) throw new Error("The value could not be copied. Try again.");
-                      })
-                    }
+                    onPress={() => {
+                      setKind(null);
+                      setCursors([null]);
+                      setArchivedCursors([null]);
+                      clearRevealed();
+                    }}
                   />
+                  {(Object.keys(VAULT_KIND_LABELS) as VaultItemKind[]).map((value) => (
+                    <Button
+                      key={value}
+                      label={VAULT_KIND_LABELS[value]}
+                      accessibilityLabel={`${VAULT_KIND_LABELS[value]}${kind === value ? ", selected" : ""}`}
+                      tone={kind === value ? "primary" : "secondary"}
+                      disabled={busy}
+                      onPress={() => {
+                        setKind(value);
+                        setCursors([null]);
+                        setArchivedCursors([null]);
+                        clearRevealed();
+                      }}
+                    />
+                  ))}
                 </View>
-              ) : null}
+              </ScrollView>
             </View>
-          ))}
+          ) : (
+            <View className="flex-row items-center justify-between gap-2">
+              <Text>Include archived items</Text>
+              <Switch
+                accessibilityLabel="Include archived Vault items"
+                value={includeArchived}
+                onValueChange={(next) => {
+                  setIncludeArchived(next);
+                  setCursors([null]);
+                  setRevealed(null);
+                }}
+              />
+            </View>
+          )}
+          {page.isPending || searchPending ? <Text>Loading Vault items…</Text> : null}
+          {page.data?.items.length === 0 ? (
+            <Text>
+              {searchSupported
+                ? query || kind
+                  ? "No matching Vault items."
+                  : "No Vault items yet. Add an item to get started."
+                : "No items on this page. Add an item or check the next page."}
+            </Text>
+          ) : null}
+          {page.data?.items.map(renderItem)}
           <View className="flex-row flex-wrap gap-2">
             <Button
               label="Previous"
-              disabled={cursors.length <= 1 || busy}
+              disabled={cursors.length <= 1 || busy || page.isPending || searchPending}
               onPress={() => {
                 setCursors((previous) => previous.slice(0, -1));
                 setRevealed(null);
@@ -355,7 +469,7 @@ function VaultItems({
             />
             <Button
               label="Next page"
-              disabled={!page.data?.nextCursor || busy}
+              disabled={!page.data?.nextCursor || busy || page.isPending || searchPending}
               onPress={() => {
                 if (page.data?.nextCursor)
                   setCursors((previous) => [...previous, page.data!.nextCursor]);
@@ -363,6 +477,63 @@ function VaultItems({
               }}
             />
           </View>
+          {searchSupported ? (
+            <View className="gap-3">
+              <Button
+                label={`${archivedOpen ? "Hide archived" : "Archived"}${archivedCount === undefined ? "" : ` (${archivedCount})`}`}
+                disabled={!connected || busy}
+                onPress={() => {
+                  setArchivedOpen(!archivedOpen);
+                  clearRevealed();
+                }}
+              />
+              {archivedOpen ? (
+                <>
+                  {archived.isPending || searchPending ? (
+                    <Text>Loading archived items…</Text>
+                  ) : null}
+                  {archived.error ? <Text accessibilityRole="alert">{archived.error}</Text> : null}
+                  {archived.error ? (
+                    <Button label="Retry archived items" onPress={refresh} />
+                  ) : null}
+                  {archived.data?.items.length === 0 ? (
+                    <Text>
+                      {archived.data.nextCursor
+                        ? "Continue to the next page to find archived items."
+                        : "No archived items match these filters."}
+                    </Text>
+                  ) : null}
+                  {archived.data?.items.map(renderItem)}
+                  <View className="flex-row flex-wrap gap-2">
+                    <Button
+                      label="Previous archived items"
+                      disabled={
+                        archivedCursors.length <= 1 || busy || archived.isPending || searchPending
+                      }
+                      onPress={() => {
+                        setArchivedCursors((previous) => previous.slice(0, -1));
+                        clearRevealed();
+                      }}
+                    />
+                    <Button
+                      label="Next archived items"
+                      disabled={
+                        !archived.data?.nextCursor || busy || archived.isPending || searchPending
+                      }
+                      onPress={() => {
+                        if (archived.data?.nextCursor)
+                          setArchivedCursors((previous) => [
+                            ...previous,
+                            archived.data!.nextCursor,
+                          ]);
+                        clearRevealed();
+                      }}
+                    />
+                  </View>
+                </>
+              ) : null}
+            </View>
+          ) : null}
         </>
       )}
       {checkingItem !== null ? (
@@ -412,7 +583,9 @@ function VaultItems({
           }
           onSaved={() => {
             setEditing(null);
-            refresh();
+            setCursors([null]);
+            setArchivedCursors([null]);
+            clearRevealed();
           }}
           onClose={() => setEditing(null)}
         />

@@ -2,7 +2,7 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Switch, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultPolicySnapshot } from "@t3tools/contracts/fork";
+import { VAULT_ITEM_SEARCH_FEATURE, type VaultPolicySnapshot } from "@t3tools/contracts/fork";
 import {
   createVaultAccessAtoms,
   createVaultCoreAtoms,
@@ -16,6 +16,7 @@ import {
   vaultHealthMessage,
   vaultHealthVisibleState,
   vaultBrokerState,
+  vaultItemChanges,
 } from "@t3tools/client-runtime/fork";
 import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -48,11 +49,11 @@ const failureMessage = (cause: unknown) =>
 export function VaultOwnerSettings({
   environmentId,
   connected,
-  advancedItems,
+  items,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
-  advancedItems: ReactNode;
+  items: ReactNode;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const registry = useContext(RegistryContext);
@@ -66,12 +67,6 @@ export function VaultOwnerSettings({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
-  const firstItems = useEnvironmentQuery(
-    connected
-      ? core.list({ environmentId, input: { cursor: null, includeArchived: false } })
-      : null,
-  );
-  const showRecords = advanced || firstItems.data?.items.length === 0;
   const [help, setHelp] = useState(false);
   const [repair, setRepair] = useState<"broker" | "health" | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches the vault access snapshot from the server while connected and aborts it on change or unmount
@@ -130,6 +125,7 @@ export function VaultOwnerSettings({
   const openRepair = useCallback((section: "broker" | "health") => setRepair(section), []);
   return (
     <>
+      {items}
       <SettingsSection title="Vault">
         <View className="gap-4 p-4">
           <View className="gap-1">
@@ -238,8 +234,8 @@ export function VaultOwnerSettings({
         <View className="gap-3 p-4">
           <Text>
             {summary.enabled
-              ? "Profiles are optional. Keep restricted access rules for switching back, or manage other Vault items and maintenance."
-              : "Manage restricted access rules, optional project profiles, other Vault items and maintenance."}
+              ? "Profiles are optional. Keep restricted access rules for switching back, or manage maintenance."
+              : "Manage restricted access rules, optional project profiles and maintenance."}
           </Text>
           <Button
             label={advanced ? "Hide advanced Vault settings" : "Advanced Vault settings"}
@@ -248,9 +244,8 @@ export function VaultOwnerSettings({
           />
         </View>
       </SettingsSection>
-      {showRecords ? (
+      {advanced ? (
         <>
-          {advancedItems}
           <VaultAccessSettingsSection environmentId={environmentId} connected={connected} />
           <VaultProfileSettingsSection environmentId={environmentId} connected={connected} />
           {repair !== "broker" ? (
@@ -284,16 +279,29 @@ function VaultConnections({
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const capabilities = config?.environment.capabilities;
+  const registry = useContext(RegistryContext);
   const sshEnabled = supportsLoomFeature(capabilities, "vault-ssh-management");
   const brokerEnabled = supportsLoomFeature(capabilities, "vault-brokers");
   const healthEnabled = supportsLoomFeature(capabilities, "vault-health");
   const status = useEnvironmentQuery(connected ? core.status({ environmentId, input: {} }) : null);
   const ready =
     connected && status.isSuccess && !status.isPending && status.data?.state === "ready";
+  const searchSupported = supportsLoomFeature(capabilities, VAULT_ITEM_SEARCH_FEATURE);
   const [cursor, setCursor] = useState<string | null>(null);
-  const page = useEnvironmentQuery(
-    ready ? core.list({ environmentId, input: { cursor, includeArchived: false } }) : null,
+  const matches = useEnvironmentQuery(
+    ready && searchSupported
+      ? core.kindSummary({
+          environmentId,
+          input: { cursor: null, includeArchived: false, kind: "ssh-key", sort: "label" },
+        })
+      : null,
   );
+  const legacyPage = useEnvironmentQuery(
+    ready && !searchSupported
+      ? core.list({ environmentId, input: { cursor, includeArchived: false } })
+      : null,
+  );
+  const page = searchSupported ? matches : legacyPage;
   const broker = useEnvironmentQuery(
     connected && brokerEnabled ? brokers.snapshot({ environmentId, input: {} }) : null,
   );
@@ -315,7 +323,8 @@ function VaultConnections({
   const sshItems = page.data?.items.filter((item) => item.kind === "ssh-key") ?? [];
   const refresh = () => {
     status.refresh();
-    page.refresh();
+    const signal = vaultItemChanges(environmentId);
+    registry.set(signal, registry.get(signal) + 1);
     broker.refresh();
     maintenance.refresh();
   };
@@ -353,7 +362,14 @@ function VaultConnections({
               <>
                 {sshItems.length === 0 ? (
                   <Text>
-                    No SSH hosts on this page. Create a key to connect a development host.
+                    {searchSupported
+                      ? "No SSH keys yet. Create a key to connect a development host."
+                      : "No SSH hosts on this page. Create a key or check the next page."}
+                  </Text>
+                ) : null}
+                {searchSupported && matches.data ? (
+                  <Text>
+                    {matches.data.total} SSH {matches.data.total === 1 ? "key" : "keys"} in Vault
                   </Text>
                 ) : null}
                 {sshItems.map((item) => (
@@ -367,7 +383,12 @@ function VaultConnections({
                     onOpen={() => setSshItem(item.id)}
                   />
                 ))}
-                {cursor ? <Button label="First SSH hosts" onPress={() => setCursor(null)} /> : null}
+                {searchSupported && matches.data && matches.data.total > sshItems.length ? (
+                  <Text>Use the Vault item list above to search all SSH keys.</Text>
+                ) : null}
+                {!searchSupported && cursor ? (
+                  <Button label="First SSH hosts" onPress={() => setCursor(null)} />
+                ) : null}
                 {page.data.nextCursor ? (
                   <Button
                     label="More SSH hosts"
