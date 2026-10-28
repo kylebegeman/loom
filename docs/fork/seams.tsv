@@ -592,7 +592,6 @@ apps/server/src/project/ManagedProjectFolders.ts	brand	1
 apps/server/src/provider/AntigravityProvider.ts	brand	1
 apps/server/src/provider/ClaudeProvider.ts	brand	2
 apps/server/src/provider/CodexAuthCallbackPage.ts	brand	4
-apps/server/src/provider/CodexDeveloperInstructions.ts	brand	1
 apps/server/src/provider/CodexInstallation.ts	brand	1
 apps/server/src/provider/CodexProvider.ts	brand	2
 apps/server/src/provider/ProviderAuthService.ts	brand	1
@@ -669,7 +668,7 @@ packages/provider-acp/src/server/mcpOverAcpBridge.ts	brand	2
 packages/provider-core/src/server/failure.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.test.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.ts	brand	1
-packages/provider-core/src/server/orchestrationInstructions.ts	brand	6
+packages/provider-core/src/server/orchestrationInstructions.ts	brand	7
 packages/provider-core/src/server/runtimeInstructions.ts	brand	1
 packages/provider-core/src/server/textGenerationPrompts.ts	brand	2
 packages/provider-cursor/src/server/accountUsage.test.ts	brand	1
