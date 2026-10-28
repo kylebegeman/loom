@@ -1332,8 +1332,8 @@ apps/server/src/orchestration-v2/testkit/fixtures/muse_workflow/muse_transcript.
 apps/server/src/orchestration-v2/testkit/fixtures/simple/muse_transcript.ndjson	-	you are running in Loom through the Muse Code harness
 apps/server/src/orchestration-v2/testkit/fixtures/subagent_v2/muse_transcript.ndjson	-	you are running in Loom through the Muse Code harness
 apps/server/src/orchestration-v2/testkit/fixtures/turn_interrupt/muse_transcript.ndjson	-	you are running in Loom through the Muse Code harness
-apps/server/src/project/AgentSessionScanner.test.ts	file-placement	3
-apps/server/src/project/AgentSessionScanner.ts	file-placement	9
+apps/server/src/project/AgentSessionScanner.test.ts	file-placement	7
+apps/server/src/project/AgentSessionScanner.ts	file-placement	12
 apps/server/src/project/ProjectFaviconResolver.test.ts	project-lifecycle	2
 apps/server/src/project/ProjectMutation.test.ts	project-home	1
 apps/server/src/project/ProjectMutation.ts	file-placement	1

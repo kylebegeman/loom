@@ -35,6 +35,8 @@ import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ServerSettings from "../serverSettings.ts";
 import { managedWorktreesDirectories } from "../worktreesDirectory.ts"; // fork: file-placement
+// fork: file-placement
+import { resolveScannerExclusionRoots } from "../fork/file-placement/scanRoots.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import {
   createTranscriptJsonReader,
@@ -658,6 +660,8 @@ export const make = Effect.gen(function* () {
       path.join(managedRoot, "scratch"),
       ...worktrees,
     ]),
+    Effect.flatMap(resolveScannerExclusionRoots), // fork: file-placement
+    Effect.provideService(FileSystem.FileSystem, fileSystem), // fork: file-placement
   );
 
   const isExcludedProjectPath = (candidatePath: string, loomRoots: ReadonlyArray<string>) =>
