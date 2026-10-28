@@ -1,3 +1,4 @@
+import { readRetryTarget, retryThread } from "../fork/attention/state"; // fork: attention-status
 import { CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
 // fork: attention-status
 import { ThreadAttentionButton } from "../fork/attention/ThreadAttention";
@@ -2605,6 +2606,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             buildThreadActionMenuItems({
               // fork: attention-status
               queueHeld: thread.queueHeld ?? false,
+              canRetryFailedRun: readRetryTarget(threadRef) !== null, // fork: attention-status
               canOperate: readEnvironmentScope(
                 threadRef.environmentId,
                 AuthOrchestrationOperateScope,
@@ -2676,6 +2678,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         switch (clicked.value) {
+          // fork: attention-status
+          case "retry-failed-run":
+            await retryThread(threadRef);
+            return;
           // fork: attention-status
           case "resume-queue":
             await resumeQueue({

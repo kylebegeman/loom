@@ -11,6 +11,11 @@ export const ATTENTION_STATUS_WS_METHODS = {
 
 export const AttentionRetryRequest = Schema.Struct({ threadId: ThreadId, runId: RunId });
 export type AttentionRetryRequest = typeof AttentionRetryRequest.Type;
+export const AttentionRetryRpcRequest = Schema.Struct({
+  ...AttentionRetryRequest.fields,
+  source: Schema.optionalKey(Schema.Literals(["web", "mobile"])),
+});
+export type AttentionRetryRpcRequest = typeof AttentionRetryRpcRequest.Type;
 export const AttentionRetryResult = Schema.Struct({ sequence: NonNegativeInt });
 export type AttentionRetryResult = typeof AttentionRetryResult.Type;
 
@@ -36,7 +41,7 @@ export class AttentionRetryError extends Schema.TaggedError<AttentionRetryError>
 
 export const AttentionStatusRpcGroup = RpcGroup.make(
   Rpc.make(ATTENTION_STATUS_WS_METHODS.retry, {
-    payload: AttentionRetryRequest,
+    payload: AttentionRetryRpcRequest,
     success: AttentionRetryResult,
     error: Schema.Union([AttentionRetryError, EnvironmentAuthorizationError]),
   }),

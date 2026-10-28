@@ -876,7 +876,7 @@ apps/desktop/src/ipc/methods/notificationBadge.test.ts	respectful-notifications	
 apps/desktop/src/ipc/methods/notificationBadge.ts	respectful-notifications	6
 apps/mobile/src/features/home/HomeScreen.tsx	attention-status	5
 apps/mobile/src/features/home/HomeScreen.tsx	everyday-workflows	5
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	11
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	16
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	everyday-workflows	1
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	library	1
 apps/mobile/src/features/threads/threadListV2.test.ts	attention-status	1
@@ -895,9 +895,9 @@ apps/server/src/orchestration-v2/ProjectionStore.ts	goal-history	2
 apps/web/src/components/CommandPalette.tsx	attention-status	4
 apps/web/src/components/Sidebar.logic.test.ts	attention-status	1
 apps/web/src/components/Sidebar.logic.ts	attention-status	8
-apps/web/src/components/Sidebar.tsx	attention-status	5
+apps/web/src/components/Sidebar.tsx	attention-status	8
 apps/web/src/components/threadActionMenu.logic.test.ts	attention-status	1
-apps/web/src/components/threadActionMenu.logic.ts	attention-status	3
+apps/web/src/components/threadActionMenu.logic.ts	attention-status	5
 packages/client-runtime/src/state/models.ts	attention-status	2
 packages/client-runtime/src/state/models.ts	bots	2
 packages/client-runtime/src/state/threadInbox.test.ts	attention-status	2
@@ -1534,3 +1534,4 @@ evals/mcp-tool-use/run.ts	vault-core	2
 evals/mcp-tool-use/run.ts	vault-references	2
 packages/client-runtime/package.json	-	"./fork/vault-secret"
 evals/mcp-tool-use/run.ts	attention-status	2
+apps/web/src/hooks/useThreadActionMenu.ts	attention-status	6

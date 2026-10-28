@@ -1,3 +1,4 @@
+import { readRetryTarget, retryThread } from "../fork/attention/state"; // fork: attention-status
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
@@ -101,6 +102,8 @@ export function useThreadActionMenu(input: {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  // fork: attention-status
+  const resumeQueue = useOrchestrationCommand(threadEnvironment.resumeThreadQueue, "resume queue");
   const handleNewThread = useNewThreadHandler();
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -152,6 +155,9 @@ export function useThreadActionMenu(input: {
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat, threadRef.environmentId);
       const items = buildThreadActionMenuItems({
+        // fork: attention-status
+        queueHeld: thread.queueHeld ?? false,
+        canRetryFailedRun: readRetryTarget(threadRef) !== null, // fork: attention-status
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
         branch: thread.branch ?? null,
         projectFilter: null,
@@ -208,6 +214,17 @@ export function useThreadActionMenu(input: {
         }
       };
       switch (action) {
+        // fork: attention-status
+        case "retry-failed-run":
+          await retryThread(threadRef);
+          return;
+        // fork: attention-status
+        case "resume-queue":
+          await resumeQueue({
+            environmentId: threadRef.environmentId,
+            input: { threadId: threadRef.threadId },
+          });
+          return;
         // fork: workspace-handoff
         case "workspace-handoff":
           openWorkspaceHandoff(threadRef);
