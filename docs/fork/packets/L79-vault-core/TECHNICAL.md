@@ -23,7 +23,11 @@ not claim provider-side revocation or secure erasure of backups.
 Values are redacted internally and encoded only across the protected transport/backend
 boundary. Secret-bearing OpenBao writes use streaming request bodies whose inspection does not
 show payloads. Errors normalize backend failures without echoing response bodies. Metadata
-pages read at most 25 records, with concurrency 4; key enumeration is capped at 4096 entries.
+listing reads the bounded inventory with concurrency 4, filters safe metadata before paging,
+and returns at most 25 summaries; key enumeration is capped at 4096 entries. Explicit label or
+updated sorting uses the item ID as a tie-breaker; omitted sorting retains legacy ID order.
+Hex cursors identify the preceding item in that order. Archived counts cover the query and
+kind filter and are omitted from policy-filtered thread responses.
 Values are capped at 1 MiB; client file import is capped at 512 KiB before base64 encoding.
 
 ## OpenBao payload encoding compatibility
@@ -60,7 +64,10 @@ before persistence. There is no raw-value MCP tool or CLI reveal command.
 retains the source only for that operation; cleanup failure retains the claim. A matching Vault
 receipt returns the committed result even after source consumption or a lost response. Existing
 SecretRequests storage is owner-only plaintext, and this work does not convert upstream auth
-storage into an encrypted vault.
+storage into an encrypted vault. Saved-item answers use audited reveal with the destination
+thread in the audit reason. A decoded secure file is staged in the existing private files
+directory before recording the answer, so a restart cannot turn its base64 envelope into the
+delivered file. The upstream answer payload and secret-store record shape stay unchanged.
 
 ## Connection and custody
 

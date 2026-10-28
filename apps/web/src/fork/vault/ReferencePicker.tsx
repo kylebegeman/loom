@@ -1,8 +1,20 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultReference, VaultItemKind } from "@t3tools/contracts/fork";
-import { createVaultReferenceAtoms, VAULT_KIND_LABELS } from "@t3tools/client-runtime/fork";
+import {
+  VAULT_ITEM_SEARCH_FEATURE,
+  type VaultReference,
+  type VaultItemKind,
+} from "@t3tools/contracts/fork";
+import {
+  createVaultReferenceAtoms,
+  VAULT_KIND_LABELS,
+  VAULT_SEARCH_DEBOUNCE_MS,
+  supportsLoomFeature,
+  vaultAddPrefill,
+  vaultPickerSelection,
+} from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "~/state/entities";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
@@ -13,6 +25,7 @@ import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
+import { openVaultAdd } from "./add-navigation";
 const references = createVaultReferenceAtoms(connectionAtomRuntime);
 export function VaultReferencePicker({
   environmentId,
@@ -26,11 +39,26 @@ export function VaultReferencePicker({
   disabled?: boolean;
 }) {
   const field = useId();
+  const configs = useServerConfigs();
+  const searchable = supportsLoomFeature(
+    configs.get(environmentId)?.environment.capabilities,
+    VAULT_ITEM_SEARCH_FEATURE,
+  );
   const [query, setQuery] = useState(""),
     [search, setSearch] = useState(""),
     [archived, setArchived] = useState(false),
     [cursor, setCursor] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces the server-side metadata query while the user types
+  useEffect(() => {
+    if (!searchable || query.trim() === search) return;
+    const timer = window.setTimeout(() => {
+      setSearch(query.trim());
+      setCursor(null);
+      setNotice(null);
+    }, VAULT_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query, search, searchable]);
   const atom = references.search({
       environmentId,
       input: { query: search, kind, includeArchived: archived, cursor },
@@ -108,6 +136,36 @@ export function VaultReferencePicker({
             : search
               ? "No matching references. Try a different name or item ID."
               : "No references available. Add a Vault record on this computer to get started."}
+          {!page.nextCursor && result._tag === "Success" ? (
+            <LoomSettingsActions>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                disabled={disabled || query.trim() !== search}
+                onClick={() => {
+                  const prefill = vaultAddPrefill(query, kind);
+                  openVaultAdd({
+                    environmentId,
+                    ...(kind ? { kind: prefill.kind } : {}),
+                    label: prefill.label,
+                    onSaved: (item) => {
+                      const selected = vaultPickerSelection(environmentId, item, kind);
+                      if (!selected) {
+                        setNotice("The saved item does not match this picker's kind.");
+                        return;
+                      }
+                      onSelect?.(selected);
+                      setNotice("Item saved in Vault.");
+                      appAtomRegistry.refresh(atom);
+                    },
+                  });
+                }}
+              >
+                Add {kind ? VAULT_KIND_LABELS[kind].toLocaleLowerCase() : "item"}
+                {query.trim() ? ` named “${query.trim()}”` : ""}
+              </Button>
+            </LoomSettingsActions>
+          ) : null}
         </LoomSettingsNotice>
       ) : null}
       <ul className="flex min-w-0 flex-col divide-y divide-border">

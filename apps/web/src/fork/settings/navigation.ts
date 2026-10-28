@@ -8,7 +8,9 @@ export const FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS: ReadonlySet<string> =
   new Set<ForkSettingsHome>(["/settings/vault", "/settings/tools"]);
 
 function findTopic(id: unknown) {
-  return FORK_SETTINGS_SECTIONS.find((section) => section.id === id);
+  return FORK_SETTINGS_SECTIONS.find(
+    (section) => section.id === (id === "vault-references" ? "vault" : id),
+  );
 }
 
 /** Where a fork settings topic lives. Unknown ids fall back to Lanes, like old Loom links. */
@@ -93,6 +95,6 @@ export function legacyLoomSettingsTarget({
   return {
     to: target.to,
     search: Object.fromEntries(Object.entries(search).filter(([key]) => key !== "section")),
-    hash: hashTopic ? anchor : target.hash,
+    hash: hashTopic && !anchor.startsWith("loom-vault-references") ? anchor : target.hash,
   };
 }

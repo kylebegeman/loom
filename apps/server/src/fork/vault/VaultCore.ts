@@ -9,6 +9,7 @@ import {
   VaultItemSummary,
   type VaultCoreStatus,
   type VaultItemPage,
+  vaultReferenceText,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -192,18 +193,54 @@ const make = Effect.gen(function* () {
       if (keys.some((key) => !/^[a-f0-9]{32}$/.test(key))) {
         return yield* new VaultError({ reason: "invalid-response" });
       }
-      const remaining = keys.filter((id) => input.cursor === null || id > input.cursor);
+      const records = yield* Effect.forEach(keys, load, { concurrency: 4 });
+      const query = input.query?.trim().toLocaleLowerCase() ?? "";
+      const summaries = records.flatMap((record) =>
+        record === null ? [] : [summary(record.item, record.version)],
+      );
+      const matches = summaries.filter(
+        (item) =>
+          item.state !== "deleted" &&
+          (input.kind === undefined || item.kind === input.kind) &&
+          (query.startsWith("loom-vault:")
+            ? vaultReferenceText(environmentId, item.id).toLocaleLowerCase().startsWith(query)
+            : [item.label, item.kind, item.id].some((value) =>
+                value.toLocaleLowerCase().includes(query),
+              )),
+      );
+      const compare = (left: VaultItemSummary, right: VaultItemSummary) => {
+        if (input.sort === undefined) return left.id.localeCompare(right.id);
+        const updated =
+          input.sort === "updated" ? right.updatedAt.localeCompare(left.updatedAt) : 0;
+        return (
+          updated ||
+          left.label.localeCompare(right.label, undefined, {
+            sensitivity: "base",
+            numeric: true,
+          }) ||
+          left.id.localeCompare(right.id)
+        );
+      };
+      const items = matches
+        .filter((item) => input.includeArchived || item.state === "active")
+        .sort(compare);
+      const cursor = input.cursor;
+      let remaining = items;
+      if (cursor !== null) {
+        if (input.sort === undefined) remaining = items.filter((item) => item.id > cursor);
+        else {
+          const previous = summaries.find((item) => item.id === cursor);
+          if (!previous) return yield* new VaultError({ reason: "invalid-input" });
+          remaining = items.filter((item) => compare(item, previous) > 0);
+        }
+      }
       const page = remaining.slice(0, PAGE_SIZE);
-      const records = yield* Effect.forEach(page, load, { concurrency: 4 });
       return {
-        items: records.flatMap((record) =>
-          record !== null &&
-          record.item.state !== "deleted" &&
-          (input.includeArchived || record.item.state === "active")
-            ? [summary(record.item, record.version)]
-            : [],
-        ),
-        nextCursor: remaining.length > page.length ? page[page.length - 1]! : null,
+        items: page,
+        nextCursor: remaining.length > page.length ? page[page.length - 1]!.id : null,
+        ...(input.query !== undefined || input.kind !== undefined || input.sort !== undefined
+          ? { archivedCount: matches.filter((item) => item.state === "archived").length }
+          : {}),
       };
     }),
     save: Effect.fn("VaultCore.save")(function* (raw, actorId, authorize, sourceRef) {

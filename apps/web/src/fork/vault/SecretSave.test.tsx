@@ -6,6 +6,8 @@ import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 import * as Redacted from "effect/Redacted";
+import type { VaultItemSummary } from "@t3tools/contracts/fork";
+import { AsyncResult } from "effect/reactivity";
 // Access changes reach the form through store subscriptions, as in the app. The React
 // Compiler memoizes the card's children, so re-rendering the root would not re-run them.
 const state = vi.hoisted(() => {
@@ -14,6 +16,9 @@ const state = vi.hoisted(() => {
     allowed: true,
     supported: true,
     configs: new Map(),
+    revision: 0,
+    items: [] as VaultItemSummary[],
+    refresh: vi.fn(),
     save: vi.fn(),
     answer: vi.fn(),
     subscribe: (listener: () => void) => {
@@ -22,19 +27,41 @@ const state = vi.hoisted(() => {
         listeners.delete(listener);
       };
     },
-    notify: () => listeners.forEach((listener) => listener()),
+    notify: () => {
+      state.revision += 1;
+      listeners.forEach((listener) => listener());
+    },
   };
 });
 vi.mock("@effect/atom-react", async () => {
   const { useSyncExternalStore } = await import("react");
-  return { useAtomValue: () => useSyncExternalStore(state.subscribe, () => state.allowed) };
+  return {
+    useAtomValue: (atom: unknown) => {
+      useSyncExternalStore(state.subscribe, () => state.revision);
+      return atom === "permission"
+        ? state.allowed
+        : AsyncResult.success({ items: state.items, nextCursor: null });
+    },
+    useAtomRefresh: () => state.refresh,
+  };
 });
-vi.mock("@t3tools/client-runtime/fork", () => ({ supportsLoomFeature: () => state.supported }));
+vi.mock("@t3tools/client-runtime/fork", async () => {
+  const { secretSaveTarget } = await import("@t3tools/client-runtime/fork/vault-secret");
+  return {
+    supportsLoomFeature: () => state.supported,
+    secretSaveTarget,
+    VAULT_SEARCH_DEBOUNCE_MS: 250,
+  };
+});
+vi.mock("~/state/queries", () => ({ useDebouncedValue: (value: string) => value }));
+vi.mock("~/fork/vault/SavedSecretAnswer", () => ({ SavedSecretAnswer: () => null }));
 vi.mock("~/state/entities", async () => {
   const { useSyncExternalStore } = await import("react");
   return { useServerConfigs: () => useSyncExternalStore(state.subscribe, () => state.configs) };
 });
-vi.mock("~/fork/vault/state", () => ({ vault: { save: { permissionAtom: () => null } } }));
+vi.mock("~/fork/vault/state", () => ({
+  vault: { save: { permissionAtom: () => "permission" }, list: () => "matches" },
+}));
 vi.mock("~/state/server", () => ({ serverEnvironment: { answerSecretRequest: "answer" } }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => (command === "answer" ? state.answer : state.save),
@@ -88,12 +115,24 @@ const item = {
   reason: "Use a private credential",
   secretStatus: "pending" as const,
 };
+const matchedItem: VaultItemSummary = {
+  id: "a".repeat(32),
+  label: item.label,
+  kind: "account",
+  state: "active",
+  version: 4,
+  createdAt: "2026-10-28T00:00:00.000Z",
+  updatedAt: "2026-10-28T00:00:00.000Z",
+};
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   state.allowed = true;
   state.supported = true;
   state.configs = new Map();
+  state.items = [];
+  state.revision = 0;
+  state.refresh.mockReset();
   state.save.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
   state.answer.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -186,3 +225,84 @@ it.each(["permission", "capability"])(
     expect(state.answer).toHaveBeenCalledOnce();
   },
 );
+
+function showMatches(items: VaultItemSummary[]) {
+  act(() => {
+    state.items = items;
+    state.notify();
+  });
+}
+function clickButton(label: string) {
+  act(() => {
+    Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent === label)!
+      .click();
+  });
+}
+it("replaces the matching item's current version and preserves its kind", async () => {
+  showMatches([matchedItem]);
+  fillSecret();
+  act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  await submit();
+  expect(state.save).toHaveBeenCalledOnce();
+  expect(state.save.mock.calls[0]?.[0]).toMatchObject({
+    environmentId,
+    input: {
+      id: matchedItem.id,
+      expectedVersion: matchedItem.version,
+      label: matchedItem.label,
+      kind: matchedItem.kind,
+    },
+  });
+  expect(state.answer).toHaveBeenCalledOnce();
+});
+it("saves as a new secret when the human declines replacing the matching item", async () => {
+  showMatches([matchedItem]);
+  fillSecret();
+  act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  clickButton("Save as new");
+  await submit();
+  const input = state.save.mock.calls[0]?.[0].input;
+  expect(input).toMatchObject({
+    expectedVersion: 0,
+    label: matchedItem.label,
+    kind: "secret",
+    operationId: input.id,
+  });
+  expect(input.id).not.toBe(matchedItem.id);
+  expect(state.answer).toHaveBeenCalledOnce();
+});
+it("holds a stale replacement until refresh clears the error and retries the current version", async () => {
+  showMatches([matchedItem]);
+  fillSecret();
+  act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  state.save.mockResolvedValueOnce({
+    _tag: "Failure",
+    cause: Cause.fail(new Error("Version conflict: synthetic-private-value")),
+  });
+  await submit();
+  expect(state.answer).not.toHaveBeenCalled();
+  expect(state.save.mock.calls[0]?.[0].input).toMatchObject({
+    id: matchedItem.id,
+    expectedVersion: 4,
+    kind: matchedItem.kind,
+  });
+  expect(container.textContent).toContain("It may have changed");
+  expect(container.textContent).not.toContain("synthetic-private-value");
+  state.refresh.mockImplementationOnce(() => {
+    state.items = [{ ...matchedItem, version: 5 }];
+    state.notify();
+  });
+  clickButton("Refresh matching item");
+  expect(state.refresh).toHaveBeenCalledOnce();
+  expect(container.textContent).not.toContain("It may have changed");
+  await submit();
+  expect(state.save).toHaveBeenCalledTimes(2);
+  expect(state.save.mock.calls[1]?.[0].input).toMatchObject({
+    id: matchedItem.id,
+    expectedVersion: 5,
+    kind: matchedItem.kind,
+    operationId: state.save.mock.calls[0]?.[0].input.operationId,
+  });
+  expect(state.answer).toHaveBeenCalledOnce();
+});

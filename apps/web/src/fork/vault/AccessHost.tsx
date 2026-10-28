@@ -36,7 +36,7 @@ export function VaultAccessHost() {
     () =>
       onOpenVaultProfiles(({ environmentId, section }) => {
         void navigate({
-          ...forkSettingsTarget(`vault-${section}`),
+          ...forkSettingsTarget(section === "references" ? "vault" : "vault-profiles"),
           search: { machine: environmentId, project: undefined, checkout: undefined },
         });
       }),

@@ -2,7 +2,8 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultItemSummary } from "@t3tools/contracts/fork";
+import { VAULT_ITEM_SEARCH_FEATURE, type VaultItemSummary } from "@t3tools/contracts/fork";
+import { useEnvironmentQuery } from "~/state/query";
 import {
   createVaultAccessAtoms,
   createVaultHealthAtoms,
@@ -257,19 +258,60 @@ function ConnectedItems({
   ownerEnabled: boolean;
   sshEnabled: boolean;
 }) {
-  const result = useAtomValue(
-    vault.list({ environmentId, input: { cursor: null, includeArchived: false } }),
+  const configs = useServerConfigs();
+  const searchable = supportsLoomFeature(
+    configs.get(environmentId)?.environment.capabilities,
+    VAULT_ITEM_SEARCH_FEATURE,
   );
-  const page = result._tag === "Success" && !result.waiting ? result.value : null;
-  const items =
-    page?.items.filter((item) => item.kind === "ssh-key" || item.kind === "service-connection") ??
-    [];
+  const legacy = useEnvironmentQuery(
+    !searchable
+      ? vault.list({ environmentId, input: { cursor: null, includeArchived: false } })
+      : null,
+  );
+  const sshRecords = useEnvironmentQuery(
+    searchable
+      ? vault.kindSummary({
+          environmentId,
+          input: { cursor: null, includeArchived: false, kind: "ssh-key", sort: "label" },
+        })
+      : null,
+  );
+  const githubRecords = useEnvironmentQuery(
+    searchable
+      ? vault.kindSummary({
+          environmentId,
+          input: {
+            cursor: null,
+            includeArchived: false,
+            kind: "service-connection",
+            sort: "label",
+          },
+        })
+      : null,
+  );
+  const loaded = searchable
+    ? sshRecords.isSuccess &&
+      githubRecords.isSuccess &&
+      !sshRecords.isPending &&
+      !githubRecords.isPending
+    : legacy.isSuccess && !legacy.isPending;
+  const error = searchable ? (sshRecords.error ?? githubRecords.error) : legacy.error;
+  const items = searchable
+    ? [...(sshRecords.data?.items ?? []), ...(githubRecords.data?.items ?? [])]
+    : (legacy.data?.items.filter(
+        (item) => item.kind === "ssh-key" || item.kind === "service-connection",
+      ) ?? []);
+  const count = searchable
+    ? (sshRecords.data?.total ?? 0) + (githubRecords.data?.total ?? 0)
+    : items.length;
   const [sshItem, setSshItem] = useState<string | null | undefined>(undefined);
   const canCreateSsh = useAtomValue(ssh.generate.permissionAtom(environmentId));
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-medium">Connected development access</h4>
+        <h4 className="text-sm font-medium">
+          Connected development access{loaded && searchable ? ` (${count})` : ""}
+        </h4>
         {sshEnabled ? (
           <Button
             size="sm"
@@ -281,15 +323,15 @@ function ConnectedItems({
           </Button>
         ) : null}
       </div>
-      {!page ? (
-        <LoomSettingsNotice role={result._tag === "Failure" ? "alert" : "status"}>
-          {result._tag === "Failure"
+      {!loaded ? (
+        <LoomSettingsNotice role={error !== null ? "alert" : "status"}>
+          {error !== null
             ? "Could not load connections. Refresh Vault below."
             : "Loading connections…"}
         </LoomSettingsNotice>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No development connections on this page. Create an SSH key below or connect GitHub in{" "}
+          No development connections. Create an SSH key below or connect GitHub in{" "}
           <TopicLink topic="vault-github">GitHub for agents</TopicLink>.
         </p>
       ) : (
@@ -318,8 +360,10 @@ function ConnectedItems({
           ))}
         </ul>
       )}
-      {page?.nextCursor ? (
-        <p className="text-sm text-muted-foreground">More records are available in Vault below.</p>
+      {(searchable ? count > items.length : !!legacy.data?.nextCursor) ? (
+        <p className="text-sm text-muted-foreground">
+          More connections are available in the Vault item list below.
+        </p>
       ) : null}
       {sshItem !== undefined ? (
         <VaultSshDialog

@@ -1,3 +1,4 @@
+import { VaultReferenceSearch } from "./ReferenceSearch";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
@@ -13,7 +14,6 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   createVaultTestAccountAtoms,
-  createVaultReferenceAtoms,
   supportsLoomFeature,
   vaultTestAccountActions,
   vaultTestAccountDeadlines,
@@ -33,7 +33,6 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { uuidv4 } from "../../lib/uuid";
 import { useVaultTime } from "./useVaultTime";
 const atoms = createVaultTestAccountAtoms(connectionAtomRuntime);
-const references = createVaultReferenceAtoms(connectionAtomRuntime);
 const id = () => uuidv4().replaceAll("-", "");
 const valid = Schema.is(VaultTestAccountMutation);
 const message = (error: unknown) =>
@@ -433,64 +432,13 @@ function AccountPicker({
   disabled: boolean;
   select: (item: VaultItemSummary) => void;
 }) {
-  const [query, setQuery] = useState(""),
-    [search, setSearch] = useState(""),
-    [cursor, setCursor] = useState<string | null>(null);
-  const result = useEnvironmentQuery(
-    connected
-      ? references.search({
-          environmentId,
-          input: { query: search, kind: "account", includeArchived: false, cursor },
-        })
-      : null,
-  );
   return (
-    <View className="gap-2">
-      <Text>Search Vault accounts</Text>
-      <TextInput
-        className="rounded-md border border-border p-3 text-foreground"
-        accessibilityLabel="Search Vault accounts"
-        editable={!disabled}
-        value={query}
-        maxLength={100}
-        onChangeText={setQuery}
-      />
-      <Button
-        label="Search accounts"
-        disabled={disabled}
-        onPress={() => {
-          setSearch(query.trim());
-          setCursor(null);
-          result.refresh();
-        }}
-      />
-      {result.isPending ? <Text>Searching…</Text> : null}
-      {result.error ? <Text accessibilityRole="alert">{result.error}</Text> : null}
-      {result.data?.items.length === 0 ? (
-        <Text>No matching accounts. Create a dedicated Account item in Vault first.</Text>
-      ) : null}
-      {result.data?.items.map((ref) => (
-        <Button
-          key={ref.item.id}
-          label={`Use ${ref.item.label} (version ${ref.item.version})`}
-          disabled={disabled || result.isPending || !!result.error}
-          onPress={() => select(ref.item)}
-        />
-      ))}
-      <View className="flex-row gap-2">
-        <Button
-          label="First account page"
-          disabled={disabled || cursor === null}
-          onPress={() => setCursor(null)}
-        />
-        {result.data?.nextCursor ? (
-          <Button
-            label="Next account page"
-            disabled={disabled}
-            onPress={() => setCursor(result.data!.nextCursor)}
-          />
-        ) : null}
-      </View>
-    </View>
+    <VaultReferenceSearch
+      environmentId={environmentId}
+      connected={connected}
+      disabled={disabled}
+      kind="account"
+      onSelect={({ item }) => select(item)}
+    />
   );
 }

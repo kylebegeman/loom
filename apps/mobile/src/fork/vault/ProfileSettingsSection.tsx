@@ -1,5 +1,4 @@
 import { VaultReferenceSearch } from "./ReferenceSearch";
-import { VaultReferenceSettings } from "./ReferenceSettingsSection";
 import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
 import { VaultRequirementImport, VaultRequirementExport } from "./ProfileTransfer";
@@ -61,9 +60,6 @@ export function VaultProfileSettingsSection({
   const supportsProfiles = supportsLoomFeature(config?.environment.capabilities, "vault-profiles");
   return (
     <>
-      <SettingsSection title="Vault references">
-        <VaultReferenceSettings key={environmentId} environmentId={environmentId} />
-      </SettingsSection>
       {supportsProfiles ? (
         <SettingsSection title="Vault project profiles">
           {canRead ? (

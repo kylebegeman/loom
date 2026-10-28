@@ -27,6 +27,11 @@ import * as Semaphore from "effect/Semaphore";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+// fork: ext-vault
+import {
+  prepareSecretRequestFile,
+  removeSecretRequestFile,
+} from "../fork/vault/secret-request-file.ts";
 
 const SECRET_REF_PREFIX = "secret-ref:";
 const storeName = (ref: SecretRef) => `secret-request-${ref.slice(SECRET_REF_PREFIX.length)}`;
@@ -57,7 +62,11 @@ const decodeStored = Schema.decodeUnknownOption(StoredSecret);
 export class SecretRequests extends Context.Service<
   SecretRequests,
   {
-    readonly answer: (input: SecretRequestAnswerInput) => Effect.Effect<void, SecretRequestError>;
+    // fork: ext-vault
+    readonly answer: (
+      input: SecretRequestAnswerInput,
+      fileContent?: Uint8Array,
+    ) => Effect.Effect<void, SecretRequestError>;
     readonly savedRef: (input: {
       readonly threadId: ThreadId;
       readonly turnItemId: string;
@@ -90,13 +99,16 @@ const make = Effect.gen(function* () {
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
   // Beside the store's own files so the same owner-only directory and cleanup rules apply.
   const filesDir = store.directory === undefined ? undefined : path.join(store.directory, "files");
+  // fork: ext-vault
+  const answerLock = yield* Semaphore.make(1);
 
   const salt = Buffer.from(
     yield* store.getOrCreateRandom("secret-request-salt", 32).pipe(Effect.orDie),
   ).toString("hex");
 
   const answer: SecretRequests["Service"]["answer"] = Effect.fn("SecretRequests.answer")(
-    function* (input) {
+    function* (input, fileContent) {
+      // fork: ext-vault
       yield* Effect.annotateCurrentSpan({
         "orchestration_v2.thread_id": input.threadId,
         "secret_request.answer": input.answer.type,
@@ -118,6 +130,14 @@ const make = Effect.gen(function* () {
       if (run === undefined || ThreadManagementService.isTerminalRunStatus(run.status)) {
         return yield* new SecretRequestError({ reason: "agent_stopped" });
       }
+      // fork: ext-vault
+      if (fileContent !== undefined && (item.delivery !== "file" || input.answer.type !== "save")) {
+        return yield* new SecretRequestError({ reason: "not_a_file_request" });
+      }
+      // fork: ext-vault
+      if (fileContent !== undefined && filesDir === undefined) {
+        return yield* new SecretRequestError({ reason: "store_failed" });
+      }
       // Create before recording so racing answers cannot overwrite values or show saved before storage.
       // Existing values on pending cards finish earlier saves whose recording failed.
       if (input.answer.type === "save") {
@@ -138,6 +158,18 @@ const make = Effect.gen(function* () {
             ),
           );
       }
+      // fork: ext-vault
+      const preparedFile =
+        fileContent === undefined
+          ? undefined
+          : yield* prepareSecretRequestFile(
+              fileSystem,
+              filesDir!,
+              refFor(salt, input.threadId, item.id).slice(SECRET_REF_PREFIX.length),
+              fileContent,
+            ).pipe(
+              Effect.tapError(() => removeLogged(storeName(refFor(salt, input.threadId, item.id)))),
+            );
       const secretStatus = input.answer.type === "save" ? "saved" : "declined";
       yield* threadManagement
         .dispatch({
@@ -161,6 +193,8 @@ const make = Effect.gen(function* () {
               ? pipe(refFor(salt, input.threadId, item.id), storeName, removeLogged)
               : Effect.void,
           ),
+          // fork: ext-vault
+          Effect.tapError(() => removeSecretRequestFile(fileSystem, preparedFile)),
         );
       if (input.answer.type !== "save") return;
       // The wait may have closed the card; delete unrecorded answers because no one receives their refs.
@@ -175,9 +209,13 @@ const make = Effect.gen(function* () {
       const card = recorded.turnItems.find((candidate) => candidate.id === item.id);
       if (card?.type === "secret_request" && card.secretStatus !== "saved") {
         yield* pipe(refFor(salt, input.threadId, item.id), storeName, removeLogged);
+        // fork: ext-vault
+        yield* removeSecretRequestFile(fileSystem, preparedFile);
         return yield* new SecretRequestError({ reason: "agent_stopped" });
       }
     },
+    // fork: ext-vault
+    answerLock.withPermits(1),
   );
 
   const savedRef: SecretRequests["Service"]["savedRef"] = Effect.fn("SecretRequests.savedRef")(

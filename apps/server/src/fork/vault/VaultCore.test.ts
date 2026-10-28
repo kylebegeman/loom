@@ -4,6 +4,7 @@ import { EnvironmentId, SecretRef } from "@t3tools/contracts";
 import { VaultError, type VaultItemSave } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
@@ -251,15 +252,86 @@ it.effect("paginates filtered and deleted records without losing the next cursor
   withCore((core) =>
     Effect.gen(function* () {
       yield* Effect.forEach(
-        Array.from({ length: 27 }, (_, index) => index.toString(16).padStart(32, "0")),
-        (next) => core.save({ ...input, id: next }, "owner"),
+        Array.from({ length: 60 }, (_, index) => index.toString(16).padStart(32, "0")),
+        (next, index) =>
+          Effect.gen(function* () {
+            yield* core.save(
+              {
+                ...input,
+                id: next,
+                label: `Credential ${String(60 - index).padStart(2, "0")}`,
+                kind: index % 2 === 0 ? "account" : "secret",
+              },
+              "owner",
+            );
+            if (index < 15)
+              yield* core.change(
+                {
+                  id: next,
+                  operationId: "c".repeat(32),
+                  expectedVersion: 1,
+                  action: index < 10 ? "archive" : "delete",
+                },
+                "owner",
+              );
+            yield* TestClock.adjust("1 second");
+          }),
       );
       const first = yield* core.list({ cursor: null, includeArchived: false });
       expect(first.items).toHaveLength(25);
       const last = yield* core.list({ cursor: first.nextCursor, includeArchived: false });
-      expect(last.items).toHaveLength(2);
+      expect(last.items).toHaveLength(20);
       expect(last.nextCursor).toBeNull();
-      expect(new Set([...first.items, ...last.items].map((item) => item.id)).size).toBe(27);
+      expect(new Set([...first.items, ...last.items].map((item) => item.id)).size).toBe(45);
+      expect(Object.keys(first).sort()).toEqual(["items", "nextCursor"]);
+      const sorted = yield* core.list({ cursor: null, includeArchived: false, sort: "label" });
+      expect(sorted.items[0]?.label).toBe("Credential 01");
+      expect(sorted.archivedCount).toBe(10);
+      const continued = yield* core.list({
+        cursor: sorted.nextCursor,
+        includeArchived: false,
+        sort: "label",
+      });
+      expect(continued.items[0]?.label).toBe("Credential 26");
+      expect(new Set([...sorted.items, ...continued.items].map((item) => item.id)).size).toBe(45);
+      expect(continued.nextCursor).toBeNull();
+      const filtered = yield* core.list({
+        cursor: null,
+        includeArchived: false,
+        query: "  cReDeNtIaL 1  ",
+        kind: "account",
+        sort: "label",
+      });
+      expect(filtered.items.map((item) => item.label)).toEqual([
+        "Credential 10",
+        "Credential 12",
+        "Credential 14",
+        "Credential 16",
+        "Credential 18",
+      ]);
+      expect(filtered.archivedCount).toBe(0);
+      expect(
+        (yield* core.list({ cursor: null, includeArchived: true, query: "ACCOUNT" })).items.every(
+          (item) => item.kind === "account",
+        ),
+      ).toBe(true);
+      expect(
+        (yield* core.list({
+          cursor: null,
+          includeArchived: false,
+          query: "synthetic-account-secret",
+        })).items,
+      ).toEqual([]);
+      const updated = yield* core.list({ cursor: null, includeArchived: false, sort: "updated" });
+      expect(updated.items[0]?.id).toBe("3b".padStart(32, "0"));
+      expect(
+        (yield* core.list({
+          cursor: null,
+          includeArchived: true,
+          sort: "label",
+          query: "Credential 5",
+        })).archivedCount,
+      ).toBe(9);
     }),
   ),
 );

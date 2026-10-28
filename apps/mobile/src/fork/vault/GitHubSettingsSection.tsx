@@ -57,19 +57,59 @@ export function VaultGitHubSettingsSection({
     </SettingsSection>
   );
 }
+export function VaultGitHubConnectSheet({
+  environmentId,
+  connected,
+  initialLabel,
+  onSaved,
+  onClose,
+}: {
+  environmentId: EnvironmentId;
+  connected: boolean;
+  initialLabel: string;
+  onSaved: (info: VaultGitHubInfo) => void;
+  onClose: () => void;
+}) {
+  const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  return (
+    <Manager
+      environmentId={environmentId}
+      connected={connected}
+      ownerMode={false}
+      canWrite={canWrite}
+      creation={{ label: initialLabel, onSaved, onClose }}
+    />
+  );
+}
+
 function Manager({
   environmentId,
   connected,
   ownerMode,
   canWrite,
+  creation,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   ownerMode: boolean;
   canWrite: boolean;
+  creation?: { label: string; onSaved: (info: VaultGitHubInfo) => void; onClose: () => void };
 }) {
   const [cursor, setCursor] = useState<string | null>(null),
-    [draft, setDraft] = useState<VaultGitHubDraft | null>(null),
+    [draft, setDraft] = useState<VaultGitHubDraft | null>(() =>
+      creation
+        ? {
+            id: id(),
+            expectedVersion: 0,
+            label: creation.label || "GitHub",
+            repositories: "",
+            type: "token",
+            appId: "",
+            installationId: "",
+            secret: "",
+          }
+        : null,
+    ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [notice, setNotice] = useState<string | null>(null),
@@ -116,92 +156,103 @@ function Manager({
   };
   return (
     <View className="gap-3">
-      <Text>
-        {ownerMode
-          ? "Connect GitHub once. Agents in this owner's environment can use the saved connection for its listed repositories. GitHub permissions still apply."
-          : "Save a GitHub connection, then choose the projects and repositories it can use. Approve recurring project access once; it lasts until you revoke it."}
-      </Text>
-      {!connected ? <Text>Reconnect this computer to manage GitHub connections.</Text> : null}
-      <Button
-        label="Connect GitHub"
-        tone="primary"
-        disabled={cannotSave || !!draft}
-        onPress={() => edit()}
-      />
-      <Button
-        label="Refresh GitHub connections"
-        tone="text"
-        disabled={busy || !connected}
-        onPress={page.refresh}
-      />
-      {page.isPending ? <Text>Loading GitHub connections…</Text> : null}
-      {error || page.error ? (
-        <Text accessibilityRole="alert">
-          {error ?? "Could not load connections. Check Vault access and refresh."}
-        </Text>
+      {!creation ? (
+        <>
+          <Text>
+            {ownerMode
+              ? "Connect GitHub once. Agents in this owner's environment can use the saved connection for its listed repositories. GitHub permissions still apply."
+              : "Save a GitHub connection, then choose the projects and repositories it can use. Approve recurring project access once; it lasts until you revoke it."}
+          </Text>
+          {!connected ? <Text>Reconnect this computer to manage GitHub connections.</Text> : null}
+          <Button
+            label="Connect GitHub"
+            tone="primary"
+            disabled={cannotSave || !!draft}
+            onPress={() => edit()}
+          />
+          <Button
+            label="Refresh GitHub connections"
+            tone="text"
+            disabled={busy || !connected}
+            onPress={page.refresh}
+          />
+          {page.isPending ? <Text>Loading GitHub connections…</Text> : null}
+          {error || page.error ? (
+            <Text accessibilityRole="alert">
+              {error ?? "Could not load connections. Check Vault access and refresh."}
+            </Text>
+          ) : null}
+          {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
+          {page.data?.items.length === 0 ? (
+            <Text>No saved GitHub connections on this page. Connect GitHub to get started.</Text>
+          ) : null}
+          {page.data?.items.map((info) => (
+            <Connection
+              key={`${info.item.id}:${info.item.version}`}
+              info={info}
+              environmentId={environmentId}
+              connected={connected}
+              ownerMode={ownerMode}
+              canWrite={canWrite}
+              canTest={canTest}
+              canChange={canChange}
+              canSave={canSave}
+              disabled={locked || !!draft}
+              onEdit={() => edit(info)}
+              onTest={(repository) =>
+                void act(async () => {
+                  const result = await test({
+                    environmentId,
+                    input: { id: info.item.id, expectedVersion: info.item.version, repository },
+                  });
+                  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                  setNotice(
+                    `API access verified for ${result.value.account} at ${repository}.${result.value.tokenExpiresAt ? " Loom attempts to release short-lived installation tokens after use." : " Token expiration is managed on GitHub."}`,
+                  );
+                })
+              }
+              onChange={(action) =>
+                void act(async () => {
+                  const result = await change({
+                    environmentId,
+                    input: {
+                      id: info.item.id,
+                      operationId: id(),
+                      expectedVersion: info.item.version,
+                      action,
+                    },
+                  });
+                  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                  setNotice(
+                    action === "archive"
+                      ? "Disconnected locally. Revoke credentials on GitHub separately; issued tokens may still work."
+                      : "Restored locally. Test its current permissions before use.",
+                  );
+                })
+              }
+            />
+          ))}
+          <Button
+            label="First GitHub connections"
+            disabled={busy || !cursor}
+            onPress={() => setCursor(null)}
+          />
+          <Button
+            label="More GitHub connections"
+            disabled={busy || !page.data?.nextCursor}
+            onPress={() => setCursor(page.data?.nextCursor ?? null)}
+          />
+        </>
       ) : null}
-      {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
-      {page.data?.items.length === 0 ? (
-        <Text>No saved GitHub connections on this page. Connect GitHub to get started.</Text>
-      ) : null}
-      {page.data?.items.map((info) => (
-        <Connection
-          key={`${info.item.id}:${info.item.version}`}
-          info={info}
-          environmentId={environmentId}
-          connected={connected}
-          ownerMode={ownerMode}
-          canWrite={canWrite}
-          canTest={canTest}
-          canChange={canChange}
-          canSave={canSave}
-          disabled={locked || !!draft}
-          onEdit={() => edit(info)}
-          onTest={(repository) =>
-            void act(async () => {
-              const result = await test({
-                environmentId,
-                input: { id: info.item.id, expectedVersion: info.item.version, repository },
-              });
-              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-              setNotice(
-                `API access verified for ${result.value.account} at ${repository}.${result.value.tokenExpiresAt ? " Loom attempts to release short-lived installation tokens after use." : " Token expiration is managed on GitHub."}`,
-              );
-            })
-          }
-          onChange={(action) =>
-            void act(async () => {
-              const result = await change({
-                environmentId,
-                input: {
-                  id: info.item.id,
-                  operationId: id(),
-                  expectedVersion: info.item.version,
-                  action,
-                },
-              });
-              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-              setNotice(
-                action === "archive"
-                  ? "Disconnected locally. Revoke credentials on GitHub separately; issued tokens may still work."
-                  : "Restored locally. Test its current permissions before use.",
-              );
-            })
-          }
-        />
-      ))}
-      <Button
-        label="First GitHub connections"
-        disabled={busy || !cursor}
-        onPress={() => setCursor(null)}
-      />
-      <Button
-        label="More GitHub connections"
-        disabled={busy || !page.data?.nextCursor}
-        onPress={() => setCursor(page.data?.nextCursor ?? null)}
-      />
       {draft ? (
-        <Sheet title="GitHub connection" dismissible={!busy} onClose={() => setDraft(null)}>
+        <Sheet
+          title="GitHub connection"
+          dismissible={!busy}
+          onClose={() => {
+            setDraft(null);
+            creation?.onClose();
+          }}
+        >
           <ScrollView
             keyboardShouldPersistTaps="handled"
             contentInsetAdjustmentBehavior="automatic"
@@ -329,7 +380,15 @@ function Manager({
                 ? "Owner access allows agents to use this saved connection without separate project approvals."
                 : "Saving this connection does not authorize any project."}
             </Text>
-            {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+            {!connected ? <Text>Reconnect this computer to save a GitHub connection.</Text> : null}
+            {error || page.error ? (
+              <Text accessibilityRole="alert">{error ?? page.error}</Text>
+            ) : null}
+            {page.isPending ? <Text>Checking Vault connection…</Text> : null}
+            {page.error ? <Button label="Retry Vault connection" onPress={page.refresh} /> : null}
+            {!canWrite || !canSave ? (
+              <Text>This connection does not have permission to save GitHub credentials.</Text>
+            ) : null}
             <Button
               label="Test and save GitHub connection"
               disabled={cannotSave}
@@ -343,6 +402,7 @@ function Manager({
                   const result = await save({ environmentId, input });
                   if (result._tag === "Failure") throw squashAtomCommandFailure(result);
                   setDraft(null);
+                  creation?.onSaved(result.value);
                   setNotice(
                     ownerMode
                       ? "GitHub connected. Agents can use this connection for its allowed repositories."
@@ -354,7 +414,10 @@ function Manager({
             <Button
               label="Cancel GitHub connection"
               disabled={busy}
-              onPress={() => setDraft(null)}
+              onPress={() => {
+                setDraft(null);
+                creation?.onClose();
+              }}
             />
           </ScrollView>
         </Sheet>

@@ -3041,7 +3041,8 @@ OS-isolated and unprefixed terminal commands receive no secret environment or so
 
 Shared `vault-references.ts`/`VaultReferences` add environment-scoped metadata search and
 stable reference text. Agent search/describe require inspect grants; unknown/forbidden IDs
-both describe as null. Search scans at most four 25-record pages and preserves sparse cursors.
+both describe as null. Search filters safe metadata before selecting a 25-item page in label
+order; thread inspect policy can remove further records while preserving its cursor.
 Client-runtime queries share the item-change signal; web/native pickers are reusable consumers.
 
 Shared `vault-profiles.ts`/`VaultProfiles` add project-local CAS registries, named required

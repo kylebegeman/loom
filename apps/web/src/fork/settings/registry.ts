@@ -16,7 +16,6 @@ export type ForkSettingsTopicId =
   | "vault-profiles"
   | "vault-access"
   | "vault-test-accounts"
-  | "vault-references"
   | "vault-passwords"
   | "vault-brokers"
   | "vault-health"
@@ -139,10 +138,11 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
   {
     id: "vault",
     scope: "computer",
-    title: "Vault status",
-    description: "Connect Vault and manage agent access in this environment.",
+    title: "Vault items",
+    description: "Search, copy references and manage Vault items and agent access.",
     home: "/settings/vault",
-    keywords: "vault openbao status secrets credentials records unlock environment",
+    keywords:
+      "vault openbao status secrets credentials records unlock environment reference references search archive restore item",
   },
   {
     id: "vault-github",
@@ -177,14 +177,6 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     description: "Organize accounts used for development and verification.",
     home: "/settings/vault",
     keywords: "vault test account collection verification login role synthetic",
-  },
-  {
-    id: "vault-references",
-    scope: "computer",
-    title: "References",
-    description: "Find shareable references to records without exposing their values.",
-    home: "/settings/vault",
-    keywords: "vault reference references search inspect id secret link item",
   },
   {
     id: "vault-passwords",

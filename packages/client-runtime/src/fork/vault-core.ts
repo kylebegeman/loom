@@ -12,6 +12,8 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "../state/runtime.ts";
+import { createVaultItemCollections } from "./vault-item-list.ts";
+export { VAULT_SEARCH_DEBOUNCE_MS } from "./vault-item-list.ts";
 
 export const VAULT_KIND_LABELS: Record<VaultItemKind, string> = {
   secret: "Secret",
@@ -58,16 +60,18 @@ export const refreshVaultItems = (
     registry.set(signal, registry.get(signal) + 1);
   });
 export function createVaultCoreAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
+  const list = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:vault:list",
+    tag: V.list,
+    refreshTrigger: ({ environmentId }) => vaultItemChanges(environmentId),
+  });
   return {
+    ...createVaultItemCollections(list),
     status: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:vault:status",
       tag: V.status,
     }),
-    list: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "loom:vault:list",
-      tag: V.list,
-      refreshTrigger: ({ environmentId }) => vaultItemChanges(environmentId),
-    }),
+    list,
     save: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:save",
       tag: V.save,

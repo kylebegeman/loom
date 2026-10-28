@@ -15,6 +15,7 @@ export const VaultItemKind = Schema.Literals([
   "secure-file",
 ]);
 export type VaultItemKind = typeof VaultItemKind.Type;
+export const VAULT_ITEM_SEARCH_FEATURE = "vault-item-search";
 export const VaultItemSummary = Schema.Struct({
   id: VaultItemId,
   label: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
@@ -115,11 +116,15 @@ export type VaultItemChange = typeof VaultItemChange.Type;
 export const VaultItemList = Schema.Struct({
   cursor: Schema.NullOr(VaultItemId),
   includeArchived: Schema.Boolean,
+  query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
+  kind: Schema.optionalKey(VaultItemKind),
+  sort: Schema.optionalKey(Schema.Literals(["label", "updated"])),
 });
 export type VaultItemList = typeof VaultItemList.Type;
 export const VaultItemPage = Schema.Struct({
   items: Schema.Array(VaultItemSummary),
   nextCursor: Schema.NullOr(VaultItemId),
+  archivedCount: Schema.optionalKey(NonNegativeInt),
 });
 export type VaultItemPage = typeof VaultItemPage.Type;
 export const VaultItemReveal = Schema.Struct({ id: VaultItemId, expectedVersion: PositiveInt });

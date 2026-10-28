@@ -1,5 +1,7 @@
 // fork: vault-core
 import { useSecretVaultSave } from "~/fork/vault/SecretSave";
+// fork: vault-core
+import { SavedSecretAnswer } from "~/fork/vault/SavedSecretAnswer";
 import { pipe } from "effect/Function";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
@@ -159,6 +161,17 @@ function PendingSecretRequestForm(props: {
       </div>
       {/* fork: vault-core */}
       {vaultSave.control(submitting)}
+      {/* fork: vault-core */}
+      <SavedSecretAnswer
+        environmentId={props.environmentId}
+        request={item}
+        disabled={submitting || vaultSave.saved}
+        onBusyChange={(busy) => {
+          inFlight.current = busy;
+          setSubmitting(busy);
+        }}
+        onAnswered={() => setSecret("")}
+      />
       {error !== null ? (
         <p id={errorId} role="alert" className="text-xs text-destructive">
           {error}

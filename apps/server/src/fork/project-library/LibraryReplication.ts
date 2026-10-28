@@ -62,7 +62,7 @@ type ReplicationStatus = {
   readonly acknowledgedSequence: number;
   readonly pendingEntries: number;
   readonly pendingBytes: number;
-  readonly maxPendingBytes: number;
+  readonly maxPendingBytes?: number;
   readonly lastFailure: LibraryError["reason"] | null;
   readonly threads: readonly {
     readonly threadId: ThreadId;
@@ -153,7 +153,6 @@ const disabledStatus = Effect.succeed<ReplicationStatus>({
   acknowledgedSequence: 0,
   pendingEntries: 0,
   pendingBytes: 0,
-  maxPendingBytes: 0,
   lastFailure: null,
   threads: [],
 });

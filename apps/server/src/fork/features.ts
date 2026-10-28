@@ -1,4 +1,5 @@
 import {
+  VAULT_SECRET_FEATURE,
   DIRECTORY_FEATURE,
   LIBRARY_DECISIONS_FEATURE,
   DIRECTORY_REPORTING_FEATURE,
@@ -16,6 +17,7 @@ import {
   LIBRARY_LAUNCH_FILES_FEATURE,
   CHECKOUT_RELEASE_FEATURE,
   CHECKOUT_RESTORE_FEATURE,
+  VAULT_ITEM_SEARCH_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
@@ -24,11 +26,13 @@ import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
+  VAULT_SECRET_FEATURE,
   "skill-registry",
   "project-profiles",
   "project-workflows",
   "core",
   "vault-core",
+  VAULT_ITEM_SEARCH_FEATURE,
   "vault-owner-trusted",
   "vault-connection-resolution",
   "vault-test-accounts",

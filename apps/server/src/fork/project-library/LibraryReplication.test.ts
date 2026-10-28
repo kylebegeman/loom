@@ -11,6 +11,7 @@ import {
 import {
   botRunThreadId,
   LibraryError,
+  LibraryReplicationStatus,
   type LibraryCopyHealth,
   type LibraryInfo,
   type LibraryIngestHistoryRequest,
@@ -28,6 +29,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -58,6 +60,8 @@ import {
   copyFor,
   archiveFor,
 } from "./Library.testkit.ts";
+
+const encodeReplicationStatus = Schema.encodeEffect(LibraryReplicationStatus);
 
 const project: LibraryProject = {
   id: "independent-project",
@@ -2350,7 +2354,9 @@ describe("durable Library history replication", () => {
       );
       yield* disabled.drain;
       yield* disabled.flush;
-      expect(yield* disabled.status).toMatchObject({ enabled: false, pendingEntries: 0 });
+      const status = yield* disabled.status;
+      expect(status).toMatchObject({ enabled: false, pendingEntries: 0 });
+      expect(yield* encodeReplicationStatus(status)).not.toHaveProperty("maxPendingBytes");
     }).pipe(
       Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
       Effect.provideService(HistorySource.LibraryHistorySource, {

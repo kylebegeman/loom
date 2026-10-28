@@ -75,6 +75,15 @@ describe("fork settings links", () => {
       to: "/settings/vault",
       hash: "loom-vault-github",
     });
+    expect(forkSettingsTarget("vault-references")).toEqual({
+      to: "/settings/vault",
+      hash: "loom-vault",
+    });
+    expect(legacyLoomSettingsTarget({ search: {}, hash: "#loom-vault-references" })).toEqual({
+      to: "/settings/vault",
+      search: {},
+      hash: "loom-vault",
+    });
     expect(forkSettingsTarget("model-preview-3d")).toEqual({
       to: "/settings/tools",
       hash: "loom-model-preview-3d",

@@ -53,6 +53,8 @@ import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.t
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
 import { ProjectLifecycleToolkit } from "../../apps/server/src/fork/project-lifecycle/mcp.ts"; // fork: project-lifecycle
 import { DirectoryToolkit } from "../../apps/server/src/fork/directory/mcp.ts"; // fork: directory-computers
+import { VaultCoreToolkit } from "../../apps/server/src/fork/vault/mcp.ts"; // fork: vault-core
+import { VaultProfileToolkit } from "../../apps/server/src/fork/vault/profile-mcp.ts"; // fork: vault-references
 import { BotsToolkit } from "../../apps/server/src/fork/bots/mcp.ts"; // fork: bots-triggers
 import {
   CLAUDE_PROVIDER,
@@ -306,6 +308,8 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   ProjectLifecycleToolkit, // fork: project-lifecycle
   DirectoryToolkit, // fork: directory-computers
   BotsToolkit, // fork: bots-triggers
+  VaultCoreToolkit, // fork: vault-core
+  VaultProfileToolkit, // fork: vault-references
   OrchestratorToolkit,
   ThreadToolkit,
   AttachmentToolkit,

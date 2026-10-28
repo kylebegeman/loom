@@ -13,6 +13,7 @@ import { VaultSshRpcGroup } from "./vault-ssh.ts";
 import { VaultBrokerRpcGroup } from "./vault-brokers.ts";
 import { VaultAccessRpcGroup } from "./vault-access.ts";
 import { VaultCoreRpcGroup } from "./vault-core.ts";
+import { VaultSecretRpcGroup } from "./vault-secret.ts";
 import { SitesRpcGroup } from "./sites.ts";
 import { ProjectLibraryRpcGroup, LIBRARY_WS_METHODS } from "./project-library.ts";
 import { ProjectLibraryHealthRpcGroup } from "./project-library-health.ts";
@@ -94,6 +95,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   VaultReferenceRpcGroup,
   VaultSshRpcGroup,
   VaultCoreRpcGroup,
+  VaultSecretRpcGroup,
   VaultBrokerRpcGroup,
   VaultAccessRpcGroup,
   SitesRpcGroup,

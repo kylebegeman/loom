@@ -15,6 +15,7 @@ import {
 import { VAULT_SSH_WS_METHODS as VS } from "@t3tools/contracts/fork";
 import { VAULT_BROKER_WS_METHODS as VB } from "@t3tools/contracts/fork";
 import { VAULT_ACCESS_WS_METHODS as VA } from "@t3tools/contracts/fork";
+import { VAULT_SECRET_WS_METHODS as VSECRET } from "@t3tools/contracts/fork";
 import { VAULT_CORE_WS_METHODS as V } from "@t3tools/contracts/fork";
 import { AuthAccessReadScope, AuthAccessWriteScope } from "@t3tools/contracts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
@@ -173,6 +174,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [V.save]: AuthAccessWriteScope,
   [V.change]: AuthAccessWriteScope,
   [V.reveal]: AuthAccessWriteScope,
+  [VSECRET.answerFromItem]: AuthAccessWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,

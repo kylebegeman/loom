@@ -108,7 +108,7 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/components/CommandPalette.tsx`                                                    | `ext-palette`               | Adds fork actions and hosts Library setup in the same searchable popup.                                     |
 | `packages/contracts/src/keybindings.ts`                                                         | `ext-keybindings`           | Fork `loom.*` commands join the static keybinding command list.                                             |
 | `apps/web/src/components/settings/KeybindingsSettings.logic.ts`                                 | `ext-keybindings`           | Fork feature names in keybinding labels, such as "Device QA".                                               |
-| `packages/client-runtime/package.json` (no marker)                                              | `ext-core`                  | `./fork` subpath export, after `./errors`.                                                                  |
+| `packages/client-runtime/package.json` (no marker)                                              | `ext-core`                  | `./fork` and saved-item helper subpath exports.                                                             |
 | `apps/web/src/components/settings/settingsSearch.ts`                                            | `ext-settings`              | Adds the Vault and Tools pages to the nav and every fork topic to search.                                   |
 | `apps/web/src/components/settings/SettingsSidebarNav.tsx`                                       | `ext-settings`              | Gives the Vault and Tools pages their icons.                                                                |
 | Upstream settings pages that host fork topics                                                   | `ext-settings`              | Render `ForkSettingsTopics`, each topic in a single-computer scope.                                         |
@@ -153,8 +153,12 @@ with owner-only POSIX permissions, not same-user process isolation. See
 
 | File                                                                         | Marker                     | Why                                                                                                                  |
 | ---------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`                | Bind private input transfers durably to an idempotent destination operation.                                         |
-| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`                | Cover private transfer retries and cleanup failures.                                                                 |
+| `apps/web/src/components/chat/SecretRequestCard.tsx`                         | `vault-core`               | Mount private-card save and saved-item answer controls.                                                              |
+| `apps/mobile/src/features/threads/SecretRequestCard.tsx`                     | `vault-core`               | Mount native private-card save and saved-item answer controls.                                                       |
+| `apps/server/src/mcp/toolkits/orchestrator/tools.ts`                         | `ext-vault`                | Guide saved-item use through the existing private request card.                                                      |
+| `packages/client-runtime/src/state/commandPermissions.test.ts`               | `ext-core`                 | Check that saved-item answers require the destination access-write scope.                                            |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`                | Bind private transfers and stage decoded saved files before recording an answer.                                     |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`                | Cover private transfer retries, decoded file bytes and cleanup failures.                                             |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core`               | Mount Vault management in the selected computer's native settings.                                                   |
 | `apps/server/src/scheduledTasks/ScheduledTaskService.ts`                     | `vault-scheduled-outcomes` | Exact scheduled-message ownership and task outcome projection; [L76](docs/fork/packets/L76-vault-profiles/SEAMS.md). |
 | `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-scheduled-outcomes` | Review/retry controls for failed Vault-attached scheduled runs.                                                      |
@@ -198,6 +202,8 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
 | `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
 | `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                    | `vault-core`          | Use the real Vault item query tools in agent evals.                          |
+| `evals/mcp-tool-use/run.ts`                                    | `vault-references`    | Include saved-reference tools for private-request guidance.                  |
 | `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
 | `evals/mcp-tool-use/run.ts`                                    | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
 | `evals/mcp-tool-use/run.ts`                                    | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |

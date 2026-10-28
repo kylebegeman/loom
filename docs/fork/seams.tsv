@@ -862,7 +862,7 @@ apps/mobile/src/features/keyboard/CommandPalette.tsx	library	8
 apps/mobile/src/features/keyboard/CommandPalette.tsx	everyday-workflows	3
 apps/web/src/hooks/useHandleNewThread.test.ts	library-projects	9
 apps/web/src/hooks/useHandleNewThread.ts	library-projects	14
-apps/mobile/src/features/threads/SecretRequestCard.tsx	vault-core	6
+apps/mobile/src/features/threads/SecretRequestCard.tsx	vault-core	8
 apps/server/src/sourceControl/GitHubHostSetup.test.ts	github-host-setup	2
 apps/server/src/sourceControl/GitHubHostSetup.ts	github-host-setup	5
 apps/server/src/sourceControl/GitHubSetupFlow.test.ts	github-host-setup	1
@@ -871,7 +871,7 @@ apps/server/src/sourceControl/SourceControlRepositoryService.ts	file-placement	2
 apps/server/src/sourceControl/SourceControlRepositoryService.ts	project-lifecycle	3
 apps/server/src/sourceControl/SourceControlRepositoryService.test.ts	file-placement	7
 apps/server/src/vcs/GitVcsDriverCore.ts	github-host-setup	1
-apps/web/src/components/chat/SecretRequestCard.tsx	vault-core	6
+apps/web/src/components/chat/SecretRequestCard.tsx	vault-core	8
 apps/desktop/src/ipc/methods/notificationBadge.test.ts	respectful-notifications	6
 apps/desktop/src/ipc/methods/notificationBadge.ts	respectful-notifications	6
 apps/mobile/src/features/home/HomeScreen.tsx	attention-status	5
@@ -1509,7 +1509,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 263691
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 264086
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
@@ -1524,3 +1524,6 @@ evals/mcp-tool-use/run.ts	bots-triggers	2
 apps/mobile/src/features/settings/settings-search.ts	ext-settings	2
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	project-lifecycle	1
 apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1
+evals/mcp-tool-use/run.ts	vault-core	2
+evals/mcp-tool-use/run.ts	vault-references	2
+packages/client-runtime/package.json	-	"./fork/vault-secret"
