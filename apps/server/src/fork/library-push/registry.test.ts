@@ -102,7 +102,12 @@ describe("library push registry", () => {
 
   it("treats a changed label, app version or token as a change", () => {
     const first = register(EMPTY_LIBRARY_PUSH_REGISTRY, registration(ALICE, "phone"));
-    for (const change of [{ label: "Renamed" }, { appVersion: "1.0.1" }, { token: tokenFor(99) }]) {
+    for (const change of [
+      { label: "Renamed" },
+      { appVersion: "1.0.1" },
+      { token: tokenFor(99) },
+      { allowedKinds: ["approval"] as const },
+    ]) {
       expect(
         applyRegistration(
           first.registry,

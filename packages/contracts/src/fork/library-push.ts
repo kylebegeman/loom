@@ -7,11 +7,13 @@ import {
   IsoDateTime,
   NonNegativeInt,
   ThreadId,
+  ScheduledTaskId,
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
 
 /** Advertised only by a Library whose push switch, Identity and APNs key settings are all set. */
 export const LIBRARY_PUSH_FEATURE = "library-push";
+export const LIBRARY_PUSH_KIND_PREFERENCES_FEATURE = "library-push-kind-preferences";
 
 /**
  * Advertised by a push Library that also sends agent alerts (C04-10): its alert switch is on and
@@ -29,15 +31,31 @@ const LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH = 256;
  * `limited` is a run that failed on a usage limit. `vault-approval` is a Vault access request from
  * the thread waiting for a decision; a Library from before it answers 400, so that alert is lost.
  */
-export const LibraryPushActivityKind = Schema.Literals([
+export const LIBRARY_PUSH_THREAD_ACTIVITY_KINDS = [
   "approval",
   "input",
   "failed",
   "limited",
   "completed",
   "vault-approval",
-]);
+] as const;
+export const LIBRARY_PUSH_ACTIVITY_KINDS = [
+  ...LIBRARY_PUSH_THREAD_ACTIVITY_KINDS,
+  "scheduled-failed",
+] as const;
+export const LibraryPushActivityKind = Schema.Literals(LIBRARY_PUSH_ACTIVITY_KINDS);
+export const LibraryPushThreadActivityKind = Schema.Literals(LIBRARY_PUSH_THREAD_ACTIVITY_KINDS);
+export type LibraryPushThreadActivityKind = typeof LibraryPushThreadActivityKind.Type;
 export type LibraryPushActivityKind = typeof LibraryPushActivityKind.Type;
+
+export const libraryPushAllowsKind = (
+  allowedKinds: ReadonlyArray<LibraryPushActivityKind> | undefined,
+  kind: LibraryPushActivityKind,
+) => allowedKinds === undefined || allowedKinds.includes(kind);
+
+export const normalizeLibraryPushKinds = (
+  allowedKinds: ReadonlyArray<LibraryPushActivityKind> | undefined,
+) => LIBRARY_PUSH_ACTIVITY_KINDS.filter((kind) => libraryPushAllowsKind(allowedKinds, kind));
 
 /**
  * One thread on the posting computer needs attention or finished. The computer comes from its
@@ -45,10 +63,16 @@ export type LibraryPushActivityKind = typeof LibraryPushActivityKind.Type;
  * posts a change as it sees it happen, or within 2 minutes of it, so no timestamp crosses between
  * two clocks.
  */
-export const LibraryPushActivityRequest = Schema.Struct({
-  threadId: ThreadId.check(Schema.isMaxLength(LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH)),
-  kind: LibraryPushActivityKind,
-});
+export const LibraryPushActivityRequest = Schema.Union([
+  Schema.Struct({
+    threadId: ThreadId.check(Schema.isMaxLength(LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH)),
+    kind: LibraryPushThreadActivityKind,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("scheduled-failed"),
+    taskId: ScheduledTaskId.check(Schema.isMaxLength(LIBRARY_PUSH_ACTIVITY_THREAD_ID_MAX_LENGTH)),
+  }),
+]);
 export type LibraryPushActivityRequest = typeof LibraryPushActivityRequest.Type;
 
 /**
@@ -130,6 +154,7 @@ export const LibraryPushRegisterRequest = Schema.Struct({
   bundleId: LibraryPushBundleId,
   apsEnvironment: LibraryPushApsEnvironment,
   appVersion: Schema.optionalKey(LibraryPushAppVersion),
+  allowedKinds: Schema.optionalKey(Schema.Array(LibraryPushActivityKind)),
   /**
    * Redacted so logs, spans and `JSON.stringify` never carry it. It has no format check: a payload
    * decode failure reaches the client as a defect carrying schema issue text, so the Library checks
@@ -166,6 +191,7 @@ export const LibraryPushDevice = Schema.Struct({
   bundleId: LibraryPushBundleId,
   apsEnvironment: LibraryPushApsEnvironment,
   appVersion: Schema.NullOr(LibraryPushAppVersion),
+  allowedKinds: Schema.optionalKey(Schema.Array(LibraryPushActivityKind)),
   registeredAt: IsoDateTime,
   refreshedAt: IsoDateTime,
   /** The Library stops sending, and drops the row, after this. The phone re-registers before it. */

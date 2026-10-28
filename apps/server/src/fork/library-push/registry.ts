@@ -5,6 +5,8 @@ import { IsoDateTime } from "@t3tools/contracts";
 import {
   LIBRARY_PUSH_DEVICE_ROW_ID_LENGTH,
   LibraryPushApsEnvironment,
+  LibraryPushActivityKind,
+  normalizeLibraryPushKinds,
   LibraryPushAppVersion,
   LibraryPushBundleId,
   LibraryPushClientDeviceId,
@@ -36,6 +38,7 @@ export const StoredLibraryPushDevice = Schema.Struct({
   bundleId: LibraryPushBundleId,
   apsEnvironment: LibraryPushApsEnvironment,
   appVersion: Schema.NullOr(LibraryPushAppVersion),
+  allowedKinds: Schema.optionalKey(Schema.Array(LibraryPushActivityKind)),
   /** Redacted in memory, so a logged or inspected row never shows it. The document holds it raw. */
   token: Schema.RedactedFromValue(Schema.String),
   registeredAt: IsoDateTime,
@@ -136,6 +139,7 @@ export const deviceView = (
   bundleId: row.bundleId,
   apsEnvironment: row.apsEnvironment,
   appVersion: row.appVersion,
+  ...(row.allowedKinds === undefined ? {} : { allowedKinds: row.allowedKinds }),
   registeredAt: row.registeredAt,
   refreshedAt: row.refreshedAt,
   expiresAt: row.expiresAt,
@@ -150,6 +154,7 @@ export interface LibraryPushRegistration {
   readonly bundleId: LibraryPushBundleId;
   readonly apsEnvironment: LibraryPushApsEnvironment;
   readonly appVersion: string | null;
+  readonly allowedKinds?: ReadonlyArray<LibraryPushActivityKind>;
   /** Lower-case hex, already checked. */
   readonly token: Redacted.Redacted<string>;
 }
@@ -191,6 +196,8 @@ export const applyRegistration = (
     existing.bundleId === registration.bundleId &&
     existing.apsEnvironment === registration.apsEnvironment &&
     existing.appVersion === registration.appVersion &&
+    normalizeLibraryPushKinds(existing.allowedKinds).join() ===
+      normalizeLibraryPushKinds(registration.allowedKinds).join() &&
     policy.nowMs - millisOf(existing.refreshedAt) < LIBRARY_PUSH_REFRESH_AFTER_MS
   ) {
     return { _tag: "Unchanged", row: existing };
@@ -206,6 +213,9 @@ export const applyRegistration = (
     bundleId: registration.bundleId,
     apsEnvironment: registration.apsEnvironment,
     appVersion: registration.appVersion,
+    ...(registration.allowedKinds === undefined
+      ? {}
+      : { allowedKinds: normalizeLibraryPushKinds(registration.allowedKinds) }),
     token: registration.token,
     registeredAt: existing?.registeredAt ?? now,
     refreshedAt: now,

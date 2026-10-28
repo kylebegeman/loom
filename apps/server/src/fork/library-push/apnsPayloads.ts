@@ -1,8 +1,13 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A collapse id is a synchronous SHA-256 digest, which keeps the payload builders pure.
 import * as NodeCrypto from "node:crypto";
 
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { type LibraryPushActivityKind, VAULT_APPROVAL_PENDING_MS } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  type LibraryPushActivityKind,
+  type LibraryPushActivityRequest,
+  isBotRunThreadId,
+  VAULT_APPROVAL_PENDING_MS,
+} from "@t3tools/contracts/fork";
 
 /**
  * APNs alert payloads, ported from `makePushNotificationRequest` in
@@ -65,6 +70,7 @@ const AGENT_ALERT_TEXT: Readonly<Record<LibraryPushActivityKind, string>> = {
   limited: "An agent reached a usage limit.",
   completed: "An agent finished.",
   "vault-approval": "An agent is asking for Vault access.",
+  "scheduled-failed": "A scheduled task failed.",
 };
 
 /**
@@ -72,7 +78,7 @@ const AGENT_ALERT_TEXT: Readonly<Record<LibraryPushActivityKind, string>> = {
  * by a digest. Every agent kind shares one id, so a thread keeps one notification that the latest
  * replaces. A Vault request has its own, so the run finishing never hides a decision still due.
  */
-const collapseId = (prefix: string, environmentId: EnvironmentId, threadId: ThreadId) =>
+const collapseId = (prefix: string, environmentId: EnvironmentId, threadId: string) =>
   `${prefix}-${NodeCrypto.createHash("sha256")
     .update(`${environmentId}\0${threadId}`)
     .digest("base64url")
@@ -80,35 +86,46 @@ const collapseId = (prefix: string, environmentId: EnvironmentId, threadId: Thre
 
 /**
  * The text names no thread, project, computer, model or Vault item, so none reaches Apple or the
- * lock screen. The deep link has `projectThreadAwarenessV2`'s shape. A Vault request opens the
- * computer's Vault access instead; older apps read `threadId` and open the thread.
+ * lock screen. Thread and Vault requests open their thread; bot requests open the inbox.
+ * Scheduled failures carry only a task id and open scheduled tasks.
  */
-export const agentAlertRequest = (input: {
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-  readonly kind: LibraryPushActivityKind;
-}): ApnsAlertRequest => {
+export const agentAlertRequest = (
+  input: LibraryPushActivityRequest & {
+    readonly environmentId: EnvironmentId;
+  },
+): ApnsAlertRequest => {
   const environment = encodeURIComponent(input.environmentId);
   const vault = input.kind === "vault-approval";
+  const scheduled = input.kind === "scheduled-failed";
+  const id = scheduled ? input.taskId : input.threadId;
+  const bot = !scheduled && !vault && isBotRunThreadId(input.threadId);
+  const deepLink = scheduled
+    ? `/settings/scheduled-tasks?environmentId=${environment}&taskId=${encodeURIComponent(input.taskId)}`
+    : bot
+      ? `/bots/${environment}/inbox`
+      : `/threads/${environment}/${encodeURIComponent(input.threadId)}`;
   return {
     payload: alertPayload({
       title: "Loom",
-      body: AGENT_ALERT_TEXT[input.kind],
-      threadId: `${input.environmentId}/${input.threadId}`,
+      body:
+        bot && (input.kind === "approval" || input.kind === "input")
+          ? input.kind === "approval"
+            ? "A bot needs your approval."
+            : "A bot is waiting for your answer."
+          : AGENT_ALERT_TEXT[input.kind],
+      threadId: `${input.environmentId}/${id}`,
       data: {
         environmentId: input.environmentId,
-        threadId: input.threadId,
-        deepLink: vault
-          ? `/settings/environments/${environment}`
-          : `/threads/${environment}/${encodeURIComponent(input.threadId)}`,
+        ...(scheduled ? { taskId: input.taskId } : { threadId: input.threadId }),
+        deepLink,
       },
     }),
     priority: 10,
     expiresInSeconds: vault ? VAULT_APPROVAL_PENDING_MS / 1000 : 300,
     collapseId: collapseId(
-      vault ? "loom-vault" : "loom-agent",
+      vault ? "loom-vault" : scheduled ? "loom-scheduled" : "loom-agent",
       input.environmentId,
-      input.threadId,
+      id,
     ),
   };
 };
