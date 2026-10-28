@@ -18,6 +18,7 @@ import {
   sortProjectEntries,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { LIBRARY_DELETED_FEATURE } from "@t3tools/contracts/fork";
 import type {
   LibraryProject,
   LibraryProjectColor,
@@ -43,6 +44,7 @@ import {
   refreshLibraryProject,
   refreshLibraryWork,
   useLibraryAuthority,
+  useLoomFeature,
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
@@ -300,6 +302,24 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
   const threads = useEnvironmentQuery(
     target ? library.threads({ environmentId: target, input: { projectId } }) : null,
   );
+  const supportsDeleted = useLoomFeature(target, LIBRARY_DELETED_FEATURE);
+  const [deletedFilter, setDeleted] = useState(false);
+  const deleted = supportsDeleted && deletedFilter;
+  const [threadPage, setThreadPage] = useState({ environmentId: target, offset: 0 });
+  const threadOffset = threadPage.environmentId === target ? threadPage.offset : 0;
+  const setThreadOffset = (offset: number) => setThreadPage({ environmentId: target, offset });
+  const threadIndex = useEnvironmentQuery(
+    target && supportsDeleted
+      ? library.threadIndex({
+          environmentId: target,
+          input: { projectId, deleted, limit: 25, offset: threadOffset },
+        })
+      : null,
+  );
+  const conversations = supportsDeleted
+    ? { ...threadIndex, data: threadIndex.data?.threads ?? null }
+    : threads;
+  const refreshConversations = conversations.refresh;
   const copies = useLibraryStartCopies(projectId, true);
   const starts = useLibraryProjectStarts(
     project.data ? [project.data] : [],
@@ -316,12 +336,12 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
   const nextLiveCopies = !authority.ready ? null : copiesReady ? copies.data : liveCopies;
   if (nextLiveCopies !== liveCopies) setLiveCopies(nextLiveCopies);
   const copiesLive = liveCopies !== null && copies.data === liveCopies;
-  const threadsState = libraryListState(threads);
+  const threadsState = libraryListState(conversations);
   const threadListNotice =
     threadsState === "loading"
       ? !authority.connected
         ? "Reconnect the selected library to load conversation history."
-        : threads.data === null
+        : conversations.data === null
           ? "Loading conversation history…"
           : "Refreshing conversation history…"
       : null;
@@ -336,7 +356,8 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       if (!target || !authority.connected || !authority.canRead) return;
       refreshLibraryProject(target, projectId);
       refreshLibraryWork(target, projectId);
-    }, [target, projectId, authority.connected, authority.canRead]),
+      refreshConversations();
+    }, [target, projectId, authority.connected, authority.canRead, refreshConversations]),
   );
   if (!target) return <LibraryAuthorityScreen />;
   if (!project.data)
@@ -378,8 +399,8 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
     removedCopies = (copies.data ?? [])
       .filter((copy) => !activeCopies.includes(copy))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const visibleThreads = (threads.data ?? [])
-    .filter((thread) => !thread.deleted)
+  const visibleThreads = (conversations.data ?? [])
+    .filter((thread) => Boolean(thread.deleted) === deleted)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return (
     <LibraryPage
@@ -435,28 +456,51 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           environmentId={target}
           project={p}
           copies={activeCopies}
-          threads={visibleThreads}
+          threads={(threads.data ?? []).filter((thread) => !thread.deleted)}
         />
       ) : null}
       <SettingsSection
         title={
-          showAllThreads || visibleThreads.length <= RECENT_CONVERSATIONS
-            ? "Conversations"
-            : "Recent conversations"
+          deleted
+            ? "Recently deleted"
+            : supportsDeleted || showAllThreads || visibleThreads.length <= RECENT_CONVERSATIONS
+              ? "Conversations"
+              : "Recent conversations"
         }
       >
-        {(showAllThreads ? visibleThreads : visibleThreads.slice(0, RECENT_CONVERSATIONS)).map(
-          (thread) => (
-            <LibraryThreadRow
-              key={thread.id}
-              thread={thread}
-              project={p}
-              computerLabel={hostLabel(thread.environmentId)}
-              onPress={() => showThread(thread)}
+        {supportsDeleted ? (
+          <View className="flex-row flex-wrap gap-2 p-4">
+            <Button
+              label="Active"
+              tone={deleted ? "text" : "secondary"}
+              onPress={() => {
+                setDeleted(false);
+                setThreadOffset(0);
+              }}
             />
-          ),
-        )}
-        {visibleThreads.length > RECENT_CONVERSATIONS ? (
+            <Button
+              label="Recently deleted"
+              tone={deleted ? "secondary" : "text"}
+              onPress={() => {
+                setDeleted(true);
+                setThreadOffset(0);
+              }}
+            />
+          </View>
+        ) : null}
+        {(supportsDeleted || showAllThreads
+          ? visibleThreads
+          : visibleThreads.slice(0, RECENT_CONVERSATIONS)
+        ).map((thread) => (
+          <LibraryThreadRow
+            key={thread.id}
+            thread={thread}
+            project={p}
+            computerLabel={hostLabel(thread.environmentId)}
+            onPress={() => showThread(thread)}
+          />
+        ))}
+        {!supportsDeleted && visibleThreads.length > RECENT_CONVERSATIONS ? (
           <Button
             label={showAllThreads ? "Show recent only" : `Show all ${visibleThreads.length}`}
             tone="text"
@@ -465,15 +509,35 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         ) : null}
         {threadsState === "empty" ? (
           <Text className="p-4 text-sm text-foreground-muted">
-            No conversations yet. Start one about the whole project or a single repository.
+            {deleted
+              ? "No recently deleted conversations."
+              : "No conversations yet. Start one about the whole project or a single repository."}
           </Text>
         ) : null}
-        {threadListNotice || threads.error ? (
+        {supportsDeleted && (threadOffset > 0 || threadIndex.data?.nextOffset != null) ? (
+          <View className="flex-row gap-2 p-4">
+            <Button
+              label="Previous"
+              disabled={!threadOffset || threadIndex.isPending}
+              onPress={() => setThreadOffset(Math.max(0, threadOffset - 25))}
+            />
+            <Button
+              label="Next"
+              disabled={
+                threadIndex.data?.nextOffset == null ||
+                threadIndex.isPending ||
+                !authority.connected
+              }
+              onPress={() => setThreadOffset(threadIndex.data?.nextOffset ?? threadOffset)}
+            />
+          </View>
+        ) : null}
+        {threadListNotice || conversations.error ? (
           <View className="p-4">
             <LibraryNotice
               detail={threadListNotice}
-              error={threads.error}
-              onRetry={threads.error ? threads.refresh : undefined}
+              error={conversations.error}
+              onRetry={conversations.error ? conversations.refresh : undefined}
             />
           </View>
         ) : null}
@@ -637,13 +701,15 @@ function LibraryThreadRow(props: {
         {libraryScopeLabel(props.project, props.thread.resourceIds)} · {props.computerLabel}
       </Text>
       <Text className="text-xs text-foreground-muted">
-        {props.thread.archived
-          ? "Archived · "
-          : props.thread.settled
-            ? "Settled · "
-            : props.thread.status === "failed"
-              ? "Last run failed · "
-              : ""}
+        {props.thread.deleted
+          ? "Recently deleted · "
+          : props.thread.archived
+            ? "Archived · "
+            : props.thread.settled
+              ? "Settled · "
+              : props.thread.status === "failed"
+                ? "Last run failed · "
+                : ""}
         Saved {ago(props.thread.syncedAt)}
       </Text>
     </Pressable>

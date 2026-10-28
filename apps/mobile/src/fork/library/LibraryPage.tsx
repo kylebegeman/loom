@@ -26,6 +26,7 @@ import { useEnvironments } from "../../state/environments";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { library, useLibraryAuthority } from "./libraryState";
 import { LibrarySignInAgainButton, LibrarySignInSection } from "./LibrarySignInStatus";
+import { LibraryDeletedSettings } from "./LibraryDeletedSettings";
 import { useWorkspacePageBack } from "./workspacePageBack";
 
 /** SettingsScreen's surface, plus the Home fallback for Back and unscrolled pages it lacks. */
@@ -189,6 +190,7 @@ export function LibraryAuthorityScreen() {
           );
         })}
       </SettingsSection>
+      <LibraryDeletedSettings />
       {error ? <LibraryNotice error={error} /> : null}
       <Button
         label={authority.environmentId ? "Sign in to another library" : "Sign in to library"}
