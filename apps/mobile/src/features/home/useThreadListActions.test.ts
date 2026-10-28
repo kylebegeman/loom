@@ -31,9 +31,23 @@ const state = vi.hoisted(() => ({
     buttons?: { text: string; onPress?: () => void }[];
   }[],
   afterRequest: undefined as (() => void) | undefined,
+  // fork: project-library
+  libraryConfirmation: { enabled: false, callback: null as (() => Promise<boolean>) | null },
   // fork: project-lifecycle
   loomFeatures: [] as string[],
   releaseEntry: { outcome: "removed", reason: "" } as { outcome: string; reason: string },
+}));
+
+// fork: project-library
+vi.mock("../../fork/library/confirmLibraryThreadDeletion", () => ({
+  confirmLibraryThreadDeletion: (
+    _thread: EnvironmentThreadShell,
+    onDelete: () => Promise<boolean>,
+  ) => {
+    if (!state.libraryConfirmation.enabled) return false;
+    state.libraryConfirmation.callback = onDelete;
+    return true;
+  },
 }));
 
 vi.mock("react", () => ({
@@ -208,6 +222,8 @@ beforeEach(() => {
   state.dialogs = [];
   state.alerts = [];
   state.afterRequest = undefined;
+  // fork: project-library
+  state.libraryConfirmation = { enabled: false, callback: null };
   state.loomFeatures = ["checkout-release"]; // fork: project-lifecycle
   state.releaseEntry = { outcome: "removed", reason: "Removed the landed worktree." }; // fork: project-lifecycle
 });
@@ -240,16 +256,33 @@ describe("thread list operation permissions", () => {
     expect(state.requests).toEqual([]);
   });
 
-  it("rechecks permission after a retained delete confirmation", async () => {
-    useThreadListActions().confirmDeleteThread(makeThread());
-    const confirm = state.dialogs[0]?.onConfirm;
-    expect(confirm).toBeTypeOf("function");
-    state.scopes.get(primaryEnvironmentId)!.clear();
+  // fork: project-library
+  it.each([
+    ["thread", false],
+    ["Library", false],
+    ["thread", true],
+    ["Library", true],
+  ] as const)(
+    "retained %s confirmation rechecks delete permission (allowed: %s)",
+    async (kind, allowed) => {
+      state.libraryConfirmation.enabled = kind === "Library";
+      useThreadListActions().confirmDeleteThread(makeThread());
+      const confirm =
+        kind === "Library" ? state.libraryConfirmation.callback : state.dialogs[0]?.onConfirm;
+      expect(confirm).toBeTypeOf("function");
+      expect(state.dialogs).toHaveLength(kind === "Library" ? 0 : 1);
+      expect(state.requests).toEqual([]);
+      if (!allowed) state.scopes.get(primaryEnvironmentId)!.clear();
 
-    await confirm!();
+      await confirm!();
 
-    expect(state.requests).toEqual([]);
-  });
+      expect(state.requests).toEqual(
+        allowed
+          ? [expect.objectContaining({ action: "delete", environmentId: primaryEnvironmentId })]
+          : [],
+      );
+    },
+  );
 });
 
 describe("pinned thread operation permissions", () => {
