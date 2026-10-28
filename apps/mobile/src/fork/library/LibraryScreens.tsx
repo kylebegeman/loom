@@ -319,7 +319,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
   const conversations = supportsDeleted
     ? { ...threadIndex, data: threadIndex.data?.threads ?? null }
     : threads;
-  const refreshConversations = conversations.refresh;
+  const refreshConversations = supportsDeleted ? threadIndex.refresh : threads.refresh;
   const copies = useLibraryStartCopies(projectId, true);
   const starts = useLibraryProjectStarts(
     project.data ? [project.data] : [],

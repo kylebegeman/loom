@@ -21,7 +21,7 @@ export function useLibraryErasure(archiveId: string, onErased: () => void, onRef
   const run = async () => {
     if (!available || !authority.environmentId || inFlight.current) return;
     // The Library saves the receipt before file cleanup, so retries reuse it.
-    requestId.current ??= uuidv4();
+    if (requestId.current === null) requestId.current = uuidv4();
     inFlight.current = true;
     setAttempted(true);
     setBusy(true);
