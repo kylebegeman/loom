@@ -106,8 +106,10 @@ export class VaultConnectionError extends Schema.TaggedError<VaultConnectionErro
         "More than one Vault connection matches. Choose the intended host or account from the matching connections.",
       missing: "This resource has no matching enrolled Vault connection.",
       inactive: "Restore this inactive Vault connection before use.",
-      revoked: "Access to this Vault connection was revoked. An administrator must restore access.",
-      expired: "Access to this Vault connection expired. An administrator must renew access.",
+      revoked:
+        "Access to this Vault connection was revoked. Restore access in Loom Settings > Vault > Access.",
+      expired:
+        "Access to this Vault connection expired. Renew access in Loom Settings > Vault > Access.",
       "policy-denied":
         "Vault policy does not allow this connection and destination for this run. Review access in Loom Settings > Vault > Access (/settings/vault#loom-vault-access).",
       "workload-inactive": vaultDeniedMessage("workload-inactive"),
