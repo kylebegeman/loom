@@ -1473,8 +1473,8 @@ apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
 apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
 apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
 apps/web/src/components/CommandPalette.tsx	library-only	1
-apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	1
-apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	5
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	3
 apps/web/src/state/shell.ts	client-computer	8
 apps/web/src/state/shell.test.ts	client-computer	7
 docs/user/updating.md	client-computer	1

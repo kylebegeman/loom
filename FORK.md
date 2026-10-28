@@ -370,6 +370,8 @@ recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 
 keeps its New thread button enabled when No project or a Library is the only way to start,
 and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
 (2 marker lines) keeps `file:` links on the primary, since their path names that machine.
+Its `client-computer` seams (5 markers; 3 in its browser test) wait for remote discovery before
+opening web links, keep pairing independent of discovery and cancel held links on unmount.
 
 The `library-projects` seams in `WorktreeMcpService.ts` (15 marker lines) coordinate an existing conversation's
 worktree handoff with its Library binding. A copy's root folder is not a separate worktree,

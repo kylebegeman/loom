@@ -43,13 +43,15 @@ const externalClick = {
 };
 
 /** Resolves once every reachable environment has reported its projects or settled offline. */
-const projectsSettled = (): Promise<void> =>
+// fork: client-computer
+const projectsSettled = (signal: AbortSignal): Promise<void> =>
   Effect.runPromise(
     AtomRegistry.toStream(appAtomRegistry, allReachableShellsLiveAtom).pipe(
       Stream.filter((settled) => settled),
       Stream.runHead,
       Effect.asVoid,
     ),
+    { signal },
   );
 
 /**
@@ -212,33 +214,42 @@ export function DesktopWebLinkCoordinator() {
     }
   });
 
-  const receiveLink = useEffectEvent((url: string) => {
-    // A connected server publishes its config before its project snapshot, so a PR link
-    // delivered at launch would miss its project and fall through to the browser. Hold PR
-    // links, and only those, until discovery settles; an ordinary link never waits for it.
-    // Discovery never settles without the local environment, so those links do not wait.
+  // fork: client-computer
+  const receiveLink = useEffectEvent((url: string, signal: AbortSignal) => {
+    if (signal.aborted) return;
+    // Pairing and app navigation do not need a discovered project or a computer that runs agents.
+    const independent = readPairingAppLink(url) !== null || promptLinkAppPath(url) !== null;
     const hold =
-      (openPullRequestsInApp &&
-        !localEnvironmentDisabled &&
-        sourceControlClients.parseChangeRequestUrl(url) !== null) ||
-      (localEnvironmentDisabled && promptLinkAppPath(url) === null) // fork: client-computer
-        ? projectsSettled()
+      !independent &&
+      (localEnvironmentDisabled ||
+        (openPullRequestsInApp && sourceControlClients.parseChangeRequestUrl(url) !== null))
+        ? projectsSettled(signal)
         : Promise.resolve();
-    void hold.then(() => {
-      queueRef.current = queueRef.current.then(() => openLink(url)).catch(() => undefined);
-    });
+    void hold.then(
+      () => {
+        if (signal.aborted) return;
+        queueRef.current = queueRef.current
+          .then(() => {
+            if (!signal.aborted) return openLink(url);
+          })
+          .catch(() => undefined);
+      },
+      () => undefined,
+    );
   });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to desktop web link opens over the bridge and marks the renderer ready
   useEffect(() => {
     if (!ready || webLinks === undefined) return;
     let subscribed = true;
-    const unsubscribe = webLinks.onOpen(receiveLink);
+    const pending = new AbortController(); // fork: client-computer
+    const unsubscribe = webLinks.onOpen((url) => receiveLink(url, pending.signal)); // fork: client-computer
     queueMicrotask(() => {
       if (subscribed) void webLinks.setReady(true).catch(() => undefined);
     });
     return () => {
       subscribed = false;
+      pending.abort(); // fork: client-computer
       void webLinks.setReady(false).catch(() => undefined);
       unsubscribe();
     };
