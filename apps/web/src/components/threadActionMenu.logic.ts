@@ -4,6 +4,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 // fork: attention-status
 export type ThreadActionMenuId =
   | "resume-queue"
+  | "retry-failed-run"
   | "workspace-handoff"
   | "save-as-bot" // fork: bots
   | "new-thread-on-branch"
@@ -74,6 +75,8 @@ export function buildDraftActionMenuItems(options: {
 export interface ThreadActionMenuState {
   // fork: attention-status
   readonly queueHeld?: boolean;
+  // fork: attention-status
+  readonly canRetryFailedRun?: boolean;
   readonly canOperate: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
@@ -134,6 +137,10 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
+    // fork: attention-status
+    ...(state.canRetryFailedRun
+      ? [{ id: "retry-failed-run" as const, label: "Retry failed run", icon: "refresh-cw" }]
+      : []),
     // fork: attention-status
     ...(state.queueHeld
       ? [{ id: "resume-queue" as const, label: "Resume queue", icon: "play" }]

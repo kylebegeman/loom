@@ -1,6 +1,6 @@
 import {
   ATTENTION_STATUS_WS_METHODS as A,
-  type AttentionRetryRequest,
+  type AttentionRetryRpcRequest,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
@@ -11,7 +11,10 @@ export const makeAttentionRpcHandlers = Effect.fn("Attention.makeRpcHandlers")(f
 ) {
   const service = yield* AttentionRetry.AttentionRetry;
   return {
-    [A.retry]: (input: AttentionRetryRequest) =>
-      auth.effect(A.retry, service.retry(input, { createdBy: "user", creationSource: "web" })),
+    [A.retry]: (input: AttentionRetryRpcRequest) =>
+      auth.effect(
+        A.retry,
+        service.retry(input, { createdBy: "user", creationSource: input.source ?? "web" }),
+      ),
   };
 });

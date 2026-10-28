@@ -79,6 +79,16 @@ it("offers queue recovery only for held work and disables it for read-only conne
     "resume-queue",
   );
   expect(
+    buildThreadActionMenuItems({ ...baseState, canRetryFailedRun: true, canOperate: false }).find(
+      (item) => item.id === "retry-failed-run",
+    )?.disabled,
+  ).toBe(true);
+  expect(
+    buildThreadActionMenuItems({ ...baseState, canRetryFailedRun: true }).some(
+      (item) => item.id === "retry-failed-run",
+    ),
+  ).toBe(true);
+  expect(
     buildThreadActionMenuItems({ ...baseState, queueHeld: true }).find(
       (item) => item.id === "resume-queue",
     )?.disabled,

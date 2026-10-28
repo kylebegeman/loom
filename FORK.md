@@ -188,6 +188,7 @@ The renderer follows the web app's React version, which comes from the workspace
 
 | File                                                           | Packet                | Why                                                                          |
 | -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `apps/web/src/hooks/useThreadActionMenu.ts`                    | `attention-status`    | Retry failed runs and resume held queues from the conversation header.       |
 | `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
 | `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
 | `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
@@ -553,8 +554,9 @@ and archive lookups to `t3_thread_list`. The thread toolkit's `tools.ts` (2) and
 `models.ts` (2), `threadInbox.ts` (2) and `threadShell.ts` (3) carry the flag, keep held queues
 off the Working shelf and time the next snooze wake instead of polling. Web `Sidebar.logic.ts`
 (9) and mobile `threadListV2.ts` (3) rank Paused below approval and input and above every run
-state, matching the shared rule. `Sidebar.tsx` (11), `threadActionMenu.logic.ts` (3) and
-`thread-list-v2-items.tsx` (12) add the count, Resume queue and offline last-seen labels,
+state, matching the shared rule. `Sidebar.tsx` (8), `threadActionMenu.logic.ts` (5),
+`useThreadActionMenu.ts` (6) and `thread-list-v2-items.tsx` (16) add the count, guarded Retry,
+Resume queue and offline last-seen labels,
 `HomeScreen.tsx` (5) the mobile filter, and `CommandPalette.tsx` (4) the next-attention action
 on `mod+shift+u` from `packages/contracts/src/keybindings.ts` (1) and
 `packages/shared/src/keybindings.ts` (1). `threadRecoveryPresentation.ts` (1) and

@@ -1,5 +1,6 @@
 /** Loom keybinding commands (`loom.<slug>.<action>`). Spread into STATIC_KEYBINDING_COMMANDS. */
 export const FORK_KEYBINDING_COMMANDS = [
+  "loom.attention-status.retry",
   "loom.bots.open",
   "loom.code-graph.open",
   "loom.mini-offload.open",
@@ -29,6 +30,7 @@ export const isForkKeybindingCommand = (command: string): command is ForkKeybind
 
 /** Display names for slugs the Keybindings page cannot title-case from the id. */
 export const FORK_KEYBINDING_FEATURE_NAMES: Readonly<Record<string, string>> = {
+  "attention-status": "Attention",
   "skill-registry": "Skills",
   "code-graph": "Code map",
   "mini-offload": "Command jobs",
