@@ -674,8 +674,32 @@ it.effect("fails closed when audit persistence fails or the workload is no longe
   ),
 );
 it.effect("filters metadata and does not disclose denied items in self explanations", () =>
-  withAccess(({ access }) =>
+  withAccess(({ access, core }) =>
     Effect.gen(function* () {
+      const archivedId = "d".repeat(32);
+      yield* core.save(
+        {
+          id: archivedId,
+          operationId: "e".repeat(32),
+          expectedVersion: 0,
+          label: "Private archived account",
+          kind: "account",
+          value: Redacted.make("synthetic-hidden"),
+        },
+        "human",
+      );
+      yield* core.change(
+        { id: archivedId, operationId: "f".repeat(32), expectedVersion: 1, action: "archive" },
+        "human",
+      );
+      const query = {
+        cursor: null,
+        includeArchived: true,
+        query: "private",
+        sort: "label" as const,
+      };
+      expect((yield* core.list(query)).archivedCount).toBe(1);
+      expect(yield* access.listForThread(query, threadId)).toEqual({ items: [], nextCursor: null });
       expect(
         (yield* access.listForThread({ cursor: null, includeArchived: false }, threadId)).items,
       ).toEqual([]);
@@ -684,6 +708,9 @@ it.effect("filters metadata and does not disclose denied items in self explanati
           .item,
       ).toBeNull();
       yield* access.apply(save, "human");
+      const visible = yield* access.listForThread(query, threadId);
+      expect(visible.items.map((item) => item.id)).toEqual([itemId]);
+      expect(visible).not.toHaveProperty("archivedCount");
       expect(
         (yield* access.listForThread({ cursor: null, includeArchived: false }, threadId)).items.map(
           (item) => item.id,

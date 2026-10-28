@@ -14,11 +14,11 @@ contain item summaries, never values or private-key material.
 
 ## Search and refresh
 
-Queries match label substrings, item IDs or exact canonical references in the selected
-environment, with optional kind and archive filters. Search is bounded to four existing
-25-record pages per request, stopping after matching results appear. Sparse/no-match pages
-retain their next cursor; consumers continue until it is null. The bound is not a global
-result limit and does not establish an index or constant-time search for large inventories.
+Queries match safe label/kind metadata, item IDs or canonical reference prefixes in the
+selected environment. Search delegates query, kind and archive filtering to VaultCore before
+its 25-item page is selected in label order. Inspect policy then removes forbidden records
+for thread callers; those pages retain their continuation cursor and omit global counts.
+The bounded inventory is read with concurrency 4; no persistent or process-local index exists.
 
 Shared queries subscribe to the existing environment-scoped item-change signal. Core lifecycle
 and SSH changes refresh mounted search/describe consumers across factories. Web/native pickers

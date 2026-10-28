@@ -2025,7 +2025,7 @@ const make = Effect.gen(function* () {
       const page = yield* core.list(input);
       const now = yield* Clock.currentTimeMillis;
       return {
-        ...page,
+        nextCursor: page.nextCursor,
         items: page.items.filter(
           (item) =>
             evaluateVaultPolicy(
