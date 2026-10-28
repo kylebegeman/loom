@@ -47,7 +47,9 @@ import { sqliteSnapshot } from "../../../scripts/lib/loomLibrarySnapshot.ts";
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const base = yield* fs.makeTempDirectoryScoped({ prefix: "loom-library-backup-test-" });
+  const base = yield* fs
+    .makeTempDirectoryScoped({ prefix: "loom-library-backup-test-" })
+    .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
   const stateDir = path.join(base, "userdata");
   yield* fs.makeDirectory(stateDir, { recursive: true });
   const database = path.join(stateDir, "statev2.sqlite");

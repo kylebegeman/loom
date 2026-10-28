@@ -1515,3 +1515,4 @@ evals/README.md	-	Loom skills
 apps/web/src/hooks/useNewConversationShortcut.ts	library-projects	1
 apps/mobile/src/features/threads/useThreadConversationDetails.tsx	library	1
 apps/mobile/src/features/settings/settings-search.ts	ext-settings	2
+apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1

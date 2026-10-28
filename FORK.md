@@ -1275,9 +1275,10 @@ See [Connections help](docs/fork/user/connections.md).
 
 ### Skills manager seams
 
-| File                                               | Marker           | Why                                                                                                   |
-| -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `apps/server/src/provider/Drivers/ClaudeSkills.ts` | `skill-registry` | Reuse Claude's current repository-root and settings precedence when managing native skill enablement. |
+| File                                                    | Marker           | Why                                                                                                   |
+| ------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `apps/server/src/provider/Drivers/ClaudeSkills.ts`      | `skill-registry` | Reuse Claude's current repository-root and settings precedence when managing native skill enablement. |
+| `apps/server/src/provider/Drivers/ClaudeSkills.test.ts` | `skill-registry` | Canonical fixture root for native plugin registry selection, retaining explicit alias cases.          |
 
 ### Hosted Bot compatibility
 
