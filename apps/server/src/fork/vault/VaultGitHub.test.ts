@@ -24,6 +24,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
+import * as VaultHealth from "./VaultHealth.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import * as SshTransport from "./SshTransport.ts";
@@ -34,6 +35,7 @@ const fixture = Effect.gen(function* () {
       execute: () => Effect.succeed({ exitCode: 0, stdout: "" }),
     }),
   );
+  let expiresAt: string | null = null;
   let account = "loom-bot",
     deny = false,
     atSession = () => {},
@@ -48,7 +50,7 @@ const fixture = Effect.gen(function* () {
     session: () =>
       Effect.sync(() => {
         atSession();
-        return { account, token: Redacted.make("synthetic-operation-token"), expiresAt: null };
+        return { account, token: Redacted.make("synthetic-operation-token"), expiresAt };
       }),
     probe: () =>
       beforeProbe.pipe(
@@ -85,10 +87,21 @@ const fixture = Effect.gen(function* () {
         ),
       ),
   });
+  const health = yield* VaultHealth.VaultHealth.pipe(
+    Effect.provide(VaultHealth.layer.pipe(Layer.provide(Layer.succeedContext(f.context)))),
+  );
   const service = yield* VaultGitHub.VaultGitHub.pipe(
     Effect.provide(
       VaultGitHub.layer.pipe(
-        Layer.provide(Layer.mergeAll(Layer.succeedContext(f.context), transport, cli, terminal)),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeedContext(f.context),
+            Layer.succeed(VaultHealth.VaultHealth, health),
+            transport,
+            cli,
+            terminal,
+          ),
+        ),
       ),
     ),
   );
@@ -104,6 +117,10 @@ const fixture = Effect.gen(function* () {
   return {
     ...f,
     service,
+    health,
+    setExpiry: (value: string | null) => {
+      expiresAt = value;
+    },
     input,
     onProbe: (effect: Effect.Effect<void>) => {
       beforeProbe = effect;
@@ -869,4 +886,27 @@ it.effect(
       ).toBe("repository-denied");
       expect((yield* f.service.info(input.id)).item.version).toBe(3);
     }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect("learns personal-token expiry on save and use without rewriting unchanged rules", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.setExpiry("2099-01-01T00:00:00.000Z");
+    yield* f.service.save(f.input, "admin", Effect.void);
+    let snapshot = yield* f.health.snapshot;
+    expect(snapshot.rules.find((rule) => rule.itemId === f.input.id)?.expiresAt).toBe(
+      Date.parse("2099-01-01T00:00:00.000Z"),
+    );
+    const revision = snapshot.revision;
+    const target = { id: f.input.id, expectedVersion: 1, repository: "owner/repo" };
+    yield* f.service.test(target, Effect.void);
+    expect((yield* f.health.snapshot).revision).toBe(revision);
+    f.setExpiry("2099-02-01T00:00:00.000Z");
+    yield* f.service.test(target, Effect.void);
+    snapshot = yield* f.health.snapshot;
+    expect(snapshot.rules[0]?.expiresAt).toBe(Date.parse("2099-02-01T00:00:00.000Z"));
+    f.setExpiry(null);
+    yield* f.service.test(target, Effect.void);
+    expect((yield* f.health.snapshot).revision).toBe(snapshot.revision);
+  }).pipe(Effect.scoped, Effect.provide(deps)),
 );

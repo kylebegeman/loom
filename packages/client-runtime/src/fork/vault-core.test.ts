@@ -1,5 +1,9 @@
 import { expect, it } from "vite-plus/test";
-import { VAULT_TOKEN_WARNING_SECONDS, vaultStatusMessage } from "./vault-core.ts";
+import {
+  VAULT_TOKEN_WARNING_SECONDS,
+  vaultStatusMessage,
+  vaultHealthBackendMessage,
+} from "./vault-core.ts";
 
 const ready = { backend: "openbao", state: "ready", origin: "https://vault.example.test" } as const;
 const hour = 60 * 60;
@@ -19,4 +23,18 @@ it("warns only while a ready connection's service token has under 72 hours left"
   expect(vaultStatusMessage({ ...ready, state: "locked", tokenTtlSeconds: hour })).toBe(
     "Your Vault backend is locked. Unlock OpenBao, then refresh.",
   );
+});
+
+it("shows backend health even when the maintenance inbox cannot be read", () => {
+  expect(vaultHealthBackendMessage({ ...ready, state: "locked" })).toBe(
+    "Backend sealed. Unlock OpenBao, then refresh.",
+  );
+  expect(vaultHealthBackendMessage(ready)).toBe("Backend ready.");
+  expect(vaultHealthBackendMessage({ ...ready, tokenTtlSeconds: 2 * hour })).toBe(
+    "Service token expires in 2 hours. Check its renewal on the computer running Loom.",
+  );
+  expect(vaultHealthBackendMessage({ ...ready, tokenTtlSeconds: 0 })).toBe(
+    "Service token expires in under an hour. Check its renewal on the computer running Loom.",
+  );
+  expect(vaultHealthBackendMessage({ ...ready, state: "unavailable" })).toContain("unavailable");
 });

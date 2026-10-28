@@ -182,6 +182,11 @@ it.effect(
         snapshot = yield* health.snapshot;
         expect(snapshot.issues).toHaveLength(2);
         expect(snapshot.issues.find((i) => i.category === "authentication")?.state).toBe("open");
+        yield* health.report({ itemId, itemVersion: 1, category: "configuration", healthy: false });
+        yield* observeVaultHealth(Effect.succeed({ exitCode: 0 }), itemId, 1);
+        expect(
+          (yield* health.snapshot).issues.find((i) => i.category === "configuration")?.state,
+        ).toBe("resolved");
         yield* health.report({ itemId, itemVersion: 1, category: "outage", healthy: true });
         expect((yield* health.snapshot).issues.find((i) => i.category === "outage")?.state).toBe(
           "resolved",
@@ -440,6 +445,32 @@ it.effect(
         expect(
           (yield* health.snapshot).issues.find((issue) => issue.itemId === ids[2])?.outageTarget,
         ).toBeUndefined();
+      }),
+    ),
+);
+
+it.effect(
+  "learns changed token expiry while preserving rule preferences and ignoring stale items",
+  () =>
+    test((f, health) =>
+      Effect.gen(function* () {
+        yield* health.observeExpiry(itemId, 1, 86400_000);
+        let snapshot = yield* health.snapshot;
+        expect(snapshot.rules[0]).toMatchObject({ itemId, expiresAt: 86400_000, automatic: false });
+        const revision = snapshot.revision;
+        yield* health.observeExpiry(itemId, 1, 86400_000);
+        expect((yield* health.snapshot).revision).toBe(revision);
+        yield* configure(health, true);
+        yield* health.observeExpiry(itemId, 1, 172800_000);
+        snapshot = yield* health.snapshot;
+        expect(snapshot.rules[0]).toMatchObject({
+          expiresAt: 172800_000,
+          automatic: true,
+          githubRepository: "owner/repo",
+        });
+        f.state.version++;
+        yield* health.observeExpiry(itemId, 1, 259200_000);
+        expect((yield* health.snapshot).revision).toBe(snapshot.revision);
       }),
     ),
 );

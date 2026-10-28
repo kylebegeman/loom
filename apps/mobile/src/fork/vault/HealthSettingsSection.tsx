@@ -11,6 +11,7 @@ import {
   createVaultCoreAtoms,
   supportsLoomFeature,
   vaultHealthMessage,
+  vaultHealthBackendMessage,
   vaultHealthRecheckMessage,
   vaultHealthVisibleState,
   vaultHealthInboxGroups,
@@ -72,6 +73,7 @@ function Inbox({
   const snapshot = useEnvironmentQuery(
     connected ? atoms.snapshot({ environmentId, input: {} }) : null,
   );
+  const backend = useEnvironmentQuery(connected ? core.status({ environmentId, input: {} }) : null);
   const snapshotData = snapshot.isSuccess && !snapshot.isPending ? snapshot.data : null;
   const apply = useAtomCommand(atoms.apply, { reportFailure: false }),
     recheck = useAtomCommand(atoms.recheck, { reportFailure: false });
@@ -146,6 +148,15 @@ function Inbox({
         Background checks require an enabled rule.
       </Text>
       {!connected ? <Text>Reconnect to check Vault health.</Text> : null}
+      {connected && backend.isPending ? <Text>Checking Vault backend…</Text> : null}
+      {backend.error ? (
+        <Text accessibilityRole="alert">
+          Could not check the Vault backend. Reconnect and refresh.
+        </Text>
+      ) : null}
+      {connected && backend.isSuccess && !backend.isPending && backend.data ? (
+        <Text accessibilityRole="summary">{vaultHealthBackendMessage(backend.data)}</Text>
+      ) : null}
       <Button
         label="Refresh health"
         disabled={busy || !connected}
@@ -153,6 +164,7 @@ function Inbox({
           setError(null);
           setNotice(null);
           snapshot.refresh();
+          backend.refresh();
         }}
       />
       <Button

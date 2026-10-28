@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import { VaultGitHubCredential, VaultGitHubError } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -18,6 +19,7 @@ export type GitHubSession = {
   readonly account: string;
   readonly token: Redacted.Redacted<string>;
   readonly expiresAt: string | null;
+  readonly installationToken?: boolean;
 };
 export class GitHubTransport extends Context.Service<
   GitHubTransport,
@@ -78,11 +80,12 @@ export const layer = Layer.effect(
       if (response.status === 403 || response.status === 404)
         return yield* fail("repository-denied");
       if (response.status < 200 || response.status >= 300) return yield* fail("failed");
-      return yield* response.json.pipe(
+      const responseBody = yield* response.json.pipe(
         Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(1)),
         Effect.timeout("15 seconds"),
         Effect.mapError(() => fail("invalid-response")),
       );
+      return { body: responseBody, headers: response.headers };
     });
     return GitHubTransport.of({
       session: Effect.fn("GitHubTransport.session")(function* (credential, repositories) {
@@ -90,9 +93,18 @@ export const layer = Layer.effect(
         if (credential.type === "token") {
           if (!/^[A-Za-z0-9_]{10,255}$/.test(Redacted.value(credential.token)))
             return yield* fail("invalid-credential");
-          const parsed = decodeIdentity(yield* request("/user", credential.token));
+          const response = yield* request("/user", credential.token);
+          const parsed = decodeIdentity(response.body);
           if (Option.isNone(parsed)) return yield* fail("invalid-response");
-          return { account: parsed.value.login, token: credential.token, expiresAt: null };
+          const header = response.headers["github-authentication-token-expiration"];
+          const expiry = header && /^\d{4}-\d{2}-\d{2}[T ]/.test(header) ? Date.parse(header) : NaN;
+          return {
+            account: parsed.value.login,
+            token: credential.token,
+            expiresAt: Number.isFinite(expiry)
+              ? DateTime.formatIso(DateTime.makeUnsafe(expiry))
+              : null,
+          };
         }
         const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
         const jwt = yield* Effect.tryPromise({
@@ -115,7 +127,7 @@ export const layer = Layer.effect(
           catch: () => fail("invalid-credential"),
         });
         const installation = decodeInstallation(
-          yield* request(`/app/installations/${credential.installationId}`, jwt),
+          (yield* request(`/app/installations/${credential.installationId}`, jwt)).body,
         );
         if (Option.isNone(installation) || String(installation.value.app_id) !== credential.appId)
           return yield* fail("invalid-response");
@@ -127,9 +139,9 @@ export const layer = Layer.effect(
         )
           return yield* fail("repository-denied");
         const token = decodeToken(
-          yield* request(`/app/installations/${credential.installationId}/access_tokens`, jwt, {
+          (yield* request(`/app/installations/${credential.installationId}/access_tokens`, jwt, {
             repositories: repositories.map((repo) => repo.split("/")[1]!),
-          }),
+          })).body,
         );
         if (
           Option.isNone(token) ||
@@ -141,10 +153,11 @@ export const layer = Layer.effect(
           account: installation.value.account.login,
           token: token.value.token,
           expiresAt: token.value.expires_at,
+          installationToken: true,
         };
       }),
       release: Effect.fn("GitHubTransport.release")(function* (session) {
-        if (!session.expiresAt) return;
+        if (!session.installationToken) return;
         const response = yield* http
           .execute(
             HttpClientRequest.delete("https://api.github.com/installation/token").pipe(
