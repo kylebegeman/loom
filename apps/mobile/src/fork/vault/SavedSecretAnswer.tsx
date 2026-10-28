@@ -72,7 +72,7 @@ export function SavedSecretAnswer({
     busy.current = true;
     onBusyChange(true);
     setError(null);
-    try {
+    await (async () => {
       const response = await answer({
         environmentId,
         input: {
@@ -84,10 +84,12 @@ export function SavedSecretAnswer({
       });
       if (response._tag === "Success") onAnswered();
       else setError(message(squashAtomCommandFailure(response)));
-    } finally {
-      busy.current = false;
-      onBusyChange(false);
-    }
+    })()
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => {
+        busy.current = false;
+        onBusyChange(false);
+      });
   };
   if (!supported) return null;
   return (
