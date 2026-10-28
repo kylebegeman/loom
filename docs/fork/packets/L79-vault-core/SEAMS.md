@@ -11,6 +11,7 @@ and existence checks; packet consumers do not import another packet's UI.
 | ---------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------ |
 | `apps/web/src/components/chat/SecretRequestCard.tsx`                         | `vault-core` | Mount private-card save and saved-item answer controls.                                          |
 | `apps/mobile/src/features/threads/SecretRequestCard.tsx`                     | `vault-core` | Mount native private-card save and saved-item answer controls.                                   |
+| `packages/client-runtime/package.json` (no marker)                           | none         | Export saved-item helpers across package boundaries for isolated consumers.                      |
 | `evals/mcp-tool-use/run.ts`                                                  | `vault-core` | Include real Vault tools in the model evaluation.                                                |
 | `apps/server/src/mcp/toolkits/orchestrator/tools.ts`                         | `ext-vault`  | Guide saved-item use through the existing private request card.                                  |
 | `packages/client-runtime/src/state/commandPermissions.test.ts`               | `ext-core`   | Check that saved-item answers require the destination access-write scope.                        |

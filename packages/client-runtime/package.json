@@ -506,6 +506,10 @@
     "./provider-clients": {
       "types": "./src/providerClients.ts",
       "default": "./src/providerClients.ts"
+    },
+    "./fork/vault-secret": {
+      "types": "./src/fork/vault-secret.ts",
+      "default": "./src/fork/vault-secret.ts"
     }
   },
   "scripts": {

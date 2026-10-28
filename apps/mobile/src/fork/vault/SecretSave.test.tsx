@@ -39,8 +39,7 @@ vi.mock("@effect/atom-react", async () => {
   };
 });
 vi.mock("@t3tools/client-runtime/fork", async () => {
-  const { secretSaveTarget } =
-    await import("../../../../../packages/client-runtime/src/fork/vault-secret.ts");
+  const { secretSaveTarget } = await import("@t3tools/client-runtime/fork/vault-secret");
   return {
     supportsLoomFeature: () => state.supported,
     createVaultCoreAtoms: () => ({ save: { permissionAtom: () => null }, list: () => "matches" }),
