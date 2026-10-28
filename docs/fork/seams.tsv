@@ -1542,3 +1542,4 @@ evals/mcp-tool-use/run.ts	attention-status	2
 apps/web/src/hooks/useThreadActionMenu.ts	attention-status	6
 apps/web/src/hooks/useThreadActions.ts	library-projects	3
 apps/mobile/src/features/home/useThreadListActions.ts	project-library	2
+apps/mobile/src/features/home/useThreadListActions.test.ts	project-library	4

@@ -208,6 +208,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
 | `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
 | `apps/mobile/src/features/home/useThreadListActions.ts`        | `project-library`     | Show confirmed Library retention when deleting a saved conversation.         |
+| `apps/mobile/src/features/home/useThreadListActions.test.ts`   | `project-library`     | Isolate Library confirmation and preserve deletion permission checks.        |
 | `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
 | `apps/server/src/project/AgentSessionScanner.ts`               | `file-placement`      | Exclude canonical aliases of managed worktree roots during session import.   |
 | `apps/server/src/project/AgentSessionScanner.test.ts`          | `file-placement`      | Cover session import exclusion through symlinked roots.                      |
