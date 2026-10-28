@@ -301,6 +301,8 @@ fork_tests() {
   printf '%s\\n' apps/mobile/src/lib/navigation.test.ts apps/web/src/fork/example.test.ts \\
     apps/web/src/fork/other.test.ts
 }
+fork_edited_code() { printf '%s\\n' apps/web/src/components/Sidebar.tsx; }
+fork_browser_tests() { printf '%s\\n' src/components/Sidebar.browser.test.tsx; }
 restore_lockfile() { printf 'restore-lockfile\\n' >> "$LOOM_TEST_LOG"; }
 check_omarchy_pack() { printf 'omarchy-pack\\n' >> "$LOOM_TEST_LOG"; }
 check_web_boot() { printf 'web-boot\\n' >> "$LOOM_TEST_LOG"; }
@@ -381,7 +383,30 @@ it("reports lint failure and exits unsuccessfully", () => {
   expect(result.stderr).toContain("loom: fork lint failed; fix the findings above");
 });
 
-it("runs lint after installation, then builds, boots and typechecks, and each package's tests last", () => {
+it("lints the upstream files the fork edits with upstream's flags, and nothing when it edits none", () => {
+  const f = lintFixture();
+  expect(runLint(f, "check_edited_lint").status).toBe(0);
+  expect(lintCalls(f)).toEqual([
+    [
+      "exec",
+      "vp",
+      "lint",
+      "--report-unused-disable-directives",
+      "apps/web/src/components/Sidebar.tsx",
+    ],
+  ]);
+
+  const none = lintFixture();
+  expect(runLint(none, "fork_edited_code() { :; }; check_edited_lint").status).toBe(0);
+  expect(lintCalls(none)).toEqual([]);
+
+  const failing = lintFixture();
+  const result = runLint(failing, "check_edited_lint", { lint: 1 });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("loom: lint failed in files the fork edits");
+});
+
+it("runs lint after installation, then builds, boots and typechecks, and the tests last", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
   const result = runLint(f, "run_checks");
   expect(result.status).toBe(0);
@@ -396,6 +421,13 @@ it("runs lint after installation, then builds, boots and typechecks, and each pa
       "--deny-warnings",
       "apps/web/src/fork",
       "scripts/fork",
+    ],
+    [
+      "exec",
+      "vp",
+      "lint",
+      "--report-unused-disable-directives",
+      "apps/web/src/components/Sidebar.tsx",
     ],
     ["omarchy-pack"],
     ["exec", "vp", "build"],
@@ -421,19 +453,33 @@ it("runs lint after installation, then builds, boots and typechecks, and each pa
       "apps/web/src/fork/example.test.ts",
       "apps/web/src/fork/other.test.ts",
     ],
+    ["exec", "playwright", "install", "--only-shell", "chromium"],
+    [
+      "exec",
+      "vp",
+      "test",
+      "run",
+      "--project",
+      "browser",
+      "src/components/Sidebar.browser.test.tsx",
+    ],
     ["restore-lockfile"],
   ]);
 });
 
-it("runs every check after a failing lint and lists the failure at the end", () => {
+it("runs every check after a failing lint and lists the failures at the end", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
   const result = runLint(f, "run_checks", { lint: 1 });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("loom: fork lint failed");
-  expect(result.stderr.trimEnd().split("\n").at(-1)).toBe("loom: check failed: Linting fork code");
+  expect(result.stderr.trimEnd().split("\n").slice(-2)).toEqual([
+    "loom: check failed: Linting fork code",
+    "loom: check failed: Linting upstream files the fork edits",
+  ]);
   expect(lintCalls(f).map(([first, second]) => second ?? first)).toEqual([
     "seams",
     "--frozen-lockfile",
+    "vp",
     "vp",
     "omarchy-pack",
     "vp",
@@ -441,6 +487,8 @@ it("runs every check after a failing lint and lists the failure at the end", () 
     "vp",
     "tsc",
     "vp",
+    "vp",
+    "playwright",
     "vp",
     "restore-lockfile",
   ]);
@@ -465,6 +513,8 @@ it("boots no stale web client when the build fails, and still runs the rest", ()
     "vp run",
     "tsc --noEmit",
     "vp test",
+    "vp test",
+    "playwright install",
     "vp test",
     "restore-lockfile",
   ]);
@@ -498,6 +548,15 @@ it("fails instead of skipping typechecks and tests it cannot list", () => {
   );
   expect(lintCalls(f).filter(([, second, third]) => second === "vp" && third !== "lint")).toEqual([
     ["exec", "vp", "build"],
+    [
+      "exec",
+      "vp",
+      "test",
+      "run",
+      "--project",
+      "browser",
+      "src/components/Sidebar.browser.test.tsx",
+    ],
   ]);
 });
 
@@ -601,6 +660,19 @@ it("runs the tests of each file the fork adds or changes since the upstream rele
   expect(
     runMetadata(root, "BRAND_TESTS=(scripts/brand.test.ts); fork_tests | test_package | sort -u"),
   ).toBe(["apps/mobile", "apps/web", "packages/shared", "scripts"].join("\n"));
+  expect(runMetadata(root, "fork_browser_tests")).toBe(
+    ["src/panel.browser.test.tsx", "src/view.browser.test.tsx"].join("\n"),
+  );
+  // Files under fork_lint_paths get the fork's stricter lint instead.
+  expect(runMetadata(root, "fork_edited_code")).toBe(
+    [
+      "apps/web/src/forked.test.ts",
+      "apps/web/src/model.ts",
+      "apps/web/src/panel.tsx",
+      "apps/web/src/view.browser.test.tsx",
+      "packages/shared/src/dirty.test.ts",
+    ].join("\n"),
+  );
 });
 
 function repositoryFixture() {
@@ -1146,15 +1218,16 @@ it("reports main stale only once a missing nightly has waited past the grace per
         .map((line) => line.split("=")),
     );
 
-  expect(status("2026-10-14T12:00:00Z")).toMatchObject({
+  expect(status("2026-10-14T15:00:00Z")).toMatchObject({
     state: "behind",
     newest: "v0.1.0-nightly.20261014.2",
     main: "v0.1.0-nightly.20261013.1",
     oldest_missing: "v0.1.0-nightly.20261014.2",
-    waited_hours: "12",
+    waited_hours: "15",
     behind_commits: "1",
+    last_unattended: "",
   });
-  expect(status("2026-10-15T12:00:00Z")).toMatchObject({ state: "stale", waited_hours: "36" });
+  expect(status("2026-10-14T16:00:00Z")).toMatchObject({ state: "stale", waited_hours: "16" });
 
   f.git("update-ref", "refs/remotes/origin/main", "v0.1.0-nightly.20261014.2");
   expect(status("2026-10-20T00:00:00Z")).toMatchObject({
@@ -1162,6 +1235,114 @@ it("reports main stale only once a missing nightly has waited past the grace per
     oldest_missing: "",
     behind_commits: "0",
   });
+});
+
+it("names the newest integration the workflow merged unattended, not one merged by hand", () => {
+  const f = repositoryFixture();
+  f.git("tag", "v0.1.0-nightly.20261013.1");
+  f.git("update-ref", "refs/remotes/origin/main", "HEAD");
+  const tag = (name: string, tagger: string, date: string, message: string) =>
+    NodeChildProcess.execFileSync(
+      "git",
+      ["-c", `user.name=${tagger}`, "tag", "-a", name, "-m", message],
+      {
+        cwd: f.root,
+        env: {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_COMMITTER_DATE: date,
+        },
+      },
+    );
+  const bot = "github-actions[bot]";
+  tag(
+    "loom-v0.0.8-nightly.1",
+    bot,
+    "2026-10-11T00:00:00Z",
+    "Loom built from upstream v0.0.8-nightly.1",
+  );
+  tag(
+    "loom-v0.0.9-nightly.1",
+    bot,
+    "2026-10-12T00:00:00Z",
+    "Loom built from upstream v0.0.9-nightly.1",
+  );
+  tag(
+    "loom-v0.1.0-nightly.20261013.1",
+    "Kyle",
+    "2026-10-13T00:00:00Z",
+    "Loom built from upstream v0.1.0-nightly.20261013.1",
+  );
+  tag("loom-v0.0.5-nightly.20261013.1", bot, "2026-10-14T00:00:00Z", "Loom fork changes on main");
+
+  expect(runSync(f.root, "upstream_status origin/main").stdout).toContain(
+    "\nlast_unattended=loom-v0.0.9-nightly.1 2026-10-12\n",
+  );
+});
+
+it("alerts once when main goes stale and once a day after, however late the watch runs", () => {
+  const f = repositoryFixture();
+  f.git("update-ref", "refs/remotes/origin/main", "HEAD");
+  commitAt(f.root, "2026-10-14T00:00:00Z", "upstream");
+  f.git("tag", "v0.1.0-nightly.20261014.1");
+  const alerts = (since: string, now: string) =>
+    runSync(f.root, `stale_crossed v0.1.0-nightly.20261014.1 ${epoch(since)}`, {
+      LOOM_NOW: epoch(now),
+    }).status === 0;
+
+  expect(alerts("2026-10-14T11:47:00Z", "2026-10-14T14:47:00Z")).toBe(false);
+  expect(alerts("2026-10-14T14:47:00Z", "2026-10-14T17:47:00Z")).toBe(true);
+  expect(alerts("2026-10-14T17:47:00Z", "2026-10-14T20:47:00Z")).toBe(false);
+  // A scheduled run that started an hour late still sends the day's reminder, once.
+  expect(alerts("2026-10-15T14:47:00Z", "2026-10-15T17:50:00Z")).toBe(true);
+  expect(alerts("2026-10-15T17:50:00Z", "2026-10-15T20:47:00Z")).toBe(false);
+});
+
+it("has work only when the newest nightly is in neither main nor an open integration pull request", () => {
+  const f = repositoryFixture();
+  f.git("tag", NIGHTLY);
+  f.git("update-ref", "refs/remotes/origin/main", "HEAD");
+  commitAt(f.root, "2026-10-15T00:00:00Z", "upstream next");
+  f.git("tag", NEXT);
+  f.git("update-ref", "refs/remotes/origin/integrate/holds-next", "HEAD");
+  f.git("update-ref", "refs/remotes/origin/integrate/older", NIGHTLY);
+  const bin = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-bin`);
+  roots.push(bin);
+  NodeFS.mkdirSync(bin);
+  // Applies loom.sh's own --jq filter, as the real gh does.
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "gh"),
+    `#!/bin/bash
+case "$*" in
+  "pr list --state open --json headRefName --jq "*) printf '%s' "$LOOM_TEST_PRS" | jq -r "$8" ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  const due = (...branches: string[]) =>
+    Object.fromEntries(
+      runSync(f.root, "upstream_due", {
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        LOOM_TEST_PRS: JSON.stringify(
+          [...branches, "feature/other"].map((headRefName) => ({ headRefName })),
+        ),
+      })
+        .stdout.trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+
+  expect(due()).toEqual({ due: "true", reason: `main lacks ${NEXT}` });
+  expect(due("integrate/older")).toMatchObject({ due: "true" });
+  expect(due("integrate/older", "integrate/holds-next")).toEqual({
+    due: "false",
+    reason: `integrate/holds-next already ran at ${NEXT}`,
+  });
+  // A needs-Kyle draft whose merge stopped holds nothing, but its name says it ran at the tag.
+  expect(due(`integrate/${NEXT}`)).toMatchObject({ due: "false" });
+  f.git("update-ref", "refs/remotes/origin/main", NEXT);
+  expect(due()).toEqual({ due: "false", reason: `main has ${NEXT}` });
 });
 
 const NIGHTLY = "v1.0.0-nightly.20261014.1";
@@ -1175,8 +1356,12 @@ function agentScript(root: string, name: string, body: string) {
   return path;
 }
 
-function conflictFixture(agent: string, options: { readonly seam?: boolean } = {}) {
+function conflictFixture(
+  agent: string,
+  options: { readonly seam?: boolean; readonly rerere?: boolean; readonly binary?: boolean } = {},
+) {
   const f = repositoryFixture();
+  if (options.rerere) f.git("config", "rerere.enabled", "true");
   const write = (file: string, text: string) => {
     NodeFS.mkdirSync(NodePath.dirname(NodePath.join(f.root, file)), { recursive: true });
     NodeFS.writeFileSync(NodePath.join(f.root, file), text);
@@ -1184,6 +1369,7 @@ function conflictFixture(agent: string, options: { readonly seam?: boolean } = {
   write("apps/a.ts", "export const a = 1;\n");
   write("apps/b.ts", "export const b = 1;\n");
   write("apps/clean.ts", "export const clean = 1;\n");
+  if (options.binary) write("apps/icon.bin", "\0base");
   if (options.seam) write("docs/fork/seams.tsv", "apps/a.ts\tdemo\t1\n");
   f.git("add", "-A");
   f.git("commit", "--quiet", "-m", "base");
@@ -1191,11 +1377,13 @@ function conflictFixture(agent: string, options: { readonly seam?: boolean } = {
   write("apps/a.ts", "export const a = 2;\n");
   write("apps/b.ts", "export const b = 2;\n");
   write("apps/clean.ts", "export const clean = 2;\n");
+  if (options.binary) write("apps/icon.bin", "\0upstream");
   f.git("commit", "--quiet", "-am", "upstream changes");
   f.git("tag", NIGHTLY);
   f.git("switch", "--quiet", "main");
   write("apps/a.ts", `export const a = 3; ${options.seam ? SEAM : "// loom change"}\n`);
   write("apps/b.ts", "export const b = 3; // loom change\n");
+  if (options.binary) write("apps/icon.bin", "\0loom");
   f.git("commit", "--quiet", "-am", "fork changes");
   f.git("switch", "--quiet", "-c", `integrate/${NIGHTLY}`);
   const merge = NodeChildProcess.spawnSync("git", ["merge", "--no-edit", NIGHTLY], {
@@ -1259,6 +1447,65 @@ esac`);
   expect(result.stdout).toContain("- `apps/b.ts`: UNRESOLVED: whether b keeps the fork value");
 });
 
+it("keeps what a stopped merge resolved, so the next attempt resolves only the rest", () => {
+  // b's session removes the markers without resolving b, which rerere must not keep.
+  const f = conflictFixture(
+    `
+echo "$LOOM_RESOLVE_FILE" >> "$LOOM_TEST_CALLS"
+case "$LOOM_RESOLVE_FILE" in
+  apps/a.ts) printf 'export const a = 2; // loom change\\n' > apps/a.ts; printf 'RESOLVED\\n' ;;
+  apps/b.ts)
+    printf 'export const b = 2;\\n' > apps/b.ts
+    printf 'UNRESOLVED: whether b keeps the fork value\\n' ;;
+esac`,
+    { rerere: true },
+  );
+  const calls = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-calls`);
+  roots.push(calls);
+
+  expect(f.resolve({ LOOM_TEST_CALLS: calls }).status).toBe(1);
+  f.git("merge", "--abort");
+  const again = NodeChildProcess.spawnSync("git", ["merge", "--no-edit", NIGHTLY], {
+    cwd: f.root,
+    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+  });
+  expect(again.status).not.toBe(0);
+  expect(f.read("apps/b.ts")).toContain("<<<<<<<");
+  const result = f.resolve({ LOOM_TEST_CALLS: calls });
+
+  expect(result.status).toBe(1);
+  expect(NodeFS.readFileSync(calls, "utf8").split("\n").filter(Boolean).sort()).toEqual([
+    "apps/a.ts",
+    "apps/b.ts",
+    "apps/b.ts",
+  ]);
+  expect(f.git("show", ":apps/a.ts")).toBe("export const a = 2; // loom change");
+  expect(f.git("diff", "--name-only", "--diff-filter=U")).toBe("apps/b.ts");
+  expect(result.stdout).toContain("git rerere reused its resolution:\n\n- `apps/a.ts`");
+});
+
+it("gives a binary conflict a session instead of taking it for an earlier resolution", () => {
+  const f = conflictFixture(
+    `
+echo "$LOOM_RESOLVE_FILE" >> "$LOOM_TEST_CALLS"
+git checkout -q --theirs -- "$LOOM_RESOLVE_FILE" 2>/dev/null || printf 'export const x = 2; // loom change\\n' > "$LOOM_RESOLVE_FILE"
+printf 'RESOLVED\\n'`,
+    { rerere: true, binary: true },
+  );
+  const calls = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-calls`);
+  roots.push(calls);
+
+  const result = f.resolve({ LOOM_TEST_CALLS: calls });
+
+  expect(result.status, result.stdout).toBe(0);
+  expect(NodeFS.readFileSync(calls, "utf8").split("\n").filter(Boolean).sort()).toEqual([
+    "apps/a.ts",
+    "apps/b.ts",
+    "apps/icon.bin",
+  ]);
+  expect(result.stdout).not.toContain("git rerere reused");
+});
+
 it("merges a resolution unattended only when the independent review passes it", () => {
   const f = conflictFixture("");
   NodeFS.writeFileSync(NodePath.join(f.root, "apps/a.ts"), "export const a = 2; // loom change\n");
@@ -1288,6 +1535,82 @@ printf 'Checked every hunk.\\n\\nVERDICT: %s\\n' "$LOOM_TEST_VERDICT"
   const failed = review("fail");
   expect(failed.status).toBe(1);
   expect(failed.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
+});
+
+// A committed resolution pushed to a bare origin, and one agent that reviews or fixes by prompt.
+function reviewFixFixture(reviewer: string) {
+  const f = conflictFixture("");
+  NodeFS.writeFileSync(NodePath.join(f.root, "apps/a.ts"), "export const a = 2; // loom change\n");
+  NodeFS.writeFileSync(NodePath.join(f.root, "apps/b.ts"), "export const b = 2; // loom change\n");
+  f.git("add", "-A");
+  f.git("commit", "--quiet", "--no-edit");
+  const origin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-review-origin-"));
+  roots.push(origin);
+  NodeChildProcess.execFileSync("git", ["init", "--quiet", "--bare", origin]);
+  f.git("remote", "add", "origin", origin);
+  f.git("push", "--quiet", "origin", "main", `integrate/${NIGHTLY}`);
+  f.git("fetch", "--quiet", "origin");
+  const calls = NodePath.join(f.logs, "..", `${NodePath.basename(f.root)}-calls`);
+  roots.push(calls);
+  const agent = agentScript(
+    f.root,
+    "review-agent",
+    `case "$prompt" in
+  "Fix what an independent review found"*)
+    echo fix >> "$LOOM_TEST_CALLS"
+    echo 'export const restored = true;' > apps/restored.ts
+    printf 'Restored the line the resolution dropped.\\n\\nFIXED\\n' ;;
+  *)
+    echo review >> "$LOOM_TEST_CALLS"
+    ${reviewer} ;;
+esac`,
+  );
+  const review = () =>
+    runSync(f.root, "run_checks() { echo checked; }; cmd_review_integration --fix", {
+      LOOM_AGENT: agent,
+      LOOM_RESOLVE_LOGS: f.logs,
+      LOOM_TEST_CALLS: calls,
+    });
+  const sessions = () => NodeFS.readFileSync(calls, "utf8").split("\n").filter(Boolean);
+  const pushed = () =>
+    NodeChildProcess.execFileSync("git", ["log", "--format=%s", `integrate/${NIGHTLY}`], {
+      cwd: origin,
+      encoding: "utf8",
+    });
+  return { ...f, review, sessions, pushed };
+}
+
+it("fixes what a failed review found, checks and pushes the fix, and reviews again", () => {
+  const f = reviewFixFixture(`if git show HEAD:apps/restored.ts >/dev/null 2>&1; then
+      printf 'VERDICT: pass\\n'
+    else
+      printf 'apps/b.ts dropped an upstream line.\\n\\nVERDICT: fail\\n'
+    fi`);
+
+  const result = f.review();
+
+  expect(result.status, result.stderr).toBe(0);
+  expect(f.sessions()).toEqual(["review", "fix", "review"]);
+  expect(result.stdout).toContain("==> Fixing what review 1 found");
+  expect(result.stdout).toContain("checked");
+  expect(f.git("log", "-1", "--format=%s")).toBe(
+    `fix(fork): address review 1 of upstream ${NIGHTLY}`,
+  );
+  expect(f.git("log", "-1", "--format=%b")).toContain("Restored the line the resolution dropped.");
+  expect(f.pushed()).toContain(`fix(fork): address review 1 of upstream ${NIGHTLY}`);
+  expect(NodeFS.readFileSync(NodePath.join(f.logs, "review-fix.md"), "utf8")).toBe(
+    "- Review 1: FIXED\n",
+  );
+});
+
+it("stops after LOOM_REVIEW_ROUNDS reviews when the fix does not satisfy the reviewer", () => {
+  const f = reviewFixFixture(`printf 'apps/b.ts dropped an upstream line.\\n\\nVERDICT: fail\\n'`);
+
+  const result = f.review();
+
+  expect(result.status).toBe(1);
+  expect(f.sessions()).toEqual(["review", "fix", "review"]);
+  expect(result.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
 });
 
 it("shows the reviewer every merge and commit the branch adds to main, oldest first", () => {
@@ -1503,8 +1826,8 @@ printf 'REPAIRED\\n'`);
 
 const NEXT = "v1.0.0-nightly.20261015.1";
 
-// Loom main, upstream's NIGHTLY and NEXT, a bare origin, and an open needs-Kyle draft that merged
-// `draftTag` and committed a repair the day before. main gained a fork commit since.
+// Loom main, upstream's NIGHTLY and NEXT, a bare origin, and an open integration pull request
+// that merged `draftTag` and committed a repair the day before. main gained a fork commit since.
 function resumeFixture(draftTag: string) {
   const f = repositoryFixture();
   const origin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-upstream-origin-"));
@@ -1555,15 +1878,16 @@ function resumeFixture(draftTag: string) {
   roots.push(bin);
   NodeFS.mkdirSync(bin);
   const ghLog = NodePath.join(bin, "gh.log");
-  // Answers each gh query loom.sh makes; --jq filtering is the real gh's job.
+  // Answers each gh query loom.sh makes. --jq filtering is the real gh's job, except for the
+  // open pull requests, whose filter picks the integrations among them.
   NodeFS.writeFileSync(
     NodePath.join(bin, "gh"),
     `#!/bin/bash
 printf '%s\\n' "$*" >> "$LOOM_TEST_GH_LOG"
 case "$*" in
   "pr list --head"*) printf '%s' "$LOOM_TEST_HEAD_PR" ;;
-  "pr list --state open --json headRefName,isDraft"*)
-    printf 'integrate/%s\\nintegrate/v0.9.0\\nintegrate/v0.8.0\\n' "$LOOM_TEST_DRAFT_TAG" ;;
+  "pr list --state open --json headRefName --jq "*)
+    printf '[{"headRefName":"integrate/%s"},{"headRefName":"integrate/v0.9.0"},{"headRefName":"integrate/v0.8.0"},{"headRefName":"feature/x"}]' "$LOOM_TEST_DRAFT_TAG" | jq -r "$8" ;;
   "pr list --state open --json number,headRefName"*)
     printf '7 integrate/%s\\n8 integrate/v0.9.0\\n9 integrate/%s\\n' "$LOOM_TEST_DRAFT_TAG" "$LOOM_TEST_NEXT" ;;
   "pr view"*) echo 9 ;;
@@ -1589,7 +1913,7 @@ esac
   return { ...f, integrate, gh, pushed };
 }
 
-it("continues yesterday's needs-Kyle draft instead of starting over from main", () => {
+it("continues yesterday's open integration pull request instead of starting over from main", () => {
   const f = resumeFixture(NIGHTLY);
 
   const result = f.integrate("");

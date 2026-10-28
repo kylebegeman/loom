@@ -94,6 +94,7 @@ apps/web/src/components/chat/V2LifecycleRow.tsx	agent-receipts	3
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.ts	feed-history-reads	2
 apps/web/src/components/chat/TimelineV2EventRow.logic.ts	compaction-recovery	2
+apps/web/src/components/device/DevicePanel.browser.test.tsx	device-qa	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
 apps/server/scripts/migrate-dev-db.ts	dev-db	12
@@ -1113,7 +1114,7 @@ apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
 apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
-apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
+apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	4
 apps/desktop/src/app/DesktopPreReadyPlatform.test.ts	brand	2
 apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	brand	1
 apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx	brand	4

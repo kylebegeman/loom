@@ -97,6 +97,8 @@ vi.mock("~/rightPanelStore", () => ({
   selectThreadRightPanelState: () => ({ isOpen: false, activeSurfaceId: null, surfaces: [] }),
 }));
 vi.mock("~/components/device/DeviceHostUpdates", () => ({ DeviceHostUpdates: () => null }));
+// fork: device-qa
+vi.mock("~/fork/device-qa/DeviceToolbarActions", () => ({ DeviceQaToolbarActions: () => null }));
 vi.mock("~/components/device/DeviceWorkspace", () => ({
   DeviceWorkspace: ({ onPowerOff }: { onPowerOff: () => void }) => (
     <button onClick={onPowerOff}>Power off</button>

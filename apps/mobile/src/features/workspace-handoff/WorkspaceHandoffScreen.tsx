@@ -46,6 +46,7 @@ import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { runtime } from "../../lib/runtime";
 import * as MobileDatabase from "../../persistence/mobile-database";
+import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
 const handoff = createWorkspaceHandoffAtoms(connectionAtomRuntime);
 const JsonRecord = Schema.fromJsonString(WorkspaceHandoffAttemptRecord);
@@ -141,6 +142,7 @@ function WorkspaceHandoffContent({
   const configs = useServerConfigs();
   const { environments, isReady } = useEnvironments();
   const navigation = useNavigation();
+  const selectDetail = useSelectWorkspaceDetail();
   const insets = useSafeAreaInsets();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [phase, setPhase] = useState<WorkspaceHandoffPhase | "idle">("idle");
@@ -286,6 +288,7 @@ function WorkspaceHandoffContent({
           ? reconnectable(destinationComputer)
           : undefined;
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- async moves check it before updating an unmounted screen
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -293,6 +296,7 @@ function WorkspaceHandoffContent({
     };
   }, []);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- reads this thread's saved move from the device database
   useEffect(() => {
     if (operation !== null) return;
     let alive = true;
@@ -412,9 +416,12 @@ function WorkspaceHandoffContent({
   };
   const openDestination = () => {
     if (attempt?.receipt)
-      navigation.navigate("Thread", {
-        environmentId: attempt.receipt.destinationEnvironmentId,
-        threadId: attempt.receipt.threadId,
+      selectDetail({
+        name: "Thread",
+        params: {
+          environmentId: attempt.receipt.destinationEnvironmentId,
+          threadId: attempt.receipt.threadId,
+        },
       });
   };
   const startOver = async () => {

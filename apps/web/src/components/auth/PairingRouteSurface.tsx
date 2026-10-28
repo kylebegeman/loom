@@ -87,6 +87,7 @@ export function PairingRouteSurface({
 
   // fork: library-sign-in
   const lastPairingTokenRef = useRef(autoPairToken);
+  // oxlint-disable-next-line t3code/react-effect-budget -- follows pairing links opened while this page shows
   useEffect(() => {
     const followPairingLink = () => {
       const token = peekPairingTokenFromUrl();

@@ -3,14 +3,15 @@
 # install it, and roll back. Fork-owned; upstream never edits this file.
 #
 #   scripts/fork/loom.sh status
-#   scripts/fork/loom.sh upstream-status [--check]
+#   scripts/fork/loom.sh upstream-status [--check | --alert-since <epoch>]
+#   scripts/fork/loom.sh upstream-due
 #   scripts/fork/loom.sh upstream-overlap <path or topic>...
 #   scripts/fork/loom.sh check
 #   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue] [--pr] [--resolve]
-#   scripts/fork/loom.sh review-integration
+#   scripts/fork/loom.sh review-integration [--fix]
 #   scripts/fork/loom.sh close-superseded
 #   scripts/fork/loom.sh merge-integration <integrate/tag branch>
-#   scripts/fork/loom.sh notify <status> [<summary file>]
+#   scripts/fork/loom.sh notify stale|heartbeat
 #   scripts/fork/loom.sh land [<pr number>] [--no-install]
 #   scripts/fork/loom.sh build
 #   scripts/fork/loom.sh install
@@ -32,14 +33,18 @@
 # --resolve gives each conflicted file its own Claude session instead of
 # stopping, so a merge that piled up over several days never exhausts one
 # session, then gives each failing check its own repair session and commit.
-# --pr continues an open needs-Kyle draft instead of starting over, so its
-# repairs carry into the next day's merge; close-superseded closes the older
-# attempts a pushed branch contains. review-integration has a separate session
-# check that resolution and repair before merge-integration merges it
-# unattended. upstream-status says how far main trails upstream (--check fails
-# once a nightly has waited past the grace period); upstream-overlap lists
-# upstream work, merged or in open pull requests, that touches what a fork
-# change is about to. notify alerts Kyle in Loom through LOOM_ALERT_WEBHOOK_URL.
+# --pr continues an open integration pull request (a needs-Kyle draft, or one
+# whose review failed) instead of starting over, so its resolutions and repairs
+# carry into the next merge; close-superseded closes the older attempts a
+# pushed branch contains. review-integration has a separate session check that
+# resolution and repair before merge-integration merges it unattended; --fix
+# gives a failed review's findings a fix session and reviews again.
+# upstream-due says whether a scheduled run has a nightly to integrate.
+# upstream-status says how far main trails upstream and when an unattended
+# run last merged (--check fails once a nightly has waited past the grace
+# period); upstream-overlap lists upstream work, merged or in open pull
+# requests, that touches what a fork change is about to. notify alerts Kyle in
+# Loom through LOOM_ALERT_WEBHOOK_URL.
 #
 # Only the publisher (scripts/fork/updates.ts) makes installable builds. land and
 # integrate run it, so this Mac, the update feed, the iOS build and remote
@@ -84,9 +89,13 @@ BRAND_TESTS=(
 )
 UPSTREAM_REPO=pingdotgg/t3code
 UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
-# A nightly may wait this long for main: one daily integration plus its run time.
-# Longer means a day was missed, and upstream-status --check fails.
-UPSTREAM_GRACE_HOURS=30
+# A nightly may wait this long for main: upstream can publish it four hours after its commit,
+# and its run can queue up to six hours behind a running integration, then take six itself.
+# Longer means runs are failing or not running, and upstream-status --check fails.
+UPSTREAM_GRACE_HOURS=16
+# A failed review gets a fix session and another review until this many reviews have run.
+LOOM_REVIEW_ROUNDS=${LOOM_REVIEW_ROUNDS:-2}
+UPSTREAM_STALE="main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly; the upstream integration is failing or not running"
 # Resolver sessions run this many at a time; each owns one conflicted file.
 LOOM_RESOLVE_JOBS=${LOOM_RESOLVE_JOBS:-4}
 # After a resolved merge, each failing check gets at most this many repair sessions.
@@ -232,8 +241,7 @@ upstream_base() {
 
 # The branding tests, every test file the fork adds or changes, and upstream's tests beside
 # the files the fork changes, which nothing else runs while the fork's CI workflow is off.
-# Browser-mode tests need apps/web's headless Chromium project, which the root config used
-# here lacks.
+# Browser-mode tests need apps/web's headless Chromium project; fork_browser_tests lists them.
 fork_tests() {
   local base source test
   base=$(upstream_base) || return 1
@@ -249,6 +257,22 @@ fork_tests() {
         done
       done
   } | sort -u
+}
+
+# The same for browser-mode tests, relative to apps/web: the only package with a browser project.
+fork_browser_tests() {
+  local base source test
+  base=$(upstream_base) || return 1
+  {
+    git diff --name-only --diff-filter=d "$base" -- 'apps/web/*.browser.test.ts' 'apps/web/*.browser.test.tsx'
+    git diff --name-only --diff-filter=d "$base" -- 'apps/web/*.ts' 'apps/web/*.tsx' \
+      ':(exclude)*.test.ts' ':(exclude)*.test.tsx' |
+      while IFS= read -r source; do
+        for test in "${source%.*}.browser.test.ts" "${source%.*}.browser.test.tsx"; do
+          [ ! -f "$test" ] || printf '%s\n' "$test"
+        done
+      done
+  } | sed 's#^apps/web/##' | sort -u
 }
 
 # The package a path belongs to: apps/<name> or packages/<name>, otherwise its top directory.
@@ -291,6 +315,27 @@ check_fork_lint() {
     die "fork lint failed; fix the findings above (rules in oxlint-plugin-t3code/rules/)"
 }
 
+# Code files the fork adds or changes outside fork_lint_paths. Upstream's lint covers them, and
+# an upstream merge can tighten its rules, so they are linted with upstream's own flags.
+fork_edited_code() {
+  local base
+  base=$(upstream_base) || return 1
+  # Through the environment: macOS awk rejects a newline in a -v value.
+  git diff --name-only --diff-filter=d "$base" -- \
+    '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' |
+    LOOM_FORK_PATHS=$(fork_lint_paths) awk 'BEGIN { n = split(ENVIRON["LOOM_FORK_PATHS"], p, "\n") }
+      { for (i = 1; i <= n; i++) if ($0 == p[i] || index($0, p[i] "/") == 1) next; print }'
+}
+
+check_edited_lint() {
+  local list file files=()
+  list=$(fork_edited_code) || return 1
+  [ -n "$list" ] || return 0
+  while IFS= read -r file; do files+=("$file"); done <<<"$list"
+  pnpm exec vp lint --report-unused-disable-directives "${files[@]}" ||
+    die "lint failed in files the fork edits; change the fork's lines, never upstream's (rules in oxlint-plugin-t3code/rules/)"
+}
+
 # The Omarchy pack's own Node tests and its generated packet views.
 check_omarchy_pack() {
   node deploy/omarchy/check.mjs
@@ -314,6 +359,16 @@ run_fork_tests() {
   # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
   # desktop artifact tests assert is absent.
   env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
+}
+
+run_fork_browser_tests() {
+  local list t tests=()
+  list=$(fork_browser_tests) || return 1
+  [ -n "$list" ] || return 0
+  while IFS= read -r t; do tests+=("$t"); done <<<"$list"
+  cd apps/web
+  pnpm exec playwright install --only-shell chromium
+  env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --project browser "${tests[@]}"
 }
 
 in_dir() {
@@ -351,6 +406,7 @@ run_checks() {
   run_check "Installing dependencies" pnpm install --frozen-lockfile
   if [ "$FAILED_CHECKS" = "$before" ]; then
     run_check "Linting fork code" check_fork_lint
+    run_check "Linting upstream files the fork edits" check_edited_lint
     run_check "Running the Omarchy pack's checks" check_omarchy_pack
     built=$FAILED_CHECKS
     run_check "Regenerating web routes and building the web client" in_dir apps/web pnpm exec vp build
@@ -375,6 +431,7 @@ run_checks() {
     else
       FAILED_CHECKS+="Listing the fork's tests"$'\n'
     fi
+    run_check "Running browser tests in apps/web" run_fork_browser_tests
   fi
   restore_lockfile
   report_failed_checks
@@ -755,7 +812,7 @@ tag_main() {
     'refs/loom/publications/*:refs/loom/publications/*'
   version=$(node scripts/fork/updates.ts next-version "$upstream")
   if upstream_status HEAD | grep -qx 'state=stale'; then
-    echo "Warning: main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly. Fix the daily integration (FORK.md, Updating from upstream) before building more fork work on it." >&2
+    echo "Warning: main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly. Fix the upstream integration (FORK.md, Updating from upstream) before building more fork work on it." >&2
   fi
   say "Tagging main as Loom $version"
   git tag -a "loom-v$version" -m "Loom fork changes on main
@@ -920,8 +977,9 @@ cmd_integrate() {
         say "main conflicts with $resume; starting over from main"
         git checkout -q "$start"
         git branch -q -D "$branch"
+        # Conflicting with main, it can no longer merge, so the fresh merge replaces it.
         if [ "$resume" = "$branch" ]; then
-          replace_failed_integration "$branch" || return 0
+          gh pr close "$branch" --delete-branch --comment "main conflicts with this branch; retrying upstream $tag from a fresh merge."
         fi
         resume=""
       fi
@@ -948,6 +1006,7 @@ cmd_integrate() {
     fi
   fi
   if [ "$resolve" -eq 1 ]; then
+    rm -f "$(resolve_logs)/repair.md"
     checks_with_repair "$tag"
   else
     run_checks
@@ -1065,13 +1124,14 @@ cmd_close_superseded() {
   close_superseded "$branch"
 }
 
-# The needs-Kyle draft an integration continues instead of starting over, as its branch: the
-# open draft holding the newest upstream tag that origin/main lacks and the target contains.
-# Its resolution and repairs survive; the run merges main and the newer tag into it.
+# The open integration pull request a run continues instead of starting over, as its branch:
+# a needs-Kyle draft or one that waits after a failed review, holding the newest upstream tag
+# that origin/main lacks and the target contains. Its resolutions and repairs survive; the run
+# merges main and the newer tag into it.
 open_integration() {
   local tag=$1 branch held
-  gh pr list --state open --json headRefName,isDraft \
-    --jq '.[] | select(.isDraft and (.headRefName | startswith("integrate/"))) | .headRefName' |
+  gh pr list --state open --json headRefName \
+    --jq '.[] | select(.headRefName | startswith("integrate/")) | .headRefName' --limit 200 |
     while IFS= read -r branch; do
       git rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null || continue
       held=$(git tag -l 'v[0-9]*' --merged "origin/$branch" --sort=-creatordate | sed -n 1p)
@@ -1083,10 +1143,18 @@ open_integration() {
 }
 
 # --- Upstream sync -------------------------------------------------------------
-# The daily workflow merges unattended; these keep that merge small, reviewed and
-# visible, and keep fork work from starting on a main that trails upstream.
+# The workflow merges unattended every few hours; these keep that merge small, reviewed
+# and visible, and keep fork work from starting on a main that trails upstream.
 
 now_epoch() { echo "${LOOM_NOW:-$(date +%s)}"; }
+
+# The newest integration the workflow tagged itself after merging unattended, with its date.
+# Configuration says what should happen; this says what did.
+last_unattended() {
+  git for-each-ref 'refs/tags/loom-v*' --sort=-creatordate \
+    --format='%(taggername)%09%(contents:subject)%09%(refname:short) %(creatordate:short)' |
+    awk -F'\t' '$1 == "github-actions[bot]" && index($2, "Loom built from upstream ") == 1 { print $3; exit }'
+}
 
 # How far a ref trails upstream's nightlies, as key=value lines. state is in-sync when it
 # has the newest nightly, behind while every missing nightly is younger than
@@ -1104,19 +1172,71 @@ upstream_status() {
     state=behind
     [ "$waited" -lt "$UPSTREAM_GRACE_HOURS" ] || state=stale
   fi
-  printf 'state=%s\nnewest=%s\nmain=%s\noldest_missing=%s\nwaited_hours=%s\nbehind_commits=%s\n' \
-    "$state" "$newest" "$(upstream_at "$ref")" "$oldest" "$waited" "$(git rev-list --count "$ref..$newest")"
+  printf 'state=%s\nnewest=%s\nmain=%s\noldest_missing=%s\nwaited_hours=%s\nbehind_commits=%s\nlast_unattended=%s\n' \
+    "$state" "$newest" "$(upstream_at "$ref")" "$oldest" "$waited" \
+    "$(git rev-list --count "$ref..$newest")" "$(last_unattended)"
+}
+
+# Whether the nightly <oldest> passed the grace period, or another whole day after it, later
+# than <since> (epoch seconds). The watch passes its previous run's start, so it alerts once
+# when main goes stale and once a day after, however late GitHub starts its scheduled runs.
+stale_crossed() {
+  local oldest=$1 since=$2 mark now
+  [ -n "$oldest" ] || return 1
+  mark=$(($(git log -1 --format=%ct "$oldest") + UPSTREAM_GRACE_HOURS * 3600))
+  now=$(now_epoch)
+  [ "$now" -ge "$mark" ] || return 1
+  mark=$((mark + (now - mark) / 86400 * 86400))
+  [ "$since" -lt "$mark" ]
 }
 
 cmd_upstream_status() {
   git fetch -q upstream --tags
-  git fetch -q origin
+  git fetch -q --tags origin
   local status
   status=$(upstream_status origin/main)
   printf '%s\n' "$status"
-  if [ "${1:-}" = --check ] && printf '%s\n' "$status" | grep -qx 'state=stale'; then
-    die "main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly; the daily integration is failing or not running"
+  case "${1:-}" in
+    --check) printf '%s\n' "$status" | grep -qx 'state=stale' || return 0 ;;
+    --alert-since)
+      [ -n "${2:-}" ] || die "--alert-since takes the previous check's time in epoch seconds"
+      stale_crossed "$(printf '%s\n' "$status" | sed -n 's/^oldest_missing=//p')" "$2" || return 0
+      # Its own status, so a failure to read the status never rings the stale alert.
+      echo "loom: $UPSTREAM_STALE" >&2
+      return 3
+      ;;
+    *) return 0 ;;
+  esac
+  die "$UPSTREAM_STALE"
+}
+
+# Whether a scheduled run has work, as due=<true|false> and reason=<why> lines: the newest
+# nightly is in neither origin/main nor an open integration pull request. A pull request
+# that holds it, or is named for it, already ran at that tag; a newer nightly retries it.
+upstream_due() {
+  local newest branch
+  newest=$(latest_nightly)
+  [ -n "$newest" ] || die "no upstream nightly tags; run git fetch upstream --tags"
+  if git merge-base --is-ancestor "$newest" origin/main; then
+    printf 'due=false\nreason=main has %s\n' "$newest"
+    return 0
   fi
+  while IFS= read -r branch; do
+    [ -n "$branch" ] || continue
+    if [ "$branch" = "integrate/$newest" ] ||
+      git merge-base --is-ancestor "$newest" "origin/$branch" 2>/dev/null; then
+      printf 'due=false\nreason=%s already ran at %s\n' "$branch" "$newest"
+      return 0
+    fi
+  done < <(gh pr list --state open --json headRefName \
+    --jq '.[] | select(.headRefName | startswith("integrate/")) | .headRefName' --limit 200)
+  printf 'due=true\nreason=main lacks %s\n' "$newest"
+}
+
+cmd_upstream_due() {
+  git fetch -q upstream --tags
+  git fetch -q origin
+  upstream_due
 }
 
 # Open upstream pull requests, with the files each one changes, as number<TAB>title<TAB>file lines.
@@ -1214,17 +1334,32 @@ EOF
   echo "  $(final_line "$log" | cut -c1-200): $file"
 }
 
+# Whether git rerere wrote an earlier attempt's resolution into a file both sides changed.
+# rerere handles only text; a binary conflict also leaves no markers, so it is not one.
+replayed_resolution() {
+  [ "$(git ls-files -u -- "$1" | awk '$3 == 2 || $3 == 3 { print $3 }' | sort -u | tr -d '\n')" = 23 ] &&
+    [ -f "$1" ] && [ ! -L "$1" ] && grep -Iq . -- "$1" && ! has_conflict_markers "$1"
+}
+
 # Resolve a stopped merge one conflicted file per session, LOOM_RESOLVE_JOBS at a time, so
-# a large merge never exhausts one session and each sees both sides of its own file.
+# a large merge never exhausts one session and each sees both sides of its own file. With
+# rerere.enabled, a file an earlier attempt resolved takes that resolution without a session,
+# and git rerere records each new one, so a run that stops still keeps what it resolved.
 # Stages what resolved; returns 1, leaving the rest conflicted, if any file did not.
 resolve_conflicts() {
-  local tag=$1 conflicted before logs file unresolved="" edited summary
+  local tag=$1 conflicted replayed="" before logs file unresolved="" edited summary
   conflicted=$(git diff --name-only --diff-filter=U)
   logs=$(resolve_logs)
   mkdir -p "$logs" && rm -f "$logs"/*.log "$logs/summary.md"
+  while IFS= read -r file; do
+    [ -n "$file" ] && [ "$file" != pnpm-lock.yaml ] && replayed_resolution "$file" || continue
+    git add -- "$file"
+    replayed+="$file"$'\n'
+  done <<<"$conflicted"
+  [ -z "$replayed" ] || conflicted=$(git diff --name-only --diff-filter=U)
   before=$(changed_files)
   say "Resolving $(printf '%s\n' "$conflicted" | grep -c .) conflicted files, $LOOM_RESOLVE_JOBS at a time (logs in $logs)"
-  if printf '%s\n' "$conflicted" | grep -qvx pnpm-lock.yaml; then
+  if printf '%s\n' "$conflicted" | grep -v -x -e pnpm-lock.yaml -e '' -q; then
     # Each worker sources this script (with its own $0, so the command dispatch stays off);
     # xargs appends its file after the fixed arguments.
     printf '%s\n' "$conflicted" | grep -vx pnpm-lock.yaml | tr '\n' '\0' |
@@ -1243,6 +1378,12 @@ resolve_conflicts() {
   done <<<"$conflicted"
   edited=$(comm -13 <(printf '%s\n' "$before") <(changed_files))
   [ -z "$edited" ] || printf '%s\n' "$edited" | while IFS= read -r file; do git add -A -- "$file"; done
+  # Before the lockfile is regenerated, so rerere never replays a stale one. rerere records
+  # any file without markers, so it forgets those whose session did not resolve them.
+  git rerere || true
+  printf '%s' "$unresolved" | while IFS= read -r file; do
+    git rerere forget -- "$file" >/dev/null 2>&1 || true
+  done
   if printf '%s\n' "$conflicted" | grep -qx pnpm-lock.yaml; then
     say "Regenerating pnpm-lock.yaml from upstream's, with the fork's dependencies"
     if git checkout -q --theirs -- pnpm-lock.yaml && pnpm install --lockfile-only --ignore-scripts >"$logs/pnpm-lock.yaml.log" 2>&1; then
@@ -1254,6 +1395,10 @@ resolve_conflicts() {
   summary="$logs/summary.md"
   {
     echo "Merging upstream $tag conflicted in $(printf '%s\n' "$conflicted" | grep -c .) files; one Claude session took each."
+    if [ -n "$replayed" ]; then
+      printf '\nAn earlier attempt resolved these, and git rerere reused its resolution:\n\n'
+      printf '%s' "$replayed" | sed 's/^/- `/; s/$/`/'
+    fi
     if [ -n "$edited" ]; then
       printf '\nSessions also edited these files to carry a seam to its new home:\n\n'
       printf '%s\n' "$edited" | sed 's/^/- `/; s/$/`/'
@@ -1283,14 +1428,14 @@ repair_time_left() { [ -z "${LOOM_REPAIR_DEADLINE:-}" ] || [ "$(now_epoch)" -lt 
 # waits a round per check nor exhausts one session. A check gets LOOM_REPAIR_ATTEMPTS
 # sessions, none after one gives up, and none starts past LOOM_REPAIR_DEADLINE. Dies, keeping
 # every commit for the needs-Kyle draft, when a round changes nothing or no failing check may
-# have another session; repair.md beside the resolve logs records every session. Call it
-# outside if and ||: run_checks relies on errexit, which bash ignores there even when set again.
+# have another session; repair.md beside the resolve logs gains a line for every session. Call
+# it outside if and ||: run_checks relies on errexit, which bash ignores there even when set again.
 checks_with_repair() {
   local tag=$1 logs report round=0 code log failed check checks session reply attempts
   local tried="" gave_up="" skipped ran changed
   logs=$(resolve_logs)
   report="$logs/repair.md"
-  mkdir -p "$logs" && rm -f "$logs"/checks-*.log "$logs"/repair-*.log "$report"
+  mkdir -p "$logs" && rm -f "$logs"/checks-*.log "$logs"/repair-*.log
   while :; do
     log="$logs/checks-$round.log"
     set +e
@@ -1373,31 +1518,64 @@ resolution_diff() {
 
 # An independent session checks an unattended resolution before it merges without a
 # person: no upstream change dropped outside a seam, no seam lost, nothing unrelated.
-# Writes review.md beside the resolve logs and fails unless the verdict is pass.
+# Writes review.md beside the resolve logs and fails unless the verdict is pass. With --fix,
+# a failed review's findings get one fix session (prompt in scripts/fork/upstream-review-fix.md)
+# whose changes become a commit; the checks and their repairs run again, the branch is pushed
+# and a fresh session reviews it, until LOOM_REVIEW_ROUNDS reviews have run. review-fix.md
+# records each fix session. No fix session starts past LOOM_REPAIR_DEADLINE.
 cmd_review_integration() {
-  local branch tag logs
+  local fix=0 branch tag logs round=1 reply
+  [ "${1:-}" != --fix ] || fix=1
   branch=$(git rev-parse --abbrev-ref HEAD)
   [[ "$branch" == integrate/* ]] || die "review-integration runs on an integrate/<tag> branch"
   tag=${branch#integrate/}
   logs=$(resolve_logs)
-  mkdir -p "$logs"
-  resolution_diff >"$logs/resolution.diff"
-  sed -e "s|{{tag}}|$tag|g" -e "s|{{diff}}|$logs/resolution.diff|g" "$REPO_ROOT/scripts/fork/upstream-review.md" |
-    run_agent 80 default Read Glob Grep "${CLAUDE_GIT_TOOLS[@]}" >"$logs/review.md" 2>&1 || true
-  cat "$logs/review.md"
-  [ "$(final_line "$logs/review.md")" = "VERDICT: pass" ] || die "the review did not pass the resolution of $tag"
+  mkdir -p "$logs" && rm -f "$logs"/review-*.md "$logs"/review-fix-*.log "$logs/review-fix.md"
+  while :; do
+    resolution_diff >"$logs/resolution.diff"
+    sed -e "s|{{tag}}|$tag|g" -e "s|{{diff}}|$logs/resolution.diff|g" "$REPO_ROOT/scripts/fork/upstream-review.md" |
+      run_agent 80 default Read Glob Grep "${CLAUDE_GIT_TOOLS[@]}" >"$logs/review.md" 2>&1 || true
+    cat "$logs/review.md"
+    [ "$(final_line "$logs/review.md")" != "VERDICT: pass" ] || return 0
+    if [ "$fix" -eq 0 ] || [ "$round" -ge "$LOOM_REVIEW_ROUNDS" ] || ! repair_time_left; then
+      die "the review did not pass the resolution of $tag"
+    fi
+    cp "$logs/review.md" "$logs/review-$round.md"
+    say "Fixing what review $round found"
+    sed -e "s|{{tag}}|$tag|g" -e "s|{{review}}|$logs/review-$round.md|g" \
+      "$REPO_ROOT/scripts/fork/upstream-review-fix.md" |
+      run_agent 150 acceptEdits Bash Read Edit Write Glob Grep >"$logs/review-fix-$round.log" 2>&1 ||
+      echo "The session exited with status $?." >>"$logs/review-fix-$round.log"
+    reply=$(final_line "$logs/review-fix-$round.log")
+    echo "- Review $round: $(printf '%s' "$reply" | cut -c1-300)" >>"$logs/review-fix.md"
+    restore_lockfile
+    git add -A
+    git diff --cached --quiet && die "the fix session for review $round changed nothing; see $logs/review-fix.md"
+    {
+      echo "fix(fork): address review $round of upstream $tag"
+      echo
+      awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
+        "$logs/review-fix-$round.log"
+    } | git commit -q -F -
+    printf '\nAfter review %s:\n\n' "$round" >>"$logs/repair.md"
+    checks_with_repair "$tag"
+    git push -q origin "$branch"
+    round=$((round + 1))
+  done
 }
 
 # Merge an integration pull request with a merge commit and tag it loom-<tag>, as land
 # does, without publishing or installing: the publisher builds the tag on its schedule.
 cmd_merge_integration() {
-  local branch=${1:-} tag number merged
+  local branch=${1:-} tag number merged head=()
   [[ "$branch" == integrate/* ]] || die "name the integrate/<tag> branch to merge"
   tag=${branch#integrate/}
   number=$(gh pr view "$branch" --json number --jq .number)
+  # On the branch, merge only the commit checked here, never a push that landed since.
+  [ "$(git rev-parse --abbrev-ref HEAD)" != "$branch" ] || head=(--match-head-commit "$(git rev-parse HEAD)")
   # gh deletes the merged branch locally too; it must not be checked out.
   git checkout -q --detach
-  gh pr merge "$number" --merge --delete-branch
+  gh pr merge "$number" --merge --delete-branch ${head[@]+"${head[@]}"}
   merged=$(gh pr view "$number" --json mergeCommit --jq .mergeCommit.oid)
   git fetch -q origin main
   git tag -a "loom-$tag" -m "Loom built from upstream $tag" "$merged"
@@ -1407,13 +1585,12 @@ cmd_merge_integration() {
 # Rings the Loom upstream alert: a scheduled task on Kyle's Mac that opens a thread and
 # looks into it. The request is a doorbell: status only, because the agent reads the
 # facts from GitHub itself, so a forged request can do no more than ask it to look.
-# loom-upstream.yml's Alert Kyle step sends the same request inline, so it works without
-# a checkout; change both together.
+# Only loom-upstream-watch.yml rings it, so one failing run never alerts by itself.
 cmd_notify() {
   local status=${1:-}
   case "$status" in
-    failed | needs-review | stale | heartbeat) ;;
-    *) die "notify takes failed, needs-review, stale or heartbeat" ;;
+    stale | heartbeat) ;;
+    *) die "notify takes stale or heartbeat" ;;
   esac
   if [ -z "${LOOM_ALERT_WEBHOOK_URL:-}" ]; then
     echo "LOOM_ALERT_WEBHOOK_URL is not set, so Loom was not alerted" >&2
@@ -1479,8 +1656,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   case "${1:-}" in
     status) cmd_status ;;
     upstream-status) shift; cmd_upstream_status "$@" ;;
+    upstream-due) cmd_upstream_due ;;
     upstream-overlap) shift; cmd_upstream_overlap "$@" ;;
-    review-integration) cmd_review_integration ;;
+    review-integration) shift; cmd_review_integration "$@" ;;
     close-superseded) cmd_close_superseded ;;
     merge-integration) shift; cmd_merge_integration "$@" ;;
     notify) shift; cmd_notify "$@" ;;

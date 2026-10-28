@@ -1,17 +1,19 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as Sqlite from "node:sqlite";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import * as NodeSqlite from "node:sqlite";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { sqliteSnapshot } from "./loomLibrarySnapshot.ts";
 import { describe, it, expect } from "vite-plus/test";
 
 describe("online snapshot under continuing writes", () => {
   it("pins the read transaction so other connections cannot restart the backup", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "loom-snapshot-writes-"));
-    const source = join(directory, "source.sqlite");
-    const target = join(directory, "snapshot.sqlite");
-    const writer = new Sqlite.DatabaseSync(source);
+    const directory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "loom-snapshot-writes-"),
+    );
+    const source = NodePath.join(directory, "source.sqlite");
+    const target = NodePath.join(directory, "snapshot.sqlite");
+    const writer = new NodeSqlite.DatabaseSync(source);
     writer.exec(
       "PRAGMA journal_mode=WAL; CREATE TABLE marker(value INTEGER); INSERT INTO marker VALUES(0); CREATE TABLE pages(data BLOB);",
     );
@@ -25,7 +27,7 @@ describe("online snapshot under continuing writes", () => {
           if (remaining.length <= 16) writer.exec("UPDATE marker SET value=value+1");
         },
       });
-      const snapshot = new Sqlite.DatabaseSync(target, { readOnly: true });
+      const snapshot = new NodeSqlite.DatabaseSync(target, { readOnly: true });
       try {
         expect(snapshot.prepare("SELECT value FROM marker").get()?.value).toBe(0);
       } finally {
@@ -38,7 +40,7 @@ describe("online snapshot under continuing writes", () => {
       expect(Number(writer.prepare("SELECT value FROM marker").get()?.value)).toBeGreaterThan(10);
     } finally {
       writer.close();
-      await rm(directory, { recursive: true, force: true });
+      await NodeFSP.rm(directory, { recursive: true, force: true });
     }
   });
 });

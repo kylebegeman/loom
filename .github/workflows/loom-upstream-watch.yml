@@ -1,20 +1,21 @@
 # Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
 #
-# The second half of the daily integration. It alerts Kyle in Loom when main has
-# waited too long for an upstream nightly, whether Loom upstream failed, never ran,
-# or left a pull request waiting. Every Monday it also rings a heartbeat, so a week
-# without one means the alert path itself is broken. A failed run here also emails
-# GitHub's usual workflow failure notice. See FORK.md, "Updating from upstream".
+# The alarm for the upstream integration. It alerts Kyle in Loom when main has waited
+# too long for an upstream nightly, whether Loom upstream failed, never ran, or left a
+# pull request waiting: once when main goes stale, then once a day while it stays stale.
+# Every Monday it also rings a heartbeat, so a week without one means the alert path
+# itself is broken. A run that alerts also fails, which emails GitHub's usual workflow
+# failure notice. See FORK.md, "Updating from upstream".
 name: Loom upstream watch
 
 on:
   schedule:
-    # Six and a half hours after Loom upstream starts, once its run has finished.
-    - cron: "47 17 * * *"
+    - cron: "47 */3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   watch:
@@ -26,16 +27,33 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          filter: blob:none
 
       - name: Check main against upstream
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           LOOM_ALERT_WEBHOOK_URL: ${{ secrets.LOOM_ALERT_WEBHOOK_URL }}
         run: |
           git remote add upstream https://github.com/pingdotgg/t3code.git
-          if scripts/fork/loom.sh upstream-status --check; then
-            if [ "$(date -u +%u)" = 1 ]; then scripts/fork/loom.sh notify heartbeat; fi
-            exit 0
+          # Each run judges the time from the previous run's start to its own, so however late
+          # GitHub starts them, every alert and heartbeat goes out exactly once.
+          created() { date -d "$1" +%s; }
+          LOOM_NOW=$(created "$(gh run view "$GITHUB_RUN_ID" --json createdAt --jq .createdAt)")
+          export LOOM_NOW
+          since=$(gh run list --workflow loom-upstream-watch.yml -L 2 --json databaseId,createdAt \
+            --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)][0].createdAt // empty")
+          since=$(created "${since:-1970-01-01T00:00:00Z}")
+          code=0
+          scripts/fork/loom.sh upstream-status --alert-since "$since" || code=$?
+          if [ "$code" = 3 ]; then
+            scripts/fork/loom.sh notify stale
+            exit 1
           fi
-          scripts/fork/loom.sh notify stale
-          exit 1
+          [ "$code" = 0 ] || exit "$code"
+          # The heartbeat marks Monday 18:00 UTC.
+          monday=$((LOOM_NOW - LOOM_NOW % 86400 - ($(date -u -d "@$LOOM_NOW" +%u) - 1) * 86400 + 18 * 3600))
+          [ "$monday" -le "$LOOM_NOW" ] || monday=$((monday - 7 * 86400))
+          if [ "$since" -lt "$monday" ]; then
+            scripts/fork/loom.sh notify heartbeat
+          fi
