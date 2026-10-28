@@ -237,7 +237,7 @@ vi.mock("../../state/sourceControl", () => ({
     // fork: fleet-connections
     publishRepository: async (request: { environmentId: string; input: { cwd: string } }) => {
       state.publishRequests.push({ environmentId: request.environmentId, cwd: request.input.cwd });
-      return AsyncResult.success(undefined);
+      return AsyncResult.success({ remoteUrl: "" });
     },
     // fork: project-home
     startProjectClone: async ({

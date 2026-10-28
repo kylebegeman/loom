@@ -1158,7 +1158,7 @@ apps/server/src/orchestration-v2/Orchestrator.ts	library-projects	4
 apps/server/src/orchestration-v2/Orchestrator.ts	workspace-handoff	2
 packages/shared/src/keybindings.ts	library-palette	2
 apps/mobile/src/features/home/homeThreadList.test.ts	project-navigation	4
-apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	provider-auth-retry	8
+apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	provider-auth-retry	10
 apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	github-host-setup	1
 apps/desktop/src/app/DesktopApp.ts	rollback-snapshot	2
 apps/desktop/src/updates/DesktopUpdates.ts	rollback-snapshot	3
