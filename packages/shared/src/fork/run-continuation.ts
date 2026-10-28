@@ -18,10 +18,14 @@ const RETRYABLE_FAILURE_CLASSES: ReadonlySet<OrchestrationV2ProviderFailureClass
   "unknown",
 ]);
 
+export const isRetryableFailureClass = (
+  failureClass: OrchestrationV2ProviderFailureClass | null | undefined,
+) => failureClass != null && RETRYABLE_FAILURE_CLASSES.has(failureClass);
+
 export const isRetryableProviderFailure = (
   failure: OrchestrationV2ProviderFailure | null,
 ): failure is OrchestrationV2ProviderFailure =>
-  failure !== null && RETRYABLE_FAILURE_CLASSES.has(failure.class);
+  failure !== null && isRetryableFailureClass(failure.class);
 
 export interface ContinuableRun {
   readonly run: OrchestrationV2Run;
