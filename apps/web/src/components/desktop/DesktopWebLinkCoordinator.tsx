@@ -221,7 +221,11 @@ export function DesktopWebLinkCoordinator() {
       (openPullRequestsInApp &&
         !localEnvironmentDisabled &&
         sourceControlClients.parseChangeRequestUrl(url) !== null) ||
-      (localEnvironmentDisabled && promptLinkAppPath(url) === null) // fork: client-computer
+      // fork: client-computer A client waits for a computer to start a thread on; pairing and PR links go now.
+      (localEnvironmentDisabled &&
+        promptLinkAppPath(url) === null && // fork: client-computer
+        readPairingAppLink(url) === null && // fork: client-computer
+        sourceControlClients.parseChangeRequestUrl(url) === null) // fork: client-computer
         ? projectsSettled()
         : Promise.resolve();
     void hold.then(() => {
