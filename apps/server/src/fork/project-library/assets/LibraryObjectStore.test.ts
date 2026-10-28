@@ -95,4 +95,70 @@ describe("private B2 durable object transport", () => {
       }),
     ),
   );
+  it.effect("permanently removes every exact-key version and delete marker across pages", () =>
+    run(
+      Effect.gen(function* () {
+        const digest = yield* Objects.assetDigest(yield* Crypto.Crypto, bytes);
+        const key = `objects/${digest.slice(0, 2)}/${digest}`;
+        const requests = yield* Ref.make<string[]>([]);
+        const http = HttpClient.make((request) =>
+          Effect.gen(function* () {
+            const url = new URL(request.url);
+            yield* Ref.update(requests, (values) => [
+              ...values,
+              `${request.method}:${url.searchParams.get("versionId") ?? "list"}`,
+            ]);
+            if (request.method === "DELETE") {
+              expect(url.pathname).toBe(`/loom-assets-test/${key}`);
+              expect(["old&version", "marker", "new"]).toContain(url.searchParams.get("versionId"));
+              return HttpClientResponse.fromWeb(request, new Response(null, { status: 204 }));
+            }
+            expect(url.searchParams.get("prefix")).toBe(key);
+            const more = url.searchParams.has("key-marker");
+            return HttpClientResponse.fromWeb(
+              request,
+              new Response(
+                more
+                  ? `<ListVersionsResult><IsTruncated>false</IsTruncated><Version><Key>${key}</Key><VersionId>new</VersionId></Version></ListVersionsResult>`
+                  : `<ListVersionsResult><IsTruncated>true</IsTruncated><NextKeyMarker>${key}</NextKeyMarker><NextVersionIdMarker>marker</NextVersionIdMarker><Version><Key>${key}</Key><VersionId>old&amp;version</VersionId></Version><DeleteMarker><Key>${key}</Key><VersionId>marker</VersionId></DeleteMarker><Version><Key>${key}-unrelated</Key><VersionId>keep</VersionId></Version></ListVersionsResult>`,
+                { status: 200 },
+              ),
+            );
+          }),
+        );
+        const store = yield* Objects.LibraryObjectStore.pipe(
+          Effect.provide(Objects.layer),
+          Effect.provideService(HttpClient.HttpClient, http),
+        );
+        yield* store.remove(digest);
+        expect(yield* Ref.get(requests)).toEqual([
+          "GET:list",
+          "DELETE:old&version",
+          "DELETE:marker",
+          "GET:list",
+          "DELETE:new",
+        ]);
+      }),
+    ),
+  );
+  it.effect("keeps failed or malformed B2 deletions retryable instead of reporting success", () =>
+    run(
+      Effect.gen(function* () {
+        const digest = yield* Objects.assetDigest(yield* Crypto.Crypto, bytes);
+        for (const body of [
+          "not XML",
+          "<ListVersionsResult><IsTruncated>true</IsTruncated></ListVersionsResult>",
+        ]) {
+          const http = HttpClient.make((request) =>
+            Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body))),
+          );
+          const store = yield* Objects.LibraryObjectStore.pipe(
+            Effect.provide(Objects.layer),
+            Effect.provideService(HttpClient.HttpClient, http),
+          );
+          expect((yield* store.remove(digest).pipe(Effect.flip)).reason).toBe("io");
+        }
+      }),
+    ),
+  );
 });
