@@ -74,6 +74,7 @@ describe("threadRestartImpact", () => {
           number: 1,
           url: "https://github.com/acme/app/pull/1",
           source: "agent",
+          snapshot: null,
           watch: {
             startedAt: "2026-10-05T00:00:00.000Z",
             headSha: null,

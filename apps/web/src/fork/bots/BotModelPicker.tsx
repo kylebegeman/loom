@@ -4,11 +4,7 @@ import { ProviderModelPicker } from "~/components/chat/ProviderModelPicker";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "~/components/settings/settingsLayout";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "~/modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "~/providerInstances";
+import { providerInstanceEntriesFor } from "~/providerInstances";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "~/state/server";
 
 /** The model choices of one environment, as the bot editor and retry offer them. */
@@ -16,9 +12,7 @@ export function useBotModelChoices(environmentId: EnvironmentId) {
   const settings = useEnvironmentSettings(environmentId);
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
-  const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
-  );
+  const instanceEntries = providerInstanceEntriesFor(providers, settings, null);
   return { settings, providers, instanceEntries };
 }
 

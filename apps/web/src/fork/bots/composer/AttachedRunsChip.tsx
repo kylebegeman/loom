@@ -7,11 +7,7 @@ import { NO_THREAD_BOT_RUNS } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { BotRun } from "@t3tools/contracts/fork";
-import {
-  ComposerControl,
-  ComposerControlIcon,
-  ComposerControlSeparator,
-} from "~/components/chat/ComposerControl";
+import { ComposerControl, ComposerControlIcon } from "~/components/chat/ComposerControl";
 import type { ComposerControlSize } from "~/components/chat/ComposerControl";
 import { useComposerMenuProps } from "~/components/chat/composerEventScope";
 import { Badge } from "~/components/ui/badge";
@@ -160,15 +156,12 @@ export function useAttachedBotRunsBlock(context: ForkComposerContext): ForkCompo
   return {
     id: "bot-runs",
     render: (size) => (
-      <>
-        <ComposerControlSeparator size={size} />
-        <AttachedRunsChip
-          environmentId={environmentId}
-          runs={runs}
-          canCancel={canCancel}
-          size={size}
-        />
-      </>
+      <AttachedRunsChip
+        environmentId={environmentId}
+        runs={runs}
+        canCancel={canCancel}
+        size={size}
+      />
     ),
   };
 }
