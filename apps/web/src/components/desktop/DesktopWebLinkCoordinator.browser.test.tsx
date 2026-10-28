@@ -227,11 +227,24 @@ it("pairs with Local environment disabled, where there is no primary environment
   );
 });
 
-it("does not hold a PR link for project discovery that never settles with Local environment disabled", async () => {
+// fork: client-computer
+it("holds a launch PR link with Local environment disabled until discovery settles", async () => {
   setup();
   state.localEnvironmentDisabled = true;
   await using _coordinator = await mount(pullRequestUrl);
-  await vi.waitFor(() => expect(state.openScratchProject).toHaveBeenCalledOnce());
+  expect(state.navigate).not.toHaveBeenCalled();
+  expect(state.openScratchProject).not.toHaveBeenCalled();
+
+  state.projects = [project];
+  const navigated = new Promise<void>((resolve) => {
+    state.navigate.mockImplementationOnce(async () => resolve());
+  });
+  await act(async () => {
+    appAtomRegistry.set(discoverySettled, true);
+    await navigated;
+  });
+  expect(state.navigate).toHaveBeenCalledExactlyOnceWith(pullRequestView);
+  expect(state.openScratchProject).not.toHaveBeenCalled();
 });
 
 // fork: client-computer
@@ -239,6 +252,10 @@ it("opens a web link on another computer once they connect, when this one runs n
   setup();
   state.localEnvironmentDisabled = true;
   state.scratchEnvironmentId = "dorothy";
+  {
+    await using _discarded = await mount("https://discarded.example.com/");
+    expect(state.openScratchProject).not.toHaveBeenCalled();
+  }
   await using _coordinator = await mount("https://example.com/");
   expect(state.openScratchProject).not.toHaveBeenCalled();
 
