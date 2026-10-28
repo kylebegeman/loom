@@ -1,23 +1,26 @@
 # Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
 #
-# Once a day, merge the newest upstream nightly on integrate/<tag>, continuing an
-# open "needs Kyle" draft from an earlier day instead of starting over. Conflicts
-# are resolved one file per Claude session (loom.sh integrate --resolve), so days
-# that pile up never exhaust one session. Then the fork's checks run, and every
+# Every three hours, when upstream has a nightly that neither main nor an open
+# integration pull request holds (loom.sh upstream-due), merge it on
+# integrate/<tag>, continuing the open integration pull request instead of
+# starting over. Conflicts are resolved one file per Claude session (loom.sh
+# integrate --resolve), and git rerere remembers every resolution across runs, so
+# a run that stops keeps what it resolved. Then the fork's checks run, and every
 # failing check gets its own Claude repair session and commit on the same branch,
-# round after round. A separate Claude session reviews any resolution or repair. With the repository
+# round after round. A separate Claude session reviews any resolution or repair;
+# a failed review gets a fix session and one more review. With the repository
 # variable LOOM_AUTO_MERGE set to "true", a pull request that passed, and passed
 # review when it needed one, merges and main is tagged loom-<tag>. Anything else
-# alerts Kyle in Loom (LOOM_ALERT_WEBHOOK_URL) from a last step that runs whatever
-# broke before it, and loom-upstream-watch.yml alerts when main falls behind
-# anyway. Claude runs on Kyle's pooled accounts through Switchboard on Dorothy,
-# reached over the tailnet. See FORK.md, "Updating from upstream".
+# waits for the next nightly, which continues it. loom-upstream-watch.yml alerts
+# Kyle when main falls behind anyway. Claude runs on Kyle's pooled accounts
+# through Switchboard on Dorothy, reached over the tailnet. See FORK.md,
+# "Updating from upstream".
 name: Loom upstream
 
 on:
   schedule:
-    # 11:17 UTC is early morning in New York. Minute zero is GitHub's busiest.
-    - cron: "17 11 * * *"
+    # Upstream cuts several nightlies a day. Minute zero is GitHub's busiest.
+    - cron: "17 */3 * * *"
   workflow_dispatch:
     inputs:
       target:
@@ -38,12 +41,46 @@ concurrency:
 permissions: {}
 
 jobs:
+  # A minute's look, so the three-hourly schedule only spends a runner and Claude on new work.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Decide whether upstream has new work
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The upstream remote would otherwise become gh's default repository.
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "due=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          scripts/fork/loom.sh upstream-due | tee -a "$GITHUB_OUTPUT"
+
   integrate:
+    needs: plan
+    if: needs.plan.outputs.due == 'true'
     # Upstream's CI image, so a new runner image cannot fail checks that pass upstream.
     runs-on: ubuntu-24.04
-    # One day of upstream often conflicts in 60 files; six sessions at a time resolve
-    # that in under half an hour. Repair rounds and the review take the rest, inside
-    # GitHub's six-hour limit for hosted runners (see LOOM_REPAIR_DEADLINE below).
+    # A large catch-up conflicts in 60 files; six sessions at a time resolve that in under
+    # half an hour. Repair rounds and the review take the rest, inside GitHub's six-hour
+    # limit for hosted runners (see LOOM_REPAIR_DEADLINE below).
     timeout-minutes: 350
     permissions:
       contents: read
@@ -63,6 +100,11 @@ jobs:
       # Telemetry and update checks would carry the gateway key to api.anthropic.com.
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     steps:
+      # No repair or review-fix session starts after this, leaving one more session, a final
+      # pass of the checks and a review inside timeout-minutes. What is left continues next run.
+      - name: Set the session deadline
+        run: echo "LOOM_REPAIR_DEADLINE=$(($(date +%s) + 220 * 60))" >> "$GITHUB_ENV"
+
       # Upstream's workflows release, deploy and run on paid runners; none of
       # them belongs to the fork. Merges can add new ones, so every run turns
       # off any workflow that is not a loom-*.yml.
@@ -111,7 +153,17 @@ jobs:
           # Global, so the git repositories tests create get an author too.
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Not --global: the git repositories tests create must not reuse resolutions.
+          git config rerere.enabled true
           git remote add upstream https://github.com/pingdotgg/t3code.git
+
+      # Every resolution earlier runs recorded, so a merge that stopped resumes where it left off.
+      - name: Restore conflict resolutions
+        uses: actions/cache/restore@v6
+        with:
+          path: .git/rr-cache
+          key: loom-rerere-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: loom-rerere-
 
       - name: Join the tailnet
         uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
@@ -142,9 +194,6 @@ jobs:
         run: |
           set +e
           export LOOM_RESOLVE_LOGS="$RUNNER_TEMP/resolve"
-          # No repair session starts after this, leaving one more session, a final pass of
-          # the checks and the review inside timeout-minutes. What is left continues tomorrow.
-          export LOOM_REPAIR_DEADLINE=$(($(date +%s) + 260 * 60))
           args=("$TARGET" --pr --resolve)
           [ "$DRY_RUN" = true ] && args+=(--dry-run)
           scripts/fork/loom.sh integrate "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/integrate.log"
@@ -159,7 +208,8 @@ jobs:
           fi
 
       # A resolution or repair merges unattended only after an independent session checks
-      # it. The verdict and its findings go on the pull request either way.
+      # it. A failed review gets a fix session, the checks again and a fresh review (--fix).
+      # The verdict and its findings go on the pull request either way.
       - name: Review the resolution
         id: review
         if: steps.integrate.outputs.code == '0' && (steps.integrate.outputs.resolved == 'true' || steps.integrate.outputs.repaired == 'true') && env.DRY_RUN != 'true'
@@ -169,13 +219,19 @@ jobs:
         run: |
           export LOOM_RESOLVE_LOGS="$RUNNER_TEMP/resolve"
           [ -n "$(gh pr list --head "$BRANCH" --state open --json isDraft --jq '.[] | select(.isDraft | not) | 1')" ] || exit 0
-          if scripts/fork/loom.sh review-integration; then verdict=pass; else verdict=fail; fi
+          if scripts/fork/loom.sh review-integration --fix; then verdict=pass; else verdict=fail; fi
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
           {
             echo "Review of the unattended resolution: **$verdict**."
             echo
             cat "$LOOM_RESOLVE_LOGS/summary.md" 2>/dev/null && echo
             cat "$LOOM_RESOLVE_LOGS/repair.md" 2>/dev/null && echo
+            if [ -s "$LOOM_RESOLVE_LOGS/review-fix.md" ]; then
+              echo "Earlier reviews failed; a session fixed their findings:"
+              echo
+              cat "$LOOM_RESOLVE_LOGS/review-fix.md"
+              echo
+            fi
             cat "$LOOM_RESOLVE_LOGS/review.md"
           } > "$RUNNER_TEMP/review-comment.md"
           gh pr comment "$BRANCH" --body-file "$RUNNER_TEMP/review-comment.md"
@@ -202,12 +258,19 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # Decide the outcome first, so the alert below knows it even if opening the draft
-      # breaks. A merge that stopped leaves no pull request, so push what it did and open
-      # a draft marked "needs Kyle" with the reports, or update the one this run continued.
-      # The next run continues that draft, and close-superseded closes older ones it holds.
+      - name: Keep conflict resolutions
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: .git/rr-cache
+          key: loom-rerere-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # A merge or check that failed leaves no pull request ready to land, so push what it did
+      # and open a draft marked "needs Kyle" with the reports, or turn the one this run continued
+      # into one. The next nightly's run continues it, and close-superseded closes older ones.
+      # A failed run fails here; loom-upstream-watch.yml alerts Kyle once main has waited
+      # too long, so a run the next one fixes alerts no one.
       - name: Result
-        id: result
         if: always()
         env:
           CODE: ${{ steps.integrate.outputs.code }}
@@ -218,34 +281,34 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "$DRY_RUN" = true ]; then
-            echo "status=dry-run" >> "$GITHUB_OUTPUT"
             [ "$CODE" = 0 ] && exit 0
             echo "::error::The dry run failed with exit code $CODE."
             exit 1
           fi
           if [ "$MERGED" = true ]; then
-            echo "status=merged" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [[ "$BRANCH" != integrate/* ]]; then
             if [ "$CODE" = 0 ]; then
-              echo "status=none" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "status=failed" >> "$GITHUB_OUTPUT"
             echo "::error::The upstream integration failed before it made a branch. See the first failed step's log."
             exit 1
           fi
-          if [ -n "$(gh pr list --head "$BRANCH" --state open --json isDraft --jq '.[] | select(.isDraft | not) | 1')" ]; then
-            echo "status=needs-review" >> "$GITHUB_OUTPUT"
-            echo "::error::The integration passed its checks but did not merge (review: ${VERDICT:-not run}, LOOM_AUTO_MERGE: ${AUTO_MERGE:-unset}). Its pull request waits."
+          ready=$(gh pr list --head "$BRANCH" --state open --json isDraft --jq '.[] | select(.isDraft | not) | 1')
+          if [ "$CODE" = 0 ] && [ -n "$ready" ]; then
+            # A review's last fix round can fail its checks before it pushes; keep it for the next run.
+            if [ -n "$(git rev-list "origin/$BRANCH..HEAD" 2>/dev/null)" ]; then
+              git push -q origin "HEAD:$BRANCH" || echo "::error::Could not push the review's last fixes."
+            fi
+            echo "::error::The integration passed its checks but did not merge (review: ${VERDICT:-not run}, LOOM_AUTO_MERGE: ${AUTO_MERGE:-unset}). Its pull request waits, and the next nightly's run continues it."
             exit 1
           fi
-          echo "status=failed" >> "$GITHUB_OUTPUT"
           tag=${BRANCH#integrate/}
           git merge --abort 2>/dev/null || true
           git reset -q
-          # Without a merge the branch holds no work, so the next run starts over from main.
+          # Without a merge the branch holds no work, so the next run starts over from main;
+          # git rerere gives it back every file this run resolved.
           held=$(git tag -l 'v[0-9]*' --merged HEAD --no-merged origin/main | sed -n 1p)
           if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             git commit -q --allow-empty -m "chore(fork): upstream $tag needs Kyle"
@@ -266,15 +329,17 @@ jobs:
             done
             echo
             if [ -n "$held" ]; then
-              echo "The next daily run continues this draft: it merges main and the newest nightly into it, then repairs what still fails. Push fixes to \`$BRANCH\` and it builds on them, or close this draft to make the next run start over from main."
+              echo "The run for upstream's next nightly continues this draft: it merges main and that nightly into it, then repairs what still fails. Push fixes to \`$BRANCH\` and it builds on them, or close this draft to make the next run start over from main. Run the workflow by hand to retry sooner."
             else
-              echo "Resolve it on your Mac with \`scripts/fork/loom.sh integrate $tag --resolve\`, or leave it: the next run starts over from main and closes this draft once it holds this tag."
+              echo "The run for upstream's next nightly starts over from main, reusing every file this run resolved (git rerere), and closes this draft once it holds this tag. Run the workflow by hand to retry sooner."
             fi
           } > "$body"
           draft=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if ! { git push -q -u origin "$BRANCH" &&
             if [ -n "$draft" ]; then
-              gh pr edit "$draft" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body"
+              gh pr edit "$draft" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body" &&
+                # A ready pull request this run continued and broke is no longer ready to land.
+                { [ -z "$ready" ] || gh pr ready "$draft" --undo; }
             else
               gh pr create --draft --base main --head "$BRANCH" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body-file "$body"
             fi &&
@@ -283,26 +348,3 @@ jobs:
           fi
           echo "::error::The upstream integration needs Kyle."
           exit 1
-
-      # Alerts Kyle in Loom for anything that did not merge. It runs whatever failed before
-      # it, including a checkout or a Result step that broke before setting a status (that
-      # counts as failed), so it sends the doorbell itself instead of using loom.sh notify.
-      - name: Alert Kyle
-        if: always() && env.DRY_RUN != 'true'
-        env:
-          STATUS: ${{ steps.result.outputs.status }}
-          LOOM_ALERT_WEBHOOK_URL: ${{ secrets.LOOM_ALERT_WEBHOOK_URL }}
-        run: |
-          case "${STATUS:-failed}" in
-            merged | none) exit 0 ;;
-            needs-review) status=needs-review ;;
-            *) status=failed ;;
-          esac
-          if [ -z "$LOOM_ALERT_WEBHOOK_URL" ]; then
-            echo "::error::LOOM_ALERT_WEBHOOK_URL is not set, so Loom was not alerted ($status)."
-            exit 1
-          fi
-          printf '{"source":"loom-upstream","status":"%s","run":"%s"}' "$status" "$GITHUB_RUN_ID" |
-            curl -fsS --retry 3 -X POST -H 'content-type: application/json' --data-binary @- \
-              "$LOOM_ALERT_WEBHOOK_URL" >/dev/null
-          echo "Alerted Loom: $status."

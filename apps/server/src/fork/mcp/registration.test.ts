@@ -5,20 +5,27 @@ import { McpServer } from "effect/ai";
 import { FORK_MCP_TOOLKITS } from "./index.ts";
 import { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { StorageCleanup } from "../../storageCleanup.ts";
 
-// Some handler layers capture thread management; registering a tool never calls it.
-const unusedThreads = new Proxy({} as ThreadManagementService["Service"], {
-  get(_target, key) {
-    throw new Error(`Unexpected service call during registration: ${String(key)}`);
-  },
-});
+// Some handler layers capture services; registering a tool never calls them.
+const unused = <S extends object>() =>
+  new Proxy({} as S, {
+    get(_target, key) {
+      throw new Error(`Unexpected service call during registration: ${String(key)}`);
+    },
+  });
 
 const registeredTools = Effect.gen(function* () {
   const layer = Layer.mergeAll(
     Layer.empty,
     ...FORK_MCP_TOOLKITS.map((entry) => entry.register(toolkitRegistration)),
   ).pipe(
-    Layer.provide(Layer.succeed(ThreadManagementService, unusedThreads)),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.succeed(ThreadManagementService, unused<ThreadManagementService["Service"]>()),
+        Layer.succeed(StorageCleanup, unused<StorageCleanup["Service"]>()),
+      ),
+    ),
     Layer.provideMerge(McpServer.McpServer.layer),
   );
   const context = yield* Layer.build(layer);

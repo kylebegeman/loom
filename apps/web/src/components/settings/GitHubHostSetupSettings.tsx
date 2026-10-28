@@ -39,6 +39,7 @@ export function GitHubHostSetupSettings({
   const state = query.data;
   const active = githubSetupIsActive(state);
   const readySeen = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the host finishes setup on its own, so no handler here sees it
   useEffect(() => {
     if (state?.phase === "ready" && state.requestId !== readySeen.current) {
       readySeen.current = state.requestId;

@@ -1,5 +1,6 @@
 import { createFileRoute, redirect, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react"; // fork: library-only
+import { Navigate } from "@tanstack/react-router"; // fork: library-only
+import { useState } from "react";
 import { useEnvironment, usePrimaryEnvironmentId } from "~/state/environments"; // fork: library-only
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -36,10 +37,7 @@ function WelcomeRouteView() {
   const primaryEnvironment = useEnvironment(usePrimaryEnvironmentId());
   const executionAvailable =
     primaryEnvironment?.serverConfig?.environment.capabilities.supportsExecution !== false;
-  useEffect(() => {
-    if (isWelcomeRoute && !executionAvailable) void navigate({ to: "/", replace: true });
-  }, [isWelcomeRoute, executionAvailable, navigate]);
-  if (!executionAvailable) return null; // fork: library-only
+  if (!executionAvailable) return isWelcomeRoute ? <Navigate to="/" replace /> : null; // fork: library-only
   const localAvailable = authGateState.status === "authenticated";
   return (
     <>

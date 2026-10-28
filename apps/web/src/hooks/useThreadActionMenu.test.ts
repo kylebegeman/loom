@@ -42,6 +42,10 @@ function recordEffect(action: string) {
 vi.mock("~/fork/workspace-handoff/state", () => ({
   openWorkspaceHandoff: () => recordEffect("workspace-handoff"),
 }));
+// fork: project-lifecycle
+vi.mock("~/fork/project-lifecycle/state", () => ({
+  releaseThreadCheckout: async () => recordEffect("release-checkout"),
+}));
 // fork: bots
 vi.mock("~/fork/bots/fromThread/state", () => ({
   openSaveAsBot: () => recordEffect("save-as-bot"),
@@ -199,6 +203,7 @@ describe("thread menu permissions", () => {
     "settle",
     "archive",
     "workspace-handoff", // fork: workspace-handoff
+    "release-checkout", // fork: project-lifecycle
   ] as const)("%s rechecks after the native menu closes", async (action) => {
     state.granted.add("secondary");
     const choice = deferred<ThreadActionMenuId | null>();

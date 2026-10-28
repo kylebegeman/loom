@@ -8,6 +8,8 @@ import { useSidebarLibraryScope } from "~/fork/project-library/useSidebarLibrary
 import { parseLibraryProjectScope } from "@t3tools/client-runtime/fork"; // fork: library-projects
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state"; // fork: workspace-handoff
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: workspace-handoff
+import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
+import { releaseThreadCheckout } from "~/fork/project-lifecycle/state"; // fork: project-lifecycle
 import { openSaveAsBot, threadCanBeSavedAsBot } from "~/fork/bots/fromThread/state"; // fork: bots
 import { useNoProjectStart } from "~/fork/project-library/useNoProjectStart"; // fork: no-project-first
 import { attachSidebarTree, SIDEBAR_TREE_PROPS } from "../lib/sidebarTree";
@@ -2218,7 +2220,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         threadKey,
         currentThreadKey: readRouteThreadKey(router),
         action: "snooze",
-        // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
         now: new Date().toISOString(),
         thread: readThreadShell(threadRef),
       })
@@ -2258,7 +2259,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       );
       if (threadKeys.length === 0) return;
       const count = threadKeys.length;
-      // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
       const selectionNow = new Date();
       const selectedThreads = threadKeys.flatMap((threadKey) => {
         const thread = threadByKeyRef.current.get(threadKey);
@@ -2289,7 +2289,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         pinnedCount: pinnedSelectedThreads.length,
       });
       // Presets sync across environments, so the first selected thread's stand for all.
-      // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
       const menuOpenedAt = new Date();
       const snoozePresets = resolveSnoozePresets(
         menuOpenedAt,
@@ -2622,6 +2621,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
+              hasWorktree: thread.worktreePath != null, // fork: project-lifecycle
               canShareWithGuest: appAtomRegistry.get(
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
@@ -2632,6 +2632,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   "workspace-handoff",
                 ),
                 saveAsBot: threadCanBeSavedAsBot(threadRef), // fork: bots
+                // fork: project-lifecycle
+                checkoutRelease: supportsLoomFeature(
+                  serverConfigs.get(thread.environmentId)?.environment.capabilities,
+                  CHECKOUT_RELEASE_FEATURE,
+                ),
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: configLoaded,
@@ -2789,6 +2794,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
+            return;
+          case "release-checkout": // fork: project-lifecycle
+            await releaseThreadCheckout(threadRef);
             return;
           case "archive": {
             if (confirmThreadArchive) {

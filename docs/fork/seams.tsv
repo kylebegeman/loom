@@ -92,6 +92,7 @@ apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	
 apps/web/src/components/chat/V2LifecycleRow.tsx	agent-receipts	3
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.ts	feed-history-reads	2
+apps/web/src/components/device/DevicePanel.browser.test.tsx	device-qa	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
 apps/server/scripts/migrate-dev-db.ts	dev-db	12
@@ -352,7 +353,7 @@ apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	8
 apps/server/src/server.ts	file-placement	7
 apps/server/src/storageCleanup.ts	project-checkout-management	10
-apps/server/src/storageCleanup.ts	project-lifecycle	78
+apps/server/src/storageCleanup.ts	project-lifecycle	99
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
@@ -805,7 +806,7 @@ packages/shared/package.json	-	"./fork/provider-processes"
 packages/shared/src/projectSettings.ts	project-lifecycle	6
 packages/shared/src/serverSettings.ts	project-lifecycle	2
 packages/shared/src/serverSettings.ts	file-placement	2
-docs/user/project-settings.md	project-lifecycle	6
+docs/user/project-settings.md	project-lifecycle	7
 packages/shared/src/projectSettings.test.ts	project-lifecycle	4
 packages/shared/src/serverSettings.test.ts	project-lifecycle	3
 packages/shared/src/serverSettings.test.ts	file-placement	1
@@ -1109,7 +1110,7 @@ apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
 apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
-apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
+apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	4
 apps/desktop/src/app/DesktopPreReadyPlatform.test.ts	brand	2
 apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	brand	1
 apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx	brand	4
@@ -1463,7 +1464,6 @@ apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
 docs/user/project-settings.md	path-picker	5
 apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	path-picker	2
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262295
 apps/desktop/src/app/DesktopWebLinks.ts	client-computer	5
 apps/desktop/src/app/DesktopWebLinks.test.ts	client-computer	2
 apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5
@@ -1500,3 +1500,12 @@ apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
 apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2
 apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13
 apps/server/src/provider/Drivers/ClaudeSkills.ts	skill-registry	2
+apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	6
+apps/web/src/components/threadActionMenu.logic.test.ts	project-lifecycle	1
+apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	5
+apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	2
+apps/web/src/components/Sidebar.tsx	project-lifecycle	5
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	5
+apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
+apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262758

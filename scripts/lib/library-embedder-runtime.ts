@@ -1,12 +1,7 @@
 /**
- * The runtime behind the Library's semantic search
- * (apps/server/src/fork/project-library/LibraryEmbedder.ts).
- *
- * The server reaches it only through `createRequire`, so the bundle leaves it alone and it is not
- * a CLI runtime external: the desktop app and the npm launcher's other platforms never carry it.
- * Only a Library authority loads it, and Libraries run the Linux archive, so the Linux archive is
- * the one that stages it. Everything it needs at runtime is WebAssembly and JavaScript, so the same
- * files serve x64 and arm64, glibc and musl.
+ * Semantic search's runtime (apps/server/src/fork/project-library/LibraryEmbedder.ts), loaded through
+ * `createRequire` so the bundle leaves it alone. Only Libraries load it, and they run the Linux
+ * archive, so only that archive stages it; WebAssembly and JavaScript serve every Linux platform.
  */
 export const LIBRARY_EMBEDDER_RUNTIME_PACKAGE = "onnxruntime-web";
 

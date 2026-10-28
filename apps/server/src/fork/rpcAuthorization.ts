@@ -356,6 +356,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [L.discard]: AuthOrchestrationOperateScope,
   [L.discardUnrecorded]: AuthOrchestrationOperateScope,
   [L.releaseLease]: AuthOrchestrationOperateScope,
+  [L.releaseCheckout]: AuthOrchestrationOperateScope,
   // Edits the server user's ~/.zshenv, which shapes every shell agents run.
   [L.installShell]: AuthTerminalOperateScope,
   [L.removeShell]: AuthTerminalOperateScope,

@@ -3,11 +3,9 @@ import { BRAND_NAME } from "@t3tools/shared/brand";
 import { cn } from "../lib/utils";
 
 /**
- * Loom fork: the header wordmark, in place of upstream's "T3" mark plus "Code".
- * Size, weight, tracking and color come from the surrounding text, so it follows
- * the sidebar header in both themes and on the stage backdrop. The text box is
- * trimmed to the capitals, like upstream's "Code", so the word centers optically, and
- * padded so round-letter overshoot stays inside the truncation clip.
+ * The header wordmark; size, weight, tracking and color come from the surrounding text. The box is
+ * trimmed to the capitals so the word centers optically, and padded so round-letter overshoot
+ * stays inside the truncation clip.
  */
 export function LoomWordmark({ className }: { className?: string }) {
   return (

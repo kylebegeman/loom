@@ -32,6 +32,10 @@ import {
 import { getThreadListV2OrderedSection } from "../threads/threadListV2";
 import { threadCanArchive } from "./threadArchive";
 import { resolveThreadTitleRename } from "../threads/thread-title-rename";
+// fork: project-lifecycle
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork";
+import { lanes } from "../../fork/project-lifecycle/state";
 
 function environmentConfigLoaded(environmentId: EnvironmentThreadShell["environmentId"]) {
   return appAtomRegistry.get(environmentServerConfigsAtom).has(environmentId);
@@ -780,4 +784,67 @@ export function useArchivedThreadListActions(
   };
 
   return { unarchiveThread, confirmDeleteThread, confirmDeleteAgentWork, deletingAgentWork };
+}
+
+// fork: project-lifecycle
+const RELEASE_CHECKOUT_FAILURE_TITLE = "Could not release checkout";
+const checkoutReleasesInFlight = new Set<string>();
+
+function environmentSupportsCheckoutRelease(
+  environmentId: EnvironmentThreadShell["environmentId"],
+) {
+  return supportsLoomFeature(
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities,
+    CHECKOUT_RELEASE_FEATURE,
+  );
+}
+
+/** Resolves true only when the server removed the checkout. */
+export function useReleaseThreadCheckout(): (thread: EnvironmentThreadShell) => Promise<boolean> {
+  const releaseMutation = useAtomCommand(lanes.releaseCheckout, { reportFailure: false });
+  return async (thread) => {
+    if (!checkThreadOperationPermission(thread, RELEASE_CHECKOUT_FAILURE_TITLE)) return false;
+    if (!environmentSupportsCheckoutRelease(thread.environmentId)) {
+      Dialog.alert(
+        RELEASE_CHECKOUT_FAILURE_TITLE,
+        "This environment's server does not support releasing checkouts yet. Update the server to use Release checkout.",
+      );
+      return false;
+    }
+    if (!threadCanArchive(thread.runtime)) {
+      Dialog.alert(
+        RELEASE_CHECKOUT_FAILURE_TITLE,
+        "This thread is working. Interrupt it first, then try again.",
+      );
+      return false;
+    }
+    const key = scopedThreadKey(thread.environmentId, thread.id);
+    if (checkoutReleasesInFlight.has(key)) return false;
+    checkoutReleasesInFlight.add(key);
+    selectionHaptic();
+    const result = await releaseMutation({
+      environmentId: thread.environmentId,
+      input: { threadId: thread.id },
+    }).finally(() => checkoutReleasesInFlight.delete(key));
+    if (result._tag === "Failure") {
+      const error = Cause.squash(result.cause);
+      Dialog.alert(
+        RELEASE_CHECKOUT_FAILURE_TITLE,
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : "The checkout could not be released.",
+      );
+      return false;
+    }
+    const entry = result.value;
+    if (entry.outcome === "removed") {
+      Dialog.alert("Checkout released", "Its next message restores the checkout.");
+      return true;
+    }
+    Dialog.alert(
+      entry.outcome === "kept" ? "Checkout kept" : RELEASE_CHECKOUT_FAILURE_TITLE,
+      entry.reason,
+    );
+    return false;
+  };
 }

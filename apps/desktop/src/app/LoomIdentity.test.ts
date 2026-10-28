@@ -26,7 +26,10 @@ afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
   servers.clear();
+  vi.useRealTimers();
 });
+// Whole seconds, so the token's 5 minute expiry lands exactly on SIGNED_IN_AT + 300_000.
+const SIGNED_IN_AT = Date.UTC(2026, 9, 13, 12);
 async function serve(handler: NodeHttp.RequestListener) {
   const server = NodeHttp.createServer(handler);
   servers.add(server);
@@ -129,6 +132,7 @@ describe("Loom native OAuth enrollment", () => {
   ])(
     "accepts only live bound host sessions (modern: $modern, expires_in: $expiresIn, refusal: $refusal)",
     async ({ modern, expiresIn, refusal }) => {
+      vi.useFakeTimers({ toFake: ["Date"], now: SIGNED_IN_AT });
       const { publicKey, privateKey } = await generateKeyPair("RS256");
       const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
       let nonce = "";
@@ -291,10 +295,8 @@ describe("Loom native OAuth enrollment", () => {
         environmentId: "central",
         accessToken: "host-session",
         identity: { issuer: `${origin}/idp`, subject: "user" },
-        expiresAt: expect.any(Number),
+        expiresAt: SIGNED_IN_AT + 300_000,
       });
-      expect(session.expiresAt).toBeGreaterThan(Date.now());
-      expect(session.expiresAt).toBeLessThanOrEqual(Date.now() + 300_000);
       expect(exchanged).toBe(true);
       if (modern) {
         // The computer reads auth_time from the ID token to cap renewable sign-ins.

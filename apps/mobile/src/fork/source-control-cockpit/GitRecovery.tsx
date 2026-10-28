@@ -10,6 +10,8 @@ import {
   landedBranch,
 } from "@t3tools/client-runtime/state/vcs";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork";
 import * as Dialog from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { AppText } from "../../components/ui/AppText";
@@ -18,9 +20,13 @@ import { vcsEnvironment, vcsActionManager } from "../../state/vcs";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useEnvironmentScope } from "../../state/session";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { appendComposerDraftText } from "../../state/use-composer-drafts";
 import { scopedThreadKey } from "../../lib/scopedEntities";
-import { useThreadListActions } from "../../features/home/useThreadListActions";
+import {
+  useReleaseThreadCheckout,
+  useThreadListActions,
+} from "../../features/home/useThreadListActions";
 import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 
 export function useGitRecoveryPrompt() {
@@ -46,6 +52,11 @@ export function GitRecovery({ status }: { status: VcsStatusResult | null }) {
   const refresh = useAtomCommand(vcsEnvironment.refreshStatus, { reportFailure: false });
   const ask = useGitRecoveryPrompt();
   const { settleThread } = useThreadListActions();
+  const releaseCheckout = useReleaseThreadCheckout();
+  const checkoutReleaseSupported = supportsLoomFeature(
+    useEnvironmentServerConfig(selectedThread?.environmentId ?? null)?.environment.capabilities,
+    CHECKOUT_RELEASE_FEATURE,
+  );
   const canWrite = useAtomValue(
     vcsEnvironment.resolveOperation.permissionAtom(selectedThread?.environmentId ?? null),
   );
@@ -112,6 +123,10 @@ export function GitRecovery({ status }: { status: VcsStatusResult | null }) {
       },
     });
   };
+  const release = async (thread: NonNullable<typeof selectedThread>) => {
+    if (!(await releaseCheckout(thread)) || !selectedThreadCwd) return;
+    await refresh({ environmentId: thread.environmentId, input: { cwd: selectedThreadCwd } });
+  };
   if (!label && !landed) return null;
   return (
     <View className="gap-2 rounded-xl border border-border bg-card p-3">
@@ -135,13 +150,25 @@ export function GitRecovery({ status }: { status: VcsStatusResult | null }) {
           )}
         </>
       ) : (
-        <Button
-          label="Settle"
-          disabled={!selectedThread || !canSettle || busy}
-          onPress={() => {
-            if (selectedThread) void settleThread(selectedThread);
-          }}
-        />
+        <View className="flex-row flex-wrap gap-2">
+          <Button
+            label="Settle"
+            disabled={!selectedThread || !canSettle || busy}
+            onPress={() => {
+              if (selectedThread) void settleThread(selectedThread);
+            }}
+          />
+          {checkoutReleaseSupported && (
+            <Button
+              label="Release checkout"
+              tone="secondary"
+              disabled={!selectedThread || !canSettle || busy}
+              onPress={() => {
+                if (selectedThread) void release(selectedThread);
+              }}
+            />
+          )}
+        </View>
       )}
     </View>
   );
