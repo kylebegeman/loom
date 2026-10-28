@@ -233,7 +233,7 @@ export const SKILL_CASES: readonly {
         shellMustNot: noShipping,
         textMust: [
           "([Ss]cope|revision|component)",
-          "([Rr]eject|mismatch|outside|needs.attention|does not match)",
+          "([Rr]eject|mismatch|outside|out of scope|needs.attention|does not match)",
         ],
       },
       maxSteps: 4,
