@@ -101,9 +101,10 @@ it.effect("reports the caller's lane without creating one", () =>
   }),
 );
 
-it.effect("releases a thread's checkout only for a caller that can control threads", () =>
+it.effect("releases and restores checkouts only for a caller that can control threads", () =>
   Effect.gen(function* () {
     const released: Array<ThreadId> = [];
+    const restored: Array<ThreadId> = [];
     const entry: StorageCleanupReportEntry = {
       kind: "worktree",
       outcome: "removed",
@@ -119,7 +120,16 @@ it.effect("releases a thread's checkout only for a caller that can control threa
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(projectLifecycleHandlers).pipe(
           Layer.provide(
-            Layer.succeed(ForkRuntime, Context.empty() as Context.Context<ForkServices>),
+            Layer.succeed(
+              ForkRuntime,
+              Context.make(ProjectLifecycleService, {
+                refreshCheckouts: () => Effect.void,
+                restoreCheckout: (threadId: ThreadId) =>
+                  Effect.sync(() => {
+                    restored.push(threadId);
+                  }),
+              } as unknown as ProjectLifecycleService["Service"]) as Context.Context<ForkServices>,
+            ),
           ),
         ),
       ),
@@ -155,5 +165,24 @@ it.effect("releases a thread's checkout only for a caller that can control threa
     const result = yield* release(new Set(["orchestration"]));
     expect(result[0]?.result).toEqual(entry);
     expect(released).toEqual([entry.threadId]);
+    const restore = (capabilities: ReadonlySet<"orchestration">) =>
+      toolkit.handle("loom_project_lifecycle_restore_checkout", { threadId: entry.threadId! }).pipe(
+        Effect.flatMap(Stream.runCollect),
+        Effect.provideService(McpInvocationContext, {
+          environmentId: EnvironmentId.make("test"),
+          thread: undefined,
+          client: undefined,
+          requestNamespace: "test",
+          capabilities,
+          issuedAt: 0,
+        }),
+        Effect.provide(Layer.mock(ThreadManagementService)({})),
+      );
+    expect(yield* restore(new Set()).pipe(Effect.flip)).toMatchObject({
+      code: "capability_denied",
+    });
+    expect(restored).toEqual([]);
+    yield* restore(new Set(["orchestration"]));
+    expect(restored).toEqual([entry.threadId]);
   }),
 );

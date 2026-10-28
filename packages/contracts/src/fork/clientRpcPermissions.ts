@@ -218,6 +218,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [L.discardUnrecorded]: AuthOrchestrationOperateScope,
   [L.releaseLease]: AuthOrchestrationOperateScope,
   [L.releaseCheckout]: AuthOrchestrationOperateScope,
+  [L.restoreCheckout]: AuthOrchestrationOperateScope,
   [L.installShell]: AuthTerminalOperateScope,
   [L.removeShell]: AuthTerminalOperateScope,
   [A.start]: AuthTerminalOperateScope,

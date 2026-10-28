@@ -28,6 +28,12 @@ import * as Stream from "effect/Stream";
 import * as Config from "../../config.ts";
 import { DeviceService } from "../../device/DeviceService.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as GitWorkflow from "../../git/GitWorkflowService.ts";
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as ProjectService from "../../project/ProjectService.ts";
+import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as ThreadSettlement from "../../orchestration-v2/ThreadSettlementService.ts";
 import {
   ThreadManagementService,
@@ -141,6 +147,7 @@ const alive = (pid: number) => {
 const setupWith = (
   options: {
     readonly devUrl?: URL;
+    readonly restoreBranchMissing?: boolean;
     readonly wrapSpaces?: ProjectLifecycleOptions["wrapSpaces"];
     readonly prepareForCleanup?: (threadId: ThreadId) => Effect.Effect<boolean>;
   } = {},
@@ -220,6 +227,35 @@ const setupWith = (
               ),
             ).pipe(Layer.provide(Config.layerTest(home, NodePath.join(home, "state")))),
         SqlitePersistenceMemory,
+        Layer.mock(GitWorkflow.GitWorkflowService)({
+          hasCommit: () => Effect.succeed(!options.restoreBranchMissing),
+          pruneWorktrees: () => Effect.void,
+          createWorktree: ({ path }) =>
+            Effect.sync(() => {
+              NodeFS.mkdirSync(path!, { recursive: true });
+              return { worktreePath: path, branch: "feature" } as never;
+            }),
+        }),
+        Layer.mock(ProjectService.ProjectService)({
+          getById: () => Effect.succeedSome({ workspaceRoot: checkout } as never),
+        }),
+        Layer.mock(ProjectionStore.ProjectionStoreV2)({
+          getCheckpointContext: () =>
+            Effect.succeed({
+              runs: [],
+              checkpointScopes: [{ kind: "root_run", id: "scope", cwd: worktree }],
+              checkpoints: [{ status: "ready", scopeId: "scope", ref: "missing" }],
+            } as never),
+        }),
+        Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          runForThread: () => Effect.succeed({ status: "no-script" }),
+        }),
+        Layer.mock(WorktreeSetupTracker.WorktreeSetupTracker)({
+          begin: () => Effect.void,
+          stageStatus: () => Effect.void,
+          finish: () => Effect.succeed(null),
+        }),
         ProcessRunner.layer,
       ).pipe(Layer.provideMerge(NodeServices.layer)),
     );
@@ -592,6 +628,49 @@ describe("ProjectLifecycleService", () => {
       expect(NodeFS.existsSync(lane.laneDir)).toBe(false);
       expect(alive(pid)).toBe(false);
       expect(NodeFS.existsSync(t.checkout)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("reports missing worktree checkouts without marking primary checkouts as released", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("primary"));
+      t.threads.push(thread("present", { worktreePath: t.worktree }));
+      t.threads.push(thread("missing", { worktreePath: `${t.home}/missing` }));
+      yield* t.service.tick();
+      const status = yield* t.service.changes.pipe(Stream.take(1), Stream.runCollect);
+      expect(status[0]).toMatchObject({ releasedCheckouts: [ThreadId.make("missing")] });
+      NodeFS.mkdirSync(`${t.home}/missing`);
+      yield* t.service.tick();
+      expect(
+        (yield* t.service.changes.pipe(Stream.take(1), Stream.runCollect))[0]?.releasedCheckouts,
+      ).toEqual([ThreadId.make("missing")]);
+      expect((yield* t.service.refreshCheckouts()).releasedCheckouts).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("restores a checkout and updates its cached released state immediately", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const id = ThreadId.make("restoring");
+      t.threads.push(thread(id, { worktreePath: t.worktree, branch: "feature" }));
+      NodeFS.rmSync(t.worktree, { recursive: true });
+      expect((yield* t.service.refreshCheckouts()).releasedCheckouts).toEqual([id]);
+      yield* t.service.restoreCheckout(id);
+      expect(NodeFS.existsSync(t.worktree)).toBe(true);
+      expect((yield* t.service.refreshCheckouts()).releasedCheckouts).toEqual([]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("explains a missing branch when no saved checkout can restore it", () =>
+    Effect.gen(function* () {
+      const t = yield* setupWith({ restoreBranchMissing: true });
+      const id = ThreadId.make("missing-branch");
+      t.threads.push(thread(id, { worktreePath: t.worktree, branch: "feature" }));
+      NodeFS.rmSync(t.worktree, { recursive: true });
+      const failure = yield* t.service.restoreCheckout(id).pipe(Effect.flip);
+      expect(failure.message).toContain("branch is missing and no saved checkout is available");
+      expect(NodeFS.existsSync(t.worktree)).toBe(false);
     }).pipe(Effect.scoped),
   );
 

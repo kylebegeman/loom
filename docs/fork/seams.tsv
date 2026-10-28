@@ -1500,12 +1500,12 @@ apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
 apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2
 apps/server/src/mcp/WorktreeMcpService.test.ts	library-projects	13
 apps/server/src/provider/Drivers/ClaudeSkills.ts	skill-registry	2
-apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	6
+apps/web/src/components/threadActionMenu.logic.ts	project-lifecycle	11
 apps/web/src/components/threadActionMenu.logic.test.ts	project-lifecycle	1
 apps/web/src/hooks/useThreadActionMenu.ts	project-lifecycle	5
 apps/web/src/hooks/useThreadActionMenu.test.ts	project-lifecycle	2
-apps/web/src/components/Sidebar.tsx	project-lifecycle	5
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	5
+apps/web/src/components/Sidebar.tsx	project-lifecycle	10
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	12
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
 apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262788
@@ -1514,3 +1514,7 @@ evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
 apps/web/src/hooks/useNewConversationShortcut.ts	library-projects	1
 apps/mobile/src/features/threads/useThreadConversationDetails.tsx	library	1
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	project-lifecycle	3
+apps/web/src/components/chat/ChatHeader.tsx	project-lifecycle	2
+apps/web/src/components/sidebar/SidebarThreadRow.tsx	project-lifecycle	2
+evals/mcp-tool-use/run.ts	project-lifecycle	2

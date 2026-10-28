@@ -1,3 +1,4 @@
+import { useReleasedCheckoutIds } from "../../fork/project-lifecycle/state"; // fork: project-lifecycle
 // fork: source-control-cockpit
 import { GitRecovery } from "../../fork/source-control-cockpit/GitRecovery";
 import { Button as GitSummaryButton } from "../../components/ui/Button";
@@ -370,6 +371,7 @@ function ThreadRouteContent(
     readonly selectedThreadDetailState: ReturnType<typeof useSelectedThreadDetailState>;
   },
 ) {
+  const releasedCheckoutIds = useReleasedCheckoutIds(); // fork: project-lifecycle
   const { themeVariables } = useAppearancePreferences();
   const headerColor = themeVariables["--color-header"];
   const { fileInspector, layout, panes, showAuxiliaryPane, toggleAuxiliaryPane } =
@@ -1118,7 +1120,14 @@ function ThreadRouteContent(
               <ThreadHeader
                 title={selectedThread.title}
                 onOpenDetails={openConversationDetails} // fork: library
-                subtitle={headerSubtitle}
+                // fork: project-lifecycle
+                subtitle={
+                  releasedCheckoutIds.has(
+                    scopedThreadKey(selectedThread.environmentId, selectedThread.id),
+                  )
+                    ? `${headerSubtitle} · Checkout released`
+                    : headerSubtitle
+                }
                 headerColor={headerColor}
                 usesNativeHeaderGlass={usesNativeHeaderGlass}
                 gitControls={threadGitControlProps}

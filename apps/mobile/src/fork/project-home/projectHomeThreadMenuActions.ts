@@ -7,6 +7,7 @@ export function projectHomeThreadMenuActions(
     readonly handoffSupported: boolean;
     /** The host supports checkout release and the thread has a worktree. */
     readonly checkoutReleaseSupported: boolean;
+    readonly checkoutReleased?: boolean;
     readonly running: boolean;
   },
 ): ReadonlyArray<MenuAction> {
@@ -20,8 +21,8 @@ export function projectHomeThreadMenuActions(
     ...(input.checkoutReleaseSupported
       ? [
           {
-            id: "release-checkout",
-            title: "Release checkout",
+            id: input.checkoutReleased ? "restore-checkout" : "release-checkout",
+            title: input.checkoutReleased ? "Restore checkout" : "Release checkout",
             image: "folder",
             attributes: { disabled: input.running },
           },

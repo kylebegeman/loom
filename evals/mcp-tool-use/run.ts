@@ -51,6 +51,7 @@ import {
 } from "../../apps/server/src/mcp/toolkits/pullRequests/tools.ts";
 import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.ts";
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
+import { ProjectLifecycleToolkit } from "../../apps/server/src/fork/project-lifecycle/mcp.ts"; // fork: project-lifecycle
 import {
   CLAUDE_PROVIDER,
   makeClaudeQueryOptions,
@@ -300,6 +301,7 @@ export const normalizeToolInput = (name: string, input: unknown) =>
 // McpHttpServer advertises each tool's JSON schema, and Claude Code passes the MCP name,
 // description, and schema through unchanged.
 const t3SourceTools: ReadonlyArray<Tool.Any> = [
+  ProjectLifecycleToolkit, // fork: project-lifecycle
   OrchestratorToolkit,
   ThreadToolkit,
   AttachmentToolkit,

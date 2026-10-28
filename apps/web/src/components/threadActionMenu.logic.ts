@@ -29,6 +29,7 @@ export type ThreadActionMenuId =
   | "copy-thread"
   | "copy-thread-id"
   | "release-checkout" // fork: project-lifecycle
+  | "restore-checkout" // fork: project-lifecycle
   | "archive"
   | "delete";
 
@@ -88,10 +89,12 @@ export interface ThreadActionMenuState {
   /** Archive rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
   readonly hasWorktree?: boolean; // fork: project-lifecycle
+  readonly checkoutReleased?: boolean | null; // fork: project-lifecycle
   readonly supports: {
     readonly workspaceHandoff?: boolean;
     readonly saveAsBot?: boolean; // fork: bots
     readonly checkoutRelease?: boolean; // fork: project-lifecycle
+    readonly checkoutRestore?: boolean; // fork: project-lifecycle
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
     readonly snooze: boolean;
@@ -120,7 +123,12 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
 
 // fork: project-lifecycle
 const canReleaseCheckout = (state: ThreadActionMenuState) =>
-  state.supports.checkoutRelease === true && state.hasWorktree === true;
+  state.supports.checkoutRelease === true &&
+  state.hasWorktree === true &&
+  state.checkoutReleased !== true;
+// fork: project-lifecycle
+const canRestoreCheckout = (state: ThreadActionMenuState) =>
+  state.supports.checkoutRestore === true && state.checkoutReleased === true;
 
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
@@ -251,6 +259,18 @@ export function buildThreadActionMenuItems(
     },
     { id: "project-settings", label: "Project settings", icon: "settings" },
     // fork: project-lifecycle
+    ...(canRestoreCheckout(state)
+      ? [
+          {
+            id: "restore-checkout" as const,
+            label: "Restore checkout",
+            icon: "folder",
+            disabled: state.isRunning,
+            separatorBefore: true,
+          },
+        ]
+      : []),
+    // fork: project-lifecycle
     ...(canReleaseCheckout(state)
       ? [
           {
@@ -267,7 +287,7 @@ export function buildThreadActionMenuItems(
       label: "Archive thread",
       icon: "archive",
       disabled: state.isRunning,
-      separatorBefore: !canReleaseCheckout(state), // fork: project-lifecycle
+      separatorBefore: !canReleaseCheckout(state) && !canRestoreCheckout(state), // fork: project-lifecycle
     },
     {
       id: "delete",

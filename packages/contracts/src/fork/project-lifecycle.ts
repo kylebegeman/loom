@@ -19,6 +19,7 @@ export const PROJECT_LIFECYCLE_WS_METHODS = {
   removeShell: "loom.project-lifecycle.removeShell",
   releaseLease: "loom.project-lifecycle.releaseLease",
   releaseCheckout: "loom.project-lifecycle.releaseCheckout",
+  restoreCheckout: "loom.project-lifecycle.restoreCheckout",
 } as const;
 
 /**
@@ -26,6 +27,7 @@ export const PROJECT_LIFECYCLE_WS_METHODS = {
  * stays open; its next message restores the checkout.
  */
 export const CHECKOUT_RELEASE_FEATURE = "checkout-release";
+export const CHECKOUT_RESTORE_FEATURE = "checkout-restore";
 
 const Gigabytes = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4000 }));
 
@@ -123,6 +125,7 @@ export const ProjectLifecycleStatus = Schema.Struct({
   belowReserve: Schema.Boolean,
   shell: Schema.Struct({ installed: Schema.Boolean, profilePath: Schema.String }),
   lanes: Schema.Array(ProjectLifecycleLane),
+  releasedCheckouts: Schema.optionalKey(Schema.Array(ThreadId)),
   unrecordedLanes: Schema.Array(UnrecordedLane).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -175,6 +178,11 @@ const rpc = <const Tag extends string, Payload extends Schema.Top, Success exten
   });
 
 export const ProjectLifecycleRpcGroup = RpcGroup.make(
+  rpc(
+    PROJECT_LIFECYCLE_WS_METHODS.restoreCheckout,
+    Schema.Struct({ threadId: ThreadId }),
+    Schema.Void,
+  ),
   rpc(PROJECT_LIFECYCLE_WS_METHODS.getSettings, Schema.Struct({}), ProjectLifecycleSettings),
   rpc(
     PROJECT_LIFECYCLE_WS_METHODS.updateSettings,

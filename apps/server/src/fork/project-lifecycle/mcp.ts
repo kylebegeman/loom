@@ -90,6 +90,17 @@ export const ProjectLifecycleToolkit = Toolkit.make(
     .annotate(Tool.Title, "Lane: discard unrecorded folder")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, true),
+  Tool.make("loom_project_lifecycle_restore_checkout", {
+    description:
+      "Restore a released thread checkout and run its setup without sending an agent message. Uses the saved branch or checkpoint; fails with a repair reason when neither can be recovered.",
+    parameters: Schema.Struct({ threadId: ThreadId }),
+    success: Schema.Void,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Lane: restore checkout")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_project_lifecycle_release_checkout", {
     description:
       "Remove a thread's worktree checkout once its work has landed on the default branch and the thread is idle, ending its idle provider sessions. Otherwise the checkout stays and the result's reason says why. The thread stays, and its next message restores the checkout. Use only when the user asks.",
@@ -175,9 +186,27 @@ export const projectLifecycleHandlers = McpToolAccess.toLayer(
           ),
         ),
       ),
+      loom_project_lifecycle_restore_checkout: McpToolAccess.writes((input) =>
+        withRuntime(
+          withForkRuntime(
+            ProjectLifecycleService.pipe(
+              Effect.flatMap((service) => service.restoreCheckout(input.threadId)),
+            ),
+          ),
+        ),
+      ),
       loom_project_lifecycle_release_checkout: McpToolAccess.writes((input) =>
         StorageCleanup.StorageCleanup.pipe(
           Effect.flatMap((cleanup) => cleanup.releaseCheckout(input.threadId)),
+          Effect.tap(() =>
+            withRuntime(
+              withForkRuntime(
+                ProjectLifecycleService.pipe(
+                  Effect.flatMap((service) => service.refreshCheckouts()),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     };

@@ -50,7 +50,7 @@ export async function releaseThreadCheckout(threadRef: ScopedThreadRef) {
         ? {
             type: "success",
             title: "Checkout released",
-            description: "Its next message restores the checkout.",
+            description: "Choose Restore checkout or send a message to restore its files.",
           }
         : outcome === "kept"
           ? { type: "info", title: "Checkout kept", description: reason }
@@ -75,4 +75,27 @@ export function onOpenStorageSettings(callback: () => void) {
 
 export function openStorageSettings() {
   for (const callback of openListeners) callback();
+}
+
+export async function restoreThreadCheckout(threadRef: ScopedThreadRef) {
+  const result = await runAtomCommand(
+    appAtomRegistry,
+    lanes.restoreCheckout,
+    { environmentId: threadRef.environmentId, input: { threadId: threadRef.threadId } },
+    { reportFailure: false },
+  );
+  if (result._tag === "Failure" && isAtomCommandInterrupted(result)) return;
+  const failure = result._tag === "Failure" ? squashAtomCommandFailure(result) : null;
+  toastManager.add(
+    stackedThreadToast(
+      failure === null
+        ? { type: "success", title: "Checkout restored" }
+        : {
+            type: "error",
+            title: "Could not restore checkout",
+            description:
+              failure instanceof Error ? failure.message : "The checkout could not be restored.",
+          },
+    ),
+  );
 }
