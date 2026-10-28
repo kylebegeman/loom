@@ -5,7 +5,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type * as Tool from "effect/ai/Tool";
 import type { McpThreadInvocationScope } from "../../mcp/McpInvocationContext.ts";
-import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
 import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
 import * as PeerForwarding from "../../peer/PeerForwarding.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
@@ -154,6 +153,10 @@ export const launchLibraryRemoteTask = Effect.fn("LibraryDelegation.launch")(fun
       project: placement.project,
       binding: placement.binding,
     },
+  );
+  // The toolkit depends on OrchestratorMcpService, which loads this adapter.
+  const { OrchestratorToolkit } = yield* Effect.promise(
+    () => import("../../mcp/toolkits/orchestrator/tools.ts"),
   );
   const sent = yield* forwarding.call(
     scope,

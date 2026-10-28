@@ -379,9 +379,11 @@ export const makeSkillCatalog = Effect.gen(function* () {
         const directory = path.join(root.path, name);
         if (!(yield* fs.exists(path.join(directory, "SKILL.md")))) continue;
         yield* add(directory, root.id, root.scope).pipe(
-          Effect.catchTag("SkillRegistryError", () => {
-            scanTruncated = true;
-            return Effect.void;
+          Effect.catchTags({
+            SkillRegistryError: () => {
+              scanTruncated = true;
+              return Effect.void;
+            },
           }),
           Effect.ignore,
         );
