@@ -1,6 +1,7 @@
 import { ProjectId, RuntimeMode } from "@t3tools/contracts";
 import {
   BotCreator,
+  BotTriggerDeliveryRefusal,
   BotTriggerEvent,
   BotTriggerMapping,
   type BotTrigger,
@@ -29,6 +30,9 @@ const Settings = Schema.Struct({
   followStable: Schema.optionalKey(Schema.Boolean),
   pipelineId: Schema.optionalKey(Schema.String),
 });
+const refusalJson = Schema.fromJsonString(BotTriggerDeliveryRefusal);
+const decodeRefusal = Schema.decodeUnknownOption(refusalJson);
+const encodeRefusal = Schema.encodeSync(refusalJson);
 const settingsJson = Schema.fromJsonString(Settings);
 const decodeSettings = Schema.decodeUnknownOption(settingsJson);
 const encodeSettings = Schema.encodeSync(settingsJson);
@@ -48,6 +52,7 @@ interface TriggerRow {
   readonly webhook_secret: string | null;
   readonly next_fire_at: string | null;
   readonly last_fired_at: string | null;
+  readonly last_delivery_refusal_json: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -63,6 +68,7 @@ interface FiringRow {
   readonly pipeline_run_id: string | null;
   readonly batch_id: string | null;
   readonly reason: string | null;
+  readonly refusal_count: number | null;
 }
 
 /** A trigger with what never leaves the server: the hook credentials and the creator's mode. */
@@ -89,6 +95,12 @@ const toStored = (row: TriggerRow): StoredTrigger | null => {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       lastFiredAt: row.last_fired_at,
+      ...(row.last_delivery_refusal_json === null
+        ? {}
+        : Option.match(decodeRefusal(row.last_delivery_refusal_json), {
+            onNone: () => ({}),
+            onSome: (lastDeliveryRefusal) => ({ lastDeliveryRefusal }),
+          })),
       ...(settings.event.kind === "schedule" ? { nextFireAt: row.next_fire_at } : {}),
     },
     creatorRuntimeMode:
@@ -111,6 +123,7 @@ const toFiring = (row: FiringRow): BotTriggerFiring => ({
   ...(row.pipeline_run_id === null ? {} : { pipelineRunId: row.pipeline_run_id }),
   ...(row.batch_id === null ? {} : { batchId: row.batch_id }),
   reason: row.reason,
+  ...(row.refusal_count === null ? {} : { refusalCount: row.refusal_count }),
 });
 
 export const makeBotTriggersStore = Effect.gen(function* () {
@@ -172,6 +185,25 @@ export const makeBotTriggersStore = Effect.gen(function* () {
         id: string;
       }>`INSERT INTO fork_bots_trigger_firings (id, trigger_id, event_key, event_summary, fired_at, outcome, run_id, pipeline_run_id, batch_id, reason) VALUES (${firing.id}, ${firing.triggerId}, ${firing.eventKey}, ${firing.eventSummary}, ${firing.firedAt}, ${firing.outcome}, ${firing.runId}, ${firing.pipelineRunId ?? null}, ${firing.batchId ?? null}, ${firing.reason}) ON CONFLICT(trigger_id, event_key) DO NOTHING RETURNING id`;
       return rows.length > 0;
+    }),
+
+    recordDeliveryRefusal: Effect.fn("BotTriggersStore.recordDeliveryRefusal")(function* (
+      firing: BotTriggerFiring,
+    ) {
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const rows =
+            yield* sql<FiringRow>`INSERT INTO fork_bots_trigger_firings (id, trigger_id, event_key, event_summary, fired_at, outcome, run_id, reason, refusal_count) VALUES (${firing.id}, ${firing.triggerId}, ${firing.eventKey}, ${firing.eventSummary}, ${firing.firedAt}, 'skipped', NULL, ${firing.reason}, 1) ON CONFLICT(trigger_id, event_key) DO UPDATE SET refusal_count = refusal_count + 1, fired_at = MAX(fired_at, excluded.fired_at), reason = CASE WHEN reason = excluded.reason THEN reason ELSE 'more than one delivery rule failed' END RETURNING *`;
+          const recorded = toFiring(rows[0]!);
+          const issue: BotTriggerDeliveryRefusal = {
+            reason: recorded.reason!,
+            count: recorded.refusalCount!,
+            at: recorded.firedAt,
+          };
+          yield* sql`UPDATE fork_bots_triggers SET last_delivery_refusal_json = ${encodeRefusal(issue)} WHERE id = ${firing.triggerId} AND (last_delivery_refusal_json IS NULL OR json_extract(last_delivery_refusal_json, '$.at') < ${issue.at} OR (json_extract(last_delivery_refusal_json, '$.at') = ${issue.at} AND json_extract(last_delivery_refusal_json, '$.count') <= ${issue.count}))`;
+          return { firing: recorded, issue };
+        }),
+      );
     }),
 
     updateFiring: Effect.fn("BotTriggersStore.updateFiring")(function* (firing: BotTriggerFiring) {

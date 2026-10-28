@@ -147,10 +147,12 @@ export function BotTriggerEditor({
             label="When"
             value={draft.kind}
             disabled={busy}
-            options={Object.entries(TRIGGER_KIND_LABELS).map(([value, label]) => ({
-              value: value as BotTriggerEventKind,
-              label,
-            }))}
+            options={Object.entries(TRIGGER_KIND_LABELS)
+              .filter(([value]) => value !== "merge-conflict")
+              .map(([value, label]) => ({
+                value: value as BotTriggerEventKind,
+                label,
+              }))}
             onChange={(kind) =>
               update({
                 kind,

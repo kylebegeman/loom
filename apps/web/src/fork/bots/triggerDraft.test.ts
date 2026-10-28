@@ -191,7 +191,9 @@ describe("trigger drafts", () => {
     });
     expect(
       triggerInputFromDraft(bot, { ...draft, kind: "merge-conflict" }, null, pipeline),
-    ).toEqual({ error: "A pipeline runs once per event, not once per conflicting file." });
+    ).toEqual({
+      error: "Merge-conflict triggers are retired. Delete this trigger and choose another event.",
+    });
 
     const saved: BotTrigger = {
       id: "trg_00000000000000000002",
@@ -477,7 +479,7 @@ describe("step checks", () => {
     ).toBe("Depth needs a number.");
     const conflicts = { ...draft, kind: "merge-conflict" as const, pipelineId: "review-fix" };
     expect(triggerStepProblem("kind", conflicts, { ...context, target: pipeline })).toBe(
-      "A pipeline runs once per event, not once per conflicting file.",
+      "Merge-conflict triggers are retired. Delete this trigger and choose another event.",
     );
     expect(firstProblemStep(unmapped, context)).toBe("runs");
     expect(firstProblemStep(draft, context)).toBeNull();

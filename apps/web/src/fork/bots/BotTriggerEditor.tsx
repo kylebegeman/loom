@@ -14,6 +14,7 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
+  BOT_TRIGGER_RETIRED_MESSAGE,
   type BotDefinition,
   type BotParameter,
   type BotPipeline,
@@ -76,7 +77,6 @@ import {
   limitsPhrase,
   mappingLines,
   newTriggerDraft,
-  PIPELINE_PER_FILE,
   remapForKind,
   reviseTriggerDraft,
   schedulePhrase,
@@ -103,8 +103,7 @@ const TRIGGER_KIND_HINTS: Record<BotTriggerEventKind, string> = {
     "Fires when a linked pull request's checks turn failing, and again for a new failing commit.",
   "pull-request-opened": "Fires the first time Loom sees a linked pull request open.",
   "thread-settled": "Fires when a thread in the project settles. Bot runs never start it.",
-  "merge-conflict":
-    "Fires when the fork integrate script reports conflicts. Each file runs as one batch item.",
+  "merge-conflict": "Retired. Delete this trigger and choose another event.",
   webhook:
     "Fires on each request to the trigger's address. Map inputs from body, headers or query.",
   schedule: "Fires on an interval or at a time of day.",
@@ -264,7 +263,7 @@ function KindStep({
               disabled={blocked}
               leading={<TriggerKindTile kind={kind} muted={draft.kind !== kind} />}
               title={TRIGGER_KIND_LABELS[kind]}
-              detail={blocked ? PIPELINE_PER_FILE : TRIGGER_KIND_HINTS[kind]}
+              detail={blocked ? BOT_TRIGGER_RETIRED_MESSAGE : TRIGGER_KIND_HINTS[kind]}
               onSelect={() => onKind(kind)}
             />
           );
@@ -670,14 +669,6 @@ function WhenStep({
             update={update}
           />
         ) : null}
-        {draft.kind === "merge-conflict" ? (
-          <p className="text-sm text-muted-foreground">
-            The trigger gets its own address. Set{" "}
-            <span className="font-mono text-foreground">LOOM_BOTS_CONFLICT_HOOK</span> to it before
-            running the fork integrate script, and each conflicting file becomes one item of a
-            batch.
-          </p>
-        ) : null}
       </div>
       <div className="grid gap-3 border-t border-border pt-4">
         <StepHeading
@@ -886,7 +877,7 @@ function RunsStep({
                 title={pipeline.name}
                 detail={
                   draft.kind === "merge-conflict"
-                    ? PIPELINE_PER_FILE
+                    ? BOT_TRIGGER_RETIRED_MESSAGE
                     : `A pipeline of ${pipeline.steps.length} step${pipeline.steps.length === 1 ? "" : "s"}, starting with ${bot.name}`
                 }
                 onSelect={() => onTarget(pipeline.id)}

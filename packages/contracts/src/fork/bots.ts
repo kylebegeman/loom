@@ -1134,6 +1134,19 @@ const TriggerFields = {
   pipelineId: Schema.optionalKey(Schema.NullOr(BotId)),
 };
 
+export const BOT_TRIGGER_RETIRED_MESSAGE =
+  "Merge-conflict triggers are retired. Delete this trigger and choose another event.";
+
+export const BotTriggerDeliveryRefusal = Schema.Struct({
+  reason: Schema.String,
+  count: Schema.Int.check(Schema.isGreaterThan(0)),
+  at: Schema.String,
+});
+export type BotTriggerDeliveryRefusal = typeof BotTriggerDeliveryRefusal.Type;
+
+export const botTriggerDeliveryRefusalText = (issue: BotTriggerDeliveryRefusal) =>
+  `Last delivery refused: ${issue.reason}${issue.count > 1 ? ` (${issue.count} times)` : ""}`;
+
 export const BotTrigger = Schema.Struct({
   id: BotTriggerId,
   ...TriggerFields,
@@ -1142,6 +1155,7 @@ export const BotTrigger = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
   lastFiredAt: Schema.NullOr(Schema.String),
+  lastDeliveryRefusal: Schema.optionalKey(BotTriggerDeliveryRefusal),
   /** Webhook and merge-conflict triggers, for callers allowed to operate. */
   webhook: Schema.optionalKey(ScheduledTaskWebhookEndpoint),
   /** Schedule triggers: when it fires next. */
@@ -1162,6 +1176,7 @@ export const BotTriggerFiring = Schema.Struct({
   pipelineRunId: Schema.optionalKey(Schema.NullOr(BotPipelineRunId)),
   batchId: Schema.optionalKey(Schema.NullOr(BotBatchId)),
   reason: Schema.NullOr(Schema.String),
+  refusalCount: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
 });
 export type BotTriggerFiring = typeof BotTriggerFiring.Type;
 

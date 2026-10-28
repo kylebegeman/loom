@@ -219,5 +219,14 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`UPDATE fork_bots_runs SET delivered_at = notified_at WHERE notify = 1 AND notified_at IS NOT NULL AND caller_thread_id IS NOT NULL AND (error IS NULL OR instr(error, 'Result delivery failed:') = 0)`;
       }),
     ],
+    [
+      16,
+      "TriggerDeliveryRefusals",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`ALTER TABLE fork_bots_trigger_firings ADD COLUMN refusal_count INTEGER`;
+        yield* sql`ALTER TABLE fork_bots_triggers ADD COLUMN last_delivery_refusal_json TEXT`;
+      }),
+    ],
   ],
 };
