@@ -1,8 +1,13 @@
 import { expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
-import type { VaultApprovalRequest } from "@t3tools/contracts/fork";
+import type {
+  VaultApprovalRequest,
+  VaultApprovalCardData,
+  VaultApprovalInbox,
+} from "@t3tools/contracts/fork";
 import {
   vaultApprovalState,
+  reviewVaultApprovalCard,
   vaultApprovalReviewQueue,
   vaultApprovalReviewLabels,
 } from "./vault-access.ts";
@@ -23,6 +28,36 @@ const base: VaultApprovalRequest = {
   decidedBy: null,
   approvedUntil: null,
   grantId: null,
+};
+const card: VaultApprovalCardData = {
+  type: "vault_access_request",
+  requestId: base.id,
+  revision: base.revision,
+  itemLabel: "Development key",
+  itemKind: "secret",
+  action: base.action,
+  destination: base.destination,
+  state: base.state,
+  requestExpiresAt: base.requestExpiresAt,
+  approvedUntil: base.approvedUntil,
+};
+const context = {
+  requestId: base.id,
+  itemLabel: card.itemLabel,
+  threadTitle: "Thread",
+  projectTitle: "Project",
+  state: "current" as const,
+};
+const inbox: VaultApprovalInbox = {
+  policyRevision: 8,
+  requests: [base],
+  notifications: "stubbed",
+  reviewContext: [context],
+};
+const choice = {
+  operationId: "c".repeat(32),
+  decision: "approve" as const,
+  durationMs: 300000 as const,
 };
 it("keeps pending work first in all requests and leaves source order untouched", () => {
   const terminal = { ...base, id: "c".repeat(32), state: "denied" as const, requestedAt: 200 };
@@ -107,4 +142,73 @@ it("requires refreshed review for changed or unavailable context without adding 
     expect(labels.warning).not.toBeNull();
     expect(labels.accessibleContext).toContain(base.threadId);
   }
+});
+
+it("prepares card decisions with the displayed request revision and fresh policy revision", () => {
+  const reviewed = reviewVaultApprovalCard(card, inbox, {
+    operationId: "c".repeat(32),
+    decision: "approve",
+    durationMs: 900000,
+  });
+  expect(reviewed).toMatchObject({
+    input: {
+      id: base.id,
+      operationId: "c".repeat(32),
+      expectedRevision: 1,
+      expectedPolicyRevision: 8,
+      decision: "approve",
+      durationMs: 900000,
+    },
+  });
+});
+it("refreshes a changed card before any decision and never approves unavailable context", () => {
+  const changed = reviewVaultApprovalCard(
+    card,
+    { ...inbox, requests: [{ ...base, revision: 2, state: "denied" }] },
+    choice,
+  );
+  expect(changed.input).toBeNull();
+  expect(changed.card).toMatchObject({ revision: 2, state: "denied" });
+  const unavailable = reviewVaultApprovalCard(
+    card,
+    { ...inbox, reviewContext: [{ ...context, state: "unavailable" }] },
+    choice,
+  );
+  expect(unavailable.input).toBeNull();
+  expect(unavailable.message).toContain("context");
+  const missing = reviewVaultApprovalCard(card, { ...inbox, requests: [] }, choice);
+  expect(missing.card).toBeNull();
+  expect(missing.input).toBeNull();
+});
+it("keeps deny and cancel available when context cannot be verified, and scopes revoke to a grant", () => {
+  for (const decision of ["deny", "cancel"] as const) {
+    expect(
+      reviewVaultApprovalCard(card, { ...inbox, reviewContext: [] }, { ...choice, decision }).input
+        ?.decision,
+    ).toBe(decision);
+  }
+  expect(reviewVaultApprovalCard(card, inbox, { ...choice, decision: "revoke" }).input).toBeNull();
+  const approved = {
+    ...base,
+    state: "approved" as const,
+    approvedUntil: 900000,
+    grantId: base.id,
+    revision: 2,
+  };
+  expect(
+    reviewVaultApprovalCard(
+      { ...card, state: "approved", approvedUntil: 900000, revision: 2 },
+      { ...inbox, requests: [approved] },
+      { ...choice, decision: "revoke" },
+    ).input?.decision,
+  ).toBe("revoke");
+});
+it("refreshes a renamed item before approving the new label", () => {
+  const reviewed = reviewVaultApprovalCard(
+    card,
+    { ...inbox, reviewContext: [{ ...context, itemLabel: "New credential" }] },
+    choice,
+  );
+  expect(reviewed.input).toBeNull();
+  expect(reviewed.card?.itemLabel).toBe("New credential");
 });
