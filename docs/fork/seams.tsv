@@ -1517,7 +1517,7 @@ apps/web/src/hooks/useNewConversationShortcut.ts	library-projects	1
 apps/mobile/src/features/threads/useThreadConversationDetails.tsx	library	1
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	project-lifecycle	3
 apps/web/src/components/chat/ChatHeader.tsx	project-lifecycle	2
-apps/web/src/components/sidebar/SidebarThreadRow.tsx	project-lifecycle	2
+apps/web/src/components/sidebar/SidebarThreadRow.tsx	project-lifecycle	3
 evals/mcp-tool-use/run.ts	project-lifecycle	2
 evals/mcp-tool-use/run.ts	directory-computers	2
 evals/mcp-tool-use/run.ts	bots-triggers	2

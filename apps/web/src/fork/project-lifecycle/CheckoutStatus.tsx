@@ -25,6 +25,8 @@ export function useThreadCheckoutReleased(threadRef: ScopedThreadRef | null) {
 
 export function CheckoutStatus({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
   return useThreadCheckoutReleased(threadRef) ? (
-    <span className="text-xs font-normal text-muted-foreground">Checkout released</span>
+    <span className="shrink-0 text-xs font-normal whitespace-nowrap text-muted-foreground">
+      Checkout released
+    </span>
   ) : null;
 }

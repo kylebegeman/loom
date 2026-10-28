@@ -1565,6 +1565,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
               {title}
+              {/* fork: project-lifecycle */}
+              <CheckoutStatus threadRef={threadRef} />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
