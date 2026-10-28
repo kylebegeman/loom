@@ -36,7 +36,7 @@ export const vaultStatusMessage = (status: VaultCoreStatus) => {
   const remaining = status.tokenTtlSeconds ?? Infinity;
   if (status.state !== "ready" || remaining >= VAULT_TOKEN_WARNING_SECONDS) return message;
   const hours = Math.floor(remaining / (60 * 60));
-  const left = hours < 1 ? "under an hour" : `about ${hours} hours`;
+  const left = hours < 1 ? "under an hour" : `about ${hours} ${hours === 1 ? "hour" : "hours"}`;
   return `${message} Its service token expires in ${left}. Check the token renewal job on the computer running Loom, or reissue the token before then.`;
 };
 export const vaultHealthBackendMessage = (status: VaultCoreStatus) => {
