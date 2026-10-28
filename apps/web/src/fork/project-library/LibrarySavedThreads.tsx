@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { RecentlyDeletedConversations, useRecentlyDeletedSupported } from "./RecentlyDeleted";
+import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
-import { InlineButton } from "~/components/ui/button";
+import { Button, InlineButton } from "~/components/ui/button";
 import { libraryOutsideArchivedProjects } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
@@ -50,6 +51,8 @@ export function LibrarySavedThreads({
   readonly showHeading?: boolean;
 }) {
   const library = useLibraryProjects(true);
+  const deletedSupported = useRecentlyDeletedSupported();
+  const [showDeleted, setShowDeleted] = useState(false);
   const index = useEnvironmentQuery(
     library.authorityId
       ? projectLibrary.threadIndex({
@@ -71,34 +74,56 @@ export function LibrarySavedThreads({
     projectKeys,
     search,
   });
-  if (!threads.length) return null;
+  if (!threads.length && !deletedSupported) return null;
   return (
     <section className="space-y-0.5 py-2" aria-label="Saved conversations">
       {showHeading ? (
         <h2 className="px-(--sidebar-row-content-inset) py-1 text-xs font-medium text-sidebar-muted-foreground">
-          Saved conversations
+          {showDeleted && deletedSupported ? "Recently deleted" : "Saved conversations"}
         </h2>
       ) : null}
-      {threads.map((thread) => (
-        <Link
-          key={thread.id}
-          to="/library/conversations/$conversationId"
-          params={{ conversationId: thread.id }}
-          className="flex items-start gap-2 rounded-md px-(--sidebar-row-content-inset) py-(--sidebar-content-inset) text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <MessageSquareIcon
-            aria-hidden
-            className="mt-0.5 size-4 shrink-0 text-sidebar-muted-foreground"
-          />
-          <div className="min-w-0">
-            <p className="truncate text-sm">{thread.title || "Untitled conversation"}</p>
-            <p className="mt-0.5 truncate text-xs text-secondary-label">
-              {titles.get(thread.projectId) ?? "Project"}
-            </p>
-          </div>
-        </Link>
-      ))}
-      {index.data?.nextOffset !== null ? (
+      {deletedSupported ? (
+        <div className="flex gap-2 px-2 py-1">
+          <Button
+            size="xs"
+            variant={showDeleted ? "outline" : "secondary"}
+            onClick={() => setShowDeleted(false)}
+          >
+            Saved
+          </Button>
+          <Button
+            size="xs"
+            variant={showDeleted ? "secondary" : "outline"}
+            onClick={() => setShowDeleted(true)}
+          >
+            Recently deleted
+          </Button>
+        </div>
+      ) : null}
+      {showDeleted && deletedSupported ? (
+        <RecentlyDeletedConversations />
+      ) : (
+        threads.map((thread) => (
+          <Link
+            key={thread.id}
+            to="/library/conversations/$conversationId"
+            params={{ conversationId: thread.id }}
+            className="flex items-start gap-2 rounded-md px-(--sidebar-row-content-inset) py-(--sidebar-content-inset) text-sidebar-foreground outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <MessageSquareIcon
+              aria-hidden
+              className="mt-0.5 size-4 shrink-0 text-sidebar-muted-foreground"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm">{thread.title || "Untitled conversation"}</p>
+              <p className="mt-0.5 truncate text-xs text-secondary-label">
+                {titles.get(thread.projectId) ?? "Project"}
+              </p>
+            </div>
+          </Link>
+        ))
+      )}
+      {!showDeleted && index.data?.nextOffset !== null ? (
         <p className="px-(--sidebar-row-content-inset) py-2 text-xs">
           <InlineButton tone="muted" render={<Link to="/projects" />}>
             Browse earlier conversations by project

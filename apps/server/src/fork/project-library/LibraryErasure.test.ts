@@ -136,14 +136,23 @@ it.effect(
         thread: make("retry", ["unique"]),
       });
       const unavailable = yield* Library.LibraryService.pipe(
-        Effect.provide(Layer.fresh(Library.layer)),
-        Effect.provideService(Assets.LibraryAssetService, {
-          ...assets,
-          removeUnused: () => Effect.fail(new LibraryError({ reason: "io" })),
-        }),
-        Effect.provideService(ServerEnvironmentIdentity, {
-          getEnvironmentId: Effect.succeed(source),
-        }),
+        Effect.provide(
+          Layer.fresh(
+            Library.layer.pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  Layer.succeed(Assets.LibraryAssetService, {
+                    ...assets,
+                    removeUnused: () => Effect.fail(new LibraryError({ reason: "io" })),
+                  }),
+                  Layer.succeed(ServerEnvironmentIdentity, {
+                    getEnvironmentId: Effect.succeed(source),
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ),
       );
       const request = { requestId: "retry-erase", id: "retry" };
       expect((yield* unavailable.eraseConversation(request, owner).pipe(Effect.flip)).reason).toBe(
@@ -158,16 +167,19 @@ it.effect(
       ).toEqual([{ count: 0 }]);
       expect((yield* assets.read(unique).pipe(Effect.flip)).reason).toBe("io");
     }).pipe(
-      Effect.provide(services),
       Effect.provide(
-        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } })),
-      ),
-      Effect.provideService(HostProcess.Environment, {}),
-      Effect.provide(
-        Layer.mergeAll(
-          layerMemory,
-          ServerConfig.layerTest(process.cwd(), { prefix: "library-erasure-test-" }),
-        ).pipe(Layer.provideMerge(NodeServices.layer)),
+        services.pipe(
+          Layer.provideMerge(
+            Layer.mergeAll(
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } }),
+              ),
+              Layer.succeed(HostProcess.Environment, {}),
+              layerMemory,
+              ServerConfig.layerTest(process.cwd(), { prefix: "library-erasure-test-" }),
+            ).pipe(Layer.provideMerge(NodeServices.layer)),
+          ),
+        ),
       ),
       Effect.scoped,
     ),

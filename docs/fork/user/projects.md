@@ -104,6 +104,15 @@ their existing Start flow; connect an updated computer to see durable operation 
 
 ## Deleted conversations
 
+Open **Recently deleted** in a project's Conversations view or the saved-conversation list to
+read a deleted conversation. **Continue in a new conversation** starts a linked continuation;
+it does not reopen the deleted thread. These controls require an updated Library.
+
+The Library keeps deleted conversations for 30 days by default. The owner can change
+**Erase deleted conversations after** in Settings → Library. **Erase now** permanently removes
+the saved conversation and attachments that no remaining conversation uses. If storage cleanup
+fails, retry the action to finish it. Independently published pages keep their own lifecycle.
+
 Deleting a conversation removes its attachment files right away. After a day the computer
 also removes its history and keeps only the record that it was deleted. For a conversation
 saved to the Library, both wait until the Library has recorded the deletion, so the Library's

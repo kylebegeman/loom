@@ -360,7 +360,7 @@ apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
 apps/web/src/components/chat/useRightPanelActions.ts	checkpoint-capable	4
 apps/web/src/components/CommandPalette.tsx	fleet-connections	30
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
-apps/web/src/components/Sidebar.tsx	library-projects	25
+apps/web/src/components/Sidebar.tsx	library-projects	30
 apps/web/src/routes/_chat.tsx	library-projects	2
 apps/web/src/shortcuts/chatRouteCommands.ts	library-projects	4
 apps/web/src/components/Sidebar.tsx	workspace-handoff	4
@@ -1540,3 +1540,4 @@ evals/mcp-tool-use/run.ts	vault-references	2
 packages/client-runtime/package.json	-	"./fork/vault-secret"
 evals/mcp-tool-use/run.ts	attention-status	2
 apps/web/src/hooks/useThreadActionMenu.ts	attention-status	6
+apps/web/src/hooks/useThreadActions.ts	library-projects	3

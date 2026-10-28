@@ -1,4 +1,5 @@
 import { readRetryTarget, retryThread } from "../fork/attention/state"; // fork: attention-status
+import { libraryThreadDeletionNotice } from "~/fork/project-library/deletionNotice"; // fork: library-projects
 import { CHECKOUT_RESTORE_FEATURE } from "@t3tools/contracts/fork"; // fork: project-lifecycle
 // fork: attention-status
 import { ThreadAttentionButton } from "../fork/attention/ThreadAttention";
@@ -2463,11 +2464,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       }
       if (clicked.value !== "delete") return;
       if (confirmThreadDelete) {
+        // fork: library-projects
+        const deletionNotice = await libraryThreadDeletionNotice(
+          actionTargets.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
+        );
         const confirmed = await settlePromise(() =>
           api.dialogs.confirm(
             [
               `Delete ${count} thread${count === 1 ? "" : "s"}?`,
-              "This permanently clears conversation history for these threads.",
+              deletionNotice, // fork: library-projects
             ].join("\n"),
             { variant: "destructive" },
           ),
@@ -2850,11 +2855,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           }
           case "delete": {
             if (confirmThreadDelete) {
+              const deletionNotice = await libraryThreadDeletionNotice([threadRef]); // fork: library-projects
               const confirmed = await settlePromise(() =>
                 api.dialogs.confirm(
                   [
                     `Delete thread "${thread.title}"?`,
-                    "This permanently clears conversation history for this thread.",
+                    deletionNotice, // fork: library-projects
                   ].join("\n"),
                   { variant: "destructive" },
                 ),
