@@ -6,6 +6,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as ApprovalNotificationTransport from "./ApprovalNotificationTransport.ts";
@@ -232,4 +233,74 @@ it.effect(
           }),
       );
     }),
+);
+
+it.effect("publishes each approval revision once and ignores stale updates", () =>
+  Effect.gen(function* () {
+    const service = yield* ApprovalNotifications.ApprovalNotifications;
+    const observed = yield* service.changes.pipe(
+      Stream.take(3),
+      Stream.runCollect,
+      Effect.forkChild({ startImmediately: true }),
+    );
+    const approved: VaultApprovalRequest = {
+      ...request,
+      revision: 2,
+      state: "approved",
+      decidedBy: "human",
+      grantId: request.id,
+      approvedUntil: 300_000,
+    };
+    const next = { ...request, id: "c".repeat(32) };
+    yield* service.changed(request);
+    yield* service.changed(request);
+    yield* service.changed(approved);
+    yield* service.changed(request);
+    yield* service.changed(next);
+    expect(yield* Fiber.join(observed)).toEqual([request, approved, next]);
+  }).pipe(Effect.provide(ApprovalNotifications.stub), Effect.scoped),
+);
+
+it.effect.each(["approved", "denied", "cancelled"] as const)(
+  "wakes all waiters when a request is %s, including a decision before registration",
+  (state) =>
+    Effect.gen(function* () {
+      const service = yield* ApprovalNotifications.ApprovalNotifications;
+      yield* service.changed(request);
+      const first = yield* service.waitForDecision(request).pipe(Effect.forkChild);
+      const second = yield* service.waitForDecision(request).pipe(Effect.forkChild);
+      yield* service.changed({
+        ...request,
+        revision: 2,
+        state,
+        decidedBy: "human",
+        grantId: state === "approved" ? request.id : null,
+        approvedUntil: state === "approved" ? 300_000 : null,
+      });
+      yield* Fiber.join(first);
+      yield* Fiber.join(second);
+      yield* service.waitForDecision(request);
+    }).pipe(Effect.provide(ApprovalNotifications.stub)),
+);
+
+it.effect("bounds a pending wait by its original request expiry", () =>
+  Effect.gen(function* () {
+    const service = yield* ApprovalNotifications.ApprovalNotifications;
+    let completed = false;
+    yield* service.changed(request);
+    yield* TestClock.adjust("9 minutes");
+    const waiting = yield* service.waitForDecision(request).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          completed = true;
+        }),
+      ),
+      Effect.forkChild,
+    );
+    yield* TestClock.adjust("59 seconds");
+    expect(completed).toBe(false);
+    yield* TestClock.adjust("1 second");
+    yield* Fiber.join(waiting);
+    expect(completed).toBe(true);
+  }).pipe(Effect.provide(ApprovalNotifications.stub)),
 );
