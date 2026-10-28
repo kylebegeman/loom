@@ -649,6 +649,27 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("indexes a lane prepared while startup and a settings save rewrite the index", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("root"), thread("resuming", { worktreePath: t.worktree }));
+      yield* t.service.ensureForThread(ThreadId.make("root"));
+      const settings = yield* t.service.getSettings;
+      const [, feature] = yield* Effect.all(
+        [
+          t.service.reconcile(),
+          t.service.ensureForThread(ThreadId.make("resuming")),
+          t.service.updateSettings(settings),
+          t.service.updateSettings(settings),
+        ],
+        { concurrency: "unbounded" },
+      );
+      expect(NodeFS.readFileSync(`${settings.lanesRoot}/.loom/lanes.tsv`, "utf8")).toContain(
+        `${t.worktree}\t${feature.laneDir}/space\t${feature.id}\t`,
+      );
+    }).pipe(Effect.scoped),
+  );
+
   it.live("claims lane ports against every other server on the computer", () =>
     Effect.gen(function* () {
       const t = yield* setup;

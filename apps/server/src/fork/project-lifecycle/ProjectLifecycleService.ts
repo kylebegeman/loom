@@ -480,27 +480,33 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     settings.buildSlots ?? autoBuildSlots(NodeOS.availableParallelism());
 
   let shellFilesReady = false;
-  const writeShellFiles = Effect.gen(function* () {
-    shellFilesReady = false;
-    const settings = yield* getSettings;
-    const root = rootOf(settings);
-    const index = yield* Effect.forEach([...lanes.values()], (lane) =>
-      Effect.promise(() => NodeFSP.realpath(lane.checkoutPath).catch(() => lane.checkoutPath)).pipe(
-        Effect.map((real) => ({
-          checkoutPaths: [lane.checkoutPath, real],
-          spacePath: lanePaths(lane).spacePath,
-          laneId: lane.id,
-          portBase: lane.portBase ?? 0,
-        })),
-      ),
-    );
-    yield* writeAtomically(`${shellDir(root)}/lanes.tsv`, renderIndex(index));
-    yield* writeAtomically(`${shellDir(root)}/lanes.zsh`, renderHook(root));
-    for (const [name, contents] of Object.entries(renderShims(root)))
-      yield* writeAtomically(`${shimsDir(root)}/${name}`, contents, 0o755);
-    yield* writeAtomically(`${slotsDir(root)}/count`, `${slotCount(settings)}\n`);
-    shellFilesReady = true;
-  });
+  // Writers run inside and outside `mutate`, and writeAtomically reuses one temp name per process.
+  const shellFiles = yield* Semaphore.make(1);
+  const writeShellFiles = shellFiles.withPermits(1)(
+    Effect.gen(function* () {
+      shellFilesReady = false;
+      const settings = yield* getSettings;
+      const root = rootOf(settings);
+      const index = yield* Effect.forEach([...lanes.values()], (lane) =>
+        Effect.promise(() =>
+          NodeFSP.realpath(lane.checkoutPath).catch(() => lane.checkoutPath),
+        ).pipe(
+          Effect.map((real) => ({
+            checkoutPaths: [lane.checkoutPath, real],
+            spacePath: lanePaths(lane).spacePath,
+            laneId: lane.id,
+            portBase: lane.portBase ?? 0,
+          })),
+        ),
+      );
+      yield* writeAtomically(`${shellDir(root)}/lanes.tsv`, renderIndex(index));
+      yield* writeAtomically(`${shellDir(root)}/lanes.zsh`, renderHook(root));
+      for (const [name, contents] of Object.entries(renderShims(root)))
+        yield* writeAtomically(`${shimsDir(root)}/${name}`, contents, 0o755);
+      yield* writeAtomically(`${slotsDir(root)}/count`, `${slotCount(settings)}\n`);
+      shellFilesReady = true;
+    }),
+  );
 
   const readProfile = Effect.promise(() =>
     NodeFSP.realpath(profilePath)
