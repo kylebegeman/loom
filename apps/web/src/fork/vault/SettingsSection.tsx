@@ -1,4 +1,5 @@
-import { vaultAddTarget } from "./add-navigation";
+import { openVaultAdd } from "./add-navigation";
+import { VaultEditor } from "./VaultEditor";
 import { vaultProfileTarget } from "./profile-navigation";
 import { readVaultFile } from "./file-draft";
 import {
@@ -14,7 +15,7 @@ import { Checkbox } from "~/components/ui/checkbox";
 import { VaultOwnerSettings } from "./OwnerSettingsSection";
 import { VaultSshDialog } from "./SshDialog";
 import { openVaultAccess } from "./access-navigation";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { forkSettingsTarget } from "../settings/navigation";
@@ -33,7 +34,6 @@ import {
   loomFeaturesOf,
   vaultStatusMessage,
   VAULT_KIND_LABELS,
-  VAULT_GENERIC_ITEM_KINDS,
   VAULT_REVEAL_DURATION_MS,
   vaultItemActions,
   vaultItemChanges,
@@ -46,7 +46,6 @@ import * as Schema from "effect/Schema";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Textarea } from "~/components/ui/textarea";
 import {
   Dialog,
   DialogPopup,
@@ -86,7 +85,6 @@ const failure = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
 export function VaultSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  const addTarget = useAtomValue(vaultAddTarget);
   const profileTarget = useAtomValue(vaultProfileTarget);
   const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
   const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
@@ -111,12 +109,8 @@ export function VaultSettingsSection() {
         environmentId={environment.environmentId}
       />
       <VaultItems
-        key={`${environment.environmentId}:${canWrite}:${addTarget?.requestId ?? ""}`}
+        key={`${environment.environmentId}:${canWrite}`}
         environmentId={environment.environmentId}
-        initialAdd={
-          !!addTarget &&
-          (!addTarget.environmentId || addTarget.environmentId === environment.environmentId)
-        }
         collapsible={
           loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
             "vault-owner-trusted",
@@ -136,12 +130,10 @@ export function VaultSettingsSection() {
 }
 function VaultItems({
   environmentId,
-  initialAdd,
   collapsible,
   focusSearch,
 }: {
   environmentId: EnvironmentId;
-  initialAdd: boolean;
   collapsible: boolean;
   focusSearch: boolean;
 }) {
@@ -196,15 +188,12 @@ function VaultItems({
   const canSave = useAtomValue(vault.save.permissionAtom(environmentId));
   const canChange = useAtomValue(vault.change.permissionAtom(environmentId));
   const canReveal = useAtomValue(vault.reveal.permissionAtom(environmentId));
-  const [editing, setEditing] = useState<VaultItemSummary | "new" | null>(
-    initialAdd ? "new" : null,
-  );
+  const [editing, setEditing] = useState<VaultItemSummary | "new" | null>(null);
   const [fileDraft, setFileDraft] = useState<{ name: string; value: string } | null>(null);
   const [expanded, setExpanded] = useState(false);
   const closeEditor = () => {
     setEditing(null);
     setFileDraft(null);
-    appAtomRegistry.set(vaultAddTarget, null);
   };
   const [deleting, setDeleting] = useState<VaultItemSummary | null>(null);
   const [revealed, setRevealed] = useState<{ id: string; value: string } | null>(null);
@@ -502,7 +491,7 @@ function VaultItems({
         <Button
           size="sm-multiline"
           disabled={!canSave || status?.state !== "ready" || busy}
-          onClick={() => setEditing("new")}
+          onClick={() => openVaultAdd({ environmentId })}
         >
           Add item
         </Button>
@@ -803,285 +792,5 @@ function VaultItems({
         </DialogPopup>
       </Dialog>
     </div>
-  );
-}
-function VaultEditor({
-  environmentId,
-  item,
-  initialFile,
-  onCreateSsh,
-  githubEnabled,
-  onSaved,
-  onClose,
-}: {
-  environmentId: EnvironmentId;
-  item: VaultItemSummary | null;
-  initialFile: { name: string; value: string } | null;
-  onCreateSsh: (() => void) | undefined;
-  githubEnabled: boolean;
-  onSaved: () => void;
-  onClose: () => void;
-}) {
-  const managed = item !== null && !vaultItemActions(item.kind).replaceValue;
-  const fieldId = useId();
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [id] = useState(() => item?.id ?? newId());
-  const [operationId, setOperationId] = useState(newId);
-  const [label, setLabel] = useState(item?.label ?? initialFile?.name ?? "");
-  const [kind, setKind] = useState<VaultItemKind>(
-    item?.kind ?? (initialFile ? "secure-file" : "secret"),
-  );
-  const [replace, setReplace] = useState(item === null);
-  const [value, setValue] = useState(initialFile?.value ?? "");
-  const [multiline, setMultiline] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(initialFile?.name ?? null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const allowed = useAtomValue(vault.save.permissionAtom(environmentId));
-  const changed = () => setOperationId(newId());
-  const pick = async (file: File | undefined) => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const draft = await readVaultFile(file);
-      setValue(draft.value);
-      setFileName(draft.name);
-      setKind("secure-file");
-      setReplace(true);
-      if (!label.trim()) setLabel(draft.name);
-      changed();
-      setError(null);
-    } catch (cause) {
-      setError(message(cause));
-    }
-    setBusy(false);
-  };
-  const save = async () => {
-    if (busy || !allowed) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await runVault(vault.save, {
-        environmentId,
-        input: {
-          id,
-          operationId,
-          expectedVersion: item?.version ?? 0,
-          label,
-          kind,
-          ...(replace ? { value: Redacted.make(value) } : {}),
-        },
-      });
-      setValue("");
-      onSaved();
-    } catch (cause) {
-      setError(message(cause));
-    }
-    setBusy(false);
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <DialogPopup>
-        <DialogHeader>
-          <DialogTitle>{item ? "Edit Vault item" : "Add Vault item"}</DialogTitle>
-          <DialogDescription>
-            {managed
-              ? "Rename this item here. Manage its connection in the dedicated settings."
-              : item
-                ? "Rename this item without changing its value, or replace the value explicitly."
-                : "Save development access separately from your personal accounts."}
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          className="flex max-h-[70vh] min-w-0 flex-col gap-5 overflow-y-auto px-6 pb-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
-          <LoomSettingsField label={<label htmlFor={fieldId}>Name</label>}>
-            <Input
-              id={fieldId}
-              autoFocus
-              autoComplete="off"
-              maxLength={200}
-              value={label}
-              disabled={busy}
-              onChange={(event) => {
-                setLabel(event.target.value);
-                changed();
-              }}
-            />
-          </LoomSettingsField>
-          {!item ? (
-            <LoomSettingsActions>
-              {onCreateSsh ? (
-                <Button type="button" size="sm" variant="outline" onClick={onCreateSsh}>
-                  Create SSH key
-                </Button>
-              ) : null}
-              {githubEnabled ? (
-                <Link
-                  {...forkSettingsTarget("vault-github")}
-                  search={{ machine: environmentId, project: undefined, checkout: undefined }}
-                  hashScrollIntoView={false}
-                  className="text-primary underline underline-offset-4"
-                >
-                  Connect GitHub
-                </Link>
-              ) : null}
-            </LoomSettingsActions>
-          ) : null}
-          {!managed ? (
-            <LoomSettingsField label={<span id={`${fieldId}-kind`}>Kind</span>}>
-              <Select
-                value={kind}
-                onValueChange={(next) => {
-                  if (next !== null) {
-                    setKind(next);
-                    setReplace(true);
-                    setMultiline(next === "secure-note");
-                    setValue("");
-                    setFileName(null);
-                    changed();
-                  }
-                }}
-                disabled={busy || (item !== null && !replace)}
-              >
-                <SelectTrigger aria-labelledby={`${fieldId}-kind`}>
-                  <SelectValue>{VAULT_KIND_LABELS[kind]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  {VAULT_GENERIC_ITEM_KINDS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {VAULT_KIND_LABELS[value]}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            </LoomSettingsField>
-          ) : null}
-          {item && !managed && (
-            <label className="flex items-start gap-2 text-sm leading-6">
-              <Checkbox
-                checked={replace}
-                disabled={busy}
-                onCheckedChange={(checked) => {
-                  setReplace(checked);
-                  setKind(item.kind);
-                  setValue("");
-                  setFileName(null);
-                  changed();
-                }}
-              />
-              Replace value
-            </label>
-          )}
-          {replace ? (
-            <>
-              <input
-                ref={fileInput}
-                type="file"
-                hidden
-                disabled={busy}
-                onChange={(event) => {
-                  void pick(event.target.files?.[0]);
-                  event.target.value = "";
-                }}
-              />
-              <LoomSettingsActions>
-                <Button
-                  type="button"
-                  size="sm-multiline"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => fileInput.current?.click()}
-                >
-                  Choose file
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Up to 512 KB{fileName ? ` · ${fileName}` : ""}
-                </span>
-              </LoomSettingsActions>
-              {kind !== "secure-file" ? (
-                <LoomSettingsField label={<label htmlFor={`${fieldId}-value`}>Value</label>}>
-                  {multiline ? (
-                    <Textarea
-                      id={`${fieldId}-value`}
-                      autoComplete="off"
-                      value={value}
-                      disabled={busy}
-                      onChange={(event) => {
-                        setValue(event.target.value);
-                        changed();
-                      }}
-                    />
-                  ) : (
-                    <Input
-                      id={`${fieldId}-value`}
-                      type="password"
-                      autoComplete="new-password"
-                      value={value}
-                      disabled={busy}
-                      onChange={(event) => {
-                        setValue(event.target.value);
-                        changed();
-                      }}
-                    />
-                  )}
-                  <div>
-                    <Button
-                      type="button"
-                      size="sm-multiline"
-                      variant="ghost"
-                      disabled={busy || (multiline && value.includes("\n"))}
-                      onClick={() => setMultiline((previous) => !previous)}
-                    >
-                      {multiline ? "Use hidden single-line entry" : "Use visible multiline entry"}
-                    </Button>
-                  </div>
-                </LoomSettingsField>
-              ) : null}
-            </>
-          ) : null}
-          {error && <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice>}
-          <p className="text-sm text-muted-foreground">
-            {item
-              ? replace
-                ? "Saving creates a new version with the replacement value."
-                : "Saving changes the name. The existing value is retained."
-              : "Draft item. Save to add it to this computer's Vault."}
-          </p>
-          <LoomSettingsActions>
-            <Button
-              size="sm-multiline"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm-multiline"
-              type="submit"
-              disabled={
-                !allowed ||
-                busy ||
-                !label.trim() ||
-                (replace && kind === "secure-file" && !fileName)
-              }
-            >
-              {busy ? "Saving…" : "Save item"}
-            </Button>
-          </LoomSettingsActions>
-        </form>
-      </DialogPopup>
-    </Dialog>
   );
 }

@@ -11,6 +11,8 @@ import {
   VAULT_KIND_LABELS,
   VAULT_SEARCH_DEBOUNCE_MS,
   supportsLoomFeature,
+  vaultAddPrefill,
+  vaultPickerSelection,
 } from "@t3tools/client-runtime/fork";
 import { useServerConfigs } from "~/state/entities";
 import * as Option from "effect/Option";
@@ -23,6 +25,7 @@ import { connectionAtomRuntime } from "~/connection/runtime";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
+import { openVaultAdd } from "./add-navigation";
 const references = createVaultReferenceAtoms(connectionAtomRuntime);
 export function VaultReferencePicker({
   environmentId,
@@ -133,6 +136,36 @@ export function VaultReferencePicker({
             : search
               ? "No matching references. Try a different name or item ID."
               : "No references available. Add a Vault record on this computer to get started."}
+          {!page.nextCursor && result._tag === "Success" ? (
+            <LoomSettingsActions>
+              <Button
+                size="sm-multiline"
+                variant="outline"
+                disabled={disabled || query.trim() !== search}
+                onClick={() => {
+                  const prefill = vaultAddPrefill(query, kind);
+                  openVaultAdd({
+                    environmentId,
+                    ...(kind ? { kind: prefill.kind } : {}),
+                    label: prefill.label,
+                    onSaved: (item) => {
+                      const selected = vaultPickerSelection(environmentId, item, kind);
+                      if (!selected) {
+                        setNotice("The saved item does not match this picker's kind.");
+                        return;
+                      }
+                      onSelect?.(selected);
+                      setNotice("Item saved in Vault.");
+                      appAtomRegistry.refresh(atom);
+                    },
+                  });
+                }}
+              >
+                Add {kind ? VAULT_KIND_LABELS[kind].toLocaleLowerCase() : "item"}
+                {query.trim() ? ` named “${query.trim()}”` : ""}
+              </Button>
+            </LoomSettingsActions>
+          ) : null}
         </LoomSettingsNotice>
       ) : null}
       <ul className="flex min-w-0 flex-col divide-y divide-border">

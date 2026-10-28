@@ -1,16 +1,21 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import type { VaultItemKind, VaultItemSummary } from "@t3tools/contracts/fork";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { openVaultSsh } from "./ssh-navigation";
-export const vaultAddTarget = Atom.make<{
+export interface VaultAddOptions {
   environmentId?: EnvironmentId;
-  requestId: number;
-} | null>(null).pipe(Atom.keepAlive);
+  kind?: VaultItemKind;
+  label?: string;
+  value?: string;
+  onSaved?: (item: VaultItemSummary) => void;
+}
+export const vaultAddTarget = Atom.make<(VaultAddOptions & { requestId: number }) | null>(
+  null,
+).pipe(Atom.keepAlive);
 let nextRequest = 0;
-export const openVaultAdd = (environmentId?: EnvironmentId) => {
+export const openVaultAdd = (options: VaultAddOptions = {}) => {
   appAtomRegistry.set(vaultAddTarget, {
-    ...(environmentId ? { environmentId } : {}),
+    ...options,
     requestId: ++nextRequest,
   });
-  openVaultSsh(environmentId);
 };

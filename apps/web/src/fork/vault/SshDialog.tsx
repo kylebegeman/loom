@@ -7,6 +7,7 @@ import {
   VaultSshGenerate,
   type VaultSshProbeResult,
   type VaultSshTrust,
+  type VaultItemSummary,
 } from "@t3tools/contracts/fork";
 import { createVaultSshAtoms, parseVaultSshPublicKey } from "@t3tools/client-runtime/fork";
 import * as Cause from "effect/Cause";
@@ -40,10 +41,14 @@ export function VaultSshDialog({
   environmentId,
   itemId,
   onClose,
+  initialLabel = "",
+  onSaved,
 }: {
   environmentId: EnvironmentId;
   itemId: string | null;
   onClose: () => void;
+  initialLabel?: string;
+  onSaved?: (item: VaultItemSummary) => void;
 }) {
   const [id, setId] = useState(itemId),
     [busy, setBusy] = useState(false);
@@ -71,13 +76,17 @@ export function VaultSshDialog({
               id={id}
               busy={busy}
               setBusy={setBusy}
+              onSaved={onSaved}
             />
           ) : (
             <SshCreator
               environmentId={environmentId}
               busy={busy}
               setBusy={setBusy}
-              onCreated={setId}
+              initialLabel={initialLabel}
+              onCreated={(item) => {
+                setId(item.id);
+              }}
             />
           )}
           <Button size="sm-multiline" variant="outline" disabled={busy} onClick={onClose}>
@@ -93,13 +102,15 @@ function SshCreator({
   busy,
   setBusy,
   onCreated,
+  initialLabel,
 }: {
   environmentId: EnvironmentId;
   busy: boolean;
   setBusy: (busy: boolean) => void;
-  onCreated: (id: string) => void;
+  onCreated: (item: VaultItemSummary) => void;
+  initialLabel: string;
 }) {
-  const [label, setLabel] = useState(""),
+  const [label, setLabel] = useState(initialLabel),
     [hostname, setHostname] = useState(""),
     [username, setUsername] = useState(""),
     [port, setPort] = useState("22");
@@ -133,7 +144,7 @@ function SshCreator({
     setError(null);
     try {
       const result = await runVault(ssh.generate, { environmentId, input: decoded.value });
-      onCreated(result.item.id);
+      onCreated(result.item);
     } catch (cause) {
       setError(message(cause));
     }
@@ -230,11 +241,13 @@ function SshDetails({
   id,
   busy,
   setBusy,
+  onSaved,
 }: {
   environmentId: EnvironmentId;
   id: string;
   busy: boolean;
   setBusy: (busy: boolean) => void;
+  onSaved?: ((item: VaultItemSummary) => void) | undefined;
 }) {
   const query = ssh.info({ environmentId, input: { id } }),
     result = useAtomValue(query),
@@ -502,6 +515,15 @@ function SshDetails({
         ) : null}
         {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
       </div>
+      {onSaved ? (
+        <Button
+          size="sm-multiline"
+          disabled={busy || result.waiting || !!failure(result) || info.item.state !== "active"}
+          onClick={() => onSaved(info.item)}
+        >
+          Use this SSH key
+        </Button>
+      ) : null}
     </>
   );
 }
