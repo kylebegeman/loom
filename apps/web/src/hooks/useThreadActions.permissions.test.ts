@@ -37,6 +37,11 @@ const state = vi.hoisted(() => ({
   sessionLookupFails: false,
 }));
 
+// fork: library-projects
+vi.mock("~/fork/project-library/deletionNotice", () => ({
+  libraryThreadDeletionNotice: async () => "Saved Library history is retained.",
+}));
+
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
@@ -271,8 +276,16 @@ describe("thread action permissions", () => {
     async (action) => {
       state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
       const confirmation = deferred<boolean>();
-      state.confirm.mockReturnValue(confirmation.promise);
+      // fork: library-projects
+      const presented = deferred<void>();
+      // fork: library-projects
+      state.confirm.mockImplementation(() => {
+        presented.resolve();
+        return confirmation.promise;
+      });
       const result = useThreadActions()[action](target);
+      // fork: library-projects
+      await presented.promise;
       expect(state.confirm).toHaveBeenCalledOnce();
       state.scopes.get(secondary)!.clear();
       confirmation.resolve(true);

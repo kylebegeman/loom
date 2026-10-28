@@ -204,6 +204,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
 | `apps/web/src/hooks/useThreadActionMenu.ts`                    | `attention-status`    | Retry failed runs and resume held queues from the conversation header.       |
 | `apps/web/src/components/Sidebar.tsx`                          | `library-projects`    | Use the Library retention setting in single and bulk delete confirmations.   |
+| `apps/web/src/hooks/useThreadActions.permissions.test.ts`      | `library-projects`    | Await async confirmation while preserving permission rechecks.               |
 | `apps/web/src/hooks/useThreadActions.ts`                       | `library-projects`    | Explain saved Library retention before deleting an archived thread.          |
 | `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
 | `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
