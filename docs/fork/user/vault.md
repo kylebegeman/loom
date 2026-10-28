@@ -14,6 +14,17 @@ disable the controls.
 The service token that connects the computer to OpenBao has to be renewed outside Loom. When it
 has less than three days left, the Vault status says so; renew or reissue it before it lapses.
 
+## Answer a private request with a saved item
+
+When an agent asks for a secret, choose **Use saved item** in the private card. An exact name
+match is offered directly; **Choose another** searches other active items. The value stays on
+the computer running the agent. A saved file can answer only a request that allows file
+delivery. Use the SSH and GitHub tools for those managed connections.
+
+If you paste a new value and also save it to Vault, a matching name replaces the existing
+item. Choose **Save as new** to create a separate item. If an item changes while the card is
+open, refresh the matching item and retry.
+
 ## Choose personal or restricted access
 
 For a computer you own and control, open **Vault**, confirm **This is my personal environment**
