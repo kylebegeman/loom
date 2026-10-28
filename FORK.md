@@ -357,9 +357,9 @@ lines). See the [L05 packet](docs/fork/packets/L05-file-outline/SEAMS.md) and
 
 The `no-project-first` seams put **No project** first in every new-chat picker and keep it off
 a Library. A Library with execution turned off still advertises a scratch folder, so
-`apps/web/src/hooks/useScratchProject.ts` (4 marker lines) picks the target through
+`apps/web/src/hooks/useScratchProject.ts` (7 marker lines) picks the target through
 `packages/client-runtime/src/fork/no-project-target.ts`: the current computer, then the
-primary, then the first by name that can run work. `CommandPalette.tsx` (1 marker line)
+primary, then the first by name that can run work. `CommandPalette.tsx` (8 marker lines)
 replaces upstream's second-place row in **New thread in...** and labels its computer.
 `DraftHeroHeadline.tsx` (10 marker lines) adds the row to the draft heading's project menu,
 which widens `ProjectEnvironmentBadge.tsx` (2 marker lines) to accept one computer, and
@@ -369,6 +369,14 @@ recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 
 keeps its New thread button enabled when No project or a Library is the only way to start,
 and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
 (2 marker lines) keeps `file:` links on the primary, since their path names that machine.
+
+The `library-projects` seams in `WorktreeMcpService.ts` (15 marker lines) coordinate an existing conversation's
+worktree handoff with its Library binding. A copy's root folder is not a separate worktree,
+even though Library conversations record it in `worktreePath`. Rebind before dispatching
+metadata so the folder guard and the next turn agree; an interrupted provider detachment
+must preserve the committed destination. `WorktreeMcpService.test.ts` (13 marker lines) covers this boundary. No project now reports
+whether a launch succeeded to keep its picker open on failure; the command palette awaits
+that result without returning it from an action.
 
 On mobile, `NewTaskRouteScreen.tsx` (8 marker lines) moves the No project row above the
 Library and local projects, shows it whenever a computer can run it, and names that computer.

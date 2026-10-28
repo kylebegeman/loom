@@ -257,6 +257,7 @@ function ProjectView({
   });
   const quickStart = quickStarts.starts.get(project.id)?.launch;
   const canStart =
+    !conversation?.quick &&
     !project.archived &&
     (library.offline
       ? activeCopies.some((copy) => copy.state === "ready")
@@ -313,6 +314,7 @@ function ProjectView({
         authorityId={authorityId}
         connected={library.connected}
         canStart={canStart}
+        starting={!!conversation?.quick}
         update={update}
         editingBrief={editingBrief}
         onEditingBriefChange={setEditingBrief}
@@ -574,6 +576,7 @@ function ProjectView({
             conversation.quick
               ? {
                   launch: conversation.quick,
+                  renderPending: () => null,
                   settle: () =>
                     setConversation((current) =>
                       current ? { ...current, quick: undefined } : null,
@@ -613,6 +616,7 @@ function ProjectHero({
   authorityId,
   connected,
   canStart,
+  starting,
   update,
   editingBrief,
   onEditingBriefChange,
@@ -631,6 +635,7 @@ function ProjectHero({
   readonly authorityId: EnvironmentId;
   readonly connected: boolean;
   readonly canStart: boolean;
+  readonly starting: boolean;
   readonly update: ReturnType<typeof useProjectUpdate>;
   readonly editingBrief: boolean;
   readonly onEditingBriefChange: (editing: boolean) => void;
@@ -722,7 +727,7 @@ function ProjectHero({
           <div className="flex items-center gap-1.5 pt-1.5">
             <Button shape="pill" disabled={!canStart} onClick={onNewConversation}>
               <PlusIcon />
-              New conversation
+              {starting ? "Starting..." : "New conversation"}
             </Button>
             <Button
               shape="pill"

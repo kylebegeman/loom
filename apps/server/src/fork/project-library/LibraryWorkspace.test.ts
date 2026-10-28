@@ -1865,12 +1865,23 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(yield* boundCwd).toBe(web.cwd);
       yield* move(Effect.fail(new LibraryError({ reason: "io" }))).pipe(Effect.flip);
       expect(yield* boundCwd).toBe(web.cwd);
+      yield* Effect.exit(move(Effect.interrupt));
+      expect(yield* boundCwd).toBe(web.cwd);
       // The conversation's folder guard reads the binding, so it moves before the conversation.
       const movedCwd = yield* fs.realPath(worktree);
       expect(yield* move(boundCwd.pipe(Effect.map((cwd) => cwd === movedCwd)))).toBe(true);
       expect(yield* boundCwd).toBe(movedCwd);
       expect(yield* move(Effect.succeed(true))).toBe(true);
       expect(yield* boundCwd).toBe(movedCwd);
+      threads.set(threadId, { projectId: web.localProjectId, worktreePath: movedCwd });
+      yield* service.prepareThreadFiles({ threadId });
+      expect(yield* boundCwd).toBe(movedCwd);
+      expect(yield* fs.exists(path.join(web.cwd, ".git"))).toBe(true);
+      expect(yield* fs.exists(path.join(movedCwd, ".git"))).toBe(true);
+      // Detaching the provider can interrupt a handoff after its metadata already committed.
+      yield* Effect.exit(move(Effect.interrupt));
+      expect(yield* boundCwd).toBe(movedCwd);
+      yield* service.prepareThreadFiles({ threadId });
     }),
   );
   it.effect("downloads a reserved copy once however many conversations wait on it", () =>

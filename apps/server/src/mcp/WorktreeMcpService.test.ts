@@ -21,6 +21,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts"; // fork: library-projects
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerConfig from "../config.ts";
 import {
@@ -89,6 +90,8 @@ const project: Project = {
 
 interface HarnessOptions {
   readonly git?: Partial<GitWorkflowService.GitWorkflowService["Service"]>;
+  readonly libraryBound?: boolean; // fork: library-projects
+  readonly libraryMultiRepo?: boolean; // fork: library-projects
   readonly thread?: ThreadFixture | null;
   readonly threadReadError?: "projection" | "dispatch";
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
@@ -117,6 +120,32 @@ interface HarnessOptions {
 
 const makeHarness = (options: HarnessOptions = {}) => {
   const thread = options.thread === undefined ? {} : options.thread;
+  // fork: library-projects
+  let libraryCwd = workspaceRoot;
+  // fork: library-projects
+  const binding = {
+    projectId: "library-project",
+    projectRevision: 1,
+    workingCopyId: "library-copy",
+    environmentId,
+    resourceIds: [],
+  };
+  // fork: library-projects
+  const moveLibraryThread = vi.fn(
+    (input: Parameters<LibraryWorkspace.LibraryWorkspace["Service"]["moveThread"]>[0]) =>
+      Effect.gen(function* () {
+        libraryCwd = input.worktreePath;
+        const applied = yield* input.move.pipe(
+          Effect.onError(() =>
+            Effect.sync(() => {
+              libraryCwd = workspaceRoot;
+            }),
+          ),
+        );
+        if (!applied) libraryCwd = workspaceRoot;
+        return applied;
+      }),
+  );
   const scope = makeScope(options.capabilities ?? new Set(["preview", "worktree"]));
   const dispatch = vi.fn((_: unknown) =>
     (options.dispatchGate ?? Effect.void).pipe(
@@ -318,6 +347,24 @@ const makeHarness = (options: HarnessOptions = {}) => {
         Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
           refreshStatus,
         } satisfies Partial<VcsStatusBroadcaster.VcsStatusBroadcaster["Service"]>),
+        // fork: library-projects
+        ...(options.libraryBound
+          ? [
+              Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+                threadBinding: () => Effect.succeed(binding),
+                resolveBinding: () =>
+                  Effect.succeed({
+                    binding,
+                    cwd: workspaceRoot,
+                    localProjectId: projectId,
+                    repositoryPaths: options.libraryMultiRepo
+                      ? ["/repo/project/api", "/repo/project/web"]
+                      : [workspaceRoot],
+                  }),
+                moveThread: moveLibraryThread,
+              }),
+            ]
+          : []),
         NodeServices.layer,
       ),
     ),
@@ -334,6 +381,10 @@ const makeHarness = (options: HarnessOptions = {}) => {
     deleteLocalBranch,
     localStatus,
     runForThread,
+    // fork: library-projects
+    moveLibraryThread,
+    // fork: library-projects
+    libraryCwd: () => libraryCwd,
   };
 };
 
@@ -370,6 +421,71 @@ const runStatus = (harness: ReturnType<typeof makeHarness>) =>
 const decodeHandoffInput = Schema.decodeUnknownEffect(WorktreeMcpHandoffInput);
 
 describe("t3_worktree_handoff", () => {
+  // fork: library-projects
+  it.effect(
+    "moves a Library conversation from its copy folder without replacing the conversation",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          libraryBound: true,
+          thread: { worktreePath: workspaceRoot },
+        });
+        const result = yield* runHandoff(harness, {
+          branch: "feature/library",
+          continuationPrompt: "Continue here.",
+        });
+        expect(harness.moveLibraryThread).toHaveBeenCalledOnce();
+        expect(harness.libraryCwd()).toBe(result.worktreePath);
+        expect(harness.dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            threadId,
+            worktreePath: result.worktreePath,
+            expectedWorktreePath: workspaceRoot,
+          }),
+        );
+        expect(harness.sendToThread).toHaveBeenCalledWith(expect.objectContaining({ threadId }));
+      }),
+  );
+
+  // fork: library-projects
+  it.effect("reports a Library copy folder as available for worktree handoff", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ libraryBound: true, thread: { worktreePath: workspaceRoot } });
+      expect(yield* runStatus(harness)).toMatchObject({ attached: false, worktreePath: null });
+    }),
+  );
+
+  // fork: library-projects
+  it.effect(
+    "rolls back a Library binding and removes its worktree when metadata dispatch fails",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          libraryBound: true,
+          thread: { worktreePath: workspaceRoot },
+          dispatchFails: true,
+        });
+        expectTypedFailure(yield* Effect.exit(runHandoff(harness, { branch: "feature/fails" })), {
+          code: "operation_failed",
+        });
+        expect(harness.moveLibraryThread).toHaveBeenCalledOnce();
+        expect(harness.libraryCwd()).toBe(workspaceRoot);
+        expect(harness.removeWorktree).toHaveBeenCalledOnce();
+        expect(harness.sendToThread).not.toHaveBeenCalled();
+      }),
+  );
+
+  // fork: library-projects
+  it.effect("refuses a multi-repository Library folder before creating a worktree", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ libraryBound: true, libraryMultiRepo: true });
+      expectTypedFailure(yield* Effect.exit(runHandoff(harness, { branch: "feature/multi" })), {
+        code: "invalid_request",
+      });
+      expect(harness.createWorktree).not.toHaveBeenCalled();
+    }),
+  );
+
   it.effect("reports a continuation failure without failing the handoff", () => {
     const harness = makeHarness({ continuation: "fails" });
     return Effect.gen(function* () {

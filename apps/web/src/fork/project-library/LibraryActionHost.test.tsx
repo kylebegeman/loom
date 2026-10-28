@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
   refresh: vi.fn(),
   noProject: { label: "Dorothy", start: vi.fn(async () => {}) } as {
     label: string;
-    start: () => Promise<void>;
+    start: () => Promise<boolean | void>;
   } | null,
   revision: 0,
   listeners: new Set<() => void>(),
@@ -150,7 +150,7 @@ vi.mock("./LibraryPalette", () => ({
         .map((item) => (
           <button
             key={item.id}
-            disabled={item.disabled}
+            disabled={props.busy || item.disabled}
             onClick={item.select}
             data-enter={item.enterLabel}
           >
@@ -627,6 +627,28 @@ it("leads a new conversation with No project and starts it without opening a pro
   expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(state.select).not.toHaveBeenCalled();
 });
+it("keeps a no-project launch pending in the picker and lets a failed launch be retried", async () => {
+  let complete!: (started: boolean) => void;
+  state.noProject = {
+    label: "Dorothy",
+    start: vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          complete = resolve;
+        }),
+    ),
+  };
+  await act(() => openLibraryAction("new-conversation"));
+  await click("No project");
+  expect(container.textContent).toContain("Starting on Dorothy...");
+  expect(button("No project").disabled).toBe(true);
+  await act(() => complete(false));
+  expect(container.textContent).toContain("Could not start on Dorothy. Try again.");
+  expect(button("No project").disabled).toBe(false);
+  await click("No project");
+  await act(() => complete(true));
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+});
 it("keeps No project beside the Library connection and leaves it out when no computer can run it", async () => {
   state.authorityId = null;
   await act(() => openLibraryAction("new-conversation"));
@@ -727,7 +749,7 @@ it("starts and opens options for a suggested project on only what its row shows"
   // The source thread's computer, copy and repository never replace what the row named.
   await click("Options Beta");
   expect(launch()).toMatchObject({ initialHostId: "dorothy", autoStart: null });
-  expect(launch().initialCopyId).toBeUndefined();
+  expect(launch().initialCopyId).toBe("beta-copy");
   expect(launch().initialResourceId).toBeUndefined();
   await click("Back");
   await click("Beta");
@@ -735,7 +757,7 @@ it("starts and opens options for a suggested project on only what its row shows"
     initialHostId: "dorothy",
     autoStart: { launch: { environmentId: "dorothy", workingCopyId: "beta-copy" } },
   });
-  expect(launch().initialCopyId).toBeUndefined();
+  expect(launch().initialCopyId).toBe("beta-copy");
   expect(launch().initialResourceId).toBeUndefined();
 });
 it("opens a promised row's options on the computer it named, and keeps them on return", async () => {

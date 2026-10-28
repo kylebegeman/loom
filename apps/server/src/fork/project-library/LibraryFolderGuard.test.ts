@@ -1,12 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { describe, expect, it, vi } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import {
   CommandId,
   EnvironmentId,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadProjection,
   ProjectId,
-  ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
 import type { LibraryResolvedBinding } from "@t3tools/contracts/fork";
@@ -16,9 +15,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
-import type * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
-import * as WorktreeMcpService from "../../mcp/WorktreeMcpService.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
@@ -26,10 +22,7 @@ import * as ProviderSessionManager from "../../orchestration-v2/ProviderSessionM
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
 import { userFacingDispatchErrorMessage } from "../../orchestration-v2/UserFacingErrors.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
-import * as ProjectService from "../../project/ProjectService.ts";
-import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
-import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import * as LibraryFolderGuard from "./LibraryFolderGuard.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 
@@ -229,61 +222,6 @@ describe("moving a bound conversation", () => {
       expect(dispatched.map((command) => command.commandId)).toEqual([
         "command:library-folder-guard:same",
       ]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
-  );
-
-  it.effect("is refused by t3_worktree_handoff before any worktree or branch exists", () =>
-    Effect.gen(function* () {
-      const { copy } = yield* makeFolders;
-      const createWorktree = vi.fn(() => Effect.die("createWorktree must not run"));
-      const layer = WorktreeMcpService.layer.pipe(
-        Layer.provide(guardLayer({ copy, projectRoot: copy })),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.mock(ThreadManagementService.ThreadManagementService)({
-              getThreadRecords: (threadId) =>
-                Effect.succeed({
-                  thread: {
-                    id: threadId,
-                    projectId,
-                    worktreePath: copy,
-                    archivedAt: null,
-                    deletedAt: null,
-                  },
-                } as OrchestrationV2ThreadProjection),
-            }),
-            Layer.mock(ProjectService.ProjectService)({}),
-            ServerSettings.layerTest(),
-            Layer.mock(GitWorkflowService.GitWorkflowService)({ createWorktree }),
-            Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
-            Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
-            NodeServices.layer,
-          ),
-        ),
-      );
-      const scope: McpInvocationContext.McpInvocationScope = {
-        environmentId,
-        requestNamespace: "provider-session-library-folder-guard",
-        thread: {
-          threadId: boundThreadId,
-          providerSessionId: "provider-session-library-folder-guard",
-          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-        },
-        client: undefined,
-        capabilities: new Set(["worktree"]),
-        issuedAt: 1,
-      };
-
-      const failure = yield* Effect.flatMap(WorktreeMcpService.WorktreeMcpService, (service) =>
-        service.handoff(scope, { branch: "feature/elsewhere" }),
-      ).pipe(Effect.provide(layer), Effect.flip);
-      // The thread already sits in its copy folder, so without the guard this would read
-      // "already in a worktree" rather than saying why.
-      expect(failure).toMatchObject({
-        code: "invalid_request",
-        message: LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL,
-      });
-      expect(createWorktree).not.toHaveBeenCalled();
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

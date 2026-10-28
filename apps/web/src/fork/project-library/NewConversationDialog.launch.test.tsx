@@ -1710,6 +1710,38 @@ describe("held attempts and one-step starts", () => {
     expectOpened();
   });
 
+  it("keeps a ready launch in its initiating surface until creation finishes, then shows a failed attempt once", async () => {
+    let complete!: (value: ReturnType<typeof failure>) => void;
+    commands.resolveBinding.run.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const settle = vi.fn();
+    const pending = vi.fn((message: string) => <p>{message}</p>);
+    await render(
+      <ConversationAutoStartContext value={{ launch: promised, settle, renderPending: pending }}>
+        <NewConversationDialog
+          project={project}
+          initialHostId={environmentId}
+          copies={[restoredCopy]}
+          copiesQuery={readyFiles}
+          onChanged={onChanged}
+          onClose={onClose}
+        />
+      </ConversationAutoStartContext>,
+    );
+    expect(pending).toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
+    expect(action("Start conversation")).toBeUndefined();
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain("Choose a computer");
+    await act(() => complete(failure("Disconnected")));
+    expect(settle).toHaveBeenCalledOnce();
+    expect(action("Retry untitled conversation")).toBeDefined();
+    expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
+  });
+
   it("starts once from the project list, and a held attempt waits for Retry or Start over", async () => {
     commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
     const settle = vi.fn();

@@ -80,7 +80,8 @@ through existing projects without losing your place.
 can start right away shows the computer, model and permissions it will use, and New worktree
 when it will start in one. Press Enter, or
 tap it on iPhone, to start with them, or open its options first (Right Arrow on a keyboard)
-to change them. A project that needs a choice opens its options instead. Loom chooses an
+to change them. On web and desktop, progress stays in the picker while a ready choice starts.
+A project that needs a choice opens its options instead. Loom chooses an
 available computer and prepares its files automatically, and you can choose another computer
 or work on one repository. On an up-to-date computer the conversation opens right away and shows
 its files downloading there; you can send your first message before they finish, and it starts
@@ -95,6 +96,9 @@ Conversations share the project's folder unless you choose **Workspace → New w
 starting, which gives the conversation a branch and folder of its own so other conversations'
 changes stay apart. Loom picks New worktree while another conversation is working in the folder.
 A new worktree needs a project with one repository, or one repository chosen to work on.
+You can also ask your agent to move an existing conversation into a new worktree later.
+It keeps the conversation and its Library history together. Uncommitted changes stay in
+the original folder.
 **Remove files** stays unavailable until worktrees made from the files are landed or removed.
 Continuing on another computer brings a worktree's commits; its uncommitted changes stay behind.
 The conversation uses your chosen model, then any computer folder override, the project's

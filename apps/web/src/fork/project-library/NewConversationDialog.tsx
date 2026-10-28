@@ -1,7 +1,7 @@
 import type { ModelEsque } from "~/components/chat/providerIconUtils";
 import { getCustomModelOptionsByInstance } from "~/modelSelection";
 import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
-import { ConversationPalette } from "./ConversationPalette";
+import { ConversationPalette, useConversationAutoStart } from "./ConversationPalette";
 import { LibraryPaletteDialog } from "./LibraryPalette";
 import { useRef, useState } from "react";
 import {
@@ -1737,9 +1737,15 @@ export function useLibraryConversationSetup({
 
 export function NewConversationDialog(props: Parameters<typeof useLibraryConversationSetup>[0]) {
   const setup = useLibraryConversationSetup(props);
+  const launch = useConversationAutoStart(setup);
   if (!setup.open) return null;
   if (setup.review) return setup.review;
-  const content = <ConversationPalette setup={setup} />;
+  if (launch.waiting && launch.renderPending)
+    return launch.renderPending(
+      setup.operationPhase ??
+        `Starting ${setup.project.title} on ${setup.hostLabel ?? "the selected computer"}...`,
+    );
+  const content = <ConversationPalette setup={setup} launch={launch} />;
   return setup.embedded ? (
     content
   ) : (
