@@ -47,7 +47,6 @@ import { VaultMigrationInventorySettingsSection } from "../vault/MigrationInvent
 import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection";
 import { VaultPasswordSettingsSection } from "../vault/PasswordGenerator";
 import { VaultProfileSettingsSection } from "../vault/ProfileSettingsSection";
-import { VaultReferenceSettingsSection } from "../vault/ReferenceSettingsSection";
 import { VaultSettingsSection } from "../vault/SettingsSection";
 import { VaultTestAccountSettingsSection } from "../vault/TestAccountSettingsSection";
 import {
@@ -74,7 +73,6 @@ const TOPIC_COMPONENTS: Readonly<Record<ForkSettingsTopicId, ComponentType>> = {
   "vault-profiles": VaultProfileSettingsSection,
   "vault-access": VaultAccessSettingsSection,
   "vault-test-accounts": VaultTestAccountSettingsSection,
-  "vault-references": VaultReferenceSettingsSection,
   "vault-passwords": VaultPasswordSettingsSection,
   "vault-brokers": VaultBrokerSettingsSection,
   "vault-health": VaultHealthSettingsSection,
