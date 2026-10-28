@@ -113,6 +113,17 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
             Saved to Vault as {name}. The private request still needs to finish.
           </Text>
         ) : null}
+        {error && matchingSupported ? (
+          <Button
+            label="Refresh matching item"
+            tone="text"
+            disabled={disabled}
+            onPress={() => {
+              matches.refresh();
+              setError(null);
+            }}
+          />
+        ) : null}
         {error ? <Text accessibilityRole="alert">{error}</Text> : null}
       </View>
     ) : null;

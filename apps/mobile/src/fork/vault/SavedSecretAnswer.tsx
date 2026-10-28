@@ -144,6 +144,17 @@ export function SavedSecretAnswer({
           ) : null}
         </View>
       ) : null}
+      {error || open ? (
+        <Button
+          label="Refresh saved items"
+          tone="text"
+          disabled={disabled}
+          onPress={() => {
+            page.refresh();
+            setError(null);
+          }}
+        />
+      ) : null}
       {error ? <Text accessibilityRole="alert">{error}</Text> : null}
     </View>
   );
