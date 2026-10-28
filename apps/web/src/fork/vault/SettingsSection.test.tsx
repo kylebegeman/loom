@@ -48,19 +48,15 @@ vi.mock("@effect/atom-react", async () => {
     },
   };
 });
-vi.mock("@t3tools/client-runtime/fork", async () => {
-  const { vaultItemActions, VAULT_GENERIC_ITEM_KINDS, VAULT_REVEAL_DURATION_MS } =
-    await import("../../../../../packages/client-runtime/src/fork/vault-item-actions.ts");
-  return {
-    loomFeaturesOf: () => ["vault-core"],
-    vaultStatusMessage: () => "Vault is connected.",
-    VAULT_KIND_LABELS: { secret: "Secret" },
-    VAULT_FILE_LIMIT_BYTES: 512 * 1024,
-    vaultItemActions,
-    VAULT_GENERIC_ITEM_KINDS,
-    VAULT_REVEAL_DURATION_MS,
-  };
-});
+vi.mock("@t3tools/client-runtime/fork", () => ({
+  loomFeaturesOf: () => ["vault-core"],
+  vaultStatusMessage: () => "Vault is connected.",
+  VAULT_KIND_LABELS: { secret: "Secret" },
+  VAULT_FILE_LIMIT_BYTES: 512 * 1024,
+  vaultItemActions: () => ({ manager: null, revealValue: true, replaceValue: true }),
+  VAULT_GENERIC_ITEM_KINDS: ["secret"],
+  VAULT_REVEAL_DURATION_MS: 60_000,
+}));
 vi.mock("~/components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({ environment: { environmentId: "development-computer" } }),
 }));
