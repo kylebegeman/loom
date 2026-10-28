@@ -94,6 +94,10 @@ describe("command permissions", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
+        // fork: ext-core
+        expect(FORK_CLIENT_GUARDED_RPC_SCOPES["loom.vault-secret.answer-from-item"]).toBe(
+          AuthAccessWriteScope,
+        );
         // fork: pcb-preview
         for (const [method, scope] of Object.entries(FORK_CLIENT_GUARDED_RPC_SCOPES)) {
           const policy = createCommandPermissions(runtime, method);

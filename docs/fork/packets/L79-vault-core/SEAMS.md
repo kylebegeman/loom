@@ -7,11 +7,11 @@ It uses existing fork RPC, service, settings, MCP and CLI registries. Those regi
 fork-owned and require no upstream seams. The extension specification records exact contracts
 and existence checks; packet consumers do not import another packet's UI.
 
-| Upstream file                                                                | Marker       | Purpose                                                                                   |
-| ---------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------- |
-| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`  | Destination-bound idempotent private transfer; existing consume retains one-use behavior. |
-| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`  | Retry, competing-destination and failed-cleanup behavior coverage.                        |
-| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core` | Import and render the fork-owned native settings section.                                 |
+| Upstream file                                                                | Marker       | Purpose                                                                                          |
+| ---------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------ |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`  | Destination-bound private transfer and decoded files; existing consume retains one-use behavior. |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`  | Retry, competing-destination and failed-cleanup behavior coverage.                               |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core` | Import and render the fork-owned native settings section.                                        |
 
 The private handoff seam adds an optional claim to existing private-source records; it does not
 migrate their contents or change stored provider sessions. The native settings seam is one

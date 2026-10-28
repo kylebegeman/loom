@@ -153,8 +153,8 @@ with owner-only POSIX permissions, not same-user process isolation. See
 
 | File                                                                         | Marker                     | Why                                                                                                                  |
 | ---------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`                | Bind private input transfers durably to an idempotent destination operation.                                         |
-| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`                | Cover private transfer retries and cleanup failures.                                                                 |
+| `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`                | Bind private transfers and stage decoded saved files before recording an answer.                                     |
+| `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`                | Cover private transfer retries, decoded file bytes and cleanup failures.                                             |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `vault-core`               | Mount Vault management in the selected computer's native settings.                                                   |
 | `apps/server/src/scheduledTasks/ScheduledTaskService.ts`                     | `vault-scheduled-outcomes` | Exact scheduled-message ownership and task outcome projection; [L76](docs/fork/packets/L76-vault-profiles/SEAMS.md). |
 | `apps/web/src/components/settings/ScheduledTasksSettings.tsx`                | `vault-scheduled-outcomes` | Review/retry controls for failed Vault-attached scheduled runs.                                                      |

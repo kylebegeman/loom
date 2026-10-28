@@ -25,6 +25,7 @@ import type { VaultBrokers } from "./vault/VaultBrokers.ts";
 import type { VaultAccess } from "./vault/VaultAccess.ts";
 import type { VaultPrivateInput } from "./vault/VaultPrivateInput.ts";
 import type { VaultCore } from "./vault/VaultCore.ts";
+import type { VaultSecretRequests } from "./vault/VaultSecretRequests.ts";
 import type { SitesService } from "./sites/SitesService.ts";
 import type { LibraryRecoveryStore } from "./project-library/assets/LibraryRecoveryStore.ts";
 import type { LibraryReplication } from "./project-library/LibraryReplication.ts";
@@ -96,6 +97,7 @@ export type ForkServices =
   | VaultWorkloads
   | VaultBrokers
   | VaultAccess
+  | VaultSecretRequests
   | VaultCore
   | VaultPrivateInput
   | SitesService

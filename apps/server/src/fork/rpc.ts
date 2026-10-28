@@ -26,6 +26,8 @@ import { makeVaultSshRpcHandlers } from "./vault/ssh-rpc.ts";
 import { makeVaultBrokerRpcHandlers } from "./vault/broker-rpc.ts";
 import { makeVaultAccessRpcHandlers } from "./vault/access-rpc.ts";
 import { makeVaultCoreRpcHandlers } from "./vault/rpc.ts";
+import { VaultSecretRpcGroup, VAULT_SECRET_WS_METHODS } from "@t3tools/contracts/fork";
+import { makeVaultSecretRpcHandlers } from "./vault/secret-rpc.ts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
 import * as SitesService from "./sites/SitesService.ts";
 import { makeProjectLibraryRpcHandlers } from "./project-library/rpc.ts";
@@ -123,6 +125,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
   ...Object.values(VAULT_BROKER_WS_METHODS),
   ...Object.values(VAULT_ACCESS_WS_METHODS),
   ...Object.values(VAULT_CORE_WS_METHODS),
+  ...Object.values(VAULT_SECRET_WS_METHODS),
   ...Object.values(PREVIEW_LINKS_WS_METHODS),
   ...Object.values(VAULT_GITHUB_WS_METHODS),
   ...Object.values(VAULT_SSH_WS_METHODS),
@@ -155,6 +158,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultTestAccountRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultCoreRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultSecretRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultAccessRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultHealthRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultBrokerRpcGroup>>
@@ -207,6 +211,9 @@ export const makeForkRpcLayer = (
       withForkRuntime(
         makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session),
       ),
+    ),
+    VaultSecretRpcGroup.toLayer(
+      withForkRuntime(makeVaultSecretRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),
     VaultCoreRpcGroup.toLayer(
       withForkRuntime(makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject)),

@@ -11,6 +11,7 @@ import { VAULT_PROFILE_WS_METHODS as VP } from "./vault-profiles.ts";
 import { VAULT_SSH_WS_METHODS as VS } from "./vault-ssh.ts";
 import { VAULT_BROKER_WS_METHODS as VB } from "./vault-brokers.ts";
 import { VAULT_ACCESS_WS_METHODS as VA } from "./vault-access.ts";
+import { VAULT_SECRET_WS_METHODS as VSECRET } from "./vault-secret.ts";
 import { VAULT_CORE_WS_METHODS as V } from "./vault-core.ts";
 import { AuthAccessReadScope, AuthAccessWriteScope } from "../auth.ts";
 import { SITES_WS_METHODS as S } from "./sites.ts";
@@ -108,6 +109,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [V.save]: AuthAccessWriteScope,
   [V.change]: AuthAccessWriteScope,
   [V.reveal]: AuthAccessWriteScope,
+  [VSECRET.answerFromItem]: AuthAccessWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,

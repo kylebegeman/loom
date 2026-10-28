@@ -17,6 +17,7 @@ export * from "./vault-workloads.ts";
 export * from "./vault-brokers.ts";
 export * from "./vault-access.ts";
 export * from "./vault-core.ts";
+export * from "./vault-secret.ts";
 export * from "./keybindings.ts";
 export * from "./rpc.ts";
 export * from "./switchboard.ts";

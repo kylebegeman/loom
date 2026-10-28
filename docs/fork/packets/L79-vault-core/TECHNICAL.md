@@ -64,7 +64,10 @@ before persistence. There is no raw-value MCP tool or CLI reveal command.
 retains the source only for that operation; cleanup failure retains the claim. A matching Vault
 receipt returns the committed result even after source consumption or a lost response. Existing
 SecretRequests storage is owner-only plaintext, and this work does not convert upstream auth
-storage into an encrypted vault.
+storage into an encrypted vault. Saved-item answers use audited reveal with the destination
+thread in the audit reason. A decoded secure file is staged in the existing private files
+directory before recording the answer, so a restart cannot turn its base64 envelope into the
+delivered file. The upstream answer payload and secret-store record shape stay unchanged.
 
 ## Connection and custody
 

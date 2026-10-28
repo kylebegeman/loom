@@ -317,9 +317,21 @@ it.effect("audits human RPC reveal with its authenticated actor before returning
         reason: "allowed",
         policyRevision: 0,
       });
+      yield* access.reveal(
+        { id: itemId, expectedVersion: 1 },
+        actor,
+        ThreadId.make("destination-thread"),
+      );
+      const afterUse = yield* access.snapshot;
+      expect(afterUse.audit).toHaveLength(2);
+      expect(afterUse.audit[0]?.reason).toBe(
+        "Allowed for secret request in thread destination-thread",
+      );
       const policy = [...fixture.records.entries()].find(([key]) => key.endsWith("/access-policy"));
       expect(policy).toBeDefined();
-      expect(Redacted.value(policy![1].value)).toMatchObject({ audit: snapshot.audit });
+      expect(Redacted.value(policy![1].value)).toMatchObject({
+        audit: afterUse.audit.toReversed(),
+      });
       expect(JSON.stringify(Redacted.value(policy![1].value))).not.toContain(
         "synthetic-never-in-audit",
       );

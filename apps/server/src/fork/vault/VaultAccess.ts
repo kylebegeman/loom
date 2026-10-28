@@ -271,6 +271,7 @@ export class VaultAccess extends Context.Service<
     readonly reveal: (
       input: VaultItemReveal,
       actor: string,
+      destinationThreadId?: ThreadId,
     ) => Effect.Effect<VaultItemValue, VaultError>;
     readonly setOwnerPolicy: (
       input: VaultOwnerPolicyChange,
@@ -1675,7 +1676,7 @@ const make = Effect.gen(function* () {
         actor,
       );
     }),
-    reveal: Effect.fn("VaultAccess.reveal")(function* (input, actor) {
+    reveal: Effect.fn("VaultAccess.reveal")(function* (input, actor, destinationThreadId) {
       if (!isAuditActor(actor)) return yield* new VaultError({ reason: "invalid-input" });
       // Human disclosure requires a durable audit; broker reads use their own audited authority.
       for (let attempt = 0; attempt < 4; attempt++) {
@@ -1691,7 +1692,10 @@ const make = Effect.gen(function* () {
           itemId: value.item.id,
           grantId: null,
           action: "reveal",
-          reason: "allowed",
+          reason:
+            destinationThreadId === undefined
+              ? "allowed"
+              : `Allowed for secret request in thread ${destinationThreadId}`,
           policyRevision: policy.revision,
         });
         const persisted = yield* persist(next, version).pipe(Effect.result);

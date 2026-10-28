@@ -380,6 +380,22 @@ it.effect("a file request moves its value to an owner-only file, once", () =>
       { delivery: "file", directory },
     );
 
+    // fork: ext-vault
+    const binaryDirectory = path.join(directory, "binary");
+    yield* fs.makeDirectory(binaryDirectory);
+    yield* withService(
+      ({ service }) =>
+        Effect.gen(function* () {
+          const bytes = new Uint8Array([0, 255, 128, 10]);
+          yield* service.answer(
+            { threadId, turnItemId, answer: { type: "save", secret: "AP+ACg==" } },
+            bytes,
+          );
+          const binaryFile = yield* service.saveToFile({ threadId, turnItemId });
+          assert.deepEqual(yield* fs.readFile(binaryFile), bytes);
+        }),
+      { delivery: "file", directory: binaryDirectory },
+    );
     const { mtime } = yield* fs.stat(file);
     yield* TestClock.setTime(Option.getOrThrow(mtime).getTime() + SECRET_FILE_TTL_MS);
     yield* withService(() => Effect.void, { directory });

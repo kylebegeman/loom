@@ -42,6 +42,7 @@ import * as BrokerCrypto from "./vault/BrokerCrypto.ts";
 import * as VaultAccess from "./vault/VaultAccess.ts";
 import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
 import * as VaultCore from "./vault/VaultCore.ts";
+import * as VaultSecretRequests from "./vault/VaultSecretRequests.ts";
 import * as OpenBaoStore from "./vault/OpenBaoStore.ts";
 import * as SitesService from "./sites/SitesService.ts";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
@@ -417,6 +418,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultJournal,
   layerOperationAdmission,
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
+  VaultSecretRequests.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
   layerLibraryService,
