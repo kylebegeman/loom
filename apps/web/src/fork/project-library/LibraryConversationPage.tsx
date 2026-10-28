@@ -205,7 +205,8 @@ export function LibraryConversationPage({
           Linked continuation from conversation {archive.summary.continuationOf.threadId}.
         </p>
       ) : null}
-      {host?.entry.enabled === true &&
+      {!archive.summary.deleted &&
+      host?.entry.enabled === true &&
       host.connection.phase === "connected" &&
       supportsLoomFeature(
         host.serverConfig?.environment.capabilities,
