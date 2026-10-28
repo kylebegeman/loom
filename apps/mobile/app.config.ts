@@ -17,6 +17,13 @@ const runtimeVersionPolicy =
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
 
 // fork: mobile-identity -- resolveLoomMobileIdentity reads the personal-team bundle ID
+
+// Compiled into the native project. Without a relay, Observe's native side could dispatch to
+// Expo's own ingest before observe.ts turns it off; `.invalid` never resolves (RFC 6761).
+const observeEndpointUrl = identity.relayUrl // fork: fleet-connect
+  ? new URL("/v1/mobile/observe", identity.relayUrl).toString()
+  : "https://observe.invalid";
+
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
@@ -399,7 +406,7 @@ const config: ExpoConfig = {
     ["expo-sensors", { motionPermission: false }],
     // Mods run in reverse order; expo-widgets must create and wipe the target before assets are added.
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
-    "./plugins/withAndroidCleartextTraffic.cjs",
+    "./plugins/withAndroidNetworkSecurityConfig.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
     "./plugins/withAndroidInputBackground.cjs",
     "./plugins/withAndroidModernPopupMenu.cjs",
@@ -448,7 +455,14 @@ const config: ExpoConfig = {
       tracesToken: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN : undefined,
     },
     // fork: mobile-identity
-    ...(identity.expoProjectId ? { eas: { projectId: identity.expoProjectId } } : {}),
+    ...(identity.expoProjectId
+      ? {
+          eas: {
+            projectId: identity.expoProjectId,
+            observe: { endpointUrl: observeEndpointUrl },
+          },
+        }
+      : {}),
   },
   ...(identity.expoOwner ? { owner: identity.expoOwner } : {}), // fork: mobile-identity
   experiments: {

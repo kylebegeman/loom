@@ -1,7 +1,6 @@
 // fork: library-projects -- checkpoint operations fan out over a Library project's repositories.
 import {
   VcsRepositoryDetectionError, // fork: library-projects
-  VcsUnsupportedOperationError,
   CheckpointRef, // fork: library-projects
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -11,7 +10,7 @@ import * as Option from "effect/Option"; // fork: library-projects
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid"; // fork: library-projects
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import { parseTurnDiffFilesFromNumstat } from "./Diffs.ts"; // fork: library-projects
-import { threadIdFromCheckpointRef } from "./Utils.ts"; // fork: library-projects
+import { threadIdFromCheckpointRef } from "../fork/project-library/checkpointRefs.ts"; // fork: library-projects
 
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
@@ -89,17 +88,9 @@ export const make = Effect.gen(function* () {
   const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
 
   const resolveCheckpoints = Effect.fn("CheckpointStore.resolveCheckpoints")(function* (
-    operation: string,
     cwd: string,
   ) {
     const handle = yield* vcsRegistry.resolve({ cwd });
-    if (!handle.driver.checkpoints) {
-      return yield* new VcsUnsupportedOperationError({
-        operation,
-        kind: handle.kind,
-        detail: `${handle.kind} driver does not implement checkpoint operations.`,
-      });
-    }
     return handle.driver.checkpoints satisfies VcsCheckpointOps;
   });
 
@@ -161,10 +152,7 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     // fork: library-projects
     for (const repository of yield* targets(input.cwd, input.checkpointRef)) {
-      const checkpoints = yield* resolveCheckpoints(
-        "CheckpointStore.captureCheckpoint",
-        repository.path,
-      );
+      const checkpoints = yield* resolveCheckpoints(repository.path);
       yield* checkpoints.captureCheckpoint({ ...input, cwd: repository.path });
     }
   });
@@ -176,10 +164,7 @@ export const make = Effect.gen(function* () {
     const repositories = yield* targets(input.cwd, input.checkpointRef);
     if (repositories.length === 0) return false;
     for (const repository of repositories) {
-      const checkpoints = yield* resolveCheckpoints(
-        "CheckpointStore.hasCheckpointRef",
-        repository.path,
-      );
+      const checkpoints = yield* resolveCheckpoints(repository.path);
       if (!(yield* checkpoints.hasCheckpointRef({ ...input, cwd: repository.path }))) return false;
     }
     return true;
@@ -193,10 +178,7 @@ export const make = Effect.gen(function* () {
     if (repositories.length === 0) return false;
     const resolved: Array<{ readonly cwd: string; readonly checkpoints: VcsCheckpointOps }> = [];
     for (const repository of repositories) {
-      const checkpoints = yield* resolveCheckpoints(
-        "CheckpointStore.restoreCheckpoint",
-        repository.path,
-      );
+      const checkpoints = yield* resolveCheckpoints(repository.path);
       if (
         input.fallbackToHead !== true &&
         !(yield* checkpoints.hasCheckpointRef({
@@ -257,10 +239,7 @@ export const make = Effect.gen(function* () {
     // fork: library-projects
     const diffs: string[] = [];
     for (const repository of yield* targets(input.cwd, input.toCheckpointRef)) {
-      const checkpoints = yield* resolveCheckpoints(
-        "CheckpointStore.diffCheckpoints",
-        repository.path,
-      );
+      const checkpoints = yield* resolveCheckpoints(repository.path);
       const filePaths = input.filePaths?.flatMap((file) => {
         if (repository.relativePath === "") return [file];
         const prefix = `${repository.relativePath}/`;
@@ -284,10 +263,7 @@ export const make = Effect.gen(function* () {
     const repositories = yield* targets(input.cwd, input.toCheckpointRef);
     const authored = new Set<string>();
     for (const repository of repositories) {
-      const checkpoints = yield* resolveCheckpoints(
-        "CheckpointStore.listAuthoredPaths",
-        repository.path,
-      );
+      const checkpoints = yield* resolveCheckpoints(repository.path);
       const paths = yield* checkpoints.listAuthoredPaths({ ...input, cwd: repository.path });
       if (paths === null) {
         if (repositories.length === 1) return null;
@@ -312,10 +288,7 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     // fork: library-projects
     for (const repository of yield* targets(input.cwd)) {
-      const checkpoints = yield* resolveCheckpoints(
-        "CheckpointStore.deleteCheckpointRefs",
-        repository.path,
-      );
+      const checkpoints = yield* resolveCheckpoints(repository.path);
       yield* checkpoints.deleteCheckpointRefs({ ...input, cwd: repository.path }); // fork: library-projects
     }
   });

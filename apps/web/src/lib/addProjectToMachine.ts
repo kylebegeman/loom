@@ -13,6 +13,7 @@ import type {
 import { create } from "zustand";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { suggestAppAccessForRemote } from "../components/sourceControlAppAccessToast";
 import { environmentProjectClonesAtom, silenceProjectCloneToasts } from "../state/projectClones";
 import { projectEnvironment } from "../state/projects";
 import { sourceControlEnvironment } from "../state/sourceControl";
@@ -142,6 +143,7 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
   );
   // fork: file-placement
   if (started._tag === "Failure") throw new Error(failureMessage(started));
+  void suggestAppAccessForRemote(input.target.environmentId, input.remoteUrl);
   // fork: file-placement - Copies follow the returned project; a reused checkout has no clone.
   const { projectId, reused = false } = started.value;
   if (reads.length === 0) return projectId; // fork: file-placement

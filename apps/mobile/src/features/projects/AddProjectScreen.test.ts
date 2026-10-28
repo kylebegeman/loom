@@ -38,6 +38,7 @@ const state = vi.hoisted(() => ({
   checkDirectories: false,
   // fork: project-home
   connected: true,
+  loseCloneResponse: false,
   disconnectAfterReceiptSave: false,
   revokeAfterReceiptSave: false,
   failReceiptSave: false,
@@ -60,12 +61,10 @@ const state = vi.hoisted(() => ({
   }[],
   existingProjects: [] as EnvironmentProject[], // fork: project-home
   createResult: null as Promise<unknown> | null,
-  cloneResult: null as Promise<unknown> | null,
   createNewResult: null as Promise<unknown> | null,
   startCloneResult: null as Promise<unknown> | null,
   connectionStates: {} as Record<string, EnvironmentConnectionPhase>,
   newProjectsRoot: null as string | null,
-  supportsCloneTracking: false,
   waitForProject: vi.fn(),
   dispatch: vi.fn(),
   alert: vi.fn(),
@@ -155,10 +154,7 @@ vi.mock("../../state/entities", () => ({
       [
         "environment",
         {
-          environment: {
-            platform: { os: "linux" },
-            capabilities: { projectCloneTracking: state.supportsCloneTracking },
-          },
+          environment: { platform: { os: "linux" }, capabilities: {} },
           newProjectsRoot: state.newProjectsRoot,
           settings: { addProjectBaseDirectory: state.baseDirectory },
         },
@@ -167,10 +163,7 @@ vi.mock("../../state/entities", () => ({
       [
         "other-environment",
         {
-          environment: {
-            platform: { os: "linux" },
-            capabilities: { projectCloneTracking: state.supportsCloneTracking },
-          },
+          environment: { platform: { os: "linux" }, capabilities: {} },
           settings: { addProjectBaseDirectory: state.baseDirectory },
           newProjectsRoot: state.newProjectsRoot,
         },
@@ -241,43 +234,37 @@ vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: {
     projectClones: () => "project-clones", // fork: project-home
     discovery: (input: unknown) => input,
-    // fork: project-home
-    startProjectClone: async (request: {
-      environmentId: string;
-      input: {
-        projectId: string;
-        title: string;
-        createdAt: string;
-        remoteUrl: string;
-        destinationPath: string;
-      };
-    }) => {
-      if (state.startCloneResult) return state.startCloneResult;
-      state.trackedCloneRequests.push(request);
-      state.existingProjects.push({
-        environmentId: EnvironmentId.make(request.environmentId),
-        id: ProjectId.make(request.input.projectId),
-        title: request.input.title,
-        workspaceRoot: request.input.destinationPath,
-        repositoryIdentity: null,
-        defaultModelSelection: null,
-        scripts: [],
-        createdAt: request.input.createdAt,
-        updatedAt: request.input.createdAt,
-      });
-      return AsyncResult.failure(
-        Cause.fail(new Error("Connection lost after the project was saved")),
-      );
-    },
     // fork: fleet-connections
     publishRepository: async (request: { environmentId: string; input: { cwd: string } }) => {
       state.publishRequests.push({ environmentId: request.environmentId, cwd: request.input.cwd });
       return AsyncResult.success(undefined);
     },
-    cloneRepository: async ({ input }: { input: { destinationPath: string } }) => {
-      if (state.cloneResult) return state.cloneResult;
+    // fork: project-home
+    startProjectClone: async ({
+      environmentId,
+      input,
+    }: (typeof state.trackedCloneRequests)[number]) => {
+      if (state.startCloneResult) return state.startCloneResult;
+      // fork: project-home
+      if (state.loseCloneResponse) {
+        state.trackedCloneRequests.push({ environmentId, input });
+        state.existingProjects.push({
+          environmentId: EnvironmentId.make(environmentId),
+          id: ProjectId.make(input.projectId),
+          title: input.title,
+          workspaceRoot: input.destinationPath,
+          repositoryIdentity: null,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: input.createdAt,
+          updatedAt: input.createdAt,
+        });
+        return AsyncResult.failure(
+          Cause.fail(new Error("Connection lost after the project was saved")),
+        );
+      }
       NodeFS.mkdirSync(input.destinationPath);
-      return AsyncResult.success({ cwd: input.destinationPath });
+      return AsyncResult.success(undefined);
     },
   },
 }));
@@ -446,7 +433,7 @@ function resetForkNavigation() {
 
 describe("reviewed project preparation", () => {
   beforeEach(() => {
-    state.supportsCloneTracking = true;
+    state.loseCloneResponse = true;
     state.connected = true;
     state.disconnectAfterReceiptSave = false;
     state.revokeAfterReceiptSave = false;
@@ -461,7 +448,7 @@ describe("reviewed project preparation", () => {
     state.newProjectsRoot = state.baseDirectory;
   });
   afterEach(() => {
-    state.supportsCloneTracking = false;
+    state.loseCloneResponse = false;
     state.connected = true;
     state.cloneSnapshots = [];
     state.existingProjects = [];
@@ -949,30 +936,6 @@ describe("local project navigation", () => {
 
     expect(navigation.getState()).toEqual(remaining);
     expect(state.dispatch).not.toHaveBeenCalled();
-  });
-
-  it("does not redirect a reopened flow when an earlier legacy clone finishes", async () => {
-    const { created, projected } = setup();
-    state.scopes.add(AuthSourceControlWriteScope);
-    const cloned = Promise.withResolvers<unknown>();
-    state.cloneResult = cloned.promise;
-    const navigation = mountProjectFlow(false, true, true, "AddProjectDestination");
-    try {
-      const submission = cloneAction()();
-      navigation.back();
-      navigation.push("AddProjectDestination");
-      const remaining = navigation.getState();
-      cloned.resolve(AsyncResult.success({ cwd: "/tmp/t3-mobile-audit-fixture/repo" }));
-      created.resolve(AsyncResult.success(undefined));
-      projected.resolve({ environmentId: "environment", id: "project" });
-      await submission;
-
-      expect(state.projects).toEqual(["/tmp/t3-mobile-audit-fixture/repo"]);
-      expect(navigation.getState()).toEqual(remaining);
-      expect(state.dispatch).not.toHaveBeenCalled();
-    } finally {
-      state.cloneResult = null;
-    }
   });
 
   it("does not redirect a reopened flow when an earlier new project finishes", async () => {

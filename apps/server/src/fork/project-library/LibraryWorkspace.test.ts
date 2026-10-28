@@ -70,7 +70,7 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ProjectPlacement from "../../project/ProjectPlacement.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
-import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
+import { checkpointRefForThreadTurn } from "./checkpointRefs.ts";
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
 
 const recoveryArchiveLimit = vi.hoisted(() => ({ bytes: undefined as number | undefined }));

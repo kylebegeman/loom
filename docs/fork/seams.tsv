@@ -627,7 +627,7 @@ apps/web/src/components/promptLinks/NewThreadLinkView.tsx	brand	2
 apps/web/src/components/promptLinks/linkedPrompt.ts	brand	1
 apps/web/src/components/settings/AcpSessionManagementSection.tsx	brand	1
 apps/web/src/components/settings/BrowserImportWizard.tsx	brand	4
-apps/web/src/components/settings/CaptureShortcutConfig.tsx	brand	5
+apps/web/src/components/settings/CaptureShortcutConfig.tsx	brand	4
 apps/web/src/components/settings/ChatGptWelcomeCoordinator.tsx	brand	1
 apps/web/src/components/settings/CodexSetupSection.tsx	brand	5
 apps/web/src/components/settings/ConnectionsSettings.tsx	brand	10
@@ -639,7 +639,7 @@ apps/web/src/components/settings/NotificationSettings.tsx	brand	1
 apps/web/src/components/settings/ResourceTelemetryDiagnostics.tsx	brand	3
 apps/web/src/components/settings/SettingsPanels.logic.ts	brand	1
 apps/web/src/components/settings/SettingsPanels.tsx	brand	2
-apps/web/src/components/settings/SnapShotSettings.tsx	brand	2
+apps/web/src/components/settings/SnapShotSettings.tsx	brand	1
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	brand	3
 apps/web/src/components/settings/StorageSettings.tsx	brand	1
 apps/web/src/components/settings/ThemeImportDialog.tsx	brand	1
@@ -815,7 +815,7 @@ apps/web/src/components/settings/scopedSettings.test.ts	project-lifecycle	12
 apps/server/src/orchestration-v2/ThreadManagementService.ts	library-projects	5
 apps/server/src/mcp/WorktreeMcpService.ts	library-projects	4
 apps/web/src/components/BranchToolbarBranchSelector.tsx	library-projects	2
-apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	4
+apps/mobile/src/state/use-selected-thread-git-actions.ts	library-projects	3
 apps/server/src/orchestration-v2/ThreadLaunchService.ts	library-projects	22
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	library-projects	18
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	file-placement	3
@@ -950,11 +950,11 @@ apps/mobile/src/features/threads/ThreadGitControls.tsx	source-control-cockpit	7
 apps/mobile/src/features/threads/ThreadGitControls.tsx	checkpoint-capable	4
 apps/mobile/src/features/threads/ThreadHeader.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	source-control-cockpit	3
-apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	11
+apps/mobile/src/features/threads/git/GitConfirmSheet.tsx	source-control-cockpit	10
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	source-control-cockpit	4
 apps/mobile/src/features/threads/git/GitOverviewSheet.tsx	checkpoint-capable	2
 apps/mobile/src/features/threads/useThreadHeaderOptions.test.tsx	source-control-cockpit	6
-apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	5
+apps/mobile/src/state/use-selected-thread-git-actions.ts	source-control-cockpit	4
 apps/mobile/src/state/use-vcs-action-state.ts	source-control-cockpit	4
 apps/mobile/src/state/use-vcs-action-state.test.ts	source-control-cockpit	1
 apps/server/src/git/GitManager.test.ts	source-control-cockpit	2
@@ -1313,7 +1313,6 @@ apps/server/src/auth/EnvironmentAuthPolicy.test.ts	directory-computers	1
 apps/server/src/auth/EnvironmentAuthPolicy.ts	directory-computers	1
 apps/server/src/bin.ts	mini-native-retention	1
 apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
-apps/server/src/checkpointing/Utils.ts	library-projects	3
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
 apps/server/src/environment/DirectEndpoints.test.ts	directory-computers	11

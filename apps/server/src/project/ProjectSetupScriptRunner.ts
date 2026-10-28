@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, type ProjectScript } from "@t3tools/contracts"; // fork: project-lifecycle
+import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   projectScriptRuntimeEnv,
@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts"; // fork: project-lifecycle
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectService from "./ProjectService.ts";
@@ -47,8 +48,18 @@ export interface ProjectSetupScriptOutputLine {
   readonly line: string;
 }
 
+/**
+ * A thread a link below full access started does not run this project's setup
+ * script: the script is the user's own code, and such a link only grants T3's
+ * tools (see `mcp/linkOrigin.ts`).
+ */
+export interface ProjectSetupScriptRunnerResultSkippedForLink {
+  readonly status: "skipped-for-link";
+}
+
 export type ProjectSetupScriptRunnerResult =
   | ProjectSetupScriptRunnerResultNoScript
+  | ProjectSetupScriptRunnerResultSkippedForLink
   | ProjectSetupScriptRunnerResultStarted;
 
 export interface ProjectSetupScriptRunnerInput {
@@ -56,7 +67,6 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectId?: string;
   readonly projectCwd?: string;
   readonly worktreePath: string;
-  readonly preferredTerminalId?: string;
   /** Internal restoration/settlement callers hold the checkout lease through completion. */
   readonly workspaceLeaseHeld?: boolean; // fork: project-lifecycle
   readonly trigger?: "setup" | "settle";
@@ -78,7 +88,13 @@ export class ProjectSetupScriptOperationError extends Schema.TaggedError<Project
     projectCwd: Schema.optional(Schema.String),
     worktreePath: Schema.String,
     // fork: project-lifecycle
-    operation: Schema.Literals(["resolveProject", "readSettings", "prepareLane", "openTerminal"]),
+    operation: Schema.Literals([
+      "readThread",
+      "resolveProject",
+      "readSettings",
+      "prepareLane",
+      "openTerminal",
+    ]),
     cause: Schema.Defect(),
   },
 ) {
@@ -185,6 +201,7 @@ function wrapCommandForCompletion(
 /** @public */
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
+  const threads = yield* ProjectionStore.ProjectionStoreV2;
   const terminalManager = yield* TerminalManager.TerminalManager;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
@@ -349,6 +366,19 @@ export const make = Effect.gen(function* () {
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       ...(input.projectCwd === undefined ? {} : { projectCwd: input.projectCwd }),
     };
+    // A thread whose origin cannot be read might be a link's: run nothing.
+    const thread = yield* threads.getThreadShell(ThreadId.make(input.threadId)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectSetupScriptOperationError({
+            ...errorContext,
+            operation: "readThread",
+            cause,
+          }),
+      ),
+    );
+    if (thread?.linkOrigin !== undefined && linkOriginIsFenced(thread.linkOrigin))
+      return { status: "skipped-for-link" } as const;
     const suppliedProject = input.project;
     const projectById =
       suppliedProject ??
@@ -427,10 +457,9 @@ export const make = Effect.gen(function* () {
 
     // Earlier settle shells may still run foreground programs; do not type resumed settles into them.
     const terminalId =
-      input.preferredTerminalId ??
-      (trigger === "settle"
+      trigger === "settle"
         ? `settle-${script.id}-${(yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8)}`
-        : `setup-${script.id}`);
+        : `setup-${script.id}`;
     const cwd = input.worktreePath;
     const env = {
       ...projectScriptRuntimeEnv({

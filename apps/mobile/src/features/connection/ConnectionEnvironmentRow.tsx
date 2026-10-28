@@ -8,7 +8,7 @@ import { type EnvironmentId, resolveEnvironmentMachineKind } from "@t3tools/cont
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native"; // fork: fleet-connections
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 
@@ -76,7 +76,7 @@ export function ConnectionEnvironmentRow(props: {
     enabled &&
     (props.environment.connectionState === "connecting" ||
       props.environment.connectionState === "reconnecting");
-  const handleSave = useCallback(async () => {
+  const handleSave = async () => {
     const result = await props.onUpdate(props.environment.environmentId, {
       label: sharedName ? props.environment.environmentLabel : label.trim(), // fork: computer-naming
       displayUrl: url.trim(),
@@ -91,7 +91,7 @@ export function ConnectionEnvironmentRow(props: {
       "Could not update computer",
       error instanceof Error ? error.message : "The connection could not be updated.",
     );
-  }, [label, url, sharedName, props]); // fork: computer-naming
+  };
 
   return (
     <Animated.View layout={LinearTransition.duration(250)} className="bg-grouped-card">

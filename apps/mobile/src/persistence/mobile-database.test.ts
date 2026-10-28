@@ -9,35 +9,6 @@ vi.mock("expo-sqlite", () => ({ openDatabaseAsync }));
 
 import * as MobileDatabase from "./mobile-database";
 
-describe("mobile database legacy cache migration", () => {
-  it("maps legacy thread records to their SQLite identity", () => {
-    const payload = JSON.stringify({
-      schemaVersion: 2,
-      environmentId: "environment-1",
-      threadId: "thread-1",
-      snapshot: {},
-    });
-
-    expect(MobileDatabase.decodeLegacyCacheRecord("connection-thread-snapshots", payload)).toEqual({
-      environmentId: "environment-1",
-      kind: "thread",
-      cacheKey: "thread-1",
-      schemaVersion: 2,
-      payload,
-    });
-  });
-
-  it("skips malformed legacy records", () => {
-    expect(MobileDatabase.decodeLegacyCacheRecord("connection-vcs-refs", "{not-json")).toBeNull();
-    expect(
-      MobileDatabase.decodeLegacyCacheRecord(
-        "connection-vcs-refs",
-        JSON.stringify({ schemaVersion: 1, environmentId: "environment-1" }),
-      ),
-    ).toBeNull();
-  });
-});
-
 // fork: library
 describe("offline database caches", () => {
   const environmentId = "cached-environment" as import("@t3tools/contracts").EnvironmentId;

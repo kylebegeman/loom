@@ -103,6 +103,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { suggestAppAccessForRemote } from "./suggestAppAccess";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import {
   useRemoteConnectionStatus,
@@ -126,7 +127,6 @@ interface EnvironmentOption {
   readonly connectionState: EnvironmentConnectionPhase;
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
-  readonly supportsCloneTracking: boolean;
 }
 
 const environmentOptionOrder = Order.mapInput(
@@ -394,6 +394,7 @@ export function useBrowsePathInput(
     return committed;
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates the browse navigation coordinator on unmount so in-flight browses do not commit
   useEffect(
     () => () => {
       browseNavigation.invalidate();
@@ -432,7 +433,6 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
         connectionState: runtime?.connectionState ?? "available",
         connectionError: runtime?.connectionError ?? null,
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
-        supportsCloneTracking: config?.environment.capabilities.projectCloneTracking === true,
       };
     });
     return Arr.sort(options, environmentOptionOrder); // fork: fleet-connections
@@ -1132,6 +1132,10 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
     AuthSourceControlWriteScope,
   );
   const createNew = useAtomCommand(projectEnvironment.createNew, { reportFailure: false });
+  const checkPublishedAppAccess = useAtomCommand(sourceControlEnvironment.checkAppAccess, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const publishRepository = useAtomCommand(sourceControlEnvironment.publishRepository, {
     reportFailure: false,
   });
@@ -1264,6 +1268,12 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
             Dialog.alert(
               `Could not create the ${publishTarget.definition.label} repository`,
               errorMessage(Cause.squash(publishResult.cause)),
+            );
+          } else {
+            void suggestAppAccessForRemote(
+              checkPublishedAppAccess,
+              environment.environmentId,
+              publishResult.value.remoteUrl,
             );
           }
         });
@@ -1549,11 +1559,12 @@ export function AddProjectDestinationScreen(props: {
   readonly prompt?: string | string[];
 }) {
   const openNewTaskDraft = useOpenNewTaskDraft();
-  const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
-    reportFailure: false,
-  });
   const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone, {
     reportFailure: false,
+  });
+  const checkAppAccess = useAtomCommand(sourceControlEnvironment.checkAppAccess, {
+    reportFailure: false,
+    reportDefect: false,
   });
   const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
@@ -1566,7 +1577,6 @@ export function AddProjectDestinationScreen(props: {
     AuthOrchestrationOperateScope,
   );
   const canCloneProject = canWriteSourceControl && canCreateProject;
-  const createProject = useCreateProject(environment, true); // fork: fleet-connections
   // fork: project-home
   const sourceEnvironmentId = stringParam(props.preparationSourceEnvironmentId);
   const sourceProjectId = stringParam(props.preparationSourceProjectId);
@@ -1609,7 +1619,7 @@ export function AddProjectDestinationScreen(props: {
         }
       : null;
   const preparationClones = useEnvironmentQuery(
-    preparation && environment?.supportsCloneTracking
+    preparation && environment
       ? sourceControlEnvironment.projectClones({
           environmentId: environment.environmentId,
           input: {},
@@ -1699,14 +1709,9 @@ export function AddProjectDestinationScreen(props: {
         !sourceProjectId ||
         !receiptState.loaded ||
         receiptState.invalid ||
-        !environment.supportsCloneTracking ||
         !preparationClones.isSuccess
       ) {
-        setError(
-          !environment.supportsCloneTracking
-            ? "Update Loom on this computer to prepare a tracked checkout."
-            : "Wait for this computer's clone progress before preparing the checkout.",
-        );
+        setError("Wait for this computer's clone progress before preparing the checkout.");
         return;
       }
       const plan = buildProjectPreparationPlan({
@@ -1746,110 +1751,92 @@ export function AddProjectDestinationScreen(props: {
       }
     }
     setIsSubmitting(true);
-    if (environment.supportsCloneTracking) {
-      const projectId = preparation?.projectId ?? ProjectId.make(uuidv4()); // fork: project-home
-      const title = preparation?.title ?? inferProjectTitleFromPath(resolved.path); // fork: project-home
-      // fork: project-home - Save the preparation receipt before any clone starts.
-      if (preparation) {
-        // No throw inside try: the React Compiler skips a component that has one.
-        const saveError =
-          sourceEnvironmentId && sourceProjectId
-            ? await receiptState
-                .save({
-                  sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
-                  sourceProjectId: ProjectId.make(sourceProjectId),
-                  destinationEnvironmentId: environment.environmentId,
-                  projectId,
-                  title,
-                  createdAt: preparation.createdAt,
-                  remoteUrl: preparation.source.remoteUrl,
-                  repositoryKey: preparation.source.repositoryKey,
-                  destinationPath: resolved.path,
-                })
-                .then(
-                  () => null,
-                  (cause: unknown) =>
-                    cause instanceof Error
-                      ? cause.message
-                      : "The preparation receipt could not be saved. No clone was started.",
-                )
-            : "The preparation source is unavailable.";
-        if (saveError !== null) {
-          setError(saveError);
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      if (
-        preparation &&
-        (!preparationHostConnected() ||
-          !readEnvironmentScope(environment.environmentId, AuthSourceControlWriteScope) ||
-          !readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope))
-      ) {
-        setError(
-          "Reconnect with cloning and project access before continuing this saved preparation.",
-        );
+    const projectId = preparation?.projectId ?? ProjectId.make(uuidv4()); // fork: project-home
+    const title = preparation?.title ?? inferProjectTitleFromPath(resolved.path); // fork: project-home
+    // fork: project-home - Save the preparation receipt before any clone starts.
+    if (preparation) {
+      // No throw inside try: the React Compiler skips a component that has one.
+      const saveError =
+        sourceEnvironmentId && sourceProjectId
+          ? await receiptState
+              .save({
+                sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
+                sourceProjectId: ProjectId.make(sourceProjectId),
+                destinationEnvironmentId: environment.environmentId,
+                projectId,
+                title,
+                createdAt: preparation.createdAt,
+                remoteUrl: preparation.source.remoteUrl,
+                repositoryKey: preparation.source.repositoryKey,
+                destinationPath: resolved.path,
+              })
+              .then(
+                () => null,
+                (cause: unknown) =>
+                  cause instanceof Error
+                    ? cause.message
+                    : "The preparation receipt could not be saved. No clone was started.",
+              )
+          : "The preparation source is unavailable.";
+      if (saveError !== null) {
+        setError(saveError);
         setIsSubmitting(false);
         return;
       }
+    }
 
-      const startResult = await startProjectClone({
-        environmentId: environment.environmentId,
-        input: {
-          projectId,
-          title,
-          createdAt: preparation?.createdAt ?? new Date().toISOString(), // fork: project-home
-          remoteUrl,
-          destinationPath: resolved.path,
-        },
-      });
-      if (AsyncResult.isFailure(startResult)) {
-        setError(errorMessage(Cause.squash(startResult.cause)));
-      } else {
-        // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
-        const project = await waitForProject(
-          { environmentId: environment.environmentId, projectId },
-          15_000,
-        );
-        if (project === null) {
-          setError(
-            "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
-          );
-        } else {
-          openNewTaskDraft(
-            {
-              environmentId: environment.environmentId,
-              projectId,
-              title,
-              cloning: "1",
-              ...(prompt
-                ? await draftWithPrompt(environment.environmentId, projectId, prompt).then(
-                    (draftId) => ({ draftId }),
-                    () => ({}),
-                  )
-                : {}),
-            },
-            originRoute,
-          );
-        }
-      }
+    if (
+      preparation &&
+      (!preparationHostConnected() ||
+        !readEnvironmentScope(environment.environmentId, AuthSourceControlWriteScope) ||
+        !readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope))
+    ) {
+      setError(
+        "Reconnect with cloning and project access before continuing this saved preparation.",
+      );
       setIsSubmitting(false);
       return;
     }
-    const cloneResult = await cloneRepository({
+
+    const startResult = await startProjectClone({
       environmentId: environment.environmentId,
       input: {
+        projectId,
+        title,
+        createdAt: preparation?.createdAt ?? new Date().toISOString(), // fork: project-home
         remoteUrl,
         destinationPath: resolved.path,
       },
     });
-    if (AsyncResult.isFailure(cloneResult)) {
-      setError(errorMessage(Cause.squash(cloneResult.cause)));
+    if (AsyncResult.isFailure(startResult)) {
+      setError(errorMessage(Cause.squash(startResult.cause)));
     } else {
-      const createResult = await createProject(cloneResult.value.cwd, originRoute);
-      if (createResult && AsyncResult.isFailure(createResult)) {
-        setError(errorMessage(Cause.squash(createResult.cause)));
+      void suggestAppAccessForRemote(checkAppAccess, environment.environmentId, remoteUrl);
+      // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
+      const project = await waitForProject(
+        { environmentId: environment.environmentId, projectId },
+        15_000,
+      );
+      if (project === null) {
+        setError(
+          "The project was created but has not reached this device yet. It will appear in the project list once the connection catches up.",
+        );
+      } else {
+        openNewTaskDraft(
+          {
+            environmentId: environment.environmentId,
+            projectId,
+            title,
+            cloning: "1",
+            ...(prompt
+              ? await draftWithPrompt(environment.environmentId, projectId, prompt).then(
+                  (draftId) => ({ draftId }),
+                  () => ({}),
+                )
+              : {}),
+          },
+          originRoute,
+        );
       }
     }
     setIsSubmitting(false);
@@ -1907,7 +1894,6 @@ export function AddProjectDestinationScreen(props: {
                   !sourceProjectId ||
                   !receiptState.loaded ||
                   receiptState.invalid ||
-                  !environment.supportsCloneTracking ||
                   !preparationClones.isSuccess ||
                   preparationProject !== undefined))
             }

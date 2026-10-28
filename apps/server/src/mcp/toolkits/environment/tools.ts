@@ -3,6 +3,7 @@ import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
   ExecutionEnvironmentDescriptor,
+  OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ServerSettings,
   ServerFolders, // fork: file-placement
@@ -48,6 +49,7 @@ const EnvironmentReadTool = Tool.make("t3_environment_read", {
   // fork: file-placement
   description:
     "Read this server's identity, preferences and the folders Loom places projects, worktrees, lanes and scratch work in. Providers and models: `orchestrator_capabilities`.",
+  parameters: Schema.Struct({ environmentId: OrchestratorMcpEnvironmentTarget }),
   success: Schema.Struct({
     environmentId: ExecutionEnvironmentDescriptor.fields.environmentId,
     label: Schema.String,
@@ -70,6 +72,7 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
   description:
     "Update environment-wide preferences. Live full-access or default caller thread only. Omitted fields are unchanged; `customInstructions: ''` clears it.",
   parameters: Schema.Struct({
+    environmentId: OrchestratorMcpEnvironmentTarget,
     defaultThreadEnvMode: ServerSettingsPatch.fields.defaultThreadEnvMode,
     newWorktreesStartFromOrigin: ServerSettingsPatch.fields.newWorktreesStartFromOrigin,
     enableProviderUpdateChecks: ServerSettingsPatch.fields.enableProviderUpdateChecks,

@@ -16,6 +16,7 @@ import { SettingsScreen } from "../../features/settings/components/SettingsScree
 import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
 import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
 import { CloudEnvironmentRows } from "../../features/connection/CloudEnvironmentRows";
+import { LinkedEnvironmentsSection } from "../../features/connection/LinkedEnvironmentsSection";
 import { LocalEnvironmentList } from "../../features/connection/LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "../../features/connection/PullRequestRoutingSettings";
 import { splitEnvironmentSections } from "../../features/connection/environmentSections";
@@ -202,6 +203,15 @@ export function ConnectionsScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={handleUpdateEnvironment}
         />
+        {connectedEnvironments
+          .filter((environment) => environment.connectionState === "connected")
+          .map((environment) => (
+            <LinkedEnvironmentsSection
+              key={environment.environmentId}
+              environmentId={environment.environmentId}
+              environmentLabel={environment.environmentLabel}
+            />
+          ))}
         <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
         <LibraryReachSection libraryReach={libraryReach} />
 
