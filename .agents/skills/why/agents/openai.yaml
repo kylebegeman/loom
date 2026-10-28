@@ -1,0 +1,5 @@
+interface:
+  display_name: "Why"
+  short_description: "Explain a design decision or regression using Library decisions"
+policy:
+  allow_implicit_invocation: false

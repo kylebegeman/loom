@@ -1,0 +1,471 @@
+[
+  {
+    "pack": "pstack",
+    "skill": "architect",
+    "disposition": "Adapt later",
+    "reason": "Types and caller-first design are useful; mandatory arena fan-out on routine boundaries is excessive here.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/architect/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "arena",
+    "disposition": "Optional",
+    "reason": "Use for an important competing design; translate model routing, isolation, and judging to Loom.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/arena/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "automate-me",
+    "disposition": "Already covered",
+    "reason": "Your durable AGENTS.md already captures working preferences. Mine Library only for a demonstrated missing procedure.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/automate-me/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "benchmark-checklist",
+    "disposition": "Adapt first",
+    "reason": "Good measurement discipline. Replace Linux-only host commands where needed and keep checks proportional.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/benchmark-checklist/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "blast-radius",
+    "disposition": "Adapt first",
+    "reason": "Strong fit for upstream merges. Require concrete invariants and evidence; use existing review bots when appropriate.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/blast-radius/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "bro",
+    "disposition": "Skip",
+    "reason": "Your communication rules already require plain language.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/bro/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "correct",
+    "disposition": "Adapt first",
+    "reason": "Turn recurring corrections into types, boundaries, lint, or tests. Avoid automatically growing AGENTS tables or scope.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/correct/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "create-formal-verification-skill",
+    "disposition": "Optional",
+    "reason": "Use for one costly race or lifecycle invariant, with a model-to-code correspondence and bounded claim.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/create-formal-verification-skill/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "create-verification-skill",
+    "disposition": "Adapt first",
+    "reason": "Best for other projects; Loom should extend its existing test skills and isolated launch flow.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/create-verification-skill/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "figure-it-out",
+    "disposition": "Optional",
+    "reason": "Useful for an unfamiliar long task, but avoid another generic process layer by default.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/figure-it-out/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "how",
+    "disposition": "Adapt later",
+    "reason": "Use bounded exploration and real source evidence; remove automatic delegation for simple questions.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/how/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "in-your-own-words",
+    "disposition": "Already covered",
+    "reason": "Your normal task restatement and clarification rules already cover this.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/in-your-own-words/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "interrogate",
+    "disposition": "Adapt later",
+    "reason": "Require executable counterexamples for a significant change; use bounded reviewers and existing bots.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/interrogate/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "ketchup",
+    "disposition": "Adapt later",
+    "reason": "Useful project catch-up; source it from Library and live state, with explicit pending decisions.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/ketchup/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "ketchup-video",
+    "disposition": "Defer",
+    "reason": "A transcript or visual report is cheaper and easier to search than a generated catch-up video.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/ketchup-video/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "maintain-formal-verification-skill",
+    "disposition": "Optional",
+    "reason": "Only useful after a real project model exists; preserve sync commit and mutation checks.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/maintain-formal-verification-skill/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "maintain-verification-skill",
+    "disposition": "Adapt first",
+    "reason": "Keep existing control skills and their feature map in sync; one integrated live pass after source reconciliation.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/maintain-verification-skill/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "make-bot-ui",
+    "disposition": "Adapt later",
+    "reason": "Reuse the server-held credential pattern through Loom UI/services; replace Cursor routine tools and networking setup.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/make-bot-ui/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "no-comments",
+    "disposition": "Skip",
+    "reason": "A dedicated comment-removal agent is not a priority. Loom already has a narrower comment policy and lint enforcement.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/no-comments/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "poteto-help",
+    "disposition": "Skip",
+    "reason": "Help for an unmodified pack is less useful than a curated Loom-specific entry point.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/poteto-help/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "poteto-mode",
+    "disposition": "Do not copy wholesale",
+    "reason": "Large Cursor-specific router, external dependencies, model fallbacks, autonomy assumptions, and workflow conflicts.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/poteto-mode/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "recall",
+    "disposition": "Adapt later",
+    "reason": "Use Library search, saved history and project scope instead of Cursor transcript paths.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/recall/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "reflect",
+    "disposition": "Adapt later",
+    "reason": "Useful after meaningful repeated friction; avoid mandatory four-agent reviews and unsolicited tracker writes.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/reflect/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "setup-pstack",
+    "disposition": "Replace integration",
+    "reason": "Use Loom provider capabilities and saved bot models. Do not write Cursor model rules for Loom.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/setup-pstack/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "sharpen",
+    "disposition": "Optional",
+    "reason": "Useful manual prompt refinement; make clear that it rewrites the prompt rather than doing the task.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/sharpen/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "show-me-your-work",
+    "disposition": "Adapt later",
+    "reason": "Use existing thread evidence or external run artifacts. Do not add a second committed decision ledger.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/show-me-your-work/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "statechart",
+    "disposition": "Optional",
+    "reason": "A real TLA+/TLC rendering toolchain, not a general diagram helper. Review its scripts and dependencies before use.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/statechart/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "swarm",
+    "disposition": "Adapt later",
+    "reason": "Coverage fan-out belongs in Loom delegation/batches; keep permissions, ownership, and budget explicit.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/swarm/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "tdd",
+    "disposition": "Already covered",
+    "reason": "Repo already requires a failing test for logic/protocol bugs and visual proof for purely visual fixes.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/tdd/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "teach",
+    "disposition": "Optional",
+    "reason": "Good for subsystem learning; simplify mandatory repeated diagrams and image-generation demands.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/teach/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "technical-writing",
+    "disposition": "Already covered",
+    "reason": "Your writing and documentation rules already supply most of the value.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/technical-writing/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "typescript-best-practices",
+    "disposition": "Already covered",
+    "reason": "Prefer the actual TypeScript/compiler/lint rules of each repo over another broad automatic checklist.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/typescript-best-practices/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "unslop",
+    "disposition": "Already covered",
+    "reason": "Much of this is already in your communication instructions; useful selectively for external prose.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/unslop/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "why",
+    "disposition": "Adapt later",
+    "reason": "Use Library decisions/history, Git, and connected evidence. Keep facts, hypotheses, and gaps distinct.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/why/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-attack-the-premise",
+    "disposition": "Reference / already covered",
+    "reason": "Useful diagnostic trigger after repeated failed approaches; fold into systematic debugging.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-attack-the-premise/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-boundary-discipline",
+    "disposition": "Reference / already covered",
+    "reason": "Already expressed in typed external boundaries and thin transports.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-boundary-discipline/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-build-the-lever",
+    "disposition": "Reference / already covered",
+    "reason": "Useful when a repeatable script or harness has concrete value; do not generate tooling for every task.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-build-the-lever/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-encode-lessons-in-structure",
+    "disposition": "Reference / already covered",
+    "reason": "A strong existing engineering preference; use it through correct rather than a duplicate global skill.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-encode-lessons-in-structure/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-exhaust-the-design-space",
+    "disposition": "Reference / already covered",
+    "reason": "Reserve multiple prototypes for consequential unsettled design choices.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-exhaust-the-design-space/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-experience-first",
+    "disposition": "Reference / already covered",
+    "reason": "Already a product preference; no separate installed skill needed.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-experience-first/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-explain-the-number",
+    "disposition": "Reference / already covered",
+    "reason": "Keep with the benchmark checklist, not another broad automatic trigger.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-explain-the-number/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-fix-root-causes",
+    "disposition": "Reference / already covered",
+    "reason": "Already covered by systematic debugging and repository guidance.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-fix-root-causes/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-foundational-thinking",
+    "disposition": "Reference / already covered",
+    "reason": "Already consistent with typed domain design and pure orchestration.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-foundational-thinking/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-guard-the-context-window",
+    "disposition": "Reference / already covered",
+    "reason": "Useful principle, but its delegation suggestion must follow current delegation permission.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-guard-the-context-window/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-laziness-protocol",
+    "disposition": "Reference / already covered",
+    "reason": "Already covered by focused changes, deletion, and avoiding speculative abstractions.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-laziness-protocol/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-make-operations-idempotent",
+    "disposition": "Reference / already covered",
+    "reason": "Important for remote dispatch and Library operations; encode it in contracts and tests.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-make-operations-idempotent/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-migrate-callers-then-delete-legacy-apis",
+    "disposition": "Reference / already covered",
+    "reason": "Useful where a complete migration is authorized; do not override supported compatibility contracts.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-migrate-callers-then-delete-legacy-apis/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-minimize-reader-load",
+    "disposition": "Reference / already covered",
+    "reason": "Already consistent with focused code and clear data flow.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-minimize-reader-load/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-model-the-domain",
+    "disposition": "Reference / already covered",
+    "reason": "Already reflected by typed contracts and state machines.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-model-the-domain/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-never-block-on-the-human",
+    "disposition": "Reference / already covered",
+    "reason": "Your current autonomy rules already cover reversible work and required questions.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-never-block-on-the-human/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-outcome-oriented-execution",
+    "disposition": "Reference / already covered",
+    "reason": "Useful within scoped migrations; not permission for a wider rewrite.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-outcome-oriented-execution/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-prove-it-works",
+    "disposition": "Reference / already covered",
+    "reason": "Already covered by proportional verification and the Verifier bot.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-prove-it-works/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-redesign-from-first-principles",
+    "disposition": "Reference / already covered",
+    "reason": "Useful for a demonstrated bad abstraction, not a standing license to replace architecture.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-redesign-from-first-principles/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-separate-before-serializing-shared-state",
+    "disposition": "Reference / already covered",
+    "reason": "Particularly relevant to isolated checkouts and process ownership; keep in implementation constraints.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-separate-before-serializing-shared-state/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-sequence-verifiable-units",
+    "disposition": "Reference / already covered",
+    "reason": "Already reflected in focused commits and integration verification.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-sequence-verifiable-units/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-subtract-before-you-add",
+    "disposition": "Reference / already covered",
+    "reason": "Already reflected in maintenance preferences.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-subtract-before-you-add/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-test-behavior-not-implementation",
+    "disposition": "Reference / already covered",
+    "reason": "Already a repository test rule with enforcement.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-test-behavior-not-implementation/SKILL.md"
+  },
+  {
+    "pack": "pstack",
+    "skill": "principle-type-system-discipline",
+    "disposition": "Reference / already covered",
+    "reason": "Already in strict types, contracts, and boundary parsing.",
+    "url": "https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/principle-type-system-discipline/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "babysit-pr",
+    "disposition": "Adopt first",
+    "reason": "Prefer Loom watch/unwatch. Do not launch the bundled pr-wait alongside Loom watchers.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/babysit-pr/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "council",
+    "disposition": "Optional, adapt",
+    "reason": "Use three providers only when available and explicitly desired; add round/spend limits.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/council/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "file-pr",
+    "disposition": "Adopt first",
+    "reason": "Useful concise delivery contract. Opening a PR still needs the applicable user instruction.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/file-pr/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "full-send",
+    "disposition": "Explicit opt-in only",
+    "reason": "Proof/review/merge workflow only after an unmistakable authorized request. Not a default.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/full-send/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "full-stop",
+    "disposition": "Adapt, explicit opt-in",
+    "reason": "A useful handoff workflow. Narrow the trigger so ordinary emphasis does not invoke it.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/full-stop/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "leaving-pr-comments",
+    "disposition": "Dependency, adapt",
+    "reason": "Preserve model/user attribution and concise evidence; choose an attribution style consistent with your preferences.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/leaving-pr-comments/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "modernize",
+    "disposition": "Adopt first",
+    "reason": "Especially useful for upstream drift: decide modernize/rework/close before spending effort rebasing.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/modernize/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "sol-loop",
+    "disposition": "Adapt later",
+    "reason": "Bounded reviews are useful. Discover exact models, honor availability, and prefer a matching saved bot when appropriate.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/sol-loop/SKILL.md"
+  },
+  {
+    "pack": "tstack",
+    "skill": "takeover",
+    "disposition": "Adopt first",
+    "reason": "Good handoff protocol, contributor credit, current-state reconstruction and independent verification.",
+    "url": "https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/takeover/SKILL.md"
+  }
+]

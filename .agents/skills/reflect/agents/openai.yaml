@@ -1,0 +1,5 @@
+interface:
+  display_name: "Reflect"
+  short_description: "Extract demonstrated reusable lessons from this conversation an"
+policy:
+  allow_implicit_invocation: false

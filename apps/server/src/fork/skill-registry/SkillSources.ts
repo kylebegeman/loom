@@ -310,6 +310,9 @@ export const makeSkillSources = Effect.gen(function* () {
             subpath,
             name: validation.name ?? path.basename(subpath),
             description: validation.description,
+            ...(validation.compatibility === undefined
+              ? {}
+              : { compatibility: validation.compatibility }),
             containsScripts: contents.some(
               (file) =>
                 file.mode === "100755" ||

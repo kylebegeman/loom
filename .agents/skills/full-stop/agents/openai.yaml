@@ -1,0 +1,5 @@
+interface:
+  display_name: "Full stop"
+  short_description: "Use only for an explicit request to invoke the full-stop delive"
+policy:
+  allow_implicit_invocation: false

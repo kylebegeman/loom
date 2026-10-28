@@ -1,0 +1,5 @@
+interface:
+  display_name: "Babysit pr"
+  short_description: "Watch an owned pull request and act on new checks or review fin"
+policy:
+  allow_implicit_invocation: true

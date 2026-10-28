@@ -265,6 +265,9 @@ export const makeSkillCatalog = Effect.gen(function* () {
           key: realDir,
           name: reported?.skill.name ?? validation.name ?? path.basename(directory),
           description: reported?.skill.description ?? validation.description,
+          ...(validation.compatibility === undefined
+            ? {}
+            : { compatibility: validation.compatibility }),
           locations: [],
           visibility: [],
           install,

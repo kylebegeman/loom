@@ -87,6 +87,9 @@ export function validateSkill(text: string, folderName: string): SkillValidation
     issue("body", "Add instructions below the frontmatter.");
   return {
     ...result,
+    ...(typeof values.compatibility === "string"
+      ? { compatibility: values.compatibility.slice(0, 1024) }
+      : {}),
     name,
     description,
     userInvocationOnly: boolean(values["disable-model-invocation"]) === true,

@@ -53,6 +53,7 @@ export type SkillValidationIssue = typeof SkillValidationIssue.Type;
 export const SkillValidation = Schema.Struct({
   name: Schema.NullOr(Schema.String),
   description: Schema.NullOr(Schema.String),
+  compatibility: Schema.optionalKey(Schema.String),
   userInvocationOnly: Schema.Boolean,
   userInvocable: Schema.Boolean,
   issues: Schema.Array(SkillValidationIssue),
@@ -103,6 +104,7 @@ export const SkillRegistryEntry = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
   description: Schema.NullOr(Schema.String),
+  compatibility: Schema.optionalKey(Schema.String),
   locations: Schema.Array(
     Schema.Struct({
       path: Schema.String,
@@ -136,6 +138,7 @@ export const SkillSourceSkill = Schema.Struct({
   subpath: Schema.String,
   name: Schema.String,
   description: Schema.NullOr(Schema.String),
+  compatibility: Schema.optionalKey(Schema.String),
   containsScripts: Schema.Boolean,
   files: Schema.Number,
   bytes: Schema.Number,

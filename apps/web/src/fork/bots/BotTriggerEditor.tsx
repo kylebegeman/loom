@@ -647,6 +647,18 @@ function WhenStep({
             </LibraryNotice>
           )
         ) : null}
+        {draft.kind === "schedule" || draft.kind === "webhook" ? (
+          <LibraryField label="Execution project">
+            <OptionSelect
+              label="Execution project"
+              value={draft.projectId || "saved"}
+              options={[["saved", "Bot's saved workspace"], ...projects]}
+              onChange={(projectId) =>
+                update({ projectId: projectId === "saved" ? "" : projectId })
+              }
+            />
+          </LibraryField>
+        ) : null}
         {draft.kind === "schedule" ? (
           <ScheduleFields draft={draft} hostLabel={hostLabel} update={update} />
         ) : null}
@@ -978,6 +990,9 @@ function ReviewStep({
   const runs = draft.pipelineId === "" ? `${bot.name}, ${version.toLowerCase()}` : target.name;
   const rows = [
     { label: "When", value: when ?? "Not set yet" },
+    ...(draft.projectId && (draft.kind === "schedule" || draft.kind === "webhook")
+      ? [{ label: "Execution project", value: projectTitle(draft.projectId) }]
+      : []),
     { label: "Runs", value: draft.pipelineId === "" ? bot.name : `Pipeline ${target.name}` },
     {
       label: "Inputs",

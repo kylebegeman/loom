@@ -1,0 +1,5 @@
+interface:
+  display_name: "Council"
+  short_description: "Use an explicitly requested bounded council for a disputed cons"
+policy:
+  allow_implicit_invocation: false

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProjectId, ProviderInstanceId } from "@t3tools/contracts";
-import type { BotDefinition, BotTrigger, BotTriggerFiring } from "@t3tools/contracts/fork";
+import {
+  WORKFLOW_IDS,
+  type BotDefinition,
+  type BotTrigger,
+  type BotTriggerFiring,
+} from "@t3tools/contracts/fork";
 import {
   emptyTriggerDraft,
   triggerDraftFrom,
@@ -694,4 +699,31 @@ describe("trigger facts", () => {
     expect(spanAhead(134 * 60_000)).toBe("2h 14m");
     expect(spanAhead(3 * 86_400_000 + 4 * 3_600_000)).toBe("3d 4h");
   });
+});
+
+it("prepares recurring workflow triggers paused and keeps their exact execution project", () => {
+  const draft = newTriggerDraft(bot, bot, WORKFLOW_IDS.review);
+  expect(draft).toMatchObject({
+    kind: "schedule",
+    enabled: false,
+    dailyLimit: "1",
+    cooldownMinutes: "720",
+    weekdays: [1],
+  });
+  const projectId = ProjectId.make("project-pinned");
+  const saved = triggerInputFromDraft(
+    bot,
+    {
+      ...draft,
+      projectId,
+      mapping: {
+        ...draft.mapping,
+        url: { mode: "value", field: "", value: "https://example.test/pr/1" },
+      },
+    },
+    null,
+  );
+  expect(saved).toHaveProperty("input.projectId", projectId);
+  const intake = newTriggerDraft(bot, bot, WORKFLOW_IDS.intake);
+  expect(intake).toMatchObject({ kind: "webhook", signed: true, enabled: false });
 });

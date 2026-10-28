@@ -1,0 +1,5 @@
+interface:
+  display_name: "Show me your work"
+  short_description: "Maintain a concise evidence trail for long-running work outside"
+policy:
+  allow_implicit_invocation: false

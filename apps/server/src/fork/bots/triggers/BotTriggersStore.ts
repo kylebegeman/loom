@@ -1,4 +1,4 @@
-import { RuntimeMode } from "@t3tools/contracts";
+import { ProjectId, RuntimeMode } from "@t3tools/contracts";
 import {
   BotCreator,
   BotTriggerEvent,
@@ -20,6 +20,7 @@ export const FIRINGS_KEPT_PER_TRIGGER = 500;
 export const PR_STATE_IDLE_MS = 90 * 24 * 60 * 60 * 1000;
 
 const Settings = Schema.Struct({
+  projectId: Schema.optionalKey(ProjectId),
   name: Schema.String,
   event: BotTriggerEvent,
   mapping: BotTriggerMapping,
@@ -136,6 +137,7 @@ export const makeBotTriggersStore = Effect.gen(function* () {
       const { trigger } = stored;
       const json = encodeSettings({
         name: trigger.name,
+        ...(trigger.projectId === undefined ? {} : { projectId: trigger.projectId }),
         event: trigger.event,
         mapping: trigger.mapping,
         cooldownMinutes: trigger.cooldownMinutes,

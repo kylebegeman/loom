@@ -1,0 +1,5 @@
+interface:
+  display_name: "Arena"
+  short_description: "Compare competing implementations only when the user explicitly"
+policy:
+  allow_implicit_invocation: false

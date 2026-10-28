@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Exercise native ESM ordering outside the test runner module transform.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
 import * as NodeURL from "node:url";

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Leaving pr comments"
+  short_description: "Write an authorized GitHub review reply or PR comment with conc"
+policy:
+  allow_implicit_invocation: true

@@ -1,3 +1,5 @@
+import { WORKFLOW_IDS, WORKFLOW_TRIGGER_HINTS } from "@t3tools/contracts/fork";
+import { intakeTriggerProblem, intakeReport } from "../../workflows/intake.ts";
 import { ScheduledTaskWebhookDeliveryId, type RuntimeMode } from "@t3tools/contracts";
 import {
   botTriggerHookId,
@@ -219,6 +221,12 @@ export const make = Effect.gen(function* () {
     caller: BotCaller,
   ) {
     yield* bots.checkCaller({ botId: target.botId, inputs: {} }, caller);
+    if (
+      caller.actor === "agent" &&
+      stored?.trigger.projectId !== undefined &&
+      stored.trigger.projectId !== caller.projectId
+    )
+      return yield* fail("permission", "An agent's trigger must keep its own execution project.");
     const ceiling =
       stored === null
         ? caller
@@ -246,7 +254,27 @@ export const make = Effect.gen(function* () {
       existing.trigger.updatedAt !== input.expectedUpdatedAt
     )
       return yield* fail("invalid", "This trigger changed since you opened it. Reload it first.");
+    const executionProjectId =
+      input.projectId === undefined
+        ? (existing?.trigger.projectId ??
+          (caller.actor === "agent" ? (caller.projectId ?? undefined) : undefined))
+        : (input.projectId ?? undefined);
+    if (
+      caller.actor === "agent" &&
+      ((executionProjectId !== undefined && executionProjectId !== caller.projectId) ||
+        (input.projectId === null &&
+          (existing?.trigger.projectId !== undefined || caller.projectId !== null)))
+    )
+      return yield* fail("permission", "An agent's trigger must keep its own execution project.");
     const pipelineId = input.pipelineId ?? null;
+    if (
+      pipelineId !== null &&
+      WORKFLOW_TRIGGER_HINTS[pipelineId] &&
+      executionProjectId === undefined
+    )
+      return yield* fail("invalid", "Choose the exact execution project for this workflow.");
+    const intakeProblem = intakeTriggerProblem(input);
+    if (intakeProblem !== null) return yield* fail("invalid", intakeProblem);
     if (existing !== null && (existing.trigger.pipelineId ?? null) !== pipelineId)
       return yield* fail("invalid", "A trigger cannot move to another pipeline.");
     const bot = yield* bots.get(input.botId);
@@ -297,6 +325,7 @@ export const make = Effect.gen(function* () {
       id: existing?.trigger.id ?? `trg_${hex(yield* randomUuidV4).slice(0, 20)}`,
       botId: input.botId,
       name: input.name,
+      ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
       event: input.event,
       mapping: input.mapping,
       enabled: input.enabled,
@@ -406,6 +435,7 @@ export const make = Effect.gen(function* () {
     nowMs: number,
   ): Effect.fn.Return<Outcome, BotsError> {
     const { trigger } = stored;
+    const executionProjectId = trigger.projectId ?? event.projectId;
     const bot = yield* bots.get(trigger.botId).pipe(Effect.option);
     if (bot._tag === "None")
       return { outcome: "skipped", runId: null, reason: "The bot was deleted." };
@@ -418,7 +448,7 @@ export const make = Effect.gen(function* () {
     const caller: BotCaller = {
       actor: trigger.createdBy,
       threadId: null,
-      projectId: event.projectId ?? null,
+      projectId: executionProjectId ?? null,
       runtimeMode: stored.creatorRuntimeMode,
     };
     const checkout =
@@ -428,7 +458,7 @@ export const make = Effect.gen(function* () {
     const input: BotsRunInput = {
       botId: definition.id,
       inputs: mapInputs(trigger.mapping, event.fields),
-      ...(event.projectId === undefined ? {} : { projectId: event.projectId }),
+      ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
       ...(checkout ? { checkoutThreadId: event.threadId } : {}),
     };
     const skip = (reason: string) =>
@@ -461,7 +491,7 @@ export const make = Effect.gen(function* () {
           {
             pipelineId: trigger.pipelineId,
             inputs: input.inputs,
-            ...(event.projectId === undefined ? {} : { projectId: event.projectId }),
+            ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
             ...(event.threadId === undefined ? {} : { checkoutThreadId: event.threadId }),
           },
           caller,
@@ -493,7 +523,7 @@ export const make = Effect.gen(function* () {
               type: "inputs",
               items: event.items.map((fields) => mapInputs(trigger.mapping, fields)),
             },
-            ...(event.projectId === undefined ? {} : { projectId: event.projectId }),
+            ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
           },
           caller,
           { triggerId: trigger.id },
@@ -636,6 +666,12 @@ export const make = Effect.gen(function* () {
         items: files.map((file) => ({ tag, branch: report?.branch ?? "", file })),
       };
     } else {
+      const deliveryKey = webhookEventKey(request);
+      const intake =
+        trigger.pipelineId === WORKFLOW_IDS.intake
+          ? intakeReport(request.bodyText, trigger.mapping, deliveryKey)
+          : null;
+      if (intake !== null && "error" in intake) return yield* fail("invalid", intake.error);
       const read = makeWebhookFieldReader(request);
       const fields: Record<string, BotInputValue> = {};
       for (const entry of Object.values(trigger.mapping))
@@ -646,7 +682,7 @@ export const make = Effect.gen(function* () {
       const githubEvent = request.headers["x-github-event"];
       event = {
         kind: "webhook",
-        key: webhookEventKey(request) ?? `delivery:${yield* randomUuidV4}`,
+        key: intake?.key ?? deliveryKey ?? `delivery:${yield* randomUuidV4}`,
         summary: githubEvent === undefined ? `${request.method} delivery` : `GitHub ${githubEvent}`,
         fields,
       };

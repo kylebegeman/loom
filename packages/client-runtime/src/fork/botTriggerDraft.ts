@@ -37,7 +37,7 @@ export interface MappingDraft {
 export interface TriggerDraft {
   readonly name: string;
   readonly kind: BotTriggerEventKind;
-  /** Empty means any project; thread-settled requires one. */
+  /** The execution project for schedules/webhooks, and event project filter where supported. */
   readonly projectId: string;
   readonly repository: string;
   readonly branchPattern: string;
@@ -168,6 +168,7 @@ export const triggerDraftFrom = (
     ...filters,
     ...schedule,
     ...signature,
+    ...(trigger.projectId === undefined ? {} : { projectId: trigger.projectId }),
     name: trigger.name,
     kind: event.kind,
     mapping: Object.fromEntries(
@@ -293,6 +294,10 @@ export const triggerInputFromDraft = (
       botId: bot.id,
       name: draft.name.trim(),
       event,
+      ...((event.kind === "schedule" || event.kind === "webhook") &&
+      (draft.projectId !== "" || existing?.projectId !== undefined)
+        ? { projectId: draft.projectId === "" ? null : (draft.projectId as ProjectId) }
+        : {}),
       mapping,
       enabled: draft.enabled,
       cooldownMinutes,

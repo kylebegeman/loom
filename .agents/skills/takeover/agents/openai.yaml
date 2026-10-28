@@ -1,0 +1,5 @@
+interface:
+  display_name: "Takeover"
+  short_description: "Continue a named PR, branch or conversation while preserving it"
+policy:
+  allow_implicit_invocation: true

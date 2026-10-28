@@ -324,3 +324,31 @@ describe("BotPipelines", () => {
     ),
   );
 });
+
+it.effect(
+  "offers workflow recipes once without replacing edited or deleted pipelines or saved models",
+  () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, pipelines } = yield* makePipelines(harness);
+        const reviewer = yield* bots.restoreStarter("reviewer", USER_CALLER);
+        yield* bots.restoreStarter("verifier", USER_CALLER);
+        yield* bots.markSeeded;
+        yield* pipelines.seedStarter();
+        const intake = yield* pipelines.get("loom-intake-reproduce");
+        const review = yield* pipelines.get("loom-engineering-review");
+        yield* pipelines.save(
+          { pipeline: { ...review, name: "My review" }, expectedVersion: review.version },
+          USER_CALLER,
+        );
+        yield* pipelines.delete(intake.id);
+        yield* pipelines.seedStarter();
+        expect((yield* pipelines.get(review.id)).name).toBe("My review");
+        expect(yield* pipelines.exists(intake.id)).toBe(false);
+        expect((yield* bots.get("reviewer")).modelSelection).toEqual(reviewer.modelSelection);
+        expect((yield* pipelines.list()).map((pipeline) => pipeline.id)).toContain(
+          "loom-performance-review",
+        );
+      }),
+    ),
+);

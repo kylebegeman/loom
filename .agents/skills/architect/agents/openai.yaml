@@ -1,0 +1,5 @@
+interface:
+  display_name: "Architect"
+  short_description: "Design a consequential interface or ownership boundary from rea"
+policy:
+  allow_implicit_invocation: false

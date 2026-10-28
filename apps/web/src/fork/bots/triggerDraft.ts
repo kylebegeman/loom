@@ -1,3 +1,4 @@
+import { WORKFLOW_TRIGGER_HINTS } from "@t3tools/contracts/fork";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
   BOTS_TRIGGER_MIN_INTERVAL_MS,
@@ -222,7 +223,22 @@ export function newTriggerDraft(
   target: TriggerTarget,
   pipelineId: string,
 ): TriggerDraft {
-  const base = emptyTriggerDraft(bot);
+  const hint = WORKFLOW_TRIGGER_HINTS[pipelineId];
+  const base = {
+    ...emptyTriggerDraft(bot),
+    ...(hint
+      ? {
+          kind: hint.kind,
+          scheduleType: "fixed_time" as const,
+          timeOfDay: hint.timeOfDay,
+          weekdays: [hint.weekday],
+          signed: hint.kind === "webhook",
+          enabled: false,
+          cooldownMinutes: "720",
+          dailyLimit: "1",
+        }
+      : {}),
+  };
   const draft = { ...base, pipelineId, mapping: guessMapping(target, base.kind) };
   return { ...draft, name: defaultTriggerName(target.name, draft) };
 }
@@ -282,6 +298,8 @@ const mappingProblem = (target: TriggerTarget, draft: TriggerDraft): string | nu
 };
 
 const whenProblem = (draft: TriggerDraft, context: TriggerStepContext): string | null => {
+  if (WORKFLOW_TRIGGER_HINTS[draft.pipelineId] && draft.projectId === "")
+    return "Choose the exact execution project for this workflow.";
   switch (draft.kind) {
     case "thread-settled":
       if (draft.projectId === "") return "Choose the project whose threads start it.";

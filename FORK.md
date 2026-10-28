@@ -1277,3 +1277,18 @@ See [Connections help](docs/fork/user/connections.md).
 | File                                               | Marker           | Why                                                                                                   |
 | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
 | `apps/server/src/provider/Drivers/ClaudeSkills.ts` | `skill-registry` | Reuse Claude's current repository-root and settings precedence when managing native skill enablement. |
+
+### Hosted Bot compatibility
+
+`apps/server/src/auth/McpOAuth.test.ts` (`grok-bot`) verifies the existing hosted
+OAuth path's approved permission ceiling and immediate revocation. Grok Bot uses
+that same remote MCP transport; it does not add a provider adapter or widen Reach's
+path allowlist. See [the pilot guide](docs/fork/user/grok-bot.md).
+
+### Workflow eval entrypoint
+
+`evals/package.json` and `evals/README.md` register the fork-owned `loom-skills`
+behavior eval. It reads current skill files and reuses the upstream MCP eval harness.
+
+`knip.jsonc` (`ext-lint`) includes the directly invoked skill validator and semantic
+upstream report as entrypoints; neither is bundled into the running application.

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Create verification skill"
+  short_description: "Create a project verification skill only when the project lacks"
+policy:
+  allow_implicit_invocation: false

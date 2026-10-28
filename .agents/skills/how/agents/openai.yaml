@@ -1,0 +1,5 @@
+interface:
+  display_name: "How"
+  short_description: "Explain a named subsystem\u2019s runtime flow, ownership and boundar"
+policy:
+  allow_implicit_invocation: false

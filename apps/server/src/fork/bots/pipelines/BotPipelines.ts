@@ -1,3 +1,4 @@
+import { WORKFLOW_PIPELINES } from "../../workflows/recipes.ts";
 import {
   BOTS_MAX_ACTIVE_PIPELINES,
   BotsError,
@@ -812,13 +813,15 @@ export const make = Effect.gen(function* () {
    */
   const seedStarter = Effect.fn("BotPipelines.seedStarter")(function* () {
     yield* bots.whenSeeded;
-    if (yield* store.hasStarter(PIPELINE_STARTER_ID).pipe(Effect.catch(storageError))) return;
+    const originalOffered = yield* store
+      .hasStarter(PIPELINE_STARTER_ID)
+      .pipe(Effect.catch(storageError));
     const all = new Map((yield* bots.list()).map((bot) => [bot.id, bot]));
     const reviewer = all.get("reviewer");
     const verifier = all.get("verifier");
     if (reviewer?.origin?.starterId !== "reviewer" || verifier?.origin?.starterId !== "verifier")
       return;
-    if (!all.has(FIXER_DEFINITION.id))
+    if (!originalOffered && !all.has(FIXER_DEFINITION.id))
       all.set(
         FIXER_DEFINITION.id,
         yield* bots.save(
@@ -826,15 +829,19 @@ export const make = Effect.gen(function* () {
           USER_CALLER,
         ),
       );
-    const taken = yield* store.hasPipeline(REVIEW_FIX_VERIFY.id).pipe(Effect.catch(storageError));
-    // A person's own bot named fixer may not fit; the pipeline is then not offered.
-    const fits =
-      firstError(checkPipeline(REVIEW_FIX_VERIFY, { bots: all, versionExists: () => true })) ===
-      undefined;
-    if (!taken && fits) yield* write(REVIEW_FIX_VERIFY, USER_CALLER, undefined);
-    yield* store
-      .recordStarter(PIPELINE_STARTER_ID, PIPELINE_STARTER_REVISION, yield* nowIso)
-      .pipe(Effect.catch(storageError));
+    for (const recipe of [REVIEW_FIX_VERIFY, ...WORKFLOW_PIPELINES]) {
+      const starterId =
+        recipe.id === REVIEW_FIX_VERIFY.id ? PIPELINE_STARTER_ID : `workflow:${recipe.id}`;
+      if (yield* store.hasStarter(starterId).pipe(Effect.catch(storageError))) continue;
+      const taken = yield* store.hasPipeline(recipe.id).pipe(Effect.catch(storageError));
+      const fits =
+        firstError(checkPipeline(recipe, { bots: all, versionExists: () => true })) === undefined;
+      if (!fits) continue;
+      if (!taken) yield* write(recipe, USER_CALLER, undefined);
+      yield* store
+        .recordStarter(starterId, PIPELINE_STARTER_REVISION, yield* nowIso)
+        .pipe(Effect.catch(storageError));
+    }
   });
 
   return {

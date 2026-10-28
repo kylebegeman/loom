@@ -1,0 +1,5 @@
+interface:
+  display_name: "Benchmark checklist"
+  short_description: "Validate a performance measurement, workload and error count be"
+policy:
+  allow_implicit_invocation: false

@@ -29,6 +29,7 @@
         "fixtures/*/*.js",
         // fork: ext-lint -- loom.sh runs this JXA script through osascript.
         "fork/running-apps.js",
+        "fork/semantic-upstream.ts", // fork: ext-lint -- the compatibility workflow invokes this report directly.
         "knip-schemas.ts",
         "mobile-behavior/run.ts",
         "mobile-native-client.ts",
@@ -54,6 +55,7 @@
         "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",
         "scripts/verify-background-live.ts",
+        "scripts/verify-loom-skills.ts", // fork: ext-lint -- validates the curated skill pack directly.
         "src/provider/testFixtures/*.mjs",
         // graphqlgen reads its config.
         "graphql.config.ts",

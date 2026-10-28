@@ -1,0 +1,5 @@
+interface:
+  display_name: "Make bot ui"
+  short_description: "Connect a requested action dashboard to existing Loom bots, pip"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Blast radius"
+  short_description: "Find what a proposed change can break beyond its diff and prove"
+policy:
+  allow_implicit_invocation: false

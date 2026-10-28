@@ -2,7 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import { describe, expect, it } from "@effect/vitest";
-import { ThreadId, type RuntimeMode } from "@t3tools/contracts";
+import { ProjectId, ThreadId, type RuntimeMode } from "@t3tools/contracts";
 import { botRunThreadId, type BotsSaveTriggerInput } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -554,3 +554,65 @@ describe("BotTriggers", () => {
     ),
   );
 });
+
+it.effect(
+  "pins a scheduled workflow to its configured project and preserves the pin after reload",
+  () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        const saved = yield* triggers.save(
+          trigger({
+            projectId,
+            event: { kind: "schedule", schedule: { type: "interval", everyMs: 3_600_000 } },
+            mapping: { file: { value: "a.ts" } },
+          }),
+          USER_CALLER,
+        );
+        expect(saved.projectId).toBe(projectId);
+        const reload = yield* makeTriggers(harness);
+        expect((yield* reload.triggers.list())[0]?.projectId).toBe(projectId);
+        const firing = yield* triggers.test({ triggerId: saved.id, fields: {} });
+        expect(firing.outcome).toBe("run");
+        const run = yield* bots.getRun(firing.runId!);
+        expect(run.projectId).toBe(projectId);
+      }),
+    ),
+);
+
+it.effect("keeps an agent-created scheduled trigger in the agent's execution project", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      const { bots, triggers } = yield* makeTriggers(harness);
+      yield* bots.save(reviewer(), USER_CALLER);
+      const saved = yield* triggers.save(
+        trigger({
+          enabled: false,
+          event: { kind: "schedule", schedule: { type: "interval", everyMs: 3_600_000 } },
+          mapping: { file: { value: "a.ts" } },
+        }),
+        agent("full-access"),
+      );
+      expect(saved.projectId).toBe(projectId);
+    }),
+  ),
+);
+
+it.effect("refuses an agent arming a trigger pinned to another execution project", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      const { bots, triggers } = yield* makeTriggers(harness);
+      yield* bots.save(reviewer(), USER_CALLER);
+      const saved = yield* triggers.save(
+        trigger({ projectId: ProjectId.make("another-project"), enabled: false }),
+        USER_CALLER,
+      );
+      const result = yield* triggers
+        .setEnabled(saved.id, true, agent("full-access"))
+        .pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+      expect((yield* triggers.get(saved.id)).enabled).toBe(false);
+    }),
+  ),
+);

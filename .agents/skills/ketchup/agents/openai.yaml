@@ -1,0 +1,5 @@
+interface:
+  display_name: "Ketchup"
+  short_description: "Give a read-only catch-up of a project or conversation, includi"
+policy:
+  allow_implicit_invocation: false

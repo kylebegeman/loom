@@ -1388,7 +1388,7 @@ apps/web/src/rpc/requestLatencyState.test.ts	library-launch-files	1
 apps/web/src/state/queries.ts	fleet-connections	1
 apps/web/src/state/session.ts	library-projects	1
 apps/web/vite.config.ts	update-publisher	2
-knip.jsonc	ext-lint	5
+knip.jsonc	ext-lint	7
 package.json	-	"dev:fixtures": "node apps/server/scripts/dev-fixtures.ts"
 package.json	-	"seed-dev-db": "node apps/server/scripts/seed-dev-db.ts"
 packages/client-runtime/src/connection/catalog.ts	directory-computers	1
@@ -1508,4 +1508,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	5
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	5
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262758
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 262788
+apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
+evals/package.json	-	"loom-skills"
+evals/README.md	-	Loom skills

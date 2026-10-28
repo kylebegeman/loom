@@ -1,0 +1,5 @@
+interface:
+  display_name: "File pr"
+  short_description: "File or update a concise pull request when the user explicitly "
+policy:
+  allow_implicit_invocation: true

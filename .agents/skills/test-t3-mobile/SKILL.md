@@ -80,3 +80,10 @@ Confirm the intended projects appear, exercise the affected flow, and capture
 evidence. Retain the app and environment while iterating. At teardown, remove
 the disposable connection, close the AgentDevice session, call `device_close`,
 and stop only your backend and Metro processes.
+
+## Choose verification journeys
+
+Use the maintained [feature map](features/README.md) to select the affected journeys,
+including alternate entry points, providers, reverse states and connection modes.
+Reconcile recipes with current source before one integrated live pass. Preserve build,
+fixture and evidence identity, and distinguish service tests from a real-client result.

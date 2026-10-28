@@ -1,0 +1,5 @@
+interface:
+  display_name: "Modernize"
+  short_description: "Update old work against current product ownership and architect"
+policy:
+  allow_implicit_invocation: true

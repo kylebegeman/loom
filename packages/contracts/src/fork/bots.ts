@@ -1113,6 +1113,7 @@ export const checkTriggerMapping = (
 };
 
 const TriggerFields = {
+  projectId: Schema.optionalKey(ProjectId),
   botId: BotId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
   event: BotTriggerEvent,
@@ -1176,6 +1177,7 @@ export const BotsSaveTriggerInput = Schema.Struct({
   /** Absent creates a trigger pinned to the bot's current version. */
   id: Schema.optionalKey(BotTriggerId),
   ...TriggerFields,
+  projectId: Schema.optionalKey(Schema.NullOr(ProjectId)),
   /** Rejects the save when the stored trigger changed since. */
   expectedUpdatedAt: Schema.optionalKey(Schema.String),
   /** The webhook signing secret. Omit to keep the stored one; an empty string removes it. */

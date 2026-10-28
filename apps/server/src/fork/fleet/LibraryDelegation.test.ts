@@ -4,6 +4,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  OrchestratorMcpFailure,
   ThreadId,
 } from "@t3tools/contracts";
 import type { LibraryProject, LibraryResolvedBinding } from "@t3tools/contracts/fork";
@@ -91,8 +92,13 @@ const resolved: LibraryResolvedBinding = {
 };
 
 function setup(
-  options: { readonly responses?: Record<string, unknown>; readonly bound?: boolean } = {},
+  options: {
+    readonly responses?: Record<string, unknown>;
+    readonly failBindOnce?: boolean;
+    readonly bound?: boolean;
+  } = {},
 ) {
+  let bindFailed = false;
   const calls: Array<{ readonly tool: string; readonly input: unknown }> = [];
   const responses: Record<string, unknown> = {
     loom_library_binding_resolve: resolved,
@@ -156,6 +162,12 @@ function setup(
     Layer.mock(PeerForwarding.PeerForwarding)({
       call: (_scope, tool, _environmentId, input) => {
         calls.push({ tool: tool.name, input });
+        if (options.failBindOnce && tool.name === "loom_library_thread_bind" && !bindFailed) {
+          bindFailed = true;
+          return Effect.fail(
+            new OrchestratorMcpFailure({ code: "target_required", message: "Binding failed" }),
+          );
+        }
         const decode = decoders[tool.name as keyof typeof decoders];
         return (
           decode === undefined
@@ -305,3 +317,43 @@ it.effect("binds an idle child before dispatch and preserves retry keys and mode
     }),
   );
 });
+
+it.effect(
+  "cannot dispatch after a failed bind and retries with the same durable request IDs",
+  () => {
+    const fixture = setup({ failBindOnce: true });
+    return fixture.run(
+      Effect.gen(function* () {
+        const request = {
+          projectId: localProject,
+          title: "Check",
+          message: "Inspect",
+          clientRequestId: "durable-request",
+        };
+        const placement = { project, binding: resolved.binding, projectId: localProject };
+        const failure = yield* launchLibraryRemoteTask(scope, there, placement, request).pipe(
+          Effect.flip,
+        );
+        expect(failure.message).toBe("Binding failed");
+        expect(fixture.calls.some((call) => call.tool === "t3_thread_send")).toBe(false);
+        yield* launchLibraryRemoteTask(scope, there, placement, request);
+        expect(
+          fixture.calls
+            .filter((call) => call.tool === "t3_thread_launch")
+            .map((call) => call.input),
+        ).toEqual([
+          expect.objectContaining({ clientRequestId: "durable-request" }),
+          expect.objectContaining({ clientRequestId: "durable-request" }),
+        ]);
+        expect(
+          fixture.calls.filter((call) => call.tool === "t3_thread_send").map((call) => call.input),
+        ).toEqual([
+          expect.objectContaining({
+            clientRequestId: "durable-request:message",
+            threadId: "remote-child",
+          }),
+        ]);
+      }),
+    );
+  },
+);

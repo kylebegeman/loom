@@ -1,0 +1,5 @@
+interface:
+  display_name: "Swarm"
+  short_description: "Coordinate explicitly requested parallel coverage with bounded "
+policy:
+  allow_implicit_invocation: false

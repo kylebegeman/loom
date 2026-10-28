@@ -378,3 +378,30 @@ pass a `target` to `loom_bots_run` and `loom_bots_run_batch`.
 **Archive** hides a bot from the palette and from agents and stops new runs; **Restore** brings
 it back. **Delete** removes the bot for good once none of its runs is queued or running. Its
 past runs stay listed.
+
+## Engineering workflows
+
+When the starter Reviewer and Verifier exist, Loom also offers Engineering review,
+Intake and reproduce, Upstream compatibility, and Performance regression review
+pipelines. These use your saved bot versions and the existing run history, budget,
+pause and cancellation controls. Your edits and deleted starters stay yours.
+
+Create a trigger from a pipeline to make it recurring. The suggested weekly schedule
+starts disabled, with one run per day and a twelve-hour cooldown. Choose the exact
+execution project, complete the inputs, review permissions and limits, then enable it.
+Schedules run on the selected computer while its Loom server is running.
+
+Intake uses a signed webhook and fixed target, Library project, component and project
+revision. Send a stable delivery ID and a JSON report with `libraryProjectId`,
+`componentId`, `projectRevision`, `reportId`, `source` and `report`. Map `source` and
+`report` from the body. Reports outside the fixed scope are refused; retries with the
+same source/report ID are deduplicated. It triages ownership and evidence, then
+reproduces a confirmed issue. A separate authorized task owns any fix or publication.
+
+Performance review needs comparable baseline and candidate artifacts with at least
+five observations per scenario. Missing work, errors or incomparable samples need
+attention. It does not manufacture a passing benchmark. Upstream compatibility
+reviews exact source refs and ownership boundaries; the nightly integration remains
+the only unattended merge workflow.
+
+For hosted intake, see [Connect Grok Bot](grok-bot.md).

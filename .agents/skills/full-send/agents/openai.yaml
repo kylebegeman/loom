@@ -1,0 +1,5 @@
+interface:
+  display_name: "Full send"
+  short_description: "Use only for an explicit request to invoke the full-send delive"
+policy:
+  allow_implicit_invocation: false

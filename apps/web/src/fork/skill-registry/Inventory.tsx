@@ -162,6 +162,9 @@ function SkillRow({
               {entry.install.commit ? `at ${entry.install.commit}` : "in the Lab"}
             </p>
           ) : null}
+          {entry.compatibility ? (
+            <p className="text-xs text-muted-foreground">Requires: {entry.compatibility}</p>
+          ) : null}
           <Issues issues={entry.problems} />
           {entry.containsScripts ? (
             <p className="text-xs text-muted-foreground">

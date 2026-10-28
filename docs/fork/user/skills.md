@@ -46,3 +46,12 @@ agents may retain the earlier version.
 
 Skill folders are installed on the selected computer. They are not synchronized to
 other computers, and source installers and plugin marketplaces are not run by Loom.
+
+## Loom workflow skills
+
+This checkout includes a curated, MIT-licensed workflow pack with pinned source
+revisions. Its `loom-workflows` catalog records provider/tool compatibility and local
+dependencies. Delivery workflows such as `$full-stop` and `$full-send` require explicit
+invocation. They retain the current task's permissions, requested model and ownership.
+Use `$recall` for a named topic across Library history, or `$ketchup` for a read-only
+catch-up with source links and actual decisions waiting on you.

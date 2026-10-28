@@ -1,0 +1,5 @@
+interface:
+  display_name: "Correct"
+  short_description: "Turn a demonstrated recurring agent mistake into a focused arch"
+policy:
+  allow_implicit_invocation: false

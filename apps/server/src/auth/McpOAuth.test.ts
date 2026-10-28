@@ -373,6 +373,16 @@ it.live("signs in a hosted agent with an https callback that asked for a client 
         ),
       );
       expect(signedIn).toMatchObject({ label: "Hosted bot", access: "approval-required" });
+      // fork: grok-bot - revocation ends the hosted client session immediately.
+      yield* auth.revokeSession(signedIn.sessionId);
+      const revoked = yield* auth
+        .authenticateMcpClient(
+          HttpServerRequest.fromWeb(
+            at("/mcp", { headers: { authorization: `Bearer ${token.access_token}` } }),
+          ),
+        )
+        .pipe(Effect.result);
+      expect(revoked._tag).toBe("Failure");
     }),
   ),
 );

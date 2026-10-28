@@ -1,0 +1,5 @@
+interface:
+  display_name: "Recall"
+  short_description: "Reconstruct a named project topic from Library history, decisio"
+policy:
+  allow_implicit_invocation: false

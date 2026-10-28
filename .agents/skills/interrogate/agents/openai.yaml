@@ -1,0 +1,5 @@
+interface:
+  display_name: "Interrogate"
+  short_description: "Challenge a significant design or change with executable counte"
+policy:
+  allow_implicit_invocation: false

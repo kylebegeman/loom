@@ -52,3 +52,10 @@ using retained terminal sessions or captured PIDs.
 When sharing is requested, start with `vp run dev --share` and give the user
 a fresh complete pairing URL that you have not consumed. Keep other credentials
 out of screenshots, commits, and replies.
+
+## Choose verification journeys
+
+Use the maintained [feature map](features/README.md) to select the affected journeys,
+including alternate entry points, providers, reverse states and connection modes.
+Reconcile recipes with current source before one integrated live pass. Preserve build,
+fixture and evidence identity, and distinguish service tests from a real-client result.

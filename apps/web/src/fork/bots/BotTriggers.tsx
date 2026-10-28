@@ -1538,6 +1538,9 @@ function TriggerSheet({
           ? `${when}, on ${data.hostLabel}'s clock`
           : when,
     },
+    ...(trigger.projectId
+      ? [{ label: "Execution project", value: data.projectTitle(trigger.projectId) }]
+      : []),
     ...(trigger.event.kind === "schedule"
       ? [
           {

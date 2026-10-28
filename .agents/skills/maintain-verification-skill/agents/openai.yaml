@@ -1,0 +1,5 @@
+interface:
+  display_name: "Maintain verification skill"
+  short_description: "Reconcile an existing verification skill and feature map with s"
+policy:
+  allow_implicit_invocation: false

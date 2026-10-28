@@ -1,0 +1,5 @@
+interface:
+  display_name: "Sol loop"
+  short_description: "Run an explicitly requested bounded Sol review loop with the ex"
+policy:
+  allow_implicit_invocation: false
