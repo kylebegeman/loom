@@ -1,11 +1,12 @@
 import { KeyRoundIcon } from "lucide-react";
+import { VAULT_ITEM_SEARCH_FEATURE } from "@t3tools/contracts/fork";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { openVaultProfiles } from "./profile-navigation";
 export const vaultProfilePaletteSource: ForkCommandPaletteSource = {
   id: "vault-profiles",
   items: ({ activeThreadRef, loomFeatures }) =>
     (["profiles", "references"] as const).flatMap((section) =>
-      loomFeatures.includes(`vault-${section}`)
+      loomFeatures.includes(section === "references" ? VAULT_ITEM_SEARCH_FEATURE : "vault-profiles")
         ? [
             {
               kind: "action" as const,

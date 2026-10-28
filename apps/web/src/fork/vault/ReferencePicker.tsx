@@ -1,8 +1,18 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultReference, VaultItemKind } from "@t3tools/contracts/fork";
-import { createVaultReferenceAtoms, VAULT_KIND_LABELS } from "@t3tools/client-runtime/fork";
+import {
+  VAULT_ITEM_SEARCH_FEATURE,
+  type VaultReference,
+  type VaultItemKind,
+} from "@t3tools/contracts/fork";
+import {
+  createVaultReferenceAtoms,
+  VAULT_KIND_LABELS,
+  VAULT_SEARCH_DEBOUNCE_MS,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "~/state/entities";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
@@ -26,11 +36,26 @@ export function VaultReferencePicker({
   disabled?: boolean;
 }) {
   const field = useId();
+  const configs = useServerConfigs();
+  const searchable = supportsLoomFeature(
+    configs.get(environmentId)?.environment.capabilities,
+    VAULT_ITEM_SEARCH_FEATURE,
+  );
   const [query, setQuery] = useState(""),
     [search, setSearch] = useState(""),
     [archived, setArchived] = useState(false),
     [cursor, setCursor] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces the server-side metadata query while the user types
+  useEffect(() => {
+    if (!searchable || query.trim() === search) return;
+    const timer = window.setTimeout(() => {
+      setSearch(query.trim());
+      setCursor(null);
+      setNotice(null);
+    }, VAULT_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query, search, searchable]);
   const atom = references.search({
       environmentId,
       input: { query: search, kind, includeArchived: archived, cursor },

@@ -5,8 +5,8 @@ SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub
 
 An administrator must connect the selected computer to an OpenBao service first.
 
-In web or desktop, open **Settings → Vault** and select the computer you want to manage. The page
-starts with **Vault status**; less frequent tools are under **Advanced** at the end.
+In web or desktop, open **Settings → Vault** and select the computer you want to manage. Your
+items, owner access and connections are shown together; less frequent tools are under **Advanced**.
 On mobile, open that computer's settings and find **Vault**. The computer owns the connection;
 your phone or browser does not need OpenBao credentials. Servers without Vault support hide or
 disable the controls.
@@ -46,6 +46,10 @@ credentials out of it.
 
 ## Manage records
 
+Items are shown by name. Search a name, kind, item ID or reference, or choose a kind to narrow
+the list. Search checks metadata only, never saved values. Choose **Recently updated** to
+start with the latest changes. Older computers retain their original paged list until updated.
+
 Choose **Add item**, or **Add to Vault...** in the command palette, and enter a name and value.
 To save a file, choose **Choose file** beside the value or drop one onto the Vault page on web/desktop.
 Loom selects Secure file and uses the filename as the initial name. Secret values are hidden by
@@ -54,7 +58,9 @@ up to 512 KB. Choose **Edit** to rename an item; enable **Replace value** only w
 contents. Values appear only after **Reveal value**, **Download** or **Share file**. Downloads
 and shared copies leave Vault's protection once saved to another application.
 
-Archive hides an item from the normal list. Enable **Include archived items** to restore it.
+Archive hides an item from the normal list. Open **Archived** below it and choose **Restore**
+to bring an item back. Archived results use the same search and kind filter; use **More archived
+items** when another page is available.
 Delete removes its current value; encrypted previous versions and backups follow your backend's
 retention policy. Delete does not revoke credentials at GitHub or another service. If an item
 changes while you edit it, refresh before retrying instead of overwriting the newer version.
@@ -549,12 +555,11 @@ personal SSH configuration is changed, and private keys stay in Vault's control 
 
 ## Find references and configure a project profile
 
-In web or desktop, open **Settings → Vault → References** to search names or item IDs
-and copy a stable reference. On mobile, open **Settings → Computers → Manage computer** and
-use **Vault references**. Choose **Search on computer** to inspect another connected computer's
-records. Each computer requires its own inspection permission and reference-search support;
-switching computers clears the current search. This does not move credentials or project bindings.
-References contain no credential values and grant no access. Use **More references** when a sparse search page has no matches but more records remain.
+Open **Settings → Vault** on web or desktop, or **Vault** in a computer's settings on mobile.
+Search the item list and choose **Copy reference** on a row. The command palette's **Search
+Vault references** opens that list with search focused. Select the computer whose Vault you
+need; each requires its own inspection permission. References contain no credential values,
+grant no access, and remain stable when an item is renamed.
 
 Open **Settings → Vault → Project connections** (**Vault project profiles** on mobile), choose the
 destination computer and project, and create a

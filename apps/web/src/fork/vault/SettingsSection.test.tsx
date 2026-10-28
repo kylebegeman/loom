@@ -10,6 +10,8 @@ const state = vi.hoisted(() => {
   const listeners = new Set<() => void>();
   return {
     listError: false,
+    features: ["vault-core"],
+    list: vi.fn(() => "items"),
     run: vi.fn(),
     refresh: vi.fn(),
     change: { permissionAtom: () => "change-permission" },
@@ -49,20 +51,24 @@ vi.mock("@effect/atom-react", async () => {
   };
 });
 vi.mock("@t3tools/client-runtime/fork", () => ({
-  loomFeaturesOf: () => ["vault-core"],
+  loomFeaturesOf: () => state.features,
   vaultStatusMessage: () => "Vault is connected.",
   VAULT_KIND_LABELS: { secret: "Secret" },
   VAULT_FILE_LIMIT_BYTES: 512 * 1024,
   vaultItemActions: () => ({ manager: null, revealValue: true, replaceValue: true }),
   VAULT_GENERIC_ITEM_KINDS: ["secret"],
   VAULT_REVEAL_DURATION_MS: 60_000,
+  VAULT_SEARCH_DEBOUNCE_MS: 250,
+  vaultItemChanges: () => "item-changes",
 }));
 vi.mock("~/components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({ environment: { environmentId: "development-computer" } }),
 }));
 vi.mock("~/state/entities", () => ({ useServerConfigs: () => new Map() }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => true }));
-vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh } }));
+vi.mock("~/rpc/atomRegistry", () => ({
+  appAtomRegistry: { refresh: state.refresh, get: () => 0, set: vi.fn() },
+}));
 vi.mock("./add-navigation", () => ({ vaultAddTarget: "add-target" }));
 vi.mock("./OwnerSettingsSection", () => ({ VaultOwnerSettings: () => null }));
 vi.mock("./SshDialog", () => ({ VaultSshDialog: () => null }));
@@ -70,7 +76,8 @@ vi.mock("./access-navigation", () => ({ openVaultAccess: vi.fn() }));
 vi.mock("./state", () => ({
   vault: {
     status: () => "status",
-    list: () => "items",
+    list: state.list,
+    archivedPage: () => "archived-items",
     save: { permissionAtom: () => "save-permission" },
     reveal: { permissionAtom: () => "reveal-permission" },
     change: state.change,
@@ -93,7 +100,9 @@ let root: Root;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.listError = false;
+  state.features = ["vault-core"];
   vi.resetAllMocks();
+  state.list.mockReturnValue("items");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -102,6 +111,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 const button = (name: string, scope: ParentNode = container) =>
   [...scope.querySelectorAll("button")].find((element) => element.textContent === name)!;
@@ -147,4 +157,37 @@ it("requires deletion confirmation and keeps a failed mutation visible inside th
   act(() => button("Cancel", dialog).click());
   expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(state.run).toHaveBeenCalledOnce();
+});
+
+it("shows the searchable list by default, debounces its query and copies a value-free reference", async () => {
+  vi.useFakeTimers();
+  state.features = ["vault-core", "vault-owner-trusted", "vault-item-search"];
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  act(() => root.render(<VaultSettingsSection />));
+  expect(container.textContent).toContain(state.item.label);
+  expect(container.textContent).not.toContain("Vault records and advanced controls");
+  expect(state.list).toHaveBeenLastCalledWith({
+    environmentId: "development-computer",
+    input: { cursor: null, includeArchived: false, query: "", sort: "label" },
+  });
+  const search = container.querySelector<HTMLInputElement>("#loom-vault-item-search")!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "credential",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(249));
+  expect(state.list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ input: expect.objectContaining({ query: "" }) }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(state.list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ input: expect.objectContaining({ query: "credential" }) }),
+  );
+  await act(async () => button("Copy reference").click());
+  expect(writeText).toHaveBeenCalledWith(`loom-vault:development-computer:${state.item.id}`);
+  expect(writeText.mock.calls[0]?.[0]).not.toContain("synthetic-account-secret");
 });
