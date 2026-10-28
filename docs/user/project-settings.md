@@ -523,7 +523,9 @@ To free a landed conversation's checkout while you keep talking to it, choose **
 from the thread's menu on web, desktop or mobile, or ask an agent to do it. It applies the same
 checks as the landed rule without waiting for the conversation to settle or for the thread to be
 unpinned, then removes the worktree and, under the same conditions as the landed rule, its branch.
-Its lane frees up an hour later. Your next message recreates the checkout and resumes the
+Its lane frees up an hour later. A released conversation shows **Checkout released**. Choose
+**Restore checkout** from its menu or the command palette to recover the files and run setup
+without sending a message. Your next message also recreates the checkout and resumes the
 conversation. If the thread is running or the checkout cannot be removed safely, Loom keeps it and
 tells you why.
 

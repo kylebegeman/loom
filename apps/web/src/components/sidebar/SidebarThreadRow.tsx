@@ -1,3 +1,4 @@
+import { CheckoutStatus } from "~/fork/project-lifecycle/CheckoutStatus"; // fork: project-lifecycle
 import { useEnvironment } from "../../state/environments"; // fork: attention-status
 import { MonitorOffIcon, PauseCircleIcon } from "lucide-react"; // fork: attention-status
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
@@ -1227,6 +1228,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             )}
             {draftIndicator}
             {title}
+            {/* fork: project-lifecycle */}
+            <CheckoutStatus threadRef={threadRef} />
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (

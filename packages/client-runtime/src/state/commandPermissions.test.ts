@@ -682,6 +682,7 @@ it.effect("interrupts document-lived commands when their final reader closes", (
 it.effect.each([
   [WS_METHODS.checkpointRestoreState, AuthOrchestrationReadScope],
   [WS_METHODS.checkpointUndoRestore, AuthOrchestrationOperateScope],
+  ["loom.project-lifecycle.restoreCheckout", AuthOrchestrationOperateScope],
 ] as const)("guards checkpoint operation %s", ([method, scope]) =>
   Effect.scoped(
     Effect.gen(function* () {

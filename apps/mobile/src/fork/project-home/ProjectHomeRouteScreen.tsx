@@ -1,3 +1,5 @@
+import { scopedThreadKey } from "../../lib/scopedEntities";
+import { useReleasedCheckoutIds, useRestoreThreadCheckout } from "../project-lifecycle/state";
 import { LegendList } from "@legendapp/list/react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -244,6 +246,8 @@ function ProjectHomeContent(props: {
     });
   const { settleThread, unsettleThread, unsnoozeThread } = useThreadListActions();
   const releaseCheckout = useReleaseThreadCheckout();
+  const restoreCheckout = useRestoreThreadCheckout();
+  const releasedCheckoutIds = useReleasedCheckoutIds();
   const openSettings = () => {
     if (!onlineProject) return;
     navigation.navigate("SettingsProjectOverview", {
@@ -591,6 +595,7 @@ function ProjectHomeContent(props: {
           configs.get(thread.environmentId)?.environment.capabilities,
           "workspace-handoff",
         ),
+        checkoutReleased: releasedCheckoutIds.has(scopedThreadKey(thread.environmentId, thread.id)),
         checkoutReleaseSupported:
           thread.worktreePath != null &&
           supportsLoomFeature(
@@ -622,6 +627,9 @@ function ProjectHomeContent(props: {
             </View>
             <View className="min-w-0 flex-1 gap-1">
               <Text className="text-sm font-t3-medium text-foreground">{thread.title}</Text>
+              {releasedCheckoutIds.has(scopedThreadKey(thread.environmentId, thread.id)) ? (
+                <Text className="text-xs text-foreground-muted">Checkout released</Text>
+              ) : null}
               <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5">
                 <Text
                   className={cn(
@@ -656,6 +664,7 @@ function ProjectHomeContent(props: {
                 if (nativeEvent.event === "reopen") void unsettleThread(thread);
                 if (nativeEvent.event === "wake") void unsnoozeThread(thread);
                 if (nativeEvent.event === "release-checkout") void releaseCheckout(thread);
+                if (nativeEvent.event === "restore-checkout") void restoreCheckout(thread);
                 if (
                   nativeEvent.event === "move-work" &&
                   readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope)

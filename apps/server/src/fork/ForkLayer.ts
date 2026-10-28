@@ -269,6 +269,9 @@ const layerLibraryPublisher = LibraryPublisher.layer.pipe(
   Layer.provide(PreviewAccess.layer),
 );
 export const layerProjectLifecycle = ProjectLifecycle.layer.pipe(
+  Layer.provide(RuntimeLayer.layerProjectSetupScriptRunner),
+  Layer.provide(WorktreeSetupTracker.layer),
+  Layer.provide(ProjectionStore.layer),
   Layer.provide(RuntimeLayer.layerThreadSettlement),
   Layer.provide(ProjectStore.layer),
   Layer.provide(RuntimeLayer.layerThreadManagementProvided),

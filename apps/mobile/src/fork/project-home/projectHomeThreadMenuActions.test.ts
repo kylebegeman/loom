@@ -39,6 +39,11 @@ describe("project row operation access", () => {
   it("offers Release checkout for idle worktree threads and disables it while running", () => {
     const release = { ...access, checkoutReleaseSupported: true };
     expect(
+      projectHomeThreadMenuActions({ ...release, activity: "settled", checkoutReleased: true }).map(
+        (action) => action.id,
+      ),
+    ).toEqual(["reopen", "move-work", "restore-checkout"]);
+    expect(
       projectHomeThreadMenuActions({ ...release, activity: "settled" }).map((action) => action.id),
     ).toEqual(["reopen", "move-work", "release-checkout"]);
     expect(

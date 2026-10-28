@@ -1,3 +1,4 @@
+import { CheckoutStatus } from "~/fork/project-lifecycle/CheckoutStatus"; // fork: project-lifecycle
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -460,6 +461,8 @@ export const ChatHeader = memo(function ChatHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       {/* fork: library-save */}
+      {/* fork: project-lifecycle */}
+      {isServerThread ? <CheckoutStatus threadRef={activeThreadRef} /> : null}
       {isServerThread ? <LibrarySaveIndicator threadRef={activeThreadRef} /> : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>

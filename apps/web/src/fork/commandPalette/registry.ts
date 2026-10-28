@@ -16,7 +16,10 @@ import { workspaceHandoffPaletteSource } from "../workspace-handoff/palette";
 import { miniOffloadPaletteSource } from "../mini-offload/palette";
 import { pcbPreviewPaletteSource } from "../pcb-preview/palette";
 import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
-import { projectLifecyclePaletteSource } from "../project-lifecycle/palette";
+import {
+  projectLifecyclePaletteSource,
+  useCheckoutPaletteContext,
+} from "../project-lifecycle/palette";
 import { appleBuildToolingPaletteSource } from "../apple-build-tooling/palette";
 import { deviceQaPaletteSource } from "../device-qa/palette";
 import { panelPickerPaletteSource } from "../panel-picker/palette";
@@ -60,6 +63,7 @@ export interface ForkCommandPaletteContext {
   readonly library?: LibraryPaletteContext | null;
   readonly bots?: BotsPaletteContext | null;
   readonly projectProfile?: ProfilePaletteContext | null;
+  readonly checkout?: ReturnType<typeof useCheckoutPaletteContext>;
 }
 
 export interface ForkCommandPaletteSource {
@@ -148,7 +152,16 @@ export function useForkCommandPaletteItems(query = ""): {
   const library = useLibraryPaletteContext(activeThreadRef, query);
   const bots = useBotsPaletteContext();
   const projectProfile = useProfilePaletteContext(activeThreadRef);
-  const context = { activeThreadRef, loomFeatures, modelFiles, library, bots, projectProfile };
+  const checkout = useCheckoutPaletteContext(activeThreadRef);
+  const context = {
+    activeThreadRef,
+    loomFeatures,
+    modelFiles,
+    library,
+    bots,
+    projectProfile,
+    checkout,
+  };
   return {
     items: forkCommandPaletteItems(context),
     searchItems: forkCommandPaletteSearchItems(context),

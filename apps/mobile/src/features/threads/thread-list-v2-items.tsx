@@ -1,3 +1,8 @@
+import { scopedThreadKey } from "../../lib/scopedEntities"; // fork: project-lifecycle
+import {
+  useReleasedCheckoutIds,
+  useRestoreThreadCheckout,
+} from "../../fork/project-lifecycle/state"; // fork: project-lifecycle
 // fork: attention-status
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentQuery } from "../../state/query";
@@ -781,6 +786,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   // fork: project-lifecycle
   const releaseCheckout = useReleaseThreadCheckout();
+  // fork: project-lifecycle
+  const checkoutReleased = useReleasedCheckoutIds().has(
+    scopedThreadKey(thread.environmentId, thread.id),
+  );
+  const restoreCheckout = useRestoreThreadCheckout(); // fork: project-lifecycle
   const checkoutReleaseSupported =
     thread.worktreePath != null &&
     supportsLoomFeature(
@@ -793,14 +803,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       checkoutReleaseSupported
         ? [
             {
-              id: "release-checkout",
-              title: "Release checkout",
+              id: checkoutReleased ? "restore-checkout" : "release-checkout",
+              title: checkoutReleased ? "Restore checkout" : "Release checkout",
               image: "folder",
               attributes: { disabled: !checkoutReleaseIdle },
             },
           ]
         : [],
-    [checkoutReleaseIdle, checkoutReleaseSupported],
+    [checkoutReleaseIdle, checkoutReleaseSupported, checkoutReleased],
   );
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
@@ -1041,6 +1051,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
       // fork: project-lifecycle
       if (nativeEvent.event === "release-checkout") void releaseCheckout(thread);
+      // fork: project-lifecycle
+      if (nativeEvent.event === "restore-checkout") void restoreCheckout(thread);
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "settle") handleSettle();
       if (nativeEvent.event === "unsettle") handleUnsettle();
@@ -1097,6 +1109,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       canOperateThread,
       botMenuItems, // fork: bots
       releaseCheckout, // fork: project-lifecycle
+      restoreCheckout, // fork: project-lifecycle
       handleArchive,
       handleDelete,
       handleRegenerateTitle,
@@ -1494,6 +1507,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             >
               {thread.title}
             </Text>
+            {/* fork: project-lifecycle */}
+            {checkoutReleased ? (
+              <Text className="text-xs text-foreground-muted">Checkout released</Text>
+            ) : null}
             {props.searchMatch ? (
               <ThreadSearchMatchExcerpt
                 sidebar={sidebarPane}
