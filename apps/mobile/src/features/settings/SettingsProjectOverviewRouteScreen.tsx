@@ -94,6 +94,7 @@ export function SettingsProjectOverviewRouteScreen({
   const initialEnvironmentId = route.params?.initialEnvironmentId;
   const initialProjectId = route.params?.initialProjectId;
   const appliedProjectRef = useRef<string | undefined>(undefined);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies the route's initial project to the shared Settings filter after its environment groups load
   useEffect(() => {
     if (initialEnvironmentId === undefined || initialProjectId === undefined) return;
     const projectRef = JSON.stringify([initialEnvironmentId, initialProjectId]);
@@ -111,7 +112,7 @@ export function SettingsProjectOverviewRouteScreen({
   // fork: project-navigation
   // Folder paths can change grouping keys, while the selected project IDs stay the same.
   const previousSelection = useRef<(typeof projectGroups)[number] | null>(null);
-  // oxlint-disable-next-line t3code/react-effect-budget -- the successor is written to the Settings filter provider, which another component owns
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the successor is written to the Settings filter provider, which another component owns
   useEffect(() => {
     if (group) {
       previousSelection.current = group;

@@ -82,7 +82,7 @@ export function useThreadHeaderOptions(props: {
 
   // fork: library -- the header offers conversation details beside upstream's right items
   const openDetails = useRef(props.onOpenDetails);
-  // oxlint-disable-next-line t3code/react-effect-budget -- a stable details handler keeps native header items from re-applying whenever the callback changes
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a stable details handler keeps native header items from re-applying whenever the callback changes
   useLayoutEffect(() => {
     openDetails.current = props.onOpenDetails;
   });

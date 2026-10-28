@@ -1512,3 +1512,4 @@ apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 26278
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
+apps/web/src/hooks/useNewConversationShortcut.ts	library-projects	1

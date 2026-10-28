@@ -1292,3 +1292,9 @@ behavior eval. It reads current skill files and reuses the upstream MCP eval har
 
 `knip.jsonc` (`ext-lint`) includes the directly invoked skill validator and semantic
 upstream report as entrypoints; neither is bundled into the running application.
+
+### Native effect lint compatibility
+
+`useNewConversationShortcut.ts` (`library-projects`) registers the hook-backed
+Library start in the global keyboard scope. Its lifecycle reason and the mobile
+Settings/header reasons use upstream's `no-unreasoned-state-sync` rule.

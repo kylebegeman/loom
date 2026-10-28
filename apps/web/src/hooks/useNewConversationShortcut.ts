@@ -28,7 +28,8 @@ export function useNewConversationShortcut() {
 /** Mounted by the chat route: the Library and No project starts need React state. */
 export function NewConversationShortcut() {
   const start = useNewConversationShortcut();
-  // oxlint-disable-next-line t3code/react-effect-budget -- hands the hook-backed start to the keydown scope
+  // fork: library-projects
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the hook-backed start to the keydown scope
   useEffect(() => provideNewConversationShortcut(start), [start]);
   return null;
 }
