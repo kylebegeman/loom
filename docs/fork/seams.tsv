@@ -1496,3 +1496,5 @@ apps/web/src/components/ui/standalone-page.tsx	brand	2
 apps/web/src/hooks/useStartTriage.ts	brand	1
 packages/client-runtime/src/state/peerPairingCode.ts	brand	1
 packages/contracts/src/preview.ts	brand	1
+apps/server/src/peer/RemoteDelegation.ts	library-fleet	5
+apps/server/src/peer/RemoteDelegation.test.ts	library-fleet	2

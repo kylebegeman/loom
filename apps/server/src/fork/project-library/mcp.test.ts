@@ -14,7 +14,8 @@ import { archiveFor, resource, source, threadId } from "./Library.testkit.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
-import { ProjectLibraryToolkit, projectLibraryHandlers } from "./mcp.ts";
+import { ProjectLibraryToolkit } from "./tools.ts";
+import { projectLibraryHandlers } from "./mcp.ts";
 
 const project = {
   id: "project",

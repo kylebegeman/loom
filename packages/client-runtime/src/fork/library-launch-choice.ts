@@ -61,9 +61,9 @@ export function libraryLaunchChoice(input: {
     (candidate) => candidate.environmentId === hostId && candidate.kind !== "mini",
   );
   const candidate =
-    onHost.find((entry) => entry.kind === "copy" && entry.copyId === input.copyId) ??
-    onHost[0] ??
-    null;
+    input.copyId === null
+      ? (onHost[0] ?? null)
+      : (onHost.find((entry) => entry.kind === "copy" && entry.copyId === input.copyId) ?? null);
   return { hostId, candidate };
 }
 

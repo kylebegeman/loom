@@ -544,6 +544,8 @@ const makeLaptop = (
   >,
   /** The laptop's links from before a restart, which keep their sessions there. */
   kept?: Context.Context<Layer.Success<ReturnType<typeof layerLinkingEnvironment>>>,
+  // fork: library-fleet
+  originKey?: string,
 ) =>
   Effect.gen(function* () {
     const linking = kept ?? (yield* layerLinkingEnvironment(laptop).pipe(Layer.build));
@@ -588,7 +590,10 @@ const makeLaptop = (
               resolve: (cwd) =>
                 Effect.succeed(
                   cwd === "/home/me/app"
-                    ? ({ canonicalKey: "github.com/acme/app" } as RepositoryIdentity)
+                    ? ({
+                        canonicalKey: "github.com/acme/app",
+                        ...(originKey === undefined ? {} : { origin: { canonicalKey: originKey } }),
+                      } as RepositoryIdentity)
                     : null,
                 ),
             }),
@@ -1757,6 +1762,31 @@ it.effect("a local task runs in this thread's project", () =>
       });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result.content)).toContain("invalid_request");
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+// fork: library-fleet
+it.effect("does not delegate a fork to a vanilla checkout sharing its upstream key", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const thread = yield* makeBoxThread;
+      const b = yield* serveBox(thread);
+      const offers = yield* SubscriptionRef.make<
+        ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+      >([]);
+      const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+      const a = yield* makeLaptop(database, offers, undefined, "github.com/acme/loom");
+      yield* seedParent(a);
+      yield* linkTo(a.links, b, "full-access");
+      const result = yield* a.call("delegate_task", {
+        task: "Check this fork on the box.",
+        target: { environmentId: box.environmentId },
+        mode: "async",
+        clientRequestId: "fork-on-box",
+      });
+      expect(result.isError).toBe(true);
+      expect(yield* Ref.get(thread.launched)).toBeNull();
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

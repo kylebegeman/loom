@@ -1245,3 +1245,10 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/mobile/src/features/cloud/dpop.ts`                              | `secure-native-random` | Fail closed when native secure randomness is unavailable; Expo's convenience byte API can fall back to Math.random in development. |
 | `apps/mobile/src/features/cloud/dpop.test.ts`                         | `secure-native-random` | Cover unavailable secure randomness without using the available insecure fallback.                                                 |
 | `apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts` | `secure-native-random` | Mock the secure byte API that registration proofs now use.                                                                         |
+
+### Library delegation seams
+
+| File                                            | Marker          | Why                                                                                                                           |
+| ----------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/peer/RemoteDelegation.ts`      | `library-fleet` | Resolve bound Library components and exact destination copies before upstream delegation; preserve origin identity for forks. |
+| `apps/server/src/peer/RemoteDelegation.test.ts` | `library-fleet` | Reject a vanilla checkout sharing the fork's upstream repository.                                                             |

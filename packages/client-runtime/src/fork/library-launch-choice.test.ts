@@ -175,7 +175,10 @@ describe("libraryLaunchChoice", () => {
     ).toMatchObject({ copyId: "mini-b" });
     expect(
       libraryLaunchChoice({ ranking, hostId: MINI, copyId: "book-copy" }).candidate,
-    ).toMatchObject({ copyId: "mini-a" });
+    ).toBeNull();
+    expect(
+      libraryLaunchChoice({ ranking, hostId: MINI, copyId: "removed-copy" }).candidate,
+    ).toBeNull();
   });
 
   it("chooses nothing when no computer can be preselected", () => {

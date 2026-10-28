@@ -1,3 +1,4 @@
+import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { useAtomValue } from "@effect/atom-react";
 import { agentReceiptFacts, createAgentReceiptsAtoms } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId, NodeId, ThreadId } from "@t3tools/contracts";
@@ -102,6 +103,15 @@ function ReceiptBody({ receipt, cwd }: { receipt: AgentReceipt; cwd: string | un
   const files = receipt.files.slice(0, FILES_SHOWN);
   return (
     <div className="mt-1 flex flex-col gap-2 rounded-md border border-border bg-muted/20 p-2 text-xs">
+      {receipt.pointers.remoteChild === undefined ? null : (
+        <ChatMarkdown
+          text={formatThreadLink(
+            receipt.pointers.remoteChild,
+            `Open on ${receipt.pointers.remoteChild.label}`,
+          )}
+          cwd={undefined}
+        />
+      )}
       {receipt.commands.failed.length > 0 ? (
         <pre className="overflow-x-auto whitespace-pre font-mono text-2xs text-destructive">
           {receipt.commands.failed

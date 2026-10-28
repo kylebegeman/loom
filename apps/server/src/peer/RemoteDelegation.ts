@@ -1,3 +1,4 @@
+import * as LibraryDelegation from "../fork/fleet/LibraryDelegation.ts"; // fork: library-fleet
 import {
   CommandId,
   type EnvironmentId,
@@ -151,10 +152,10 @@ const make = Effect.gen(function* () {
     );
     // The project's own identity is a one-minute cache that reads blank when
     // cold, so resolve it here, as the other side's t3_project_list does.
-    const key =
-      here === undefined
-        ? undefined
-        : (yield* repositoryIdentities.resolve(here.workspaceRoot))?.canonicalKey;
+    // fork: library-fleet
+    const identity =
+      here === undefined ? null : yield* repositoryIdentities.resolve(here.workspaceRoot);
+    const key = identity?.origin?.canonicalKey ?? identity?.canonicalKey;
     if (key === undefined) {
       return yield* new OrchestratorMcpFailure({
         code: "target_required",
@@ -170,7 +171,12 @@ const make = Effect.gen(function* () {
           limit: 100,
         });
       matches.push(
-        ...listed.projects.filter((project) => project.repositoryIdentity?.canonicalKey === key),
+        // fork: library-fleet
+        ...listed.projects.filter(
+          (project) =>
+            (project.repositoryIdentity?.origin?.canonicalKey ??
+              project.repositoryIdentity?.canonicalKey) === key,
+        ),
       );
       cursor = listed.nextCursor;
     }
@@ -247,37 +253,55 @@ const make = Effect.gen(function* () {
         input.interactionMode === undefined || input.interactionMode === "inherit"
           ? undefined
           : yield* resolveInteractionMode(parent.thread.interactionMode, input.interactionMode);
-      const projectId = yield* resolveRemoteProject(
+      // fork: library-fleet
+      const libraryPlacement = yield* LibraryDelegation.resolveLibraryRemotePlacement(
         scope,
         target.environmentId,
-        parent.thread.projectId,
         target.projectId,
-      );
+      ).pipe(Effect.provideService(PeerForwarding.PeerForwarding, forwarding));
+      const projectId =
+        libraryPlacement?.projectId ??
+        (yield* resolveRemoteProject(
+          scope,
+          target.environmentId,
+          parent.thread.projectId,
+          target.projectId,
+        ));
       // One key for the launch there and the record here, so a retry finds both.
       // Both are scoped to the provider session, as every key a caller passes is:
       // the forwarder scopes the launch's, and the record's names it.
       const key = input.clientRequestId ?? (yield* crypto.randomUUIDv4().pipe(Effect.orDie));
       const task = taskPrompt(input);
-      const launched = yield* forwarding.call(
-        scope,
-        ProjectToolkit.tools.t3_thread_launch,
-        target.environmentId,
-        {
-          projectId,
-          title: input.title ?? parent.thread.title,
-          modelSelection: { instanceId, model, ...(options === undefined ? {} : { options }) },
-          ...(runtimeMode === undefined ? {} : { runtimeMode }),
-          ...(interactionMode === undefined ? {} : { interactionMode }),
-          message: task,
-          clientRequestId: `delegate:${scope.thread.threadId}:${key}`,
-          // The thread there shows it is this thread's subagent, with a way back.
-          delegatedFrom: {
-            environmentId: hereId,
-            threadId: parent.thread.id,
-            title: parent.thread.title,
-          },
+      // fork: library-fleet
+      const launchInput = {
+        projectId,
+        title: input.title ?? parent.thread.title,
+        modelSelection: { instanceId, model, ...(options === undefined ? {} : { options }) },
+        ...(runtimeMode === undefined ? {} : { runtimeMode }),
+        ...(interactionMode === undefined ? {} : { interactionMode }),
+        message: task,
+        clientRequestId: `delegate:${scope.thread.threadId}:${key}`,
+        // The thread there shows it is this thread's subagent, with a way back.
+        delegatedFrom: {
+          environmentId: hereId,
+          threadId: parent.thread.id,
+          title: parent.thread.title,
         },
-      );
+      } satisfies Tool.Parameters<typeof ProjectToolkit.tools.t3_thread_launch>;
+      // fork: library-fleet
+      const launched = yield* libraryPlacement === null
+        ? forwarding.call(
+            scope,
+            ProjectToolkit.tools.t3_thread_launch,
+            target.environmentId,
+            launchInput,
+          )
+        : LibraryDelegation.launchLibraryRemoteTask(
+            scope,
+            target.environmentId,
+            libraryPlacement,
+            launchInput,
+          ).pipe(Effect.provideService(PeerForwarding.PeerForwarding, forwarding));
       const link = yield* links.get(target.environmentId).pipe(
         Effect.map(Option.getOrUndefined),
         Effect.orElseSucceed(() => undefined),

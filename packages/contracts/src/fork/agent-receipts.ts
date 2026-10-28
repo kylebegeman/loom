@@ -1,3 +1,4 @@
+import { OrchestrationV2RemoteTaskChild } from "../orchestrationV2.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -96,6 +97,7 @@ export const AgentReceipt = Schema.Struct({
   /** A workflow coordinator's members, or a top-level run's direct sub-agents. */
   memberReceiptIds: Schema.Array(Schema.String),
   pointers: Schema.Struct({
+    remoteChild: Schema.optional(OrchestrationV2RemoteTaskChild),
     childThreadId: Schema.NullOr(ThreadId),
     providerTranscriptPath: Schema.NullOr(Schema.String),
   }),

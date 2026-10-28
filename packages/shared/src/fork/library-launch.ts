@@ -296,6 +296,16 @@ function freshnessReason(freshness: LibraryLaunchFreshness, behind: number, chan
   }
 }
 
+/** Required tools must be positively checked before an automatic placement. */
+export function libraryLaunchRequirementsMet(
+  profile: Pick<LibraryProjectProfile, "requiredTools"> | undefined,
+  readiness: LibraryProfileReadiness | null,
+): boolean {
+  return (profile?.requiredTools ?? []).every((tool) =>
+    readiness?.checks.some((check) => check.id === tool.id && check.status === "ok"),
+  );
+}
+
 /**
  * Orders computers that could start this project's conversation, best first: online, a copy
  * covering the scope, up to date over unchecked over behind, most recently used, fewest working
@@ -417,6 +427,12 @@ export function rankLibraryLaunchCandidates(input: {
       (candidate) =>
         candidate.online &&
         candidate.readiness !== "not-ready" &&
+        libraryLaunchRequirementsMet(
+          input.profile,
+          input.readiness?.get(candidate.environmentId)?.environmentId === candidate.environmentId
+            ? (input.readiness.get(candidate.environmentId) ?? null)
+            : null,
+        ) &&
         !(candidate.kind === "copy" && candidate.freshness === "broken"),
     ) ?? null;
   return { candidates: [...candidates, ...miniCandidates(input)], preselected };

@@ -1,3 +1,4 @@
+import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
 import { type AgentReceipt, AgentReceiptError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -76,7 +77,7 @@ const formatReceipt = (receipt: AgentReceipt) =>
     ...(receipt.memberReceiptIds.length === 0
       ? []
       : [`members: ${receipt.memberReceiptIds.join(", ")}`]),
-    `child conversation: ${receipt.pointers.childThreadId ?? "none"} · transcript: ${receipt.pointers.providerTranscriptPath ?? "none"}`,
+    `child conversation: ${receipt.pointers.remoteChild === undefined ? (receipt.pointers.childThreadId ?? "none") : formatThreadLink(receipt.pointers.remoteChild, receipt.pointers.remoteChild.label)} · transcript: ${receipt.pointers.providerTranscriptPath ?? "none"}`,
     `result (${receipt.result.source}):`,
     receipt.result.text,
   ].join("\n");

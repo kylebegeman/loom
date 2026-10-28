@@ -458,6 +458,25 @@ describe("rankLibraryLaunchCandidates with required tools", () => {
     expect(preselected).toBe(testCase.preselected);
   });
 
+  it("preselects only a computer whose required tools have all passed", () => {
+    const input = {
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI)), copy("book-copy", BOOK)],
+      threads: [],
+      resourceIds: null,
+      profile: { requiredTools: [{ id: "node", minimumVersion: "26" }] },
+    };
+    const ranking = rankLibraryLaunchCandidates({
+      ...input,
+      readiness: new Map([
+        [MINI, checks(MINI, [tool("node", "Node.js", "unknown")])],
+        [BOOK, checks(BOOK, [NODE_OK])],
+      ]),
+    });
+    expect(ranking.preselected?.environmentId).toBe(BOOK);
+    expect(rankLibraryLaunchCandidates(input).preselected).toBeNull();
+  });
+
   it("ignores checks filed under another computer", () => {
     const ranking = rankLibraryLaunchCandidates({
       computers: [computer(MINI), computer(BOOK)],

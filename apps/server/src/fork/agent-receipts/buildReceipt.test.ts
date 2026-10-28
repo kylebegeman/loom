@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { NodeId, ProviderDriverKind, RunId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, NodeId, ProviderDriverKind, RunId, ThreadId } from "@t3tools/contracts";
 
 import {
   assistantItem,
@@ -10,7 +10,12 @@ import {
   toolItem,
   userItem,
 } from "./AgentReceipts.testkit.ts";
-import { commandSummary, extractSubagentResult, subagentPrompt } from "./buildReceipt.ts";
+import {
+  buildSubagentReceipt,
+  commandSummary,
+  extractSubagentResult,
+  subagentPrompt,
+} from "./buildReceipt.ts";
 import { summarizeClaudeAgentTranscript } from "./claudeTranscript.ts";
 
 const childThreadId = ThreadId.make("thread:receipts-child");
@@ -138,4 +143,33 @@ describe("command summary", () => {
       ]),
     ).toEqual({ count: 2, failed: [{ input: "vp test run", exitCode: 1 }] });
   });
+});
+
+it("keeps a remote delegate's final answer and environment pointer without a local child", () => {
+  const remoteChild = {
+    environmentId: EnvironmentId.make("studio"),
+    threadId: ThreadId.make("remote-child"),
+    label: "Studio",
+    runId: RunId.make("remote-run"),
+  };
+  const receipt = buildSubagentReceipt({
+    subagent: {
+      ...subagent,
+      origin: "app_owned",
+      driver: ProviderDriverKind.make("remote"),
+      childThreadId: null,
+      remoteChild,
+      status: "completed",
+      result: "Verified on Studio",
+    },
+    lineage: { threadId: rootThreadId, rootThreadId, parentThreadId: null, parentSubjectId: null },
+    child: null,
+    transcript: null,
+    parentCheckpoints: [],
+    workflowMember: undefined,
+    memberReceiptIds: [],
+    promptSha256: "a".repeat(64),
+  });
+  expect(receipt.pointers).toMatchObject({ childThreadId: null, remoteChild });
+  expect(receipt.result).toEqual({ source: "delegate_task", text: "Verified on Studio" });
 });

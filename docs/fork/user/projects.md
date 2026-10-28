@@ -116,3 +116,9 @@ History that a remaining conversation still shares, such as the source of a fork
 until that conversation is deleted too. An older database keeps the freed space on disk
 until its one-time repair; see
 [Reclaim database space](../../user/background-service.md#reclaim-database-space).
+
+## Delegate to another computer
+
+A Library conversation delegates within its pinned project and component scope. Prepare a copy on the destination computer and link the environments first. Loom checks that copy's repository origin and required tools before starting work. If several copies match, choose the exact destination project ID. An explicit computer or copy stays selected; Loom refuses an unavailable choice instead of substituting another.
+
+Remote tasks keep their result and a link to the destination conversation in their receipt. Cancellation and result following use the environment link and recover across restarts. Credentials and local attachments do not travel with the task.

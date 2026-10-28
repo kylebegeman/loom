@@ -14,7 +14,8 @@ import { VaultBrokerToolkit, vaultBrokerHandlers } from "../vault/broker-mcp.ts"
 import { VaultAccessToolkit, vaultAccessHandlers } from "../vault/access-mcp.ts";
 import { VaultCoreToolkit, vaultCoreHandlers } from "../vault/mcp.ts";
 import { SitesToolkit, sitesHandlers } from "../sites/mcp.ts";
-import { ProjectLibraryToolkit, projectLibraryHandlers } from "../project-library/mcp.ts";
+import { ProjectLibraryToolkit } from "../project-library/tools.ts";
+import { projectLibraryHandlers } from "../project-library/mcp.ts";
 import { ProjectCheckoutToolkit, projectCheckoutHandlers } from "../project-checkout/mcp.ts";
 import { ComputerNamingToolkit, computerNamingHandlers } from "../computer-naming/mcp.ts";
 import { GitHubHostSetupToolkit, githubHostSetupHandlers } from "../github-host-setup/mcp.ts";

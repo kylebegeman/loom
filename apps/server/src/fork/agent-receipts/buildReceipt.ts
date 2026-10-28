@@ -106,6 +106,8 @@ export const extractSubagentResult = (input: {
   const recorded = nonEmpty(subagent.result);
   const childItems = child?.turnItems ?? [];
   if (subagent.origin === "app_owned") {
+    if (subagent.remoteChild !== undefined && recorded !== undefined)
+      return { source: "delegate_task", text: recorded };
     const run = child === null ? undefined : delegatedRun(subagent, child);
     if (child !== null && run !== undefined)
       return { source: "delegate_task", text: subagentResultForRun(child, run).text };
@@ -261,6 +263,7 @@ export const buildSubagentReceipt = (input: {
     finishedAt: DateTime.formatIso(finishedAt),
     memberReceiptIds: [...input.memberReceiptIds],
     pointers: {
+      ...(subagent.remoteChild === undefined ? {} : { remoteChild: subagent.remoteChild }),
       childThreadId: subagent.childThreadId,
       providerTranscriptPath: transcript?.path ?? null,
     },

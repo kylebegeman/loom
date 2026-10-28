@@ -28,7 +28,7 @@ import { resource } from "./Library.testkit.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
-import { ProjectLibraryToolkit } from "./mcp.ts";
+import { ProjectLibraryToolkit } from "./tools.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 
 const noAssets = Layer.succeed(Assets.LibraryAssetService, {
