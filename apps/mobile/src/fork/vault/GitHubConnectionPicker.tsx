@@ -1,8 +1,11 @@
+import { VaultGitHubConnectSheet } from "./GitHubSettingsSection";
+import { useAtomValue } from "@effect/atom-react";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { useState } from "react";
 import { View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { VaultGitHubInfo } from "@t3tools/contracts/fork";
-import { createVaultGitHubAtoms } from "@t3tools/client-runtime/fork";
+import { VAULT_ITEM_SEARCH_FEATURE, type VaultGitHubInfo } from "@t3tools/contracts/fork";
+import { createVaultGitHubAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { connectionAtomRuntime } from "../../connection/runtime";
@@ -18,6 +21,9 @@ export function VaultGitHubConnectionPicker({
   onSelect: (id: string, repository: string) => void;
 }) {
   const [cursor, setCursor] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const config = useEnvironmentServerConfig(environmentId);
+  const canAdd = useAtomValue(atoms.save.permissionAtom(environmentId));
   const page = useEnvironmentQuery(
     connected ? atoms.list({ environmentId, input: { cursor } }) : null,
   );
@@ -41,6 +47,29 @@ export function VaultGitHubConnectionPicker({
       ) : null}
       {page.data?.items.length === 0 ? (
         <Text>No GitHub connections in this page. Continue if more pages are available.</Text>
+      ) : null}
+      {page.data?.items.length === 0 &&
+      cursor === null &&
+      !page.data.nextCursor &&
+      supportsLoomFeature(config?.environment.capabilities, VAULT_ITEM_SEARCH_FEATURE) ? (
+        <Button
+          label="Connect GitHub"
+          disabled={disabled || !canAdd}
+          onPress={() => setAdding(true)}
+        />
+      ) : null}
+      {adding ? (
+        <VaultGitHubConnectSheet
+          environmentId={environmentId}
+          connected={connected}
+          initialLabel="GitHub"
+          onClose={() => setAdding(false)}
+          onSaved={(info) => {
+            setAdding(false);
+            page.refresh();
+            onSelect(info.item.id, info.repositories[0]!);
+          }}
+        />
       ) : null}
       {page.data?.items.map((info) => (
         <Choice

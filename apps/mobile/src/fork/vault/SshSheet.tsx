@@ -7,6 +7,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   VaultSshGenerate,
   type VaultSshProbeResult,
+  type VaultItemSummary,
   type VaultSshTrust,
 } from "@t3tools/contracts/fork";
 import { createVaultSshAtoms, parseVaultSshPublicKey } from "@t3tools/client-runtime/fork";
@@ -30,12 +31,16 @@ export function VaultSshSheet({
   itemId,
   connected,
   ownerMode = false,
+  initialLabel = "",
+  onSelect,
   onClose,
 }: {
   environmentId: EnvironmentId;
   itemId: string | null;
   connected: boolean;
   ownerMode?: boolean;
+  initialLabel?: string;
+  onSelect?: (item: VaultItemSummary) => void;
   onClose: () => void;
 }) {
   const [id, setId] = useState(itemId),
@@ -48,6 +53,7 @@ export function VaultSshSheet({
         keyboardShouldPersistTaps="handled"
         contentContainerClassName="gap-4 px-5 pb-8"
       >
+        {!connected ? <Text>Reconnect this computer to manage SSH keys.</Text> : null}
         {id ? (
           <SshDetails
             key={id}
@@ -57,6 +63,7 @@ export function VaultSshSheet({
             ownerMode={ownerMode}
             busy={busy}
             setBusy={setBusy}
+            onSelect={onSelect}
           />
         ) : (
           <SshCreator
@@ -64,7 +71,10 @@ export function VaultSshSheet({
             connected={connected}
             busy={busy}
             setBusy={setBusy}
-            onCreated={setId}
+            initialLabel={initialLabel}
+            onCreated={(item) => {
+              setId(item.id);
+            }}
           />
         )}
         <Button label="Close" disabled={busy} onPress={onClose} />
@@ -77,15 +87,17 @@ function SshCreator({
   connected,
   busy,
   setBusy,
+  initialLabel,
   onCreated,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
-  onCreated: (id: string) => void;
+  initialLabel: string;
+  onCreated: (item: VaultItemSummary) => void;
 }) {
-  const [label, setLabel] = useState(""),
+  const [label, setLabel] = useState(initialLabel),
     [hostname, setHostname] = useState(""),
     [username, setUsername] = useState(""),
     [port, setPort] = useState("22");
@@ -120,7 +132,7 @@ function SshCreator({
     await generate({ environmentId, input: decoded.value })
       .then((result) => {
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        onCreated(result.value.item.id);
+        onCreated(result.value.item);
       })
       .catch((cause: unknown) => setError(message(cause)))
       .finally(() => setBusy(false));
@@ -209,6 +221,7 @@ function SshDetails({
   ownerMode,
   busy,
   setBusy,
+  onSelect,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
@@ -216,6 +229,7 @@ function SshDetails({
   ownerMode: boolean;
   busy: boolean;
   setBusy: (busy: boolean) => void;
+  onSelect?: ((item: VaultItemSummary) => void) | undefined;
 }) {
   const query = useEnvironmentQuery(connected ? ssh.info({ environmentId, input: { id } }) : null),
     info = query.data;
@@ -319,6 +333,13 @@ function SshDetails({
         ) : null}
       </View>
       {query.error ? <Text accessibilityRole="alert">{query.error}</Text> : null}
+      {onSelect ? (
+        <Button
+          label="Use this SSH key"
+          disabled={busy || query.isPending || !!query.error || info.item.state !== "active"}
+          onPress={() => onSelect(info.item)}
+        />
+      ) : null}
       <View className="gap-2">
         <Text className="font-t3-semibold">Public key</Text>
         <Text selectable>{info.publicKey}</Text>
