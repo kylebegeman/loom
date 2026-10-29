@@ -1095,7 +1095,7 @@ apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	7
 apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
-apps/server/src/orchestration-v2/runtimeLayer.test.ts	file-placement	1
+apps/server/src/orchestration-v2/runtimeLayer.test.ts	file-placement	2
 apps/server/src/mcp/linkOrigin.test.ts	file-placement	3
 apps/server/src/peer/PeerForwarding.test.ts	file-placement	7
 apps/server/src/peer/RemoteDelegation.test.ts	file-placement	2
@@ -1357,7 +1357,7 @@ apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	3
-apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	3
+apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	4
 apps/server/src/serverActivation.test.ts	server-weight	1
 apps/server/src/sourceControl/ServerSourceControlHost.ts	github-host-setup	3
 apps/server/src/terminal/Manager.ts	project-lifecycle	6
