@@ -32,9 +32,17 @@ const native = vi.hoisted(() => {
       state.close?.({ type: "dismiss" });
       state.close = null;
     }),
+    access: { prepare: vi.fn(async () => null), complete: vi.fn(async () => {}), cancel: vi.fn() },
     grants: { put: vi.fn(async () => {}), remove: vi.fn(async () => {}) },
   };
 });
+
+vi.mock("../cloudflare-access/mobileAccess", () => ({
+  mobileAccess: {
+    ...native.access,
+    fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+  },
+}));
 
 vi.mock("expo-constants", () => ({ default: { expoConfig: { scheme: "loom" } } }));
 vi.mock("expo-web-browser", () => ({ dismissAuthSession: native.dismissAuthSession }));

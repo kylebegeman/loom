@@ -1,3 +1,4 @@
+import * as DesktopCloudflareAccess from "../cloudflare-access/DesktopCloudflareAccess.ts"; // fork: cloudflare-access
 // @effect-diagnostics globalFetch:off - The shared renewal helpers take a fetch so Electron main and React Native run the same code.
 import type {
   LoomDesktopForgetRequest,
@@ -210,5 +211,8 @@ export const make = Effect.fn("DesktopIdentityRenewal.make")(function* (options:
 
 export const layer = Layer.effect(
   DesktopIdentityRenewal,
-  make({ fetch: (url, init) => fetch(url, init) }),
+  Effect.gen(function* () {
+    const access = yield* DesktopCloudflareAccess.DesktopCloudflareAccess;
+    return yield* make({ fetch: access.fetch });
+  }),
 ).pipe(Layer.provide(DesktopIdentityGrantStore.layer));

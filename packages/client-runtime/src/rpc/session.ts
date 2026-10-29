@@ -1,3 +1,4 @@
+import { nativeTransportHeaders } from "../fork/cloudflare-access.ts"; // fork: cloudflare-access
 import {
   type ServerConfig,
   type ServerConfigStreamEvent,
@@ -223,7 +224,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       });
       return socket;
     };
+    const headers = yield* nativeTransportHeaders(connection.socketUrl);
     const layerSocket = Socket.layerWebSocket(connection.socketUrl, {
+      ...(headers ? { headers } : {}),
       openTimeout: SOCKET_OPEN_TIMEOUT,
     }).pipe(
       Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),

@@ -1,3 +1,5 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
+import { downloadAttachmentForPreview } from "../lib/attachmentDownload";
 import * as Dialog from "./ui/Dialog";
 import { requireNativeModule } from "expo";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -94,12 +96,21 @@ function NativeVideoPreview(props: {
     let ready = false;
     fullscreenVideoOpened();
     void (async () => {
-      const file =
+      let file =
         localAttachment !== null
           ? await loadLocalAttachmentPreview(localAttachment, controller.signal)
           : null;
       if (localAttachment !== null && !file) return;
-      const uri = file?.uri ?? (await resolvePlaybackUrl());
+      let uri = file?.uri ?? (await resolvePlaybackUrl());
+      if (!file && (await mobileAccess.token(uri))) {
+        file = await downloadAttachmentForPreview({
+          url: uri,
+          attachment: { name, mimeType: "video/mp4" },
+          signal: controller.signal,
+        });
+        if (!file) return;
+        uri = file.uri;
+      }
       if (controller.signal.aborted) {
         file?.dispose();
         return;

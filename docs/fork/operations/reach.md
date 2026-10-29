@@ -214,6 +214,103 @@ curl -s "$H/api/loom/identity"
   receives live updates, which proves `/ws` upgrades. A native Loom sign-in and its renewal work
   over the address.
 
+## Cloudflare Access pilot
+
+Access integration is not rolled out. Computer sign-ins keep their seven-day limit until
+native renewal, reconnect and MCP compatibility pass against an isolated Access application.
+Do not enable Managed OAuth on the production Loom or Grok endpoint: Cloudflare documents
+that it can replace an existing OAuth server's discovery and challenges.
+
+The isolated transport pilot loads no Loom database, provider credentials, Identity settings
+or tasks. Run it behind a dedicated test hostname and Access application. Use Pocket ID as
+the identity provider and restrict the policy to the existing owner. The team origin and
+application audience are public configuration, not credentials:
+
+```sh
+LOOM_ACCESS_TEAM_DOMAIN=https://YOUR-TEAM.cloudflareaccess.com \
+LOOM_ACCESS_AUDIENCE=YOUR-APPLICATION-AUD \
+vp run --filter t3 access:pilot --port 14443
+```
+
+The pilot binds only `127.0.0.1`. Its origin must remain reachable only through the test
+Cloudflare tunnel. Access must protect the entire hostname, including discovery and WebSocket
+paths. Do not use an allow-all or bypass policy to make a client connect.
+
+- `/probe` confirms a verified Access assertion and reports only whether a Loom bearer
+  credential was present. It never returns either credential.
+- `/oauth-challenge` returns a controlled Loom-shaped `401` challenge. Compare the response
+  through Access to the origin response to detect OAuth interception.
+- With `--native-exchange`, `POST /native-exchange` returns the verified Access assertion for
+  native transport checks. Treat its response as a credential and store it privately. This
+  diagnostic endpoint is absent unless explicitly enabled.
+- `/ws` sends `loom-access-pilot-ready` and echoes frames for streaming and reconnect checks.
+- Every path, including unknown paths and upgrade requests, refuses a missing or invalid
+  Access assertion. A key-discovery outage refuses the request with `503`.
+
+The production origin gate uses the same two configuration values and validates Cloudflare's
+signature, team issuer, application audience, token type and expiry before Loom authentication.
+It grants no Loom permissions. Partial configuration prevents startup. Leave both values unset
+on existing servers until their clients and every ingress path are verified; enabling the gate
+also gates relay, peer, CLI and MCP requests. No localhost or metadata exception bypasses it.
+Changing or removing either value invalidates earlier Identity sessions after restart.
+
+Open native sign-in in the system browser. Loom's internal Browser cannot use passkeys.
+Pocket ID's **Alternative Sign In** QR and login codes both produce `otp`, so they do not
+satisfy an `amr=phr` policy. Use a passkey in the system browser, including its genuine
+cross-device passkey prompt, when testing that policy. Keep the Access requirement intact.
+
+Native clients send the Managed OAuth access token in `Cf-Access-Token`, leaving Loom's
+`Authorization` header intact. Keep its refresh grant in OS-protected storage and persist rotation
+before sending the replacement token. A copied application JWT is unsuitable for this native
+cache: the pilot's 30-day JWT remained usable after its OAuth refresh grant was revoked, while
+the short-lived OAuth token was refused immediately. A Cloudflare rejection clears the cached
+grant without replaying the original operation. Sign-out ends only that client's grant.
+
+The desktop opens Access authorization in the system browser and supplies the header from its
+main process for HTTP, assets and WebSocket handshakes. iPhone uses its system authorization
+sheet and device-only Keychain storage. Native viewers that cannot accept request headers receive
+a temporary local copy; the app removes it when the viewer closes.
+
+Library publishers and fleet services need their own Access service credentials before the
+Library gate is enabled. Add a **Service Auth** policy for each named service token, then list
+its exact `CF-Access-Client-Id` in the Library's comma-separated
+`LOOM_ACCESS_SERVICE_SUBJECTS`. An empty subject is accepted only when its signed assertion's
+`common_name` matches this list. Keep the owner/passkey policy for interactive sign-ins.
+
+On each computer, place a private `cloudflare-access.json` next to its `publisher.json` in
+`~/.config/loom/computers/computer-<environment id>/`, or set
+`LOOM_LIBRARY_ACCESS_CREDENTIAL_FILE` to an explicit private path. Use mode `0600`:
+
+```json
+{
+  "version": 1,
+  "origin": "https://YOUR-LIBRARY-HOST",
+  "clientId": "YOUR-SERVICE-CLIENT.access",
+  "clientSecret": "YOUR-SERVICE-SECRET"
+}
+```
+
+The existing Library client adds these credentials to its normal publisher bearer requests,
+including renewal. It reloads replaced files and refuses mismatched origins or unsafe file
+permissions. The service credential admits traffic through Access; the Library still requires
+its own publisher credential and signed computer requests. Removing or revoking Access does
+not grant another route or change Grok's Supervised ceiling. Deploy clients and verify every
+Library consumer before enabling the gate or extending the Identity session limit.
+
+For the native pilot, verify authorization code with S256, exact desktop/iPhone redirects,
+OS-protected refresh storage, HTTP plus WebSocket authentication, sleep/restart renewal,
+expiry and revocation. Verify Loom's bearer header and OAuth challenge survive Access, and
+complete the existing Grok connection's supervised read-only check before touching its route.
+An origin unit test alone does not prove Cloudflare's edge behavior. Keep token values out of
+screenshots and receipts. Stop the owned test connector and pilot server after verification.
+
+References: [Managed OAuth][cf-managed-oauth], [session durations][cf-access-sessions] and
+[origin JWT validation][cf-access-validation].
+
+[cf-managed-oauth]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
+[cf-access-sessions]: https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/
+[cf-access-validation]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+
 ## Rotate
 
 - **Cloudflare token.** Create the new token, write it to a new 0600 file in the same folder,

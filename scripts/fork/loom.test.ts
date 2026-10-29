@@ -266,6 +266,12 @@ printf '\\n' >> "$LOOM_TEST_LOG"
 if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = lint ]; then
   exit "$LOOM_TEST_LINT_STATUS"
 fi
+if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = fmt ]; then
+  exit "$LOOM_TEST_FORMAT_STATUS"
+fi
+if [ "$1" = run ] && [ "$2" = knip:check ]; then
+  exit "$LOOM_TEST_KNIP_STATUS"
+fi
 if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = build ]; then
   exit "$LOOM_TEST_BUILD_STATUS"
 fi
@@ -292,7 +298,15 @@ function runLint(
     lint = 0,
     install = 0,
     build = 0,
-  }: { readonly lint?: number; readonly install?: number; readonly build?: number } = {},
+    format = 0,
+    knip = 0,
+  }: {
+    readonly lint?: number;
+    readonly install?: number;
+    readonly build?: number;
+    readonly format?: number;
+    readonly knip?: number;
+  } = {},
 ) {
   return NodeChildProcess.spawnSync(
     "bash",
@@ -327,6 +341,8 @@ ${command}
         LOOM_TEST_LINT_STATUS: String(lint),
         LOOM_TEST_INSTALL_STATUS: String(install),
         LOOM_TEST_BUILD_STATUS: String(build),
+        LOOM_TEST_FORMAT_STATUS: String(format),
+        LOOM_TEST_KNIP_STATUS: String(knip),
       },
     },
   );
@@ -422,6 +438,17 @@ it("runs lint after installation, then builds, boots and typechecks, and the tes
     [
       "exec",
       "vp",
+      "fmt",
+      "--check",
+      "--no-error-on-unmatched-pattern",
+      "apps/web/src/components/Sidebar.tsx",
+      "apps/web/src/fork",
+      "scripts/fork",
+    ],
+    ["run", "knip:check"],
+    [
+      "exec",
+      "vp",
       "lint",
       "--report-unused-disable-directives",
       "--deny-warnings",
@@ -474,18 +501,22 @@ it("runs lint after installation, then builds, boots and typechecks, and the tes
   ]);
 });
 
-it("runs every check after a failing lint and lists the failures at the end", () => {
+it("runs every check after formatting, unused-code and lint failures and reports all of them", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
-  const result = runLint(f, "run_checks", { lint: 1 });
+  const result = runLint(f, "run_checks", { lint: 1, format: 1, knip: 1 });
   expect(result.status).toBe(1);
   expect(result.stderr).toContain("loom: fork lint failed");
-  expect(result.stderr.trimEnd().split("\n").slice(-2)).toEqual([
+  expect(result.stderr.trimEnd().split("\n").slice(-4)).toEqual([
+    "loom: check failed: Checking code formatting",
+    "loom: check failed: Checking unused code",
     "loom: check failed: Linting fork code",
     "loom: check failed: Linting upstream files the fork edits",
   ]);
   expect(lintCalls(f).map(([first, second]) => second ?? first)).toEqual([
     "seams",
     "--frozen-lockfile",
+    "vp",
+    "knip:check",
     "vp",
     "vp",
     "omarchy-pack",
@@ -555,7 +586,11 @@ it("fails instead of skipping typechecks and tests it cannot list", () => {
       "loom: check failed: Listing the fork's tests",
     ],
   );
-  expect(lintCalls(f).filter(([, second, third]) => second === "vp" && third !== "lint")).toEqual([
+  expect(
+    lintCalls(f).filter(
+      ([, second, third]) => second === "vp" && third !== "lint" && third !== "fmt",
+    ),
+  ).toEqual([
     ["exec", "vp", "build"],
     [
       "exec",
@@ -1742,6 +1777,12 @@ case "$check" in
   test) echo passing > apps/test.ts; printf 'Fixed the fork test.\\n\\nREPAIRED\\n' ;;
 esac`);
 
+  NodeFS.writeFileSync(
+    NodePath.join(f.root, ".git/hooks/pre-commit"),
+    "#!/bin/sh\ngrep -q passing apps/test.ts\n",
+    { mode: 0o755 },
+  );
+
   const result = f.repair();
 
   expect(result.status).toBe(0);
@@ -1787,6 +1828,10 @@ case "$check" in
   seam) printf "UNREPAIRABLE: upstream's own seam moved\\n" ;;
   test) echo passing > apps/test.ts; printf 'REPAIRED\\n' ;;
 esac`);
+
+  NodeFS.writeFileSync(NodePath.join(f.root, ".git/hooks/pre-commit"), "#!/bin/sh\nexit 1\n", {
+    mode: 0o755,
+  });
 
   const result = f.repair();
 

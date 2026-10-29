@@ -178,8 +178,13 @@ class LoomRequestRejected extends Error {
   }
 }
 
-async function jsonRequest(url: string, init: RequestInit, signal: AbortSignal) {
-  const response = await fetch(url, {
+async function nativeJsonRequest(
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal,
+  request: (url: string, init: RequestInit) => Promise<Response>,
+) {
+  const response = await request(url, {
     ...init,
     redirect: "error",
     signal: AbortSignal.any([signal, AbortSignal.timeout(HTTP_TIMEOUT_MS)]),
@@ -214,7 +219,10 @@ export async function signInToLoom(
     LoomDesktopSignInRequest,
     "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer" | "directory"
   >,
+  request: (url: string, init: RequestInit) => Promise<Response> = fetch,
 ): Promise<LoomSignIn> {
+  const jsonRequest = (url: string, init: RequestInit, signal: AbortSignal) =>
+    nativeJsonRequest(url, init, signal, request);
   const origin = loomHostOrigin(httpBaseUrl);
   if (activeSignIns.has(origin)) throw new Error("Loom sign-in is already open for this computer.");
   const abort = new AbortController();

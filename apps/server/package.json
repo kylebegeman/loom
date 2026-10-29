@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "node --watch --watch-path=src --watch-path=../../packages --watch-path=package.json src/bin.ts",
     "dev:built": "vp run dev",
+    "access:pilot": "node scripts/access-pilot.ts",
     "build:bundle": "vp pack",
     "build:exe": "node scripts/cli.ts build-exe",
     "start": "node dist/bin.mjs",

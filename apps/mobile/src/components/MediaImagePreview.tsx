@@ -1,3 +1,4 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import { createContext, useContext, useState } from "react";
 import { Pressable, View } from "react-native";
 import ImageViewing from "react-native-image-viewing";
@@ -55,7 +56,10 @@ export function MediaImagePreview(props: MediaImagePreviewProps) {
   return (
     <ImagePreviewContext value={props}>
       <ImageViewing
-        images={gallery.map((item) => ({ uri: item.uri }))}
+        images={gallery.map((item) => {
+          const token = mobileAccess.peekToken(item.uri);
+          return { uri: item.uri, ...(token ? { headers: { "Cf-Access-Token": token } } : {}) };
+        })}
         imageIndex={initialIndex}
         visible
         presentationStyle="fullScreen"

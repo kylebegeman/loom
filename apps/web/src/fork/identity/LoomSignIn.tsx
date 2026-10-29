@@ -8,7 +8,12 @@ import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { resolvePrimaryEnvironmentHttpUrl } from "~/environments/primary";
 import { readLibraryAuthorityId } from "~/fork/project-library/state";
-import { readLoomIdentity, loomBrowserLoginUrl, cancelLoomBrowserSignIn } from "~/rpc/loomIdentity";
+import {
+  LoomAccessRequiredError,
+  readLoomIdentity,
+  loomBrowserLoginUrl,
+  cancelLoomBrowserSignIn,
+} from "~/rpc/loomIdentity";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { loomSignInDestination } from "./returnTo";
 import { connectLoomIdentity } from "./connection";
@@ -55,6 +60,7 @@ function LoomSignInTarget({
     baseUrl: string;
     metadata: LoomIdentityMetadata;
   } | null>(null);
+  const [accessTarget, setAccessTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [checked, setChecked] = useState<string | null>(null);
   const [checkAttempt, setCheckAttempt] = useState(0);
@@ -88,6 +94,7 @@ function LoomSignInTarget({
     void readLoomIdentity(target, abort.signal, checkAttempt > 0)
       .then((metadata) => {
         if (!abort.signal.aborted) {
+          setAccessTarget(null);
           setChecked(target);
           setIdentity(metadata ? { baseUrl: target, metadata } : null);
           onAvailabilityChange?.(
@@ -100,16 +107,21 @@ function LoomSignInTarget({
           );
         }
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (!abort.signal.aborted) {
+          const accessRequired = isElectron && cause instanceof LoomAccessRequiredError;
+          setAccessTarget(accessRequired ? target : null);
           setChecked(target);
           setIdentity(null);
-          onAvailabilityChange?.(false);
+          onAvailabilityChange?.(accessRequired);
         }
       });
     return () => abort.abort();
   }, [baseUrl, checkAttempt, onAvailabilityChange]);
   const active = identity && (!baseUrl || identity.baseUrl === baseUrl) ? identity : null;
+  const nativeAccessTarget =
+    isElectron && accessTarget && (!baseUrl || accessTarget === baseUrl) ? accessTarget : null;
+  const target = active?.baseUrl ?? nativeAccessTarget;
   const browserUrl = active
     ? loomBrowserLoginUrl(
         active.baseUrl,
@@ -124,10 +136,9 @@ function LoomSignInTarget({
     (!active.metadata.sessionExchangeEnabled ||
       !active.metadata.browserOrigins?.includes(window.location.origin));
   const nativeEnabled =
-    active?.metadata.enabled &&
-    active.metadata.nativeClientId &&
+    (nativeAccessTarget || (active?.metadata.enabled && active.metadata.nativeClientId)) &&
     window.desktopBridge?.signInToLoom;
-  if (!active || crossOriginUnavailable || (isElectron ? !nativeEnabled : !browserUrl))
+  if (!target || crossOriginUnavailable || (isElectron ? !nativeEnabled : !browserUrl))
     return showUnavailable ? (
       <div className="space-y-2">
         <p role="status" className="text-xs text-muted-foreground">
@@ -149,18 +160,19 @@ function LoomSignInTarget({
     ) : null;
   const signIn = async () => {
     if (
-      (expectedEnvironmentId && expectedEnvironmentId !== active.metadata.environmentId) ||
-      (expectedIdentity && expectedIdentity.issuer !== active.metadata.issuer)
+      active &&
+      ((expectedEnvironmentId && expectedEnvironmentId !== active.metadata.environmentId) ||
+        (expectedIdentity && expectedIdentity.issuer !== active.metadata.issuer))
     ) {
       setError("This address or Identity provider changed. Review the saved computer connection.");
       return;
     }
-    const resourceRefusal = identityResourceRefusal(active.metadata);
+    const resourceRefusal = active ? identityResourceRefusal(active.metadata) : null;
     if (resourceRefusal !== null) {
       setError(resourceRefusal);
       return;
     }
-    if (!isElectron && new URL(active.baseUrl).origin === window.location.origin) {
+    if (!isElectron && new URL(target).origin === window.location.origin) {
       if (browserUrl) window.location.assign(browserUrl);
       return;
     }
@@ -171,7 +183,7 @@ function LoomSignInTarget({
       setError("Allow the sign-in window and try again.");
       return;
     }
-    ownedSignIn.current = active.baseUrl;
+    ownedSignIn.current = target;
     setBusy(true);
     setError(null);
     setConnected(false);
@@ -179,7 +191,7 @@ function LoomSignInTarget({
     const abort = new AbortController();
     ownedAbort.current = abort;
     const result = await connect({
-      httpBaseUrl: active.baseUrl,
+      httpBaseUrl: target,
       ...(popup ? { popup } : {}),
       ...(expectedEnvironmentId ? { expectedEnvironmentId } : {}),
       ...(expectedIdentity ? { expectedIdentity } : {}),
@@ -210,15 +222,15 @@ function LoomSignInTarget({
             onClick={() => {
               ownedAbort.current?.abort();
               if (isElectron)
-                void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: active.baseUrl });
-              else cancelLoomBrowserSignIn(active.baseUrl);
+                void window.desktopBridge?.cancelLoomSignIn?.({ httpBaseUrl: target });
+              else cancelLoomBrowserSignIn(target);
             }}
           >
             Cancel sign-in
           </Button>
         ) : null}
       </div>
-      {renewal ? (
+      {renewal && active ? (
         <p className="max-w-lg text-xs text-muted-foreground">
           {identityRenewalText({ metadata: active.metadata, renews: identityRenewalAvailable() })}
         </p>

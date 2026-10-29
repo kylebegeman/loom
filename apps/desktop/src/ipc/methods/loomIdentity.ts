@@ -1,3 +1,4 @@
+import * as DesktopCloudflareAccess from "../../fork/cloudflare-access/DesktopCloudflareAccess.ts"; // fork: cloudflare-access
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
@@ -30,16 +31,30 @@ export const signInToLoom = DesktopIpc.makeIpcMethod({
     const shell = yield* ElectronShell.ElectronShell;
     const windows = yield* ElectronWindow.ElectronWindow;
     const renewal = yield* DesktopIdentityRenewal.DesktopIdentityRenewal;
+    const access = yield* DesktopCloudflareAccess.DesktopCloudflareAccess;
     const context = yield* Effect.context<ElectronShell.ElectronShell>();
     const runPromise = Effect.runPromiseWith(context);
+    const accessCreated = yield* access.signIn(input.httpBaseUrl, (url) =>
+      runPromise(shell.openExternal(url)),
+    );
     const signedIn = yield* Effect.tryPromise({
       try: (signal) =>
-        enroll(input.httpBaseUrl, (url) => runPromise(shell.openExternal(url)), signal, input),
+        enroll(
+          input.httpBaseUrl,
+          (url) => runPromise(shell.openExternal(url)),
+          signal,
+          input,
+          access.fetch,
+        ),
       catch: (cause) =>
         new LoomIdentityError({
           detail: cause instanceof Error ? cause.message : "Could not sign in to Loom. Try again.",
         }),
-    });
+    }).pipe(
+      Effect.onError(() =>
+        accessCreated ? access.forget(input.httpBaseUrl).pipe(Effect.ignore) : Effect.void,
+      ),
+    );
     // The grant stays in this process; the renderer only receives the computer session.
     if (signedIn.grant) yield* renewal.save(signedIn.grant);
     const window = yield* windows.currentMainOrFirst;
@@ -52,10 +67,16 @@ export const cancelLoomSignIn = DesktopIpc.makeIpcMethod({
   payload: LoomDesktopSignInRequest,
   result: Schema.Void,
   handler: (input) =>
-    Effect.try({
-      try: () => cancel(input.httpBaseUrl),
-      catch: () => new LoomIdentityError({ detail: "The computer address is invalid." }),
-    }),
+    Effect.flatMap(DesktopCloudflareAccess.DesktopCloudflareAccess, (access) =>
+      access.cancel(input.httpBaseUrl),
+    ).pipe(
+      Effect.andThen(
+        Effect.try({
+          try: () => cancel(input.httpBaseUrl),
+          catch: () => new LoomIdentityError({ detail: "The computer address is invalid." }),
+        }),
+      ),
+    ),
 });
 /** Rejects only for transient failures; a sign-in that cannot renew resolves `SignInRequired`. */
 export const renewLoomIdentity = DesktopIpc.makeIpcMethod({
@@ -74,5 +95,6 @@ export const forgetLoomIdentity = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.loomIdentity.forget")(function* (input) {
     const renewal = yield* DesktopIdentityRenewal.DesktopIdentityRenewal;
     yield* renewal.forget(input);
+    yield* (yield* DesktopCloudflareAccess.DesktopCloudflareAccess).forget(input.httpBaseUrl);
   }),
 });

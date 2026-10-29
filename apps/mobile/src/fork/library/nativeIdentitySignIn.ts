@@ -1,3 +1,4 @@
+import { mobileAccess } from "../cloudflare-access/mobileAccess"; // fork: cloudflare-access
 // @effect-diagnostics globalDate:off globalTimers:off -- Expo OAuth is an imperative native boundary with a bounded cancellation timer.
 import type { BearerConnectionRegistration } from "@t3tools/client-runtime/connection";
 import {
@@ -73,18 +74,47 @@ export async function signInWithNativeIdentity(input: {
   }, SIGN_IN_TIMEOUT_MS);
   input.signal.addEventListener("abort", stop, { once: true });
   const options: IdentityOptions = { ...input.options, signal: abort.signal };
+  let accessOrigin: string | undefined;
+  let accessCreated = false;
+  let completed = false;
   try {
     const destination = libraryIdentityAddress(input.httpBaseUrl);
-    const metadata = await loadLibraryIdentity(
-      destination.httpBaseUrl,
-      input.expectedEnvironmentId,
-      fetch,
-      options,
-    );
-    const discovery = await loadNativeIdentityDiscovery(metadata, fetch, abort.signal);
+    accessOrigin = destination.httpBaseUrl;
     const configuredScheme = Constants.expoConfig?.scheme;
     const scheme = Array.isArray(configuredScheme) ? configuredScheme[0] : configuredScheme;
     if (!scheme) throw new Error("This app does not have a sign-in callback configured.");
+    const ticket = await mobileAccess.prepare(
+      destination.httpBaseUrl,
+      makeRedirectUri({ scheme, path: "access-auth" }),
+    );
+    if (abort.signal.aborted) return null;
+    if (ticket) {
+      input.onProgress("signing-in");
+      const accessAuth = new AuthRequest({
+        clientId: ticket.registration.clientId,
+        redirectUri: ticket.registration.redirectUri,
+        responseType: ResponseType.Code,
+        usePKCE: true,
+        scopes: [],
+        extraParams: { resource: ticket.registration.origin },
+      });
+      const result = await accessAuth.promptAsync({
+        authorizationEndpoint: ticket.registration.issuer + "/cdn-cgi/access/oauth/authorization",
+      });
+      if (abort.signal.aborted || result.type === "cancel" || result.type === "dismiss")
+        return null;
+      if (result.type !== "success" || !result.params.code || !accessAuth.codeVerifier)
+        throw new Error("Cloudflare Access sign-in did not complete. Try again.");
+      await mobileAccess.complete(ticket, result.params.code, accessAuth.codeVerifier);
+      accessCreated = true;
+    }
+    const metadata = await loadLibraryIdentity(
+      destination.httpBaseUrl,
+      input.expectedEnvironmentId,
+      mobileAccess.fetch,
+      options,
+    );
+    const discovery = await loadNativeIdentityDiscovery(metadata, mobileAccess.fetch, abort.signal);
     // The registered native callback serves the Library and every other computer.
     const redirectUri = makeRedirectUri({ scheme, path: "library-auth" });
     const auth = new AuthRequest({
@@ -115,21 +145,28 @@ export async function signInWithNativeIdentity(input: {
       discovery,
     );
     if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
-    return await completeNativeIdentitySignIn({
+    const signedIn = await completeNativeIdentitySignIn({
       destination,
       metadata,
       discovery,
       tokens: account,
       label: input.label ?? new URL(destination.httpBaseUrl).hostname,
       options,
-      request: fetch,
+      request: mobileAccess.fetch,
       now: Date.now,
     });
+    completed = true;
+    return signedIn;
   } catch (cause) {
     if (expired) throw new NativeIdentitySignInExpired({ cause });
     if (abort.signal.aborted) return null;
     throw cause;
   } finally {
+    if (accessOrigin) {
+      mobileAccess.cancel(accessOrigin);
+      if (accessCreated && !completed)
+        await mobileAccess.forget(accessOrigin).catch(() => undefined);
+    }
     clearTimeout(timer);
     input.signal.removeEventListener("abort", stop);
   }

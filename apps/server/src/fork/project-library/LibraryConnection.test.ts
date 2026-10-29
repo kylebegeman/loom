@@ -55,6 +55,7 @@ const withConnection = <A, E>(
     replace: (value: unknown) => Effect.Effect<void, PlatformError.PlatformError>;
   }) => Effect.Effect<A, E, FileSystem.FileSystem>,
   credential: unknown = initial,
+  access?: { readonly value: unknown; readonly mode?: number },
 ) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(NOW);
@@ -62,6 +63,9 @@ const withConnection = <A, E>(
     const config = yield* ServerConfig.ServerConfig;
     const file = `${config.baseDir}/publisher.json`;
     yield* fs.writeFileString(file, encode(credential), { mode: 0o600 });
+    const accessFile = `${config.baseDir}/cloudflare-access.json`;
+    if (access)
+      yield* fs.writeFileString(accessFile, encode(access.value), { mode: access.mode ?? 0o600 });
     const requests: HttpClientRequest.HttpClientRequest[] = [];
     const http = HttpClient.make((request) =>
       Effect.sync(() => {
@@ -87,7 +91,12 @@ const withConnection = <A, E>(
       Effect.provideService(HttpClient.HttpClient, http),
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_CREDENTIAL_FILE: file } }),
+        ConfigProvider.fromEnv({
+          env: {
+            LOOM_LIBRARY_CREDENTIAL_FILE: file,
+            ...(access ? { LOOM_LIBRARY_ACCESS_CREDENTIAL_FILE: accessFile } : {}),
+          },
+        }),
       ),
       Effect.provideService(HostProcess.HomeDirectory, config.baseDir),
       Effect.provideService(ServerEnvironmentIdentity, {
@@ -215,4 +224,77 @@ it.effect("reports no renewal until the first succeeds, then when it last renewe
       }),
     { ...initial, issuedAt: iso(NOW - DAY), expiresAt: iso(NOW + 29 * DAY) },
   ),
+);
+
+it.effect(
+  "keeps the publisher bearer when authenticating renewal and Library calls through Access",
+  () =>
+    withConnection(
+      () => Response.json(successor),
+      (h) =>
+        Effect.gen(function* () {
+          yield* h.service.send(HttpClientRequest.post("/api/loom/directory/list"));
+          expect(h.requests.length).toBeGreaterThan(0);
+          for (const request of h.requests) {
+            expect(request.headers["cf-access-client-id"]).toBe("publisher123.access");
+            expect(request.headers["cf-access-client-secret"]).toBe("machine-private");
+            expect(request.headers.authorization).toMatch(/^Bearer (?:before|after)-token$/u);
+          }
+          const count = h.requests.length;
+          const remote = yield* h.service.current;
+          if (remote.kind !== "remote") throw new Error("Expected Library connection");
+          for (const target of ["https://other.example.test/", "https://["]) {
+            for (const send of [h.service.send, remote.send]) {
+              expect((yield* Effect.result(send(HttpClientRequest.get(target))))._tag).toBe(
+                "Failure",
+              );
+              expect(h.requests).toHaveLength(count);
+            }
+          }
+        }),
+      initial,
+      {
+        value: {
+          version: 1,
+          origin: initial.libraryUrl,
+          clientId: "publisher123.access",
+          clientSecret: "machine-private",
+        },
+      },
+    ),
+);
+
+it.effect("refuses unsafe or mismatched Access configuration before contacting the Library", () =>
+  Effect.gen(function* () {
+    for (const config of [
+      {
+        value: {
+          version: 1,
+          origin: "https://other.example.test",
+          clientId: "publisher123.access",
+          clientSecret: "machine-private",
+        },
+      },
+      {
+        value: {
+          version: 1,
+          origin: initial.libraryUrl,
+          clientId: "publisher123.access",
+          clientSecret: "machine-private",
+        },
+        mode: 0o644,
+      },
+      { value: { version: 1, origin: initial.libraryUrl, clientId: "publisher123.access" } },
+    ])
+      yield* withConnection(
+        () => Response.json(successor),
+        (h) =>
+          Effect.gen(function* () {
+            expect((yield* h.service.current).kind).toBe("unavailable");
+            expect(h.requests).toHaveLength(0);
+          }),
+        initial,
+        config,
+      );
+  }),
 );

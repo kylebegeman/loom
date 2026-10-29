@@ -1,5 +1,9 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+vi.mock("../fork/cloudflare-access/mobileAccess", () => ({
+  mobileAccess: { token: async () => null, peekToken: () => null },
+}));
 
 import { assetImageSource } from "./assetImageSource";
 

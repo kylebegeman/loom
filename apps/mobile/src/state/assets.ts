@@ -1,3 +1,4 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import { useAtomMount, useAtomSubscribe, useAtomValue } from "@effect/atom-react";
 import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
 import {
@@ -93,7 +94,9 @@ export function useRefreshAssetUrl(
       await createUrl({ environmentId, input: { resource } }),
       httpBaseUrl,
     );
-    return state._tag === "Success" ? state.url : null;
+    if (state._tag !== "Success") return null;
+    await mobileAccess.token(state.url);
+    return state.url;
   };
 }
 
@@ -116,7 +119,9 @@ export async function refreshAssetUrl(
   const connection = appAtomRegistry.get(connectionAtom);
   if (connection._tag === "None") return null;
   const state = assetUrlStateFromResult(result, connection.value.httpBaseUrl);
-  return state._tag === "Success" ? state.url : null;
+  if (state._tag !== "Success") return null;
+  await mobileAccess.token(state.url);
+  return state.url;
 }
 
 export interface AuthorizedAssetUrl {

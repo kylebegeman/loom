@@ -1,3 +1,4 @@
+import { mobileAccess } from "../cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -38,7 +39,9 @@ const identityMetadata = Atom.family((key: string) => {
   const [environmentId, httpBaseUrl] = JSON.parse(key) as [string, string];
   return Atom.make(
     Effect.promise(() =>
-      loadLibraryIdentity(httpBaseUrl, EnvironmentId.make(environmentId)).catch(() => null),
+      loadLibraryIdentity(httpBaseUrl, EnvironmentId.make(environmentId), mobileAccess.fetch).catch(
+        () => null,
+      ),
     ),
   ).pipe(Atom.setIdleTTL(5 * 60_000), Atom.withLabel(`mobile:library-identity:${key}`));
 });

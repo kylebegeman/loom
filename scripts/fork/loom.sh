@@ -328,6 +328,13 @@ fork_edited_code() {
       { for (i = 1; i <= n; i++) if ($0 == p[i] || index($0, p[i] "/") == 1) next; print }'
 }
 
+check_fork_format() {
+  local path paths=()
+  while IFS= read -r path; do paths+=("$path"); done < <({ fork_lint_paths; fork_edited_code; } | sort -u)
+  [ "${#paths[@]}" -gt 0 ] || return 0
+  pnpm exec vp fmt --check --no-error-on-unmatched-pattern "${paths[@]}"
+}
+
 check_edited_lint() {
   local list file files=()
   list=$(fork_edited_code) || return 1
@@ -406,6 +413,8 @@ run_checks() {
   local before=$FAILED_CHECKS built dirs d packages package
   run_check "Installing dependencies" pnpm install --frozen-lockfile
   if [ "$FAILED_CHECKS" = "$before" ]; then
+    run_check "Checking code formatting" check_fork_format
+    run_check "Checking unused code" pnpm run knip:check
     run_check "Linting fork code" check_fork_lint
     run_check "Linting upstream files the fork edits" check_edited_lint
     run_check "Running the Omarchy pack's checks" check_omarchy_pack
@@ -1488,7 +1497,7 @@ checks_with_repair() {
         continue
       fi
       changed=1
-      # A session that stops partway still commits, so the needs-Kyle draft keeps its work.
+      # Checkpoints may retain other failures; the next full pass gates landing instead of commit hooks.
       {
         if [ "$reply" = REPAIRED ]; then
           echo "fix(fork): repair round $round after upstream $tag ($check)"
@@ -1502,7 +1511,7 @@ checks_with_repair() {
         # The session's reply without its final line, at most 80 lines.
         awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
           "$session.log"
-      } | git commit -q -F -
+      } | git -c core.hooksPath=/dev/null commit -q -F -
     done
     printf '%s' "$skipped" >>"$report"
     [ "$ran" -gt 0 ] || die "the fork's checks still fail after repair; see $report"$'\n'"${skipped%$'\n'}"

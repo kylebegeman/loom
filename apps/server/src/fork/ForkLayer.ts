@@ -134,6 +134,7 @@ import { DirectoryHttpRoutes } from "./directory/http.ts";
 import { CloudflaredExtraPorts } from "./cloudflared/connector.ts";
 import * as ReachService from "./reach/ReachService.ts";
 import { ReachGuardLayer } from "./reach/guard.ts";
+import * as CloudflareAccess from "./cloudflare-access/CloudflareAccess.ts";
 import * as ReachStore from "./reach/library/ReachStore.ts";
 import * as ReachCloudflare from "./reach/library/ReachCloudflare.ts";
 import * as ReachPocketId from "./reach/library/ReachPocketId.ts";
@@ -689,4 +690,8 @@ export const ForkRoutesLayer = Layer.mergeAll(
   LibraryPushHttpRoutes,
   // Global, so it also covers upstream routes such as /mcp and requests no route matches.
   ReachGuardLayer,
+  CloudflareAccess.guardLayer.pipe(
+    Layer.provide(CloudflareAccess.layer),
+    Layer.provide(FetchHttpClient.layer),
+  ),
 );

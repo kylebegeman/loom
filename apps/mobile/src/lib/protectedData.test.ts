@@ -36,6 +36,11 @@ vi.mock("react-native", () => ({
   },
 }));
 
+vi.mock("../fork/cloudflare-access/mobileAccess", async () => ({
+  layer: (await import("effect/Layer")).empty,
+  mobileAccess: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) },
+}));
+
 vi.mock("../persistence/layer", async () => {
   const Effect = await import("effect/Effect");
   const Layer = await import("effect/Layer");

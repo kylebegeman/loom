@@ -1,3 +1,4 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import type { ChatFileAttachment } from "@t3tools/contracts";
 import type { Directory, File } from "expo-file-system"; // fork: library
 import type { SharingOptions } from "expo-sharing";
@@ -167,6 +168,24 @@ export function nativeViewerErrorMessage(cause: unknown): string {
     : "The file could not be opened. Check the connection and try again.";
 }
 
+async function downloadRemoteAttachment(url: string, file: File, signal: AbortSignal) {
+  const { File } = await import("expo-file-system");
+  const token = /^https?:/u.test(url) ? await mobileAccess.token(url) : null;
+  if (!token) {
+    await File.downloadFileAsync(url, file, { signal });
+    return;
+  }
+  const { fetch } = await import("expo/fetch");
+  const response = await fetch(url, {
+    signal,
+    redirect: "error",
+    headers: { "Cf-Access-Token": token },
+  });
+  if (!response.ok || !response.body) throw new Error("The attachment could not be downloaded.");
+  file.create();
+  await response.body.pipeTo(file.writableStream(), { signal });
+}
+
 export async function openAttachmentInViewer(input: {
   readonly uri: string;
   readonly attachment: AttachmentFileMetadata;
@@ -180,7 +199,7 @@ export async function openAttachmentInViewer(input: {
     if (/^(file|content):/.test(input.uri)) {
       await new File(input.uri).copy(cached.file);
     } else {
-      await File.downloadFileAsync(input.uri, cached.file, { signal: input.signal });
+      await downloadRemoteAttachment(input.uri, cached.file, input.signal);
     }
     if (input.signal.aborted) return;
     const endHandoff = beginForegroundHandoff();
@@ -210,7 +229,6 @@ export async function downloadAttachmentForPreview(input: {
   readonly signal: AbortSignal;
 }): Promise<AttachmentPreviewFile | null> {
   if (input.signal.aborted) return null;
-  const { File } = await import("expo-file-system");
   const cached = await createCachedAttachmentFile(input.attachment);
   try {
     if (input.signal.aborted) {
@@ -219,7 +237,7 @@ export async function downloadAttachmentForPreview(input: {
     }
     // fork: library
     if (input.download) await input.download(cached.file);
-    else await File.downloadFileAsync(input.url, cached.file, { signal: input.signal });
+    else await downloadRemoteAttachment(input.url, cached.file, input.signal);
     if (input.signal.aborted) {
       cached.preview.dispose();
       return null;

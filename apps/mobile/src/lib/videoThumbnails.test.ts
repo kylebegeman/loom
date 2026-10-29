@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({ createPlayer: vi.fn() }));
+vi.mock("../fork/cloudflare-access/mobileAccess", () => ({
+  mobileAccess: { token: async () => null },
+}));
+
 vi.mock("expo-video", () => ({ createVideoPlayer: mocks.createPlayer }));
 
 let thumbnails: typeof import("./videoThumbnails");

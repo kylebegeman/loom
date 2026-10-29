@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   uuid: vi.fn(),
 }));
 
+vi.mock("../fork/cloudflare-access/mobileAccess", () => ({
+  mobileAccess: { token: async () => null },
+}));
+
 vi.mock("expo-file-system", () => {
   class Directory {
     readonly uri: string;
