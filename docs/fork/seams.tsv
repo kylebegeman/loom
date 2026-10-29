@@ -163,7 +163,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
-apps/server/src/storageCleanup.test.ts	project-lifecycle	30
+apps/server/src/storageCleanup.test.ts	project-lifecycle	31
 packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	3
 packages/contracts/src/settings.ts	project-lifecycle	14
@@ -354,7 +354,7 @@ apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	11
 apps/server/src/server.ts	file-placement	7
 apps/server/src/storageCleanup.ts	project-checkout-management	10
-apps/server/src/storageCleanup.ts	project-lifecycle	100
+apps/server/src/storageCleanup.ts	project-lifecycle	102
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2

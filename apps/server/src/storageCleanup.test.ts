@@ -1225,6 +1225,28 @@ describe("deleted thread worktrees", () => {
     }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
   );
 
+  // fork: project-lifecycle
+  it.effect("releases a settled worktree once its session stops", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW_MS + DAY_MS);
+      const fixture = yield* cleanupFixture({
+        ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+        worktreeAfterDays: null,
+        worktreeOnSettle: true,
+      });
+      fixture.settle();
+      yield* fixture.publish();
+      fixture.setOpenSessionCwd(fixture.worktree);
+      const reads = yield* stopSessionAfterStartupSweep(
+        fixture,
+        ThreadId.make("thread-1"),
+        Effect.sync(() => fixture.setSessionLive(false)),
+      );
+      expect(reads).toBeGreaterThan(0);
+      expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
+    }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
+  );
+
   it.effect("removes a deleted thread's worktree once its session stops", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW_MS);

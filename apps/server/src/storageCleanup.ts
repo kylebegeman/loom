@@ -2493,6 +2493,9 @@ const make = Effect.gen(function* () {
           return Effect.void;
         else if (
           event.type === "provider-session.updated" && // fork: project-lifecycle
+          // fork: project-lifecycle -- settle and project rules also keep checkouts for open sessions.
+          !settlementCleanupEnabled() &&
+          lastSettings.storageCleanup.projectAfterDays === null && // fork: project-lifecycle
           !deletedWorktreeWaits &&
           deletions === sweptDeletions
         ) {
