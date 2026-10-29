@@ -105,37 +105,44 @@ export function MachineUpdatePlanControls({
 
 export function UpdateAllWhenIdle({ targetVersion }: { readonly targetVersion: string }) {
   const { environments } = useEnvironments();
-  const permissions = useAtomValue(
-    updatePlans.permissions(environments.map((entry) => entry.environmentId)),
-  );
-  const arm = useAtomCommand(updatePlans.arm, { reportFailure: false });
-  const [busy, setBusy] = useState(false);
-  const [outcomes, setOutcomes] = useState<readonly UpdatePlanOutcome[]>([]);
-  const run = async () => {
-    if (busy) return;
-    setBusy(true);
-    const targets = environments.map((entry, index) => ({
-      environmentId: entry.environmentId,
-      label: entry.label,
-      unavailableReason: updatePlanUnavailableReason({
+  const eligibility = useAtomValue(
+    updatePlans.eligibility(
+      environments.map((entry) => ({
+        environmentId: entry.environmentId,
         advertised: supportsLoomFeature(
           entry.serverConfig?.environment.capabilities,
           UPDATE_PLAN_FEATURE,
         ),
-        connected: entry.entry.enabled && entry.connection.phase === "connected",
-        canMaintain: permissions[index] === true,
-      }),
-    }));
+      })),
+    ),
+  );
+  const arm = useAtomCommand(updatePlans.arm, { reportFailure: false });
+  const [busy, setBusy] = useState(false);
+  const [outcomes, setOutcomes] = useState<readonly UpdatePlanOutcome[]>([]);
+  const targets = environments.map((entry, index) => ({
+    environmentId: entry.environmentId,
+    label: entry.label,
+    unavailableReason: updatePlanUnavailableReason({
+      advertised: supportsLoomFeature(
+        entry.serverConfig?.environment.capabilities,
+        UPDATE_PLAN_FEATURE,
+      ),
+      connected: entry.entry.enabled && entry.connection.phase === "connected",
+      canMaintain: eligibility[index]?.canMaintain === true,
+      status: eligibility[index]?.status ?? null,
+      ready: eligibility[index]?.ready === true,
+      targetVersion,
+    }),
+  }));
+  const hasEligible = targets.some((target) => target.unavailableReason === null);
+  const run = async () => {
+    if (busy || !hasEligible) return;
+    setBusy(true);
+
     setOutcomes(
       await armUpdatePlans(
         targets,
-        async (target) => {
-          const current = environments.find((entry) => entry.environmentId === target.environmentId)
-            ?.serverConfig?.environment.serverVersion;
-          return current && resolveVersionMismatch(current, targetVersion) === null
-            ? null
-            : targetVersion;
-        },
+        async () => targetVersion,
         async (target, version) => {
           const result = await arm({
             environmentId: target.environmentId,
@@ -153,19 +160,7 @@ export function UpdateAllWhenIdle({ targetVersion }: { readonly targetVersion: s
       <Button
         size="sm"
         variant="outline"
-        disabled={
-          busy ||
-          !environments.some(
-            (entry, index) =>
-              permissions[index] &&
-              entry.entry.enabled &&
-              entry.connection.phase === "connected" &&
-              supportsLoomFeature(
-                entry.serverConfig?.environment.capabilities,
-                UPDATE_PLAN_FEATURE,
-              ),
-          )
-        }
+        disabled={busy || !hasEligible}
         onClick={() => void run()}
       >
         {busy ? "Arming updates..." : "Update all when agents finish"}

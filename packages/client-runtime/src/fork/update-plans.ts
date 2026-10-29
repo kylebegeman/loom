@@ -1,13 +1,38 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import { UPDATE_PLAN_WS_METHODS, type UpdatePlanStatus } from "@t3tools/contracts/fork";
+import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Effect from "effect/Effect";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "../state/runtime.ts";
+
+export interface UpdatePlanEligibilityTarget {
+  readonly environmentId: EnvironmentId;
+  readonly advertised: boolean;
+}
+
+export function createUpdatePlanEligibilityAtom(
+  targets: readonly UpdatePlanEligibilityTarget[],
+  status: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<AsyncResult.AsyncResult<UpdatePlanStatus, unknown>>,
+  permission: (environmentId: EnvironmentId) => Atom.Atom<boolean>,
+) {
+  return Atom.make((get) =>
+    targets.map((target) => {
+      const result = target.advertised ? get(status(target.environmentId)) : null;
+      return {
+        canMaintain: get(permission(target.environmentId)),
+        status: result === null ? null : AsyncResult.getOrElse(result, () => null),
+        ready: result !== null && AsyncResult.isSuccess(result),
+      };
+    }),
+  );
+}
 
 export function createUpdatePlanAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
   const status = createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -30,13 +55,17 @@ export function createUpdatePlanAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     tag: UPDATE_PLAN_WS_METHODS.cancel,
     onSuccess: refresh,
   });
-  const permissions = Atom.family((key: string) => {
-    const ids = JSON.parse(key) as string[];
-    return Atom.make((get) => ids.map((id) => get(arm.permissionAtom(EnvironmentId.make(id)))));
-  });
+  const eligibility = Atom.family((key: string) =>
+    createUpdatePlanEligibilityAtom(
+      JSON.parse(key) as UpdatePlanEligibilityTarget[],
+      (environmentId) => status({ environmentId, input: {} }),
+      arm.permissionAtom,
+    ),
+  );
   return {
     status,
-    permissions: (ids: readonly EnvironmentId[]) => permissions(JSON.stringify(ids)),
+    eligibility: (targets: readonly UpdatePlanEligibilityTarget[]) =>
+      eligibility(JSON.stringify(targets)),
     arm,
     cancel,
   };
@@ -71,12 +100,24 @@ export function updatePlanUnavailableReason(input: {
   readonly connected: boolean;
   readonly canMaintain: boolean;
   readonly status?: UpdatePlanStatus | null;
+  readonly ready?: boolean;
+  readonly targetVersion?: string;
 }) {
   if (!input.advertised) return "Update this computer to schedule updates.";
   if (!input.connected) return "Reconnect this computer to change its update plan.";
   if (!input.canMaintain) return "This connection does not allow computer updates.";
   if (input.status?.supported === false)
     return input.status.unavailableReason ?? "This computer cannot install updates automatically.";
+  if (!input.status || input.ready === false) return "Waiting for this computer's update status.";
+  if (updatePlanCanCancel(input.status) || input.status.plan?.state === "installing")
+    return "This computer already has an active update plan.";
+  if (parseSemver(input.status.currentVersion) === null)
+    return "This computer's current version is unavailable.";
+  if (input.targetVersion !== undefined) {
+    if (parseSemver(input.targetVersion) === null) return "No update version is available.";
+    if (compareSemverVersions(input.targetVersion, input.status.currentVersion) <= 0)
+      return "Already up to date";
+  }
   return null;
 }
 
