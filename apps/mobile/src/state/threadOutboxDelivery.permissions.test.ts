@@ -554,7 +554,7 @@ describe("interrupted mobile message delivery", () => {
       state.start.mockImplementationOnce(async ({ input }) => {
         expect(appAtomRegistry.get(threadOutboxDeliveryAtom)?.phase).toBe("confirming");
         accept(input);
-        return AsyncResult.success(undefined);
+        return AsyncResult.success({});
       });
       await runDrain();
       expect(
