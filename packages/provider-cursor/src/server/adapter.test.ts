@@ -710,8 +710,8 @@ describe("CursorAdapterV2", () => {
         );
         const sent = sentMessages.at(-1)!;
         return {
-          orchestration: sent.includes("## T3 Code orchestration"),
-          devices: sent.includes("## T3 Code devices"),
+          orchestration: sent.includes("## Loom orchestration"), // fork: brand
+          devices: sent.includes("## Loom devices"), // fork: brand
         };
       });
       const told = (orchestration: boolean, devices: boolean) => ({ orchestration, devices });
