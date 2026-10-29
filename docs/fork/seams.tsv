@@ -665,6 +665,8 @@ packages/provider-core/src/server/failure.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.test.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.ts	brand	1
 packages/provider-core/src/server/orchestrationInstructions.ts	brand	7
+evals/mcp-tool-use/devices.test.ts	brand	1
+evals/mcp-tool-use/run.test.ts	brand	1
 packages/provider-core/src/server/runtimeInstructions.ts	brand	1
 packages/provider-core/src/server/textGenerationPrompts.ts	brand	2
 packages/provider-cursor/src/server/accountUsage.test.ts	brand	1
