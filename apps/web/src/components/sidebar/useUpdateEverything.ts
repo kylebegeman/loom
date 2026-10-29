@@ -3,12 +3,9 @@ import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity"; // fork: machine-updates
 
 import { APP_VERSION } from "~/branding";
+import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 // fork: machine-updates
-import {
-  isLocalUpdateEnvironment,
-  updateEnvironmentInScope,
-  type UpdateScope,
-} from "~/fork/connections/updateScope";
+import { updateEnvironmentInScope, type UpdateScope } from "~/fork/connections/updateScope";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
 // fork: machine-updates
@@ -23,7 +20,9 @@ import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification
 import { useProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
 import {
+  type ChannelSwitchRelease,
   closeFinishedUpdateRun,
+  collectChannelSwitchTargets,
   collectRestartingMachines,
   collectServerUpdateTargets,
   collectUpdateEverythingResult,
@@ -44,10 +43,26 @@ import {
 
 const UPDATE_RESTART_DELAY_MS = 5_000;
 
+/** Servers this desktop app runs; they update with it. */
+export function isHostedByThisApp(
+  environment: ReturnType<typeof useEnvironments>["environments"][number],
+) {
+  return (
+    isElectron &&
+    (environment.entry.target._tag === "PrimaryConnectionTarget" ||
+      isDesktopLocalConnectionTarget(environment.entry.target))
+  );
+}
+
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
-// fork: machine-updates - The footer owns local updates; Computers owns fleet updates.
-export function useUpdateEverything(localUpdateVersion: string | null, scope: UpdateScope) {
+/** `channelSwitch` makes the run move the fleet to that release's track instead of updating it. */
+export function useUpdateEverything(
+  localUpdateVersion: string | null,
+  // fork: machine-updates - The footer owns local updates; Computers owns fleet updates.
+  scope: UpdateScope,
+  channelSwitch?: ChannelSwitchRelease,
+) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   // fork: machine-updates
   const { environments: allEnvironments } = useEnvironments();
@@ -66,20 +81,23 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
     serverConfig: environment.serverConfig,
     // fork: machine-updates
     connected: environment.entry.enabled && environment.connection.phase === "connected",
-    hostedByThisApp: isLocalUpdateEnvironment(environment.entry.target, isElectron),
+    hostedByThisApp: isHostedByThisApp(environment),
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
-  const { targets: behindServers, skipped: unreachable } = collectServerUpdateTargets(
-    machines,
-    targetVersion,
-  );
+  // A track switch's target came from npm already.
+  const {
+    targets: behindServers,
+    skipped: unreachable,
+    waitForNpm,
+  } = channelSwitch
+    ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForNpm: [] }
+    : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
   // fork: machine-updates -- published runtime archives replace the npm publication check
-  const needsArchive = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
-  const release = useRuntimeReleaseAssets(needsArchive ? targetVersion : null);
+  const release = useRuntimeReleaseAssets(waitForNpm.length > 0 ? targetVersion : null);
   const assets = AsyncResult.getOrElse(release, () => []);
   const servers = behindServers.filter((server) => {
-    if (server.selfUpdate === "desktop-managed") return true;
+    if (!waitForNpm.includes(server)) return true;
     const platform = machines.find((machine) => machine.environmentId === server.environmentId)
       ?.serverConfig?.environment.platform;
     return platform !== undefined && isRuntimeArchivePublished(assets, targetVersion, platform);
@@ -99,19 +117,25 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
             : "runtime archive is not published for this computer",
       })),
   ];
+  // fork: machine-updates - A track switch moves this app along with the fleet.
+  const ownsLocal = scope === "local" || channelSwitch !== undefined;
+  // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.
+  const moving = servers.filter((server) => server.trackOnly !== true);
   // fork: machine-updates
   const restarts = collectRestartingMachines(
     machines,
-    servers,
-    scope === "local" && localUpdateVersion !== null,
+    moving,
+    ownsLocal && localUpdateVersion !== null,
   );
-  const providers = useProviderUpdates(scopedEnvironmentIds);
+  const providerUpdates = useProviderUpdates(scopedEnvironmentIds); // fork: machine-updates
+  // A track switch moves app and servers only; provider updates stay a separate choice.
+  const providers = channelSwitch ? { machines: [], updateAll: async () => [] } : providerUpdates;
   const updateServer = useServerUpdate();
 
   const view = describeUpdateEverything({
-    localVersion: scope === "local" ? localUpdateVersion : null, // fork: machine-updates
+    localVersion: ownsLocal ? localUpdateVersion : null, // fork: machine-updates
     localMachines: machines.filter((machine) => machine.hostedByThisApp),
-    servers,
+    servers: moving,
     skipped,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
@@ -182,6 +206,7 @@ export function useUpdateEverything(localUpdateVersion: string | null, scope: Up
         if (existing !== null) return existing;
         started = true;
         return {
+          ...(channelSwitch ? { trackSwitch: true } : {}),
           scope,
           localVersion,
           installWhenIdle: installLocalWhenIdle !== undefined, // fork: machine-updates

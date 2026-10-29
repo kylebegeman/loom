@@ -26,6 +26,7 @@ import {
 } from "../fork/runtime-owner/selfUpdateSwitch.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
+import { databaseMigrationHead } from "../persistence/databaseMigrationHead.ts";
 import * as ProcessRunner from "../processRunner.ts";
 // fork: computer-naming -- ComputerNaming replaces resolveServerEnvironmentLabel.
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
@@ -214,6 +215,7 @@ export const make = Effect.gen(function* () {
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
+  const databaseMigration = databaseMigrationHead(serverConfig.dbPath);
   // fork: library-projects
   const libraryAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
     Config.withDefault(false),
@@ -231,6 +233,7 @@ export const make = Effect.gen(function* () {
     },
     serverVersion: packageJson.version,
     orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+    ...(databaseMigration === undefined ? {} : { databaseMigration }),
     capabilities: {
       supportsExecution, // fork: library-projects
       libraryAuthority, // fork: library-projects
@@ -288,7 +291,7 @@ export const make = Effect.gen(function* () {
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? { serverSelfUpdateProgress: true }
         : {}),
-      ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
+      ...(desktopAppUpdate ? { desktopAppUpdate: true, desktopAppChannelSwitch: true } : {}),
       serverBrowser: true,
       peerLinks: true,
       mcpModeLimitHeader: true,

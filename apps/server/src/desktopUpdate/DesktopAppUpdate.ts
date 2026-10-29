@@ -44,6 +44,7 @@ export class DesktopAppUpdate extends Context.Service<
       reportProgress: (
         stage: ServerSelfUpdateProgressStage,
       ) => Effect.Effect<void, ServerSelfUpdateError>,
+      trackSwitch?: DesktopTelemetryReceiver.DesktopTrackSwitch,
       options?: { readonly waitForIdle?: boolean }, // fork: machine-updates
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
     /** Success stops the server; returns only on installation failure or timeout. */
@@ -72,6 +73,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     reportProgress: (
       stage: ServerSelfUpdateProgressStage,
     ) => Effect.Effect<void, ServerSelfUpdateError>,
+    trackSwitch: boolean,
     waitForIdle = false, // fork: machine-updates
   ) {
     const lastStage = yield* Ref.make<ServerSelfUpdateProgressStage | null>(null);
@@ -127,6 +129,11 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
       return { targetVersion, method: "desktop-app" as const, desktopUpdateToken: requestId };
     }
     if (report.outcome === "up-to-date") {
+      // A switch's host already on the newest build of its track only saved the track.
+      if (trackSwitch) {
+        yield* Ref.set(inFlight, false);
+        return { targetVersion: report.state.currentVersion, method: "desktop-app" as const };
+      }
       return yield* failWith(
         // fork: brand
         `The Loom desktop app on this machine is already up to date on ${report.state.currentVersion}.`,
@@ -138,7 +145,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   });
 
   const run: DesktopAppUpdate["Service"]["run"] = Effect.fn("desktopUpdate.desktopAppUpdate.run")(
-    function* (reportProgress, options) {
+    function* (reportProgress, trackSwitch, options) {
       // fork: machine-updates
       if (!available) {
         return yield* failWith(
@@ -162,7 +169,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
           // Subscribe before requesting to catch fast reports.
           const { changes } = yield* receiver.desktopUpdates;
           yield* receiver
-            .requestDesktopUpdate(requestId)
+            .requestDesktopUpdate(requestId, trackSwitch)
             .pipe(
               Effect.mapError((error) =>
                 failWith("Could not reach the Loom desktop app on this machine.", error),
@@ -173,6 +180,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
             requestId,
             changes,
             reportProgress,
+            trackSwitch !== undefined,
             options?.waitForIdle,
           ).pipe(
             Effect.onInterrupt(() => receiver.cancelDesktopUpdate(requestId).pipe(Effect.ignore)),
