@@ -1547,3 +1547,5 @@ apps/mobile/src/features/home/useThreadListActions.test.ts	project-library	4
 apps/web/src/hooks/useThreadActions.permissions.test.ts	library-projects	4
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	directory-computers	4
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	directory-computers	2
+apps/server/src/orchestration-v2/EventSink.ts	machine-updates	4
+packages/shared/package.json	-	"./fork/restart-impact"

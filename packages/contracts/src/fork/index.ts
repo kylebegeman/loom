@@ -1,3 +1,4 @@
+export * from "./machine-updates.ts";
 export * from "./workflows.ts";
 export * from "./skill-registry.ts";
 export * from "./project-library-decisions.ts";

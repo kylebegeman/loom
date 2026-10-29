@@ -1306,12 +1306,14 @@ See [Connections help](docs/fork/user/connections.md).
 
 ### Machine update seams
 
-| File                                                        | Packet            | Why                                                  |
-| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------- |
-| `apps/web/src/components/ProviderUpdatesAction.tsx`         | `machine-updates` | Scope provider updates to permitted computers.       |
-| `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`     | `machine-updates` | Keep the footer local to the desktop computer.       |
-| `apps/web/src/components/sidebar/useUpdateEverything.ts`    | `machine-updates` | Share scoped local and fleet update execution.       |
-| `apps/web/src/components/sidebar/updateEverything.logic.ts` | `machine-updates` | Keep local and fleet progress in their owning views. |
+| File                                                        | Packet            | Why                                                                     |
+| ----------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------- |
+| `apps/web/src/components/ProviderUpdatesAction.tsx`         | `machine-updates` | Scope provider updates to permitted computers.                          |
+| `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`     | `machine-updates` | Keep the footer local to the desktop computer.                          |
+| `apps/web/src/components/sidebar/useUpdateEverything.ts`    | `machine-updates` | Share scoped local and fleet update execution.                          |
+| `apps/web/src/components/sidebar/updateEverything.logic.ts` | `machine-updates` | Keep local and fleet progress in their owning views.                    |
+| `apps/server/src/orchestration-v2/EventSink.ts`             | `machine-updates` | Hold new event commits while an idle update hands off to its installer. |
+| `packages/shared/package.json` (no marker)                  | `machine-updates` | Share the restart-impact rule between servers and clients.              |
 
 ### Secure native randomness
 
