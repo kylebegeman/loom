@@ -577,6 +577,13 @@ const layerOrchestrationApplication = CheckpointDiffQuery.layer.pipe(
 
 // fork: project-lifecycle -- settlement and the runtime share one storage cleanup service.
 const layerStorageCleanup = RuntimeLayer.layerStorageCleanup;
+// fork: project-lifecycle
+const layerDatabaseStorage = DatabaseStorage.layer.pipe(
+  Layer.provide(ProjectionMaintenance.layer),
+  Layer.provide(
+    Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
+  ),
+);
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
   // fork: project-lifecycle
@@ -637,12 +644,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
   layerStorageCleanup, // fork: project-lifecycle
-  DatabaseStorage.layer.pipe(
-    Layer.provide(ProjectionMaintenance.layer),
-    Layer.provide(
-      Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
-    ),
-  ),
+  layerDatabaseStorage, // fork: project-lifecycle
   layerThreadPullRequestWorker,
   DelegatedTaskAnalytics.layer,
   Layer.effectDiscard(
@@ -680,6 +682,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // show webhook addresses on the relay like scheduled tasks.
   Layer.provideMerge(
     ForkLayer.pipe(
+      Layer.provide(layerDatabaseStorage), // fork: project-lifecycle
       Layer.provide(layerSelfUpdate), // fork: machine-updates
       Layer.provide(Layer.merge(layerPullRequestService, layerScheduledTaskWebhookOrigin)),
     ),

@@ -49,7 +49,9 @@ const make = Effect.gen(function* () {
   const count = projections.getShellSnapshot().pipe(
     Effect.map(
       (snapshot) =>
-        snapshot.threads.filter((thread) => threadRestartImpact(thread) !== null).length,
+        [...snapshot.threads, ...snapshot.archivedThreads].filter(
+          (thread) => threadRestartImpact(thread) !== null,
+        ).length,
     ),
     Effect.mapError((cause) => new UpdatePlanError({ reason: "activity", cause })),
   );

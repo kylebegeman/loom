@@ -1325,6 +1325,8 @@ See [Connections help](docs/fork/user/connections.md).
 | `packages/shared/src/cliRelease.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/ssh/src/tunnel.test.ts`                                            | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/ssh/src/tunnel.ts`                                                 | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/server/src/server.ts`                                                  | `project-lifecycle` | Share database maintenance with the read-only storage inventory.           |
+| `apps/server/src/orchestration-v2/runtimeLayer.ts`                           | `project-lifecycle` | Share mirror locks and cleanup accounting across inventory and removal.    |
 
 ### Machine update seams
 

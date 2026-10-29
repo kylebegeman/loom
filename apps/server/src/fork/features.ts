@@ -1,3 +1,4 @@
+import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
 import {
   AGENT_TOOL_FAMILIES_FEATURE,
@@ -33,6 +34,7 @@ import { isLibraryAuthorityEnv } from "./project-library/authority.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
+  PROJECT_STORAGE_FEATURE,
   UPDATE_PLAN_FEATURE,
   AGENT_TOOL_FAMILIES_FEATURE,
   ATTENTION_RETRY_FEATURE,

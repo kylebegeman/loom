@@ -362,8 +362,7 @@ const hiddenFromSubagents = enabledWhen(McpInvocationContext.hiddenFromSubagents
 // The Linked environments beta starts off, and T3 lists its tools only while it is on.
 const hiddenWhileLinksOff = enabledWhen(McpInvocationContext.hiddenWhileLinksOff);
 // fork: ext-mcp
-const familyFilteredTools = (families: ReadonlyArray<string> | undefined) => {
-  if (families === undefined) return t3Tools;
+const familyFilteredTools = (families: ReadonlyArray<string> = []) => {
   const response = hideUnusableTools(
     HttpServerResponse.jsonUnsafe({
       result: {

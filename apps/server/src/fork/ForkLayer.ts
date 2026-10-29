@@ -1,6 +1,8 @@
 import * as SessionToolPolicy from "./mcp/SessionToolPolicy.ts";
 import { SessionToolContextRoutes } from "./mcp/toolContextHttp.ts";
 import * as AttentionRetry from "./attention/AttentionRetry.ts";
+import * as ProjectStorageInventory from "./project-lifecycle/ProjectStorageInventory.ts";
+import * as StorageAccounting from "./project-lifecycle/StorageCleanupAccounting.ts";
 import * as UpdatePlans from "./machine-updates/UpdatePlans.ts";
 import * as UpdateRuntime from "./machine-updates/UpdateRuntime.ts";
 import * as UpdatePlanStore from "./machine-updates/UpdatePlanStore.ts";
@@ -77,7 +79,6 @@ import * as LibraryLocalCatalog from "./project-library/LibraryLocalCatalog.ts";
 import * as LibraryTimeline from "./project-library/LibraryTimeline.ts";
 import * as LibraryLaunchCandidates from "./project-library/LibraryLaunchCandidates.ts";
 import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
-import * as LibraryGitFetch from "./project-library/LibraryGitFetch.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as LibraryWorkspaceStore from "./project-library/LibraryWorkspaceStore.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -304,6 +305,7 @@ export const layerProjectLifecycle = ProjectLifecycle.layer.pipe(
 );
 
 export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
+  Layer.provide(StorageAccounting.layer),
   Layer.provide(
     LibraryRecoveryPublisher.layer.pipe(
       Layer.provide(NodeHttpClient.layerNodeHttp),
@@ -316,7 +318,7 @@ export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
   Layer.provide(ProcessRunner.layer),
   Layer.provide(layerLibraryPublisher),
   // The same layers as storage cleanup and the setup card, so mirror locks and progress are shared.
-  Layer.provide(LibraryGitFetch.layer),
+  Layer.provide(RuntimeLayer.layerLibraryGitFetch),
   Layer.provide(WorktreeSetupTracker.layer),
 );
 const layerLibraryHistorySource = LibraryHistorySource.layer.pipe(
@@ -403,6 +405,15 @@ export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  ProjectStorageInventory.layer.pipe(
+    Layer.provide(RuntimeLayer.layerStorageCleanup),
+    Layer.provide(layerProjectLifecycle),
+    Layer.provide(RuntimeLayer.layerLibraryGitFetch),
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(StorageAccounting.layer),
+    Layer.provide(ProjectionStore.layer),
+    Layer.provide(ProjectStore.layer),
+  ),
   UpdatePlans.layer.pipe(
     Layer.provideMerge(
       UpdateHandoff.layer.pipe(
@@ -514,7 +525,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerLibraryWorkspace,
   ProjectCheckoutManagement.layer.pipe(
     Layer.provide(ProcessRunner.layer),
-    Layer.provide(StorageCleanup.layer.pipe(Layer.provide(LibraryGitFetch.layer))),
+    Layer.provide(StorageCleanup.layer.pipe(Layer.provide(RuntimeLayer.layerLibraryGitFetch))),
     Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
   ),
   GitHubSetupFlow.layer.pipe(

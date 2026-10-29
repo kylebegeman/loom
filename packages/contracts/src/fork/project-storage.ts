@@ -72,7 +72,7 @@ export const PROJECT_STORAGE_WS_METHODS = {
 } as const;
 export const ProjectStorageRpcGroup = RpcGroup.make(
   Rpc.make(PROJECT_STORAGE_WS_METHODS.byCategory, {
-    payload: Schema.Struct({ refresh: Schema.optional(Schema.Boolean) }),
+    payload: Schema.Struct({ refresh: Schema.optionalKey(Schema.Boolean) }),
     success: ProjectStorageReport,
     error: Schema.Union([ProjectStorageError, EnvironmentAuthorizationError]),
   }),

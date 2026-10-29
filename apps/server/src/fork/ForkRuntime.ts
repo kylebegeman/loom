@@ -1,3 +1,4 @@
+import type { ProjectStorageInventory } from "./project-lifecycle/ProjectStorageInventory.ts";
 import type { UpdatePlans } from "./machine-updates/UpdatePlans.ts";
 import type { UpdateHandoff } from "./machine-updates/UpdateHandoff.ts";
 import type { SessionToolPolicy } from "./mcp/SessionToolPolicy.ts";
@@ -78,6 +79,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | ProjectStorageInventory
   | UpdatePlans
   | UpdateHandoff
   | AttentionRetry

@@ -22,8 +22,9 @@ import * as UpdateHandoff from "./UpdateHandoff.ts";
 import * as UpdatePlans from "./UpdatePlans.ts";
 
 const headers = { "cache-control": "no-store" } as const;
-const decodeProgress = Schema.decodeUnknownEffect(UpdateProgress);
-const decodeFence = Schema.decodeUnknownEffect(UpdateFenceRequest);
+const MAX_UPDATE_BODY_BYTES = 4096;
+const decodeProgress = Schema.decodeUnknownEffect(Schema.fromJsonString(UpdateProgress));
+const decodeFence = Schema.decodeUnknownEffect(Schema.fromJsonString(UpdateFenceRequest));
 const handle = (mode: "activity" | "fence" | "progress") =>
   withForkRuntime(
     Effect.gen(function* () {
@@ -36,13 +37,26 @@ const handle = (mode: "activity" | "fence" | "progress") =>
       const service = yield* UpdateHandoff.UpdateHandoff;
       if (mode === "activity")
         return HttpServerResponse.jsonUnsafe(yield* service.activity, { headers });
-      const parsed = yield* request.json.pipe(
-        Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(4096)),
+      const length = request.headers["content-length"];
+      if (
+        length !== undefined &&
+        (!/^\d+$/.test(length) || Number(length) > MAX_UPDATE_BODY_BYTES)
+      ) {
+        return HttpServerResponse.text("Update request too large", { status: 413, headers });
+      }
+      const parsed = yield* request.text.pipe(
+        Effect.provideService(
+          HttpIncomingMessage.MaxBodySize,
+          ByteSize.bytes(MAX_UPDATE_BODY_BYTES),
+        ),
         Effect.option,
       );
       if (parsed._tag === "None")
         return HttpServerResponse.text("Invalid update request", { status: 400, headers });
       const body = parsed.value;
+      if (new TextEncoder().encode(body).byteLength > MAX_UPDATE_BODY_BYTES) {
+        return HttpServerResponse.text("Update request too large", { status: 413, headers });
+      }
       if (mode === "progress") {
         const input = yield* decodeProgress(body).pipe(Effect.option);
         if (input._tag === "None")
