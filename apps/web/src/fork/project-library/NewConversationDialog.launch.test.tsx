@@ -284,11 +284,6 @@ function savedAttempt() {
 }
 function expectOpened() {
   expect(savedAttempt()).toBeNull();
-  expect(commands.snapshotThread.run).toHaveBeenCalledWith({
-    environmentId,
-    input: { threadId },
-  });
-  expect(commands.registerThread.run).toHaveBeenCalledOnce();
   expect(onClose).toHaveBeenCalledOnce();
   expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
     to: "/$environmentId/$threadId",
@@ -393,6 +388,7 @@ beforeEach(() => {
     AsyncResult.success({ localProjectId, cwd: restoredCopy.rootPath }),
   );
   commands.create.run.mockResolvedValue(AsyncResult.success(null));
+  commands.executeOperation.run.mockResolvedValue(AsyncResult.success({ result: { threadId } }));
   commands.bindThread.run.mockResolvedValue(bindingReceipt);
   commands.setCopyRetention.run.mockResolvedValue(AsyncResult.success(temporaryCopy));
   commands.snapshotThread.run.mockResolvedValue(AsyncResult.success({ summary: { threadId } }));
@@ -405,127 +401,140 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe("Library conversation retention", () => {
-  it.each([true, false])(
-    "restores saved files with registered=%s and binds the new thread before enabling cleanup",
-    async (registered) => {
-      state.query.mockImplementation((query: unknown) => ({
-        data: query === state.retainedQuery ? [{ ...releasedCopy, registered }] : undefined,
-        isPending: false,
-        isSuccess: true,
-        error: null,
-        refresh: vi.fn(),
-      }));
-      let resolveBind!: (receipt: typeof bindingReceipt) => void;
-      const bindingPromise = new Promise<typeof bindingReceipt>((resolve) => {
-        resolveBind = resolve;
-      });
-      commands.bindThread.run.mockReturnValueOnce(bindingPromise);
-      await mount();
-      expect(launch.keepOnComputer).toBe(false);
-      await click("Start conversation");
-
-      expect(commands.reopenCopy.run).toHaveBeenCalledExactlyOnceWith({
-        environmentId,
-        input: { requestId: expect.any(String), workingCopyId: releasedCopy.id },
-      });
-      expect(commands.prepareCopy.run).not.toHaveBeenCalled();
-      expect(commands.registerCopy.run).toHaveBeenCalledExactlyOnceWith({
-        environmentId: authorityId,
-        input: { requestId: expect.any(String), copy: restoredCopy },
-      });
-      expect(commands.create.run).toHaveBeenCalledWith({
-        environmentId,
-        input: expect.objectContaining({ threadId, projectId: localProjectId }),
-      });
-      expect(commands.bindThread.run).toHaveBeenCalledExactlyOnceWith({
-        environmentId,
-        input: { threadId, binding, project },
-      });
-      expect(commands.setCopyRetention.run).not.toHaveBeenCalled();
-      expect(commands.snapshotThread.run).not.toHaveBeenCalled();
-      expect(state.navigate).not.toHaveBeenCalled();
-      expect(savedAttempt()).toMatchObject({ threadId, created: true, keepOnComputer: false });
-
-      await act(() => resolveBind(bindingReceipt));
-
-      expect(commands.setCopyRetention.run).toHaveBeenCalledExactlyOnceWith({
-        environmentId,
-        input: { workingCopyId: restoredCopy.id, keepOnComputer: false },
-      });
-      expect(commands.registerCopy.run).toHaveBeenNthCalledWith(2, {
-        environmentId: authorityId,
-        input: { requestId: expect.stringMatching(/:retention$/), copy: temporaryCopy },
-      });
-      expectOpened();
-    },
+function saveLegacyAttempt(overrides: Record<string, unknown> = {}) {
+  saveLibraryAttempt(
+    attemptKey,
+    JSON.stringify({
+      environmentId,
+      threadId,
+      binding,
+      project,
+      title: "Recovered conversation",
+      context: "",
+      modelSelection: { instanceId, model: "test-model" },
+      runtimeMode: "full-access",
+      createdAt: project.createdAt,
+      created: true,
+      registerRequestId: "legacy-request",
+      keepOnComputer: false,
+      ...overrides,
+    }),
+    storage,
   );
+}
 
-  it("persists a successful retention mutation and republishes its receipt after an authority failure and remount", async () => {
-    commands.registerCopy.run
-      .mockResolvedValueOnce(AsyncResult.success(restoredCopy))
-      .mockImplementationOnce(async () => {
-        expect(savedAttempt()).toMatchObject({
-          threadId,
-          created: true,
-          keepOnComputer: false,
-          retentionCopy: temporaryCopy,
-        });
-        return failure("Authority unavailable");
-      });
-    await mount();
-    await click("Start conversation");
+function expectLaunched(target: { environmentId: EnvironmentId; input: Record<string, unknown> }) {
+  expect(commands.executeOperation.run).toHaveBeenCalledWith({
+    environmentId: target.environmentId,
+    input: {
+      operationId: expect.any(String),
+      request: {
+        kind: "launch",
+        input:
+          "asymmetricMatch" in target.input ? target.input : expect.objectContaining(target.input),
+      },
+    },
+  });
+}
 
-    expect(launch.error).toContain("Authority unavailable");
-    expect(commands.setCopyRetention.run).toHaveBeenCalledOnce();
-    expect(savedAttempt()).toMatchObject({ retentionCopy: temporaryCopy });
-    expect(commands.snapshotThread.run).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
-    expect(state.navigate).not.toHaveBeenCalled();
-    const failedPublication = commands.registerCopy.run.mock.calls[1]![0];
+function lastLaunch() {
+  return commands.executeOperation.run.mock.lastCall![0].input.request.input;
+}
 
-    await act(() => renderer!.unmount());
-    renderer = undefined;
-    // The authority still has the kept restoration because publishing the changed policy failed.
+describe("saved legacy conversation recovery", () => {
+  it("binds an existing conversation before changing temporary retention", async () => {
+    saveLegacyAttempt();
+    let release!: (value: typeof bindingReceipt) => void;
+    commands.bindThread.run.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
     await mount([restoredCopy]);
     await click("Retry conversation");
-
-    expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
-    expect(commands.create.run).toHaveBeenCalledOnce();
-    expect(commands.setCopyRetention.run).toHaveBeenCalledOnce();
-    expect(commands.registerCopy.run).toHaveBeenCalledTimes(3);
-    expect(commands.registerCopy.run).toHaveBeenLastCalledWith(failedPublication);
-    expectOpened();
-  });
-
-  it("keeps restored files protected when binding fails and enables cleanup only after retry succeeds", async () => {
-    commands.bindThread.run.mockResolvedValueOnce(failure("Thread binding failed"));
-    await mount();
-    await click("Start conversation");
-
-    expect(launch.error).toContain("Thread binding failed");
+    expect(commands.create.run).not.toHaveBeenCalled();
+    expect(commands.executeOperation.run).not.toHaveBeenCalled();
     expect(commands.setCopyRetention.run).not.toHaveBeenCalled();
-    expect(commands.registerCopy.run).toHaveBeenCalledTimes(1);
-    expect(commands.registerCopy.run).toHaveBeenCalledWith({
-      environmentId: authorityId,
-      input: { requestId: expect.any(String), copy: restoredCopy },
-    });
-    expect(savedAttempt()).toMatchObject({ threadId, created: true, keepOnComputer: false });
-    expect(savedAttempt()).not.toHaveProperty("retentionCopy");
-    expect(commands.snapshotThread.run).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
-    expect(state.navigate).not.toHaveBeenCalled();
-
-    await click("Retry conversation");
-
-    expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
-    expect(commands.create.run).toHaveBeenCalledOnce();
-    expect(commands.bindThread.run).toHaveBeenCalledTimes(2);
-    expect(commands.bindThread.run.mock.calls[1]).toEqual(commands.bindThread.run.mock.calls[0]);
+    await act(() => release(bindingReceipt));
     expect(commands.setCopyRetention.run).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: { workingCopyId: restoredCopy.id, keepOnComputer: false },
     });
+    expectOpened();
+  });
+
+  it("republishes a saved retention receipt after remount without repeating its mutation", async () => {
+    saveLegacyAttempt({ retentionCopy: temporaryCopy });
+    commands.registerCopy.run.mockResolvedValueOnce(failure("Authority unavailable"));
+    await mount([restoredCopy]);
+    await click("Retry conversation");
+    expect(launch.error).toContain("Authority unavailable");
+    expect(savedAttempt()).toMatchObject({ retentionCopy: temporaryCopy });
+    const failedPublication = commands.registerCopy.run.mock.calls[0]![0];
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([restoredCopy]);
+    await click("Retry conversation");
+    expect(commands.registerCopy.run).toHaveBeenLastCalledWith(failedPublication);
+    expect(commands.setCopyRetention.run).not.toHaveBeenCalled();
+    expect(commands.create.run).not.toHaveBeenCalled();
+    expect(commands.executeOperation.run).not.toHaveBeenCalled();
+    expectOpened();
+  });
+
+  it("recovers an untagged lost create response by binding the same conversation", async () => {
+    saveLegacyAttempt({ created: false, defaultsResolved: true });
+    commands.create.run.mockResolvedValueOnce(failure("Create response lost"));
+    await mount([restoredCopy]);
+    await click("Retry conversation");
+    expect(commands.create.run).toHaveBeenCalledOnce();
+    expect(commands.bindThread.run).toHaveBeenCalledWith({
+      environmentId,
+      input: { threadId, binding, project },
+    });
+    expect(commands.executeOperation.run).not.toHaveBeenCalled();
+    expect(commands.snapshotThread.run).toHaveBeenCalledWith({
+      environmentId,
+      input: { threadId },
+    });
+    expect(commands.registerThread.run).toHaveBeenCalledOnce();
+    expectOpened();
+  });
+
+  it("recovers a saved preparation receipt then launches without preparing again", async () => {
+    const key = `loom:library:launch-files:${authorityId}:${project.id}`;
+    const recovered = { ...restoredCopy, id: "old-files", rootPath: "/work/recovering" };
+    const preparation = {
+      environmentId,
+      input: {
+        requestId: "old-files",
+        project,
+        rootPath: recovered.rootPath,
+        strategy: "reuse",
+      },
+      registerRequestId: "old-registration",
+      copy: null,
+    };
+    saveLibraryAttempt(key, JSON.stringify(preparation), storage);
+    commands.prepareCopy.run.mockResolvedValueOnce(failure("Receipt lost"));
+    commands.preparation.run.mockResolvedValueOnce(AsyncResult.success(recovered));
+    await mount([]);
+    await click("Retry conversation");
+    expect(JSON.parse(storage.getItem(key)!)).toMatchObject({ copy: recovered });
+    await act(() => renderer!.unmount());
+    renderer = undefined;
+    await mount([]);
+    await click("Retry conversation");
+    expect(commands.prepareCopy.run).toHaveBeenCalledOnce();
+    expect(commands.registerCopy.run).toHaveBeenCalledWith({
+      environmentId: authorityId,
+      input: { requestId: "old-registration", copy: recovered },
+    });
+    expectLaunched({
+      environmentId,
+      input: { threadId, binding: { ...binding, workingCopyId: recovered.id }, project },
+    });
+    expect(storage.getItem(key)).toBeNull();
     expectOpened();
   });
 });
@@ -550,21 +559,17 @@ describe("new conversations with source settings", () => {
     expect(commands.create.run).not.toHaveBeenCalled();
     await click("Start conversation");
     expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
-    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith({
+    expectLaunched({
       environmentId,
       input: {
         threadId,
-        projectId: localProjectId,
         title: "New conversation",
         modelSelection: sourceSelection,
         runtimeMode: "auto",
         interactionMode: "plan",
-        branch: null,
-        worktreePath: restoredCopy.rootPath,
-        createdAt: expect.any(String),
       },
     });
-    expect(commands.bindThread.run).toHaveBeenCalledExactlyOnceWith({
+    expectLaunched({
       environmentId,
       input: { threadId, binding, project },
     });
@@ -581,7 +586,7 @@ describe("new conversations with source settings", () => {
       launch.setInteractionChoice("default");
     });
     await click("Start conversation");
-    expect(commands.create.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         modelSelection: { instanceId, model: "edited-model", options },
@@ -653,7 +658,7 @@ describe("new conversations with source settings", () => {
     await act(() => launch.selectHost(otherId));
     await act(() => launch.selectCopy(otherCopy.id));
     await click("Start conversation");
-    expect(commands.create.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId: otherId,
       input: expect.objectContaining({
         modelSelection: otherSelection,
@@ -661,7 +666,7 @@ describe("new conversations with source settings", () => {
         interactionMode: "default",
       }),
     });
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId: otherId,
       input: {
         threadId,
@@ -673,7 +678,7 @@ describe("new conversations with source settings", () => {
   });
 
   it("recovers the selected launch settings after a failure and remount", async () => {
-    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    commands.executeOperation.run.mockResolvedValueOnce(failure("Disconnected"));
     await mount([], sourceDefaults);
     await click("Start conversation");
     expect(savedAttempt()).toMatchObject({
@@ -689,7 +694,7 @@ describe("new conversations with source settings", () => {
     renderer = undefined;
     await mount([restoredCopy]);
     await click("Retry conversation");
-    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         modelSelection: sourceSelection,
@@ -704,7 +709,7 @@ describe("new conversations with source settings", () => {
     await mount();
     expect(launch.title).toBe("");
     await click("Start conversation");
-    expect(commands.create.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         modelSelection: { instanceId, model: "test-model" },
@@ -848,13 +853,15 @@ describe("portable project launch", () => {
     });
     expect(commands.prepareCopy.run).not.toHaveBeenCalled();
     expect(commands.reopenCopy.run).not.toHaveBeenCalled();
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: { threadId, project, binding: { ...binding, workingCopyId: restored.id } },
     });
-    expect(commands.bindThread.run.mock.invocationCallOrder[0]).toBeLessThan(
-      commands.setCopyRetention.run.mock.invocationCallOrder[0]!,
+    expect(commands.registerCopy.run.mock.invocationCallOrder[0]).toBeLessThan(
+      commands.executeOperation.run.mock.invocationCallOrder[0]!,
     );
+    expect(lastLaunch()).toMatchObject({ keepOnComputer: false });
+    expect(commands.setCopyRetention.run).not.toHaveBeenCalled();
     expect(commands.readCopyStatus.run).not.toHaveBeenCalled();
     expect(
       [...Array(storage.length)].map((_, index) => storage.getItem(storage.key(index)!)).join(),
@@ -971,8 +978,8 @@ describe("portable project launch", () => {
         rootPath: rejected.rootPath,
       }),
     });
-    expect(commands.bindThread.run).toHaveBeenCalledOnce();
-    expect(commands.create.run).toHaveBeenCalledOnce();
+    expect(commands.bindThread.run).not.toHaveBeenCalled();
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
     expectOpened();
   });
 
@@ -1030,12 +1037,11 @@ describe("portable project launch", () => {
     expect(storage.getItem(portableKey)).toBeNull();
     expect(launch.canCreate).toBe(false);
     await click("Use files in this folder");
-    const existing = { ...destinationCopy, ownership: "borrowed" as const };
-    commands.prepareCopy.run.mockResolvedValue(AsyncResult.success(existing));
     await click("Start conversation");
-    expect(commands.prepareCopy.run).toHaveBeenCalledWith({
-      environmentId,
-      input: expect.objectContaining({ rootPath: destinationCopy.rootPath, strategy: "reuse" }),
+    expect(commands.prepareCopy.run).not.toHaveBeenCalled();
+    expect(lastLaunch().files).toMatchObject({
+      rootPath: destinationCopy.rootPath,
+      strategy: "reuse",
     });
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
     expectOpened();
@@ -1117,7 +1123,7 @@ describe("portable project launch", () => {
         sourceCopy,
       },
     });
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: {
         threadId,
@@ -1144,7 +1150,7 @@ describe("portable project launch", () => {
     await click("Start conversation");
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
     expect(commands.authorizeRecovery.run).not.toHaveBeenCalled();
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         binding: expect.objectContaining({
@@ -1162,7 +1168,7 @@ describe("portable project launch", () => {
 
   it("holds an unfinished continuation for that continuation only, names it, and retries it there", async () => {
     setup();
-    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    commands.executeOperation.run.mockResolvedValueOnce(failure("Disconnected"));
     await mount([restoredCopy], { continuation: sourceSummary });
     await act(() => launch.selectCopy(restoredCopy.id));
     await click("Start conversation");
@@ -1187,7 +1193,7 @@ describe("portable project launch", () => {
     expect(launch.held).toEqual({ title: "Continue: Original work", savedAt: held.createdAt });
     await click("Retry conversation");
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
-    expect(commands.bindThread.run).toHaveBeenLastCalledWith({
+    expectLaunched({
       environmentId,
       input: { threadId, binding: held.binding, project },
     });
@@ -1237,7 +1243,7 @@ describe("portable project launch", () => {
     expect(commands.restoreCopy.run.mock.calls[0]![0].input.requestId).toBe(
       commands.restoreCopy.run.mock.calls[1]![0].input.requestId,
     );
-    expect(commands.create.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         modelSelection,
@@ -1246,7 +1252,7 @@ describe("portable project launch", () => {
         title: "Continue: Original work",
       }),
     });
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         binding: expect.objectContaining({ continuationOf: receipt.launch.continuationOf }),
@@ -1285,7 +1291,7 @@ describe("portable project launch", () => {
       environmentId,
       input: expect.objectContaining({ resourceIds: ["app", "api"] }),
     });
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         binding: expect.objectContaining({ resourceIds: ["app", "api"] }),
@@ -1318,7 +1324,7 @@ describe("portable project launch", () => {
       input: expect.objectContaining({ rootPath: newPath }),
     });
     expect(commands.prepareCopy.run).not.toHaveBeenCalled();
-    expect(commands.bindThread.run).toHaveBeenCalledWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         binding: expect.objectContaining({ workingCopyId: newCopy.id }),
@@ -1371,19 +1377,15 @@ describe("conversation palette ergonomics", () => {
     expect(action("Start conversation").props.disabled).toBe(false);
     expect(commands.create.run).not.toHaveBeenCalled();
     await choose("Start conversation");
-    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          modelSelection: {
-            instanceId,
-            model: "test-model",
-            options: [{ id: "reasoningEffort", value: "high" }],
-          },
-          runtimeMode: "approval-required",
-          interactionMode: "plan",
-        }),
-      }),
-    );
+    expect(lastLaunch()).toMatchObject({
+      modelSelection: {
+        instanceId,
+        model: "test-model",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+      runtimeMode: "approval-required",
+      interactionMode: "plan",
+    });
   });
   it("keeps the title and source options across settings drill-down and Back until Start", async () => {
     await mountPalette();
@@ -1403,20 +1405,16 @@ describe("conversation palette ergonomics", () => {
     await choose("Back");
     expect(commands.create.run).not.toHaveBeenCalled();
     await choose("Start conversation");
-    expect(commands.create.run).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          title: "Inspect project",
-          runtimeMode: "full-access",
-          interactionMode: "plan",
-          modelSelection: {
-            instanceId,
-            model: "test-model",
-            options: [{ id: "reasoningEffort", value: "high" }],
-          },
-        }),
-      }),
-    );
+    expect(lastLaunch()).toMatchObject({
+      title: "Inspect project",
+      runtimeMode: "full-access",
+      interactionMode: "plan",
+      modelSelection: {
+        instanceId,
+        model: "test-model",
+        options: [{ id: "reasoningEffort", value: "high" }],
+      },
+    });
   });
 });
 
@@ -1490,7 +1488,7 @@ describe("held attempts and one-step starts", () => {
   }
 
   it("offers Retry and Start over in a reopened dialog, and starts a new conversation with the settings it showed", async () => {
-    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    commands.executeOperation.run.mockResolvedValueOnce(failure("Disconnected"));
     await mount([], chosenSettings);
     await click("Start conversation");
     const first = savedAttempt();
@@ -1508,7 +1506,7 @@ describe("held attempts and one-step starts", () => {
     state.threadIds.push("second-thread");
     await choose("Start conversation");
     expect(commands.reopenCopy.run).toHaveBeenCalledOnce();
-    expect(commands.create.run).toHaveBeenCalledExactlyOnceWith({
+    expectLaunched({
       environmentId,
       input: expect.objectContaining({
         threadId: "second-thread",
@@ -1517,7 +1515,7 @@ describe("held attempts and one-step starts", () => {
         interactionMode: "plan",
       }),
     });
-    const registered = commands.registerThread.run.mock.calls[0]![0].input.requestId;
+    const registered = commands.executeOperation.run.mock.lastCall![0].input.operationId;
     expect(registered).not.toBe(first.registerRequestId);
     expect(savedAttempt()).toBeNull();
     expect(state.navigate).toHaveBeenCalledExactlyOnceWith({
@@ -1572,7 +1570,7 @@ describe("held attempts and one-step starts", () => {
   });
 
   it("retries with the project revision it started from after the brief changes", async () => {
-    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    commands.executeOperation.run.mockResolvedValueOnce(failure("Disconnected"));
     await mount([restoredCopy]);
     await click("Start conversation");
     await act(() => renderer!.unmount());
@@ -1580,11 +1578,8 @@ describe("held attempts and one-step starts", () => {
     // The binding names the first revision, and the computer refuses a project that differs from it.
     await mount([restoredCopy], { project: { ...project, brief: "Edited", revision: 2 } });
     await click("Retry conversation");
-    expect(commands.resolveBinding.run).toHaveBeenLastCalledWith({
-      environmentId,
-      input: { binding, project },
-    });
-    expect(commands.bindThread.run).toHaveBeenCalledExactlyOnceWith({
+    expect(lastLaunch()).toMatchObject({ binding, project });
+    expectLaunched({
       environmentId,
       input: { threadId, binding, project },
     });
@@ -1706,13 +1701,13 @@ describe("held attempts and one-step starts", () => {
     await act(async () => {
       await Promise.all([launch.submit(), launch.submit()]);
     });
-    expect(commands.create.run).toHaveBeenCalledOnce();
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
     expectOpened();
   });
 
   it("keeps a ready launch in its initiating surface until creation finishes, then shows a failed attempt once", async () => {
     let complete!: (value: ReturnType<typeof failure>) => void;
-    commands.resolveBinding.run.mockImplementationOnce(
+    commands.executeOperation.run.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           complete = resolve;
@@ -1739,20 +1734,20 @@ describe("held attempts and one-step starts", () => {
     await act(() => complete(failure("Disconnected")));
     expect(settle).toHaveBeenCalledOnce();
     expect(action("Retry untitled conversation")).toBeDefined();
-    expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
   });
 
   it("starts once from the project list, and a held attempt waits for Retry or Start over", async () => {
-    commands.resolveBinding.run.mockResolvedValueOnce(failure("Disconnected"));
+    commands.executeOperation.run.mockResolvedValueOnce(failure("Disconnected"));
     const settle = vi.fn();
     await render(dialog(promised, settle));
     expect(settle).toHaveBeenCalledOnce();
-    expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
     expect(savedAttempt()).not.toBeNull();
 
     await remount(dialog(promised, settle));
     expect(settle).toHaveBeenCalledTimes(2);
-    expect(commands.resolveBinding.run).toHaveBeenCalledOnce();
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
     expect(action("Retry untitled conversation")).toBeDefined();
     expect(action("Start over")).toBeDefined();
   });
@@ -1898,7 +1893,7 @@ describe("Library offline starts", () => {
     },
   );
 
-  it("keeps preparation, unregistered folders, old hosts and retention changes blocked offline", async () => {
+  it("keeps preparation, unregistered folders and retention changes blocked offline", async () => {
     offline([restoredCopy]);
     await mount([restoredCopy]);
     expect(launch.canCreate).toBe(true);
@@ -1911,7 +1906,6 @@ describe("Library offline starts", () => {
       [[], true],
       [[releasedCopy], true],
       [[{ ...restoredCopy, registered: false }], true],
-      [[restoredCopy], false],
     ] as const) {
       offline(copies, durable);
       await mount(copies);
@@ -1974,7 +1968,11 @@ describe("starts that open the conversation before its files", () => {
     await mount();
     await click("Start conversation");
     expect(launch.error).toBe("Disconnected");
-    expect(savedAttempt()).toMatchObject({ threadId, files: { strategy: "clone" } });
+    expect(savedAttempt()).toMatchObject({
+      threadId,
+      files: { strategy: "clone" },
+      launchOperationId: expect.any(String),
+    });
 
     await click("Retry conversation");
     const [first, retried] = [launchInput(0), launchInput(1)];
@@ -1990,6 +1988,9 @@ describe("starts that open the conversation before its files", () => {
       commands.resolveBinding,
       commands.create,
       commands.bindThread,
+      commands.setCopyRetention,
+      commands.snapshotThread,
+      commands.registerThread,
     ])
       expect(skipped.run).not.toHaveBeenCalled();
     expect(state.waitForProject).not.toHaveBeenCalled();

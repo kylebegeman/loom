@@ -321,6 +321,9 @@ planned updates, skipped computers, and restart impact before you run them. The
 command palette's **Review updates** opens this section.
 Offline computers retain their last known version until they reconnect.
 
+If a computer is older than this Loom supports, Computers names it and offers **Update**.
+This includes your Library. The notice clears after the updated computer reports its capabilities.
+
 ### Forget an old computer
 
 In Settings > Computers, your Library's list offers **Forget** for computers and unattached machines. Computers that have not reported for 30 days appear under **Old machines**. Forget removes the Library entry and its pinned key; it does not remove your saved connection or files. A running computer returns when it reports again, usually within 15 minutes. Retire an active Reach address before forgetting its computer.

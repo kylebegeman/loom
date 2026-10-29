@@ -8,6 +8,7 @@ import { searchableSetting } from "~/components/settings/settingsSearch";
 import { ConnectAccount } from "./ConnectAccount";
 import { ComputerWorkActions } from "./ComputerWorkActions";
 import { ComputerConnectionDetails } from "./ComputerConnectionDetails";
+import { CompatibilityNotice } from "./CompatibilityNotice";
 import { FleetUpdatesSection } from "./FleetUpdatesSection";
 import {
   LibraryComputers,
@@ -75,6 +76,7 @@ export function ComputerConnectionsHome({
         {computerRows}
         {discoveredRows}
       </SettingsSection>
+      <CompatibilityNotice />
       <LibraryComputers onPair={onPairComputer} />
       <LibraryReach />
       <LibraryPushSection />

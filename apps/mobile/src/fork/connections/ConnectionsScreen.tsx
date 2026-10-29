@@ -1,3 +1,4 @@
+import { CompatibilityNotice } from "./CompatibilityNotice";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
@@ -213,6 +214,10 @@ export function ConnectionsScreen() {
               environmentLabel={environment.environmentLabel}
             />
           ))}
+        <CompatibilityNotice
+          computers={directoryComputers.incompatible}
+          onUpdate={openEnvironment}
+        />
         <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
         <LibraryReachSection libraryReach={libraryReach} />
 
