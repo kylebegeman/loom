@@ -118,6 +118,7 @@ describe("trackReleaseAtom", () => {
     const nightlies = Array.from({ length: 100 }, (_, index) => ({
       tag_name: `0.0.${200 - index}-nightly.20261029.${4000 - index}`,
       draft: false,
+      body: `<!-- loom-release-metadata: ${JSON.stringify({ schemaVersion: 1, version: `0.0.${200 - index}-nightly.20261029.${4000 - index}`, sourceCommit: "a".repeat(40), databaseMigration: 38 })} -->`,
     }));
     fetchMock.mockImplementation(async (input) =>
       Response.json(
@@ -125,7 +126,11 @@ describe("trackReleaseAtom", () => {
           ? [{ tag_name: "loom-v0.0.201", draft: false }, ...nightlies]
           : [
               { tag_name: "0.0.99", draft: true },
-              { tag_name: "0.0.98", draft: false },
+              {
+                tag_name: "0.0.98",
+                draft: false,
+                body: `<!-- loom-release-metadata: ${JSON.stringify({ schemaVersion: 1, version: "0.0.98", sourceCommit: "b".repeat(40), databaseMigration: 36 })} -->`,
+              },
             ],
       ),
     );
@@ -133,12 +138,12 @@ describe("trackReleaseAtom", () => {
     const nightly = await settledCheck(trackReleaseAtom("nightly"));
     expect(AsyncResult.getOrElse(nightly, () => null)).toEqual({
       version: "0.0.200-nightly.20261029.4000",
-      databaseMigration: undefined,
+      databaseMigration: 38,
     });
     const stable = await settledCheck(trackReleaseAtom("latest"));
     expect(AsyncResult.getOrElse(stable, () => null)).toEqual({
       version: "0.0.98",
-      databaseMigration: undefined,
+      databaseMigration: 36,
     });
     expect(
       fetchMock.mock.calls.map(([input]) =>

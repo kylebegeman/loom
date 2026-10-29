@@ -6,6 +6,7 @@ import {
   cliReleaseIndexPageUrl,
   CLI_RELEASE_CHECKSUMS_FILE,
   newestCliReleaseVersion,
+  loomReleaseDatabaseMigration,
 } from "@t3tools/shared/cliRelease";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -44,12 +45,15 @@ export const runtimeReleaseAssetsAtom = Atom.family((version: string) =>
 );
 
 const ReleaseIndex = Schema.Array(
-  Schema.Struct({ tag_name: Schema.String, draft: Schema.Boolean }),
+  Schema.Struct({
+    tag_name: Schema.String,
+    draft: Schema.Boolean,
+    body: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
 );
 const decodeReleaseIndex = Schema.decodeUnknownEffect(ReleaseIndex);
 
-/** A track switch targets Loom's newest release on that track; npm's `t3` carries upstream's versions.
- * Loom releases record no database migration, so the switch's check blocks crossing tracks. */
+/** Loom's publisher records migration compatibility in its own release body, independently of npm. */
 export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
   Atom.make(
     Effect.gen(function* () {
@@ -63,7 +67,14 @@ export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
           releases,
           channel === "nightly" ? "nightly" : "stable",
         );
-        if (version !== undefined) return { version, databaseMigration: undefined };
+        if (version !== undefined)
+          return {
+            version,
+            databaseMigration: loomReleaseDatabaseMigration(
+              releases.find((release) => release.tag_name === version)?.body,
+              version,
+            ),
+          };
         if (releases.length < 100) return null;
       }
     }).pipe(

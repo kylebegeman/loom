@@ -210,7 +210,7 @@ scripts/lib/public-config.test.ts	fleet-connect	1
 scripts/lib/public-config.ts	fleet-connect	1
 scripts/lib/public-config.ts	mobile-identity	2
 packages/shared/src/cliRelease.test.ts	fleet-connect	3
-packages/shared/src/cliRelease.ts	fleet-connect	3
+packages/shared/src/cliRelease.ts	fleet-connect	4
 packages/ssh/src/tunnel.ts	fleet-connect	3
 apps/mobile/src/features/settings/environment-maintenance.test.ts	fleet-connect	6
 apps/mobile/src/features/cloud/linkEnvironment.ts	fleet-connect	7

@@ -8,6 +8,8 @@ import * as NodePath from "node:path";
 
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { loomReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
+
 import { parseLoomConnectConfig } from "./connect-config.ts";
 
 import { normalizeDesktopUpdateReleaseNotes } from "../../apps/desktop/src/updates/releaseNotes.ts";
@@ -37,6 +39,7 @@ import {
   releaseForTag,
   releaseFromRepository,
   releaseHistory,
+  releaseDatabaseMigration,
   releaseNotes,
   ensureUpstreamProvenance,
   restoreBuildInputs,
@@ -244,7 +247,14 @@ describe("publisher CLI pins", () => {
           stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
         else if (args[0] === "rev-parse") stdout = COMMIT;
         else if (args[0] === "cat-file") stdout = "commit";
-        else if (args[0] !== "tag" || args[1] !== "--list") {
+        else if (args[0] === "ls-tree") {
+          expect(args).toEqual([
+            "ls-tree",
+            "--name-only",
+            `${COMMIT}:apps/server/src/persistence/Migrations`,
+          ]);
+          stdout = "001_Init.ts\n038_Current.ts\nREADME.md";
+        } else if (args[0] !== "tag" || args[1] !== "--list") {
           throw new Error(`Unexpected Git mutation: ${args.join(" ")}`);
         }
         return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
@@ -308,7 +318,14 @@ describe("published release history lookup", () => {
                     .join("\n");
           } else if (args[0] === "rev-parse") stdout = COMMIT;
           else if (args[0] === "cat-file") stdout = "commit";
-          else if (args[0] === "log") {
+          else if (args[0] === "ls-tree") {
+            expect(args).toEqual([
+              "ls-tree",
+              "--name-only",
+              `${COMMIT}:apps/server/src/persistence/Migrations`,
+            ]);
+            stdout = "001_Init.ts\n038_Current.ts\nREADME.md";
+          } else if (args[0] === "log") {
             expect(args.at(-1)).toBe(`${previousCommit}..${COMMIT}`);
             stdout = "feat(library): integrated feature work\nfix(desktop): include parser license";
           } else if (!["fetch", "tag", "push", "update-ref"].includes(args[0]!)) {
@@ -367,6 +384,9 @@ describe("published release history lookup", () => {
           ).toBe(false);
         } else {
           expect(notes).toContain("Library: integrated feature work");
+          expect(loomReleaseDatabaseMigration(String(notes), "0.0.112-nightly.20261022.1")).toBe(
+            38,
+          );
           expect(notes).toContain("Desktop: include parser license");
           expect(notes).toContain(`${published}...0.0.112-nightly.20261022.1`);
         }
@@ -426,7 +446,14 @@ describe("prepared Connect decision", () => {
           stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
         else if (args[0] === "rev-parse") stdout = COMMIT;
         else if (args[0] === "cat-file") stdout = "commit";
-        else if (args[0] === "show" && args[1] === `${COMMIT}:package.json`)
+        else if (args[0] === "ls-tree") {
+          expect(args).toEqual([
+            "ls-tree",
+            "--name-only",
+            `${COMMIT}:apps/server/src/persistence/Migrations`,
+          ]);
+          stdout = "001_Init.ts\n038_Current.ts\nREADME.md";
+        } else if (args[0] === "show" && args[1] === `${COMMIT}:package.json`)
           stdout = JSON.stringify({ engines: { node: ENGINE_NODE } });
         else if (!["fetch", "tag", "checkout", "status", "restore"].includes(args[0]!))
           throw new Error(`Unexpected Git command: ${args.join(" ")}`);
@@ -997,8 +1024,9 @@ describe("Loom update publishing", () => {
         "feat(library): integrated feature work",
         "fix(desktop): include parser license",
       ]);
-      const notes = releaseNotes(release, history.previous, history.subjects);
+      const notes = releaseNotes(release, history.previous, history.subjects, 38);
       expect(notes).toContain("Library: integrated feature work");
+      expect(loomReleaseDatabaseMigration(String(notes), "0.0.112-nightly.20261022.1")).toBe(38);
       expect(notes).toContain(`${published}...${release.version}`);
     } finally {
       await NodeFSP.rm(fixture.root, { recursive: true, force: true });
@@ -1029,7 +1057,7 @@ describe("Loom update publishing", () => {
       );
       expect(history.previous).toBe("0.0.64-nightly.20261015.3158");
 
-      const notes = releaseNotes(release, history.previous, history.subjects);
+      const notes = releaseNotes(release, history.previous, history.subjects, 38);
       expect(notes).toContain(
         "https://github.com/kylebegeman/loom/compare/0.0.64-nightly.20261015.3158...0.0.65-nightly.20261015.3158",
       );
@@ -1058,7 +1086,7 @@ describe("Loom update publishing", () => {
 
   it("says so when a publication carries no app changes", () => {
     const release = releaseForTag("loom-v0.0.65-nightly.20261015.3158", COMMIT);
-    const notes = releaseNotes(release, "0.0.64-nightly.20261015.3158", ["docs: update plan"]);
+    const notes = releaseNotes(release, "0.0.64-nightly.20261015.3158", ["docs: update plan"], 38);
     expect(notes).toContain("- No app changes since 0.0.64-nightly.20261015.3158.");
   });
 
@@ -1204,7 +1232,14 @@ describe("publisher Node", () => {
       else if (args[0] === "for-each-ref") stdout = args.at(-1) === "refs/tags/loom-v*" ? tag : "";
       else if (args[0] === "rev-parse") stdout = COMMIT;
       else if (args[0] === "cat-file") stdout = "commit";
-      else if (args[0] === "show") stdout = JSON.stringify({ engines: { node: ENGINE_NODE } });
+      else if (args[0] === "ls-tree") {
+        expect(args).toEqual([
+          "ls-tree",
+          "--name-only",
+          `${COMMIT}:apps/server/src/persistence/Migrations`,
+        ]);
+        stdout = "001_Init.ts\n038_Current.ts\nREADME.md";
+      } else if (args[0] === "show") stdout = JSON.stringify({ engines: { node: ENGINE_NODE } });
       return { pid: 1, output: [null, stdout, ""], stdout, stderr: "", status: 0, signal: null };
     });
     try {
@@ -1392,6 +1427,39 @@ describe("publisher logs", () => {
       expect((await NodeFSP.stat(NodePath.join(record, "build.log"))).mode & 0o777).toBe(0o600);
     } finally {
       await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("release database migration provenance", () => {
+  it("reads the release commit instead of the publisher working tree and refuses missing migration files", () => {
+    const spawn = vi.mocked(NodeChildProcess.spawnSync);
+    spawn.mockReturnValue({
+      pid: 1,
+      output: [null, "", ""],
+      stdout: "001_Init.ts\n038_Current.ts\n999_ignored.test.ts\nREADME.md",
+      stderr: "",
+      status: 0,
+      signal: null,
+    });
+    try {
+      expect(releaseDatabaseMigration(COMMIT, "/checked-source")).toBe(38);
+      expect(spawn.mock.calls.at(-1)?.[1]).toEqual([
+        "ls-tree",
+        "--name-only",
+        `${COMMIT}:apps/server/src/persistence/Migrations`,
+      ]);
+      spawn.mockReturnValue({
+        pid: 1,
+        output: [null, "", ""],
+        stdout: "README.md",
+        stderr: "",
+        status: 0,
+        signal: null,
+      });
+      expect(() => releaseDatabaseMigration(COMMIT, "/checked-source")).toThrow(/migration/i);
+    } finally {
+      spawn.mockReset();
     }
   });
 });

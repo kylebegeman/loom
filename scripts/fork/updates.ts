@@ -902,6 +902,24 @@ export function releaseChangeItems(subjects: readonly string[]) {
   });
 }
 
+/** Read the exact release commit, rather than the installed publisher or a moving checkout. */
+export function releaseDatabaseMigration(sourceCommit: string, sourceDir = SOURCE_DIR) {
+  if (!SOURCE_COMMIT.test(sourceCommit))
+    throw new Error("Release migrations require an exact source commit.");
+  const files = run(
+    "git",
+    ["ls-tree", "--name-only", `${sourceCommit}:apps/server/src/persistence/Migrations`],
+    { cwd: sourceDir },
+  );
+  const ids = files.split("\n").flatMap((name) => {
+    const id = /^(\d+)_\w+\.ts$/.exec(name)?.[1];
+    return id === undefined ? [] : [Number(id)];
+  });
+  if (ids.length === 0 || ids.some((id) => !Number.isSafeInteger(id)))
+    throw new Error("The release source has no valid server migration manifest.");
+  return Math.max(...ids);
+}
+
 /**
  * GitHub release body for one publication. `subjects` are the first-parent commits since
  * `previous`, oldest first. The desktop popover lists items up to a "Full changelog"
@@ -911,7 +929,16 @@ export function releaseNotes(
   release: Release,
   previous: string | undefined,
   subjects: readonly string[],
+  databaseMigration: number,
 ) {
+  if (!Number.isSafeInteger(databaseMigration) || databaseMigration < 0)
+    throw new Error("Release notes require a verified database migration number.");
+  const metadata = JSON.stringify({
+    schemaVersion: 1,
+    version: release.version,
+    sourceCommit: release.commit,
+    databaseMigration,
+  });
   const items = releaseChangeItems(subjects);
   const changes =
     items.length > 0
@@ -934,6 +961,8 @@ ${compare}Loom built from the checked integration [${release.tag}](https://githu
 Source commit: ${release.commit}. macOS Apple Silicon; signed with Kyle's local Loom certificate.
 
 Use Loom's update button to download, then restart and install when ready.
+
+<!-- loom-release-metadata: ${metadata} -->
 `;
 }
 
@@ -973,7 +1002,15 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
     ".[] | select(.draft == false) | .tag_name",
   ]).split("\n");
   const history = releaseHistory(release, publishedTags);
-  await NodeFSP.writeFile(notes, releaseNotes(release, history.previous, history.subjects));
+  await NodeFSP.writeFile(
+    notes,
+    releaseNotes(
+      release,
+      history.previous,
+      history.subjects,
+      releaseDatabaseMigration(release.commit),
+    ),
+  );
   if (state === "missing") {
     run(
       "gh",
@@ -1034,6 +1071,8 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
       "--repo",
       REPOSITORY,
       "--draft=false",
+      "--notes-file",
+      notes,
       `--latest=${release.channel === "latest"}`,
     ],
     { stream: true },
