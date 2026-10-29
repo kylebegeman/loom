@@ -33,7 +33,7 @@ const sharedPnpmVirtualStore = Effect.fn("ProjectStorage.sharedPnpmVirtualStore"
   Effect.orElseSucceed(() => null),
 );
 
-export const STORAGE_ENTRY_LIMIT = 2_000_000;
+const STORAGE_ENTRY_LIMIT = 2_000_000;
 
 /** Allocation estimates never follow links or cross a separately counted root. */
 export const measureStoragePath = Effect.fn("ProjectStorage.measurePath")(

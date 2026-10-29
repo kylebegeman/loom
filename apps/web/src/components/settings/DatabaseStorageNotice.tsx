@@ -9,7 +9,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { shouldRecommendDatabaseCompaction, type EnvironmentId } from "@t3tools/contracts"; // fork: project-lifecycle
 import type { RestartCompactionState } from "@t3tools/contracts/fork"; // fork: restart-compaction
 import * as Schema from "effect/Schema";
 import { useState } from "react"; // fork: restart-compaction
@@ -134,7 +134,16 @@ export function DatabaseStorageNotice({
             environments.find((environment) => environment.environmentId === environmentId)
               ?.label ?? environmentId
           }`}
-          description={<code className="select-text break-all">{status.compactCommand}</code>}
+          description={
+            <>
+              <span className="block">
+                {shouldRecommendDatabaseCompaction(status)
+                  ? `${(status.reclaimableBytes / 1024 ** 3).toFixed(2)} GiB can be reclaimed.`
+                  : "Compaction is not needed now."}
+              </span>
+              <code className="select-text break-all">{status.compactCommand}</code>
+            </>
+          }
           control={
             <div className="flex flex-wrap items-center gap-1.5">
               <Button

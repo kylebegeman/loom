@@ -1559,7 +1559,7 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	ext-set
 apps/server/src/mcp/toolkits/environment/tools.ts	project-lifecycle	5
 apps/server/src/mcp/toolkits/environment/handlers.ts	project-lifecycle	3
 apps/server/src/mcp/toolkits/environment/handlers.test.ts	project-lifecycle	5
-apps/web/src/components/settings/DatabaseStorageNotice.tsx	project-lifecycle	9
+apps/web/src/components/settings/DatabaseStorageNotice.tsx	project-lifecycle	10
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	project-lifecycle	2
 apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-lifecycle	3
 packages/shared/package.json	-	"./fork/compatibility"

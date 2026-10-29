@@ -241,7 +241,10 @@ it.effect.each([
         };
         const invoke = (
           name: "loom_updates_status" | "loom_updates_arm" | "loom_updates_cancel",
-          values: Record<string, unknown>,
+          values:
+            | { readonly targetVersion: string }
+            | { readonly id: string }
+            | Record<string, never>,
         ) =>
           toolkit.handle(name, values).pipe(
             Effect.flatMap(Stream.runCollect),

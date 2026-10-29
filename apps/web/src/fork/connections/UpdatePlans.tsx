@@ -19,7 +19,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useEnvironments } from "~/state/environments";
 import { resolveVersionMismatch } from "~/versionSkew";
 
-export const updatePlans = createUpdatePlanAtoms(connectionAtomRuntime);
+const updatePlans = createUpdatePlanAtoms(connectionAtomRuntime);
 const NO_PLAN = Atom.make(AsyncResult.initial<UpdatePlanStatus>());
 
 export function useUpdatePlan(environmentId: EnvironmentId, advertised: boolean) {

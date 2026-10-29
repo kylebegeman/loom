@@ -15,7 +15,7 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 import type { DesktopBackendInstance } from "../../backend/DesktopBackendPool.ts";
 import type { DesktopBackendStartConfig } from "../../backend/DesktopBackendManager.ts";
 
-export const IDLE_INSTALL_QUIET_MS = 30_000;
+const IDLE_INSTALL_QUIET_MS = 30_000;
 export const IDLE_INSTALL_POLL = "15 seconds";
 const FENCE_ROUTE = UPDATE_FENCE_ROUTE;
 const Activity = UpdateActivity;

@@ -13,7 +13,7 @@ import * as UpdateHandoff from "./UpdateHandoff.ts";
 import * as UpdatePlanStore from "./UpdatePlanStore.ts";
 import * as UpdateRuntime from "./UpdateRuntime.ts";
 
-export const UPDATE_QUIET_MS = 30_000;
+const UPDATE_QUIET_MS = 30_000;
 const active = (plan: UpdatePlan | null): plan is UpdatePlan =>
   plan !== null &&
   (plan.state === "armed" || plan.state === "waiting" || plan.state === "installing");

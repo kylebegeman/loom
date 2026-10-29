@@ -33,7 +33,7 @@ import * as ProjectLifecycle from "./ProjectLifecycleService.ts";
 import * as Accounting from "./StorageCleanupAccounting.ts";
 import { measureStoragePath } from "./storageMeasurement.ts";
 
-export const STORAGE_CACHE_MS = 60_000;
+const STORAGE_CACHE_MS = 60_000;
 const ROOT_LIMIT = 512;
 type MutableTotal = {
   -readonly [K in keyof ProjectStorageCategoryTotal]: ProjectStorageCategoryTotal[K];
