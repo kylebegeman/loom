@@ -1,8 +1,12 @@
 import { expect, it, vi } from "vite-plus/test";
 import { EnvironmentId } from "@t3tools/contracts";
 import type { UpdatePlanStatus } from "@t3tools/contracts/fork";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import {
   armUpdatePlans,
+  createUpdatePlanEligibilityAtom,
   updatePlanCanCancel,
   updatePlanText,
   updatePlanUnavailableReason,
@@ -104,4 +108,82 @@ it("distinguishes old servers, disconnected computers and denied maintenance", (
       },
     }),
   ).toBe("Managed by the operating system");
+});
+
+it("only offers an idle update after a supported status with a known older version", async () => {
+  const ready = { ...status("done"), plan: null };
+  const base = { advertised: true, connected: true, canMaintain: true, status: ready };
+  const inputs = [
+    { ...base, status: null },
+    { ...base, ready: false },
+    { ...base, status: { ...ready, supported: false } },
+    ...(["armed", "waiting", "installing"] as const).map((state) => ({
+      ...base,
+      status: status(state),
+    })),
+    { ...base, status: { ...ready, currentVersion: "" } },
+    { ...base, targetVersion: "0.0.1" },
+    { ...base, targetVersion: "0.0.0" },
+    { ...base, targetVersion: "0.0.2" },
+  ];
+  const targets = inputs.map((input, index) => ({
+    environmentId: EnvironmentId.make(`computer-${index}`),
+    label: `Computer ${index}`,
+    unavailableReason: updatePlanUnavailableReason(input),
+  }));
+  expect(targets.map((target) => target.unavailableReason === null)).toEqual([
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+  ]);
+  const arm = vi.fn(async () => status("waiting"));
+  const outcomes = await armUpdatePlans(targets, async () => "0.0.2", arm);
+  expect(arm).toHaveBeenCalledExactlyOnceWith(targets[9], "0.0.2");
+  expect(outcomes.filter((outcome) => outcome.state === "armed")).toHaveLength(1);
+});
+
+it("composes current permission and status without querying unadvertised computers", () => {
+  const ready = { ...status("done"), plan: null };
+  const result = Atom.make<AsyncResult.AsyncResult<UpdatePlanStatus, Error>>(
+    AsyncResult.success(ready),
+  );
+  const permission = Atom.make(true);
+  const statusAtom = vi.fn(() => result);
+  const composed = createUpdatePlanEligibilityAtom(
+    [
+      { environmentId: EnvironmentId.make("old"), advertised: false },
+      { environmentId: EnvironmentId.make("supported"), advertised: true },
+    ],
+    statusAtom,
+    () => permission,
+  );
+  const registry = AtomRegistry.make();
+  const unmount = registry.mount(composed);
+  try {
+    expect(registry.get(composed)).toEqual([
+      { canMaintain: true, status: null, ready: false },
+      { canMaintain: true, status: ready, ready: true },
+    ]);
+    expect(statusAtom).toHaveBeenCalledWith("supported");
+    expect(statusAtom).not.toHaveBeenCalledWith("old");
+    registry.set(permission, false);
+    expect(registry.get(composed)[1]?.canMaintain).toBe(false);
+    registry.set(
+      result,
+      AsyncResult.failure(Cause.fail(new Error("Disconnected")), {
+        previousSuccess: Option.some(AsyncResult.success(ready)),
+      }),
+    );
+    expect(registry.get(composed)[1]).toMatchObject({ status: ready, ready: false });
+  } finally {
+    unmount();
+    registry.dispose();
+  }
 });

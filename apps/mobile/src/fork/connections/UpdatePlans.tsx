@@ -127,33 +127,47 @@ export function FleetUpdatePlans() {
     environmentId,
     ...presentation,
   }));
-  const permissions = useAtomValue(
-    updatePlans.permissions(environments.map((entry) => entry.environmentId)),
-  );
-  const arm = useAtomCommand(updatePlans.arm, { reportFailure: false });
-  const [busy, setBusy] = useState(false);
-  const [outcomes, setOutcomes] = useState<readonly UpdatePlanOutcome[]>([]);
-  const run = async () => {
-    if (busy) return;
-    setBusy(true);
-    const targets = environments.map((entry, index) => ({
-      environmentId: entry.environmentId,
-      label: entry.entry.target.label,
-      unavailableReason: updatePlanUnavailableReason({
+  const eligibility = useAtomValue(
+    updatePlans.eligibility(
+      environments.map((entry) => ({
+        environmentId: entry.environmentId,
         advertised: supportsLoomFeature(
           entry.serverConfig?.environment.capabilities,
           UPDATE_PLAN_FEATURE,
         ),
-        connected: entry.entry.enabled && entry.connection.phase === "connected",
-        canMaintain: permissions[index] === true,
-      }),
-    }));
+      })),
+    ),
+  );
+  const arm = useAtomCommand(updatePlans.arm, { reportFailure: false });
+  const [busy, setBusy] = useState(false);
+  const [outcomes, setOutcomes] = useState<readonly UpdatePlanOutcome[]>([]);
+  const targets = environments.map((entry, index) => ({
+    environmentId: entry.environmentId,
+    label: entry.entry.target.label,
+    unavailableReason: updatePlanUnavailableReason({
+      advertised: supportsLoomFeature(
+        entry.serverConfig?.environment.capabilities,
+        UPDATE_PLAN_FEATURE,
+      ),
+      connected: entry.entry.enabled && entry.connection.phase === "connected",
+      canMaintain: eligibility[index]?.canMaintain === true,
+      status: eligibility[index]?.status ?? null,
+      ready: eligibility[index]?.ready === true,
+    }),
+  }));
+  const hasEligible = targets.some((target) => target.unavailableReason === null);
+  const run = async () => {
+    if (busy || !hasEligible) return;
+    setBusy(true);
+
     setOutcomes(
       await armUpdatePlans(
         targets,
         async (target) => {
-          const current = environments.find((entry) => entry.environmentId === target.environmentId)
-            ?.serverConfig?.environment.serverVersion;
+          const index = environments.findIndex(
+            (entry) => entry.environmentId === target.environmentId,
+          );
+          const current = eligibility[index]?.status?.currentVersion;
           if (!current) throw new Error("Reconnect this computer to check its version.");
           return latestVersion(current);
         },
@@ -178,18 +192,7 @@ export function FleetUpdatePlans() {
         label="Update all when agents finish"
         onPress={() => void run()}
         loading={busy}
-        disabled={
-          !environments.some(
-            (entry, index) =>
-              permissions[index] &&
-              entry.entry.enabled &&
-              entry.connection.phase === "connected" &&
-              supportsLoomFeature(
-                entry.serverConfig?.environment.capabilities,
-                UPDATE_PLAN_FEATURE,
-              ),
-          )
-        }
+        disabled={!hasEligible}
       />
       {environments.length === 0 ? (
         <Text className="px-4 py-3 text-sm text-foreground-muted">
