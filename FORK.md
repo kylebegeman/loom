@@ -1311,7 +1311,6 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`     | `machine-updates` | Keep app updates local and show each computer’s remembered update plan with cancellation. |
 | `apps/web/src/components/sidebar/useUpdateEverything.ts`    | `machine-updates` | Share scoped local and fleet update execution.                                            |
 | `apps/web/src/components/sidebar/updateEverything.logic.ts` | `machine-updates` | Keep local and fleet progress in their owning views.                                      |
-| `docs/user/updating.md`                                     | `machine-updates` | Explain remembered update plans and closing windows while waiting.                        |
 | `apps/server/src/orchestration-v2/EventSink.ts`             | `machine-updates` | Hold new event commits while an idle update hands off to its installer.                   |
 | `packages/shared/package.json` (no marker)                  | `machine-updates` | Share the restart-impact rule between servers and clients.                                |
 
