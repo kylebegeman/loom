@@ -1546,3 +1546,5 @@ apps/web/src/hooks/useThreadActionMenu.test.ts	attention-status	5
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-library	4
 apps/web/src/hooks/useThreadActions.permissions.test.ts	library-projects	4
 packages/shared/package.json	-	"./fork/compatibility"
+apps/server/src/orchestration-v2/EventSink.ts	machine-updates	4
+packages/shared/package.json	-	"./fork/restart-impact"
