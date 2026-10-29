@@ -1012,7 +1012,7 @@ apps/desktop/src/ipc/channels.ts	machine-updates	1
 apps/desktop/src/ipc/methods/updates.ts	machine-updates	1
 apps/desktop/src/preload.ts	machine-updates	1
 apps/desktop/src/updates/DesktopUpdates.test.ts	machine-updates	2
-apps/desktop/src/updates/DesktopUpdates.ts	machine-updates	5
+apps/desktop/src/updates/DesktopUpdates.ts	machine-updates	13
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	machine-updates	1
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	machine-updates	3
 apps/web/src/components/desktopUpdate.logic.test.ts	machine-updates	4
@@ -1563,3 +1563,8 @@ apps/web/src/components/settings/DatabaseStorageNotice.tsx	project-lifecycle	9
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	project-lifecycle	2
 apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-lifecycle	3
 packages/shared/package.json	-	"./fork/compatibility"
+apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
+apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
+apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
+apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
+apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3

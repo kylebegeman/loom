@@ -58,6 +58,11 @@ interface HostPowerIntervals {
   readonly idle: Duration.Duration;
 }
 
+// fork: machine-updates
+export type DesktopUpdateRequest = DesktopTelemetryRequestDesktopUpdate & {
+  readonly sourceId?: string;
+};
+
 export class DesktopTelemetryPublisher extends Context.Service<
   DesktopTelemetryPublisher,
   {
@@ -70,7 +75,7 @@ export class DesktopTelemetryPublisher extends Context.Service<
     ) => Effect.Effect<void>;
     readonly removeControlSource: (sourceId: string) => Effect.Effect<void>;
     readonly publishUpdateReport: (report: DesktopUpdateStatusReport) => Effect.Effect<void>;
-    readonly updateRequests: Stream.Stream<DesktopTelemetryRequestDesktopUpdate>;
+    readonly updateRequests: Stream.Stream<DesktopUpdateRequest>; // fork: machine-updates
     readonly updateCommits: Stream.Stream<DesktopTelemetryCommitDesktopUpdate>;
     readonly updateCancellations: Stream.Stream<DesktopTelemetryCancelDesktopUpdate>;
   }
@@ -172,7 +177,8 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
   const sequence = yield* Ref.make(0);
   const latestUpdateReport = yield* Ref.make(Option.none<DesktopUpdateStatusReport>());
   const updateReportChanges = yield* PubSub.sliding<DesktopUpdateStatusReport>(16);
-  const updateRequestQueue = yield* Queue.unbounded<DesktopTelemetryRequestDesktopUpdate>();
+  const updateRequestQueue =
+    yield* Queue.unbounded<DesktopUpdateRequest>(); /* fork: machine-updates */
   const updateCommitQueue = yield* Queue.unbounded<DesktopTelemetryCommitDesktopUpdate>();
   const updateCancellationQueue = yield* Queue.unbounded<DesktopTelemetryCancelDesktopUpdate>();
 
@@ -345,7 +351,7 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
           idle: Duration.millis(message.idleIntervalMs),
         }).pipe(Effect.andThen(Queue.offer(sampleTriggers, undefined)), Effect.asVoid);
       case "requestDesktopUpdate":
-        return Queue.offer(updateRequestQueue, message).pipe(Effect.asVoid);
+        return Queue.offer(updateRequestQueue, { ...message, sourceId }).pipe(Effect.asVoid); // fork: machine-updates
       case "commitDesktopUpdate":
         return Queue.offer(updateCommitQueue, message).pipe(Effect.asVoid);
       case "cancelDesktopUpdate":
