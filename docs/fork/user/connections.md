@@ -324,6 +324,7 @@ Offline computers retain their last known version until they reconnect.
 Choose **Update all when agents finish**, or arm one computer, to leave the update waiting there.
 Each computer remembers its plan after you close every window. The waiting count and **Cancel**
 appear in Computers and the sidebar; the phone lists plans under **Fleet updates**.
+The desktop app's **Install when idle** wait also continues with every Loom window closed.
 A computer that cannot schedule updates explains what needs updating or which access is missing.
 When only some computers accept the plan, each result is shown separately.
 

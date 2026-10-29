@@ -16,10 +16,10 @@ in **Settings → Computers**.
 Before the app restarts to install, it lists the threads on this computer that
 the restart would interrupt, including threads waiting on a subagent, monitor,
 or background task. Choose **Install when idle** to let them finish first. The
-button then shows **Installs when agents finish**, and the update installs once
-this computer's agents have had nothing to do for 30 seconds. If the button is
+button then shows **Installs when agents finish**, and the update waits until
+this computer's agents have finished. If the button is
 also updating providers, they update right away and only the restart waits.
-Keep a Loom window open while it waits; minimized is fine. Choose **Cancel** on
+You can close every Loom window while it waits. Choose **Cancel** on
 the button, or in **Settings → About**, to stop waiting. If a newer
 version comes out first, the wait ends and the button offers that download.
 
@@ -52,6 +52,13 @@ retry and dismiss actions.
 
 If a desktop app restarts on its old version, Loom reports that the update did
 not apply. Use the update button on that machine to retry.
+
+Choose **Update all when agents finish**, or **Update when agents finish** for
+one computer, to leave an update waiting there. Each computer remembers its plan
+after you close the client. Computers and the sidebar show its waiting agent
+count, progress, and result. **Cancel update** stops a plan that has not started
+installing. If only some computers accept the plan, each result is shown
+separately; reconnect or update the others before trying them again.
 
 ## Before you update
 
@@ -166,9 +173,16 @@ status and refresh it again.
 
 To update an environment from your phone, open **Settings → Computers** and <!-- fork: fleet-connections -->
 select it. **Check for updates** finds the latest release on that environment's
-current release channel. Keep the app open while the environment updates and
+current release channel. For an immediate update, keep the app open while the environment updates and
 reconnects. Hosts that cannot update remotely show instructions for updating on
 the machine instead.
+
+<!-- fork: machine-updates -->
+
+Under **Fleet updates**, choose **Update all when agents finish** or a computer's
+**Update when ready** action to leave the update waiting on the computer. You can
+then close the phone app. Return to this section to see the waiting count and
+result, or choose **Cancel** before installation starts.
 
 The same page lets you refresh provider status and update supported providers.
 These controls require a connected environment and permission to operate it.
