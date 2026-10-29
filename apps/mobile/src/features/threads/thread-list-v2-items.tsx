@@ -15,7 +15,6 @@ import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { useServerConfigs } from "../../state/entities";
 // fork: project-lifecycle
 import { CHECKOUT_RELEASE_FEATURE } from "@t3tools/contracts/fork";
-import { threadCanArchive } from "../home/threadArchive";
 import { useReleaseThreadCheckout } from "../home/useThreadListActions";
 import * as Dialog from "../../components/ui/Dialog";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
@@ -81,6 +80,8 @@ import { useThreadPr } from "../../state/use-thread-pr";
 import { useSwipeRowDormant } from "../home/swipe-row-activation";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
+import { canTurnThreadIntoProject, turnThreadIntoProject } from "./turnThreadIntoProject";
+import { threadCanArchive } from "../home/threadArchive";
 import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   resolveThreadListV2SnoozeGateExpiryMs,
@@ -936,6 +937,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
   const retryAllowed = canRetryThread(thread); // fork: attention-status
+  const canTurnIntoProject = canTurnThreadIntoProject(thread);
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
       // fork: attention-status
@@ -959,11 +961,23 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         supported: props.titleRegenerationSupported,
         isRegenerating: thread.titleRegeneration != null,
       }),
+      ...(canTurnIntoProject
+        ? [
+            {
+              id: "turn-into-project",
+              title: "Turn into project",
+              image: "folder.badge.plus",
+              attributes: { disabled: !threadCanArchive(thread.runtime) },
+            } satisfies MenuAction,
+          ]
+        : []),
     ],
     // fork: attention-status
     [
       botMenuItems,
+      canTurnIntoProject,
       props.titleRegenerationSupported,
+      thread.runtime,
       thread.titleRegeneration,
       thread.queueHeld,
       retryAllowed, // fork: attention-status
@@ -1079,6 +1093,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "archive") handleArchive();
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
+      if (nativeEvent.event === "turn-into-project") void turnThreadIntoProject(thread);
       if (nativeEvent.event === "copy-thread") {
         const target = threadChipCopyTarget(
           { environmentId: thread.environmentId, threadId: thread.id },
