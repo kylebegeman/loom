@@ -13,12 +13,16 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { continuableRun } from "./run-continuation.ts";
+import { continuableRun, isRetryableFailureClass } from "./run-continuation.ts";
 
 const threadId = ThreadId.make("thread");
 const at = (minute: number) => DateTime.makeUnsafe(Date.UTC(2026, 9, 25, 9, minute));
 
-const run = (id: string, ordinal: number, status: OrchestrationV2RunStatus): OrchestrationV2Run => ({
+const run = (
+  id: string,
+  ordinal: number,
+  status: OrchestrationV2RunStatus,
+): OrchestrationV2Run => ({
   id: RunId.make(id),
   threadId,
   ordinal,
@@ -60,6 +64,12 @@ const failure = (
 });
 
 describe("continuableRun", () => {
+  it("classifies shell failures without requiring turn items", () => {
+    for (const value of ["usage_limit", "provider_error", "transport_error", "unknown"] as const)
+      expect(isRetryableFailureClass(value)).toBe(true);
+    for (const value of ["permission_error", "validation_error", null, undefined] as const)
+      expect(isRetryableFailureClass(value)).toBe(false);
+  });
   it("continues a cut-off run, or a failure another try can get past", () => {
     const stopped = run("stopped", 1, "interrupted");
     expect(continuableRun({ runs: [stopped], turnItems: [], lastErrorClass: null })).toEqual({
@@ -108,9 +118,9 @@ describe("continuableRun", () => {
   it("continues a usage limit only while the thread still shows it", () => {
     const limited = run("limited", 1, "failed");
     const turnItems = [failure(limited, "usage_limit")];
-    expect(
-      continuableRun({ runs: [limited], turnItems, lastErrorClass: "usage_limit" })?.run,
-    ).toBe(limited);
+    expect(continuableRun({ runs: [limited], turnItems, lastErrorClass: "usage_limit" })?.run).toBe(
+      limited,
+    );
     expect(continuableRun({ runs: [limited], turnItems, lastErrorClass: null })).toBeNull();
   });
 });

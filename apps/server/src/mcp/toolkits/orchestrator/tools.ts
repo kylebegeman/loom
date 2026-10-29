@@ -199,7 +199,7 @@ const DeleteScheduledTaskTool = Tool.make("delete_scheduled_task", {
 const RequestSecretTool = Tool.make("request_secret", {
   description:
     // fork: ext-vault
-    'Ask the user to enter a secret in a private card and wait. If loom_vault_references_search is available, search it first; for a matching plain item, call this with its exact label so the user can choose that saved item in the card. Use the dedicated Vault tools for SSH keys and GitHub connections. You never see the value. Returns a one-use `secretRef` for a tool that accepts it, or with `delivery: "file"` a private file path to read inside a shell command. Asked how to provide a secret: call this now, do not explain instead.',
+    'Ask the user to enter a secret in a private card and wait. If loom_vault_references_search is available, search it first. For a matching plain item, tell the user to choose that saved Vault item in the private card instead of retyping it, then call this with its exact label. Use the dedicated Vault tools for SSH keys and GitHub connections. You never see the value. Returns a one-use `secretRef` for a tool that accepts it, or with `delivery: "file"` a private file path to read inside a shell command. Asked how to provide a secret: open the card now after that brief instruction.',
   parameters: OrchestratorMcpRequestSecretInput,
   success: OrchestratorMcpRequestSecretResult,
   failure: OrchestratorMcpFailure,

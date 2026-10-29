@@ -7,11 +7,15 @@ permission ceilings and retry semantics; these constraints are not reimplemented
 
 ## Overview
 
-Persist a request bound to principal, item/action, destination, policy revision and expiry. Notify eligible approvers through the platform; allow once, grant a bounded duration, deny or cancel. Resume only the still-valid requesting operation after the decision is committed.
+Persist a request bound to principal, item/action, destination, policy revision and expiry.
+The owner can grant five or fifteen minutes, deny, cancel or revoke. A requesting agent can
+wait for the decision, then recheck access and explicitly retry its operation. Automatic
+resumption and allow-once consumption remain closed.
 
 ## Contracts and authorization
 
-Request/create/read/cancel and decision/allowOnce/allowUntil/deny use request IDs and expected revisions. Approver identity is verified centrally. One-time decisions are atomically consumed; a timed grant is visible and revocable through ordinary grant management.
+Create/read/cancel and approve/deny/revoke use request IDs and expected revisions. Approver
+identity is verified centrally. A timed grant is visible and revocable through grant management.
 
 Use packet-owned `loom.vault-approvals.*` RPC methods if Loom transport is needed; exact schemas
 remain a design-review output. Return typed unsupported, locked, denied, conflict, expired,
@@ -228,12 +232,16 @@ the response names the final observation, not a capability to reuse it indefinit
 
 ## Process-local notification observations
 
-Kyle selected memory storage for this milestone. No correctness guarantee depends on a delivery
-receipt surviving restart: there is no external transport and no automatic replay. Policy remains
-format 3; no sidecar, path, permission or new downgrade caveat is introduced. A future transport
-requiring durable duplicate prevention must select an independent versioned ledger rather than
-changing access-policy. That work includes compatible-policy reader proof and missing/corrupt
-ledger handling; it is not implemented by this milestone.
+Delivery observations stay in memory; durable policy remains the authority. Restart does not
+replay a push. Card updates use a separate process-local signal after policy commits and durable
+thread receipts for duplicate prevention. The retention reactor republishes current request
+views once a minute, repairing a missed card write and marking expiry without polling OpenBao
+for each waiting agent.
+
+`wait:true` waits on a request's in-process Deferred only until the original ten-minute
+deadline, then rereads its authorized status. A decision that arrives before waiter registration
+still resolves the wait. No request field, policy schema, automatic dispatcher or consumption
+gate is added by waiting.
 
 The notification service reserves at most one attempt per request per process. Its map has a
 128-entry cap and lazy 24-hour expiry measured from request creation, matching the request queue.

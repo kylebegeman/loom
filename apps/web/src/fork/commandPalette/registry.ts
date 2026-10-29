@@ -1,3 +1,4 @@
+import { attentionPaletteSource, useAttentionPaletteContext } from "../attention/palette";
 import { LIBRARY_PUSH_FEATURE } from "@t3tools/contracts/fork";
 import { useLibraryAuthorityId } from "../project-library/state";
 import { connectionsPaletteSource } from "../connections/palette";
@@ -69,6 +70,7 @@ export interface ForkCommandPaletteContext {
   readonly projectProfile?: ProfilePaletteContext | null;
   readonly checkout?: ReturnType<typeof useCheckoutPaletteContext>;
   readonly libraryPush?: boolean;
+  readonly canRetryFailedRun?: boolean;
 }
 
 export interface ForkCommandPaletteSource {
@@ -85,6 +87,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  attentionPaletteSource,
   connectionsPaletteSource,
   skillsPaletteSource,
   projectProfilesPaletteSource,
@@ -165,6 +168,7 @@ export function useForkCommandPaletteItems(query = ""): {
   const bots = useBotsPaletteContext();
   const projectProfile = useProfilePaletteContext(activeThreadRef);
   const checkout = useCheckoutPaletteContext(activeThreadRef);
+  const canRetryFailedRun = useAttentionPaletteContext(activeThreadRef);
   const context = {
     activeThreadRef,
     loomFeatures,
@@ -174,6 +178,7 @@ export function useForkCommandPaletteItems(query = ""): {
     projectProfile,
     checkout,
     libraryPush,
+    canRetryFailedRun,
   };
   return {
     items: forkCommandPaletteItems(context),

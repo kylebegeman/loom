@@ -1,6 +1,7 @@
 import { PROJECT_WORKFLOW_WS_METHODS as W } from "@t3tools/contracts/fork";
 import {
   LibraryInfo,
+  LibraryDeletedPreferences,
   LibraryProject,
   LibraryWorkingCopy,
   LibraryThreadSummary,
@@ -46,6 +47,20 @@ export function createProjectLibraryAtoms<R, E>(
   );
   return {
     refreshes,
+    deletedPreferences: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:deleted-preferences",
+      tag: L.deletedPreferences,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+      persistence: persistQuery(LibraryDeletedPreferences),
+    }),
+    setDeletedPreferences: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:set-deleted-preferences",
+      tag: L.setDeletedPreferences,
+    }),
+    eraseConversation: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:erase-conversation",
+      tag: L.eraseConversation,
+    }),
     workstreams: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:workstreams",
       tag: W.workstreams,

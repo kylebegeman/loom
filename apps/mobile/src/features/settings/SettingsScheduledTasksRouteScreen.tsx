@@ -1,4 +1,5 @@
 import { VaultScheduledRecovery } from "../../fork/vault/ScheduledRecovery"; // fork: vault-scheduled-outcomes
+import { useScheduledTaskAlertTarget } from "../../fork/library-push/scheduledTaskAlertTarget"; // fork: library-push
 import { scheduledTaskDeliveryIssueText } from "@t3tools/client-runtime/fork"; // fork: webhook-delivery-issues
 import { PathField } from "../../fork/path-picker/PathField"; // fork: path-picker
 import * as Dialog from "../../components/ui/Dialog";
@@ -364,6 +365,7 @@ function PickerRow(props: {
 }
 
 export function SettingsScheduledTasksRouteScreen() {
+  const alertTarget = useScheduledTaskAlertTarget(); // fork: library-push
   const [now, setNow] = useState(Date.now);
   useFocusEffect(() => {
     const updateNow = () => setNow(Date.now());
@@ -380,10 +382,13 @@ export function SettingsScheduledTasksRouteScreen() {
   const { availableTargets, selectedTargets, selectedProjectKey, projectGroups } =
     useSettingsEnvironmentFilter();
   const selectedGroup = projectGroups.find((group) => group.key === selectedProjectKey);
-  const visibleEnvironments = settingsTargetsForProject(
-    selectedTargets,
-    selectedProjectKey === null ? null : selectedGroup,
-  );
+  // fork: library-push
+  const visibleEnvironments = alertTarget
+    ? availableTargets.filter((target) => target.environmentId === alertTarget.environmentId)
+    : settingsTargetsForProject(
+        selectedTargets,
+        selectedProjectKey === null ? null : selectedGroup,
+      );
   const { startEditor, resetEditor } = useScheduledTaskEditor();
   const navigation = useNavigation<NativeStackNavigationProp<ScheduledTaskRoutes>>();
   const insets = useSafeAreaInsets();
@@ -440,8 +445,9 @@ export function SettingsScheduledTasksRouteScreen() {
                 key={environment.environmentId}
                 environment={environment}
                 now={now}
+                focusedTaskId={alertTarget?.taskId /* fork: library-push */}
                 projectIds={
-                  selectedProjectKey === null
+                  alertTarget || selectedProjectKey === null // fork: library-push
                     ? null
                     : (selectedGroup?.members
                         .filter(
@@ -1271,20 +1277,29 @@ function EnvironmentTasks({
   environment,
   now,
   projectIds,
+  focusedTaskId, // fork: library-push
   onEdit,
 }: {
   readonly environment: SettingsTarget;
   readonly now: number;
   readonly projectIds: readonly ProjectId[] | null;
+  readonly focusedTaskId?: ScheduledTask["id"]; // fork: library-push
   readonly onEdit: (task: ScheduledTask) => void;
 }) {
   const environmentId = environment.environmentId;
   const tasks = useEnvironmentQuery(
     serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
   );
-  const visibleTasks = tasks.data?.tasks.filter(
+  // fork: library-push
+  const filteredTasks = tasks.data?.tasks.filter(
     (task) => projectIds === null || projectIds.includes(task.projectId),
   );
+  const visibleTasks =
+    focusedTaskId && filteredTasks
+      ? [...filteredTasks].sort(
+          (left, right) => Number(right.id === focusedTaskId) - Number(left.id === focusedTaskId),
+        )
+      : filteredTasks;
   const canOperate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(environmentId),
   );

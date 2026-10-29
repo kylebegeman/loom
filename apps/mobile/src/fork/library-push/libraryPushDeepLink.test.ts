@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { extractAgentNotificationDeepLink } from "../../features/agent-awareness/notificationPayload";
-import { computerSettingsDeepLink } from "./libraryPushDeepLink";
+import { computerSettingsDeepLink, libraryPushDeepLink } from "./libraryPushDeepLink";
 
 const tapOn = (data: Record<string, unknown>) =>
   extractAgentNotificationDeepLink({ notification: { request: { content: { data } } } });
@@ -40,5 +40,24 @@ describe("Vault approval alert taps", () => {
     ]) {
       expect(computerSettingsDeepLink(link)).toBeNull();
     }
+  });
+});
+
+describe("away alert links", () => {
+  it("opens the bot inbox and preserves the failed task and computer", () => {
+    expect(libraryPushDeepLink("/bots/computer%201/inbox")).toBe("/bots/computer%201/inbox");
+    expect(
+      libraryPushDeepLink("/settings/scheduled-tasks?environmentId=computer%201&taskId=task%2F1"),
+    ).toBe("/settings/scheduled-tasks?environmentId=computer%201&taskId=task%2F1");
+  });
+  it("refuses foreign routes and extra query fields", () => {
+    for (const value of [
+      "https://example.test/bots/a/inbox",
+      "//bots/a/inbox",
+      "/bots/a/inbox?x=1",
+      "/settings/scheduled-tasks?environmentId=a",
+      "/settings/scheduled-tasks?environmentId=a&taskId=b&next=https://example.test",
+    ])
+      expect(libraryPushDeepLink(value)).toBeNull();
   });
 });

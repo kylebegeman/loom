@@ -17,6 +17,18 @@ const context = {
 };
 
 describe("fork command palette sources", () => {
+  it("offers failed-run retry only with the capability and an eligible active thread", () => {
+    const source = FORK_COMMAND_PALETTE_SOURCES.find(
+      (entry) => entry.id === "attention-status-retry",
+    )!;
+    const available = { ...context, canRetryFailedRun: true };
+    expect(source.items(available).map((item) => item.value)).toContain(
+      "action:loom:attention-status:retry",
+    );
+    expect(source.items({ ...available, canRetryFailedRun: false })).toEqual([]);
+    expect(source.items({ ...available, loomFeatures: [] })).toEqual([]);
+    expect(source.items({ ...available, activeThreadRef: null })).toEqual([]);
+  });
   it("offers the applicable checkout action only with its permission and host feature", () => {
     const source = FORK_COMMAND_PALETTE_SOURCES.find((entry) => entry.id === "project-lifecycle")!;
     const checkout = { released: false, canRelease: true, canRestore: true };

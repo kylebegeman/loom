@@ -1,14 +1,15 @@
 import { useNavigation } from "@react-navigation/native";
 import { libraryOutsideArchivedProjects, librarySearchRequest } from "@t3tools/client-runtime/fork";
+import { LIBRARY_DELETED_FEATURE } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
 import { useEnvironmentQuery } from "../../state/query";
 import { useLibrarySearchSupported } from "./LibraryHistorySearch";
-import { library, useLibraryAuthority } from "./libraryState";
+import { library, useLibraryAuthority, useLoomFeature } from "./libraryState";
 
 export function LibrarySavedThreads({
   localThreads,
@@ -26,9 +27,18 @@ export function LibrarySavedThreads({
 }) {
   const authority = useLibraryAuthority();
   const navigation = useNavigation();
+  const supportsDeleted = useLoomFeature(authority.environmentId, LIBRARY_DELETED_FEATURE);
+  const [deletedFilter, setDeleted] = useState(false);
+  const deleted = supportsDeleted && deletedFilter;
+  const [page, setPage] = useState({ environmentId: authority.environmentId, offset: 0 });
+  const offset = page.environmentId === authority.environmentId ? page.offset : 0;
+  const setOffset = (offset: number) => setPage({ environmentId: authority.environmentId, offset });
   const index = useEnvironmentQuery(
     authority.environmentId
-      ? library.threadIndex({ environmentId: authority.environmentId, input: { limit: 100 } })
+      ? library.threadIndex({
+          environmentId: authority.environmentId,
+          input: supportsDeleted ? { deleted, limit: 25, offset } : { limit: 100 },
+        })
       : null,
   );
   const catalog = useEnvironmentQuery(
@@ -48,29 +58,63 @@ export function LibrarySavedThreads({
     [catalog.data],
   );
   // Titles alone miss what was said, so a typed search can carry on into saved history.
-  const searchHistory = useLibrarySearchSupported() && librarySearchRequest(search) !== null;
+  const searchSupported = useLibrarySearchSupported();
+  const searchHistory = !deleted && searchSupported && librarySearchRequest(search) !== null;
   const query = search.trim().toLocaleLowerCase();
-  const threads = libraryOutsideArchivedProjects(
-    index.data?.threads ?? [],
-    catalog.data ?? [],
-  ).filter(
+  const candidates = deleted
+    ? (index.data?.threads ?? [])
+    : libraryOutsideArchivedProjects(index.data?.threads ?? [], catalog.data ?? []);
+  const threads = candidates.filter(
     (t) =>
-      !t.archived &&
-      !t.deleted &&
-      !local.has(`${t.environmentId}:${t.threadId}`) &&
+      (deleted || !t.archived) &&
+      Boolean(t.deleted) === deleted &&
+      (deleted || !local.has(`${t.environmentId}:${t.threadId}`)) &&
       (!environmentId || environmentId === t.environmentId) &&
       (!projectKeys || projectKeys.has(`${t.environmentId}:${t.localProjectId}`)) &&
       (!query || `${t.title} ${titles.get(t.projectId) ?? ""}`.toLocaleLowerCase().includes(query)),
   );
-  if (!threads.length && !searchHistory) return null;
+  if (!threads.length && !searchHistory && !supportsDeleted) return null;
   return (
     <View className="gap-1 px-4 py-4">
+      {supportsDeleted ? (
+        <View className="flex-row flex-wrap gap-2">
+          <Button
+            label="Saved conversations"
+            tone={deleted ? "text" : "secondary"}
+            onPress={() => {
+              setDeleted(false);
+              setOffset(0);
+            }}
+          />
+          <Button
+            label="Recently deleted"
+            tone={deleted ? "secondary" : "text"}
+            onPress={() => {
+              setDeleted(true);
+              setOffset(0);
+            }}
+          />
+        </View>
+      ) : null}
+      {index.isPending ? (
+        <Text className="text-sm text-foreground-muted">Loading saved conversations…</Text>
+      ) : null}
+      {index.error ? (
+        <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
+          {index.error}
+        </Text>
+      ) : null}
+      {deleted && !threads.length && !index.isPending && !index.error ? (
+        <Text className="text-sm text-foreground-muted">
+          No recently deleted conversations match these filters.
+        </Text>
+      ) : null}
       {threads.length ? (
         <Text className="mb-1 text-xs font-t3-medium text-foreground-muted">
           Saved conversations
         </Text>
       ) : null}
-      {threads.slice(0, 20).map((thread) => (
+      {(supportsDeleted ? threads : threads.slice(0, 20)).map((thread) => (
         <Pressable
           key={thread.id}
           accessibilityRole="button"
@@ -104,7 +148,23 @@ export function LibrarySavedThreads({
           </Text>
         </Pressable>
       ) : null}
-      {threads.length && (threads.length > 20 || index.data?.nextOffset !== null) ? (
+      {supportsDeleted && (offset > 0 || index.data?.nextOffset != null) ? (
+        <View className="flex-row gap-2">
+          <Button
+            label="Previous"
+            disabled={!offset || index.isPending}
+            onPress={() => setOffset(Math.max(0, offset - 25))}
+          />
+          <Button
+            label="Next"
+            disabled={index.data?.nextOffset == null || index.isPending || !authority.connected}
+            onPress={() => setOffset(index.data?.nextOffset ?? offset)}
+          />
+        </View>
+      ) : null}
+      {!supportsDeleted &&
+      threads.length &&
+      (threads.length > 20 || index.data?.nextOffset !== null) ? (
         <Button
           label="Browse earlier conversations by project"
           tone="text"

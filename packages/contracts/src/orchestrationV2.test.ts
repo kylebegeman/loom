@@ -202,6 +202,37 @@ describe("orchestration V2 contracts", () => {
       kind: "event",
       event: { type: "turn-item.updated", payload: { id: "item-known", type: "system_notice" } },
     });
+    // fork: vault-approvals
+    const [vaultEvent] = decodeWireItems([
+      turnItemEvent(
+        4,
+        item("vault-approval:request", "vault_access_request", {
+          requestId: "a".repeat(32),
+          revision: 1,
+          itemLabel: "Deployment key",
+          itemKind: "secret",
+          action: "reveal",
+          destination: null,
+          state: "pending",
+          requestExpiresAt: 600_000,
+          approvedUntil: null,
+          value: "must-never-be-carried",
+        }),
+      ),
+    ]);
+    expect(vaultEvent).toMatchObject({
+      kind: "event",
+      sequence: 4,
+      event: { payload: { type: "vault_access_request", itemLabel: "Deployment key" } },
+    });
+    if (vaultEvent?.kind !== "event" || vaultEvent.event.type !== "turn-item.updated")
+      throw new Error("expected a Vault card event");
+    expect(vaultEvent.event.payload).not.toHaveProperty("value");
+    expect(
+      decodeOrchestrationV2TurnItemJson(
+        encodeOrchestrationV2TurnItemJson(vaultEvent.event.payload),
+      ),
+    ).toEqual(vaultEvent.event.payload);
     expect(
       decodeHistoryPage({
         snapshotSequence: 1,

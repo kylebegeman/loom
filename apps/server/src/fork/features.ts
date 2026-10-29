@@ -1,5 +1,9 @@
 import {
+  ATTENTION_RETRY_FEATURE,
   VAULT_SECRET_FEATURE,
+  VAULT_APPROVAL_CARDS_FEATURE,
+  LIBRARY_DELETED_FEATURE,
+  LIBRARY_PUSH_KIND_PREFERENCES_FEATURE,
   DIRECTORY_FEATURE,
   LIBRARY_DECISIONS_FEATURE,
   DIRECTORY_REPORTING_FEATURE,
@@ -23,10 +27,13 @@ import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
 import { libraryPushActivityAdvertised, libraryPushEffective } from "./library-push/config.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
+import { isLibraryAuthorityEnv } from "./project-library/authority.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
+  ATTENTION_RETRY_FEATURE,
   VAULT_SECRET_FEATURE,
+  VAULT_APPROVAL_CARDS_FEATURE,
   "skill-registry",
   "project-profiles",
   "project-workflows",
@@ -154,12 +161,15 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   REACH_IDENTITY_PREPARE_FEATURE,
   // Only a Library authority with the pinned model's weights (LP-20).
   ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
+  ...(isLibraryAuthorityEnv(process.env) ? [LIBRARY_DELETED_FEATURE] : []),
   // Only the Library authority, which computers ask for it (DIR-05).
   ...(directoryAdvertised(process.env) ? [DIRECTORY_FEATURE] : []),
   // Only that Library once it can hold reach records, with or without a reach zone.
   ...(reachLibraryAdvertised(process.env) ? [REACH_LIBRARY_FEATURE] : []),
   // Only a Library whose push switch, Identity and APNs key settings are all set (K1).
-  ...(libraryPushEffective(process.env) ? [LIBRARY_PUSH_FEATURE] : []),
+  ...(libraryPushEffective(process.env)
+    ? [LIBRARY_PUSH_FEATURE, LIBRARY_PUSH_KIND_PREFERENCES_FEATURE]
+    : []),
   // Only that Library once its alert switch is on and someone can receive alerts (C04-10).
   ...(libraryPushActivityAdvertised(process.env) ? [LIBRARY_PUSH_ACTIVITY_FEATURE] : []),
 ];

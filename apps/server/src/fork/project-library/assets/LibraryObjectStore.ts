@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { SaxesParser } from "saxes";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -31,12 +32,62 @@ export class LibraryObjectStore extends Context.Service<
       bytes: Uint8Array,
       contentType: string,
     ) => Effect.Effect<void, LibraryError>;
+    readonly remove: (digest: string) => Effect.Effect<void, LibraryError>;
     readonly get: (digest: string) => Effect.Effect<Uint8Array, LibraryError>;
     readonly url: (digest: string) => Effect.Effect<string | null, LibraryError>;
   }
 >()("t3/fork/project-library/assets/LibraryObjectStore") {}
 const validDigest = (digest: string) => /^[a-f0-9]{64}$/.test(digest);
 const isLibraryError = Schema.is(LibraryError);
+function objectVersions(xml: string, expectedKey: string) {
+  const parser = new SaxesParser();
+  const stack: string[] = [];
+  const result = { versions: [] as string[], truncated: false, keyMarker: "", versionMarker: "" };
+  let text = "",
+    key = "",
+    version = "",
+    root = false,
+    sawTruncated = false;
+  parser.on("opentag", (tag) => {
+    stack.push(tag.name);
+    if (stack.length === 1) root = tag.name === "ListVersionsResult";
+    if (tag.name === "Version" || tag.name === "DeleteMarker") {
+      key = "";
+      version = "";
+    }
+    text = "";
+  });
+  parser.on("text", (value) => {
+    text += value;
+  });
+  parser.on("closetag", () => {
+    const name = stack.pop();
+    if (name === "Key") key = text;
+    if (name === "VersionId") version = text;
+    if (name === "Version" || name === "DeleteMarker") {
+      if (key === expectedKey) {
+        if (!version) throw new Error("Missing object version");
+        result.versions.push(version);
+      }
+    }
+    if (name === "IsTruncated") {
+      if (text !== "true" && text !== "false") throw new Error("Invalid version page");
+      result.truncated = text === "true";
+      sawTruncated = true;
+    }
+    if (name === "NextKeyMarker") result.keyMarker = text;
+    if (name === "NextVersionIdMarker") result.versionMarker = text;
+    text = "";
+  });
+  parser.on("doctype", () => {
+    throw new Error("Unexpected object version document type");
+  });
+  parser.write(xml).close();
+  if (!root || !sawTruncated || result.versions.length > 100)
+    throw new Error("Invalid version page");
+  return result;
+}
+
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const fs = yield* FileSystem.FileSystem;
@@ -69,7 +120,11 @@ const make = Effect.gen(function* () {
     });
   const directory = path.join(config.stateDir, "project-library", "objects");
   // Sign at the operation's clock, rather than keeping startup URLs alive.
-  const sign = (method: "GET" | "PUT", digest: string) =>
+  const sign = (
+    method: "GET" | "PUT" | "DELETE",
+    digest: string,
+    query?: Readonly<Record<string, string>>,
+  ) =>
     DateTime.now.pipe(
       Effect.flatMap((now) => {
         if (!b2 || !validDigest(digest))
@@ -78,7 +133,9 @@ const make = Effect.gen(function* () {
           try: () =>
             signB2ObjectUrl(b2, {
               method,
-              objectKey: `objects/${digest.slice(0, 2)}/${digest}`,
+              objectKey:
+                query?.versions === undefined ? `objects/${digest.slice(0, 2)}/${digest}` : "",
+              ...(query === undefined ? {} : { query }),
               now: DateTime.formatIso(now),
               expiresInSeconds: 300,
             }),
@@ -172,6 +229,67 @@ const make = Effect.gen(function* () {
     mode,
     get,
     put,
+    remove: Effect.fn("LibraryObjectStore.remove")(function* (digest: string) {
+      if (!validDigest(digest)) return yield* new LibraryError({ reason: "invalid" });
+      if (mode === "local") {
+        yield* fs
+          .remove(path.join(directory, digest), { force: true })
+          .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
+        return;
+      }
+      const key = `objects/${digest.slice(0, 2)}/${digest}`;
+      let marker: { key: string; version: string } | null = null;
+      const visited = new Set<string>();
+      for (let page = 0; page < 1000; page++) {
+        const response = yield* http
+          .execute(
+            HttpClientRequest.get(
+              yield* sign("GET", digest, {
+                versions: "",
+                prefix: key,
+                "max-keys": "100",
+                ...(marker
+                  ? { "key-marker": marker.key, "version-id-marker": marker.version }
+                  : {}),
+              }),
+            ),
+          )
+          .pipe(
+            Effect.timeout("30 seconds"),
+            Effect.mapError(() => new LibraryError({ reason: "io" })),
+          );
+        if (response.status !== 200) return yield* new LibraryError({ reason: "io" });
+        const text: string = yield* response.text.pipe(
+          Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(2)),
+          Effect.timeout("30 seconds"),
+          Effect.mapError(() => new LibraryError({ reason: "io" })),
+        );
+        const listing: ReturnType<typeof objectVersions> = yield* Effect.try({
+          try: () => objectVersions(text, key),
+          catch: () => new LibraryError({ reason: "io" }),
+        });
+        for (const version of listing.versions) {
+          const removed = yield* http
+            .execute(
+              HttpClientRequest.delete(yield* sign("DELETE", digest, { versionId: version })),
+            )
+            .pipe(
+              Effect.timeout("30 seconds"),
+              Effect.mapError(() => new LibraryError({ reason: "io" })),
+            );
+          if (removed.status !== 204 && removed.status !== 200 && removed.status !== 404)
+            return yield* new LibraryError({ reason: "io" });
+        }
+        if (!listing.truncated) return;
+        if (!listing.keyMarker || !listing.versionMarker)
+          return yield* new LibraryError({ reason: "io" });
+        const cursor = `${listing.keyMarker}\0${listing.versionMarker}`;
+        if (visited.has(cursor)) return yield* new LibraryError({ reason: "io" });
+        visited.add(cursor);
+        marker = { key: listing.keyMarker, version: listing.versionMarker };
+      }
+      return yield* new LibraryError({ reason: "io" });
+    }),
     url: Effect.fn("LibraryObjectStore.url")(function (
       digest: string,
     ): Effect.Effect<string | null, LibraryError> {

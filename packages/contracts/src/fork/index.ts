@@ -19,6 +19,7 @@ export * from "./vault-access.ts";
 export * from "./vault-core.ts";
 export * from "./vault-secret.ts";
 export * from "./keybindings.ts";
+export * from "./attention-status.ts";
 export * from "./rpc.ts";
 export * from "./switchboard.ts";
 export * from "./model-preview-3d.ts";

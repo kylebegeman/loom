@@ -1,3 +1,4 @@
+import { libraryThreadDeletionNotice } from "~/fork/project-library/deletionNotice"; // fork: library-projects
 import {
   parseScopedThreadKey,
   scopeProjectRef,
@@ -929,11 +930,12 @@ export function useThreadActions() {
 
     if (confirmThreadDelete && localApi) {
       const title = resolved?.thread.title ?? "this thread";
+      const deletionNotice = await libraryThreadDeletionNotice([target]); // fork: library-projects
       const confirmationResult = await settlePromise(() =>
         localApi.dialogs.confirm(
           [
             `Delete thread "${title}"?`,
-            "This permanently clears conversation history for this thread.",
+            deletionNotice, // fork: library-projects
           ].join("\n"),
           { variant: "destructive" },
         ),

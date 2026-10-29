@@ -260,6 +260,7 @@ export class VaultAccess extends Context.Service<
       input: VaultApprovalCreate,
       actor: string,
       authorize: Effect.Effect<void, VaultError>,
+      wait?: boolean,
     ) => Effect.Effect<VaultApprovalRequest, VaultError>;
     readonly approvalChange: (
       input: VaultApprovalChange,
@@ -812,7 +813,13 @@ const make = Effect.gen(function* () {
   const approvalRetain = Effect.gen(function* () {
     for (let attempt = 0; attempt < 4; attempt++) {
       const { policy, version } = yield* load();
-      const trimmed = yield* trimApprovals(policy, yield* Clock.currentTimeMillis);
+      const now = yield* Clock.currentTimeMillis;
+      yield* Effect.forEach(
+        policy.approvals ?? [],
+        ({ request }) => notifications.changed(approvalView(request, policy, now), true),
+        { discard: true },
+      );
+      const trimmed = yield* trimApprovals(policy, now);
       if (trimmed.removed === 0) return 0;
       const saved = yield* persist(trimmed.policy, version).pipe(Effect.result);
       if (saved._tag === "Success") return trimmed.removed;
@@ -1191,7 +1198,9 @@ const make = Effect.gen(function* () {
       const old = policy.approvals?.find((r) => r.request.id === input.id);
       if (old) {
         if (old.fingerprint !== fingerprint) return yield* new VaultError({ reason: "conflict" });
-        return approvalView(old.request, policy, yield* Clock.currentTimeMillis);
+        const request = approvalView(old.request, policy, yield* Clock.currentTimeMillis);
+        yield* notifications.changed(request);
+        return request;
       }
       if (
         (policy.approvals?.length ?? 0) >= 128 ||
@@ -1239,6 +1248,7 @@ const make = Effect.gen(function* () {
       yield* authorize;
       const result = yield* persist(next, version).pipe(Effect.result);
       if (result._tag === "Success") {
+        yield* notifications.changed(request);
         yield* notifications.pending(request);
         return request;
       }
@@ -1386,8 +1396,11 @@ const make = Effect.gen(function* () {
       )
         return yield* new VaultError({ reason: "conflict" });
       const result = yield* persist(next, version).pipe(Effect.result);
-      if (result._tag === "Success")
-        return approvalView(changed, next, yield* Clock.currentTimeMillis);
+      if (result._tag === "Success") {
+        const request = approvalView(changed, next, yield* Clock.currentTimeMillis);
+        yield* notifications.changed(request);
+        return request;
+      }
       if (result.failure.reason !== "conflict") return yield* result.failure;
     }
     return yield* new VaultError({ reason: "conflict" });
@@ -1725,7 +1738,26 @@ const make = Effect.gen(function* () {
         );
       },
     ),
-    approvalCreate,
+    approvalCreate: Effect.fn("VaultAccess.requestApproval")(function* (
+      input,
+      actor,
+      authorize,
+      wait = false,
+    ) {
+      if (wait && actor !== `thread:${input.threadId}`)
+        return yield* new VaultError({ reason: "denied" });
+      const request = yield* approvalCreate(input, actor, authorize);
+      if (!wait) return request;
+      yield* notifications.waitForDecision(request);
+      const { policy } = yield* load();
+      const status = yield* approvalStatusFromPolicy(
+        policy,
+        yield* Clock.currentTimeMillis,
+        request.id,
+        input.threadId,
+      );
+      return status.request;
+    }),
     approvalChange,
     approvalContext: Effect.fn("VaultAccess.approvalContext")(function* (input) {
       const { policy } = yield* load(),

@@ -58,6 +58,7 @@ const computer = EnvironmentId.make("computer");
 const localProjectId = ProjectId.make("local-project");
 const noAssets = Layer.succeed(Assets.LibraryAssetService, {
   mode: "local",
+  removeUnused: () => Effect.void,
   find: () => Effect.fail(new LibraryError({ reason: "not-found" })),
   read: () => Effect.fail(new LibraryError({ reason: "not-found" })),
   put: () => Effect.fail(new LibraryError({ reason: "io" })),

@@ -20,5 +20,13 @@ export const LibraryAssetMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE fork_library_recovery (source_environment_id TEXT NOT NULL, copy_id TEXT NOT NULL, digest TEXT NOT NULL, byte_length INTEGER NOT NULL, archive_key TEXT NOT NULL, manifest_json TEXT NOT NULL, verified_at TEXT NOT NULL, PRIMARY KEY(source_environment_id,copy_id,digest))`;
       }),
     ],
+    [
+      3,
+      "ErasedAssetCleanup",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_library_erased_assets (source_environment_id TEXT NOT NULL, source_attachment_id TEXT NOT NULL, digest TEXT NOT NULL, pending INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(source_environment_id,source_attachment_id))`;
+      }),
+    ],
   ],
 };

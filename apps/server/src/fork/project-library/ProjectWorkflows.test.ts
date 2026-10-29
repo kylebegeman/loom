@@ -1,7 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
-import { LibraryBlueprint, LibraryError } from "@t3tools/contracts/fork";
+import {
+  LibraryBlueprint,
+  LibraryError,
+  LibraryThreadArchive,
+  LibraryThreadSummary,
+} from "@t3tools/contracts/fork";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -13,14 +18,20 @@ import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import { LibraryAssetService } from "./assets/LibraryAssetService.ts";
 import * as LibraryService from "./LibraryService.ts";
+import * as LibraryStore from "./LibraryStore.ts";
 import * as ProjectWorkflows from "./ProjectWorkflows.ts";
 import { resource, copyFor, archiveFor } from "./Library.testkit.ts";
 
 const isBlueprint = Schema.is(LibraryBlueprint);
+const encodeArchive = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchive)),
+);
+const encodeSummary = Schema.encodeEffect(Schema.fromJsonString(LibraryThreadSummary));
 const catalog = LibraryService.layer.pipe(
   Layer.provide(
     Layer.succeed(LibraryAssetService, {
       mode: "local",
+      removeUnused: () => Effect.void,
       find: () => Effect.fail(new LibraryError({ reason: "not-found" })),
       read: () => Effect.fail(new LibraryError({ reason: "not-found" })),
       put: () => Effect.fail(new LibraryError({ reason: "io" })),
@@ -528,7 +539,20 @@ describe("Project workflows", () => {
         const copy = copyFor(project);
         yield* library.registerCopy({ requestId: "existing-copy", copy });
         const archive = yield* archiveFor(project);
-        yield* library.registerThread({ requestId: "existing-thread", thread: archive });
+        const store = yield* LibraryStore.LibraryStore.pipe(Effect.provide(LibraryStore.layer));
+        yield* store.transaction(
+          store.putThread({
+            id: archive.summary.id,
+            environmentId: archive.summary.environmentId,
+            threadId: archive.summary.threadId,
+            projectId: archive.summary.projectId,
+            workingCopyId: archive.summary.workingCopyId,
+            sourceSequence: archive.summary.sequence,
+            summary: yield* encodeSummary(archive.summary),
+            payload: yield* encodeArchive(archive),
+            updatedAt: archive.summary.updatedAt,
+          }),
+        );
         const before = yield* library.history({ id: archive.summary.id, limit: 100 });
         yield* runForkMigrationSet(ProjectLibraryMigrations);
         yield* runForkMigrationSet(ProjectLibraryMigrations);
@@ -539,6 +563,7 @@ describe("Project workflows", () => {
         const sql = yield* SqlClient.SqlClient;
         expect(yield* sql`SELECT id FROM fork_library_operations`).toEqual([]);
         expect(yield* sql`SELECT id FROM fork_library_workstreams`).toEqual([]);
+        expect(yield* sql`SELECT library_id FROM fork_library_erased_threads`).toEqual([]);
       }).pipe(
         Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
         Effect.scoped,

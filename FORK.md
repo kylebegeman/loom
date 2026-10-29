@@ -54,6 +54,20 @@ identifiers.
 
 ## Seams in upstream files
 
+The `vault-approvals` seams in `packages/contracts/src/orchestrationV2.ts` (3 marker lines)
+add the metadata-only Vault approval card to the forward-compatible turn-item union.
+Older clients omit this unknown item while retaining the rest of the thread stream.
+Its contract test (1 marker line) checks that the card carries metadata without secret values.
+`apps/web/src/session-logic.ts` (2) and `apps/mobile/src/lib/threadActivity.ts` (5) keep
+these cards visible and separate from collapsible work, including after a turn is superseded.
+The mobile activity test (1) covers preserving their detail outside a folded run.
+`apps/server/src/mcp/OrchestratorMcpService.ts` (1) includes their safe fields in thread reads.
+Web `TimelineV2EventRow.tsx` (2) and mobile `ThreadFeed.tsx` (3) mount the fork approval cards.
+The eval runner includes Vault access and Library tools with two `vault-approvals` and two
+`library-projects` marker lines, so scenarios exercise their current tool text.
+The `library-push` seams in mobile `SettingsScheduledTasksRouteScreen.tsx` (8) select the
+alert's computer and bring its failed scheduled task to the top of the list.
+
 Find them with `git grep -n "fork: brand"`; `docs/fork/seams.tsv` is the checked list.
 JSON and binary files cannot carry the marker and are listed separately.
 
@@ -155,7 +169,7 @@ with owner-only POSIX permissions, not same-user process isolation. See
 | ---------------------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `apps/web/src/components/chat/SecretRequestCard.tsx`                         | `vault-core`               | Mount private-card save and saved-item answer controls.                                                              |
 | `apps/mobile/src/features/threads/SecretRequestCard.tsx`                     | `vault-core`               | Mount native private-card save and saved-item answer controls.                                                       |
-| `apps/server/src/mcp/toolkits/orchestrator/tools.ts`                         | `ext-vault`                | Guide saved-item use through the existing private request card.                                                      |
+| `apps/server/src/mcp/toolkits/orchestrator/tools.ts`                         | `ext-vault`                | Explain saved-item selection before opening the existing private request card.                                       |
 | `packages/client-runtime/src/state/commandPermissions.test.ts`               | `ext-core`                 | Check that saved-item answers require the destination access-write scope.                                            |
 | `apps/server/src/secrets/SecretRequests.ts`                                  | `ext-vault`                | Bind private transfers and stage decoded saved files before recording an answer.                                     |
 | `apps/server/src/secrets/SecretRequests.test.ts`                             | `ext-vault`                | Cover private transfer retries, decoded file bytes and cleanup failures.                                             |
@@ -188,8 +202,15 @@ The renderer follows the web app's React version, which comes from the workspace
 
 | File                                                           | Packet                | Why                                                                          |
 | -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `apps/web/src/hooks/useThreadActionMenu.ts`                    | `attention-status`    | Retry failed runs and resume held queues from the conversation header.       |
+| `apps/web/src/components/Sidebar.tsx`                          | `library-projects`    | Use the Library retention setting in single and bulk delete confirmations.   |
+| `apps/web/src/hooks/useThreadActions.permissions.test.ts`      | `library-projects`    | Await async confirmation while preserving permission rechecks.               |
+| `apps/web/src/hooks/useThreadActions.ts`                       | `library-projects`    | Explain saved Library retention before deleting an archived thread.          |
 | `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
+| `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `attention-status`    | Isolate retry state and verify header retry permission checks.               |
 | `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
+| `apps/mobile/src/features/home/useThreadListActions.ts`        | `project-library`     | Show confirmed Library retention when deleting a saved conversation.         |
+| `apps/mobile/src/features/home/useThreadListActions.test.ts`   | `project-library`     | Isolate Library confirmation and preserve deletion permission checks.        |
 | `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
 | `apps/server/src/project/AgentSessionScanner.ts`               | `file-placement`      | Exclude canonical aliases of managed worktree roots during session import.   |
 | `apps/server/src/project/AgentSessionScanner.test.ts`          | `file-placement`      | Cover session import exclusion through symlinked roots.                      |
@@ -202,6 +223,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
 | `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
 | `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                    | `attention-status`    | Use the guarded failed-run retry tool in agent evals.                        |
 | `evals/mcp-tool-use/run.ts`                                    | `vault-core`          | Use the real Vault item query tools in agent evals.                          |
 | `evals/mcp-tool-use/run.ts`                                    | `vault-references`    | Include saved-reference tools for private-request guidance.                  |
 | `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
@@ -535,6 +557,8 @@ cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
 recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
 (1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
 
+The `attention-status` seams in `evals/mcp-tool-use/run.ts` (2) include the retry toolkit in model-facing tests. The fork retry service shares guarded manual continuation across RPC and MCP.
+
 The `attention-status` seams give Loom one list of work that needs the user (approvals,
 questions, paused queues, failed or limited runs) on web, desktop, mobile and agents. The rule
 lives in fork-owned `packages/contracts/src/fork/thread-attention.ts`; keep every caller on it.
@@ -550,8 +574,9 @@ and archive lookups to `t3_thread_list`. The thread toolkit's `tools.ts` (2) and
 `models.ts` (2), `threadInbox.ts` (2) and `threadShell.ts` (3) carry the flag, keep held queues
 off the Working shelf and time the next snooze wake instead of polling. Web `Sidebar.logic.ts`
 (9) and mobile `threadListV2.ts` (3) rank Paused below approval and input and above every run
-state, matching the shared rule. `Sidebar.tsx` (11), `threadActionMenu.logic.ts` (3) and
-`thread-list-v2-items.tsx` (12) add the count, Resume queue and offline last-seen labels,
+state, matching the shared rule. `Sidebar.tsx` (8), `threadActionMenu.logic.ts` (5),
+`useThreadActionMenu.ts` (6) and `thread-list-v2-items.tsx` (16) add the count, guarded Retry,
+Resume queue and offline last-seen labels,
 `HomeScreen.tsx` (5) the mobile filter, and `CommandPalette.tsx` (4) the next-attention action
 on `mod+shift+u` from `packages/contracts/src/keybindings.ts` (1) and
 `packages/shared/src/keybindings.ts` (1). `threadRecoveryPresentation.ts` (1) and

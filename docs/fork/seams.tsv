@@ -360,7 +360,7 @@ apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
 apps/web/src/components/chat/useRightPanelActions.ts	checkpoint-capable	4
 apps/web/src/components/CommandPalette.tsx	fleet-connections	30
 apps/web/src/components/ProjectFavicon.tsx	library-projects	7
-apps/web/src/components/Sidebar.tsx	library-projects	25
+apps/web/src/components/Sidebar.tsx	library-projects	30
 apps/web/src/routes/_chat.tsx	library-projects	2
 apps/web/src/shortcuts/chatRouteCommands.ts	library-projects	4
 apps/web/src/components/Sidebar.tsx	workspace-handoff	4
@@ -876,7 +876,7 @@ apps/desktop/src/ipc/methods/notificationBadge.test.ts	respectful-notifications	
 apps/desktop/src/ipc/methods/notificationBadge.ts	respectful-notifications	6
 apps/mobile/src/features/home/HomeScreen.tsx	attention-status	5
 apps/mobile/src/features/home/HomeScreen.tsx	everyday-workflows	5
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	11
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	16
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	everyday-workflows	1
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	library	1
 apps/mobile/src/features/threads/threadListV2.test.ts	attention-status	1
@@ -895,9 +895,9 @@ apps/server/src/orchestration-v2/ProjectionStore.ts	goal-history	2
 apps/web/src/components/CommandPalette.tsx	attention-status	4
 apps/web/src/components/Sidebar.logic.test.ts	attention-status	1
 apps/web/src/components/Sidebar.logic.ts	attention-status	8
-apps/web/src/components/Sidebar.tsx	attention-status	5
+apps/web/src/components/Sidebar.tsx	attention-status	8
 apps/web/src/components/threadActionMenu.logic.test.ts	attention-status	1
-apps/web/src/components/threadActionMenu.logic.ts	attention-status	3
+apps/web/src/components/threadActionMenu.logic.ts	attention-status	5
 packages/client-runtime/src/state/models.ts	attention-status	2
 packages/client-runtime/src/state/models.ts	bots	2
 packages/client-runtime/src/state/threadInbox.test.ts	attention-status	2
@@ -906,6 +906,17 @@ packages/client-runtime/src/state/threadShell.test.ts	attention-status	2
 packages/client-runtime/src/state/threadShell.ts	attention-status	3
 packages/contracts/src/keybindings.ts	attention-status	1
 packages/contracts/src/orchestrationV2.ts	attention-status	1
+packages/contracts/src/orchestrationV2.ts	vault-approvals	3
+packages/contracts/src/orchestrationV2.test.ts	vault-approvals	1
+apps/mobile/src/lib/threadActivity.ts	vault-approvals	5
+apps/mobile/src/lib/threadActivity.test.ts	vault-approvals	1
+apps/web/src/session-logic.ts	vault-approvals	2
+apps/server/src/mcp/OrchestratorMcpService.ts	vault-approvals	1
+evals/mcp-tool-use/run.ts	vault-approvals	2
+evals/mcp-tool-use/run.ts	library-projects	2
+apps/web/src/components/chat/TimelineV2EventRow.tsx	vault-approvals	2
+apps/mobile/src/features/threads/ThreadFeed.tsx	vault-approvals	3
+apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	library-push	8
 packages/contracts/src/orchestratorMcp.ts	attention-status	4
 packages/provider-core/src/server/orchestrationInstructions.ts	attention-status	1
 packages/shared/src/keybindings.ts	attention-status	1
@@ -1509,7 +1520,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 264086
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 264938
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
@@ -1527,3 +1538,10 @@ apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1
 evals/mcp-tool-use/run.ts	vault-core	2
 evals/mcp-tool-use/run.ts	vault-references	2
 packages/client-runtime/package.json	-	"./fork/vault-secret"
+evals/mcp-tool-use/run.ts	attention-status	2
+apps/web/src/hooks/useThreadActionMenu.ts	attention-status	6
+apps/web/src/hooks/useThreadActions.ts	library-projects	3
+apps/mobile/src/features/home/useThreadListActions.ts	project-library	2
+apps/web/src/hooks/useThreadActionMenu.test.ts	attention-status	5
+apps/mobile/src/features/home/useThreadListActions.test.ts	project-library	4
+apps/web/src/hooks/useThreadActions.permissions.test.ts	library-projects	4

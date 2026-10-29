@@ -1,3 +1,5 @@
+// fork: project-library
+import { confirmLibraryThreadDeletion } from "../../fork/library/confirmLibraryThreadDeletion";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import * as ThreadUndo from "@t3tools/client-runtime/state/thread-undo";
@@ -179,6 +181,8 @@ function confirmThreadDeletion(
   thread: EnvironmentThreadShell,
 ) {
   if (!checkThreadOperationPermission(thread, actionFailureTitle("delete"))) return;
+  // fork: project-library
+  if (confirmLibraryThreadDeletion(thread, () => executeAction("delete", thread))) return;
   const title = "Delete thread?";
   const message = `“${thread.title}” will be permanently deleted, including its terminal history.`;
   Dialog.confirm({

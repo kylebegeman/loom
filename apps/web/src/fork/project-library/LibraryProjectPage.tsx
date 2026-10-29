@@ -1,3 +1,4 @@
+import { RecentlyDeletedConversations, useRecentlyDeletedSupported } from "./RecentlyDeleted";
 import { TidyProjectDialog } from "./TidyProjectDialog";
 import { projectEntries } from "@t3tools/client-runtime/fork";
 import { ProjectWorkstreams } from "./ProjectWorkstreams";
@@ -177,6 +178,8 @@ function ProjectView({
   const [tidying, setTidying] = useState(false);
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
+  const deletedSupported = useRecentlyDeletedSupported();
+  const [showDeleted, setShowDeleted] = useState(false);
   const [editingBrief, setEditingBrief] = useState(false);
   // The command palette's Open project brief lands here, whether or not this page was open.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for command palette brief edit requests and unsubscribes on unmount
@@ -417,22 +420,46 @@ function ProjectView({
           </div>
         ) : shown === "conversations" ? (
           <div className="flex min-w-0 flex-col gap-8">
-            <LibraryHistorySearch
-              authorityId={authorityId}
-              connected={library.connected}
-              capabilities={capabilities}
-              projectId={project.id}
-              hostLabel={hostLabel}
-            />
-            <ProjectConversations
-              project={project}
-              threads={threads}
-              loading={library.threads.isPending}
-              error={library.threads.error}
-              onRetry={library.threads.refresh}
-              hostLabel={hostLabel}
-              hostConnected={hostConnected}
-            />
+            {!showDeleted || !deletedSupported ? (
+              <LibraryHistorySearch
+                authorityId={authorityId}
+                connected={library.connected}
+                capabilities={capabilities}
+                projectId={project.id}
+                hostLabel={hostLabel}
+              />
+            ) : null}
+            {deletedSupported ? (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={showDeleted ? "outline" : "secondary"}
+                  onClick={() => setShowDeleted(false)}
+                >
+                  Conversations
+                </Button>
+                <Button
+                  size="sm"
+                  variant={showDeleted ? "secondary" : "outline"}
+                  onClick={() => setShowDeleted(true)}
+                >
+                  Recently deleted
+                </Button>
+              </div>
+            ) : null}
+            {showDeleted && deletedSupported ? (
+              <RecentlyDeletedConversations key={project.id} projectId={project.id} />
+            ) : (
+              <ProjectConversations
+                project={project}
+                threads={threads}
+                loading={library.threads.isPending}
+                error={library.threads.error}
+                onRetry={library.threads.refresh}
+                hostLabel={hostLabel}
+                hostConnected={hostConnected}
+              />
+            )}
           </div>
         ) : shown === "timeline" ? (
           <ProjectTimeline

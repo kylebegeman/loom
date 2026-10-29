@@ -1,3 +1,4 @@
+import { ATTENTION_STATUS_WS_METHODS as ATTENTION } from "@t3tools/contracts/fork";
 import { SKILL_REGISTRY_WS_METHODS as SK } from "@t3tools/contracts/fork";
 import { AuthFilesystemReadScope, AuthFilesystemWriteScope } from "@t3tools/contracts";
 import { PROJECT_WORKFLOW_WS_METHODS as WF } from "@t3tools/contracts/fork";
@@ -71,6 +72,7 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [ATTENTION.retry]: AuthOrchestrationOperateScope,
   [SK.inventory]: AuthFilesystemReadScope,
   [SK.sources]: AuthFilesystemReadScope,
   [SK.watchFetch]: AuthFilesystemReadScope,
@@ -193,6 +195,9 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [LIB.copies]: AuthOrchestrationReadScope,
   [LIB.threads]: AuthOrchestrationReadScope,
   [LIB.history]: AuthOrchestrationReadScope,
+  [LIB.deletedPreferences]: AuthOrchestrationReadScope,
+  [LIB.setDeletedPreferences]: AuthSettingsWriteScope,
+  [LIB.eraseConversation]: AuthSettingsWriteScope,
   [LIB.threadIndex]: AuthOrchestrationReadScope,
   [LIB.lookupThread]: AuthOrchestrationReadScope,
   [LIB.threadBinding]: AuthOrchestrationReadScope,

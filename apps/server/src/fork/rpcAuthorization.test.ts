@@ -293,8 +293,8 @@ it.effect("checkout previews require read access and never start without it", ()
   }),
 );
 
-it.effect.each([C.adopt, C.setRetention])(
-  "checkout %s requires settings write before any ownership or policy mutation",
+it.effect.each([C.adopt, C.setRetention, LIB.setDeletedPreferences, LIB.eraseConversation])(
+  "mutation %s requires settings write before any ownership or policy mutation",
   (method) =>
     Effect.gen(function* () {
       const auth = (scopes: readonly AuthEnvironmentScope[]) =>

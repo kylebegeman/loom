@@ -408,6 +408,14 @@ export function isSecretRequestActivityGroup(entry: ThreadFeedActivityGroup): bo
   );
 }
 
+// fork: vault-approvals
+export function isVaultApprovalActivityGroup(entry: ThreadFeedActivityGroup): boolean {
+  return (
+    entry.activities.length === 1 &&
+    entry.activities[0]?.projectedItem.item.type === "vault_access_request"
+  );
+}
+
 export function isLinkRequestActivityGroup(entry: ThreadFeedActivityGroup): boolean {
   return (
     entry.activities.length === 1 && entry.activities[0]?.projectedItem.item.type === "link_request"
@@ -523,6 +531,8 @@ function itemIsProminent(item: OrchestrationV2TurnItem): boolean {
     item.type === "system_notice" ||
     item.type === "proposed_plan" ||
     item.type === "secret_request" ||
+    // fork: vault-approvals
+    item.type === "vault_access_request" ||
     item.type === "link_request"
   );
 }
@@ -644,6 +654,8 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
     case "thread_created":
       return "zap";
     case "secret_request":
+    // fork: vault-approvals
+    case "vault_access_request":
       return "lock";
     case "link_request":
       return "globe";
@@ -706,6 +718,9 @@ function itemSummary(
       return "Thread created";
     case "secret_request":
       return item.label;
+    // fork: vault-approvals
+    case "vault_access_request":
+      return `Vault access: ${item.itemLabel}`;
     case "link_request":
       return `Link ${item.label ?? item.url ?? "an environment"}`;
     case "dynamic_tool": {
@@ -768,6 +783,9 @@ function itemPreview(item: OrchestrationV2TurnItem): string | null {
     case "secret_request":
     case "link_request":
       return item.reason || null;
+    // fork: vault-approvals
+    case "vault_access_request":
+      return item.destination;
     case "subagent":
       return item.result ?? item.progress ?? item.prompt;
     case "dynamic_tool":
