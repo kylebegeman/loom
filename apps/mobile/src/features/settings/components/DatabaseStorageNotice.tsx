@@ -26,14 +26,14 @@ import { SettingsSection } from "./SettingsSection";
 
 const databaseCompaction = createDatabaseCompactionAtoms(connectionAtomRuntime); // fork: restart-compaction
 
-/** Suggests `t3 doctor` on every machine whose database still holds at least 1 GiB of freed pages. */
+// fork: project-lifecycle -- collapse keeps every supported database visible.
 export function DatabaseStorageNotice({
   targets,
 }: {
   readonly targets: readonly SettingsTarget[];
 }) {
   const recommendations = useAtomValue(
-    serverEnvironment.databaseCompactionRecommendations(
+    serverEnvironment.databaseStorageStatuses(
       JSON.stringify(targets.map((target) => target.environmentId)),
     ),
   );
@@ -42,62 +42,69 @@ export function DatabaseStorageNotice({
   const dismissed = AsyncResult.isSuccess(preferences)
     ? (preferences.value.dismissedDatabaseStorageNotices ?? [])
     : [];
-  const visible = recommendations.filter(
-    (recommendation) => !dismissed.includes(recommendation.environmentId),
-  );
-  if (visible.length === 0) return null;
-  // fork: restart-compaction: both notices dismiss the same way.
-  const dismiss = (environmentIds: readonly string[]) =>
+  const dismiss = (environmentId: string, collapse: boolean) =>
     updatePreferences({
       transform: (current) => ({
-        dismissedDatabaseStorageNotices: [
-          ...new Set([...(current.dismissedDatabaseStorageNotices ?? []), ...environmentIds]),
-        ],
+        dismissedDatabaseStorageNotices: collapse
+          ? [...new Set([...(current.dismissedDatabaseStorageNotices ?? []), environmentId])]
+          : (current.dismissedDatabaseStorageNotices ?? []).filter((id) => id !== environmentId),
       }),
     });
-  // fork: restart-compaction: the desktop app compacts its own database while it restarts.
-  const restartCompactions = visible.flatMap(({ environmentId, status }) => {
-    const target = targets.find((entry) => entry.environmentId === environmentId);
-    return target && status.restartCompaction !== undefined
-      ? [{ target, status, state: status.restartCompaction }]
-      : [];
-  });
-  // fork: restart-compaction
-  const commands = visible.filter(({ status }) => status.restartCompaction === undefined);
   return (
-    // fork: restart-compaction
     <>
-      {restartCompactions.map(({ target, status, state }) => (
-        <RestartCompactionSection
-          key={target.environmentId}
-          target={target}
-          gib={(status.reclaimableBytes / 1024 ** 3).toFixed(1)}
-          state={state}
-          onDismiss={() => dismiss([target.environmentId])}
-        />
-      ))}
-      {commands.length === 0 ? null : (
-        <SettingsSection
-          title="Reclaim database space"
-          footer="Old history is cleaned up automatically, but these databases still hold the freed space. Run the command on each machine to return it to disk; it pauses and restarts the background service. Quit the desktop app first if it hosts the environment."
-        >
-          {commands.map(({ environmentId, status }) => (
-            <SettingsActionRow
+      {recommendations.map(({ environmentId, status }) => {
+        const target = targets.find((entry) => entry.environmentId === environmentId);
+        if (!target) return null;
+        const summary = `${(status.databaseBytes / 1024 ** 3).toFixed(2)} GiB stored; ${(status.reclaimableBytes / 1024 ** 3).toFixed(2)} GiB reclaimable.`;
+        if (dismissed.includes(environmentId))
+          return (
+            <SettingsSection key={environmentId} title={`Database on ${target.label}`}>
+              <View className="gap-3 p-4">
+                <Text className="text-sm text-foreground-muted">{summary}</Text>
+                <SettingsActionRow
+                  icon="chevron.down"
+                  label="Show details"
+                  onPress={() => dismiss(environmentId, false)}
+                />
+              </View>
+            </SettingsSection>
+          );
+        if (status.restartCompaction)
+          return (
+            <RestartCompactionSection
               key={environmentId}
-              icon="doc.on.doc"
-              label={targets.find((target) => target.environmentId === environmentId)?.label ?? ""}
-              description={status.compactCommand}
-              detail={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB`}
-              onPress={() => copyTextWithHaptic(status.compactCommand, { target: "command" })}
+              target={target}
+              summary={summary}
+              state={status.restartCompaction}
+              onDismiss={() => dismiss(environmentId, true)}
             />
-          ))}
-          <SettingsActionRow
-            icon="xmark"
-            label="Dismiss"
-            onPress={() => dismiss(commands.map((recommendation) => recommendation.environmentId))}
-          />
-        </SettingsSection>
-      )}
+          );
+        return (
+          <SettingsSection key={environmentId} title={`Database on ${target.label}`}>
+            <View className="gap-2 p-4">
+              <Text className="text-sm text-foreground-muted">{summary}</Text>
+              <Text className="text-sm text-foreground-muted">
+                {status.incrementalVacuumEnabled
+                  ? "Freed pages return to disk automatically."
+                  : "Run the repair command on this computer. It pauses and restarts the background service; quit the desktop app first if it hosts the environment."}
+              </Text>
+            </View>
+            {!status.incrementalVacuumEnabled ? (
+              <SettingsActionRow
+                icon="doc.on.doc"
+                label="Copy repair command"
+                description={status.compactCommand}
+                onPress={() => copyTextWithHaptic(status.compactCommand, { target: "command" })}
+              />
+            ) : null}
+            <SettingsActionRow
+              icon="chevron.up"
+              label="Collapse details"
+              onPress={() => dismiss(environmentId, true)}
+            />
+          </SettingsSection>
+        );
+      })}
     </>
   );
 }
@@ -105,12 +112,12 @@ export function DatabaseStorageNotice({
 // fork: restart-compaction
 function RestartCompactionSection({
   target,
-  gib,
+  summary, // fork: project-lifecycle
   state,
   onDismiss,
 }: {
   readonly target: SettingsTarget;
-  readonly gib: string;
+  readonly summary: string; // fork: project-lifecycle
   readonly state: RestartCompactionState;
   readonly onDismiss: () => void;
 }) {
@@ -132,14 +139,16 @@ function RestartCompactionSection({
   };
   const { plan, lastAttempt } = describeRestartCompaction(state, target.label);
   return (
-    <SettingsSection title={`Reclaim ${gib} GiB on ${target.label}`}>
+    <SettingsSection title={`Database on ${target.label}`}>
       <View className="gap-3 p-4">
         <Text className="text-sm text-foreground-muted">
-          Old history is cleaned up automatically, but this database still holds the freed space.{" "}
-          {plan} Compacting can take several minutes while Loom starts.
+          {summary} {plan} Compacting can take several minutes while Loom starts.
         </Text>
         {lastAttempt === null ? null : (
-          <Text className="text-sm text-foreground-muted">{lastAttempt}</Text>
+          <Text className="text-sm text-foreground-muted">
+            {lastAttempt}{" "}
+            {state.lastAttempt ? `(${new Date(state.lastAttempt.at).toLocaleString()})` : ""}
+          </Text>
         )}
         {allowed ? null : (
           <Text className="text-sm text-foreground-muted">
@@ -169,7 +178,7 @@ function RestartCompactionSection({
             loading={pending}
             onPress={() => void update(true)}
           />
-          <SettingsActionRow icon="xmark" label="Dismiss" onPress={onDismiss} />
+          <SettingsActionRow icon="xmark" label="Collapse details" onPress={onDismiss} />
         </>
       )}
     </SettingsSection>

@@ -186,6 +186,10 @@ const make = Effect.gen(function* () {
         path,
         home,
       )) {
+        if (isNetworkPath(root)) {
+          unknown("worktrees");
+          continue;
+        }
         if (!(yield* exists(root))) continue;
         const first = yield* fs.readDirectory(root).pipe(Effect.orElseSucceed(() => []));
         for (const name of first.slice(0, ROOT_LIMIT)) {
@@ -248,6 +252,11 @@ const make = Effect.gen(function* () {
       const localDefaults = new Map<string, { remote: string; branch: string } | null>();
       for (const root of selected) {
         const row = totals.get(root.kind)!;
+        if (isNetworkPath(root.path)) {
+          row.locations++;
+          unknown(root.kind);
+          continue;
+        }
         const present = yield* exists(root.path);
         if (root.released && !present) {
           row.released++;

@@ -38,6 +38,18 @@ describe("confirmed storage cleanup accounting", () => {
       expect((yield* account.history).entries).toEqual(first.entries);
       yield* accountStorageRemoval(input, fs.remove(archive));
       expect((yield* account.history).entries).toHaveLength(2);
+      yield* fs.writeFileString(target, "partial deletion".repeat(1024));
+      yield* Effect.result(
+        accountStorageRemoval(
+          { ...input, id: "partial" },
+          fs.remove(target).pipe(Effect.andThen(Effect.fail("receipt failed"))),
+        ),
+      );
+      expect((yield* account.history).entries[0]).toMatchObject({
+        kind: "library-copy",
+        outcome: "failed",
+      });
+      expect((yield* account.history).entries[0]?.bytes).toBeGreaterThan(0);
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layer, NodeServices.layer))),
   );
 });

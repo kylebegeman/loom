@@ -26,7 +26,7 @@ describe("describeRestartCompaction", () => {
       expect(copy.plan).toBe(
         "Loom will not try again on its own; choose Compact at next restart to retry.",
       );
-      expect(copy.lastAttempt).toBe("Last attempt: The repair stopped.");
+      expect(copy.lastAttempt).toBe(`Last attempt (${outcome}): The repair stopped.`);
     }
   });
 
@@ -36,10 +36,10 @@ describe("describeRestartCompaction", () => {
     ).toBe("Loom on Studio returns it to disk the next time it starts.");
   });
 
-  it("hides a completed attempt, which left nothing to report", () => {
+  it("keeps the completed outcome visible", () => {
     expect(
       describeRestartCompaction({ requested: false, lastAttempt: attempt("completed") }, "Studio")
         .lastAttempt,
-    ).toBeNull();
+    ).toBe("Last attempt (completed): completed detail");
   });
 });

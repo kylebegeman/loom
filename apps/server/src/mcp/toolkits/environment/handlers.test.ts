@@ -19,7 +19,7 @@ import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementSer
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
 import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
 // fork: project-lifecycle
-import { ForkRuntime } from "../../../fork/ForkRuntime.ts";
+import { ForkRuntime, type ForkServices } from "../../../fork/ForkRuntime.ts";
 // fork: project-lifecycle
 import * as Context from "effect/Context";
 // fork: project-lifecycle
@@ -175,7 +175,7 @@ it.effect("reads cleanup reports without running cleanup and refuses another env
                     additionalBytesFreed: 0,
                   }),
               }),
-            ),
+            ) as unknown as Context.Context<ForkServices>,
           ),
         ),
       ),

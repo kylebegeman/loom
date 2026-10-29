@@ -1,3 +1,4 @@
+import { measureStoragePath } from "../project-lifecycle/storageMeasurement.ts";
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -253,18 +254,13 @@ const make = Effect.gen(function* () {
     );
 
   const directoryBytes = Effect.fn("LibraryGitFetch.directoryBytes")(function* (directory: string) {
-    const entries = yield* fs.readDirectory(directory, { recursive: true });
-    const sizes = yield* Effect.forEach(
-      entries,
-      (entry) =>
-        fs.stat(path.join(directory, entry)).pipe(
-          Effect.map((info) => (info.type === "File" ? Number(info.size) : 0)),
-          // Git can replace packs while the walk runs.
-          Effect.orElseSucceed(() => 0),
-        ),
-      { concurrency: 16 },
+    // The legacy report requires a number; detailed fork accounting preserves unknown sizes.
+    return (
+      (yield* measureStoragePath(directory, { reclaimable: true }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      )) ?? 0
     );
-    return sizes.reduce((total, size) => total + size, 0);
   });
 
   const isReadableMirror = (mirror: string) =>

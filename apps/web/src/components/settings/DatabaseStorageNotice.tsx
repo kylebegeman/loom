@@ -27,14 +27,14 @@ const databaseCompaction = createDatabaseCompactionAtoms(connectionAtomRuntime);
 
 const DismissedEnvironmentIds = Schema.Array(Schema.String);
 
-/** Suggests `t3 doctor` on every machine whose database still holds at least 1 GiB of freed pages. */
+// fork: project-lifecycle -- every supported database stays visible, including successful repairs.
 export function DatabaseStorageNotice({
   environments,
 }: {
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>;
 }) {
   const recommendations = useAtomValue(
-    serverEnvironment.databaseCompactionRecommendations(
+    serverEnvironment.databaseStorageStatuses(
       JSON.stringify(environments.map((environment) => environment.environmentId)),
     ),
   );
@@ -44,9 +44,8 @@ export function DatabaseStorageNotice({
     DismissedEnvironmentIds,
   );
   const { copyToClipboard } = useCopyToClipboard({ target: "command" });
-  const visible = recommendations.filter(
-    (recommendation) => !dismissed.includes(recommendation.environmentId),
-  );
+  // fork: project-lifecycle -- previous dismissals now collapse details instead of hiding storage.
+  const visible = recommendations;
   if (visible.length === 0) return null;
   // fork: restart-compaction
   const labelOf = (environmentId: EnvironmentId) =>
@@ -54,23 +53,72 @@ export function DatabaseStorageNotice({
     environmentId;
   // fork: restart-compaction: the desktop app compacts its own database while it restarts.
   const commandRecommendations = visible.filter(
-    ({ status }) => status.restartCompaction === undefined,
+    ({ environmentId, status }) =>
+      status.restartCompaction === undefined &&
+      !status.incrementalVacuumEnabled &&
+      !dismissed.includes(environmentId),
   );
   return (
     <SettingsSection id="storage-database" title="Database">
+      {/* fork: project-lifecycle */}
+      {visible
+        .filter(({ environmentId }) => dismissed.includes(environmentId))
+        .map(({ environmentId, status }) => (
+          <SettingsRow
+            key={environmentId}
+            title={`Database on ${labelOf(environmentId)}`}
+            description={`${(status.databaseBytes / 1024 ** 3).toFixed(2)} GiB stored`}
+            control={
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() =>
+                  setDismissed((current) => current.filter((id) => id !== environmentId))
+                }
+              >
+                Show details
+              </Button>
+            }
+          />
+        ))}
       {/* fork: restart-compaction */}
       {visible.map(({ environmentId, status }) =>
-        status.restartCompaction === undefined ? null : (
+        status.restartCompaction === undefined || dismissed.includes(environmentId) ? null : (
           <RestartCompactionRow
             key={environmentId}
             environmentId={environmentId}
             label={labelOf(environmentId)}
             reclaimableBytes={status.reclaimableBytes}
+            databaseBytes={status.databaseBytes} // fork: project-lifecycle
             state={status.restartCompaction}
             onDismiss={() => setDismissed((current) => [...current, environmentId])}
           />
         ),
       )}
+      {/* fork: project-lifecycle */}
+      {visible
+        .filter(
+          ({ environmentId, status }) =>
+            status.restartCompaction === undefined &&
+            status.incrementalVacuumEnabled &&
+            !dismissed.includes(environmentId),
+        )
+        .map(({ environmentId, status }) => (
+          <SettingsRow
+            key={environmentId}
+            title={`Database on ${labelOf(environmentId)}`}
+            description={`${(status.databaseBytes / 1024 ** 3).toFixed(2)} GiB stored. Freed pages return to disk automatically.`}
+            control={
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => setDismissed((current) => [...current, environmentId])}
+              >
+                Collapse
+              </Button>
+            }
+          />
+        ))}
       {/* fork: restart-compaction */}
       {commandRecommendations.length === 0 ? null : (
         <SettingsRow
@@ -82,7 +130,7 @@ export function DatabaseStorageNotice({
       {commandRecommendations.map(({ environmentId, status }) => (
         <SettingsRow
           key={environmentId}
-          title={`${(status.reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${
+          title={`${(status.databaseBytes / 1024 ** 3).toFixed(2)} GiB stored on ${
             environments.find((environment) => environment.environmentId === environmentId)
               ?.label ?? environmentId
           }`}
@@ -101,7 +149,7 @@ export function DatabaseStorageNotice({
                 size="xs"
                 onClick={() => setDismissed((current) => [...current, environmentId])}
               >
-                Dismiss
+                Collapse
               </Button>
             </div>
           }
@@ -116,12 +164,14 @@ function RestartCompactionRow({
   environmentId,
   label,
   reclaimableBytes,
+  databaseBytes, // fork: project-lifecycle
   state,
   onDismiss,
 }: {
   environmentId: EnvironmentId;
   label: string;
   reclaimableBytes: number;
+  databaseBytes: number; // fork: project-lifecycle
   state: RestartCompactionState;
   onDismiss: () => void;
 }) {
@@ -145,12 +195,19 @@ function RestartCompactionRow({
   const { plan, lastAttempt } = describeRestartCompaction(state, label);
   return (
     <SettingsRow
-      title={`Reclaim ${(reclaimableBytes / 1024 ** 3).toFixed(1)} GiB on ${label}`}
+      title={`Database on ${label}`} // fork: project-lifecycle
       description={
         <>
-          Old history is cleaned up automatically, but this database still holds the freed space.{" "}
-          {plan} Compacting can take several minutes while Loom starts.
-          {lastAttempt === null ? null : <span className="mt-2 block">{lastAttempt}</span>}
+          {/* fork: project-lifecycle */}
+          {(databaseBytes / 1024 ** 3).toFixed(2)} GiB stored;{" "}
+          {(reclaimableBytes / 1024 ** 3).toFixed(2)} GiB can be reclaimed. {plan} Compacting can
+          take several minutes while Loom starts.
+          {lastAttempt === null ? null : (
+            <span className="mt-2 block">
+              {lastAttempt}
+              {state.lastAttempt ? ` (${new Date(state.lastAttempt.at).toLocaleString()})` : ""}
+            </span>
+          )}
         </>
       }
       control={
@@ -174,7 +231,7 @@ function RestartCompactionRow({
               Compact at next restart
             </Button>
             <Button variant="ghost" size="xs" onClick={onDismiss}>
-              Dismiss
+              Collapse
             </Button>
           </div>
         )

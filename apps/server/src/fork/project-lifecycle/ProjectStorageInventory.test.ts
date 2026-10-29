@@ -45,13 +45,26 @@ const fixture = Effect.gen(function* () {
   yield* fs.writeFileString(`${primary}/file`, "primary".repeat(8192));
   yield* fs.writeFileString(`${worktree}/file`, "worktree".repeat(8192));
   yield* fs.symlink(primary, `${root}/alias`);
+  const config = yield* Config.ServerConfig;
+  const library = `${primary}/library`,
+    mirror = `${root}/mirror`,
+    lane = `${root}/lane`,
+    image = `${root}/image`;
+  const scratch = `${config.baseDir}/scratch/task`;
+  for (const folder of [library, mirror, lane, image, scratch]) {
+    yield* fs.makeDirectory(folder, { recursive: true });
+    yield* fs.writeFileString(`${folder}/file`, "synthetic data".repeat(1024));
+  }
+  yield* fs.writeFileString(`${image}/space.asif`, "image allocation".repeat(1024));
+  yield* fs.writeFileString(config.dbPath, "synthetic database".repeat(1024));
   const projectId = ProjectId.make("project");
   const snapshot = {
-    projects: [
-      { id: projectId, workspaceRoot: primary },
-      { id: ProjectId.make("alias"), workspaceRoot: `${root}/alias` },
+    threads: [
+      { id: ThreadId.make("thread"), projectId, worktreePath: worktree },
+      { id: ThreadId.make("borrowed"), projectId, worktreePath: primary },
+      { id: ThreadId.make("released"), projectId, worktreePath: `${root}/gone` },
+      { id: ThreadId.make("scratch"), projectId: ProjectId.make("scratch"), worktreePath: scratch },
     ],
-    threads: [{ id: ThreadId.make("thread"), projectId, worktreePath: worktree }],
     archivedThreads: [],
   } as unknown as OrchestrationV2ThreadShellSnapshot;
   let reads = 0;
@@ -73,6 +86,7 @@ const fixture = Effect.gen(function* () {
           Effect.succeed([
             { id: projectId, workspaceRoot: primary },
             { id: ProjectId.make("alias"), workspaceRoot: `${root}/alias` },
+            { id: ProjectId.make("scratch"), workspaceRoot: `${config.baseDir}/scratch` },
           ] as unknown as ReadonlyArray<import("@t3tools/contracts").OrchestrationProjectShell>),
       }),
     ),
@@ -88,18 +102,36 @@ const fixture = Effect.gen(function* () {
     ),
     Layer.succeed(
       Workspace.LibraryWorkspaceStore,
-      partial<Workspace.LibraryWorkspaceStore["Service"]>({ receipts: Effect.succeed([]) }),
+      partial<Workspace.LibraryWorkspaceStore["Service"]>({
+        receipts: Effect.succeed([
+          {
+            copy: { rootPath: library, ownership: "managed", state: "ready" },
+            archivePath: null,
+            removalPath: null,
+          },
+          {
+            copy: { rootPath: primary, ownership: "borrowed", state: "ready" },
+            archivePath: null,
+            removalPath: null,
+          },
+        ] as unknown as ReadonlyArray<Workspace.WorkspaceReceipt>),
+      }),
     ),
     Layer.succeed(
       Mirrors.LibraryGitFetch,
-      partial<Mirrors.LibraryGitFetch["Service"]>({ mirrorLocations: Effect.succeed([]) }),
+      partial<Mirrors.LibraryGitFetch["Service"]>({
+        mirrorLocations: Effect.succeed([{ key: "mirror", path: mirror }]),
+      }),
     ),
     Layer.succeed(
       Lifecycle.ProjectLifecycleService,
       partial<Lifecycle.ProjectLifecycleService["Service"]>({
         changes: Stream.succeed({
-          lanes: [],
-          releasedCheckouts: [],
+          lanes: [
+            { backend: "folder", laneDir: lane, spacePath: lane },
+            { backend: "image", laneDir: image, spacePath: `${image}/mounted` },
+          ],
+          releasedCheckouts: [ThreadId.make("released")],
           unrecordedLanes: [],
         } as unknown as ProjectLifecycleStatus),
       }),
@@ -146,7 +178,10 @@ describe("project storage inventory", () => {
         expect(worktrees.locations).toBe(1);
         expect(primary.bytes).toBeGreaterThan(0);
         expect(worktrees.bytes).toBeGreaterThan(0);
-        expect(a.breakdown.categories.find((row) => row.kind === "database")?.bytes).toBeNull();
+        expect(worktrees.released).toBe(1);
+        for (const kind of ["library-copies", "git-mirrors", "lanes", "scratch", "database"])
+          expect(a.breakdown.categories.find((row) => row.kind === kind)?.bytes).toBeGreaterThan(0);
+        expect(a.breakdown.categories.find((row) => row.kind === "lanes")?.locations).toBe(2);
         yield* inventory.byCategory();
         expect(f.reads()).toBe(1);
         yield* inventory.byCategory({ refresh: true });

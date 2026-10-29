@@ -369,7 +369,7 @@ apps/web/src/components/auth/PairingRouteSurface.tsx	library-sign-in	6
 apps/web/src/components/chat/composerFocusRedirect.ts	ext-panels	1
 apps/web/src/components/settings/ConnectionsSettings.tsx	library-sign-in	4
 apps/web/src/components/settings/SourceControlSettings.tsx	github-host-setup	11
-apps/web/src/components/settings/StorageSettings.tsx	project-lifecycle	16
+apps/web/src/components/settings/StorageSettings.tsx	project-lifecycle	18
 apps/web/src/components/settings/settingsSearch.ts	ext-keybindings	5
 apps/web/src/components/settings/settingsSearch.ts	github-host-setup	1
 apps/web/src/components/ui/button.tsx	iris-pill	7
@@ -943,7 +943,7 @@ apps/web/src/components/chat/ChatOverlayHosts.tsx	project-lifecycle	10
 packages/client-runtime/src/operations/commands.test.ts	project-lifecycle	2
 packages/client-runtime/src/operations/commands.ts	project-lifecycle	3
 packages/client-runtime/src/state/commandPermissions.test.ts	project-lifecycle	1
-packages/client-runtime/src/state/server.ts	project-lifecycle	1
+packages/client-runtime/src/state/server.ts	project-lifecycle	3
 packages/contracts/src/clientRpcPermissions.ts	project-lifecycle	1
 packages/contracts/src/orchestrationV2.ts	project-lifecycle	1
 packages/contracts/src/orchestrationV2.ts	workspace-handoff	1
@@ -1153,7 +1153,7 @@ apps/desktop/src/window/DesktopApplicationMenu.test.ts	restart-compaction	1
 apps/desktop/src/window/DesktopWindow.test.ts	restart-continuity	6
 apps/desktop/src/window/DesktopWindow.ts	restart-compaction	7
 apps/desktop/src/window/DesktopWindow.ts	restart-continuity	3
-apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	restart-compaction	14
+apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	restart-compaction	10
 apps/server/src/cli/config.ts	restart-compaction	2
 apps/server/src/cli/config.ts	smoke-port-race	1
 apps/server/src/config.ts	restart-compaction	1
@@ -1193,7 +1193,7 @@ packages/contracts/src/ipc.ts	tailnet-ownership	5
 packages/contracts/src/worktreeSetup.ts	library-launch-files	2
 apps/desktop/src/app/DesktopClerk.ts	clerk-token-mode	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-sign-in	5
-apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library	1
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library	8
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	webhook-delivery-issues	2
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx	library-save	2
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx	library	3
@@ -1548,3 +1548,6 @@ apps/web/src/hooks/useThreadActions.permissions.test.ts	library-projects	4
 apps/server/src/mcp/toolkits/environment/tools.ts	project-lifecycle	5
 apps/server/src/mcp/toolkits/environment/handlers.ts	project-lifecycle	3
 apps/server/src/mcp/toolkits/environment/handlers.test.ts	project-lifecycle	5
+apps/web/src/components/settings/DatabaseStorageNotice.tsx	project-lifecycle	9
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	project-lifecycle	2
+apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-lifecycle	3

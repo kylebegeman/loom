@@ -3,6 +3,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -13,7 +14,9 @@ export class StorageCleanupAccounting extends Context.Service<
   StorageCleanupAccounting,
   {
     readonly record: (
-      input: Pick<AdditionalStorageCleanupEntry, "id" | "kind" | "path" | "bytes" | "reason">,
+      input: Pick<AdditionalStorageCleanupEntry, "id" | "kind" | "path" | "bytes" | "reason"> & {
+        readonly outcome?: "removed" | "failed";
+      },
     ) => Effect.Effect<void>;
     readonly history: Effect.Effect<{
       readonly revision: number;
@@ -32,7 +35,7 @@ export const layer = Layer.sync(StorageCleanupAccounting, () => {
       entries.set(input.id, {
         ...input,
         at,
-        outcome: "removed",
+        outcome: input.outcome ?? "removed",
         projectPath: null,
         threadId: null,
         threadTitle: null,
@@ -78,21 +81,25 @@ export const accountStorageRemoval = Effect.fn("StorageCleanupAccounting.remove"
     Effect.orElseSucceed(() => ({ bytes: null, present: [] as string[] })),
   );
   const before = yield* measure();
-  const result = yield* operation;
+  const result = yield* Effect.exit(operation);
   const after = yield* measure();
-  if (before.present.some((target) => !after.present.includes(target))) {
-    const bytes =
-      before.bytes === null || after.bytes === null
-        ? null
-        : Math.max(0, before.bytes - after.bytes);
+  const bytes =
+    before.bytes === null || after.bytes === null ? null : Math.max(0, before.bytes - after.bytes);
+  if (
+    (bytes !== null && bytes > 0) ||
+    before.present.some((target) => !after.present.includes(target))
+  ) {
     if (bytes === null || bytes > 0)
       yield* accounting.value.record({
-        ...input,
-        id: `${input.id}:${before.present.join("\0")}`,
+        kind: input.kind,
+        path: input.path,
+        reason: input.reason,
+        id: `${input.id}:${before.present.join("\0")}:${before.bytes ?? "unknown"}`,
         bytes,
+        outcome: Exit.isFailure(result) ? "failed" : "removed",
       });
   }
-  return result;
+  return yield* result;
 });
 
 export const makeStorageRemovalRecorder = Effect.gen(function* () {
