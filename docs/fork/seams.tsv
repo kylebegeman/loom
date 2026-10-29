@@ -1549,3 +1549,7 @@ apps/web/src/components/settings/SavedEnvironmentRows.tsx	directory-computers	4
 apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx	directory-computers	2
 apps/server/src/orchestration-v2/EventSink.ts	machine-updates	4
 packages/shared/package.json	-	"./fork/restart-impact"
+apps/server/src/server.ts	machine-updates	3
+apps/server/src/cloud/selfUpdate.ts	machine-updates	3
+apps/server/src/desktopUpdate/DesktopAppUpdate.ts	machine-updates	6
+evals/mcp-tool-use/run.ts	machine-updates	2

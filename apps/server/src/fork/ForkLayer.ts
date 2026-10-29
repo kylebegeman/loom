@@ -1,4 +1,10 @@
 import * as AttentionRetry from "./attention/AttentionRetry.ts";
+import * as UpdatePlans from "./machine-updates/UpdatePlans.ts";
+import * as UpdateRuntime from "./machine-updates/UpdateRuntime.ts";
+import * as UpdatePlanStore from "./machine-updates/UpdatePlanStore.ts";
+import * as UpdateHandoff from "./machine-updates/UpdateHandoff.ts";
+import * as UpdateFence from "./machine-updates/UpdateFence.ts";
+import { UpdateHttpRoutes } from "./machine-updates/http.ts";
 import * as SkillRegistry from "./skill-registry/SkillRegistryService.ts";
 import * as SkillStore from "./skill-registry/SkillStore.ts";
 import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
@@ -365,6 +371,17 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  UpdatePlans.layer.pipe(
+    Layer.provideMerge(
+      UpdateHandoff.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(ProjectionStore.layer, UpdateFence.layer, UpdatePlanStore.layer),
+        ),
+      ),
+    ),
+    Layer.provide(UpdatePlanStore.layer),
+    Layer.provide(UpdateRuntime.layer),
+  ),
   AttentionRetry.layer.pipe(Layer.provide(RuntimeLayer.layerThreadManagementProvided)),
   SkillRegistry.layer.pipe(
     Layer.provide(SkillStore.layer),
@@ -619,6 +636,7 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
 export const ForkRoutesLayer = Layer.mergeAll(
+  UpdateHttpRoutes,
   Layer.empty,
   VaultBrokerHttpRoutes,
   VaultWorkloadHttpRoutes,

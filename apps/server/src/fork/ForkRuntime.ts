@@ -1,3 +1,5 @@
+import type { UpdatePlans } from "./machine-updates/UpdatePlans.ts";
+import type { UpdateHandoff } from "./machine-updates/UpdateHandoff.ts";
 import type { AttentionRetry } from "./attention/AttentionRetry.ts";
 import type { SkillRegistryService } from "./skill-registry/SkillRegistryService.ts";
 import type { LibraryPublishingCredential } from "../auth/LibraryPublishingCredential.ts";
@@ -75,6 +77,8 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | UpdatePlans
+  | UpdateHandoff
   | AttentionRetry
   | SkillRegistryService
   | LibraryPublishingCredential

@@ -285,6 +285,9 @@ const layerDesktopAppUpdate = DesktopAppUpdate.layer.pipe(
   Layer.provide(layerDesktopTelemetryReceiver),
 );
 
+// fork: machine-updates
+const layerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate));
+
 const layerBackground = BackgroundPolicy.layer.pipe(
   Layer.provide(layerHostPowerMonitor),
   Layer.provideMerge(layerServerSettings),
@@ -675,6 +678,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // show webhook addresses on the relay like scheduled tasks.
   Layer.provideMerge(
     ForkLayer.pipe(
+      Layer.provide(layerSelfUpdate), // fork: machine-updates
       Layer.provide(Layer.merge(layerPullRequestService, layerScheduledTaskWebhookOrigin)),
     ),
   ),
@@ -835,7 +839,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(PreviewAutomationBroker.layer),
-  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
+  Layer.provide(layerSelfUpdate), // fork: machine-updates
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),

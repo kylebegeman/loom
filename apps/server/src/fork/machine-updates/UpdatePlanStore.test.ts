@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { UpdatePlan } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as ServerConfig from "../../config.ts";
 import * as UpdatePlanStore from "./UpdatePlanStore.ts";
@@ -25,16 +26,11 @@ it.live("atomically reloads an armed plan and refuses corrupt or oversized state
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "loom-update-plan-" });
       const config = ServerConfig.layerTest(root, root);
-      const store = yield* UpdatePlanStore.UpdatePlanStore.pipe(
-        Effect.provide(UpdatePlanStore.layer),
-        Effect.provide(config),
-      );
+      const storeLayer = UpdatePlanStore.layer.pipe(Layer.provide(config));
+      const store = yield* UpdatePlanStore.UpdatePlanStore.pipe(Effect.provide(storeLayer));
       assert.isNull(yield* store.read);
       yield* store.write(plan);
-      const reloaded = yield* UpdatePlanStore.UpdatePlanStore.pipe(
-        Effect.provide(UpdatePlanStore.layer),
-        Effect.provide(config),
-      );
+      const reloaded = yield* UpdatePlanStore.UpdatePlanStore.pipe(Effect.provide(storeLayer));
       assert.deepEqual(yield* reloaded.read, plan);
       const settings = yield* ServerConfig.ServerConfig.pipe(Effect.provide(config));
       const directory = path.join(settings.stateDir, "fork", "machine-updates");
