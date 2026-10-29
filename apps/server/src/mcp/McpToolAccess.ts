@@ -8,6 +8,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import { requireToolFamily, toolFamily } from "../fork/mcp/toolFamilies.ts"; // fork: ext-mcp
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Ref from "effect/Ref";
@@ -258,8 +259,9 @@ export const startsThreads = <P, A, E, R>(
         return yield* handle(params, yield* started(caller, params));
       }),
     (params: P) =>
-      Effect.flatMap(writingCaller, (caller) =>
-        refuseBotRunSpawn(caller.scope).pipe(Effect.andThen(started(caller, params))), // fork: bots
+      Effect.flatMap(
+        writingCaller,
+        (caller) => refuseBotRunSpawn(caller.scope).pipe(Effect.andThen(started(caller, params))), // fork: bots
       ),
   );
 };
@@ -390,6 +392,16 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
   const forwarding = yield* Effect.serviceOption(PeerForwarding.PeerForwarding);
   const handlers: Record<string, unknown> = { ...checked };
   for (const [name, declaration] of Object.entries<Declaration<unknown>>(declarations)) {
+    // fork: ext-mcp
+    const family = toolFamily(name);
+    // fork: ext-mcp
+    if (family) {
+      const call = handlers[name] as (
+        params: object,
+      ) => Effect.Effect<unknown, Tool.Failure<Tools[keyof Tools]>>;
+      handlers[name] = (params: object) =>
+        requireToolFamily(family).pipe(Effect.andThen(() => call(params)));
+    }
     const tool = toolkit.tools[name];
     if (tool === undefined || !takesLinkedEnvironment(tool)) continue;
     const remote = remoteCheckOf(declaration);

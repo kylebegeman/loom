@@ -7,6 +7,7 @@
 #   scripts/fork/loom.sh upstream-due
 #   scripts/fork/loom.sh upstream-overlap <path or topic>...
 #   scripts/fork/loom.sh check
+#   scripts/fork/loom.sh compat
 #   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue] [--pr] [--resolve]
 #   scripts/fork/loom.sh review-integration [--fix]
 #   scripts/fork/loom.sh close-superseded
@@ -1670,6 +1671,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     merge-integration) shift; cmd_merge_integration "$@" ;;
     notify) shift; cmd_notify "$@" ;;
     check) run_checks ;;
+    compat) node "$REPO_ROOT/scripts/fork/compat.ts" ;;
     integrate) shift; cmd_integrate "$@" ;;
     land) shift; cmd_land "$@" ;;
     build) cmd_build ;;

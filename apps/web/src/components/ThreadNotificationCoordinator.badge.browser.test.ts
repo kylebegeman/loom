@@ -87,27 +87,20 @@ vi.mock(import("../threadNotifications"), async (original) => ({
   setNotificationBadge: state.badge,
 }));
 
-// fork: respectful-notifications
-vi.mock(import("../state/threads"), async (original) => {
-  const actual = await original();
+// fork: respectful-notifications: a second mock of ../state/threads would race the one above.
+vi.mock(import("../fork/attention/attentionBadge"), async () => {
   const { Atom } = await import("effect/reactivity");
   const { selectAttentionThreadShells } = await import("@t3tools/contracts/fork");
-  const { presentThreadShell } = await import("@t3tools/client-runtime/state/models");
+  const countAtom = Atom.make((get) =>
+    get(environmentIdsAtom).reduce((count, id) => {
+      const value = get(shellAtom(id)) as ReturnType<typeof shell> | null;
+      const threads = value && Option.isSome(value.snapshot) ? value.snapshot.value.threads : [];
+      return count + selectAttentionThreadShells(threads, Date.now()).length;
+    }, 0),
+  );
   return {
-    ...actual,
-    environmentThreadShells: {
-      ...actual.environmentThreadShells,
-      attentionThreadShellsAtom: Atom.make((get) =>
-        get(environmentIdsAtom).flatMap((id) => {
-          const value = get(shellAtom(id)) as ReturnType<typeof shell> | null;
-          const threads =
-            value && Option.isSome(value.snapshot) ? value.snapshot.value.threads : [];
-          return selectAttentionThreadShells(threads, Date.now()).map((thread) =>
-            presentThreadShell(EnvironmentId.make(id), thread),
-          );
-        }),
-      ),
-    },
+    startAttentionBadge: (registry: AtomRegistry.AtomRegistry) =>
+      registry.subscribe(countAtom, state.badge, { immediate: true }),
   };
 });
 

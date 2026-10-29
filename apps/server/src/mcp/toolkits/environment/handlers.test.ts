@@ -18,7 +18,12 @@ import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandE
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
 import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
-import * as StorageCleanup from "../../../storageCleanup.ts"; // fork: mini-native-retention
+// fork: project-lifecycle
+import { ForkRuntime, type ForkServices } from "../../../fork/ForkRuntime.ts";
+// fork: project-lifecycle
+import * as Context from "effect/Context";
+// fork: project-lifecycle
+import { ProjectStorageInventory } from "../../../fork/project-lifecycle/ProjectStorageInventory.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -135,7 +140,8 @@ it.effect("reads cleanup reports without running cleanup and refuses another env
           Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         );
     const results = yield* read(caller);
-    expect(results.at(-1)?.result).toBeNull();
+    // fork: project-lifecycle
+    expect(results.at(-1)?.result).toMatchObject({ cleanup: null, breakdown: { categories: [] } });
     const denied = yield* read({ ...caller, environmentId: EnvironmentId.make("other") });
     expect(denied.at(-1)?.result).toMatchObject({ code: "capability_denied" });
   }).pipe(
@@ -150,10 +156,27 @@ it.effect("reads cleanup reports without running cleanup and refuses another env
           }),
         ),
         Layer.provideMerge(
-          Layer.mock(StorageCleanup.StorageCleanup)({
-            latestReport: Effect.succeed(null),
-            runNow: Effect.die("A read must not run cleanup"),
-          }),
+          // fork: project-lifecycle
+          Layer.succeed(
+            ForkRuntime,
+            Context.make(
+              ProjectStorageInventory,
+              ProjectStorageInventory.of({
+                byCategory: () =>
+                  Effect.succeed({
+                    breakdown: {
+                      measuredAt: "2026-10-28T12:00:00.000Z",
+                      categories: [],
+                      omittedLocations: 0,
+                      database: null,
+                    },
+                    cleanup: null,
+                    additionalEntries: [],
+                    additionalBytesFreed: 0,
+                  }),
+              }),
+            ) as unknown as Context.Context<ForkServices>,
+          ),
         ),
       ),
     ),

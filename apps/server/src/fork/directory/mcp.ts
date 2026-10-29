@@ -1,10 +1,12 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   DirectoryError,
+  DirectoryEnvironment,
   DirectoryForgetRequest,
   DirectoryListing,
   DirectoryReporting,
 } from "@t3tools/contracts/fork";
+import { loomCompatibility } from "@t3tools/shared/fork/compatibility";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -14,6 +16,27 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { DirectoryReporter } from "./DirectoryReporter.ts";
 import { DirectoryService } from "./DirectoryService.ts";
+
+const CompatibleDirectoryListing = Schema.Struct({
+  ...DirectoryListing.fields,
+  environments: Schema.Array(
+    Schema.Struct({
+      ...DirectoryEnvironment.fields,
+      belowCompatibilityFloor: Schema.Boolean,
+      missingCompatibilityFeatures: Schema.Array(Schema.String),
+    }),
+  ),
+});
+
+export function directoryCompatibility(listing: DirectoryListing) {
+  return {
+    ...listing,
+    environments: listing.environments.map((environment) => ({
+      ...environment,
+      ...loomCompatibility(environment.loomFeatures),
+    })),
+  };
+}
 
 export const DirectoryToolkit = Toolkit.make(
   Tool.make("loom_directory_forget", {
@@ -29,7 +52,7 @@ export const DirectoryToolkit = Toolkit.make(
   Tool.make("loom_directory_computers", {
     description:
       "List the computers and LoomOS machines in this Library's directory: names, versions, platforms, features, routes, providers, key fingerprints and when each last reported. Answered by the Library authority, also when called on another computer. Includes no credentials.",
-    success: DirectoryListing,
+    success: CompatibleDirectoryListing,
     failure: Schema.Union([DirectoryError, OrchestratorMcpFailure]),
   })
     .annotate(Tool.Readonly, true)
@@ -56,6 +79,7 @@ export const directoryHandlers = McpToolAccess.toLayer(
       ),
       loom_directory_computers: McpToolAccess.reads(() =>
         withForkRuntime(Effect.flatMap(DirectoryService, (service) => service.computers)).pipe(
+          Effect.map(directoryCompatibility),
           Effect.provideService(ForkRuntime, runtime),
         ),
       ),

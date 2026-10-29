@@ -82,6 +82,11 @@ import { RemoteComputerAccess } from "~/fork/connections/RemoteComputerAccess";
 import { RenameComputer } from "~/fork/connections/RenameComputer";
 import { ComputerReachDetails } from "~/fork/reach/ComputerReach"; // fork: reach
 
+// fork: directory-computers
+import { ComputerHealthSummary } from "~/fork/connection-health/ComputerHealthSummary";
+// fork: directory-computers
+import { DirectoryReporting } from "~/fork/directory-computers/DirectoryReporting";
+
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
   removingEnvironmentId: EnvironmentId | null;
@@ -289,6 +294,8 @@ export function SavedBackendListRow({
       // fork: fleet-connections -- routes and permissions moved into the details panel.
       below={
         <>
+          {/* fork: directory-computers */}
+          <ComputerHealthSummary environment={environment} />
           {diagnosis ? (
             <ConnectionDiagnosisSummary
               diagnosis={diagnosis}
@@ -338,6 +345,8 @@ export function SavedBackendListRow({
             </section>
             {/* fork: reach */}
             <ComputerReachDetails environment={environment} />
+            {/* fork: directory-computers */}
+            <DirectoryReporting environment={environment} />
             {/* fork: identity-renewal */}
             <SavedComputerIdentity entry={environment.entry} phase={environment.connection.phase} />
             {/* fork: fleet-connections */}

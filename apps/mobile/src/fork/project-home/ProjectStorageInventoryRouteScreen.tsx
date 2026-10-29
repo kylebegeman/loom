@@ -74,7 +74,7 @@ export function ProjectStorageInventoryRouteScreen() {
   return (
     <View className="flex-1 bg-screen">
       <AppBar
-        title="Files on computers"
+        title="Working files"
         onBack={back}
         search={{
           value: query,

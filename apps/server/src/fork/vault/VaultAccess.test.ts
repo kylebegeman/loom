@@ -30,6 +30,7 @@ import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as AccessPolicy from "./AccessPolicy.ts";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -235,7 +236,7 @@ const fixture = () => {
   );
   const core = VaultCore.layer.pipe(Layer.provide(dependencies));
   const layer = VaultAccess.layer.pipe(
-    Layer.provide(
+    Layer.provideMerge(
       ApprovalNotifications.layer.pipe(
         Layer.provide(
           Layer.succeed(ApprovalNotificationTransport.ApprovalNotificationTransport, {
@@ -264,6 +265,7 @@ function withAccess<A, E>(
   use: (services: {
     access: VaultAccess.VaultAccess["Service"];
     core: VaultCore.VaultCore["Service"];
+    notifications: ApprovalNotifications.ApprovalNotifications["Service"];
     fixture: ReturnType<typeof fixture>;
   }) => Effect.Effect<A, E>,
   kind: VaultItemKind = "secret",
@@ -271,7 +273,8 @@ function withAccess<A, E>(
   const f = fixture();
   return Effect.gen(function* () {
     const access = yield* VaultAccess.VaultAccess,
-      core = yield* VaultCore.VaultCore;
+      core = yield* VaultCore.VaultCore,
+      notifications = yield* ApprovalNotifications.ApprovalNotifications;
     yield* core.save(
       {
         id: itemId,
@@ -283,7 +286,7 @@ function withAccess<A, E>(
       },
       "human",
     );
-    return yield* use({ access, core, fixture: f });
+    return yield* use({ access, core, notifications, fixture: f });
   }).pipe(Effect.provide(f.layer));
 }
 it.effect("audits human RPC reveal with its authenticated actor before returning the value", () =>
@@ -836,6 +839,69 @@ const approveInput = {
   decision: "approve" as const,
   durationMs: 300_000 as const,
 };
+
+it.effect("publishes create, decision, cancellation and expiry without replay duplicates", () =>
+  withAccess(({ access, notifications }) =>
+    Effect.gen(function* () {
+      const updates = yield* notifications.changes.pipe(
+        Stream.take(6),
+        Stream.runCollect,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* access.approvalCreate(approvalInput, `thread:${threadId}`, Effect.void);
+      yield* access.approvalCreate(approvalInput, `thread:${threadId}`, Effect.void);
+      yield* access.approvalChange(approveInput, "human", Effect.void);
+      yield* TestClock.adjust("5 minutes");
+      yield* access.approvalRetain;
+      yield* access.approvalRetain;
+      const next = { ...approvalInput, id: "d".repeat(32) };
+      yield* access.approvalCreate(next, `thread:${threadId}`, Effect.void);
+      yield* access.approvalCancel(
+        { id: next.id, operationId: "c".repeat(32), expectedRevision: 1 },
+        threadId,
+        Effect.void,
+      );
+      expect((yield* Fiber.join(updates)).map(({ state }) => state)).toEqual([
+        "pending",
+        "approved",
+        "expired",
+        "expired",
+        "pending",
+        "cancelled",
+      ]);
+    }),
+  ),
+);
+
+it.effect("a waiting requester observes a decision made before its notification returns", () =>
+  withAccess(({ access, fixture }) =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<"delivered">();
+      fixture.state.notificationBarrier = { started, release };
+      const waiting = yield* access
+        .approvalCreate(approvalInput, `thread:${threadId}`, Effect.void, true)
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* access.approvalChange(approveInput, "human", Effect.void);
+      yield* Deferred.succeed(release, "delivered");
+      expect((yield* Fiber.join(waiting)).state).toBe("approved");
+    }),
+  ),
+);
+
+it.effect("a waiting requester rechecks expired access after its bounded wait", () =>
+  withAccess(({ access }) =>
+    Effect.gen(function* () {
+      const waiting = yield* access
+        .approvalCreate(approvalInput, `thread:${threadId}`, Effect.void, true)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("10 minutes");
+      expect((yield* Fiber.join(waiting)).state).toBe("expired");
+    }),
+  ),
+);
+
 it.effect(
   "atomically approves a durable request as a bounded grant, expires it and visibly revokes it",
   () =>

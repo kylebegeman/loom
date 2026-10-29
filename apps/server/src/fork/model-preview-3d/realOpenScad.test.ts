@@ -224,7 +224,7 @@ realTest(
         client: undefined,
 
         requestNamespace: "model-test",
-        capabilities: new Set<never>(),
+        capabilities: new Set(["hardware"] as const),
         issuedAt: 0,
       };
       for (const name of ["bracket.scad", "cuboid.stl", "cuboid.obj", "inch-cube.3mf"]) {

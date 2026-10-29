@@ -6,7 +6,6 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   CommandId,
-  type EnvironmentId,
   type RunId,
   isProviderAvailable,
   MessageId,
@@ -115,6 +114,7 @@ import {
   type McpInvocationScope,
   type McpThreadInvocationScope,
   requireThreadScope,
+  threadLinkFor,
 } from "./McpInvocationContext.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import {
@@ -790,7 +790,7 @@ function threadPullRequests(
 }
 
 function listItemFromShell(
-  environmentId: EnvironmentId,
+  scope: McpInvocationScope,
   shell: OrchestrationV2ThreadShell,
   nowMs: number,
   // fork: attention-status
@@ -811,7 +811,7 @@ function listItemFromShell(
             createdAt: DateTime.formatIso(pendingRequest.createdAt),
           },
     title: shell.title,
-    link: formatThreadLink({ environmentId, threadId: shell.id }),
+    link: threadLinkFor(scope, shell.id),
     createdBy: shell.createdBy,
     creationSource: shell.creationSource,
     status: shell.activityRunStatus ?? shell.status,
@@ -834,7 +834,7 @@ function listItemFromShell(
 }
 
 function threadDetail(
-  environmentId: EnvironmentId,
+  scope: McpInvocationScope,
   projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "runtimeRequests">,
   itemCount: number,
   shell: OrchestrationV2ThreadShell,
@@ -846,7 +846,7 @@ function threadDetail(
     threadId: projection.thread.id,
     projectId: projection.thread.projectId,
     title: projection.thread.title,
-    link: formatThreadLink({ environmentId, threadId: projection.thread.id }),
+    link: threadLinkFor(scope, projection.thread.id),
     createdBy: projection.thread.createdBy,
     creationSource: projection.thread.creationSource,
     status: active?.status ?? latest?.status ?? "idle",
@@ -960,6 +960,17 @@ function turnItemText(item: OrchestrationV2TurnItem): string | null {
       return `Created thread ${item.targetThreadId} with ${item.targetProviderInstanceId} (${item.targetModel}).`;
     case "secret_request":
       return `Asked the user for ${item.label}: ${item.secretStatus}.`;
+    // fork: vault-approvals
+    case "vault_access_request":
+      return jsonText({
+        requestId: item.requestId,
+        itemLabel: item.itemLabel,
+        action: item.action,
+        destination: item.destination,
+        state: item.state,
+        requestExpiresAt: item.requestExpiresAt,
+        approvedUntil: item.approvedUntil,
+      });
     case "link_request":
       return item.linkStatus === "linked"
         ? `Linked ${item.linkedLabel ?? item.label ?? item.url ?? "an environment"} (${item.linkedAccess}).`
@@ -2989,7 +3000,7 @@ const make = Effect.gen(function* () {
         // fork: attention-status
         threads: page.map((shell) =>
           listItemFromShell(
-            scope.environmentId,
+            scope,
             shell,
             nowMs,
             shell.pendingRuntimeRequest ?? childRequests.get(shell.id) ?? null,
@@ -3075,7 +3086,7 @@ const make = Effect.gen(function* () {
       }
       return {
         thread: threadDetail(
-          scope.environmentId,
+          scope,
           target,
           timeline.totalItems,
           shell,
@@ -3139,7 +3150,7 @@ const make = Effect.gen(function* () {
         );
       return {
         threadId: input.threadId,
-        link: formatThreadLink({ environmentId: scope.environmentId, threadId: input.threadId }),
+        link: threadLinkFor(scope, input.threadId),
         messageId,
         runId: result.run.id,
         ...(result.run.delegatedTaskId === undefined ? {} : { taskId: result.run.delegatedTaskId }),

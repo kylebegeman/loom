@@ -76,7 +76,7 @@ const makeHarness = Effect.fn("ReachMcpTest.makeHarness")(function* (
       Effect.map((chunks) => chunks[0]?.result),
       Effect.provideService(McpInvocationContext, {
         environmentId: EnvironmentId.make("mcp-host"),
-        capabilities: new Set(["orchestration"] as const),
+        capabilities: new Set(["orchestration", "reach"] as const),
         issuedAt: 0,
         requestNamespace: "test",
         thread: undefined,

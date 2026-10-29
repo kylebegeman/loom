@@ -10,6 +10,15 @@ create no files in the repository. Selecting several checkouts lets you edit the
 unchanged fields keep each checkout's existing value. Offline checkouts do not receive
 changes.
 
+**Tools for agents** controls Hardware, Reach and Sites for the next agent session.
+On mobile, open **Settings > Computer folders**, select the project, and choose the tools
+for each computer.
+**Automatic** shows hardware tools for tscircuit, KiCad or OpenSCAD projects, Reach tools
+when your Library has a Reach zone, and Sites tools when the project links a site.
+Choose **Always** or **Never** to override a family, or return to **Automatic**.
+Resetting a profile also restores these choices to Automatic. The choices change which
+tools the agent sees; they do not grant permission to use them.
+
 Type `%` at the start of a word in any provider's composer to insert the notes as visible,
 editable text. When the project has no notes, **Add project notes** opens its profile.
 Agents can also read notes and command mappings with `loom_project_profiles_get`.

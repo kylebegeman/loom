@@ -1,3 +1,5 @@
+import { UPDATE_PLAN_WS_METHODS as UPDATES } from "./machine-updates.ts";
+import { ATTENTION_STATUS_WS_METHODS as ATTENTION } from "./attention-status.ts";
 import { SKILL_REGISTRY_WS_METHODS as SK } from "./skill-registry.ts";
 import { AuthFilesystemWriteScope } from "../auth.ts";
 import { PROJECT_WORKFLOW_WS_METHODS as WF } from "./project-workflows.ts";
@@ -52,6 +54,9 @@ import {
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [UPDATES.arm]: AuthEnvironmentMaintainScope,
+  [UPDATES.cancel]: AuthEnvironmentMaintainScope,
+  [ATTENTION.retry]: AuthOrchestrationOperateScope,
   [SK.setEnabled]: AuthSettingsWriteScope,
   [SK.fetchSource]: AuthFilesystemWriteScope,
   [SK.cancelFetch]: AuthFilesystemWriteScope,
@@ -115,6 +120,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [S.saveCheck]: AuthSettingsWriteScope,
   [S.runChecks]: AuthSettingsWriteScope,
   [LIB.flushHistory]: AuthOrchestrationOperateScope,
+  [LIB.setDeletedPreferences]: AuthSettingsWriteScope,
+  [LIB.eraseConversation]: AuthSettingsWriteScope,
   [LIB.registerThread]: AuthOrchestrationOperateScope,
   [LIB.inspectFolder]: AuthTerminalOperateScope,
   [LIB.createProject]: AuthSettingsWriteScope,

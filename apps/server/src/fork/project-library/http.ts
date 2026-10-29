@@ -1,11 +1,14 @@
 import {
   AuthLibraryPublishScope,
+  AuthSettingsWriteScope,
   AuthLibraryRecoveryReadScope,
   AuthOrchestrationOperateScope,
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
   LibraryProjectsRead,
+  LibraryEraseConversation,
+  LibrarySetDeletedPreferences,
   LibraryConversationsRead,
   LibraryConversationLookup,
   LibraryHistoryRead,
@@ -56,6 +59,8 @@ const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityRequest);
 const decodeProjectRead = Schema.decodeUnknownEffect(Schema.Struct({ projectId: LibraryId }));
 const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefProposal);
 const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
+const decodeErase = Schema.decodeUnknownEffect(LibraryEraseConversation);
+const decodeDeletedPreferences = Schema.decodeUnknownEffect(LibrarySetDeletedPreferences);
 const decodeProjectsRead = Schema.decodeUnknownEffect(LibraryProjectsRead);
 const decodeConversationsRead = Schema.decodeUnknownEffect(LibraryConversationsRead);
 const decodeConversationLookup = Schema.decodeUnknownEffect(LibraryConversationLookup);
@@ -67,6 +72,9 @@ const encodeHistory = Schema.encodeEffect(Schema.toCodecJson(LibraryThreadArchiv
 const handler = (
   operation:
     | "projects"
+    | "deleted-preferences"
+    | "set-deleted-preferences"
+    | "erase-conversation"
     | "conversations"
     | "lookup"
     | "history"
@@ -112,7 +120,17 @@ const handler = (
         (session.subject === `loom-host:${source}` &&
           fence.authorityId !== undefined &&
           fence.authorityEpoch !== undefined);
+      if (
+        (operation === "set-deleted-preferences" || operation === "erase-conversation") &&
+        (!session.scopes.includes(AuthSettingsWriteScope) ||
+          session.subject.startsWith("loom-host:"))
+      )
+        return HttpServerResponse.text("Access denied", { status: 403 });
       const library = yield* LibraryService.LibraryService;
+      if (operation === "deleted-preferences")
+        return HttpServerResponse.jsonUnsafe(yield* library.deletedPreferences, {
+          headers: { "cache-control": "no-store" },
+        });
       if (operation === "info")
         return HttpServerResponse.jsonUnsafe(yield* library.info, {
           headers: { "cache-control": "no-store" },
@@ -128,6 +146,18 @@ const handler = (
             Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
           )
         : readLibraryJson(request);
+      if (operation === "set-deleted-preferences") {
+        const input = yield* decodeDeletedPreferences(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.setDeletedPreferences(input, session));
+      }
+      if (operation === "erase-conversation") {
+        const input = yield* decodeErase(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.eraseConversation(input, session));
+      }
       if (operation === "projects") {
         const input = yield* decodeProjectsRead(body).pipe(
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
@@ -305,6 +335,21 @@ export const LibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/deleted/preferences",
+        handler("deleted-preferences").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/deleted/preferences/set",
+        handler("set-deleted-preferences").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/conversations/erase",
+        handler("erase-conversation").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       HttpRouter.add(
         "POST",
         "/api/loom/library/projects/list",

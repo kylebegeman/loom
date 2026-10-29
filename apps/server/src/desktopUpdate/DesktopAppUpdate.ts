@@ -44,6 +44,7 @@ export class DesktopAppUpdate extends Context.Service<
       reportProgress: (
         stage: ServerSelfUpdateProgressStage,
       ) => Effect.Effect<void, ServerSelfUpdateError>,
+      options?: { readonly waitForIdle?: boolean }, // fork: machine-updates
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
     /** Success stops the server; returns only on installation failure or timeout. */
     readonly commit: (
@@ -71,6 +72,7 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
     reportProgress: (
       stage: ServerSelfUpdateProgressStage,
     ) => Effect.Effect<void, ServerSelfUpdateError>,
+    waitForIdle = false, // fork: machine-updates
   ) {
     const lastStage = yield* Ref.make<ServerSelfUpdateProgressStage | null>(null);
     const emitStage = (
@@ -91,9 +93,12 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
       Stream.mapEffect(
         (report): Effect.Effect<Option.Option<DesktopUpdateStatusReport>, ServerSelfUpdateError> =>
           report.outcome === undefined
-            ? emitStage(desktopUpdateProgressStage(report.state)).pipe(
-                Effect.as(Option.none<DesktopUpdateStatusReport>()),
-              )
+            ? // fork: machine-updates
+              emitStage(
+                waitForIdle && report.state.status === "downloaded"
+                  ? null
+                  : desktopUpdateProgressStage(report.state),
+              ).pipe(Effect.as(Option.none<DesktopUpdateStatusReport>()))
             : Effect.succeedSome(report),
       ),
       Stream.filterMap(
@@ -133,7 +138,8 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
   });
 
   const run: DesktopAppUpdate["Service"]["run"] = Effect.fn("desktopUpdate.desktopAppUpdate.run")(
-    function* (reportProgress) {
+    function* (reportProgress, options) {
+      // fork: machine-updates
       if (!available) {
         return yield* failWith(
           // fork: brand
@@ -162,12 +168,19 @@ export const make = Effect.fn("desktopUpdate.desktopAppUpdate.make")(function* (
                 failWith("Could not reach the Loom desktop app on this machine.", error),
               ),
             ); // fork: brand
-          return yield* consumeReports(requestId, changes, reportProgress).pipe(
+          // fork: machine-updates
+          return yield* consumeReports(
+            requestId,
+            changes,
+            reportProgress,
+            options?.waitForIdle,
+          ).pipe(
             Effect.onInterrupt(() => receiver.cancelDesktopUpdate(requestId).pipe(Effect.ignore)),
           );
         }),
       ).pipe(
-        Effect.timeout(DESKTOP_UPDATE_TIMEOUT),
+        // fork: machine-updates
+        Effect.timeout(options?.waitForIdle ? Duration.infinity : DESKTOP_UPDATE_TIMEOUT),
         Effect.catchTags({
           TimeoutError: () => failWith("The desktop app did not finish the update in time."),
         }),

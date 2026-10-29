@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
-import { type DirectoryRoute } from "@t3tools/contracts/fork";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/reactivity";
+import { type DirectoryReporting, type DirectoryRoute } from "@t3tools/contracts/fork";
 
 import {
   directoryAgeText,
@@ -8,6 +11,7 @@ import {
   backgroundCheckFailureText,
   directoryProofAge,
   directoryReportingText,
+  directoryReportingView,
   directoryRoutes,
   directoryUnattachedMachines,
   directoryOldMachines,
@@ -42,7 +46,7 @@ const savedStudio = {
 describe("directoryAgeText", () => {
   it("reads in the largest whole unit", () => {
     expect(directoryAgeText(20_000)).toBe("just now");
-    expect(directoryAgeText(2 * MINUTES)).toBe("2 min ago");
+    expect(directoryAgeText(2 * MINUTES)).toBe("2 minutes ago");
     expect(directoryAgeText(60 * MINUTES)).toBe("1 hour ago");
     expect(directoryAgeText(3 * 60 * MINUTES)).toBe("3 hours ago");
     expect(directoryAgeText(49 * 60 * MINUTES)).toBe("2 days ago");
@@ -53,7 +57,7 @@ describe("directoryProofAge", () => {
   it("counts a report within two minutes as recent, like the Library's online window", () => {
     expect(directoryProofAge(ago(2 * MINUTES), NOW)).toMatchObject({
       recent: true,
-      text: "Reported 2 min ago",
+      text: "Reported 2 minutes ago",
     });
     expect(directoryProofAge(ago(2 * MINUTES + 1), NOW)?.recent).toBe(false);
   });
@@ -155,7 +159,7 @@ describe("directoryCatalogRows", () => {
       label: "Studio (saved)",
       routes: [],
       action: null,
-      proof: { text: "Reported 1 min ago" },
+      proof: { text: "Reported 1 minute ago" },
     });
     expect(row?.report).not.toHaveProperty("routes");
     expect(row && directoryConnectPlan(row, identity(STUDIO), native)).toBeNull();
@@ -424,65 +428,161 @@ describe("identityDirectoryAddresses", () => {
 });
 
 describe("directoryReportingText", () => {
+  const report = { state: "reporting", lastReportedAt: ago(3 * MINUTES) } as const;
   const signIn = {
     state: "ready",
-    expiresAt: "2026-11-24T12:00:00.000Z",
-    renewsAt: "2026-11-05T12:00:00.000Z",
+    expiresAt: "2026-10-22T12:00:00.000Z",
+    renewsAt: "2026-10-21T12:00:00.000Z",
     renewal: "automatic",
     repair: null,
   } as const;
-  const signInLine = (renewedAt?: string | null) =>
-    directoryReportingText({
-      state: "reporting",
-      lastReportedAt: null,
-      routes: [],
-      signIn: renewedAt === undefined ? signIn : { ...signIn, renewedAt },
-    }).find((line) => line.startsWith("Library sign-in"));
 
-  it("names the first renewal until one succeeds, then the last one", () => {
-    expect(signInLine(null)).toBe(
-      "Library sign-in expires 2026-11-24T12:00:00.000Z. First renewal scheduled for 2026-11-05T12:00:00.000Z.",
-    );
-    expect(signInLine("2026-10-26T09:00:00.000Z")).toBe(
-      "Library sign-in expires 2026-11-24T12:00:00.000Z. Last renewed 2026-10-26T09:00:00.000Z. Next renewal 2026-11-05T12:00:00.000Z.",
+  it("names each reporting state without exposing its enum", () => {
+    const cases: readonly [DirectoryReporting["state"], string][] = [
+      ["off", "This computer is not reporting to a Library."],
+      ["unsupported", "Update your Library to receive this computer's reports."],
+      ["reporting", "Reporting normally, last seen 3 minutes ago."],
+      [
+        "retrying",
+        "Can't report to your Library. Loom will try again. Last reported 3 minutes ago.",
+      ],
+      [
+        "key-changed",
+        "This computer's sign-in key changed. Forget it in your Library to accept its new key.",
+      ],
+      ["signed-out", "This computer needs to sign in to your Library again."],
+    ];
+    for (const [state, text] of cases) {
+      expect(directoryReportingText({ ...report, state }, NOW)[0]).toBe(text);
+    }
+    expect(
+      directoryReportingText(
+        { ...report, state: "off", signIn: { ...signIn, state: "authority" } },
+        NOW,
+      )[0],
+    ).toBe("This computer is your Library.");
+    expect(directoryReportingText({ ...report, lastReportedAt: null }, NOW)[0]).toBe(
+      "Waiting for this computer's first report.",
     );
   });
 
-  it("keeps the older wording for a server that does not report renewals", () => {
-    expect(signInLine()).toBe(
-      "Library sign-in expires 2026-11-24T12:00:00.000Z. Renews automatically.",
+  it("uses relative times across minute, hour and day boundaries, including clock skew", () => {
+    for (const [age, text] of [
+      [0, "just now"],
+      [MINUTES, "1 minute ago"],
+      [60 * MINUTES, "1 hour ago"],
+      [2 * 24 * 60 * MINUTES, "2 days ago"],
+      [-MINUTES, "just now"],
+    ] as const) {
+      expect(directoryReportingText({ ...report, lastReportedAt: ago(age) }, NOW)[0]).toBe(
+        `Reporting normally, last seen ${text}.`,
+      );
+    }
+  });
+
+  it("distinguishes first, completed and older-server automatic renewals", () => {
+    const lines = (renewedAt?: string | null) =>
+      directoryReportingText(
+        { ...report, signIn: { ...signIn, ...(renewedAt === undefined ? {} : { renewedAt }) } },
+        NOW,
+      );
+    expect(lines(null)).toContain("Library sign-in expires in 2 days. First renewal due in 1 day.");
+    expect(lines(ago(60 * MINUTES))).toContain(
+      "Library sign-in expires in 2 days. Last renewed 1 hour ago. Next renewal due in 1 day.",
     );
+    expect(lines()).toContain("Library sign-in expires in 2 days. Renews automatically.");
+    expect(
+      directoryReportingText(
+        { ...report, signIn: { ...signIn, renewsAt: ago(MINUTES), renewedAt: null } },
+        NOW,
+      ),
+    ).toContain("Library sign-in expires in 2 days. First renewal was due 1 minute ago.");
+  });
+
+  it("keeps renewal failures and expired sign-ins actionable in owner language", () => {
+    expect(
+      directoryReportingText({ ...report, signIn: { ...signIn, renewal: "retrying" } }, NOW),
+    ).toContain("Can't renew this computer's Library sign-in. Loom will try again.");
+    expect(
+      directoryReportingText({ ...report, signIn: { ...signIn, renewal: "unsupported" } }, NOW),
+    ).toContain("Update Loom on your Library to renew this sign-in automatically.");
+    const expired = directoryReportingText(
+      {
+        ...report,
+        state: "signed-out",
+        signIn: {
+          ...signIn,
+          state: "expired",
+          expiresAt: ago(60 * MINUTES),
+          repair: "Ask your Library administrator to replace its publisher credential.",
+        },
+      },
+      NOW,
+    );
+    expect(expired).toContain("Library sign-in expired 1 hour ago.");
+    expect(expired).toContain("Reconnect this computer to your Library in Settings > Computers.");
+    expect(expired.join(" ")).not.toContain("administrator");
   });
 });
 
 describe("backgroundCheckFailureText", () => {
-  it("says since when a check has failed and why, and nothing once it passes", () => {
+  it("keeps the reason and repeated-failure history in relative time, then clears it", () => {
     const report = { state: "reporting", lastReportedAt: null } as const;
     expect(
-      backgroundCheckFailureText({
-        ...report,
-        failingChecks: [
-          {
-            check: "tailscale-cli",
-            message: "Loom is not allowed to run the Tailscale CLI (tailscale).",
-            firstSeenAt: "2026-09-23T06:21:00.000Z",
-            lastSeenAt: "2026-10-26T09:15:00.000Z",
-            count: 95_000,
-          },
-          {
-            check: "preview-registration",
-            message: "Could not reach the Library to register this computer's previews.",
-            firstSeenAt: "2026-10-26T09:00:00.000Z",
-            lastSeenAt: "2026-10-26T09:00:00.000Z",
-            count: 1,
-          },
-        ],
-      }),
+      backgroundCheckFailureText(
+        {
+          ...report,
+          failingChecks: [
+            {
+              check: "library-renewal",
+              message: "Check the Library connection.",
+              firstSeenAt: ago(24 * 60 * MINUTES),
+              lastSeenAt: ago(3 * MINUTES),
+              count: 5,
+            },
+            {
+              check: "preview-registration",
+              message: "The Library could not be reached.",
+              firstSeenAt: ago(MINUTES),
+              lastSeenAt: ago(MINUTES),
+              count: 1,
+            },
+          ],
+        },
+        NOW,
+      ),
     ).toEqual([
-      "Tailscale CLI has failed 95000 times since 2026-09-23T06:21:00.000Z, most recently at 2026-10-26T09:15:00.000Z: Loom is not allowed to run the Tailscale CLI (tailscale).",
-      "Preview registration failed at 2026-10-26T09:00:00.000Z: Could not reach the Library to register this computer's previews.",
+      "Library sign-in renewal has failed 5 times since 1 day ago, most recently 3 minutes ago: Check the Library connection.",
+      "Preview sharing failed 1 minute ago: The Library could not be reached.",
     ]);
-    expect(backgroundCheckFailureText(report)).toEqual([]);
+    expect(backgroundCheckFailureText(report, NOW)).toEqual([]);
+  });
+});
+
+describe("directoryReportingView", () => {
+  it("labels a retained report after refresh fails and hides it while disconnected", () => {
+    const report = { state: "reporting", lastReportedAt: ago(MINUTES) } as const;
+    const result = AsyncResult.failureWithPrevious(Cause.fail("unreachable"), {
+      previous: Option.some(AsyncResult.success(report)),
+    });
+    expect(directoryReportingView(result, true)).toEqual({
+      report,
+      stale: true,
+      notice: "Could not refresh this computer's Library status. Try again.",
+    });
+    expect(directoryReportingView(result, false)).toEqual({
+      report: null,
+      stale: false,
+      notice: "Reconnect to check this computer's Library sign-in.",
+    });
+    expect(directoryReportingView(AsyncResult.success(report), true)).toEqual({
+      report,
+      stale: false,
+      notice: null,
+    });
+    expect(directoryReportingView(AsyncResult.initial(), true).notice).toBe(
+      "Checking Library status...",
+    );
   });
 });
 

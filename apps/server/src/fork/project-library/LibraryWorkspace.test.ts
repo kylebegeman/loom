@@ -1,3 +1,4 @@
+import * as StorageAccounting from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -224,6 +225,7 @@ const gitFetchLayer = Layer.effect(
       warmMirror: () => Effect.void,
       mirrorKey: (remoteUrl) => Effect.succeed(remoteUrl),
       mirrors: Effect.succeed([]),
+      mirrorLocations: Effect.succeed([]),
       removeMirror: () => Effect.succeed(null),
     });
   }),
@@ -264,6 +266,7 @@ const placementLayer = ProjectPlacement.layer.pipe(
   Layer.provideMerge(ServerSettings.layerTest()),
 );
 const hostDependencies = Layer.mergeAll(
+  StorageAccounting.layer,
   store,
   placementLayer,
   broadcasterLayer,
@@ -4893,7 +4896,29 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         expect(yield* fs.exists(copy.rootPath)).toBe(false);
         expect(yield* fs.exists(marker)).toBe(false);
         expect(yield* fs.exists(legacy)).toBe(true);
-      }),
+        const accounting = yield* StorageAccounting.StorageCleanupAccounting;
+        const entries = (yield* accounting.history).entries;
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toMatchObject({
+          kind: "library-copy",
+          path: copy.rootPath,
+          outcome: "removed",
+        });
+        expect(entries[0]?.bytes).toBeGreaterThan(0);
+        yield* service.release({
+          requestId: "first-review-release",
+          workingCopyId: copy.id,
+          reviewToken: review.reviewToken!,
+        });
+        expect((yield* accounting.history).entries).toEqual(entries);
+      }).pipe(
+        // The suite shares layers; isolate both the recorder and the workspace that captures it.
+        Effect.provide(
+          Layer.fresh(LibraryWorkspace.layer).pipe(
+            Layer.provideMerge(Layer.fresh(StorageAccounting.layer)),
+          ),
+        ),
+      ),
   );
 
   it.effect(

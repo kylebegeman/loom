@@ -5,6 +5,7 @@ import {
   createEnvironmentRpcQueryAtomFamily,
 } from "../state/runtime.ts";
 import { AsyncResult, Atom } from "effect/reactivity";
+import * as Option from "effect/Option";
 
 const idleReporting = Atom.make(AsyncResult.initial<DirectoryReporting, unknown>());
 export function createDirectoryForgetCommand<R, E>(
@@ -29,60 +30,117 @@ export function createDirectoryReportingAtoms<R, E>(
     environmentId === null ? idleReporting : reporting({ environmentId, input: {} });
 }
 
-export function directoryReportingText(report: DirectoryReporting): readonly string[] {
+function relativeTime(at: string, now: number, future = false): string {
+  const difference = Date.parse(at) - now;
+  const age = future ? Math.abs(difference) : Math.max(0, -difference);
+  const text = directoryAgeText(age);
+  return future && difference > 0 ? (age < MINUTE_MS ? "soon" : `in ${text.slice(0, -4)}`) : text;
+}
+
+export function directoryReportingSummary(report: DirectoryReporting, now: number): string {
+  if (report.signIn?.renewal === "retrying")
+    return "Can't renew this computer's Library sign-in. Loom will try again.";
+  switch (report.state) {
+    case "off":
+      return report.signIn?.state === "authority"
+        ? "This computer is your Library."
+        : "This computer is not reporting to a Library.";
+    case "unsupported":
+      return "Update your Library to receive this computer's reports.";
+    case "reporting":
+      return report.lastReportedAt === null
+        ? "Waiting for this computer's first report."
+        : `Reporting normally, last seen ${relativeTime(report.lastReportedAt, now)}.`;
+    case "retrying":
+      return `Can't report to your Library. Loom will try again.${report.lastReportedAt === null ? "" : ` Last reported ${relativeTime(report.lastReportedAt, now)}.`}`;
+    case "key-changed":
+      return "This computer's sign-in key changed. Forget it in your Library to accept its new key.";
+    case "signed-out":
+      return "This computer needs to sign in to your Library again.";
+  }
+}
+
+export function directoryReportingText(report: DirectoryReporting, now: number): readonly string[] {
+  const lines = [directoryReportingSummary(report, now)];
   const routes = report.routes;
-  const lines = [
-    routes === undefined
-      ? "Your Library lists this computer at: not reported yet"
-      : `Your Library lists this computer at: ${routes.length === 0 ? "none" : routes.map((route) => route.url).join(", ")}`,
-    `Directory reporting: ${report.state}.`,
-  ];
-  if (routes?.length === 0)
+  if (routes !== undefined)
+    lines.push(
+      routes.length === 0
+        ? "No addresses are listed in your Library."
+        : `Your Library lists this computer at: ${routes.map((route) => route.url).join(", ")}`,
+    );
+  if (routes?.length === 0 && report.state !== "off" && report.state !== "unsupported")
     lines.push(
       "Turn on Tailscale HTTPS or Reach from anywhere on this computer so other devices can find it. You can also pair a device using a reachable address.",
     );
   const signIn = report.signIn;
   if (signIn?.expiresAt) {
-    // Older servers omit renewedAt
-    const renewal =
-      signIn.renewal !== "automatic" || signIn.state === "expired"
-        ? ""
-        : signIn.renewedAt === undefined
-          ? " Renews automatically."
-          : signIn.renewedAt === null
-            ? signIn.renewsAt
-              ? ` First renewal scheduled for ${signIn.renewsAt}.`
-              : ""
-            : ` Last renewed ${signIn.renewedAt}.${signIn.renewsAt ? ` Next renewal ${signIn.renewsAt}.` : ""}`;
-    lines.push(
-      `Library sign-in ${signIn.state === "expired" ? "expired" : "expires"} ${signIn.expiresAt}.${renewal}`,
-    );
+    const expired = signIn.state === "expired" || Date.parse(signIn.expiresAt) <= now;
+    let text = `Library sign-in ${expired ? "expired" : "expires"} ${relativeTime(signIn.expiresAt, now, !expired)}.`;
+    if (!expired && signIn.renewal === "automatic") {
+      if (signIn.renewedAt === undefined) text += " Renews automatically.";
+      else {
+        if (signIn.renewedAt !== null)
+          text += ` Last renewed ${relativeTime(signIn.renewedAt, now)}.`;
+        if (signIn.renewsAt) {
+          const due = Date.parse(signIn.renewsAt) <= now ? "was due" : "due";
+          text += ` ${signIn.renewedAt === null ? "First" : "Next"} renewal ${due} ${relativeTime(signIn.renewsAt, now, true)}.`;
+        }
+      }
+    }
+    lines.push(text);
   }
-  if (signIn?.repair) lines.push(signIn.repair);
-  else if (report.state === "signed-out")
-    lines.push(
-      "Your Library refused this computer's sign-in. Ask its administrator to replace the publisher credential on this computer. Loom reloads it automatically.",
-    );
+  if (signIn?.renewal === "unsupported")
+    lines.push("Update Loom on your Library to renew this sign-in automatically.");
+  if (
+    signIn?.state === "expired" ||
+    (signIn?.state === "unavailable" && signIn.renewal !== "retrying") ||
+    (report.state === "signed-out" && !signIn)
+  )
+    lines.push("Reconnect this computer to your Library in Settings > Computers.");
+  else if (signIn?.repair) lines.push(signIn.repair);
   return lines;
 }
 
 const BACKGROUND_CHECK_NAMES: Readonly<Record<string, string>> = {
-  "tailscale-cli": "Tailscale CLI",
-  "tailscale-serve": "Tailscale Serve",
-  "directory-reporting": "Directory reporting",
+  "tailscale-cli": "Tailscale",
+  "tailscale-serve": "Tailscale sharing",
+  "directory-reporting": "Library reporting",
   "library-renewal": "Library sign-in renewal",
-  "preview-registration": "Preview registration",
-  "push-readiness": "Library push",
+  "preview-registration": "Preview sharing",
+  "push-readiness": "Library notifications",
 };
 
 /** One line per recurring check that has failed since it last passed, kept across restarts. */
-export function backgroundCheckFailureText(report: DirectoryReporting): readonly string[] {
+export function backgroundCheckFailureText(
+  report: DirectoryReporting,
+  now: number,
+): readonly string[] {
   return (report.failingChecks ?? []).map((failure) => {
     const name = BACKGROUND_CHECK_NAMES[failure.check] ?? failure.check;
     return failure.count === 1
-      ? `${name} failed at ${failure.lastSeenAt}: ${failure.message}`
-      : `${name} has failed ${failure.count} times since ${failure.firstSeenAt}, most recently at ${failure.lastSeenAt}: ${failure.message}`;
+      ? `${name} failed ${relativeTime(failure.lastSeenAt, now)}: ${failure.message}`
+      : `${name} has failed ${failure.count} times since ${relativeTime(failure.firstSeenAt, now)}, most recently ${relativeTime(failure.lastSeenAt, now)}: ${failure.message}`;
   });
+}
+
+/** Retained data is useful after a failed refresh, but must not look like a fresh answer. */
+export function directoryReportingView(
+  result: AsyncResult.AsyncResult<DirectoryReporting, unknown>,
+  connected: boolean,
+) {
+  const report = connected ? Option.getOrNull(AsyncResult.value(result)) : null;
+  return {
+    report,
+    stale: report !== null && (AsyncResult.isFailure(result) || result.waiting),
+    notice: !connected
+      ? "Reconnect to check this computer's Library sign-in."
+      : AsyncResult.isFailure(result)
+        ? "Could not refresh this computer's Library status. Try again."
+        : result.waiting || report === null
+          ? "Checking Library status..."
+          : null,
+  };
 }
 
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -110,11 +168,14 @@ const DAY_MS = 24 * HOUR_MS;
  */
 const DIRECTORY_REPORT_RECENT_MS = 2 * MINUTE_MS;
 
-/** "just now", "2 min ago", "3 hours ago" or "2 days ago". */
+/** "just now", "2 minutes ago", "3 hours ago" or "2 days ago". */
 export function directoryAgeText(ageMs: number): string {
   const age = Math.max(0, ageMs);
   if (age < MINUTE_MS) return "just now";
-  if (age < HOUR_MS) return `${Math.floor(age / MINUTE_MS)} min ago`;
+  if (age < HOUR_MS) {
+    const minutes = Math.floor(age / MINUTE_MS);
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  }
   if (age < DAY_MS) {
     const hours = Math.floor(age / HOUR_MS);
     return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
@@ -129,7 +190,7 @@ export interface DirectoryProofAge {
   readonly ageMs: number;
   /** Reported within `DIRECTORY_REPORT_RECENT_MS`. */
   readonly recent: boolean;
-  /** For example "Reported 2 min ago". */
+  /** For example "Reported 2 minutes ago". */
   readonly text: string;
 }
 

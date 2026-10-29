@@ -14,6 +14,8 @@ through the fork Connections screen.
 | `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` | `fork: directory-computers` | 4     | Take a `libraryComputer` route param, check the computer before the code is spent, and hide the unpinned sign-in.                                            |
 | `apps/mobile/src/features/connection/devAutoConnect.ts`             | `fork: directory-computers` | 3     | Check the same `libraryComputer` when a development pairing link connects by itself.                                                                         |
 | `evals/mcp-tool-use/run.ts`                                         | `fork: directory-computers` | 2     | Load the real tool schema for focused agent evals.                                                                                                           |
+| `apps/web/src/components/settings/SavedEnvironmentRows.tsx`         | `fork: directory-computers` | 4     | Show each saved computer’s Library health and reporting details.                                                                                             |
+| `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx`  | `fork: directory-computers` | 2     | Show the shared Library health summary for saved computers.                                                                                                  |
 
 The pairing forms' state lives in `ConnectionsSettings` and the iPhone pairing route, so a row
 that falls back to pairing has to set it there.

@@ -16,13 +16,13 @@ describe("LOOM_VAULT_INSTRUCTIONS", () => {
     const firstRun = t3OrchestrationPrompt({
       prompt: "Use the development connection.",
       hasT3Mcp: true,
-      hasDeviceTools: false,
+      hasDeviceTools: true,
       orchestrationDelivered: false,
       deviceInstructionsDelivered: false,
     });
     const acp = t3AcpPromptWithInstructions({
       prompt: "Use the development connection.",
-      state: { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false },
+      state: { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: true },
     });
     for (const prompt of [firstRun, acp]) {
       expect(prompt.split(LOOM_VAULT_INSTRUCTIONS)).toHaveLength(2);

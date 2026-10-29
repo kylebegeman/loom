@@ -41,7 +41,8 @@ describe("T3 device instructions", () => {
 
   it("reach OpenCode and Cursor only when the session holds device access", () => {
     assert.include(t3OrchestrationSystemPrompt(true, true), T3_CODE_DEVICE_TOOL_INSTRUCTIONS);
-    assert.notInclude(t3OrchestrationSystemPrompt(true, false), "## Loom devices"); // fork: brand
+    // fork: brand
+    assert.notInclude(t3OrchestrationSystemPrompt(true, false), "## Loom devices");
     assert.isUndefined(t3OrchestrationSystemPrompt(false, true));
 
     const firstRun = (hasDeviceTools: boolean) =>
@@ -80,6 +81,7 @@ describe("T3 device instructions", () => {
       t3AcpPromptWithInstructions({ prompt: "Again.", state, previousState: state }),
       "Again.",
     );
-    assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## Loom devices"); // fork: brand
+    // fork: brand
+    assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## Loom devices");
   });
 });

@@ -39,6 +39,8 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import { SessionToolPolicy } from "../fork/mcp/SessionToolPolicy.ts"; // fork: ext-mcp
+import type { AgentToolFamily } from "@t3tools/contracts/fork"; // fork: ext-mcp
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
@@ -51,6 +53,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as NativeResources from "./NativeWorkloadResources.ts"; // fork: mini-native-retention
@@ -498,6 +501,7 @@ function layerTest(input: {
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
+  readonly sessionToolPolicy?: SessionToolPolicy["Service"]; // fork: ext-mcp
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -544,6 +548,10 @@ function layerTest(input: {
   const layerProviderEventIngestorTest = ProviderEventIngestor.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+          // @effect-diagnostics-next-line effectSucceedWithVoid:off - Optional instances require undefined rather than void.
+          getInstance: () => Effect.succeed(undefined),
+        }),
         layerConfiguredEventSink,
         IdAllocator.layer,
         layerTestStores,
@@ -581,6 +589,10 @@ function layerTest(input: {
             : [Layer.succeed(NativeResources.NativeWorkloadResources, input.nativeResources)]),
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
+          // fork: ext-mcp
+          ...(input.sessionToolPolicy === undefined
+            ? []
+            : [Layer.succeed(SessionToolPolicy, input.sessionToolPolicy)]),
         ),
       ),
     ),
@@ -2064,10 +2076,12 @@ it.effect("ProviderSessionManagerV2 duplicate detach preserves replacement MCP c
 );
 
 it.effect(
-  "ProviderSessionManagerV2 keeps a thread's MCP credential stable across detach and re-attach on a shared session",
+  "ProviderSessionManagerV2 reuses a thread credential until its tool families change",
   () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
+      // fork: ext-mcp
+      let families: ReadonlySet<AgentToolFamily> = new Set();
       const mcpConfigs = yield* Ref.make<
         ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
       >([]);
@@ -2119,6 +2133,23 @@ it.effect(
         );
         assert.equal((yield* registry.resolve(originalToken!))?.thread.threadId, threadId);
 
+        // fork: ext-mcp
+        families = new Set(["hardware"]);
+        // fork: ext-mcp
+        yield* manager.detach({ providerSessionId, threadId });
+        // fork: ext-mcp
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        // fork: ext-mcp
+        const replacement = yield* mcpSessions.read(threadId);
+        // fork: ext-mcp
+        assert.notEqual(replacement?.providerSessionId, original?.providerSessionId);
+        // fork: ext-mcp
+        const token = replacement!.authorizationHeader.replace(/^Bearer\s+/, "");
+        // fork: ext-mcp
+        assert.isTrue((yield* registry.resolve(token))?.capabilities.has("hardware"));
+        // fork: ext-mcp
+        assert.isUndefined(yield* registry.resolve(originalToken!));
+
         yield* manager.close(providerSessionId);
         assert.isUndefined(yield* registry.resolve(originalToken!));
       });
@@ -2129,6 +2160,12 @@ it.effect(
             state,
             idleTimeoutMs: 1_000,
             mcpConfigs,
+            // fork: ext-mcp
+            sessionToolPolicy: {
+              isAuthority: false,
+              localContext: () => Effect.succeed({ reach: false, sites: false }),
+              forThread: () => Effect.sync(() => families),
+            },
           }),
         ),
       );

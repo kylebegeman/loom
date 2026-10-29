@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ScheduledTaskId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { agentAlertRequest, alertPayload, LIBRARY_PUSH_TEST_ALERT } from "./apnsPayloads.ts";
@@ -73,6 +73,24 @@ describe("agentAlertRequest", () => {
     });
   });
 
+  it("opens the bot inbox and sends scheduled failures without a thread id", () => {
+    expect(
+      agentAlertRequest({ environmentId, threadId: ThreadId.make("bot-run-1"), kind: "input" })
+        .payload.body?.deepLink,
+    ).toBe("/bots/environment-1/inbox");
+    const scheduled = agentAlertRequest({
+      environmentId,
+      taskId: ScheduledTaskId.make("task-1"),
+      kind: "scheduled-failed",
+    });
+    expect(scheduled.payload.body).toEqual({
+      environmentId,
+      taskId: "task-1",
+      deepLink: "/settings/scheduled-tasks?environmentId=environment-1&taskId=task-1",
+    });
+    expect(scheduled.payload.aps.alert.body).toBe("A scheduled task failed.");
+  });
+
   it("collapses every kind for one thread into one notification within Apple's 64 bytes", () => {
     const kinds = ["approval", "input", "failed", "limited", "completed"] as const;
     const collapseIds = new Set(
@@ -93,7 +111,7 @@ describe("agentAlertRequest", () => {
     expect(new TextEncoder().encode(longest.collapseId).length).toBeLessThanOrEqual(64);
   });
 
-  it("opens a Vault request's computer settings and expires with the request", () => {
+  it("opens a Vault request's thread and expires with the request", () => {
     const vault = agentAlertRequest({ environmentId, threadId, kind: "vault-approval" });
     expect(vault).toEqual({
       payload: {
@@ -106,7 +124,7 @@ describe("agentAlertRequest", () => {
         body: {
           environmentId: "environment-1",
           threadId: "thread-1",
-          deepLink: "/settings/environments/environment-1",
+          deepLink: "/threads/environment-1/thread-1",
         },
       },
       priority: 10,

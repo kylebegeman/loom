@@ -1,3 +1,4 @@
+import { LibraryDeletedSettings } from "./RecentlyDeleted";
 import { useAtomValue } from "@effect/atom-react";
 import {
   identityRenewalLimitSeconds,
@@ -186,6 +187,7 @@ function LibrarySignInStatus({ environment }: { readonly environment: Environmen
           </div>
         ) : null}
       </SettingsRow>
+      <LibraryDeletedSettings />
       <details className="px-3 py-3 text-sm sm:px-4">
         <summary className="cursor-pointer text-muted-foreground">
           Use a different Library or account

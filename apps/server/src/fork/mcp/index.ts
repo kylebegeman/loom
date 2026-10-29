@@ -1,3 +1,5 @@
+import { UpdateToolkit, updateHandlers } from "../machine-updates/mcp.ts";
+import { AttentionToolkit, attentionHandlers } from "../attention/mcp.ts";
 import { ProjectProfilesToolkit, projectProfilesHandlers } from "../project-profiles/mcp.ts";
 import { VaultTestAccountToolkit, vaultTestAccountHandlers } from "../vault/test-accounts-mcp.ts";
 import {
@@ -37,6 +39,17 @@ import { LibraryPushToolkit, libraryPushHandlers } from "../library-push/mcp.ts"
 import { BotsToolkit, botsHandlers } from "../bots/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: UpdateToolkit,
+    handlers: updateHandlers,
+    register: (register: typeof toolkitRegistration) => register(UpdateToolkit, updateHandlers),
+  },
+  {
+    toolkit: AttentionToolkit,
+    handlers: attentionHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(AttentionToolkit, attentionHandlers),
+  },
   {
     toolkit: ProjectProfilesToolkit,
     handlers: projectProfilesHandlers,

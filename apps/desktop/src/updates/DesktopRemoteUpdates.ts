@@ -1,8 +1,4 @@
-import type {
-  DesktopTelemetryRequestDesktopUpdate,
-  DesktopUpdateRemoteOutcome,
-  DesktopUpdateState,
-} from "@t3tools/contracts";
+import type { DesktopUpdateRemoteOutcome, DesktopUpdateState } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -16,6 +12,14 @@ import * as Stream from "effect/Stream";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
+// fork: machine-updates
+import {
+  makeRemoteIdlePreparation,
+  type RemoteIdleReservation,
+} from "../fork/machine-updates/RemoteIdlePreparation.ts";
+// fork: machine-updates
+import { makeBackendPost, makeOwnedBackendUpdates } from "../fork/machine-updates/IdleInstall.ts";
+import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts"; // fork: machine-updates
 import {
   nextRemoteDesktopUpdateStep,
   normalizeRemoteUpdateReason,
@@ -48,6 +52,21 @@ export const listen: Effect.Effect<
 > = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const publisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
+  // fork: machine-updates
+  const pool = yield* Effect.serviceOption(DesktopBackendPool.DesktopBackendPool);
+  // fork: machine-updates
+  const post = yield* makeBackendPost;
+  // fork: machine-updates
+  const prepareIdle = yield* makeRemoteIdlePreparation({
+    owned: makeOwnedBackendUpdates({
+      instances: Option.isSome(pool) ? pool.value.list : Effect.succeed([]),
+      post,
+    }),
+    post,
+    updates,
+  });
+  // fork: machine-updates
+  const idleReservations = new Map<string, RemoteIdleReservation>();
   const activeRequestIdRef = yield* Ref.make(Option.none<string>());
   const requestControlRef = yield* Ref.make<{
     readonly active: Option.Option<{
@@ -125,7 +144,9 @@ export const listen: Effect.Effect<
     }),
   ).pipe(Effect.forkScoped);
 
-  const handleRequest = (request: DesktopTelemetryRequestDesktopUpdate): Effect.Effect<void> =>
+  const handleRequest = (
+    request: DesktopTelemetryPublisher.DesktopUpdateRequest,
+  )/* fork: machine-updates */ : Effect.Effect<void> =>
     Effect.scoped(
       Effect.gen(function* () {
         const cancellation = yield* Deferred.make<void>();
@@ -232,6 +253,21 @@ export const listen: Effect.Effect<
                 );
                 return true;
               }
+              // fork: machine-updates
+              const idle = request.sourceId
+                ? yield* prepareIdle(request.sourceId, state.downloadedVersion)
+                : { kind: "manual" as const };
+              // fork: machine-updates
+              if (idle.kind === "cancelled") {
+                yield* publishReport(
+                  state,
+                  { outcome: "failed", reason: "Update cancelled." },
+                  request.requestId,
+                );
+                return true;
+              }
+              // fork: machine-updates
+              if (idle.kind === "ready") idleReservations.set(request.requestId, idle);
               yield* Ref.set(
                 preparedUpdateRef,
                 Option.some({
@@ -328,6 +364,13 @@ export const listen: Effect.Effect<
       if (Option.isSome(activeSignal)) {
         yield* Deferred.succeed(activeSignal.value, undefined);
       }
+      // fork: machine-updates
+      const idle = idleReservations.get(cancellation.requestId);
+      // fork: machine-updates
+      if (idle) {
+        idleReservations.delete(cancellation.requestId);
+        yield* idle.release;
+      }
       const matchedPrepared = yield* Ref.modify(preparedUpdateRef, (prepared) => {
         if (Option.isNone(prepared) || prepared.value.requestId !== cancellation.requestId) {
           return [false, prepared] as const;
@@ -406,7 +449,21 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion);
+      // fork: machine-updates
+      const idle = idleReservations.get(commit.requestId);
+      // fork: machine-updates
+      const result = idle
+        ? yield* idle.commit(updates.installPrepared(claim.prepared.downloadedVersion, true))
+        : yield* updates.installPrepared(claim.prepared.downloadedVersion);
+      // fork: machine-updates
+      idleReservations.delete(commit.requestId);
+      // fork: machine-updates
+      if (result === null) {
+        const reason = "Agent activity changed before installation.";
+        yield* recordPreparedFailure(commit.requestId, reason);
+        yield* publishReport(current, { outcome: "failed", reason }, commit.requestId);
+        return;
+      }
       if (
         !result.accepted &&
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&

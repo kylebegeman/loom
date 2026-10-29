@@ -1,6 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts"; // fork: ext-mcp
+import { filterSessionTools } from "../fork/mcp/sessionToolList.ts"; // fork: ext-mcp
 import { McpProviderSessions } from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -124,11 +126,32 @@ it.effect("agent context matches the committed budget", () =>
       // The model sees these fields. outputSchema and annotations are protocol metadata.
       mcpToolListJsonBytes: utf8Bytes(
         JSON.stringify(
-          mcp.tools.map(({ tool }) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          })),
+          // fork: ext-mcp
+          filterSessionTools(
+            mcp.tools.map(({ tool }) => ({
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+            })),
+            {
+              environmentId: EnvironmentId.make("context-budget"),
+              requestNamespace: "context-budget",
+              thread: {
+                threadId: ThreadId.make("context-budget"),
+                providerSessionId: "context-budget",
+                providerInstanceId: ProviderInstanceId.make("context-budget"),
+              },
+              client: undefined,
+              issuedAt: 0,
+              capabilities: new Set([
+                "preview",
+                "device",
+                "orchestration",
+                "worktree",
+                "pull-requests",
+              ]),
+            },
+          ),
         ),
       ),
     };

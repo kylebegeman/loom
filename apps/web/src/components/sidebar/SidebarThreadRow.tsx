@@ -1174,6 +1174,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         <TooltipPopup side="top">New thread with these settings</TooltipPopup>
       </Tooltip>
     ) : null;
+
   const diff = latestRunDiff(thread);
   // Only the provider icon would remain, so the row drops the line instead of leaving it blank.
   const metaLineEmpty =

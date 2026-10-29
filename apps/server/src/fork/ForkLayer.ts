@@ -1,6 +1,18 @@
+import * as SessionToolPolicy from "./mcp/SessionToolPolicy.ts";
+import { SessionToolContextRoutes } from "./mcp/toolContextHttp.ts";
+import * as AttentionRetry from "./attention/AttentionRetry.ts";
+import * as ProjectStorageInventory from "./project-lifecycle/ProjectStorageInventory.ts";
+import * as StorageAccounting from "./project-lifecycle/StorageCleanupAccounting.ts";
+import * as UpdatePlans from "./machine-updates/UpdatePlans.ts";
+import * as UpdateRuntime from "./machine-updates/UpdateRuntime.ts";
+import * as UpdatePlanStore from "./machine-updates/UpdatePlanStore.ts";
+import * as UpdateHandoff from "./machine-updates/UpdateHandoff.ts";
+import * as UpdateFence from "./machine-updates/UpdateFence.ts";
+import { UpdateHttpRoutes } from "./machine-updates/http.ts";
 import * as SkillRegistry from "./skill-registry/SkillRegistryService.ts";
 import * as SkillStore from "./skill-registry/SkillStore.ts";
 import * as LibraryPublishingCredential from "../auth/LibraryPublishingCredential.ts";
+import * as LibraryMaintenance from "./project-library/LibraryMaintenance.ts";
 import * as ProjectWorkflows from "./project-library/ProjectWorkflows.ts";
 import * as ProjectOperations from "./project-library/ProjectOperations.ts";
 import * as ProjectProfiles from "./project-profiles/ProjectProfileService.ts";
@@ -16,6 +28,7 @@ import * as VaultTestAccounts from "./vault/VaultTestAccounts.ts";
 import * as OperationAdmission from "./vault/OperationAdmission.ts";
 import * as OperationJournal from "./vault/OperationJournal.ts";
 import * as ApprovalNotifications from "./vault/ApprovalNotifications.ts";
+import * as ApprovalCards from "./vault/ApprovalCards.ts";
 import * as VaultMigrationInventory from "./vault/VaultMigrationInventory.ts";
 import * as MigrationGitMetadata from "./vault/MigrationGitMetadata.ts";
 import * as VaultMigration from "./vault/VaultMigration.ts";
@@ -66,7 +79,6 @@ import * as LibraryLocalCatalog from "./project-library/LibraryLocalCatalog.ts";
 import * as LibraryTimeline from "./project-library/LibraryTimeline.ts";
 import * as LibraryLaunchCandidates from "./project-library/LibraryLaunchCandidates.ts";
 import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
-import * as LibraryGitFetch from "./project-library/LibraryGitFetch.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as LibraryWorkspaceStore from "./project-library/LibraryWorkspaceStore.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -129,6 +141,7 @@ import * as ReachProvisioner from "./reach/library/ReachProvisioner.ts";
 import { ReachHttpRoutes } from "./reach/library/http.ts";
 import { LibraryPushLive } from "./library-push/LibraryPushService.ts";
 import { AgentAlertsLive } from "./library-push/AgentAlerts.ts";
+import { ScheduledFailureAlertsLive } from "./library-push/ScheduledFailureAlerts.ts";
 import * as LibraryPushReadiness from "./library-push/LibraryPushReadiness.ts";
 import * as UnheardAlertNotices from "./library-push/UnheardAlertNotices.ts";
 import * as VaultApprovalAlerts from "./library-push/VaultApprovalAlerts.ts";
@@ -168,6 +181,16 @@ const layerApprovalNotifications = ApprovalNotifications.layer.pipe(
 const layerVaultAccess = VaultAccess.layer.pipe(
   Layer.provide(layerApprovalNotifications),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
+);
+const layerApprovalCards = ApprovalCards.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultCore,
+      RuntimeLayer.layerEventSink,
+      ProjectionStore.layer,
+      ThreadCommandExecutor.layer,
+    ),
+  ),
 );
 
 const layerVaultTestAccountWorkloads = VaultTestAccountWorkloads.layer.pipe(
@@ -282,6 +305,7 @@ export const layerProjectLifecycle = ProjectLifecycle.layer.pipe(
 );
 
 export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
+  Layer.provide(StorageAccounting.layer),
   Layer.provide(
     LibraryRecoveryPublisher.layer.pipe(
       Layer.provide(NodeHttpClient.layerNodeHttp),
@@ -294,7 +318,7 @@ export const layerLibraryWorkspace = LibraryWorkspace.layer.pipe(
   Layer.provide(ProcessRunner.layer),
   Layer.provide(layerLibraryPublisher),
   // The same layers as storage cleanup and the setup card, so mirror locks and progress are shared.
-  Layer.provide(LibraryGitFetch.layer),
+  Layer.provide(RuntimeLayer.layerLibraryGitFetch),
   Layer.provide(WorktreeSetupTracker.layer),
 );
 const layerLibraryHistorySource = LibraryHistorySource.layer.pipe(
@@ -349,8 +373,59 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
   ),
 );
 
+const layerProjectProfiles = ProjectProfiles.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      ProjectStore.layer,
+      ProjectionStore.layer,
+      ProfileEnvInspector.layer,
+      ProfileVarlock.layer.pipe(Layer.provide(ProcessRunner.layer)),
+    ),
+  ),
+);
+const layerSites = SitesService.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(layerLibraryService),
+);
+// Credential preparation runs before the full fork runtime; share these exact layer instances.
+export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerProjectProfiles,
+      layerSites,
+      layerDirectory,
+      LibraryConnection.layer,
+      LibraryWorkspaceStore.layer,
+      ProjectStore.layer,
+      ProjectionStore.layer,
+    ),
+  ),
+  Layer.provide(ForkMigrationsLive),
+);
+
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  ProjectStorageInventory.layer.pipe(
+    Layer.provide(RuntimeLayer.layerStorageCleanup),
+    Layer.provide(layerProjectLifecycle),
+    Layer.provide(RuntimeLayer.layerLibraryGitFetch),
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(StorageAccounting.layer),
+    Layer.provide(ProjectionStore.layer),
+    Layer.provide(ProjectStore.layer),
+  ),
+  UpdatePlans.layer.pipe(
+    Layer.provideMerge(
+      UpdateHandoff.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(ProjectionStore.layer, UpdateFence.layer, UpdatePlanStore.layer),
+        ),
+      ),
+    ),
+    Layer.provide(UpdatePlanStore.layer),
+    Layer.provide(UpdateRuntime.layer),
+  ),
+  AttentionRetry.layer.pipe(Layer.provide(RuntimeLayer.layerThreadManagementProvided)),
   SkillRegistry.layer.pipe(
     Layer.provide(SkillStore.layer),
     Layer.provide(RuntimeLayer.layerProjectService),
@@ -360,16 +435,8 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryPublishingCredential.layer,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
   StaleConnectLink.layer,
-  ProjectProfiles.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        ProjectStore.layer,
-        ProjectionStore.layer,
-        ProfileEnvInspector.layer,
-        ProfileVarlock.layer.pipe(Layer.provide(ProcessRunner.layer)),
-      ),
-    ),
-  ),
+  layerProjectProfiles,
+  layerSessionToolPolicy,
   ProfileBudgets.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -417,11 +484,15 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultAccess,
   layerVaultJournal,
   layerOperationAdmission,
+  ApprovalCards.reactor.pipe(
+    Layer.provide(Layer.merge(layerApprovalCards, layerApprovalNotifications)),
+  ),
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultSecretRequests.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
-  SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
+  layerSites,
   layerLibraryService,
+  LibraryMaintenance.retentionLayer.pipe(Layer.provide(layerLibraryService)),
   layerProjectWorkflows,
   ProjectOperations.layer.pipe(
     Layer.provide(LibraryWorkspaceStore.layer),
@@ -454,7 +525,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerLibraryWorkspace,
   ProjectCheckoutManagement.layer.pipe(
     Layer.provide(ProcessRunner.layer),
-    Layer.provide(StorageCleanup.layer.pipe(Layer.provide(LibraryGitFetch.layer))),
+    Layer.provide(StorageCleanup.layer.pipe(Layer.provide(RuntimeLayer.layerLibraryGitFetch))),
     Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
   ),
   GitHubSetupFlow.layer.pipe(
@@ -568,6 +639,10 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(layerUnheardAlertNotices),
     Layer.provide(FetchHttpClient.layer),
   ),
+  ScheduledFailureAlertsLive.pipe(
+    Layer.provide(LibraryPushLive),
+    Layer.provide(FetchHttpClient.layer),
+  ),
   // `loom_push_status` reads the Library's push here, or asks the Library from another computer.
   LibraryPushReadiness.layer.pipe(
     Layer.provide(Layer.merge(LibraryPushLive, LibraryConnection.layer)),
@@ -596,7 +671,9 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
 export const ForkRoutesLayer = Layer.mergeAll(
+  UpdateHttpRoutes,
   Layer.empty,
+  SessionToolContextRoutes,
   VaultBrokerHttpRoutes,
   VaultWorkloadHttpRoutes,
   LibraryAssetHttpRoutes,

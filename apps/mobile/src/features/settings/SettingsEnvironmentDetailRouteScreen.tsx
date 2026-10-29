@@ -1,3 +1,5 @@
+// fork: project-lifecycle
+import { StorageBreakdown } from "../../fork/project-lifecycle/StorageBreakdown";
 import { VaultSettingsSection } from "../../fork/vault/VaultSettingsSection"; // fork: vault-core
 // fork: brand - Remote hosts may run upstream T3 Code or Loom.
 import * as Dialog from "../../components/ui/Dialog";
@@ -260,6 +262,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             <ComputerNameSection environmentId={environmentId} connected={connected} />
             {/* fork: file-placement - Each computer names where new project files go. */}
             <ComputerProjectsFolderSection environmentId={environmentId} connected={connected} />
+            {/* fork: project-lifecycle */}
+            <StorageBreakdown environmentId={environmentId} connected={connected} />
             <ComputerConnectSection environmentId={environmentId} connected={connected} />
             {/* fork: reach - Reach is per computer; the phone is never a reach host. */}
             <ComputerReachSection environmentId={environmentId} connected={connected} />

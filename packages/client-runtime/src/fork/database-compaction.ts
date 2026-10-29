@@ -23,7 +23,7 @@ export function describeRestartCompaction(
   state: RestartCompactionState,
   label: string,
 ): { readonly plan: string; readonly lastAttempt: string | null } {
-  const lastAttempt = state.lastAttempt?.outcome === "completed" ? null : state.lastAttempt;
+  const lastAttempt = state.lastAttempt;
   // The desktop never repeats a repair that failed or was stopped until asked again.
   const stopped = lastAttempt?.outcome === "failed" || lastAttempt?.outcome === "interrupted";
   return {
@@ -32,6 +32,7 @@ export function describeRestartCompaction(
       : stopped
         ? "Loom will not try again on its own; choose Compact at next restart to retry."
         : `Loom on ${label} returns it to disk when it restarts for its next update, or at its next restart if you ask now.`,
-    lastAttempt: lastAttempt === null ? null : `Last attempt: ${lastAttempt.detail}`,
+    lastAttempt:
+      lastAttempt === null ? null : `Last attempt (${lastAttempt.outcome}): ${lastAttempt.detail}`,
   };
 }

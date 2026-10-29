@@ -1,5 +1,5 @@
 import * as NodeZlib from "node:zlib";
-import { MessageId } from "@t3tools/contracts";
+import { AuthSettingsWriteScope, MessageId } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
@@ -45,6 +45,7 @@ import { validLibraryResources } from "./policy.ts";
 
 const noAssets = Layer.succeed(Assets.LibraryAssetService, {
   mode: "local",
+  removeUnused: () => Effect.void,
   find: () => Effect.fail(new LibraryError({ reason: "not-found" })),
   read: () => Effect.fail(new LibraryError({ reason: "not-found" })),
   put: () => Effect.fail(new LibraryError({ reason: "io" })),
@@ -2011,5 +2012,109 @@ describe("Library history ingest", () => {
         expect((yield* historyRows).blobs).toEqual(blobs);
       }),
     ),
+  );
+});
+
+describe("recently deleted Library conversations", () => {
+  const owner = { subject: "owner", scopes: [AuthSettingsWriteScope] };
+  it.effect(
+    "filters deleted history, erases it permanently and acknowledges replay without restoring it",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = yield* create(service);
+          yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+          const before = yield* archiveFor(project);
+          const deleted = {
+            ...before,
+            summary: { ...before.summary, deleted: true },
+            projection: {
+              ...before.projection,
+              thread: { ...before.projection.thread, deletedAt: before.projection.updatedAt },
+            },
+          };
+          const input = {
+            requestId: "history",
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence: 0,
+            entries: [{ sequence: 1, thread: deleted }],
+          };
+          yield* service.ingestHistory(input);
+          expect((yield* service.conversations({})).threads).toEqual([]);
+          expect(
+            (yield* service.conversations({ deleted: true })).threads.map((thread) => thread.id),
+          ).toEqual([deleted.summary.id]);
+          yield* service.eraseConversation({ requestId: "erase", id: deleted.summary.id }, owner);
+          expect(
+            (yield* service.history({ id: deleted.summary.id }).pipe(Effect.flip)).reason,
+          ).toBe("not-found");
+          expect((yield* service.threadIndex({})).threads).toEqual([]);
+          yield* service.ingestHistory(input);
+          yield* service.ingestHistory({
+            ...input,
+            requestId: "late",
+            fromSequence: 1,
+            entries: [
+              { sequence: 2, thread: { ...deleted, summary: { ...deleted.summary, sequence: 2 } } },
+            ],
+          });
+          expect((yield* service.threadIndex({})).threads).toEqual([]);
+          const sql = yield* SqlClient.SqlClient;
+          for (const table of [
+            "fork_library_threads",
+            "fork_library_history_items",
+            "fork_library_history_headers",
+            "fork_library_thread_versions",
+            "fork_library_history_blobs",
+            "fork_library_search_items",
+            "fork_library_search_vectors",
+          ]) {
+            expect(yield* sql.unsafe(`SELECT COUNT(*) AS count FROM ${table}`)).toEqual([
+              { count: 0 },
+            ]);
+          }
+        }),
+      ),
+  );
+  it.effect(
+    "permits only owners to erase deleted conversations and retains unexpired history",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = yield* create(service);
+          yield* service.registerCopy({ requestId: "copy", copy: copyFor(project) });
+          const before = yield* archiveFor(project);
+          yield* service.registerThread({ requestId: "active", thread: before });
+          expect(
+            (yield* service
+              .eraseConversation({ requestId: "active-erase", id: before.summary.id }, owner)
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid");
+          const deleted = {
+            ...before,
+            summary: { ...before.summary, deleted: true, sequence: 2 },
+            projection: {
+              ...before.projection,
+              thread: { ...before.projection.thread, deletedAt: before.projection.updatedAt },
+            },
+          };
+          yield* service.registerThread({ requestId: "deleted", thread: deleted });
+          expect(
+            (yield* service
+              .eraseConversation(
+                { requestId: "agent-erase", id: before.summary.id },
+                { subject: "mcp-client", scopes: [AuthSettingsWriteScope] },
+              )
+              .pipe(Effect.flip)).reason,
+          ).toBe("blocked");
+          expect(yield* service.deletedPreferences).toEqual({ retentionDays: 30 });
+          yield* service.setDeletedPreferences({ requestId: "retention", retentionDays: 2 }, owner);
+          yield* TestClock.adjust("1 day");
+          expect(yield* service.eraseExpired).toBe(0);
+          yield* TestClock.adjust("2 days");
+          expect(yield* service.eraseExpired).toBe(1);
+        }),
+      ),
   );
 });

@@ -1,3 +1,4 @@
+import * as StorageAccounting from "../fork/project-lifecycle/StorageCleanupAccounting.ts"; // fork: project-lifecycle
 import * as ThreadSettlementService from "./ThreadSettlementService.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
@@ -280,8 +281,13 @@ export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe
   // Whether a thread came from a linked environment, which skips setup.
   Layer.provide(ProjectionStore.layer),
 );
+// fork: project-lifecycle
+export const layerLibraryGitFetch = LibraryGitFetch.layer.pipe(
+  Layer.provide(StorageAccounting.layer),
+);
+
 export const layerStorageCleanup = StorageCleanup.layer.pipe(
-  Layer.provide(LibraryGitFetch.layer), // fork: library-launch-files
+  Layer.provide(layerLibraryGitFetch), // fork: library-launch-files
   Layer.provide(
     Layer.mergeAll(
       ProjectionStore.layer,

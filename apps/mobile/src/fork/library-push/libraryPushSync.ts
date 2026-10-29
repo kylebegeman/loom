@@ -9,6 +9,9 @@ import { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_PUSH_ACTIVITY_FEATURE,
   LIBRARY_PUSH_FEATURE,
+  LIBRARY_PUSH_KIND_PREFERENCES_FEATURE,
+  normalizeLibraryPushKinds,
+  type LibraryPushActivityKind,
   type LibraryPushDeviceRowId,
   type LibraryPushStatus,
 } from "@t3tools/contracts/fork";
@@ -47,6 +50,7 @@ import {
   recordAfterServed,
   recordAfterStatus,
   recordAfterUnregister,
+  recordFor,
   recordForOptIn,
   recordForRetry,
   sameLibraryPushSnapshot,
@@ -102,6 +106,9 @@ function libraryView(get: Atom.AtomContext, id: EnvironmentId): LibraryPushLibra
       capabilities === null
         ? null
         : supportsLoomFeature(capabilities, LIBRARY_PUSH_ACTIVITY_FEATURE),
+    kindPreferences:
+      capabilities !== null &&
+      supportsLoomFeature(capabilities, LIBRARY_PUSH_KIND_PREFERENCES_FEATURE),
     canChange: get(libraryPush.register.permissionAtom(id)),
     account: identity === undefined ? null : { issuer: identity.issuer, subject: identity.subject },
   };
@@ -275,6 +282,9 @@ async function registerDevice(
     apsEnvironment: build.apsEnvironment,
     appVersion: build.appVersion,
     tokenSuffix: tokenSuffix(token),
+    ...(registry.get(libraryPushSnapshotAtom).chosen?.kindPreferences
+      ? { allowedKinds: normalizeLibraryPushKinds(planned.allowedKinds) }
+      : {}),
   };
   if (planLibraryPushRegistration(planned.registration, device, Date.now()) === "none") {
     setActivity(registry, IDLE_ACTIVITY);
@@ -306,6 +316,7 @@ async function registerDevice(
         bundleId: build.bundleId,
         apsEnvironment: build.apsEnvironment,
         ...(build.appVersion === null ? {} : { appVersion: build.appVersion }),
+        ...(device.allowedKinds === undefined ? {} : { allowedKinds: device.allowedKinds }),
         token: Redacted.make(token),
       },
     },
@@ -537,4 +548,19 @@ export async function forgetPushThen<A>(
     // A removal that failed keeps the Library, and nothing else would plan its register again.
     requestLibraryPushSync(appAtomRegistry);
   }
+}
+
+export async function setLibraryPushKinds(
+  registry: AtomRegistry.AtomRegistry,
+  allowedKinds: ReadonlyArray<LibraryPushActivityKind>,
+): Promise<void> {
+  const snapshot = registry.get(libraryPushSnapshotAtom);
+  if (!snapshot.chosen?.kindPreferences) return;
+  await updateLibraryPushRecord(registry, (record) => {
+    const own = recordFor(record, snapshot.chosen!);
+    return own === null
+      ? record
+      : { ...own, allowedKinds: normalizeLibraryPushKinds(allowedKinds) };
+  });
+  requestLibraryPushSync(registry);
 }

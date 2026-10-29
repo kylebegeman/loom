@@ -32,6 +32,13 @@ import { Tool } from "effect/ai";
 import * as McpSchema from "effect/ai/McpSchema";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
+import { hideUnusableTools } from "../../apps/server/src/fork/mcp/sessionToolList.ts"; // fork: ext-mcp
+import { PcbToolkit } from "../../apps/server/src/fork/pcb-preview/mcp.ts"; // fork: ext-mcp
+import { ModelPreview3dToolkit } from "../../apps/server/src/fork/model-preview-3d/mcp.ts"; // fork: ext-mcp
+import { ReachToolkit } from "../../apps/server/src/fork/reach/mcp.ts"; // fork: ext-mcp
+import { ReachLibraryToolkit } from "../../apps/server/src/fork/reach/library/mcp.ts"; // fork: ext-mcp
+import { SitesToolkit } from "../../apps/server/src/fork/sites/mcp.ts"; // fork: ext-mcp
+import { HttpServerResponse } from "effect/http";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../apps/server/src/mcp/McpInvocationContext.ts";
 import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSchema.ts";
@@ -53,10 +60,14 @@ import {
 } from "../../apps/server/src/mcp/toolkits/pullRequests/tools.ts";
 import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.ts";
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
+import { UpdateToolkit } from "../../apps/server/src/fork/machine-updates/mcp.ts"; // fork: machine-updates
+import { AttentionToolkit } from "../../apps/server/src/fork/attention/mcp.ts"; // fork: attention-status
 import { ProjectLifecycleToolkit } from "../../apps/server/src/fork/project-lifecycle/mcp.ts"; // fork: project-lifecycle
 import { DirectoryToolkit } from "../../apps/server/src/fork/directory/mcp.ts"; // fork: directory-computers
 import { VaultCoreToolkit } from "../../apps/server/src/fork/vault/mcp.ts"; // fork: vault-core
 import { VaultProfileToolkit } from "../../apps/server/src/fork/vault/profile-mcp.ts"; // fork: vault-references
+import { VaultAccessToolkit } from "../../apps/server/src/fork/vault/access-mcp.ts"; // fork: vault-approvals
+import { ProjectLibraryToolkit } from "../../apps/server/src/fork/project-library/tools.ts"; // fork: library-projects
 import { BotsToolkit } from "../../apps/server/src/fork/bots/mcp.ts"; // fork: bots-triggers
 import {
   CLAUDE_PROVIDER,
@@ -87,7 +98,7 @@ const isCodex = (model: Model): model is Extract<Model, `gpt-${string}`> =>
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 // USD per million tokens. Cache writes use the 5-minute rate.
 const PRICES = {
-  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1 },
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
   "claude-opus-5-5": { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
 };
@@ -232,6 +243,8 @@ export const McpToolUseCase = Schema.Struct({
     harness: Schema.optional(Schema.Literals(["claude", "codex"])),
     /** The Linked environments beta is on, so T3 lists its link tools. */
     linkedEnvironments: Schema.optional(Schema.Boolean),
+    // fork: ext-mcp
+    toolFamilies: Schema.optional(Schema.Array(Schema.Literals(["hardware", "reach", "sites"]))),
     /** delegate_task `role` for a delegated child. T3 builds the child's first message from it. */
     delegateRole: Schema.optional(OrchestratorMcpTaskRole),
     context: Schema.optional(Schema.String),
@@ -358,11 +371,20 @@ export const normalizeToolInput = (name: string, input: unknown) =>
 // McpHttpServer advertises each tool's JSON schema, and Claude Code passes the MCP name,
 // description, and schema through unchanged.
 const t3SourceTools: ReadonlyArray<Tool.Any> = [
+  UpdateToolkit, // fork: machine-updates
+  PcbToolkit, // fork: ext-mcp
+  ModelPreview3dToolkit, // fork: ext-mcp
+  ReachToolkit, // fork: ext-mcp
+  ReachLibraryToolkit, // fork: ext-mcp
+  SitesToolkit, // fork: ext-mcp
+  AttentionToolkit, // fork: attention-status
   ProjectLifecycleToolkit, // fork: project-lifecycle
   DirectoryToolkit, // fork: directory-computers
   BotsToolkit, // fork: bots-triggers
   VaultCoreToolkit, // fork: vault-core
   VaultProfileToolkit, // fork: vault-references
+  VaultAccessToolkit, // fork: vault-approvals
+  ProjectLibraryToolkit, // fork: library-projects
   OrchestratorToolkit,
   ThreadToolkit,
   AttachmentToolkit,
@@ -392,8 +414,51 @@ const enabledWhen = (predicate: () => boolean) =>
 const hiddenFromSubagents = enabledWhen(McpInvocationContext.hiddenFromSubagents);
 // The Linked environments beta starts off, and T3 lists its tools only while it is on.
 const hiddenWhileLinksOff = enabledWhen(McpInvocationContext.hiddenWhileLinksOff);
-const visibleT3Tools = (options: { readonly subagent?: boolean; readonly links?: boolean }) =>
-  t3Tools.filter(
+// fork: ext-mcp
+const familyFilteredTools = (families: ReadonlyArray<string> = []) => {
+  const response = hideUnusableTools(
+    HttpServerResponse.jsonUnsafe({
+      result: {
+        tools: t3Tools.map((tool) => ({
+          ...tool,
+          name: normalizeToolName(tool.name),
+          inputSchema: tool.input_schema,
+        })),
+      },
+    }),
+    {
+      environmentId: EnvironmentId.make("eval-host"),
+      capabilities: new Set([
+        "orchestration",
+        "worktree",
+        "pull-requests",
+        "preview",
+        "device",
+        ...families,
+      ] as McpInvocationContext.McpCapability[]),
+      issuedAt: 0,
+      requestNamespace: "eval",
+      thread: {
+        threadId: ThreadId.make("eval-thread"),
+        providerSessionId: "eval-session",
+        providerInstanceId: ProviderInstanceId.make("eval-provider"),
+      },
+      client: undefined,
+    },
+  );
+  if (response.body._tag !== "Uint8Array") throw new Error("Expected a JSON tool-list response");
+  const payload = JSON.parse(new TextDecoder().decode(response.body.body)) as {
+    result: { tools: Array<{ name: string }> };
+  };
+  const names = new Set(payload.result.tools.map((tool) => tool.name));
+  return t3Tools.filter((tool) => names.has(normalizeToolName(tool.name)));
+};
+const visibleT3Tools = (options: {
+  readonly subagent?: boolean;
+  readonly links?: boolean;
+  readonly toolFamilies?: ReadonlyArray<string> | undefined;
+}) =>
+  familyFilteredTools(options.toolFamilies).filter(
     (tool) =>
       (options.links === true || !hiddenWhileLinksOff.has(tool.name)) &&
       !(options.subagent === true && hiddenFromSubagents.has(tool.name)),
@@ -507,6 +572,8 @@ export const buildBase = (
     readonly nativeSubagent?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
     readonly deviceAccess?: boolean;
+    // fork: ext-mcp
+    readonly toolFamilies?: ReadonlyArray<string> | undefined;
   },
 ) => {
   const t3 = visibleT3Tools(options);
@@ -589,6 +656,8 @@ const buildCodexBase = (
     readonly links?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
     readonly deviceAccess?: boolean;
+    // fork: ext-mcp
+    readonly toolFamilies?: ReadonlyArray<string> | undefined;
   },
 ): Base => {
   const t3 = visibleT3Tools(options);
@@ -1955,6 +2024,7 @@ const main = Effect.gen(function* () {
     role: McpToolUseCase["setup"]["role"],
     deviceAccess: boolean,
     links: boolean,
+    toolFamilies?: ReadonlyArray<string>, // fork: ext-mcp
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -1966,6 +2036,7 @@ const main = Effect.gen(function* () {
               subagent: role === "delegated-child",
               links,
               deviceAccess,
+              toolFamilies, // fork: ext-mcp
             }),
           ),
         )
@@ -1978,6 +2049,7 @@ const main = Effect.gen(function* () {
               nativeSubagent: role === "native-subagent",
               links,
               deviceAccess,
+              toolFamilies, // fork: ext-mcp
             });
             return role === "native-subagent"
               ? Effect.promise(() => t3SubagentContext(flags.model, deviceAccess)).pipe(
@@ -2001,7 +2073,26 @@ const main = Effect.gen(function* () {
     ];
     bases.set(key, yield* buildFor(role, access === "true", links === "true"));
   }
-  const baseFor = (testCase: McpToolUseCase) => bases.get(baseKey(testCase)) ?? base;
+  // fork: ext-mcp
+  const familyKey = (testCase: McpToolUseCase) =>
+    `${baseKey(testCase)}:${testCase.setup.toolFamilies?.join(",")}`;
+  const familyBases = new Map<string, Base>();
+  for (const testCase of selected) {
+    const key = familyKey(testCase);
+    if (testCase.setup.toolFamilies === undefined || familyBases.has(key)) continue;
+    const [role = "top", access, links] = key.split(":") as [
+      McpToolUseCase["setup"]["role"],
+      string,
+      string,
+    ];
+    familyBases.set(
+      key,
+      yield* buildFor(role, access === "true", links === "true", testCase.setup.toolFamilies),
+    );
+  }
+  const baseFor = (testCase: McpToolUseCase) =>
+    // fork: ext-mcp
+    familyBases.get(familyKey(testCase)) ?? bases.get(baseKey(testCase)) ?? base;
   const effort = flags.effort ?? base.codex?.reasoning.effort ?? "high";
   if (flags["dry-run"]) {
     // One JSON line per case. Without --case this also checks that every case builds.

@@ -1,3 +1,4 @@
+export * from "./attention-retry.ts";
 export * from "./skill-registry.ts";
 export * from "./project-profiles.ts";
 
@@ -122,3 +123,8 @@ export * from "./library-workflows.ts";
 export * from "./thread-attention.ts";
 export * from "./restart-impact.ts";
 export * from "./database-compaction.ts";
+export * from "./project-storage.ts";
+
+export * from "./compatibility.ts";
+
+export * from "./update-plans.ts";

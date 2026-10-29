@@ -1,6 +1,14 @@
-import { PROVIDER_DISPLAY_NAMES, type EnvironmentId, type ProviderDriverKind } from "@t3tools/contracts";
+import {
+  PROVIDER_DISPLAY_NAMES,
+  type EnvironmentId,
+  type ProviderDriverKind,
+} from "@t3tools/contracts";
 import type { DirectoryListing } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
+
+import { connectionRoutes } from "../connection/routes.ts";
+import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
+import * as Option from "effect/Option";
 
 import type { EnvironmentConnectionPresentation } from "../connection/presentation.ts";
 import { directoryAgeText, directoryEnvironments, directoryProofAge } from "./directory.ts";
@@ -47,9 +55,9 @@ export function connectionStallTitle(label: string, failingSince: number, now: n
 
 export const CONNECTION_STALL_DETAIL = "Loom keeps trying.";
 
-/** What the Library's directory says about a saved computer this device cannot reach. */
+/** What the Library last heard from a computer, independent of this device's connection. */
 export interface ComputerDirectoryHealth {
-  /** "Running, but not reachable from here." or "Last reported 3 hours ago." */
+  /** A recent live report, or the age of older or cached evidence. */
   readonly text: string;
   /** For example "Codex needs attention on Dorothy.", or null. */
   readonly attention: string | null;
@@ -61,16 +69,13 @@ const providerName = (id: string) => PROVIDER_DISPLAY_NAMES[id as ProviderDriver
 const listText = (names: readonly string[]) =>
   names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
-/**
- * Reads a live listing only: a cached one cannot say the computer is running now. A recent report
- * means the computer reaches the Library but not this device, which a route or network fixes,
- * not a restart. Null when the directory has no report for the computer.
- */
+/** A cached report gives history, never evidence that the computer is reporting now. */
 export function computerDirectoryHealth(input: {
   readonly listing: DirectoryListing;
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly now: number;
+  readonly source?: "live" | "cache";
 }): ComputerDirectoryHealth | null {
   const report = directoryEnvironments(input.listing).find(
     (environment) => environment.environmentId === input.environmentId,
@@ -81,12 +86,35 @@ export function computerDirectoryHealth(input: {
     .filter((provider) => provider.status === "error" || provider.status === "warning")
     .map((provider) => providerName(provider.id));
   return {
-    text: proof.recent
-      ? "Running, but not reachable from here."
-      : `Last reported ${directoryAgeText(proof.ageMs)}.`,
+    text:
+      proof.recent && input.source !== "cache"
+        ? `Reporting normally, last seen ${directoryAgeText(proof.ageMs)}.`
+        : `Last reported ${directoryAgeText(proof.ageMs)}.`,
     attention:
       attention.length === 0
         ? null
         : `${listText(attention)} ${attention.length === 1 ? "needs" : "need"} attention on ${input.label}.`,
   };
+}
+
+/** A route label alone cannot prove Tailscale: only the catalog's explicit network marker can. */
+export function tailnetOnlyConnectionHint(
+  entry: ConnectionCatalogEntry,
+  connection: Pick<EnvironmentConnectionPresentation, "phase" | "failingSince" | "blockedReason">,
+): string | null {
+  if (
+    !entry.enabled ||
+    connection.blockedReason !== undefined ||
+    (connection.phase !== "reconnecting" &&
+      !(connection.phase === "connecting" && connection.failingSince !== undefined))
+  )
+    return null;
+  const routes = connectionRoutes(entry);
+  return routes.length > 0 &&
+    routes.every((route) => {
+      const profile = Option.getOrNull(route.profile);
+      return profile?._tag === "BearerConnectionProfile" && profile.network === "tailscale";
+    })
+    ? "Turn on Tailscale on this device."
+    : null;
 }

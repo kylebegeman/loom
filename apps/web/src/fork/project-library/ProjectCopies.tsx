@@ -390,7 +390,7 @@ export function ProjectCopies({
     );
   return (
     <LibrarySection
-      title="Files on computers"
+      title="Library copies"
       icon={MonitorIcon}
       count={active.length}
       action={
@@ -785,7 +785,7 @@ export function CopiesSummary({
   const active = libraryActiveCopies(copies);
   return (
     <LibraryPanel
-      title="Files on computers"
+      title="Library copies"
       icon={MonitorIcon}
       count={active.length}
       action={

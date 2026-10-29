@@ -8,7 +8,6 @@ import {
   ServerSettings,
   ServerFolders, // fork: file-placement
   ServerSettingsPatch,
-  StorageCleanupReport, // fork: mini-native-retention
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -17,7 +16,10 @@ import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandE
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
 import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
-import * as StorageCleanup from "../../../storageCleanup.ts"; // fork: mini-native-retention
+// fork: project-lifecycle
+import { ProjectStorageError, ProjectStorageReport } from "@t3tools/contracts/fork";
+// fork: project-lifecycle
+import { ForkRuntime } from "../../../fork/ForkRuntime.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -85,9 +87,13 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
 const StorageCleanupReportTool = Tool.make("loom_storage_cleanup_report", {
   ...shared,
   description:
-    "Read the latest automatic or user-requested native workspace cleanup report, including kept-work reasons and reclaimed bytes. Does not run cleanup or change administrator-owned retention settings.",
-  dependencies: [...shared.dependencies, StorageCleanup.StorageCleanup],
-  success: Schema.NullOr(StorageCleanupReport),
+    "Read this computer's measured storage breakdown for worktrees, primary checkouts, Library copies, Git mirrors, lanes, Scratch and database, plus cleanup history and confirmed reclaimed bytes. Measurements are cached briefly; unknown sizes are not zero. Does not run cleanup or change retention settings.",
+  // fork: project-lifecycle
+  dependencies: [...shared.dependencies, ForkRuntime],
+  // fork: project-lifecycle
+  success: ProjectStorageReport,
+  // fork: project-lifecycle
+  failure: Schema.Union([OrchestratorMcpFailure, ProjectStorageError]),
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);

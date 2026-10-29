@@ -75,6 +75,7 @@ export const projectProfilesPaletteSource: ForkCommandPaletteSource = {
               ...base,
               value: "action:loom:project-profiles:edit",
               title: "Edit project profile",
+              searchTerms: [...base.searchTerms, "agent tools", "hardware", "reach", "sites"],
               run: async () =>
                 requestProfileAction({
                   kind: "edit",

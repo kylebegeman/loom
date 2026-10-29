@@ -1,3 +1,6 @@
+import { ProjectStorageRpcGroup } from "./project-storage.ts";
+import { UpdatePlanRpcGroup } from "./machine-updates.ts";
+import { AttentionStatusRpcGroup } from "./attention-status.ts";
 import { SkillRegistryRpcGroup, SKILL_REGISTRY_WS_METHODS } from "./skill-registry.ts";
 import { ProjectWorkflowsRpcGroup, PROJECT_WORKFLOW_WS_METHODS } from "./project-workflows.ts";
 import { LibraryDecisionsRpcGroup } from "./project-library-decisions.ts";
@@ -83,6 +86,9 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  ProjectStorageRpcGroup,
+  UpdatePlanRpcGroup,
+  AttentionStatusRpcGroup,
   SkillRegistryRpcGroup,
   ProjectWorkflowsRpcGroup,
   ProjectProfilesRpcGroup,

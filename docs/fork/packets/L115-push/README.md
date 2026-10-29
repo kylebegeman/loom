@@ -161,20 +161,20 @@ it is a C05 cleanup item.
 
 Everything ships off at four layers, so each default is reversible.
 
-| ID  | Default                                                                                                                 |
-| --- | ----------------------------------------------------------------------------------------------------------------------- |
-| K1  | Env-only switch and key settings on the Library. Restart to apply.                                                      |
-| K2  | One secret-store document, `loom-push-devices`. No migration, no SQL table.                                             |
-| K3  | With push off, the document is removed at startup. The `.p8` is never touched.                                          |
-| K4  | A Production, topic-specific key for `com.kylebegeman.loom`, with a copy in Vault, installed outside the T3 home.       |
-| K5  | `LOOM_LIBRARY_PUSH_TOPICS`, default `com.kylebegeman.loom:production`, inside the `LOOM_IOS_PUSH_BUNDLE_IDS` allowlist. |
-| K6  | `LOOM_MOBILE_LIBRARY_PUSH_ENABLED` defaults to `0`. Kyle turns it on for a TestFlight build after the Apple setup.      |
-| K7  | Per-device opt-in, default off.                                                                                         |
-| K8  | Row lifetime is 60 days from the last refresh, independent of the Identity session age (D-11, see above).               |
-| K9  | Agent alerts from computers (C04-10): go. Built behind `LOOM_LIBRARY_PUSH_ACTIVITY`, off by default.                    |
-| K10 | Live Activities stay out until after C05.                                                                               |
-| K11 | Alert text is generic: title "Loom" and a body by kind. Thread or project titles would be Kyle's option.                |
-| K12 | Top-level user threads alert; a snoozed thread's finish stays quiet. Approving from a notification comes later.         |
+| ID  | Default                                                                                                                                |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| K1  | Env-only switch and key settings on the Library. Restart to apply.                                                                     |
+| K2  | One secret-store document, `loom-push-devices`. No migration, no SQL table.                                                            |
+| K3  | With push off, the document is removed at startup. The `.p8` is never touched.                                                         |
+| K4  | A Production, topic-specific key for `com.kylebegeman.loom`, with a copy in Vault, installed outside the T3 home.                      |
+| K5  | `LOOM_LIBRARY_PUSH_TOPICS`, default `com.kylebegeman.loom:production`, inside the `LOOM_IOS_PUSH_BUNDLE_IDS` allowlist.                |
+| K6  | `LOOM_MOBILE_LIBRARY_PUSH_ENABLED` defaults to `0`. Kyle turns it on for a TestFlight build after the Apple setup.                     |
+| K7  | Per-device opt-in, default off.                                                                                                        |
+| K8  | Row lifetime is 60 days from the last refresh, independent of the Identity session age (D-11, see above).                              |
+| K9  | Agent alerts from computers (C04-10): go. Built behind `LOOM_LIBRARY_PUSH_ACTIVITY`, off by default.                                   |
+| K10 | Live Activities stay out until after C05.                                                                                              |
+| K11 | Alert text is generic: title "Loom" and a body by kind. Thread or project titles would be Kyle's option.                               |
+| K12 | Top-level user threads and bot approval/input alert; a snoozed thread's finish stays quiet. Approving from a notification comes later. |
 
 ## Agent alerts (C04-10)
 
@@ -185,8 +185,9 @@ Library decides whose iPhones hear it and how often. The computer side is
 
 - **What alerts.** A top-level user thread that starts waiting for approval or an answer, fails,
   reaches a usage limit or finishes. Phases and the settled rule come from the relay's
-  `projectThreadAwarenessV2`, so every surface agrees on what needs the user. Subagents, bot runs,
-  and archived, deleted or settled threads never alert. A snoozed thread's finish stays quiet.
+  `projectThreadAwarenessV2`, so every surface agrees on what needs the user. Bot runs alert only
+  for approval and input. Subagents and archived, deleted or settled threads never alert.
+  A snoozed thread's finish stays quiet.
   The rule is the server's `isSnoozed`, so a failure or a pending question still alerts, just as
   the sidebar wakes the thread for them.
 - **Once per transition.** A computer keys each transition by its request or run id and keeps the
@@ -229,10 +230,17 @@ Library decides whose iPhones hear it and how often. The computer side is
   5 minutes.
 - **Vault approvals (L86).** A new pending Vault access request posts kind `vault-approval` for its
   thread through the same route, once and never retried. The computer reads its Library connection
-  per request, so a later sign-in needs no restart. Its `deepLink` opens that computer's settings,
-  where the request waits; an iPhone build without that route falls back to the thread. It expires
+  per request, so a later sign-in needs no restart. Its `deepLink` opens the requesting thread.
+  The mobile client keeps the computer-settings fallback for older Libraries. It expires
   with the request after 10 minutes and collapses under `loom-vault-`, apart from the thread's other
   alerts. A Library from before the kind answers 400, which the inbox shows as unconfirmed.
+- **Away alerts.** `ScheduledFailureAlertsLive` observes the scheduled-task list after an initial
+  seed and posts each changed failed run with only `{ kind: "scheduled-failed", taskId }`.
+  A 400 from an older Library is logged once. Bot approval/input alerts open the Bots inbox;
+  scheduled failures open the task's computer in Scheduled tasks.
+- **Preferences.** The optional `allowedKinds` field on the existing per-device record and
+  registration request limits Library delivery. Missing fields allow all kinds, preserving old
+  registrations. The `library-push-kind-preferences` capability gates mobile controls.
 - **Limits.** 20 per computer per hour, counting every accepted alert, sent or not. 30 per device
   per hour, past which that device is skipped. Alerts count apart from tests but share the last
   delivery and the failing flag, so the device list says "Last notification".

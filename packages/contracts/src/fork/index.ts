@@ -1,3 +1,4 @@
+export * from "./machine-updates.ts";
 export * from "./workflows.ts";
 export * from "./skill-registry.ts";
 export * from "./project-library-decisions.ts";
@@ -19,6 +20,7 @@ export * from "./vault-access.ts";
 export * from "./vault-core.ts";
 export * from "./vault-secret.ts";
 export * from "./keybindings.ts";
+export * from "./attention-status.ts";
 export * from "./rpc.ts";
 export * from "./switchboard.ts";
 export * from "./model-preview-3d.ts";
@@ -99,3 +101,4 @@ export * from "./thread-attention.ts";
 export * from "./database-compaction.ts";
 export * from "./agent-receipts.ts";
 export * from "./open-at-login.ts";
+export * from "./project-storage.ts";

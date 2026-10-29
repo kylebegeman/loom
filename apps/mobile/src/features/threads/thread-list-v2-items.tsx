@@ -1,3 +1,4 @@
+import { canRetryThread, retryThread } from "../../fork/attention/state"; // fork: attention-status
 import { scopedThreadKey } from "../../lib/scopedEntities"; // fork: project-lifecycle
 import {
   useReleasedCheckoutIds,
@@ -934,8 +935,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : [],
     [props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
+  const retryAllowed = canRetryThread(thread); // fork: attention-status
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
+      // fork: attention-status
+      ...(retryAllowed
+        ? [{ id: "retry-failed-run", title: "Retry failed run", image: "arrow.clockwise" }]
+        : []),
       // fork: attention-status
       ...(thread.queueHeld
         ? [
@@ -960,6 +966,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       props.titleRegenerationSupported,
       thread.titleRegeneration,
       thread.queueHeld,
+      retryAllowed, // fork: attention-status
       canOperateThread,
     ],
   );
@@ -1025,6 +1032,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      // fork: attention-status
+      if (nativeEvent.event === "retry-failed-run" && canOperateThread) {
+        void retryThread(thread);
+        return;
+      }
       // fork: attention-status
       if (nativeEvent.event === "resume-queue" && canOperateThread) {
         void resumeQueue({ environmentId: thread.environmentId, input: { threadId: thread.id } });
@@ -1485,8 +1497,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       >
         <View
           className={cn(
-            "min-h-[44px] flex-row items-center gap-2.5 py-2",
-            sidebarPane ? "px-3" : "px-5",
+            THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME,
+            "min-h-[44px] flex-row items-center gap-2 py-2",
+            sidebarPane && "px-3",
           )}
         >
           {props.project ? (

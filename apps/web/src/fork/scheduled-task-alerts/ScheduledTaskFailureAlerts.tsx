@@ -17,6 +17,8 @@ import { deliverDesktopNotification } from "../respectful-notifications/notifica
 import {
   newScheduledTaskFailures,
   scheduledTaskRunMark,
+  readScheduledTaskRunMarks,
+  writeScheduledTaskRunMarks,
   type ScheduledTaskRunMarks,
 } from "./scheduledTaskFailures";
 
@@ -42,12 +44,40 @@ export function ScheduledTaskFailureAlerts({
   const router = useRouter();
   // Kept through a reconnect, so a run that failed in between is still news.
   const seen = useRef<ScheduledTaskRunMarks | null>(null);
+  const initial = useRef(true);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays sounds and shows toasts or desktop notifications for newly failed scheduled task runs from the server
   useEffect(() => {
     if (tasks === null) return;
-    const { marks, failed } = newScheduledTaskFailures(seen.current, tasks);
+    const starting = initial.current;
+    const previous = starting ? readScheduledTaskRunMarks(environmentId) : seen.current;
+    const { marks, failed } = newScheduledTaskFailures(previous, tasks);
     seen.current = marks;
+    initial.current = false;
+    writeScheduledTaskRunMarks(environmentId, marks);
+    if (starting && failed.length > 0) {
+      if (getClientSettings().inAppNotificationsEnabled && !onTasksPage(router)) {
+        const toastId = toastManager.add({
+          type: "error",
+          title: `${failed.length} scheduled task${failed.length === 1 ? "" : "s"} failed while you were away`,
+          description: "Open Scheduled tasks to review the failures.",
+          actionProps: {
+            children: "Review failures",
+            onClick: () => {
+              toastManager.close(toastId);
+              void navigate({
+                to: SCHEDULED_TASKS_PATH,
+                search: {
+                  environmentId,
+                  ...(failed.length === 1 ? { taskId: failed[0]!.id } : {}),
+                },
+              });
+            },
+          },
+        });
+      }
+      return;
+    }
     for (const task of failed) {
       const mark = scheduledTaskRunMark(task);
       const reason = task.lastRunError ?? "Its last run failed.";

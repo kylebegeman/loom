@@ -1,6 +1,6 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
-  createDirectoryComputersAtoms,
+  computersBelowCompatibilityFloor,
   directoryComputersView,
   directoryCatalogRows,
   directoryOldMachines,
@@ -22,11 +22,10 @@ import * as Dialog from "../../components/ui/Dialog";
 import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { environmentCatalog } from "../../connection/catalog";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironmentServerConfig } from "../../state/entities";
-import { useEnvironmentPresentation } from "../../state/presentation";
+import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -43,7 +42,7 @@ import {
 } from "./directoryComputers";
 import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 
-const directoryComputers = createDirectoryComputersAtoms(connectionAtomRuntime);
+import { directoryComputers } from "./state";
 
 const FOOTER =
   "Computers your Library knows about. Connect signs in with Loom Identity, or asks for a pairing code when a computer does not offer it. Forget clears the Library entry and leaves your files and saved connection in place.";
@@ -89,9 +88,12 @@ export function useDirectoryComputers() {
   const answeredAt = AsyncResult.isSuccess(live) ? Date.parse(live.value.fetchedAt) : Number.NaN;
   const now = Number.isFinite(answeredAt) ? Math.max(shownAt, answeredAt) : shownAt;
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
+  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const saved = [...catalog.entries.values()].map((entry) => ({
     environmentId: entry.target.environmentId,
     label: entry.target.label,
+    loomFeatures: presentations.get(entry.target.environmentId)?.serverConfig?.environment
+      .capabilities.loomFeatures,
   }));
   const view = directoryComputersView({
     authorityEnvironmentId: libraryId,
@@ -114,6 +116,7 @@ export function useDirectoryComputers() {
   );
   return {
     libraryId,
+    incompatible: computersBelowCompatibilityFloor({ listing, saved }),
     content: directorySectionContent(
       {
         ...view,
@@ -121,6 +124,7 @@ export function useDirectoryComputers() {
         status: view.status === "empty" && rows.length > 0 ? "listed" : view.status,
       },
       catalog.isReady,
+      now,
     ),
     old,
     oldIds,

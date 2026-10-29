@@ -140,7 +140,7 @@ const offerUpdateFromMenu = Effect.fn("desktop.menu.offerUpdate")(function* (
       yield* tell(
         "Update scheduled",
         `Loom ${version} installs once agents on this computer are idle.`,
-        "Keep a Loom window open until then. Minimized is fine.",
+        "You can close every Loom window.", // fork: machine-updates
       );
     } else if (!(yield* updates.isInstallActive)) {
       yield* busy();

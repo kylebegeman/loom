@@ -1,3 +1,4 @@
+import { EraseLibraryConversation } from "./RecentlyDeleted";
 import {
   libraryHistoryOffsetForItem,
   shouldRefreshLibraryArchive,
@@ -62,7 +63,13 @@ export function LibraryConversationPage({
   const canContinue = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
   const [continuing, setContinuing] = useState(false);
   const visibleMessages = 100;
-  const archive = history.data;
+  const archive =
+    typeof history.failure === "object" &&
+    history.failure !== null &&
+    "reason" in history.failure &&
+    history.failure.reason === "not-found"
+      ? null
+      : history.data;
   const timeline = useMemo(
     () => (archive ? libraryArchiveTimeline(archive.projection) : []),
     [archive],
@@ -141,21 +148,24 @@ export function LibraryConversationPage({
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <SuggestBriefUpdates
-            summary={archive.summary}
-            projectArchived={library.project.data?.archived ?? false}
-            libraryKeepsProposals={supportsLoomFeature(
-              authority.environment?.serverConfig?.environment.capabilities,
-              LIBRARY_BRIEF_PROPOSALS_FEATURE,
-            )}
-            hostLabel={hostLabel}
-            hostConnected={host?.entry.enabled === true && host.connection.phase === "connected"}
-            hostProposes={supportsLoomFeature(
-              host?.serverConfig?.environment.capabilities,
-              LIBRARY_BRIEF_PROPOSALS_FEATURE,
-            )}
-          />
-          {host?.connection.phase === "connected" ? (
+          <EraseLibraryConversation thread={archive.summary} />
+          {!archive.summary.deleted ? (
+            <SuggestBriefUpdates
+              summary={archive.summary}
+              projectArchived={library.project.data?.archived ?? false}
+              libraryKeepsProposals={supportsLoomFeature(
+                authority.environment?.serverConfig?.environment.capabilities,
+                LIBRARY_BRIEF_PROPOSALS_FEATURE,
+              )}
+              hostLabel={hostLabel}
+              hostConnected={host?.entry.enabled === true && host.connection.phase === "connected"}
+              hostProposes={supportsLoomFeature(
+                host?.serverConfig?.environment.capabilities,
+                LIBRARY_BRIEF_PROPOSALS_FEATURE,
+              )}
+            />
+          ) : null}
+          {!archive.summary.deleted && host?.connection.phase === "connected" ? (
             <Button
               variant="outline"
               render={
@@ -180,7 +190,9 @@ export function LibraryConversationPage({
             }
             onClick={() => setContinuing(true)}
           >
-            Start on another computer
+            {archive.summary.deleted
+              ? "Continue in a new conversation"
+              : "Start on another computer"}
           </Button>
         </div>
       </div>
@@ -195,7 +207,8 @@ export function LibraryConversationPage({
           Linked continuation from conversation {archive.summary.continuationOf.threadId}.
         </p>
       ) : null}
-      {host?.entry.enabled === true &&
+      {!archive.summary.deleted &&
+      host?.entry.enabled === true &&
       host.connection.phase === "connected" &&
       supportsLoomFeature(
         host.serverConfig?.environment.capabilities,
@@ -206,7 +219,7 @@ export function LibraryConversationPage({
           threadId={archive.summary.threadId}
         />
       ) : null}
-      {host?.connection.phase === "connected" ? (
+      {!archive.summary.deleted && host?.connection.phase === "connected" ? (
         <LibraryUploadStatus
           environmentId={archive.summary.environmentId}
           threadId={archive.summary.threadId}

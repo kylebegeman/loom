@@ -78,18 +78,19 @@ names that app and asks for another port instead of replacing it.
 
 A computer renews its Library sign-in automatically before it expires. In
 **Settings > Computers > Connection details**, check **Library sign-in and
-directory** for its expiry, reporting state and any repair. The same status is
-available in the computer's details on iPhone. This sign-in is separate from
+directory** for its expiry, reporting state and any repair on web, desktop or iPhone.
+Each computer’s row also shows its Library health. An unreachable computer keeps its last
+report with its age; a cached report does not mean it is running now. If its only routes
+use Tailscale, Loom reminds you to turn on Tailscale on this device. This sign-in is separate from
 your devices' Identity sign-ins.
 
 If automatic renewal is unavailable, update Loom on your Library before the
-shown expiry. An expired or refused sign-in needs your Library administrator to
-issue a replacement publisher credential for this computer and replace its
-private credential file. Loom reloads the replacement automatically. Until
+shown expiry. For an expired or refused sign-in, issue a replacement publisher credential for this
+computer and replace its private credential file. Loom reloads the replacement automatically. Until
 then, Library publishing, directory reporting and remote bot requests cannot
 use that sign-in. A Library outage is retried automatically.
 
-The administrator issues credentials on the Library with
+Issue credentials on the Library with
 `loom auth library-publisher --source-environment-id <computer-id> --library-url <https-origin>`.
 If replacing a credential, revoke its old publisher session and retire its old
 issuer-side credential file first. Transfer the generated file privately to
@@ -219,14 +220,16 @@ notification settings, then choose the registered iPhone to test.
 Your Library can send notifications to Loom on your iPhone without a Connect
 account. With agent alerts on, it tells your iPhone when an agent needs your
 approval or an answer, asks for Vault access, fails, reaches a usage limit or
-finishes. This needs a
+finishes. It also reports bot runs waiting for you and failed scheduled tasks. This needs a
 Loom build for iPhone that supports Library notifications, a Library with
 notifications turned on, and an iPhone signed in to the Library with Loom
 Identity.
 
 To turn them on, open **Settings > Notifications** on iPhone and turn on
 **Notifications from** your Library. iOS asks for permission the first time.
-Choose **Send test notification** to check that one arrives. If the test fails,
+Choose the kinds you want below that switch, including bot approvals and failed scheduled
+tasks. These choices require an updated Library. Choose **Send test notification** to check
+that one arrives. If the test fails,
 Loom says why, such as too many tests in a short time or Apple refusing the
 Library's push key. When the Library no longer had the phone, or Apple no longer
 accepted its notification token, Loom registers the phone again; try the test
@@ -247,13 +250,18 @@ and from each computer your Library lists that has a Library connection and runs
 a Loom version with agent alerts. A computer connected to your Library after it
 started sends alerts once it restarts. An alert names no conversation, project
 or computer. Tap it to open the conversation, which needs a connection to that
-computer on this iPhone. A Vault access alert opens that computer's settings
-instead, and a computer sends it even when it connected to your Library after
-starting. Each conversation keeps one notification, the latest.
-Subagents, bot runs, and archived or settled conversations never alert. A
+computer on this iPhone. A Vault access alert opens its requesting conversation, a bot alert
+opens the Bots inbox, and a failed scheduled-task alert opens that task's computer in Scheduled
+tasks. Older Libraries can still open computer settings for Vault requests. A computer sends
+Vault alerts even when it connected to your Library after starting. Each conversation keeps one
+notification, the latest.
+Subagents and archived or settled conversations never alert. A
 snoozed conversation stays quiet when its agent finishes, but still alerts when
 it fails or asks you something. A computer sends at most 20 alerts an hour, and
 an iPhone gets at most 30.
+
+When you reopen Loom on desktop or in a browser, it summarizes scheduled tasks that failed
+since your last visit. Open the notice to review them in Scheduled tasks.
 
 With no iPhone registered, alerts reach no one. The **Push notifications**
 section and the iPhone's switch both say so with the steps to fix it, and a
@@ -313,6 +321,16 @@ versions and provider updates across computers. **Review updates** shows the
 planned updates, skipped computers, and restart impact before you run them. The
 command palette's **Review updates** opens this section.
 Offline computers retain their last known version until they reconnect.
+
+Choose **Update all when agents finish**, or arm one computer, to leave the update waiting there.
+Each computer remembers its plan after you close every window. The waiting count and **Cancel**
+appear in Computers and the sidebar; the phone lists plans under **Fleet updates**.
+The desktop app's **Install when idle** wait also continues with every Loom window closed.
+A computer that cannot schedule updates explains what needs updating or which access is missing.
+When only some computers accept the plan, each result is shown separately.
+
+If a computer is older than this Loom supports, Computers names it and offers **Update**.
+This includes your Library. The notice clears after the updated computer reports its capabilities.
 
 ### Forget an old computer
 

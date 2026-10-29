@@ -1,3 +1,4 @@
+import { RecentlyDeletedConversations, useRecentlyDeletedSupported } from "./RecentlyDeleted";
 import { TidyProjectDialog } from "./TidyProjectDialog";
 import { projectEntries } from "@t3tools/client-runtime/fork";
 import { ProjectWorkstreams } from "./ProjectWorkstreams";
@@ -177,6 +178,8 @@ function ProjectView({
   const [tidying, setTidying] = useState(false);
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
+  const deletedSupported = useRecentlyDeletedSupported();
+  const [showDeleted, setShowDeleted] = useState(false);
   const [editingBrief, setEditingBrief] = useState(false);
   // The command palette's Open project brief lands here, whether or not this page was open.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the module bus for command palette brief edit requests and unsubscribes on unmount
@@ -238,7 +241,6 @@ function ProjectView({
   const activeCopies = libraryActiveCopies(copies);
   const capabilities = library.environment?.serverConfig?.environment.capabilities;
   // An older Library would drop a saved profile, so the section waits until it says it keeps one.
-  const supportsWorkflows = supportsLoomFeature(capabilities, "project-workflows");
   const keepsProfile = supportsLoomFeature(capabilities, LIBRARY_PROJECT_PROFILE_FEATURE);
   // Suggested brief updates appear only once the Library says it keeps them.
   const proposesBrief = supportsLoomFeature(capabilities, LIBRARY_BRIEF_PROPOSALS_FEATURE);
@@ -279,10 +281,7 @@ function ProjectView({
     hostConnected,
   );
   const views = PROJECT_VIEWS.filter(
-    (entry) =>
-      entry !== "repositories" &&
-      (entry !== "setup" || keepsProfile) &&
-      (entry !== "workstreams" || supportsWorkflows),
+    (entry) => entry !== "repositories" && (entry !== "setup" || keepsProfile),
   );
   // A link to the setup view still lands somewhere on a Library that keeps no setup.
   const shown = view === "repositories" ? "computers" : views.includes(view) ? view : "overview";
@@ -331,7 +330,7 @@ function ProjectView({
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
       <ProjectTabs views={views} selected={shown} count={viewCount} onSelect={show}>
-        {shown === "workstreams" && supportsWorkflows ? (
+        {shown === "workstreams" ? (
           <ProjectWorkstreams
             project={project}
             authorityId={authorityId}
@@ -339,7 +338,7 @@ function ProjectView({
             threads={threads}
           />
         ) : null}
-        {shown === "setup" && supportsWorkflows ? (
+        {shown === "setup" ? (
           <ProjectBlueprint
             project={project}
             authorityId={authorityId}
@@ -417,22 +416,46 @@ function ProjectView({
           </div>
         ) : shown === "conversations" ? (
           <div className="flex min-w-0 flex-col gap-8">
-            <LibraryHistorySearch
-              authorityId={authorityId}
-              connected={library.connected}
-              capabilities={capabilities}
-              projectId={project.id}
-              hostLabel={hostLabel}
-            />
-            <ProjectConversations
-              project={project}
-              threads={threads}
-              loading={library.threads.isPending}
-              error={library.threads.error}
-              onRetry={library.threads.refresh}
-              hostLabel={hostLabel}
-              hostConnected={hostConnected}
-            />
+            {!showDeleted || !deletedSupported ? (
+              <LibraryHistorySearch
+                authorityId={authorityId}
+                connected={library.connected}
+                capabilities={capabilities}
+                projectId={project.id}
+                hostLabel={hostLabel}
+              />
+            ) : null}
+            {deletedSupported ? (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant={showDeleted ? "outline" : "secondary"}
+                  onClick={() => setShowDeleted(false)}
+                >
+                  Conversations
+                </Button>
+                <Button
+                  size="sm"
+                  variant={showDeleted ? "secondary" : "outline"}
+                  onClick={() => setShowDeleted(true)}
+                >
+                  Recently deleted
+                </Button>
+              </div>
+            ) : null}
+            {showDeleted && deletedSupported ? (
+              <RecentlyDeletedConversations key={project.id} projectId={project.id} />
+            ) : (
+              <ProjectConversations
+                project={project}
+                threads={threads}
+                loading={library.threads.isPending}
+                error={library.threads.error}
+                onRetry={library.threads.refresh}
+                hostLabel={hostLabel}
+                hostConnected={hostConnected}
+              />
+            )}
           </div>
         ) : shown === "timeline" ? (
           <ProjectTimeline
@@ -492,38 +515,36 @@ function ProjectView({
               onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
               onRemove={setReleasing}
             />
-            {supportsWorkflows ? (
-              <LibrarySection
-                title="Recovery and activity"
-                icon={ShieldCheckIcon}
-                action={
-                  <Button
-                    shape="pill"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setPreservationOpen(true)}
-                  >
-                    Review preservation
-                  </Button>
-                }
-              >
-                {activityHosts.length ? (
-                  <div className="grid gap-x-10 gap-y-6 lg:grid-cols-2">
-                    {activityHosts.map((environmentId) => (
-                      <ProjectOperationHistory
-                        key={environmentId}
-                        environmentId={environmentId}
-                        projectId={project.id}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    File activity shows here for each connected computer holding this project.
-                  </p>
-                )}
-              </LibrarySection>
-            ) : null}
+            <LibrarySection
+              title="Recovery and activity"
+              icon={ShieldCheckIcon}
+              action={
+                <Button
+                  shape="pill"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPreservationOpen(true)}
+                >
+                  Review preservation
+                </Button>
+              }
+            >
+              {activityHosts.length ? (
+                <div className="grid gap-x-10 gap-y-6 lg:grid-cols-2">
+                  {activityHosts.map((environmentId) => (
+                    <ProjectOperationHistory
+                      key={environmentId}
+                      environmentId={environmentId}
+                      projectId={project.id}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  File activity shows here for each connected computer holding this project.
+                </p>
+              )}
+            </LibrarySection>
           </div>
         ) : shown === "setup" ? (
           <ProjectProfile
