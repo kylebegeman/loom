@@ -254,6 +254,11 @@ on existing servers until their clients and every ingress path are verified; ena
 also gates relay, peer, CLI and MCP requests. No localhost or metadata exception bypasses it.
 Changing or removing either value invalidates earlier Identity sessions after restart.
 
+Open native sign-in in the system browser. Loom's internal Browser cannot use passkeys.
+Pocket ID's **Alternative Sign In** QR and login codes both produce `otp`, so they do not
+satisfy an `amr=phr` policy. Use a passkey in the system browser, including its genuine
+cross-device passkey prompt, when testing that policy. Keep the Access requirement intact.
+
 For the native pilot, verify authorization code with S256, exact desktop/iPhone redirects,
 OS-protected refresh storage, HTTP plus WebSocket authentication, sleep/restart renewal,
 expiry and revocation. Verify Loom's bearer header and OAuth challenge survive Access, and
