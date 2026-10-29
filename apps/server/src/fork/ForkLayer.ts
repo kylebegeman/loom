@@ -1,3 +1,5 @@
+import * as SessionToolPolicy from "./mcp/SessionToolPolicy.ts";
+import { SessionToolContextRoutes } from "./mcp/toolContextHttp.ts";
 import * as AttentionRetry from "./attention/AttentionRetry.ts";
 import * as SkillRegistry from "./skill-registry/SkillRegistryService.ts";
 import * as SkillStore from "./skill-registry/SkillStore.ts";
@@ -363,6 +365,36 @@ const layerOperationAdmission = OperationAdmission.layer.pipe(
   ),
 );
 
+const layerProjectProfiles = ProjectProfiles.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      ProjectStore.layer,
+      ProjectionStore.layer,
+      ProfileEnvInspector.layer,
+      ProfileVarlock.layer.pipe(Layer.provide(ProcessRunner.layer)),
+    ),
+  ),
+);
+const layerSites = SitesService.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(layerLibraryService),
+);
+// Credential preparation runs before the full fork runtime; share these exact layer instances.
+export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerProjectProfiles,
+      layerSites,
+      layerDirectory,
+      LibraryConnection.layer,
+      LibraryWorkspaceStore.layer,
+      ProjectStore.layer,
+      ProjectionStore.layer,
+    ),
+  ),
+  Layer.provide(ForkMigrationsLive),
+);
+
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   AttentionRetry.layer.pipe(Layer.provide(RuntimeLayer.layerThreadManagementProvided)),
@@ -375,16 +407,8 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryPublishingCredential.layer,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
   StaleConnectLink.layer,
-  ProjectProfiles.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        ProjectStore.layer,
-        ProjectionStore.layer,
-        ProfileEnvInspector.layer,
-        ProfileVarlock.layer.pipe(Layer.provide(ProcessRunner.layer)),
-      ),
-    ),
-  ),
+  layerProjectProfiles,
+  layerSessionToolPolicy,
   ProfileBudgets.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -438,7 +462,7 @@ const ForkServicesLive = Layer.mergeAll(
   VaultAccess.reactor.pipe(Layer.provide(layerVaultAccess)),
   VaultSecretRequests.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
-  SitesService.layer.pipe(Layer.provide(FetchHttpClient.layer), Layer.provide(layerLibraryService)),
+  layerSites,
   layerLibraryService,
   LibraryMaintenance.retentionLayer.pipe(Layer.provide(layerLibraryService)),
   layerProjectWorkflows,
@@ -620,6 +644,7 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
 export const ForkRoutesLayer = Layer.mergeAll(
   Layer.empty,
+  SessionToolContextRoutes,
   VaultBrokerHttpRoutes,
   VaultWorkloadHttpRoutes,
   LibraryAssetHttpRoutes,

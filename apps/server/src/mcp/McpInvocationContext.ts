@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
 const ALL_MCP_CAPABILITIES = [
+  ...(["hardware", "reach", "sites"] as const), // fork: ext-mcp
   "preview",
   "orchestration",
   "worktree",

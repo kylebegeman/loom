@@ -40,6 +40,7 @@ import {
   ForkLayer,
   ForkRoutesLayer,
   layerLibraryWorkspace,
+  layerSessionToolPolicy, // fork: ext-mcp
   layerProjectLifecycle,
 } from "./fork/ForkLayer.ts"; // fork: ext-core
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -549,6 +550,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerSessionToolPolicy), // fork: ext-mcp
   Layer.provide(layerProjectLifecycle), // fork: project-lifecycle
   Layer.provide(layerPullRequestService), // fork: project-lifecycle
   Layer.provide(layerLibraryWorkspace), // fork: library-projects

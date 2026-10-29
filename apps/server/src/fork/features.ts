@@ -31,6 +31,7 @@ import { isLibraryAuthorityEnv } from "./project-library/authority.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
+  "agent-tool-families",
   ATTENTION_RETRY_FEATURE,
   VAULT_SECRET_FEATURE,
   VAULT_APPROVAL_CARDS_FEATURE,

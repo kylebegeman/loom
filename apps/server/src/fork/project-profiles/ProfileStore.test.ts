@@ -20,6 +20,11 @@ describe("private project profiles storage", () => {
       const profile = {
         ...defaultProjectProfile(projectId),
         agentNotes: "Private notes",
+        agentToolFamilies: {
+          hardware: "always" as const,
+          reach: "never" as const,
+          sites: "auto" as const,
+        },
         commands: { test: { _tag: "command" as const, command: "vp test" } },
       };
       yield* store.put(profile);

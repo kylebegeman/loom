@@ -1545,3 +1545,10 @@ apps/mobile/src/features/home/useThreadListActions.ts	project-library	2
 apps/web/src/hooks/useThreadActionMenu.test.ts	attention-status	5
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-library	4
 apps/web/src/hooks/useThreadActions.permissions.test.ts	library-projects	4
+apps/server/src/orchestration-v2/ProviderSessionManager.ts	ext-mcp	5
+apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	ext-mcp	14
+apps/server/src/mcp/McpInvocationContext.ts	ext-mcp	1
+apps/server/src/mcp/McpToolAccess.ts	ext-mcp	3
+apps/server/src/server.ts	ext-mcp	2
+evals/mcp-tool-use/run.ts	ext-mcp	19
+apps/server/src/provider/AgentContextBudget.test.ts	ext-mcp	3
