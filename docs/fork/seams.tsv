@@ -1575,7 +1575,7 @@ apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-l
 packages/shared/package.json	-	"./fork/compatibility"
 apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
-apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
+apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1

@@ -22,7 +22,6 @@ import {
 } from "../fork/machine-updates/RemoteIdlePreparation.ts";
 // fork: machine-updates
 import { makeBackendPost, makeOwnedBackendUpdates } from "../fork/machine-updates/IdleInstall.ts";
-import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts"; // fork: machine-updates
 import {
   nextRemoteDesktopUpdateStep,
   normalizeRemoteUpdateReason,
