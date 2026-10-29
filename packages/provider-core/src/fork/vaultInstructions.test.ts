@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   T3_CODE_ORCHESTRATION_SECTIONS,
   t3AcpPromptWithInstructions,
-  t3OrchestrationPromptForFirstRun,
+  t3OrchestrationPrompt,
 } from "../server/orchestrationInstructions.ts";
 import { LOOM_VAULT_INSTRUCTIONS } from "./vaultInstructions.ts";
 
@@ -13,14 +13,16 @@ describe("LOOM_VAULT_INSTRUCTIONS", () => {
     ).toHaveLength(1);
     // Codex truncates the middle of a single instruction entry above this size.
     expect(new TextEncoder().encode(LOOM_VAULT_INSTRUCTIONS).length).toBeLessThan(4000);
-    const firstRun = t3OrchestrationPromptForFirstRun({
+    const firstRun = t3OrchestrationPrompt({
       prompt: "Use the development connection.",
-      runOrdinal: 1,
       hasT3Mcp: true,
+      hasDeviceTools: false,
+      orchestrationDelivered: false,
+      deviceInstructionsDelivered: false,
     });
     const acp = t3AcpPromptWithInstructions({
       prompt: "Use the development connection.",
-      state: { interactionMode: "default", hasT3Mcp: true },
+      state: { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false },
     });
     for (const prompt of [firstRun, acp]) {
       expect(prompt.split(LOOM_VAULT_INSTRUCTIONS)).toHaveLength(2);
