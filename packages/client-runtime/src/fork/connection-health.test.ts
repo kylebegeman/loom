@@ -1,11 +1,15 @@
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import * as Option from "effect/Option";
+import { BearerConnectionProfile, type ConnectionCatalogEntry } from "../connection/catalog.ts";
+import { BearerConnectionTarget, RelayConnectionTarget } from "../connection/model.ts";
 
 import {
   CONNECTION_STALL_MS,
   computerDirectoryHealth,
   connectionStallAt,
   isConnectionStalled,
+  tailnetOnlyConnectionHint,
 } from "./connection-health.ts";
 import { BOOK, DESK, MINUTES, NOW, ago, listing, reported } from "./directory-test-fixtures.ts";
 
@@ -29,7 +33,7 @@ describe("connection stall", () => {
 });
 
 describe("computer directory health", () => {
-  it("says a computer that reported moments ago is running but unreachable from here", () => {
+  it("uses a recent live report without claiming this device can reach the computer", () => {
     expect(
       computerDirectoryHealth({
         listing: listing([reported(BOOK, { reportedAt: ago(MINUTES) })]),
@@ -37,7 +41,16 @@ describe("computer directory health", () => {
         label: "Book",
         now: NOW,
       }),
-    ).toEqual({ text: "Running, but not reachable from here.", attention: null });
+    ).toEqual({ text: "Reporting normally, last seen 1 minute ago.", attention: null });
+    expect(
+      computerDirectoryHealth({
+        listing: listing([reported(BOOK, { reportedAt: ago(MINUTES) })]),
+        environmentId: BOOK,
+        label: "Book",
+        now: NOW,
+        source: "cache",
+      }),
+    ).toEqual({ text: "Last reported 1 minute ago.", attention: null });
   });
 
   it("gives an older report's age and names providers that need attention", () => {
@@ -72,5 +85,76 @@ describe("computer directory health", () => {
         now: NOW,
       }),
     ).toBeNull();
+  });
+});
+
+describe("tailnet-only connection advice", () => {
+  const route = (id: string, marked: boolean, url = "https://book.example.ts.net") => ({
+    target: new BearerConnectionTarget({ environmentId: BOOK, label: "Book", connectionId: id }),
+    profile: Option.some(
+      new BearerConnectionProfile({
+        environmentId: BOOK,
+        label: "Book",
+        connectionId: id,
+        httpBaseUrl: url,
+        wsBaseUrl: url.replace("https:", "wss:"),
+        ...(marked ? { network: "tailscale" as const } : {}),
+      }),
+    ),
+  });
+  const entry: ConnectionCatalogEntry = { ...route("one", true), enabled: true };
+  it("uses every saved route's explicit network marker, including alternatives", () => {
+    const failed = { phase: "reconnecting" as const };
+    expect(tailnetOnlyConnectionHint(entry, failed)).toBe("Turn on Tailscale on this device.");
+    expect(
+      tailnetOnlyConnectionHint({ ...entry, alternateRoutes: [route("two", true)] }, failed),
+    ).not.toBeNull();
+    expect(
+      tailnetOnlyConnectionHint(
+        { ...entry, alternateRoutes: [route("public", false, "https://book.example.com")] },
+        failed,
+      ),
+    ).toBeNull();
+    expect(
+      tailnetOnlyConnectionHint(
+        {
+          ...entry,
+          alternateRoutes: [
+            {
+              target: new RelayConnectionTarget({ environmentId: BOOK, label: "Book" }),
+              profile: Option.none(),
+            },
+          ],
+        },
+        failed,
+      ),
+    ).toBeNull();
+    expect(
+      tailnetOnlyConnectionHint(
+        { ...route("unmarked", false, "https://100.64.0.1"), enabled: true },
+        failed,
+      ),
+    ).toBeNull();
+  });
+  it("does not diagnose an offline device, a healthy or disabled connection, or refused sign-in", () => {
+    for (const phase of [
+      "connected",
+      "offline",
+      "available",
+      "unsupported",
+      "error",
+      "connecting",
+    ] as const) {
+      expect(tailnetOnlyConnectionHint(entry, { phase })).toBeNull();
+    }
+    expect(
+      tailnetOnlyConnectionHint(entry, { phase: "error", blockedReason: "authentication" }),
+    ).toBeNull();
+    expect(
+      tailnetOnlyConnectionHint({ ...entry, enabled: false }, { phase: "reconnecting" }),
+    ).toBeNull();
+    expect(
+      tailnetOnlyConnectionHint(entry, { phase: "connecting", failingSince: NOW }),
+    ).not.toBeNull();
   });
 });

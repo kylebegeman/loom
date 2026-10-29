@@ -88,6 +88,7 @@ function content(input: {
       now: NOW,
     }),
     input.savedReady ?? true,
+    NOW,
   );
 }
 
@@ -112,7 +113,7 @@ describe("Library computers section", () => {
     expect(listed.kind === "computers" && listed.computers).toEqual([
       expect.objectContaining({
         row: expect.objectContaining({ environmentId: BOOK, label: "Book" }),
-        description: "Linux · Reported 2 min ago",
+        description: "Linux · Reporting normally, last seen 2 minutes ago.",
         connectable: true,
       }),
     ]);
@@ -154,7 +155,7 @@ describe("Library computers section", () => {
     });
     expect(listed.kind === "computers" && listed.computers[0]).toMatchObject({
       description:
-        "macOS · Reported 2 min ago · Turn on Tailscale HTTPS or Reach on Book, or pair instead",
+        "macOS · Reporting normally, last seen 2 minutes ago. · Turn on Tailscale HTTPS or Reach on Book, or pair instead",
       connectable: false,
     });
   });

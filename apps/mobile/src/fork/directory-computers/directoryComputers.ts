@@ -2,6 +2,8 @@ import {
   directorySignInMismatch,
   type DirectoryCatalogRow,
   type DirectoryComputersView,
+  computerDirectoryHealth,
+  type ComputerDirectoryHealth,
   type DirectoryConnectStep,
   type DirectoryPlanConnectInput,
 } from "@t3tools/client-runtime/fork";
@@ -20,7 +22,7 @@ const PLATFORM_TEXT: Readonly<Record<string, string>> = {
 
 export interface DirectoryComputerItem {
   readonly row: DirectoryCatalogRow;
-  /** For example "macOS · Reported 2 min ago". */
+  /** Platform, report age and any provider that needs attention. */
   readonly description: string;
   readonly connectable: boolean;
 }
@@ -47,10 +49,14 @@ const HIDDEN: DirectorySectionContent = { kind: "hidden" };
 const LOADING: DirectorySectionContent = { kind: "loading" };
 const EMPTY: DirectorySectionContent = { kind: "empty" };
 
-export function directoryComputerItem(row: DirectoryCatalogRow): DirectoryComputerItem {
+export function directoryComputerItem(
+  row: DirectoryCatalogRow,
+  health: ComputerDirectoryHealth | null,
+): DirectoryComputerItem {
   const parts = [
     row.report === null ? undefined : PLATFORM_TEXT[row.report.platform.os],
-    row.proof?.text,
+    health?.text ?? row.proof?.text,
+    health?.attention ?? undefined,
     row.action === "pair"
       ? `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair instead`
       : undefined,
@@ -65,13 +71,27 @@ export function directoryComputerItem(row: DirectoryCatalogRow): DirectoryComput
 export function directorySectionContent(
   view: DirectoryComputersView,
   savedReady: boolean,
+  now: number,
 ): DirectorySectionContent {
   if (view.status === "no-library" || view.status === "unsupported") return HIDDEN;
   if (!savedReady) return LOADING;
   if (view.rows.length > 0)
     return {
       kind: "computers",
-      computers: view.rows.map(directoryComputerItem),
+      computers: view.rows.map((row) =>
+        directoryComputerItem(
+          row,
+          view.listing.listing === null
+            ? null
+            : computerDirectoryHealth({
+                listing: view.listing.listing,
+                source: view.listing.source === "live" ? "live" : "cache",
+                environmentId: row.environmentId,
+                label: row.label,
+                now,
+              }),
+        ),
+      ),
       cacheText: view.listing.cacheText,
       error: view.error,
     };
