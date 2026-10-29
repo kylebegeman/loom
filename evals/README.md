@@ -6,7 +6,7 @@ Write or run an eval when a change affects what a model sees or does: agent inst
 
 | Eval                            | Measures                                                                                                  |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [mcp-tool-use](mcp-tool-use/)   | Whether agents use T3's MCP tools correctly in fake threads.                                              |
+| [mcp-tool-use](mcp-tool-use/)   | Whether agents use T3's MCP tools correctly, including device routing and recovery, in fake threads.      |
 | [thread-titles](thread-titles/) | Whether generated thread titles name the right subject.                                                   |
 | [Loom skills](fork/skills/)     | Whether imported workflows preserve explicit delivery, exact models, bot boundaries and read-only recall. |
 | [test-signal](test-signal/)     | Whether a cheap model running the test-signal check flags low-signal tests.                               |

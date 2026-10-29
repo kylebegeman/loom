@@ -463,7 +463,7 @@ packages/provider-core/src/server/mcpSession.ts	ext-vault-terminal	3
 packages/provider-core/src/server/McpProviderSessions.ts	ext-vault-terminal	8
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	ext-vault-terminal	1
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	ext-vault-terminal	3
-apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	ext-vault-terminal	3
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	ext-vault-terminal	1
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	ext-vault-terminal	1
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	switchboard	1
 apps/web/src/components/sidebar/SidebarChrome.tsx	bots	14
@@ -570,6 +570,7 @@ apps/server/src/mcp/toolkits/orchestrator/tools.ts	brand	7
 apps/server/src/mcp/toolkits/pullRequests/tools.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts	brand	8
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	brand	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts	brand	1
 apps/server/src/orchestration-v2/ContextHandoffService.ts	brand	1
 apps/server/src/orchestration-v2/PullRequestWatchReactor.ts	brand	2
@@ -587,8 +588,8 @@ apps/server/src/preview/PreviewBrowserHost.ts	brand	4
 apps/server/src/project/ManagedProjectFolders.ts	brand	1
 apps/server/src/provider/AntigravityProvider.ts	brand	1
 apps/server/src/provider/ClaudeProvider.ts	brand	2
+apps/server/src/provider/CodexDeveloperInstructions.test.ts	brand	1
 apps/server/src/provider/CodexAuthCallbackPage.ts	brand	4
-apps/server/src/provider/CodexDeveloperInstructions.ts	brand	1
 apps/server/src/provider/CodexInstallation.ts	brand	1
 apps/server/src/provider/CodexProvider.ts	brand	2
 apps/server/src/provider/ProviderAuthService.ts	brand	1
@@ -665,11 +666,15 @@ packages/provider-acp/src/server/mcpOverAcpBridge.ts	brand	2
 packages/provider-core/src/server/failure.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.test.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.ts	brand	1
-packages/provider-core/src/server/orchestrationInstructions.ts	brand	6
+packages/provider-core/src/server/orchestrationInstructions.test.ts	brand	3
+packages/provider-core/src/server/orchestrationInstructions.ts	brand	7
+evals/mcp-tool-use/devices.test.ts	brand	1
+evals/mcp-tool-use/run.test.ts	brand	1
 packages/provider-core/src/server/runtimeInstructions.ts	brand	1
 packages/provider-core/src/server/textGenerationPrompts.ts	brand	2
 packages/provider-cursor/src/server/accountUsage.test.ts	brand	1
 packages/provider-cursor/src/server/accountUsage.ts	brand	1
+packages/provider-cursor/src/server/adapter.test.ts	brand	2
 packages/provider-cursor/src/server/status.test.ts	brand	2
 packages/provider-cursor/src/server/status.ts	brand	4
 packages/provider-cursor/src/server/textGeneration.ts	brand	1
@@ -1067,7 +1072,7 @@ apps/server/src/mcp/toolkits/attachment/handlers.ts	mcp-refusals	1
 apps/server/src/mcp/toolkits/core.test.ts	mcp-refusals	3
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	agent-catalog	1
 apps/server/src/mcp/toolkits/project/handlers.ts	mcp-refusals	2
-apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	9
+apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	8
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mobile-surface-hint	4
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-launch-files	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mobile-surface-hint	2
@@ -1321,6 +1326,8 @@ apps/server/src/bin.ts	mini-native-retention	1
 apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
+apps/server/src/device/AgentDeviceShim.ts	brand	4
+apps/server/src/device/AgentDeviceTarget.test.ts	brand	2
 apps/server/src/environment/DirectEndpoints.test.ts	directory-computers	11
 apps/server/src/environment/ServerEnvironment.test.ts	computer-naming	1
 apps/server/src/mcp/toolkits/orchestrator/handlers.ts	bots	3
@@ -1515,7 +1522,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199733
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199798
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
@@ -1568,3 +1575,4 @@ apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
 apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
+apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1

@@ -112,7 +112,7 @@ vi.mock("./threads", async () => {
       familyAtom: () => Atom.make(AsyncResult.success({})),
       refresh: vi.fn(),
     },
-    environmentThreadDetails: { threadAtom: () => Atom.make(null) },
+    environmentThreadDetails: { stateAtom: () => Atom.make(null) },
   };
 });
 vi.mock("./git", () => ({ gitEnvironment: { preparePullRequestThread: state.checkout } }));
@@ -243,6 +243,7 @@ beforeEach(() => {
   ]) {
     command.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   }
+  state.start.mockResolvedValue(AsyncResult.success({}));
   state.prepare.mockReset().mockImplementation(async ({ attachments }) => ({
     status: "ready",
     attachments: [],
@@ -446,7 +447,8 @@ describe("queued task operation access", () => {
       );
       await state.manager.enqueue(queued);
       const started = Promise.withResolvers<void>();
-      const delivery = Promise.withResolvers<AsyncResult.AsyncResult<void, Error>>();
+      const delivery =
+        Promise.withResolvers<AsyncResult.AsyncResult<{ readonly sequence?: number }, Error>>();
       state.start.mockImplementationOnce(() => {
         started.resolve();
         return delivery.promise;
@@ -456,7 +458,7 @@ describe("queued task operation access", () => {
       setOperateGrant("secondary", false);
       delivery.resolve(
         accepted
-          ? AsyncResult.success(undefined)
+          ? AsyncResult.success({})
           : AsyncResult.failure(Cause.fail(new Error("This connection cannot control this task."))),
       );
       await drained;
@@ -552,7 +554,7 @@ describe("interrupted mobile message delivery", () => {
       state.start.mockImplementationOnce(async ({ input }) => {
         expect(appAtomRegistry.get(threadOutboxDeliveryAtom)?.phase).toBe("confirming");
         accept(input);
-        return AsyncResult.success(undefined);
+        return AsyncResult.success({});
       });
       await runDrain();
       expect(
