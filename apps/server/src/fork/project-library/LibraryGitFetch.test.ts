@@ -9,8 +9,10 @@ import { expect } from "vite-plus/test";
 import * as ServerConfig from "../../config.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as LibraryGitFetch from "./LibraryGitFetch.ts";
+import * as Accounting from "../project-lifecycle/StorageCleanupAccounting.ts";
 
 const testLayer = LibraryGitFetch.layer.pipe(
+  Layer.provideMerge(Accounting.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "library-git-fetch-test-" })),
   Layer.provideMerge(ProcessRunner.layer),
   Layer.provideMerge(NodeServices.layer),
@@ -234,6 +236,17 @@ describe("LibraryGitFetch", () => {
       );
       expect(yield* fs.exists(mirror!.path)).toBe(false);
       expect(yield* fetch.mirrors).toEqual([]);
+      const accounting = yield* Accounting.StorageCleanupAccounting;
+      const entries = (yield* accounting.history).entries;
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        kind: "git-mirror",
+        outcome: "removed",
+        path: mirror!.path,
+      });
+      expect(entries[0]?.bytes).toBeGreaterThan(0);
+      yield* fetch.removeMirror({ key, unusedSince: "2999-01-01T00:00:00.000Z" });
+      expect((yield* accounting.history).entries).toEqual(entries);
     }).pipe(Effect.provide(testLayer)),
   );
 });

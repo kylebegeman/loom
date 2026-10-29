@@ -337,3 +337,15 @@ Worktree release is visible through the lifecycle status, independent of whether
 or retention removed the folder. Existence checks are shared by path and retained for 30 seconds.
 Explicit release and restore invalidate the cache; restore waits for the existing checkpoint and
 setup flow before reporting success.
+
+## Storage inventory
+
+The storage read model measures known roots on request with a short shared cache. It is not
+built from cleanup history, which can omit retained paths and contain deleted ones. Canonical
+paths have one category owner; nested roots, hardlinks and image-backed lane mounts must not
+be added twice. Unavailable paths remain unknown. Refresh never runs cleanup.
+
+Library releases and mirror removals record their measured net allocation change under the
+existing removal locks. The fork response carries those entries separately, preserving the
+upstream cleanup entry enum for older clients. Its additional byte total covers Library
+releases only, because upstream cleanup already counts mirror removals.

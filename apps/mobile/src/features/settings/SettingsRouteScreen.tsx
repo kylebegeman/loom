@@ -315,7 +315,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
           selectedProjectKey !== null ? { value: projectLabel } : undefined,
         ),
         // fork: project-home - Storage review is reachable without a project filter.
-        route("ProjectStorageInventory", "internaldrive", "Files on computers"),
+        route("ProjectStorageInventory", "internaldrive", "Working files"),
         serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
         serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
         page("SettingsPreviewLinks", "globe", "Previews"), // fork: preview-links

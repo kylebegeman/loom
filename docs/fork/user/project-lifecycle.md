@@ -4,6 +4,22 @@ Long agent tasks fill a disk quickly with build output, Xcode DerivedData and te
 files. Loom gives each checkout an agent works in a **lane**: a capped space for that
 scratch data, kept outside the checkout and removed when the work is done.
 
+## Find what uses storage
+
+Open **Settings > Worktrees** on web or desktop for a breakdown by computer. On mobile,
+open a computer's details and its **Storage** section. Refresh measures the files again;
+the timestamp tells you how old the result is. Unreadable folders show an unknown size,
+and partial measurements show a lower bound. Shared files and disk images make these
+estimates, rather than a promise of how many bytes an action will free.
+
+**Working files** lists project locations. **Library copies** belongs to the project's
+saved files on its computers. The category links open existing review and cleanup controls;
+mobile opens the computer's web settings for lanes, mirrors and Scratch when a browser
+address is available. That browser may need its own sign-in.
+
+The database stays visible after you collapse its details, including the last restart
+compaction outcome. Cleanup history reports completed removals separately from current usage.
+
 ## How lanes work
 
 A lane is created the first time an agent starts a run in a checkout. The project's main

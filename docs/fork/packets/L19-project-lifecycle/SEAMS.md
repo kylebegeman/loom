@@ -47,3 +47,11 @@ must preserve rather than duplicating their file catalog.
 Run the seam check and the affected lifecycle tests and consumer typechecks described in
 [TESTING.md](./TESTING.md). A full maintenance check is a separate integration gate; a docs
 or marker-manifest correction does not require running every fork suite.
+
+## Storage breakdown
+
+Storage settings mount fork-owned web and native summaries. Database notices retain every
+supported database, treating old dismissals as collapsed details. The shared server-state
+selector exposes all database statuses; new storage RPCs remain feature-gated. The native
+lane and mirror links open the computer's existing web settings when it has a browser route.
+The storage MCP read uses the fork runtime and leaves cleanup execution unchanged.

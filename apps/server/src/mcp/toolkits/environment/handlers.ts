@@ -6,7 +6,10 @@ import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts"; // fork: file-placement
 import * as ProjectPlacement from "../../../project/ProjectPlacement.ts"; // fork: file-placement
-import * as StorageCleanup from "../../../storageCleanup.ts"; // fork: mini-native-retention
+// fork: project-lifecycle
+// fork: project-lifecycle
+import { withForkRuntime } from "../../../fork/ForkRuntime.ts";
+import { ProjectStorageInventory } from "../../../fork/project-lifecycle/ProjectStorageInventory.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -50,7 +53,8 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
   loom_storage_cleanup_report: McpToolAccess.reads(() =>
     access.pipe(
       Effect.andThen(
-        Effect.flatMap(StorageCleanup.StorageCleanup, (cleanup) => cleanup.latestReport),
+        // fork: project-lifecycle
+        withForkRuntime(Effect.flatMap(ProjectStorageInventory, (storage) => storage.byCategory())),
       ),
     ),
   ),
