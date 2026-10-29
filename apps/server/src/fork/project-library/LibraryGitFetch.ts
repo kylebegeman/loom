@@ -1,3 +1,4 @@
+import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
@@ -62,6 +63,10 @@ export class LibraryGitFetch extends Context.Service<
     }) => Effect.Effect<void>;
     readonly mirrorKey: (remoteUrl: string) => Effect.Effect<string>;
     readonly mirrors: Effect.Effect<ReadonlyArray<LibraryGitMirror>, LibraryError>;
+    readonly mirrorLocations: Effect.Effect<
+      ReadonlyArray<{ readonly key: string; readonly path: string }>,
+      LibraryError
+    >;
     /** Removes a mirror unused since `unusedSince`, returning the bytes freed, or null when kept. */
     readonly removeMirror: (input: {
       readonly key: string;
@@ -138,6 +143,7 @@ const progressReporter = (onProgress: (progress: LibraryCloneProgress) => Effect
 };
 
 const make = Effect.gen(function* () {
+  const accountStorageRemoval = yield* makeStorageRemovalRecorder;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
@@ -501,14 +507,17 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const mirrors: LibraryGitFetch["Service"]["mirrors"] = Effect.gen(function* () {
+  const mirrorLocations = Effect.gen(function* () {
     if (!(yield* fs.exists(mirrorsDirectory))) return [];
     const keys = (yield* fs.readDirectory(mirrorsDirectory))
       .filter((name) => name.endsWith(MIRROR_SUFFIX))
       .map((name) => name.slice(0, -MIRROR_SUFFIX.length))
       .filter((key) => MIRROR_KEY.test(key))
       .toSorted();
-    return yield* Effect.forEach(keys, (key) =>
+    return keys.map((key) => ({ key, path: mirrorPath(key) }));
+  }).pipe(mapIo);
+  const mirrors: LibraryGitFetch["Service"]["mirrors"] = Effect.gen(function* () {
+    return yield* Effect.forEach(yield* mirrorLocations, ({ key }) =>
       Effect.gen(function* () {
         const mirror = mirrorPath(key);
         const remote = yield* runGit([
@@ -543,7 +552,16 @@ const make = Effect.gen(function* () {
         const lastUsedAt = yield* readLastUsed(mirror);
         if (lastUsedAt !== null && Date.parse(lastUsedAt) > cutoff) return null;
         const bytes = yield* directoryBytes(mirror);
-        yield* fs.remove(mirror, { recursive: true });
+        yield* accountStorageRemoval(
+          {
+            id: `git-mirror:${input.key}:${lastUsedAt ?? "unused"}`,
+            kind: "git-mirror",
+            path: mirror,
+            reason: "Unused Git mirror removed.",
+            paths: () => Effect.succeed([mirror]),
+          },
+          fs.remove(mirror, { recursive: true }),
+        );
         return bytes;
       }),
     );
@@ -564,7 +582,14 @@ const make = Effect.gen(function* () {
     Effect.forkIn(scope),
   );
 
-  return LibraryGitFetch.of({ cloneRepository, warmMirror, mirrorKey, mirrors, removeMirror });
+  return LibraryGitFetch.of({
+    cloneRepository,
+    warmMirror,
+    mirrorKey,
+    mirrorLocations,
+    mirrors,
+    removeMirror,
+  });
 });
 
 export const layer = Layer.effect(LibraryGitFetch, make);

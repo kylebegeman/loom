@@ -51,6 +51,7 @@ export const ProjectStorageReport = Schema.Struct({
   breakdown: ProjectStorageBreakdown,
   cleanup: Schema.NullOr(StorageCleanupReport),
   additionalEntries: Schema.Array(AdditionalStorageCleanupEntry),
+  /** Library release bytes; mirror removals are already counted by the upstream cleanup report. */
   additionalBytesFreed: Schema.Number,
 });
 export type ProjectStorageReport = typeof ProjectStorageReport.Type;

@@ -1,3 +1,4 @@
+import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { libraryCloneFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
 import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
@@ -296,6 +297,7 @@ const mapIo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.mapError(mapLibraryError));
 
 const make = Effect.gen(function* () {
+  const accountStorageRemoval = yield* makeStorageRemovalRecorder;
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const fs = yield* FileSystem.FileSystem;
@@ -2514,7 +2516,7 @@ const make = Effect.gen(function* () {
     return saved.copy;
   });
 
-  const release = Effect.fn("LibraryWorkspace.release")(function* (
+  const releaseFiles = Effect.fn("LibraryWorkspace.release")(function* (
     input: LibraryReleaseCopyRequest,
     isHistoryAcknowledged?: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
   ) {
@@ -2656,6 +2658,35 @@ const make = Effect.gen(function* () {
     // Keep the retry archive until the deletion and released state are durably recorded.
     yield* removeArchiveCache(released);
     return released.copy;
+  });
+
+  const release = Effect.fn("LibraryWorkspace.accountedRelease")(function* (
+    input: LibraryReleaseCopyRequest,
+    isHistoryAcknowledged?: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+  ) {
+    const receipt = yield* store.get(input.workingCopyId);
+    if (receipt.copy.ownership === "borrowed")
+      return yield* releaseFiles(input, isHistoryAcknowledged);
+    const paths = () =>
+      store.get(input.workingCopyId).pipe(
+        Effect.map((current) => [
+          current.copy.rootPath,
+          ...[current.removalPath, current.archivePath].filter(
+            (value): value is string => value !== null,
+          ),
+        ]),
+        Effect.orElseSucceed(() => [receipt.copy.rootPath]),
+      );
+    return yield* accountStorageRemoval(
+      {
+        id: `library-copy:${input.requestId}`,
+        kind: "library-copy",
+        path: receipt.copy.rootPath,
+        reason: "Library files released after their work was saved.",
+        paths,
+      },
+      releaseFiles(input, isHistoryAcknowledged),
+    );
   });
 
   const setCopyRetention = Effect.fn("LibraryWorkspace.setCopyRetention")(function* (
@@ -3661,7 +3692,16 @@ const make = Effect.gen(function* () {
         receipt.rootIdentity?.inode !== identity.inode
       )
         return;
-      yield* fs.remove(rootPath, { recursive: true });
+      yield* accountStorageRemoval(
+        {
+          id: `library-copy:reservation:${receipt.copy.id}`,
+          kind: "library-copy",
+          path: rootPath,
+          reason: "Unused Library download released.",
+          paths: () => Effect.succeed([rootPath]),
+        },
+        fs.remove(rootPath, { recursive: true }),
+      );
     }
     yield* store.put({
       ...receipt,

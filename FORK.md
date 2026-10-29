@@ -198,6 +198,15 @@ Upstream moved its own DOM tests to the browser test project and dropped them in
 `v0.1.1-nightly.20261018.3302`; seam rows keep the next merge from removing them again.
 The renderer follows the web app's React version, which comes from the workspace catalog.
 
+### Storage inventory seams
+
+| File                                                        | Packet              | Why                                                                       |
+| ----------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------- |
+| `apps/server/src/storageCleanup.ts`                         | `project-lifecycle` | Share bounded filesystem measurement with the computer storage inventory. |
+| `apps/server/src/mcp/toolkits/environment/tools.ts`         | `project-lifecycle` | Expose measured storage and separate fork cleanup entries.                |
+| `apps/server/src/mcp/toolkits/environment/handlers.ts`      | `project-lifecycle` | Read storage through the shared fork runtime.                             |
+| `apps/server/src/mcp/toolkits/environment/handlers.test.ts` | `project-lifecycle` | Keep storage reads scoped to the caller's environment.                    |
+
 ### Packet seams
 
 | File                                                           | Packet                | Why                                                                          |

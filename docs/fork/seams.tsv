@@ -111,12 +111,12 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mini-native-retenti
 apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	library-projects	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	project-lifecycle	2
-apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	5
+apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	3
 apps/server/src/mcp/toolkits/environment/tools.ts	file-placement	6
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	mini-native-retention	1
-apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	3
+apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	2
 apps/server/src/mcp/toolkits/environment/handlers.ts	file-placement	5
-apps/server/src/mcp/toolkits/environment/handlers.test.ts	mini-native-retention	4
+apps/server/src/mcp/toolkits/environment/handlers.test.ts	mini-native-retention	3
 apps/server/src/mcp/toolkits/environment/handlers.test.ts	file-placement	3
 apps/server/src/orchestration-v2/CheckpointRollbackService.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts	mini-native-retention	1
@@ -353,7 +353,7 @@ apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	8
 apps/server/src/server.ts	file-placement	7
 apps/server/src/storageCleanup.ts	project-checkout-management	10
-apps/server/src/storageCleanup.ts	project-lifecycle	99
+apps/server/src/storageCleanup.ts	project-lifecycle	100
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
@@ -1545,3 +1545,6 @@ apps/mobile/src/features/home/useThreadListActions.ts	project-library	2
 apps/web/src/hooks/useThreadActionMenu.test.ts	attention-status	5
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-library	4
 apps/web/src/hooks/useThreadActions.permissions.test.ts	library-projects	4
+apps/server/src/mcp/toolkits/environment/tools.ts	project-lifecycle	5
+apps/server/src/mcp/toolkits/environment/handlers.ts	project-lifecycle	3
+apps/server/src/mcp/toolkits/environment/handlers.test.ts	project-lifecycle	5
