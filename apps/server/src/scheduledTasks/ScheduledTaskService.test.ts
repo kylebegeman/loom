@@ -439,7 +439,7 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
           }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
+            // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,

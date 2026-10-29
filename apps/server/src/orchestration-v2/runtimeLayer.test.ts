@@ -5882,7 +5882,7 @@ const layerScratchPromotionTest = ScratchThreadPromotion.layer.pipe(
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
       scratchRoot: Effect.succeedSome(SCRATCH_ROOT),
       isScratchProject: (projectId) => Effect.succeed(projectId === SCRATCH_PROJECT_ID),
-      namedProjectsRoot: "/projects",
+      // fork: file-placement -- no namedProjectsRoot: ProjectPlacement owns the Projects folder.
     }),
   ),
   Layer.provide(NodeServices.layer),
