@@ -164,7 +164,7 @@ function SwitchPlan({
           ? ["This app's updates are off here, so reinstall it yourself to switch."]
           : []),
         ...(switchesLocal && isMacPlatform(navigator.platform)
-          ? ["If T3 Code does not reopen after it restarts, open it again."]
+          ? ["If Loom does not reopen after it restarts, open it again."] // fork: brand
           : []),
       ]}
       restarts={everything.restarts}
