@@ -1,3 +1,4 @@
+import { nativeTransportHeaders } from "../fork/cloudflare-access.ts"; // fork: cloudflare-access
 import {
   type AssetCreateUrlInput,
   type AssetCreateUrlResult,
@@ -18,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
@@ -137,6 +139,9 @@ export function createAssetEnvironmentAtoms<R, E>(
   } | null>,
 ) {
   const execute = Effect.fn("assets.createUrl")(function* (input: AssetCreateUrlInput) {
+    const source = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const prepared = yield* SubscriptionRef.get(source.prepared);
+    if (Option.isSome(prepared)) yield* nativeTransportHeaders(prepared.value.httpBaseUrl);
     const result = yield* request(WS_METHODS.assetsCreateUrl, input).pipe(Effect.result);
     if (Result.isSuccess(result)) return result.success;
     const error = result.failure;

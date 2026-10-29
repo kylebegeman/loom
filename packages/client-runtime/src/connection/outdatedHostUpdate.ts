@@ -1,3 +1,4 @@
+import { nativeTransportHeaders } from "../fork/cloudflare-access.ts"; // fork: cloudflare-access
 import {
   ORCHESTRATION_PROTOCOL_VERSION,
   type EnvironmentId,
@@ -127,6 +128,7 @@ export const updateOutdatedHost = Effect.fn("clientRuntime.connection.updateOutd
             Layer.provide(
               Layer.mergeAll(
                 Socket.layerWebSocket(prepared.socketUrl, {
+                  headers: yield* nativeTransportHeaders(prepared.socketUrl),
                   openTimeout: SOCKET_OPEN_TIMEOUT,
                 }).pipe(
                   Layer.provide(Layer.succeed(Socket.WebSocketConstructor, webSocketConstructor)),

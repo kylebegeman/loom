@@ -1,3 +1,4 @@
+import * as DesktopCloudflareAccess from "../fork/cloudflare-access/DesktopCloudflareAccess.ts"; // fork: cloudflare-access
 import * as Cause from "effect/Cause";
 // fork: restart-continuity -- BACKEND_STOP_TIMEOUT replaced the Duration import
 import * as Effect from "effect/Effect";
@@ -182,6 +183,7 @@ const bootstrap = Effect.gen(function* () {
       : { assetDirectory: environment.clientAssetsDir }),
     clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
   });
+  yield* (yield* DesktopCloudflareAccess.DesktopCloudflareAccess).install;
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
   yield* recordInstalledBuildAtStartup; // fork: rollback-snapshot

@@ -1013,6 +1013,13 @@ They add no grants and keep Loom authentication in place. Both Access settings s
 live servers pending native and MCP verification; see the
 [Reach runbook](docs/fork/operations/reach.md#cloudflare-access-pilot).
 
+Native Access sign-in is fork-owned in `packages/shared/src/fork/cloudflareAccess.ts`,
+`apps/desktop/src/fork/cloudflare-access/` and `apps/mobile/src/fork/cloudflare-access/`.
+`cloudflare-access` seams mount it in desktop startup/Identity IPC and renewal, mobile runtime,
+Identity and media consumers, and shared RPC/update handshakes and asset authorization. The web
+Identity entry point recognizes the Access challenge before protected host metadata is available.
+Keep Access admission separate from Loom session authorization and permission ceilings.
+
 ## Updating from upstream
 
 Loom follows upstream's nightlies, so `main` takes small upstream steps several times a day

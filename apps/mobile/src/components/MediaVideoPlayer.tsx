@@ -1,3 +1,4 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import { useEvent } from "expo";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -71,7 +72,13 @@ function LoadedMediaVideo(props: {
     if (uri === null) throw new Error("Video unavailable");
     playback.pause();
     previousPlaybackRequested.current = false;
-    await player.replaceAsync({ uri, contentType: "progressive" });
+    const token = await mobileAccess.token(uri);
+    if (signal.aborted) return;
+    await player.replaceAsync({
+      uri,
+      contentType: "progressive",
+      ...(token ? { headers: { "Cf-Access-Token": token } } : {}),
+    });
     if (!signal.aborted && props.playRequested) await playIfUninterrupted();
   });
 

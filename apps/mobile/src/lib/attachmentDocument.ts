@@ -1,3 +1,4 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -51,9 +52,12 @@ async function readAttachmentText(key: AttachmentTextKey, signal: AbortSignal) {
     if (!refreshed) throw new Error("Reconnect to this environment and try again.");
     target = refreshed;
   }
+  const token = await mobileAccess.token(target);
   const response = await fetch(target, {
     signal,
+    redirect: "error",
     headers: {
+      ...(token ? { "Cf-Access-Token": token } : {}),
       ...(key.sizeBytes > 0 ? { Range: `bytes=0-${FILE_TEXT_PREVIEW_MAX_BYTES}` } : {}),
       ...(key.revision > 0 ? { "Cache-Control": "no-cache" } : {}),
     },

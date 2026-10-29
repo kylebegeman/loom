@@ -1,3 +1,4 @@
+import { mobileAccess } from "../../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import { useRef, useState } from "react"; // fork: everyday-workflows
 import { Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
@@ -66,7 +67,12 @@ function DocumentWebPreview(props: { readonly uri: string; readonly onRetry?: ()
       <View className="flex-1" style={linkedPdf ? { display: "none" } : undefined}>
         <WebView
           ref={webViewRef} // fork: everyday-workflows
-          source={{ uri: props.uri }}
+          source={{
+            uri: props.uri,
+            headers: mobileAccess.peekToken(props.uri)
+              ? { "Cf-Access-Token": mobileAccess.peekToken(props.uri)! }
+              : {},
+          }}
           // react-native-webview defaults to "never", which starts the page under the header.
           contentInsetAdjustmentBehavior="automatic"
           originWhitelist={["*"]}

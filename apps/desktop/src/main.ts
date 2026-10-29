@@ -1,3 +1,4 @@
+import * as DesktopCloudflareAccess from "./fork/cloudflare-access/DesktopCloudflareAccess.ts"; // fork: cloudflare-access
 import * as MacPermissions from "./permissions/MacPermissions.ts";
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", (err: NodeJS.ErrnoException) => {
@@ -143,7 +144,7 @@ const layerElectron = Layer.mergeAll(
 );
 
 const layerDesktopFoundation = Layer.mergeAll(
-  DesktopIdentityRenewal.layer, // fork: identity-renewal
+  DesktopIdentityRenewal.layer.pipe(Layer.provideMerge(DesktopCloudflareAccess.layer)), // fork: identity-renewal
   OpenAtLogin.layer.pipe(Layer.provide(DesktopAppSettings.layer)), // fork: open-at-login
   MacPermissions.layer,
   DesktopState.layer,

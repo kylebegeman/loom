@@ -1,9 +1,11 @@
+import { mobileAccess } from "../fork/cloudflare-access/mobileAccess"; // fork: cloudflare-access
 import * as Dialog from "./ui/Dialog";
 import { useContext, useEffect, useEffectEvent, useState } from "react";
 
 import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import {
   downloadAndShareAttachment,
+  downloadAttachmentForPreview,
   nativeViewerErrorMessage,
   shareLocalAttachment,
 } from "../lib/attachmentDownload";
@@ -64,6 +66,19 @@ async function resolvePreviewItem(
         "Reconnect to this environment and try again. The file may have been moved or deleted.",
       );
     });
+  if (await mobileAccess.token(url)) {
+    const file = await downloadAttachmentForPreview({
+      url,
+      attachment: { name: name ?? "Preview", mimeType: "application/octet-stream" },
+      signal,
+    });
+    return file
+      ? {
+          source: { ...item, name, uri: file.uri + (item.srcFragment ?? "") },
+          dispose: file.dispose,
+        }
+      : null;
+  }
   return { source: { ...item, name, uri: url + (item.srcFragment ?? "") } };
 }
 

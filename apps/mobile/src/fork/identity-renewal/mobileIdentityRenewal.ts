@@ -1,6 +1,8 @@
+import { mobileAccess } from "../cloudflare-access/mobileAccess"; // fork: cloudflare-access
 // @effect-diagnostics globalDate:off -- The shared grant helpers are Promise APIs that take a wall clock.
 import { IdentityRenewal } from "@t3tools/client-runtime/fork";
 import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
 import * as SecureStore from "expo-secure-store";
 
 import { makeIdentityGrantStore } from "./grantStore";
@@ -24,8 +26,14 @@ export const identityGrantStore = makeIdentityGrantStore({
 
 const mobileIdentityRenewal = makeIdentityRenewal({
   store: identityGrantStore,
-  fetch: (url, init) => fetch(url, init),
+  fetch: mobileAccess.fetch,
   now: () => Date.now(),
 });
 
-export const addIdentityRenewal = Context.add(IdentityRenewal, mobileIdentityRenewal);
+export const addIdentityRenewal = Context.add(IdentityRenewal, {
+  ...mobileIdentityRenewal,
+  forget: (request) =>
+    mobileIdentityRenewal
+      .forget(request)
+      .pipe(Effect.andThen(Effect.promise(() => mobileAccess.forget(request.httpBaseUrl)))),
+});

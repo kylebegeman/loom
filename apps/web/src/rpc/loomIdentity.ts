@@ -26,6 +26,12 @@ export function loomIdentityUrl(baseUrl: string, path: string) {
   return new URL(path, base.origin).href;
 }
 
+export class LoomAccessRequiredError extends Error {
+  constructor() {
+    super("Sign in through Cloudflare Access before connecting to this computer.");
+  }
+}
+
 export async function readLoomIdentity(baseUrl: string, signal?: AbortSignal, refresh = false) {
   const url = loomIdentityUrl(baseUrl, LOOM_IDENTITY_METADATA_PATH);
   if (!url) return null;
@@ -37,6 +43,19 @@ export async function readLoomIdentity(baseUrl: string, signal?: AbortSignal, re
     ...(refresh ? { cache: "no-store" as const } : {}),
     ...(signal ? { signal } : {}),
   });
+  if (response.status === 401) {
+    const resource = /resource_metadata="([^"]+)"/u.exec(
+      response.headers.get("www-authenticate") ?? "",
+    )?.[1];
+    if (resource) {
+      const metadata = new URL(resource, url);
+      if (
+        metadata.origin === new URL(url).origin &&
+        metadata.pathname.startsWith("/.well-known/cloudflare-access-protected-resource/")
+      )
+        throw new LoomAccessRequiredError();
+    }
+  }
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Could not check Loom sign-in on this server.");
   return decodeMetadata(await response.json());

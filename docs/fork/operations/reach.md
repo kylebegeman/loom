@@ -259,6 +259,18 @@ Pocket ID's **Alternative Sign In** QR and login codes both produce `otp`, so th
 satisfy an `amr=phr` policy. Use a passkey in the system browser, including its genuine
 cross-device passkey prompt, when testing that policy. Keep the Access requirement intact.
 
+Native clients send the Managed OAuth access token in `Cf-Access-Token`, leaving Loom's
+`Authorization` header intact. Keep its refresh grant in OS-protected storage and persist rotation
+before sending the replacement token. A copied application JWT is unsuitable for this native
+cache: the pilot's 30-day JWT remained usable after its OAuth refresh grant was revoked, while
+the short-lived OAuth token was refused immediately. A Cloudflare rejection clears the cached
+grant without replaying the original operation. Sign-out ends only that client's grant.
+
+The desktop opens Access authorization in the system browser and supplies the header from its
+main process for HTTP, assets and WebSocket handshakes. iPhone uses its system authorization
+sheet and device-only Keychain storage. Native viewers that cannot accept request headers receive
+a temporary local copy; the app removes it when the viewer closes.
+
 For the native pilot, verify authorization code with S256, exact desktop/iPhone redirects,
 OS-protected refresh storage, HTTP plus WebSocket authentication, sleep/restart renewal,
 expiry and revocation. Verify Loom's bearer header and OAuth challenge survive Access, and

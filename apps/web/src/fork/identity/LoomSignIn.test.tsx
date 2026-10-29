@@ -10,6 +10,7 @@ vi.mock("~/environments/primary", () => ({
   resolvePrimaryEnvironmentHttpUrl: () => "https://primary.example",
 }));
 vi.mock("~/rpc/loomIdentity", () => ({
+  LoomAccessRequiredError: class extends Error {},
   readLoomIdentity: (...args: unknown[]) => harness.metadata(...args),
   loomBrowserLoginUrl: () => null,
 }));
@@ -25,6 +26,7 @@ vi.mock("~/components/ui/button", () => ({
   ),
 }));
 import { LoomSignIn } from "./LoomSignIn";
+import { LoomAccessRequiredError } from "~/rpc/loomIdentity";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -109,3 +111,13 @@ it.each([null, new Error("Metadata unavailable")])(
     expect(container.textContent).toContain("Account sign-in is unavailable at this address.");
   },
 );
+
+it("offers native sign-in before Access-protected computer metadata is available", async () => {
+  harness.metadata.mockRejectedValueOnce(new LoomAccessRequiredError());
+  harness.connect.mockResolvedValue({ _tag: "Success", value: EnvironmentId.make("first") });
+  await render();
+  expect(container.textContent).toContain("Sign in with Identity");
+  click("Sign in with Identity");
+  await act(async () => {});
+  expect(connected).toHaveBeenCalledWith(EnvironmentId.make("first"));
+});
