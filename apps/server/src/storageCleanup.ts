@@ -1813,7 +1813,7 @@ const make = Effect.gen(function* () {
         ),
       );
     }
-    if (releasing) return; // fork: project-lifecycle
+    if (releasing) return { waiting, kept }; // fork: project-lifecycle
     yield* reportOrphanWorktrees(
       roots,
       yield* projectStore.list({ includeDeleted: true }),
