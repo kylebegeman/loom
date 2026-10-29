@@ -57,24 +57,24 @@ export function AgentToolFamiliesSection({
   const [error, setError] = useState<string | null>(null);
   if (!supported) return null;
   const preferences = profile?.agentToolFamilies ?? DEFAULT_AGENT_TOOL_FAMILIES;
-  const save = async (family: AgentToolFamily, choice: AgentToolFamilies[AgentToolFamily]) => {
+  const save = (family: AgentToolFamily, choice: AgentToolFamilies[AgentToolFamily]) => {
     if (!profile || !allowed || busy) return;
     setBusy(true);
     setError(null);
-    try {
-      const result = await update({
-        environmentId,
-        input: { projectId, patch: { agentToolFamilies: { ...preferences, [family]: choice } } },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      setSaved({ source: query.data, profile: result.value });
-      setChoosing(null);
-      query.refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not save agent tools. Try again.");
-    } finally {
-      setBusy(false);
-    }
+    void update({
+      environmentId,
+      input: { projectId, patch: { agentToolFamilies: { ...preferences, [family]: choice } } },
+    })
+      .then((result) => {
+        if (result._tag === "Failure") return Promise.reject(squashAtomCommandFailure(result));
+        setSaved({ source: query.data, profile: result.value });
+        setChoosing(null);
+        query.refresh();
+      })
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Could not save agent tools. Try again.");
+      })
+      .finally(() => setBusy(false));
   };
   return (
     <SettingsSection

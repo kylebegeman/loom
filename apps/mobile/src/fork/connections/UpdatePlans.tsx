@@ -58,27 +58,27 @@ function ComputerUpdatePlan({
   const cancel = useAtomCommand(updatePlans.cancel, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const run = async () => {
+  const run = () => {
     if (busy || !currentVersion) return;
     setBusy(true);
     setMessage(null);
-    try {
-      if (updatePlanCanCancel(status)) {
-        const response = await cancel({ environmentId, input: { id: status!.plan!.id } });
-        if (response._tag === "Failure") throw squashAtomCommandFailure(response);
-      } else {
-        const targetVersion = await latestVersion(currentVersion);
-        if (targetVersion === null) setMessage("Already up to date");
-        else {
-          const response = await arm({ environmentId, input: { targetVersion } });
-          if (response._tag === "Failure") throw squashAtomCommandFailure(response);
-        }
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not change the update plan.");
-    } finally {
-      setBusy(false);
-    }
+    const change = updatePlanCanCancel(status)
+      ? cancel({ environmentId, input: { id: status!.plan!.id } })
+      : latestVersion(currentVersion).then((targetVersion) => {
+          if (targetVersion === null) {
+            setMessage("Already up to date");
+            return null;
+          }
+          return arm({ environmentId, input: { targetVersion } });
+        });
+    void change
+      .then((response) => {
+        if (response?._tag === "Failure") return Promise.reject(squashAtomCommandFailure(response));
+      })
+      .catch((error) => {
+        setMessage(error instanceof Error ? error.message : "Could not change the update plan.");
+      })
+      .finally(() => setBusy(false));
   };
   const text = updatePlanText(status);
   const cancelable = updatePlanCanCancel(status);
