@@ -7,6 +7,7 @@ export type ThreadActionMenuId =
   | "retry-failed-run"
   | "workspace-handoff"
   | "save-as-bot" // fork: bots
+  | "find"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
@@ -79,6 +80,7 @@ export interface ThreadActionMenuState {
   // fork: attention-status
   readonly canRetryFailedRun?: boolean;
   readonly canOperate: boolean;
+  readonly canFind?: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
     readonly label: string;
@@ -115,6 +117,7 @@ export interface ThreadActionMenuState {
 /** Local navigation, read markers, and copying remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
+    "find",
     "new-thread-on-branch",
     "project-settings",
     "mark-unread",
@@ -160,6 +163,9 @@ export function buildThreadActionMenuItems(
     ...(state.supports.saveAsBot
       ? [{ id: "save-as-bot" as const, label: "Save as bot…", icon: "bot" }]
       : []), // fork: bots
+    ...(state.canFind
+      ? [{ id: "find" as const, label: "Find in thread", icon: "text-search" }]
+      : []),
     ...(state.branch
       ? [
           {

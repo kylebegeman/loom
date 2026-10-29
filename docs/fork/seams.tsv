@@ -638,6 +638,7 @@ apps/web/src/components/settings/SettingsPanels.tsx	brand	2
 apps/web/src/components/settings/SnapShotSettings.tsx	brand	1
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	brand	3
 apps/web/src/components/settings/StorageSettings.tsx	brand	1
+apps/web/src/components/settings/SecretsSettings.tsx	brand	1
 apps/web/src/components/settings/ThemeImportDialog.tsx	brand	1
 apps/web/src/components/settings/ThemePreviewCircles.tsx	brand	1
 apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	brand	1
@@ -1124,7 +1125,7 @@ apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
 apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
-apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	4
+apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
 apps/desktop/src/app/DesktopPreReadyPlatform.test.ts	brand	2
 apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	brand	1
 apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx	brand	4
@@ -1524,7 +1525,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199798
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199898
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
