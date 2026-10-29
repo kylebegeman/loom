@@ -1048,6 +1048,7 @@ describe("Loom update publishing", () => {
             "Mobile: stable-only fix",
           ],
           totalItems: 3,
+          releasedAt: "2026-10-15",
         },
       ]);
     } finally {
