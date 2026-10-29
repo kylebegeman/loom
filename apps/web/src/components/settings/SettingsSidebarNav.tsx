@@ -56,7 +56,7 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
-import { HammerIcon, KeyRoundIcon } from "lucide-react"; // fork: ext-settings
+import { HammerIcon } from "lucide-react"; // fork: ext-settings
 import { validateSettingsScopeSearch } from "./settingsScope";
 import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";

@@ -1125,7 +1125,7 @@ apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
 apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
-apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	4
+apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
 apps/desktop/src/app/DesktopPreReadyPlatform.test.ts	brand	2
 apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	brand	1
 apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx	brand	4
