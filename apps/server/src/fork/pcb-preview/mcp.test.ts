@@ -38,7 +38,7 @@ const scope: McpInvocationScope = {
   },
   client: undefined,
   requestNamespace: "pcb-test",
-  capabilities: new Set(["orchestration"]),
+  capabilities: new Set(["orchestration", "hardware"]),
   issuedAt: 0,
 };
 const fixture = Effect.fn(function* (

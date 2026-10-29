@@ -6,6 +6,9 @@ import {
   type CommandIntent,
   type ProjectProfile,
   type IntentCommand,
+  AGENT_TOOL_FAMILIES,
+  AGENT_TOOL_FAMILIES_FEATURE,
+  DEFAULT_AGENT_TOOL_FAMILIES,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
@@ -386,11 +389,56 @@ export function ProfileEditor({
   };
   const commandFor = (intent: CommandIntent) =>
     mixedValue(records.map((record) => record.profile.commands[intent]));
+  const supportsToolFamilies = records.every((record) =>
+    loomFeaturesOf(configs.get(record.environmentId)?.environment.capabilities).includes(
+      AGENT_TOOL_FAMILIES_FEATURE,
+    ),
+  );
   return (
     <LoomSettingsPanel
       title="Private project profile"
       description={`Changes apply to ${records.length} selected checkout${records.length === 1 ? "" : "s"}. Notes stay in each environment's database.`}
     >
+      {supportsToolFamilies ? (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Tools for agents</h3>
+          <p className="text-sm text-muted-foreground">
+            Applies to the next agent session. Automatic shows Hardware for board or CAD projects,
+            Reach when your Library has a Reach zone, and Sites when the project links a site.
+          </p>
+          {AGENT_TOOL_FAMILIES.map((family) => {
+            const value = mixedValue(
+              records.map(
+                (record) =>
+                  (record.profile.agentToolFamilies ?? DEFAULT_AGENT_TOOL_FAMILIES)[family],
+              ),
+            );
+            const label =
+              family === "hardware" ? "Hardware" : family === "reach" ? "Reach" : "Sites";
+            return (
+              <LoomSettingsField key={family} label={label}>
+                <Select
+                  value={draft.agentToolFamilies?.[family] ?? value.value ?? ""}
+                  onValueChange={(choice) => {
+                    if (choice === "auto" || choice === "always" || choice === "never")
+                      edit({ agentToolFamilies: { ...draft.agentToolFamilies, [family]: choice } });
+                  }}
+                  disabled={!allowed || busy}
+                >
+                  <SelectTrigger aria-label={`${label} tools for agents`}>
+                    <SelectValue placeholder={value.mixed ? "Mixed" : "Automatic"} />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="auto">Automatic</SelectItem>
+                    <SelectItem value="always">Always</SelectItem>
+                    <SelectItem value="never">Never</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </LoomSettingsField>
+            );
+          })}
+        </div>
+      ) : null}
       <LoomSettingsField
         label="Agent notes"
         description="Private Markdown, up to 8,000 characters. Insert with % in the composer or let agents read it with the profile tool."

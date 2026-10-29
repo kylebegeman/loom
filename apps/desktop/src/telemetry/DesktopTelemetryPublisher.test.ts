@@ -9,6 +9,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
+import * as Stream from "effect/Stream"; // fork: machine-updates
+import * as Fiber from "effect/Fiber"; // fork: machine-updates
 
 import type * as Electron from "electron";
 import * as NodeEvents from "node:events";
@@ -57,6 +59,57 @@ function layerElectronApp(
 }
 
 describe("DesktopTelemetryPublisher", () => {
+  // fork: machine-updates
+  it.effect("retains each backend's origin on internal update requests", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const publisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
+        const requests = yield* publisher.updateRequests.pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* publisher.handleControlForSource("primary", {
+          version: 1,
+          type: "requestDesktopUpdate",
+          requestId: "one",
+        });
+        yield* publisher.handleControlForSource("wsl:Ubuntu", {
+          version: 1,
+          type: "requestDesktopUpdate",
+          requestId: "two",
+        });
+        assert.deepEqual(yield* Fiber.join(requests), [
+          { version: 1, type: "requestDesktopUpdate", requestId: "one", sourceId: "primary" },
+          { version: 1, type: "requestDesktopUpdate", requestId: "two", sourceId: "wsl:Ubuntu" },
+        ]);
+      }).pipe(
+        Effect.provide(
+          DesktopTelemetryPublisher.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                layerElectronApp([]),
+                Layer.succeed(
+                  ElectronPowerMonitor.ElectronPowerMonitor,
+                  ElectronPowerMonitor.ElectronPowerMonitor.of({
+                    isOnBatteryPower: Effect.succeed(false),
+                    getSystemIdleTime: Effect.succeed(0),
+                    getSystemIdleState: () => Effect.succeed("active"),
+                    getCurrentThermalState: Effect.succeed("nominal"),
+                    onSimpleEvent: () => Effect.void,
+                    onThermalStateChange: () => Effect.void,
+                    onSpeedLimitChange: () => Effect.void,
+                  }),
+                ),
+                layerHistory,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect("stops when its scope closes during an Electron telemetry sample", () =>
     Effect.gen(function* () {
       const pollStarted = yield* Deferred.make<void>();

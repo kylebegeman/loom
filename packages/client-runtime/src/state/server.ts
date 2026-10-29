@@ -8,7 +8,6 @@ import {
   type ServerProviderWorkspaceSnapshot,
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateResult,
-  shouldRecommendDatabaseCompaction,
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -1115,7 +1114,8 @@ export function createServerEnvironmentAtoms<R, E>(
     idleTtlMs: 0,
   });
   // Keyed by a JSON array of environment ids so one notice can list every machine.
-  const databaseCompactionRecommendations = Atom.family((environmentIdsKey: string) => {
+  // fork: project-lifecycle -- supported databases remain visible below the cleanup threshold.
+  const databaseStorageStatuses = Atom.family((environmentIdsKey: string) => {
     const sources = (JSON.parse(environmentIdsKey) as EnvironmentId[]).map((environmentId) => ({
       environmentId,
       atom: databaseStorage({ environmentId, input: {} }),
@@ -1124,17 +1124,13 @@ export function createServerEnvironmentAtoms<R, E>(
       sources
         .flatMap(({ environmentId, atom }) => {
           const result = get(atom);
-          return result._tag === "Success" &&
-            result.value !== null &&
-            shouldRecommendDatabaseCompaction(result.value)
+          return result._tag === "Success" && result.value !== null
             ? [{ environmentId, status: result.value }]
             : [];
         })
         .sort((left, right) => right.status.reclaimableBytes - left.status.reclaimableBytes),
     ).pipe(
-      Atom.withLabel(
-        `environment-data:server:database-compaction-recommendations:${environmentIdsKey}`,
-      ),
+      Atom.withLabel(`environment-data:server:database-storage-statuses:${environmentIdsKey}`),
     );
   });
   const welcome = (target: {
@@ -1170,7 +1166,7 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
     databaseStorage,
-    databaseCompactionRecommendations,
+    databaseStorageStatuses, // fork: project-lifecycle
     storageCleanupReport: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:storage-cleanup-report",
       tag: WS_METHODS.serverGetStorageCleanupReport,

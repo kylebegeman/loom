@@ -125,7 +125,7 @@ export function ProjectStoragePage() {
 
   return (
     <SettingsPageContainer scopePresentation="none">
-      <SettingsSection id="project-files" title="Files on computers" hideTitle variant="plain">
+      <SettingsSection id="project-files" title="Working files" hideTitle variant="plain">
         <p className="max-w-xl px-3 text-xs leading-relaxed text-muted-foreground sm:px-4">
           Projects organize your conversations in Loom. Working files are the code and other files
           at the locations below. Automatic removal frees safe copies after work is settled; Loom

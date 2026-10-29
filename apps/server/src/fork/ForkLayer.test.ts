@@ -43,6 +43,8 @@ vi.mock("../orchestration-v2/runtimeLayer.ts", async () => {
     layerProjectService: Layer.empty,
     layerProjectSetupScriptRunner: Layer.empty,
     layerEventSink: Layer.empty,
+    layerLibraryGitFetch: Layer.empty,
+    layerStorageCleanup: Layer.empty,
   };
 });
 

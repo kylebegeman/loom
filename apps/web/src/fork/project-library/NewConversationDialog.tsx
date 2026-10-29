@@ -44,9 +44,6 @@ import {
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_DEFAULT_CONVERSATION_TITLE,
-  LIBRARY_FILE_LIFECYCLE_FEATURE,
-  LIBRARY_LAUNCH_FILES_FEATURE,
-  LIBRARY_WORKTREE_STARTS_FEATURE,
   isDefaultThreadTitle,
   LibraryLaunchWorkspace,
   LibraryThreadBinding,
@@ -113,6 +110,7 @@ const ConversationAttempt = Schema.NullOr(
     createdAt: Schema.String,
     created: Schema.Boolean,
     registerRequestId: Schema.String,
+    launchOperationId: Schema.optional(Schema.String),
     defaultsResolved: Schema.optional(Schema.Boolean),
     requestedModelSelection: Schema.optional(ModelSelection),
     keepOnComputer: Schema.optional(Schema.Boolean),
@@ -514,10 +512,6 @@ export function useLibraryConversationSetup({
         })
       : null,
   );
-  const supportsReopen = supportsLoomFeature(
-    host?.serverConfig?.environment.capabilities,
-    LIBRARY_FILE_LIFECYCLE_FEATURE,
-  );
   const plannedSource = filesPlan.kind === "recover" ? filesPlan.sourceCopy : null;
   const supportsPortable = supportsLoomFeature(
     host?.serverConfig?.environment.capabilities,
@@ -545,7 +539,7 @@ export function useLibraryConversationSetup({
     resourceId,
     resourceIds: selectedScope,
     copyId: attempt?.binding.workingCopyId ?? copyId,
-    allowReopen: supportsReopen,
+    allowReopen: true,
     environmentId: hostId,
     newProjectsRoot: host?.serverConfig?.newProjectsRoot,
     copies: retained.data ?? knownCopies,
@@ -557,7 +551,7 @@ export function useLibraryConversationSetup({
     resourceId,
     resourceIds: selectedScope,
     copyId: attempt?.binding.workingCopyId ?? copyId,
-    allowReopen: supportsReopen,
+    allowReopen: true,
   })?.rootPath;
   const suggestedPath = serverRestores
     ? (retainedRoot ?? "")
@@ -583,7 +577,7 @@ export function useLibraryConversationSetup({
     resourceId,
     resourceIds: selectedScope,
     copyId: attempt?.binding.workingCopyId ?? copyId,
-    allowReopen: supportsReopen,
+    allowReopen: true,
   });
   const filesPolicy = movingLocalCopy ? null : (copy ?? retainedCopy);
   const keepOnComputer =
@@ -599,15 +593,10 @@ export function useLibraryConversationSetup({
   const workspace = attempt
     ? (attempt.workspace ?? null)
     : libraryLaunchWorkspace({
-        available:
-          supportsLoomFeature(
-            host?.serverConfig?.environment.capabilities,
-            LIBRARY_WORKTREE_STARTS_FEATURE,
-          ) &&
-          libraryLaunchCanUseWorktree(
-            launchProject,
-            launchResourceIds.length === 1 ? launchResourceIds[0]! : null,
-          ),
+        available: libraryLaunchCanUseWorktree(
+          launchProject,
+          launchResourceIds.length === 1 ? launchResourceIds[0]! : null,
+        ),
         chosen: workspaceChoice,
         conversations: folderConversations,
       });
@@ -625,17 +614,19 @@ export function useLibraryConversationSetup({
           }
         : null));
   const needsReopen =
-    reopening !== null ||
-    (!movingLocalCopy &&
-      copy?.state !== "ready" &&
-      retainedCopy?.state === "released" &&
-      (copy?.id === retainedCopy.id ||
-        portableSource?.id === retainedCopy.id ||
-        (!supportsPortable &&
-          filesPlan.kind !== "choose" &&
-          !plannedSource &&
-          (!sourceWorkingCopyId || sourceWorkingCopyId === retainedCopy.id))));
-  const needsPortable = restoring !== null || (portableSource !== null && !needsReopen);
+    preparation === null &&
+    (reopening !== null ||
+      (!movingLocalCopy &&
+        copy?.state !== "ready" &&
+        retainedCopy?.state === "released" &&
+        (copy?.id === retainedCopy.id ||
+          portableSource?.id === retainedCopy.id ||
+          (!supportsPortable &&
+            filesPlan.kind !== "choose" &&
+            !plannedSource &&
+            (!sourceWorkingCopyId || sourceWorkingCopyId === retainedCopy.id)))));
+  const needsPortable =
+    preparation === null && (restoring !== null || (portableSource !== null && !needsReopen));
   const restoreChoosesFolder =
     needsPortable && rootPath.trim() === "" && (restoring !== null || serverRestores);
   const snapshotSource = restoring?.sourceCopy ?? portableSource;
@@ -736,13 +727,10 @@ export function useLibraryConversationSetup({
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
   const canExecuteOperation = useLibraryPermission(projectLibrary.executeOperation, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
-  const supportsOperations = supportsLoomFeature(
-    host?.serverConfig?.environment.capabilities,
-    "project-workflows",
-  );
+  // Untagged saved attempts finish their original receipt chain; every new start has an operation.
+  const usesLegacyLaunch = attempt !== null && attempt.launchOperationId === undefined;
   const offlineReady =
     offline &&
-    supportsOperations &&
     copy?.state === "ready" &&
     copy.registered !== false &&
     !movingLocalCopy &&
@@ -920,7 +908,7 @@ export function useLibraryConversationSetup({
         onChanged();
       }
       if (needsReopen) {
-        if (!supportsReopen || !canReopen || !canRegisterCopy)
+        if (!canReopen || !canRegisterCopy)
           throw new Error(
             "This computer cannot reopen saved project files with your current access.",
           );
@@ -968,14 +956,7 @@ export function useLibraryConversationSetup({
       // The computer opens the conversation first and fills its files after, so one request
       // replaces preparing, registering and resolving files here. A saved preparation from an
       // earlier start finishes on the chain that began it.
-      if (
-        pendingPreparation === null &&
-        supportsOperations &&
-        supportsLoomFeature(
-          host?.serverConfig?.environment.capabilities,
-          LIBRARY_LAUNCH_FILES_FEATURE,
-        )
-      ) {
+      if (pendingPreparation === null && !usesLegacyLaunch) {
         const readyCopy = launchCopy?.state === "ready" ? launchCopy : null;
         let files = attempt?.files;
         if (!attempt && !readyCopy && serverPlaces)
@@ -1016,6 +997,7 @@ export function useLibraryConversationSetup({
         const workingCopyId = files?.requestId ?? readyCopy?.id;
         if (!workingCopyId)
           throw new Error("Reopen this conversation's original project files before retrying.");
+        const registerRequestId = attempt?.registerRequestId ?? randomUUID();
         const next = attempt ?? {
           environmentId: hostId,
           project: launchProject,
@@ -1049,7 +1031,8 @@ export function useLibraryConversationSetup({
           interactionMode,
           createdAt: new Date().toISOString(),
           created: false,
-          registerRequestId: randomUUID(),
+          registerRequestId,
+          launchOperationId: `${registerRequestId}:launch`,
         };
         saveAttempt(next);
         saveReopening(null);
@@ -1065,7 +1048,7 @@ export function useLibraryConversationSetup({
         const launched = await executeOperation({
           environmentId: next.environmentId,
           input: {
-            operationId: `${next.registerRequestId}:launch`,
+            operationId: next.launchOperationId!,
             request: {
               kind: "launch",
               input: {
@@ -1089,16 +1072,16 @@ export function useLibraryConversationSetup({
         await openConversation(next);
         return;
       }
-      if (pendingPreparation || !launchCopy || launchCopy.state !== "ready") {
+      if (pendingPreparation) {
         let files = pendingPreparation;
-        const filesRootPath = files ? files.input.rootPath : serverPlaces ? undefined : rootPath;
+        const filesRootPath = files.input.rootPath;
         if (
           filesRootPath !== undefined &&
           (retained.data ?? knownCopies).some(
             (entry) =>
               entry.environmentId === hostId &&
               entry.ownership === "managed" &&
-              entry.id !== files?.copy?.id &&
+              entry.id !== files.copy?.id &&
               libraryLaunchPathOverlaps(entry.rootPath, filesRootPath.trim()),
           )
         )
@@ -1107,34 +1090,6 @@ export function useLibraryConversationSetup({
             cause:
               "Choose a separate folder for this project layout. Existing project files must be reopened from their saved version.",
           });
-        if (!files) {
-          if (attempt)
-            throw new Error("Reopen this conversation's original project files before retrying.");
-          let strategy = libraryPlacementStrategy(placement.data);
-          if (!serverPlaces) {
-            const inspected = await inspect({
-              environmentId: hostId,
-              input: { rootPath: rootPath.trim() },
-            });
-            if (inspected._tag === "Failure") throw squashAtomCommandFailure(inspected);
-            strategy = folderChoice(inspected.value);
-          }
-          files = {
-            environmentId: hostId,
-            input: {
-              requestId: randomUUID(),
-              project: launchProject,
-              ...(serverPlaces ? {} : { rootPath: rootPath.trim() }),
-              strategy,
-              ...(launchResourceIds.length ? { resourceIds: launchResourceIds } : {}),
-            },
-            registerRequestId: randomUUID(),
-            copy: null,
-            keepOnComputer,
-            savedAt: new Date().toISOString(),
-          };
-          savePreparation(files);
-        }
         submittedPreparation = files;
         if (!files.copy || files.copy.state !== "ready") {
           const prepared = await prepareCopy({
@@ -1165,6 +1120,7 @@ export function useLibraryConversationSetup({
       }
       if (!launchCopy)
         throw new Error("The project files are unavailable. Reopen the project and try again.");
+      const registerRequestId = attempt?.registerRequestId ?? randomUUID();
       let next = attempt ?? {
         environmentId: hostId,
         project: launchProject,
@@ -1201,7 +1157,8 @@ export function useLibraryConversationSetup({
         interactionMode,
         createdAt: new Date().toISOString(),
         created: false,
-        registerRequestId: randomUUID(),
+        registerRequestId,
+        launchOperationId: `${registerRequestId}:launch`,
       };
       saveAttempt(next);
       saveReopening(null);
@@ -1266,15 +1223,11 @@ export function useLibraryConversationSetup({
         };
         saveAttempt(next);
       }
-      const durableLaunch = supportsLoomFeature(
-        host?.serverConfig?.environment.capabilities,
-        "project-workflows",
-      );
-      if (durableLaunch) {
+      if (next.launchOperationId !== undefined) {
         const launched = await executeOperation({
           environmentId: next.environmentId,
           input: {
-            operationId: `${next.registerRequestId}:launch`,
+            operationId: next.launchOperationId,
             request: {
               kind: "launch",
               input: {
@@ -1449,10 +1402,7 @@ export function useLibraryConversationSetup({
             restoring?.copy != null ||
             (canReadSource && canSnapshotSource))
         : needsReopen
-          ? supportsReopen &&
-            canReopen &&
-            canRegisterCopy &&
-            libraryCopyReadiness(retained) === "ready"
+          ? canReopen && canRegisterCopy && libraryCopyReadiness(retained) === "ready"
           : (copy?.state === "ready" &&
               (copy.ownership === "managed" || (canPrepare && canRegisterCopy))) ||
             (canPrepare &&
@@ -1464,7 +1414,6 @@ export function useLibraryConversationSetup({
     allowed &&
     (offline ? offlineReady : canRegister) &&
     (!(
-      supportsReopen &&
       filesPolicy?.ownership !== "borrowed" &&
       (needsPortable ||
         needsReopen ||
@@ -1474,15 +1423,15 @@ export function useLibraryConversationSetup({
     (continuation === undefined || (source.isSuccess && !source.isPending)) &&
     connected;
   const operationProgress = useEnvironmentQuery(
-    busy && hostId && supportsOperations
+    busy && hostId && !usesLegacyLaunch
       ? projectLibrary.operations({ environmentId: hostId, input: { projectId: project.id } })
       : null,
   );
   const operationPhase = operationProgress.data?.find(
-    (operation) => operation.id === `${attempt?.registerRequestId}:launch`,
+    (operation) => operation.id === attempt?.launchOperationId,
   )?.phase;
   const canCreate =
-    canContinue && modelSelection !== null && (!supportsOperations || canExecuteOperation);
+    canContinue && modelSelection !== null && (usesLegacyLaunch || canExecuteOperation);
   // Only live connections deliver these; a disconnected computer's query waits without failing.
   const checking =
     connected &&
@@ -1659,8 +1608,7 @@ export function useLibraryConversationSetup({
     setKeepChoice,
     workspace,
     setWorkspaceChoice,
-    canKeep:
-      supportsReopen && filesPolicy?.ownership !== "borrowed" && canSetRetention && canRegisterCopy,
+    canKeep: filesPolicy?.ownership !== "borrowed" && canSetRetention && canRegisterCopy,
     needsReopen,
     needsPortable,
     locked,

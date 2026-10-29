@@ -26,6 +26,9 @@ import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { environmentStatusText } from "./environmentStatusText";
 
+// fork: directory-computers
+import { ComputerHealthSummary } from "../../fork/connection-health/ComputerHealthSummary";
+
 function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string | null {
   if (!environment.isEnabled && environment.connectionState !== "unsupported") {
     return "Off";
@@ -158,6 +161,8 @@ export function ConnectionEnvironmentRow(props: {
               ) : null}
             </Text>
           ) : null}
+          {/* fork: directory-computers */}
+          <ComputerHealthSummary environmentId={props.environment.environmentId} />
           {freeze ? (
             <Text
               className="text-xs text-warning-foreground"

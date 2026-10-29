@@ -34,6 +34,7 @@ import * as EventStore from "./EventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+import * as UpdateFence from "../fork/machine-updates/UpdateFence.ts"; // fork: machine-updates
 
 export class EventSinkWriteError extends Schema.TaggedError<EventSinkWriteError>()(
   "EventSinkWriteError",
@@ -220,6 +221,7 @@ const layerBase: Layer.Layer<
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const projectStore = yield* ProjectStore.ProjectStoreV2;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+    const updateFence = yield* UpdateFence.UpdateFence; // fork: machine-updates
     const liveEvents = yield* PubSub.unbounded<OrchestrationV2StoredEvent>();
     const liveEventsByType = new Map<
       OrchestrationV2DomainEvent["type"],
@@ -281,7 +283,7 @@ const layerBase: Layer.Layer<
               Effect.suspend(() => (holdsLane ? publishLane.release(1) : Effect.void)),
             ),
           );
-      });
+      }).pipe(updateFence.write); // fork: machine-updates
 
     // A user can answer after terminal normalization reads the pending request.
     // Recheck inside the write transaction so stale cleanup cannot erase answers.
@@ -998,7 +1000,7 @@ const layerBase: Layer.Layer<
         ),
     } satisfies EventSinkV2Shape);
   }),
-);
+).pipe(Layer.provide(UpdateFence.layer)); // fork: machine-updates
 
 /** Share the worker's outbox instance: enqueue wakeups are in-memory. */
 export const layerFromStores = layerBase;

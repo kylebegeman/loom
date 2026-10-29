@@ -5,6 +5,7 @@ import {
   computerDirectoryHealth,
   connectionStallTitle,
   supportsLoomFeature,
+  tailnetOnlyConnectionHint,
 } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { DIRECTORY_FEATURE } from "@t3tools/contracts/fork";
@@ -75,6 +76,7 @@ function StallDescription({ environment }: { environment: EnvironmentPresentatio
     <>
       {CONNECTION_STALL_DETAIL}
       <DirectoryHealth environmentId={environment.environmentId} label={environment.label} />{" "}
+      {tailnetOnlyConnectionHint(environment.entry, environment.connection)}{" "}
       <ConnectionDiagnosisHeadline environment={environment} />
     </>
   );

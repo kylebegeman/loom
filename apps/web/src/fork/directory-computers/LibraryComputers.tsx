@@ -1,5 +1,6 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
+  computerDirectoryHealth,
   directoryComputersView,
   directoryCatalogRows,
   directoryOldMachines,
@@ -263,7 +264,17 @@ function LibraryComputersSection({
         const state = rowStates.get(row.environmentId) ?? null;
         const os = row.report?.platform.os;
         const platform = os === undefined ? null : (PLATFORM_LABELS[os] ?? os);
-        const subtitle = [platform, row.proof?.text ?? "Not reported yet"]
+        const health =
+          listing === null
+            ? null
+            : computerDirectoryHealth({
+                listing,
+                environmentId: row.environmentId,
+                label: row.label,
+                now,
+                source: view.listing.source === "live" ? "live" : "cache",
+              });
+        const subtitle = [platform, health?.text ?? "Not reported yet", health?.attention]
           .filter(Boolean)
           .join(" · ");
         const note =

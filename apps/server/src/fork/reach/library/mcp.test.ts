@@ -83,7 +83,7 @@ it.effect("lists reach to read-only agents and retires only with full access", (
       effect.pipe(
         Effect.provideService(McpInvocationContext, {
           environmentId: EnvironmentId.make("mcp-host"),
-          capabilities: new Set(["orchestration"] as const),
+          capabilities: new Set(["orchestration", "reach"] as const),
           issuedAt: 0,
           requestNamespace: "test",
           thread: undefined,

@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./fork/restart-impact": {
+      "types": "./src/fork/restart-impact.ts",
+      "import": "./src/fork/restart-impact.ts"
+    },
     "./sha256": {
       "types": "./src/sha256.ts",
       "import": "./src/sha256.ts"
@@ -542,6 +546,10 @@
     "./fork/provider-processes": {
       "types": "./src/fork/provider-processes.ts",
       "import": "./src/fork/provider-processes.ts"
+    },
+    "./fork/compatibility": {
+      "types": "./src/fork/compatibility.ts",
+      "import": "./src/fork/compatibility.ts"
     },
     "./fork/system-temp-dir": {
       "types": "./src/fork/system-temp-dir.ts",

@@ -7,12 +7,19 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 import { McpSchema, Tool } from "effect/ai";
+import { LOOM_COMPAT_FLOOR } from "@t3tools/shared/fork/compatibility";
+import {
+  listing,
+  reported,
+  BOOK,
+  LIBRARY,
+} from "../../../../../packages/client-runtime/src/fork/directory-test-fixtures.ts";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { DirectoryService } from "./DirectoryService.ts";
-import { DirectoryToolkit, directoryHandlers } from "./mcp.ts";
+import { directoryCompatibility, DirectoryToolkit, directoryHandlers } from "./mcp.ts";
 
 const decodeToolSchema = Schema.decodeUnknownEffect(McpSchema.ToolJson);
 
@@ -88,4 +95,21 @@ describe("directory forget MCP", () => {
       expect(calls).toEqual([target]);
     }),
   );
+});
+
+it("adds computed compatibility without changing the signed report", () => {
+  const source = listing([
+    { ...reported(LIBRARY), loomFeatures: [] },
+    { ...reported(BOOK), loomFeatures: LOOM_COMPAT_FLOOR },
+  ]);
+  const result = directoryCompatibility(source);
+  expect(result.environments[0]).toMatchObject({
+    belowCompatibilityFloor: true,
+    missingCompatibilityFeatures: LOOM_COMPAT_FLOOR,
+  });
+  expect(result.environments[1]).toMatchObject({
+    belowCompatibilityFloor: false,
+    missingCompatibilityFeatures: [],
+  });
+  expect(source.environments[0]).not.toHaveProperty("belowCompatibilityFloor");
 });

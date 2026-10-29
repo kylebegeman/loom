@@ -1,3 +1,4 @@
+export * from "./machine-updates.ts";
 export * from "./workflows.ts";
 export * from "./skill-registry.ts";
 export * from "./project-library-decisions.ts";
@@ -100,3 +101,4 @@ export * from "./thread-attention.ts";
 export * from "./database-compaction.ts";
 export * from "./agent-receipts.ts";
 export * from "./open-at-login.ts";
+export * from "./project-storage.ts";

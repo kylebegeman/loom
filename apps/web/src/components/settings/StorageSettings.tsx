@@ -1,3 +1,5 @@
+// fork: project-lifecycle
+import { StorageBreakdown } from "../../fork/project-lifecycle/StorageBreakdown";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models"; // fork: project-lifecycle
 import { useNavigate } from "@tanstack/react-router"; // fork: project-lifecycle
 // fork: project-lifecycle
@@ -871,12 +873,16 @@ export function StorageCleanupSections() {
   const update = (patch: Partial<StorageCleanupSettings>) =>
     updateSettings({ storageCleanup: patch });
   const databaseStorageNotice = (
-    <DatabaseStorageNotice
-      environments={connectedEnvironments.filter(
-        (environment) =>
-          environment.serverConfig?.environment.capabilities.databaseStorage === true,
-      )}
-    />
+    <>
+      {/* fork: project-lifecycle */}
+      <StorageBreakdown environments={connectedEnvironments} />
+      <DatabaseStorageNotice
+        environments={connectedEnvironments.filter(
+          (environment) =>
+            environment.serverConfig?.environment.capabilities.databaseStorage === true,
+        )}
+      />
+    </>
   );
   if (!supportsStorageCleanup(connectedEnvironments)) {
     return (

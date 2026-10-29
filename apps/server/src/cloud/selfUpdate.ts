@@ -61,6 +61,7 @@ export class ServerSelfUpdate extends Context.Service<
         stage: ServerSelfUpdateProgressStage,
       ) => Effect.Effect<void, ServerSelfUpdateError>,
       onHandoffAccepted?: () => Effect.Effect<void>,
+      options?: { readonly waitForIdle?: boolean }, // fork: machine-updates
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
     readonly commitDesktopUpdate: (
       requestId: string,
@@ -129,11 +130,17 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
 
   const update: ServerSelfUpdate["Service"]["update"] = Effect.fn(
     "cloud.server_self_update.update",
-  )(function* (input, reportProgress = () => Effect.void, onHandoffAccepted = () => Effect.void) {
+    // fork: machine-updates
+  )(function* (
+    input,
+    reportProgress = () => Effect.void,
+    onHandoffAccepted = () => Effect.void,
+    options,
+  ) {
     if (!selfUpdateEnabled) return yield* failWith(OS_MANAGED_RUNTIME_REASON); // fork: runtime-owner
     if (capability === "desktop-managed") {
       if (desktopAppUpdate.available) {
-        return yield* desktopAppUpdate.run(reportProgress);
+        return yield* desktopAppUpdate.run(reportProgress, options); // fork: machine-updates
       }
       return yield* failWith(
         // fork: brand

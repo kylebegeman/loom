@@ -3,6 +3,7 @@ import {
   reachChangeErrorText,
   backgroundCheckFailureText,
   directoryReportingText,
+  directoryReportingView,
   reachView,
   supportsLoomFeature,
   type ReachConfirm,
@@ -16,7 +17,6 @@ import {
   REACH_FORGET_FEATURE,
   type ReachStatus,
 } from "@t3tools/contracts/fork";
-import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
@@ -147,7 +147,9 @@ export function ComputerReachSection({
   const reportingAtom = directoryReporting(connected && reportingSupported ? environmentId : null);
   const reportingResult = useAtomValue(reportingAtom);
   const reportingRefresh = useAtomRefresh(reportingAtom);
-  const report = Option.getOrNull(AsyncResult.value(reportingResult));
+  const reportingView = directoryReportingView(reportingResult, connected);
+  const report = reportingView.report;
+  const [reportingNow, setReportingNow] = useState(Date.now);
   const lines: { readonly tone: ReachTone; readonly text: string }[] = [];
   if (view.detail !== null)
     lines.push({ tone: view.status.tone === "danger" ? "danger" : "neutral", text: view.detail });
@@ -163,21 +165,16 @@ export function ComputerReachSection({
       {reportingSupported ? (
         <SettingsSection title="Library sign-in and directory">
           <View className="gap-2 px-4 py-3">
-            {(report
-              ? directoryReportingText(report)
-              : [
-                  !connected
-                    ? "Reconnect to check this computer's Library sign-in."
-                    : AsyncResult.isFailure(reportingResult)
-                      ? "Could not read this computer's Library sign-in. Try again."
-                      : "Checking Library sign-in...",
-                ]
-            ).map((text) => (
+            {(report ? directoryReportingText(report, reportingNow) : []).map((text, index) => (
               <Text key={text} className="text-sm text-foreground-muted">
+                {index === 0 && reportingView.stale ? "Last checked: " : ""}
                 {text}
               </Text>
             ))}
-            {(report ? backgroundCheckFailureText(report) : []).map((text) => (
+            {reportingView.notice ? (
+              <Text className="text-sm text-foreground-muted">{reportingView.notice}</Text>
+            ) : null}
+            {(report ? backgroundCheckFailureText(report, reportingNow) : []).map((text) => (
               <Text key={text} selectable className={cn("text-sm", REACH_INK.danger)}>
                 {text}
               </Text>
@@ -193,7 +190,10 @@ export function ComputerReachSection({
             icon="arrow.clockwise"
             label="Refresh Library status"
             disabled={!connected || reportingResult.waiting}
-            onPress={reportingRefresh}
+            onPress={() => {
+              setReportingNow(Date.now());
+              reportingRefresh();
+            }}
           />
         </SettingsSection>
       ) : null}

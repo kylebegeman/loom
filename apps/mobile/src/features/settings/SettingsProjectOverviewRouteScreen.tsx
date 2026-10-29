@@ -1,4 +1,5 @@
 import { libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
+import { AgentToolFamiliesSection } from "../../fork/project-profiles/AgentToolFamiliesSection"; // fork: ext-settings
 import { library, useLibraryAuthority } from "../../fork/library/libraryState";
 import { useEnvironmentQuery } from "../../state/query";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts"; // fork: project-navigation
@@ -424,6 +425,18 @@ function ProjectOverviewContent(props: {
           );
         })}
       </SettingsSection>
+      {/* fork: ext-settings */}
+      {props.members.map((member) => (
+        <AgentToolFamiliesSection
+          key={`${member.environmentId}:${member.id}`}
+          environmentId={member.environmentId}
+          projectId={member.id}
+          computerLabel={
+            props.environments.find((entry) => entry.environmentId === member.environmentId)
+              ?.label ?? "Computer"
+          }
+        />
+      ))}
       {/* fork: project-checkout-management - Each review stays bound to one computer's folder. */}
       {!sharedProjectId
         ? props.members.map((member) => (

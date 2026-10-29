@@ -1,3 +1,10 @@
+import { MachineUpdatePlanControls, UpdateAllWhenIdle } from "./UpdatePlans";
+import { directoryComputers } from "../directory-computers/state";
+import { useLibraryAuthority } from "../project-library/state";
+import { directoryServerVersion, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { DIRECTORY_FEATURE, UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
 import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork";
@@ -20,6 +27,16 @@ import { describeFleetUpdateStatus } from "./fleetUpdates";
 
 /** Fleet subscriptions live on the Computers page, away from the local update control. */
 export function FleetUpdatesSection() {
+  const authority = useLibraryAuthority();
+  const directorySupported = supportsLoomFeature(
+    authority.environment?.serverConfig?.environment.capabilities,
+    DIRECTORY_FEATURE,
+  );
+  const liveDirectory = useAtomValue(
+    directoryComputers.listing(directorySupported ? authority.authorityId : null),
+  );
+  const keptDirectory = useAtomValue(directoryComputers.stored(authority.authorityId));
+  const listing = AsyncResult.getOrElse(liveDirectory, () => keptDirectory)?.listing ?? null;
   const state = useDesktopUpdateState();
   const localVersion =
     state && resolveDesktopUpdateButtonAction(state) !== "none"
@@ -65,6 +82,7 @@ export function FleetUpdatesSection() {
         Runtime updates are compared with Loom {updates.targetVersion}. Offline computers show their
         last known version. Install this computer’s app update from its sidebar.
       </p>
+      <UpdateAllWhenIdle targetVersion={updates.targetVersion} />
       {updates.machines.length === 0 ? (
         <p role="status" className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
           Connect a computer to see its updates.
@@ -84,7 +102,9 @@ export function FleetUpdatesSection() {
                 ? "Update failed"
                 : describeFleetUpdateStatus({
                     connected: machine.connected,
-                    currentVersion: machine.serverConfig?.environment.serverVersion ?? null,
+                    currentVersion:
+                      machine.serverConfig?.environment.serverVersion ??
+                      directoryServerVersion(machine.environmentId, listing),
                     targetVersion: updates.targetVersion,
                     providerCount: providers.length,
                     localVersion: machine.hostedByThisApp ? localVersion : null,
@@ -100,13 +120,29 @@ export function FleetUpdatesSection() {
                 <span className="text-xs text-muted-foreground">{status}</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Runtime {machine.serverConfig?.environment.serverVersion ?? "unknown"}
+                Runtime{" "}
+                {machine.serverConfig?.environment.serverVersion ??
+                  directoryServerVersion(machine.environmentId, listing) ??
+                  "unknown"}
                 {providers.length > 0
                   ? ` · Providers: ${providers
                       .map((provider) => PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.driver)
                       .join(", ")}`
                   : ""}
               </p>
+              <MachineUpdatePlanControls
+                environmentId={machine.environmentId}
+                advertised={supportsLoomFeature(
+                  machine.serverConfig?.environment.capabilities,
+                  UPDATE_PLAN_FEATURE,
+                )}
+                connected={machine.connected}
+                targetVersion={updates.targetVersion}
+                currentVersion={
+                  machine.serverConfig?.environment.serverVersion ??
+                  directoryServerVersion(machine.environmentId, listing)
+                }
+              />
               {machine.updateState.status !== "idle" ? (
                 <ServerUpdateProgress state={machine.updateState} />
               ) : null}

@@ -8,6 +8,7 @@ import { searchableSetting } from "~/components/settings/settingsSearch";
 import { ConnectAccount } from "./ConnectAccount";
 import { ComputerWorkActions } from "./ComputerWorkActions";
 import { ComputerConnectionDetails } from "./ComputerConnectionDetails";
+import { CompatibilityNotice } from "./CompatibilityNotice";
 import { FleetUpdatesSection } from "./FleetUpdatesSection";
 import {
   LibraryComputers,
@@ -16,6 +17,7 @@ import {
 import { LibraryPushSection } from "../library-push/LibraryPushSection";
 import { ComputerReachSection } from "../reach/ComputerReach";
 import { LibraryReach } from "../reach/LibraryReach";
+import { ComputerHealthSummary } from "../connection-health/ComputerHealthSummary";
 
 export function ComputerConnectionsHome({
   primaryEnvironment,
@@ -60,6 +62,7 @@ export function ComputerConnectionsHome({
             kind={resolveEnvironmentMachineKind(primaryEnvironment.serverConfig)}
             label={primaryEnvironment.label}
             subtitle={`${window.desktopBridge ? "This computer" : "Direct connection"} · ${connectionStatusTitle(primaryEnvironment.connection)}`}
+            below={<ComputerHealthSummary environment={primaryEnvironment} />}
             detail={
               <>
                 <ComputerWorkActions environment={primaryEnvironment} />
@@ -75,6 +78,7 @@ export function ComputerConnectionsHome({
         {computerRows}
         {discoveredRows}
       </SettingsSection>
+      <CompatibilityNotice />
       <LibraryComputers onPair={onPairComputer} />
       <LibraryReach />
       <LibraryPushSection />

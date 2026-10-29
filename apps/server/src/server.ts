@@ -40,6 +40,7 @@ import {
   ForkLayer,
   ForkRoutesLayer,
   layerLibraryWorkspace,
+  layerSessionToolPolicy, // fork: ext-mcp
   layerProjectLifecycle,
 } from "./fork/ForkLayer.ts"; // fork: ext-core
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -284,6 +285,9 @@ const layerHostPowerMonitor = HostPowerMonitor.layer.pipe(
 const layerDesktopAppUpdate = DesktopAppUpdate.layer.pipe(
   Layer.provide(layerDesktopTelemetryReceiver),
 );
+
+// fork: machine-updates
+const layerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate));
 
 const layerBackground = BackgroundPolicy.layer.pipe(
   Layer.provide(layerHostPowerMonitor),
@@ -549,6 +553,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerSessionToolPolicy), // fork: ext-mcp
   Layer.provide(layerProjectLifecycle), // fork: project-lifecycle
   Layer.provide(layerPullRequestService), // fork: project-lifecycle
   Layer.provide(layerLibraryWorkspace), // fork: library-projects
@@ -572,6 +577,13 @@ const layerOrchestrationApplication = CheckpointDiffQuery.layer.pipe(
 
 // fork: project-lifecycle -- settlement and the runtime share one storage cleanup service.
 const layerStorageCleanup = RuntimeLayer.layerStorageCleanup;
+// fork: project-lifecycle
+const layerDatabaseStorage = DatabaseStorage.layer.pipe(
+  Layer.provide(ProjectionMaintenance.layer),
+  Layer.provide(
+    Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
+  ),
+);
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
   // fork: project-lifecycle
@@ -632,12 +644,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
   layerStorageCleanup, // fork: project-lifecycle
-  DatabaseStorage.layer.pipe(
-    Layer.provide(ProjectionMaintenance.layer),
-    Layer.provide(
-      Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
-    ),
-  ),
+  layerDatabaseStorage, // fork: project-lifecycle
   layerThreadPullRequestWorker,
   DelegatedTaskAnalytics.layer,
   Layer.effectDiscard(
@@ -675,6 +682,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // show webhook addresses on the relay like scheduled tasks.
   Layer.provideMerge(
     ForkLayer.pipe(
+      Layer.provide(layerDatabaseStorage), // fork: project-lifecycle
+      Layer.provide(layerSelfUpdate), // fork: machine-updates
       Layer.provide(Layer.merge(layerPullRequestService, layerScheduledTaskWebhookOrigin)),
     ),
   ),
@@ -835,7 +844,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(PreviewAutomationBroker.layer),
-  Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
+  Layer.provide(layerSelfUpdate), // fork: machine-updates
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),

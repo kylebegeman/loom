@@ -26,7 +26,7 @@ export function ProjectSettingsLanding() {
     <SettingsPageContainer>
       <SettingsSection id="project-overview" title="Projects" hideTitle>
         <SettingsRow
-          title="Files on computers"
+          title="Working files"
           description="Choose whether each project's working files stay on a computer after you settle work."
           control={
             <Button
