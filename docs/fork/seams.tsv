@@ -1598,6 +1598,7 @@ apps/mobile/src/lib/attachmentDocument.ts	cloudflare-access	1
 apps/mobile/src/lib/attachmentDownload.ts	cloudflare-access	1
 apps/mobile/src/lib/runtime.ts	cloudflare-access	1
 apps/mobile/src/lib/videoThumbnails.ts	cloudflare-access	1
+apps/mobile/src/state/assets.test.ts	cloudflare-access	1
 apps/mobile/src/state/assets.ts	cloudflare-access	1
 packages/client-runtime/src/connection/outdatedHostUpdate.ts	cloudflare-access	1
 packages/client-runtime/src/rpc/session.ts	cloudflare-access	1

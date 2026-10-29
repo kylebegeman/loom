@@ -8,15 +8,16 @@ import * as Layer from "effect/Layer";
 import * as Socket from "effect/socket/Socket";
 
 const KEY = "loom.cloudflare-access.v1";
-const keychain: SecureStore.SecureStoreOptions = {
+// Read on use: upstream tests load this module through runtime.ts with partial SecureStore mocks.
+const keychain = (): SecureStore.SecureStoreOptions => ({
   keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
-};
+});
 export const mobileAccess = makeCloudflareAccess({
   now: () => Date.now(),
   fetch: (url, init) => fetch(url, init),
   storage: {
-    read: () => SecureStore.getItemAsync(KEY, keychain),
-    write: (value) => SecureStore.setItemAsync(KEY, value, keychain),
+    read: () => SecureStore.getItemAsync(KEY, keychain()),
+    write: (value) => SecureStore.setItemAsync(KEY, value, keychain()),
   },
 });
 
