@@ -214,6 +214,57 @@ curl -s "$H/api/loom/identity"
   receives live updates, which proves `/ws` upgrades. A native Loom sign-in and its renewal work
   over the address.
 
+## Cloudflare Access pilot
+
+Access integration is not rolled out. Computer sign-ins keep their seven-day limit until
+native renewal, reconnect and MCP compatibility pass against an isolated Access application.
+Do not enable Managed OAuth on the production Loom or Grok endpoint: Cloudflare documents
+that it can replace an existing OAuth server's discovery and challenges.
+
+The isolated transport pilot loads no Loom database, provider credentials, Identity settings
+or tasks. Run it behind a dedicated test hostname and Access application. Use Pocket ID as
+the identity provider and restrict the policy to the existing owner. The team origin and
+application audience are public configuration, not credentials:
+
+```sh
+LOOM_ACCESS_TEAM_DOMAIN=https://YOUR-TEAM.cloudflareaccess.com \
+LOOM_ACCESS_AUDIENCE=YOUR-APPLICATION-AUD \
+vp run --filter t3 access:pilot --port 14443
+```
+
+The pilot binds only `127.0.0.1`. Its origin must remain reachable only through the test
+Cloudflare tunnel. Access must protect the entire hostname, including discovery and WebSocket
+paths. Do not use an allow-all or bypass policy to make a client connect.
+
+- `/probe` confirms a verified Access assertion and reports only whether a Loom bearer
+  credential was present. It never returns either credential.
+- `/oauth-challenge` returns a controlled Loom-shaped `401` challenge. Compare the response
+  through Access to the origin response to detect OAuth interception.
+- `/ws` sends `loom-access-pilot-ready` and echoes frames for streaming and reconnect checks.
+- Every path, including unknown paths and upgrade requests, refuses a missing or invalid
+  Access assertion. A key-discovery outage refuses the request with `503`.
+
+The production origin gate uses the same two configuration values and validates Cloudflare's
+signature, team issuer, application audience, token type and expiry before Loom authentication.
+It grants no Loom permissions. Partial configuration prevents startup. Leave both values unset
+on existing servers until their clients and every ingress path are verified; enabling the gate
+also gates relay, peer, CLI and MCP requests. No localhost or metadata exception bypasses it.
+Changing or removing either value invalidates earlier Identity sessions after restart.
+
+For the native pilot, verify authorization code with S256, exact desktop/iPhone redirects,
+OS-protected refresh storage, HTTP plus WebSocket authentication, sleep/restart renewal,
+expiry and revocation. Verify Loom's bearer header and OAuth challenge survive Access, and
+complete the existing Grok connection's supervised read-only check before touching its route.
+An origin unit test alone does not prove Cloudflare's edge behavior. Keep token values out of
+screenshots and receipts. Stop the owned test connector and pilot server after verification.
+
+References: [Managed OAuth][cf-managed-oauth], [session durations][cf-access-sessions] and
+[origin JWT validation][cf-access-validation].
+
+[cf-managed-oauth]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
+[cf-access-sessions]: https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/
+[cf-access-validation]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+
 ## Rotate
 
 - **Cloudflare token.** Create the new token, write it to a new 0600 file in the same folder,

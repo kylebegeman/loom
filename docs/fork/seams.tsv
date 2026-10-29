@@ -1576,3 +1576,4 @@ apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
+apps/server/package.json	-	"access:pilot"

@@ -59,6 +59,26 @@ describe("identitySessionPrefix", () => {
     const unlimited = identitySessionPrefix(ENVIRONMENT);
     const weekly = identitySessionPrefix({ ...ENVIRONMENT, LOOM_IDENTITY_MAX_SESSION_AGE: "7d" });
     expect(weekly).not.toBe(unlimited);
+    const protectedEnvironment = {
+      ...ENVIRONMENT,
+      LOOM_ACCESS_TEAM_DOMAIN: "https://loom.cloudflareaccess.com",
+      LOOM_ACCESS_AUDIENCE: "a".repeat(64),
+    };
+    const protectedPrefix = identitySessionPrefix(protectedEnvironment);
+    expect(protectedPrefix).not.toBe(unlimited);
+    expect(
+      identitySessionPrefix({
+        ...protectedEnvironment,
+        LOOM_ACCESS_AUDIENCE: "b".repeat(64),
+      }),
+    ).not.toBe(protectedPrefix);
+    expect(
+      identitySessionPrefix({
+        ...ENVIRONMENT,
+        LOOM_ACCESS_TEAM_DOMAIN: " ",
+        LOOM_ACCESS_AUDIENCE: " ",
+      }),
+    ).toBe(unlimited);
     expect(
       identitySessionPrefix({ ...ENVIRONMENT, LOOM_IDENTITY_MAX_SESSION_AGE: "30d" }),
     ).not.toBe(weekly);

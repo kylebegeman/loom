@@ -1005,6 +1005,14 @@ Windows `.ico` and web exports) and for the mobile iOS build.
   "macOS pre-Tahoe" export described in `assets/README.md`.
 - `assets/prod/logo.svg` is unchanged. No build uses it.
 
+## Cloudflare Access pilot
+
+The optional origin gate and isolated HTTP/WebSocket pilot live in
+`apps/server/src/fork/cloudflare-access/` and `apps/server/scripts/access-pilot.ts`.
+They add no grants and keep Loom authentication in place. Both Access settings stay unset on
+live servers pending native and MCP verification; see the
+[Reach runbook](docs/fork/operations/reach.md#cloudflare-access-pilot).
+
 ## Updating from upstream
 
 Loom follows upstream's nightlies, so `main` takes small upstream steps several times a day
