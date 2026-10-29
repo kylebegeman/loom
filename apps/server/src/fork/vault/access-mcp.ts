@@ -53,7 +53,7 @@ export const VaultAccessToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_vault_connections_resolve", {
     description:
-      "Find a Vault SSH, Git-over-SSH or GitHub connection by resource name, host, repository or safe account metadata. Use connection:{resource:personal-vps}, kind:ssh for a saved VPS, or kind:github with a repository. No project profile is required. A unique compatible connection is selected automatically; ambiguity returns meaningful safe choices. The selected item/version/destination is an operation pin, not permission. Execution rechecks current policy, lifecycle and host trust. Returns specific setup or repair states without secret values. Broker availability and upstream authentication are verified by execution/readiness separately.",
+      "Resolve a Vault SSH, Git-over-SSH or GitHub connection for a credentialed operation. To find or list saved items by label and kind, use loom_vault_items with query and kind filters first. Use connection:{resource:personal-vps}, kind:ssh for a saved VPS, or kind:github with a repository. No project profile is required. A unique compatible connection is selected automatically; ambiguity returns meaningful safe choices. The selected item/version/destination is an operation pin, not permission. Execution rechecks current policy, lifecycle and host trust. Returns specific setup or repair states without secret values. Broker availability and upstream authentication are verified by execution/readiness separately.",
     parameters: VaultConnectionRequest,
     success: VaultConnectionReport,
     failure,
