@@ -50,7 +50,8 @@ non-comment line in `apps/*/src` or `packages/*/src` that names it, outside test
 provider transcripts and T3's marketing site. The reviewed exceptions live in
 `docs/fork/brand-copy-allowlist.tsv`: identifiers matched against existing data, names sent to
 third parties, T3's triage playbook and Connect-only copy. Reword new lines; allowlist only real
-identifiers.
+identifiers. Device-instruction delivery tests in the provider and eval harness check Loom's
+branded headers, including exclusion when a session has no device access.
 
 ## Seams in upstream files
 
