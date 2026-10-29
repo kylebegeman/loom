@@ -240,6 +240,9 @@ paths. Do not use an allow-all or bypass policy to make a client connect.
   credential was present. It never returns either credential.
 - `/oauth-challenge` returns a controlled Loom-shaped `401` challenge. Compare the response
   through Access to the origin response to detect OAuth interception.
+- With `--native-exchange`, `POST /native-exchange` returns the verified Access assertion for
+  native transport checks. Treat its response as a credential and store it privately. This
+  diagnostic endpoint is absent unless explicitly enabled.
 - `/ws` sends `loom-access-pilot-ready` and echoes frames for streaming and reconnect checks.
 - Every path, including unknown paths and upgrade requests, refuses a missing or invalid
   Access assertion. A key-discovery outage refuses the request with `503`.

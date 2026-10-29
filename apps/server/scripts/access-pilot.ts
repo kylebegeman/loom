@@ -11,13 +11,18 @@ import { FetchHttpClient, HttpRouter, HttpServerRequest, HttpServerResponse } fr
 import * as CloudflareAccess from "../src/fork/cloudflare-access/CloudflareAccess.ts";
 
 const args = NodeUtil.parseArgs({
-  options: { port: { type: "string", default: "14443" }, help: { type: "boolean" } },
+  options: {
+    port: { type: "string", default: "14443" },
+    help: { type: "boolean" },
+    "native-exchange": { type: "boolean", default: false },
+  },
 });
 if (args.values.help) {
   process.stdout.write(
     "Access transport pilot. No Loom state, credentials or tasks are loaded.\n" +
       "Set LOOM_ACCESS_TEAM_DOMAIN=https://<team>.cloudflareaccess.com and LOOM_ACCESS_AUDIENCE=<app-aud>.\n" +
       "Run: vp run --filter t3 access:pilot [--port 14443]\n" +
+      "--native-exchange enables the credential-bearing POST /native-exchange test endpoint.\n" +
       "GET /probe reports credential presence only; /oauth-challenge returns an origin OAuth challenge; /ws echoes frames.\n",
   );
 } else {
@@ -71,6 +76,25 @@ if (args.values.help) {
         return HttpServerResponse.empty();
       }),
     ),
+    args.values["native-exchange"]
+      ? HttpRouter.add(
+          "POST",
+          "/native-exchange",
+          Effect.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            return HttpServerResponse.jsonUnsafe(
+              { assertion: request.headers["cf-access-jwt-assertion"] },
+              {
+                headers: {
+                  "cache-control": "no-store",
+                  pragma: "no-cache",
+                  "x-content-type-options": "nosniff",
+                },
+              },
+            );
+          }),
+        )
+      : Layer.empty,
     CloudflareAccess.guardLayer,
   ).pipe(Layer.provide(CloudflareAccess.layer), Layer.provide(FetchHttpClient.layer));
   const program = Effect.gen(function* () {
