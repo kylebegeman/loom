@@ -4911,7 +4911,14 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
           reviewToken: review.reviewToken!,
         });
         expect((yield* accounting.history).entries).toEqual(entries);
-      }),
+      }).pipe(
+        // The suite shares layers; isolate both the recorder and the workspace that captures it.
+        Effect.provide(
+          Layer.fresh(LibraryWorkspace.layer).pipe(
+            Layer.provideMerge(Layer.fresh(StorageAccounting.layer)),
+          ),
+        ),
+      ),
   );
 
   it.effect(
