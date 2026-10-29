@@ -18,7 +18,10 @@ describe("storage measurement presentation", () => {
   });
   it("opens a public web destination without forwarding credentials or query strings", () => {
     expect(storageWebSettingsUrl("https://computer.example/route?token=private#fragment")).toBe(
-      "https://computer.example/settings/worktrees",
+      "https://computer.example/settings/worktrees#storage-worktrees",
+    );
+    expect(storageWebSettingsUrl("https://computer.example/?token=private", "scratch")).toBe(
+      "https://computer.example/settings/maintenance#storage-scratch",
     );
     for (const address of [
       "ssh://computer.example",

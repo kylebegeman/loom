@@ -72,12 +72,28 @@ export function storageMeasuredAge(measuredAt: string, now: number) {
   return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
 }
 
-export function storageWebSettingsUrl(address: string | null | undefined): string | null {
+export const storageReviewDestinations = {
+  worktrees: { to: "/settings/worktrees", hash: "storage-worktrees" },
+  primary: { to: "/settings/project-files", hash: "" },
+  "library-copies": { to: "/library", hash: "" },
+  "git-mirrors": { to: "/settings/maintenance", hash: "storage-cleanup" },
+  lanes: { to: "/settings/worktrees", hash: "loom-project-lifecycle" },
+  scratch: { to: "/settings/maintenance", hash: "storage-scratch" },
+  database: { to: "/settings/maintenance", hash: "storage-database" },
+} as const satisfies Record<ProjectStorageCategory, { readonly to: string; readonly hash: string }>;
+
+export function storageWebSettingsUrl(
+  address: string | null | undefined,
+  kind: ProjectStorageCategory = "worktrees",
+): string | null {
   if (!address) return null;
   try {
     const url = new URL(address);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
-    return new URL("/settings/worktrees", url.origin).toString();
+    const destination = storageReviewDestinations[kind];
+    const result = new URL(destination.to, url.origin);
+    result.hash = destination.hash;
+    return result.toString();
   } catch {
     return null;
   }

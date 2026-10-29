@@ -6,7 +6,7 @@ scratch data, kept outside the checkout and removed when the work is done.
 
 ## Find what uses storage
 
-Open **Settings > Worktrees** on web or desktop for a breakdown by computer. On mobile,
+Open **Settings > Maintenance** on web or desktop for a breakdown by computer. On mobile,
 open a computer's details and its **Storage** section. Refresh measures the files again;
 the timestamp tells you how old the result is. Unreadable folders show an unknown size,
 and partial measurements show a lower bound. Shared files and disk images make these

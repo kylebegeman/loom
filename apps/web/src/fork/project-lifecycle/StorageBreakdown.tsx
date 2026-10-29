@@ -8,6 +8,7 @@ import {
   storageCategorySize,
   storageCategoryDetail,
   storageMeasuredAge,
+  storageReviewDestinations,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { useState } from "react";
@@ -21,13 +22,6 @@ import { useServerConfigs } from "~/state/entities";
 import { useNowMinute } from "~/hooks/useNowMinute";
 
 const storage = createProjectStorageAtoms(connectionAtomRuntime);
-const anchors: Partial<Record<ProjectStorageCategory, string>> = {
-  worktrees: "storage-worktrees",
-  "git-mirrors": "storage-cleanup",
-  lanes: "loom-project-lifecycle",
-  scratch: "storage-scratch",
-  database: "storage-database",
-};
 
 function ComputerStorage({
   environmentId,
@@ -41,9 +35,9 @@ function ComputerStorage({
     if (kind === "library-copies") void navigate({ to: "/library" });
     else
       void navigate({
-        to: kind === "primary" ? "/settings/project-files" : "/settings/worktrees",
+        to: storageReviewDestinations[kind].to,
         search: { machine: environmentId, project: undefined, checkout: undefined },
-        hash: anchors[kind] ?? "",
+        hash: storageReviewDestinations[kind].hash,
       });
   };
   const allowed = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);

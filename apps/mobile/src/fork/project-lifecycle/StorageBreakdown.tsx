@@ -55,11 +55,12 @@ export function StorageBreakdown({
   )?.displayUrl;
   const webUrl = storageWebSettingsUrl(displayUrl);
   const open = (kind: ProjectStorageCategory) => {
+    const destination = storageWebSettingsUrl(displayUrl, kind);
     if (kind === "worktrees" || kind === "primary") navigation.navigate("ProjectStorageInventory");
     else if (kind === "library-copies") navigation.navigate("Library");
     else if (kind === "database") openSettings(navigation, "SettingsEnvironmentMaintenance");
-    else if (webUrl !== null)
-      void Linking.openURL(webUrl).catch(() =>
+    else if (destination !== null)
+      void Linking.openURL(destination).catch(() =>
         setError("This computer's web app could not be opened."),
       );
   };
