@@ -290,7 +290,7 @@ apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	res
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1
 apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	9
-apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	19
+apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
@@ -385,7 +385,6 @@ apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	4
 apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	4
 apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	3
 apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1
-
 # Loom Vault encrypted record foundation
 apps/server/src/secrets/SecretRequests.ts	ext-vault	9
 apps/server/src/secrets/SecretRequests.test.ts	ext-vault	2
@@ -423,7 +422,6 @@ apps/server/src/orchestration-v2/ProviderTurnControlService.ts	ext-vault-preflig
 apps/server/src/scheduledTasks/ScheduledTaskService.ts	vault-scheduled-outcomes	7
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	vault-scheduled-outcomes	2
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	vault-scheduled-outcomes	2
-
 apps/server/src/cloud/selfUpdate.ts	runtime-owner	6
 apps/server/vite.config.ts	runtime-owner	1
 apps/server/src/environment/ServerEnvironment.ts	runtime-owner	7
@@ -438,7 +436,6 @@ apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	6
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	runtime-owner	6
 apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	3
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	runtime-owner	4
-
 apps/web/src/browser/browserTargetResolver.ts	preview-links	5
 apps/web/src/browser/browserTargetResolver.test.ts	preview-links	15
 apps/web/src/browser/openFileInPreview.ts	preview-links	4
@@ -461,7 +458,6 @@ apps/mobile/src/features/files/FileMarkdownPreview.tsx	preview-links	2
 apps/mobile/src/features/settings/components/settings-page-targets.ts	preview-links	1
 apps/mobile/src/reactCompilerCoverage.test.ts	react-compiler	2
 vite.config.ts	ext-lint	5
-
 # Loom Vault native terminal session connection
 packages/provider-core/src/server/mcpSession.ts	ext-vault-terminal	3
 packages/provider-core/src/server/McpProviderSessions.ts	ext-vault-terminal	8
@@ -1493,7 +1489,6 @@ docs/user/faq.md	fleet-connections	1
 apps/mobile/src/features/projects/AddProjectScreen.tsx	library-only	3
 apps/mobile/src/features/projects/AddProjectScreen.logic.ts	library-only	2
 apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts	library-only	3
-
 apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	2
 apps/mobile/src/features/diagnostics/SettingsDiagnosticsRouteScreen.tsx	brand	1
 apps/mobile/src/features/threads/ThreadQueueControl.tsx	brand	1
@@ -1567,3 +1562,4 @@ apps/server/src/mcp/toolkits/environment/handlers.test.ts	project-lifecycle	5
 apps/web/src/components/settings/DatabaseStorageNotice.tsx	project-lifecycle	9
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	project-lifecycle	2
 apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-lifecycle	3
+packages/shared/package.json	-	"./fork/compatibility"

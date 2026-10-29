@@ -1,5 +1,6 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
+  computersBelowCompatibilityFloor,
   directoryComputersView,
   directoryCatalogRows,
   directoryOldMachines,
@@ -24,7 +25,7 @@ import { environmentCatalog } from "../../connection/catalog";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironmentServerConfig } from "../../state/entities";
-import { useEnvironmentPresentation } from "../../state/presentation";
+import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -87,9 +88,12 @@ export function useDirectoryComputers() {
   const answeredAt = AsyncResult.isSuccess(live) ? Date.parse(live.value.fetchedAt) : Number.NaN;
   const now = Number.isFinite(answeredAt) ? Math.max(shownAt, answeredAt) : shownAt;
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
+  const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const saved = [...catalog.entries.values()].map((entry) => ({
     environmentId: entry.target.environmentId,
     label: entry.target.label,
+    loomFeatures: presentations.get(entry.target.environmentId)?.serverConfig?.environment
+      .capabilities.loomFeatures,
   }));
   const view = directoryComputersView({
     authorityEnvironmentId: libraryId,
@@ -112,6 +116,7 @@ export function useDirectoryComputers() {
   );
   return {
     libraryId,
+    incompatible: computersBelowCompatibilityFloor({ listing, saved }),
     content: directorySectionContent(
       {
         ...view,

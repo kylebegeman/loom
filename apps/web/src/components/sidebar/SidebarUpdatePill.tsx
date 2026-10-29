@@ -1,3 +1,4 @@
+import { SidebarUpdatePlans } from "~/fork/connections/SidebarUpdatePlans"; // fork: machine-updates
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { type ComponentProps, useId, useRef, useState } from "react";
@@ -190,7 +191,8 @@ export async function installLocalUpdate(
 }
 
 // fork: machine-updates - Only this app's own updates show here; fleet updates live in Computers.
-export function SidebarUpdatePill() {
+function SidebarUpdatePillContent() {
+  // fork: machine-updates
   return isElectron ? <SidebarUpdateControl /> : null; // fork: machine-updates
 }
 
@@ -429,7 +431,7 @@ function SidebarUpdateControl() {
   if (state?.installWhenIdle === true && window.desktopBridge) {
     return (
       <SidebarMenuItem className="ml-auto flex min-w-0 flex-1">
-        <InstallWhenIdlePill bridge={window.desktopBridge} />
+        <InstallWhenIdlePill bridge={window.desktopBridge} message={state.message} />
         {confirmDialog}
       </SidebarMenuItem>
     );
@@ -561,5 +563,15 @@ function SidebarUpdateControl() {
       </Popover>
       {confirmDialog}
     </SidebarMenuItem>
+  );
+}
+
+// fork: machine-updates
+export function SidebarUpdatePill() {
+  return (
+    <>
+      <SidebarUpdatePlans />
+      <SidebarUpdatePillContent />
+    </>
   );
 }

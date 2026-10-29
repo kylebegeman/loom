@@ -124,3 +124,7 @@ export * from "./thread-attention.ts";
 export * from "./restart-impact.ts";
 export * from "./database-compaction.ts";
 export * from "./project-storage.ts";
+
+export * from "./compatibility.ts";
+
+export * from "./update-plans.ts";
