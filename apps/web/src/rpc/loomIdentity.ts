@@ -35,10 +35,12 @@ export class LoomAccessRequiredError extends Error {
 export async function readLoomIdentity(baseUrl: string, signal?: AbortSignal, refresh = false) {
   const url = loomIdentityUrl(baseUrl, LOOM_IDENTITY_METADATA_PATH);
   if (!url) return null;
-  // The metadata is public and served with a wildcard origin, which browsers refuse
-  // for credentialed requests from another origin.
+  // Same-origin Access needs its cookie; wildcard metadata CORS requires omitting cross-origin credentials.
   const response = await fetch(url, {
-    credentials: "omit",
+    credentials:
+      typeof window !== "undefined" && new URL(url).origin === window.location.origin
+        ? "same-origin"
+        : "omit",
     redirect: "error",
     ...(refresh ? { cache: "no-store" as const } : {}),
     ...(signal ? { signal } : {}),

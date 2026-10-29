@@ -76,6 +76,22 @@ describe("Loom browser sign-in boundary", () => {
     fetch.mockResolvedValue(new Response(JSON.stringify({ enabled: true }), { status: 200 }));
     await expect(readLoomIdentity("https://library.example.com")).rejects.toThrow();
   });
+  it.each([
+    ["https://library.example.com", "same-origin"],
+    ["https://app.example.com", "omit"],
+  ] as const)(
+    "preserves Access cookies only for the browser's own origin %s",
+    async (origin, credentials) => {
+      vi.stubGlobal("window", { location: { origin } });
+      const request = vi.fn(async (_url: string, init?: RequestInit) =>
+        init?.credentials === credentials
+          ? Response.json(metadata)
+          : new Response(null, { status: 401 }),
+      );
+      vi.stubGlobal("fetch", request);
+      await expect(readLoomIdentity("https://library.example.com")).resolves.toEqual(metadata);
+    },
+  );
 });
 
 it("returns browser sign-in to the requested page only on the selected host", () => {
