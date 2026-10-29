@@ -262,9 +262,12 @@ cross-device passkey prompt, when testing that policy. Keep the Access requireme
 Native clients send the Managed OAuth access token in `Cf-Access-Token`, leaving Loom's
 `Authorization` header intact. Keep its refresh grant in OS-protected storage and persist rotation
 before sending the replacement token. A copied application JWT is unsuitable for this native
-cache: the pilot's 30-day JWT remained usable after its OAuth refresh grant was revoked, while
-the short-lived OAuth token was refused immediately. A Cloudflare rejection clears the cached
-grant without replaying the original operation. Sign-out ends only that client's grant.
+cache: the pilot's 30-day JWT remained usable after its OAuth refresh grant was revoked.
+Sign-out removes the saved grant and revokes that client's refresh token. Edge rejection of an
+already issued access token can lag behind revocation, so keep the access token lifetime short
+and retain Loom's independent authentication. Verify that refresh is refused rather than treating
+a successful revocation response as proof of immediate edge rejection. A Cloudflare rejection
+clears the cached grant without replaying the original operation.
 
 The desktop opens Access authorization in the system browser and supplies the header from its
 main process for HTTP, assets and WebSocket handshakes. iPhone uses its system authorization
