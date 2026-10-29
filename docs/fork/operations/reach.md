@@ -271,6 +271,32 @@ main process for HTTP, assets and WebSocket handshakes. iPhone uses its system a
 sheet and device-only Keychain storage. Native viewers that cannot accept request headers receive
 a temporary local copy; the app removes it when the viewer closes.
 
+Library publishers and fleet services need their own Access service credentials before the
+Library gate is enabled. Add a **Service Auth** policy for each named service token, then list
+its exact `CF-Access-Client-Id` in the Library's comma-separated
+`LOOM_ACCESS_SERVICE_SUBJECTS`. An empty subject is accepted only when its signed assertion's
+`common_name` matches this list. Keep the owner/passkey policy for interactive sign-ins.
+
+On each computer, place a private `cloudflare-access.json` next to its `publisher.json` in
+`~/.config/loom/computers/computer-<environment id>/`, or set
+`LOOM_LIBRARY_ACCESS_CREDENTIAL_FILE` to an explicit private path. Use mode `0600`:
+
+```json
+{
+  "version": 1,
+  "origin": "https://YOUR-LIBRARY-HOST",
+  "clientId": "YOUR-SERVICE-CLIENT.access",
+  "clientSecret": "YOUR-SERVICE-SECRET"
+}
+```
+
+The existing Library client adds these credentials to its normal publisher bearer requests,
+including renewal. It reloads replaced files and refuses mismatched origins or unsafe file
+permissions. The service credential admits traffic through Access; the Library still requires
+its own publisher credential and signed computer requests. Removing or revoking Access does
+not grant another route or change Grok's Supervised ceiling. Deploy clients and verify every
+Library consumer before enabling the gate or extending the Identity session limit.
+
 For the native pilot, verify authorization code with S256, exact desktop/iPhone redirects,
 OS-protected refresh storage, HTTP plus WebSocket authentication, sleep/restart renewal,
 expiry and revocation. Verify Loom's bearer header and OAuth challenge survive Access, and

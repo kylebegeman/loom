@@ -55,8 +55,16 @@ const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
   const team = env.LOOM_ACCESS_TEAM_DOMAIN?.trim() ?? "";
   const audience = env.LOOM_ACCESS_AUDIENCE?.trim() ?? "";
+  const services = new Set(
+    (env.LOOM_ACCESS_SERVICE_SUBJECTS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
   const configured =
-    env.LOOM_ACCESS_TEAM_DOMAIN !== undefined || env.LOOM_ACCESS_AUDIENCE !== undefined;
+    env.LOOM_ACCESS_TEAM_DOMAIN !== undefined ||
+    env.LOOM_ACCESS_AUDIENCE !== undefined ||
+    env.LOOM_ACCESS_SERVICE_SUBJECTS !== undefined;
   if (!configured)
     return CloudflareAccess.of({
       enabled: false,
@@ -64,7 +72,9 @@ const make = Effect.gen(function* () {
     });
   if (
     !/^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/u.test(team) ||
-    !/^[a-f0-9]{64}$/u.test(audience)
+    !/^[a-f0-9]{64}$/u.test(audience) ||
+    services.size > 100 ||
+    [...services].some((value) => value.length > 200 || !/^[a-zA-Z0-9_-]+\.access$/u.test(value))
   ) {
     return yield* new CloudflareAccessError({ reason: "configuration" });
   }
@@ -132,7 +142,9 @@ const make = Effect.gen(function* () {
             : yield* first.failure;
       if (
         typeof verified.payload.sub !== "string" ||
-        verified.payload.sub.length === 0 ||
+        (verified.payload.sub.length === 0 &&
+          (typeof verified.payload.common_name !== "string" ||
+            !services.has(verified.payload.common_name))) ||
         verified.payload.sub.length > 200 ||
         verified.payload.type !== "app" ||
         verified.payload.iat === undefined ||
@@ -140,7 +152,7 @@ const make = Effect.gen(function* () {
       ) {
         return yield* new CloudflareAccessError({ reason: "assertion" });
       }
-      return { subject: verified.payload.sub };
+      return { subject: verified.payload.sub || `service:${verified.payload.common_name}` };
     }),
   });
 });

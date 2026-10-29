@@ -38,6 +38,13 @@ const LibraryHostCredential = Schema.Struct({
   renewedAt: Schema.optional(IsoDateTime),
 });
 export type LibraryHostCredential = typeof LibraryHostCredential.Type;
+const LibraryAccessCredential = Schema.Struct({
+  version: Schema.Literal(1),
+  origin: Schema.String,
+  clientId: Schema.String,
+  clientSecret: Schema.RedactedFromValue(Schema.String),
+});
+const decodeAccessCredential = Schema.decodeEffect(Schema.fromJsonString(LibraryAccessCredential));
 const decodeCredential = Schema.decodeEffect(Schema.fromJsonString(LibraryHostCredential));
 const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown));
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -152,6 +159,37 @@ export const readLibraryConnection = Effect.gen(function* () {
       }))
   )
     return UNAVAILABLE;
+  const configuredAccessFile = yield* Config.String("LOOM_LIBRARY_ACCESS_CREDENTIAL_FILE").pipe(
+    Config.option,
+  );
+  const defaultAccessFile = path.join(computerDirectory, "cloudflare-access.json");
+  const accessFile = Option.isSome(configuredAccessFile)
+    ? configuredAccessFile
+    : (yield* fs.exists(defaultAccessFile))
+      ? Option.some(defaultAccessFile)
+      : Option.none();
+  const accessResult = Option.isNone(accessFile)
+    ? null
+    : yield* Effect.gen(function* () {
+        const stat = yield* fs.stat(accessFile.value);
+        if (stat.type !== "File" || (stat.mode & 0o077) !== 0 || Number(stat.size) > 16 * 1024)
+          return yield* new LibraryError({ reason: "invalid" });
+        const access = yield* decodeAccessCredential(yield* fs.readFileString(accessFile.value));
+        if (
+          base.protocol !== "https:" ||
+          access.origin !== base.origin ||
+          access.clientId.length > 200 ||
+          !/^[a-zA-Z0-9_-]+\.access$/u.test(access.clientId) ||
+          !/^[\x21-\x7e]{1,1024}$/u.test(Redacted.value(access.clientSecret))
+        )
+          return yield* new LibraryError({ reason: "invalid" });
+        return access;
+      }).pipe(
+        Effect.mapError(() => new LibraryError({ reason: "blocked" })),
+        Effect.result,
+      );
+  if (accessResult !== null && accessResult._tag === "Failure") return UNAVAILABLE;
+  const access = accessResult === null ? null : accessResult.success;
   const token =
     credential === null
       ? yield* Config.Redacted("LOOM_LIBRARY_TOKEN").pipe(Config.option)
@@ -163,8 +201,23 @@ export const readLibraryConnection = Effect.gen(function* () {
       (credential !== null && Date.parse(credential.expiresAt) <= (yield* Clock.currentTimeMillis))
     )
       return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_SIGN_IN_MISSING });
+    const target = yield* Effect.try({
+      try: () => new URL(request.url, base.origin),
+      catch: () => new LibraryError({ reason: "invalid" }),
+    });
+    if (target.origin !== base.origin || target.username || target.password)
+      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_MISMATCH });
+    let authenticated = request.pipe(
+      HttpClientRequest.setUrl(target.toString()),
+      HttpClientRequest.bearerToken(token.value),
+    );
+    if (access)
+      authenticated = authenticated.pipe(
+        HttpClientRequest.setHeader("cf-access-client-id", access.clientId),
+        HttpClientRequest.setHeader("cf-access-client-secret", Redacted.value(access.clientSecret)),
+      );
     // HTTP failures can hold a request containing its token. Do not retain that cause.
-    return yield* http.execute(request.pipe(HttpClientRequest.bearerToken(token.value))).pipe(
+    return yield* http.execute(authenticated).pipe(
       Effect.timeout("3 minutes"),
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
@@ -429,8 +482,11 @@ const make = Effect.gen(function* () {
     if (connection.kind !== "remote")
       return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_SIGN_IN_MISSING });
     // Refuse absolute URLs outside the configured Library, including after a host config repair.
-    const target = new URL(request.url, connection.origin);
-    if (target.origin !== connection.origin)
+    const target = yield* Effect.try({
+      try: () => new URL(request.url, connection.origin),
+      catch: () => new LibraryError({ reason: "invalid" }),
+    });
+    if (target.origin !== connection.origin || target.username || target.password)
       return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_MISMATCH });
     return yield* connection.send(HttpClientRequest.setUrl(request, target.toString()));
   });

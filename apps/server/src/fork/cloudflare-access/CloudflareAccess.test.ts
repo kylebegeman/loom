@@ -66,6 +66,8 @@ describe("Cloudflare Access origin gate", () => {
       expect(yield* off.verify(undefined)).toBeNull();
       for (const env of [
         { LOOM_ACCESS_TEAM_DOMAIN: ISSUER },
+        { LOOM_ACCESS_SERVICE_SUBJECTS: "publisher123.access" },
+        { ...ENV, LOOM_ACCESS_SERVICE_SUBJECTS: "not-a-service-client" },
         { LOOM_ACCESS_AUDIENCE: AUDIENCE },
         { ...ENV, LOOM_ACCESS_TEAM_DOMAIN: "https://example.com" },
         { ...ENV, LOOM_ACCESS_TEAM_DOMAIN: `${ISSUER}/path` },
@@ -75,6 +77,34 @@ describe("Cloudflare Access origin gate", () => {
       }
       expect(f.requests).toEqual([]);
     }),
+  );
+
+  it.effect(
+    "admits only explicitly configured service principals without treating them as user identities",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const machine = "publisher123.access";
+        const access = yield* f.accessFor({ ...ENV, LOOM_ACCESS_SERVICE_SUBJECTS: machine });
+        expect(yield* access.verify(yield* f.sign({ sub: "", common_name: machine }))).toEqual({
+          subject: "service:" + machine,
+        });
+        for (const payload of [
+          { sub: "", common_name: "another.access" },
+          { sub: "", common_name: undefined },
+          { sub: undefined, common_name: machine },
+          { sub: "", common_name: machine, type: "org" },
+          { sub: "", common_name: machine, aud: ["b".repeat(64)] },
+        ])
+          expect((yield* Effect.result(access.verify(yield* f.sign(payload))))._tag).toBe(
+            "Failure",
+          );
+        const usersOnly = yield* f.accessFor(ENV);
+        expect(
+          (yield* Effect.result(usersOnly.verify(yield* f.sign({ sub: "", common_name: machine }))))
+            ._tag,
+        ).toBe("Failure");
+      }),
   );
 
   it.effect(
