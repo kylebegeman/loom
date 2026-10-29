@@ -1,3 +1,4 @@
+import { FleetUpdatePlans } from "./UpdatePlans";
 import { CompatibilityNotice } from "./CompatibilityNotice";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -214,6 +215,7 @@ export function ConnectionsScreen() {
               environmentLabel={environment.environmentLabel}
             />
           ))}
+        <FleetUpdatePlans />
         <CompatibilityNotice
           computers={directoryComputers.incompatible}
           onUpdate={openEnvironment}

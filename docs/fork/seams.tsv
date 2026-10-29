@@ -290,7 +290,7 @@ apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	res
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1
 apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	9
-apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	19
+apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
