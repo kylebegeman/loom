@@ -11,6 +11,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
@@ -84,9 +85,12 @@ describe("TextGeneration.make", () => {
           ]),
         ),
         Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("Unauthenticated generation must not resolve links"),
-          }),
+          Layer.mergeAll(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("Unauthenticated generation must not resolve links"),
+            }),
+            ServerSettings.ServerSettingsService.layerTest(),
+          ),
         ),
       );
       const result = yield* generation
