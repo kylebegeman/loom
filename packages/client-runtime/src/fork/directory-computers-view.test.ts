@@ -53,6 +53,14 @@ const view = (
 const ids = (shown: ReturnType<typeof view>) => shown.rows.map((row) => row.environmentId);
 
 describe("directoryComputersView", () => {
+  it("treats a retained successful answer as cached after the Library disconnects", () => {
+    const recent = storedDirectoryListing(LIBRARY, everyone, NOW - MINUTES);
+    const shown = view(AsyncResult.success(recent), {
+      libraryConnection: { phase: "offline", error: null },
+    });
+    expect(shown.listing.source).toBe("cache");
+    expect(shown.listing.cacheText).toBe("Showing the list from 1 minute ago");
+  });
   it("lists only computers this device has not saved, from the live answer", () => {
     const live = storedDirectoryListing(
       LIBRARY,
@@ -93,7 +101,7 @@ describe("directoryComputersView", () => {
       }),
     );
     expect(ids(shown)).toEqual([DESK]);
-    expect(shown.listing.cacheText).toBe("Showing the list from 5 min ago");
+    expect(shown.listing.cacheText).toBe("Showing the list from 5 minutes ago");
   });
 
   it("explains a Library that does not keep the list", () => {
@@ -139,7 +147,7 @@ describe("directoryComputersView", () => {
       libraryConnection: retrying,
     });
     expect(again).toMatchObject({ status: "failed", refreshing: false });
-    expect(again.listing.cacheText).toBe("Showing the list from 5 min ago");
+    expect(again.listing.cacheText).toBe("Showing the list from 5 minutes ago");
     expect(ids(again)).toEqual([DESK]);
 
     // A first attempt that has not failed yet is still loading.

@@ -78,18 +78,19 @@ names that app and asks for another port instead of replacing it.
 
 A computer renews its Library sign-in automatically before it expires. In
 **Settings > Computers > Connection details**, check **Library sign-in and
-directory** for its expiry, reporting state and any repair. The same status is
-available in the computer's details on iPhone. This sign-in is separate from
+directory** for its expiry, reporting state and any repair on web, desktop or iPhone.
+Each computer’s row also shows its Library health. An unreachable computer keeps its last
+report with its age; a cached report does not mean it is running now. If its only routes
+use Tailscale, Loom reminds you to turn on Tailscale on this device. This sign-in is separate from
 your devices' Identity sign-ins.
 
 If automatic renewal is unavailable, update Loom on your Library before the
-shown expiry. An expired or refused sign-in needs your Library administrator to
-issue a replacement publisher credential for this computer and replace its
-private credential file. Loom reloads the replacement automatically. Until
+shown expiry. For an expired or refused sign-in, issue a replacement publisher credential for this
+computer and replace its private credential file. Loom reloads the replacement automatically. Until
 then, Library publishing, directory reporting and remote bot requests cannot
 use that sign-in. A Library outage is retried automatically.
 
-The administrator issues credentials on the Library with
+Issue credentials on the Library with
 `loom auth library-publisher --source-environment-id <computer-id> --library-url <https-origin>`.
 If replacing a credential, revoke its old publisher session and retire its old
 issuer-side credential file first. Transfer the generated file privately to

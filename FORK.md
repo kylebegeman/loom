@@ -506,7 +506,8 @@ remote and SSH connections so a wrong computer is refused, hides the form's unpi
 sign-in for that row, and clears the row's address when the form closes. iPhone's
 `ConnectionsNewRouteScreen.tsx` (4) does the same for its pairing form through a
 `libraryComputer` route param, and `devAutoConnect.ts` (3) for development links that pair by
-themselves. See the
+themselves. `SavedEnvironmentRows.tsx` (4) shows each saved computer’s Library health and
+reporting details; `ConnectionEnvironmentRow.tsx` (2) shows the same health summary on mobile. See the
 [L113 packet](docs/fork/packets/L113-directory-computers/SEAMS.md).
 
 L114 `reach` seams publish a computer's public reach address, `https://<name>-loom.<zone>/`,

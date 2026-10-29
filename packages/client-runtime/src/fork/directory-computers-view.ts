@@ -114,10 +114,13 @@ export function directoryComputersView(input: {
   // A failed refresh keeps the listing it last read; prefer it when it is newer than the store.
   const previous = Option.getOrNull(AsyncResult.value(live));
   const cached = fetchedAtMs(previous) > fetchedAtMs(input.stored) ? previous : input.stored;
+  const phase = input.libraryConnection?.phase;
   const unreachable =
-    live.waiting &&
-    input.libraryConnection?.phase === "reconnecting" &&
-    input.libraryConnection.error !== null;
+    phase === "offline" ||
+    phase === "available" ||
+    phase === "error" ||
+    phase === "unsupported" ||
+    (live.waiting && phase === "reconnecting" && input.libraryConnection?.error !== null);
   const failed = live._tag === "Failure" || unreachable;
   const answer: DirectoryAnswer =
     live._tag === "Success" && !unreachable

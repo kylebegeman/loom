@@ -6,21 +6,20 @@ import {
   computerDirectoryHealth,
   computerDisplayLabel,
   connectionStallTitle,
-  createDirectoryComputersAtoms,
   supportsLoomFeature,
+  tailnetOnlyConnectionHint,
 } from "@t3tools/client-runtime/fork";
 import { EnvironmentId } from "@t3tools/contracts";
 import { DIRECTORY_FEATURE } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
 import { useConnectionStall } from "./useConnectionStall";
 
-const directoryComputers = createDirectoryComputersAtoms(connectionAtomRuntime);
+import { directoryComputers } from "../directory-computers/state";
 
 /** Opens the Identity sign-in for a computer that refused this phone's expired sign-in. */
 export function useComputerSignIn(
@@ -97,7 +96,13 @@ export function useComputerConnectionHealth(
   const label = presentation === null ? "This computer" : computerDisplayLabel(presentation);
   const stall = useConnectionStall(connection);
   const signIn = useComputerSignIn(environmentId, connection);
-  const directoryHealth = useDirectoryHealthText(environmentId, label, stall !== null);
+  const directoryHealth =
+    [
+      useDirectoryHealthText(environmentId, label, stall !== null),
+      presentation ? tailnetOnlyConnectionHint(presentation.entry, presentation.connection) : null,
+    ]
+      .filter(Boolean)
+      .join(" ") || null;
   return {
     label,
     stallTitle: stall === null ? null : connectionStallTitle(label, stall.since, stall.at),
@@ -125,6 +130,7 @@ export function useConnectionNoticeOverride(input: {
   readonly connection: EnvironmentConnectionPresentation;
 }): ConnectionNoticeOverride | null {
   const { environmentLabel: label, resourceName } = input;
+  const { presentation } = useEnvironmentPresentation(input.environmentId ?? null);
   const stall = useConnectionStall(input.connection);
   const signIn = useComputerSignIn(input.environmentId ?? null, input.connection);
   const directoryHealth = useDirectoryHealthText(
@@ -145,6 +151,7 @@ export function useConnectionNoticeOverride(input: {
     detail: [
       CONNECTION_STALL_DETAIL,
       directoryHealth,
+      presentation ? tailnetOnlyConnectionHint(presentation.entry, input.connection) : null,
       `The ${resourceName} will load once ${label} connects.`,
     ]
       .filter(Boolean)

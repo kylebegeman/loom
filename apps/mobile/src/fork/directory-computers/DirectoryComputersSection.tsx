@@ -1,6 +1,5 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
-  createDirectoryComputersAtoms,
   directoryComputersView,
   directoryCatalogRows,
   directoryOldMachines,
@@ -22,7 +21,6 @@ import * as Dialog from "../../components/ui/Dialog";
 import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { environmentCatalog } from "../../connection/catalog";
-import { connectionAtomRuntime } from "../../connection/runtime";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironmentServerConfig } from "../../state/entities";
@@ -43,7 +41,7 @@ import {
 } from "./directoryComputers";
 import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 
-const directoryComputers = createDirectoryComputersAtoms(connectionAtomRuntime);
+import { directoryComputers } from "./state";
 
 const FOOTER =
   "Computers your Library knows about. Connect signs in with Loom Identity, or asks for a pairing code when a computer does not offer it. Forget clears the Library entry and leaves your files and saved connection in place.";
@@ -121,6 +119,7 @@ export function useDirectoryComputers() {
         status: view.status === "empty" && rows.length > 0 ? "listed" : view.status,
       },
       catalog.isReady,
+      now,
     ),
     old,
     oldIds,
