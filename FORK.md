@@ -990,8 +990,9 @@ the merge or its checks failed, or the ready pull request when the review did no
 run continues that pull request instead of starting over: it merges `main` and the newest nightly
 into it and repairs and reviews what still fails, so a large catch-up spreads over several runs
 without redoing any of them. A scheduled run skips a nightly that an open pull request already
-ran at, so a failure waits for the next nightly, or a run by hand, instead of repeating every
-three hours. Push fixes to the pull request's branch and the next run builds on them; close it to
+ran at unless `main` has advanced since that attempt. A merge blocked by concurrent fork work
+is retried on the next schedule; an unchanged failed attempt waits for a new nightly or a run
+by hand. Push fixes to the pull request's branch and the next run builds on them; close it to
 make the next run start over from `main`. A pull request whose merge stopped on a conflict no
 session resolved holds no work, so the next run starts over too. Starting over still replays what
 rerere recorded; delete the `loom-rerere-` caches (Actions > Caches, or `gh cache delete`) to

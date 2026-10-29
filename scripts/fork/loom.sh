@@ -1213,8 +1213,8 @@ cmd_upstream_status() {
 }
 
 # Whether a scheduled run has work, as due=<true|false> and reason=<why> lines: the newest
-# nightly is in neither origin/main nor an open integration pull request. A pull request
-# that holds it, or is named for it, already ran at that tag; a newer nightly retries it.
+# nightly is missing, or an attempted integration needs newer main changes. Unchanged
+# attempts wait for a newer nightly, so a failing check does not repeat every three hours.
 upstream_due() {
   local newest branch
   newest=$(latest_nightly)
@@ -1227,7 +1227,12 @@ upstream_due() {
     [ -n "$branch" ] || continue
     if [ "$branch" = "integrate/$newest" ] ||
       git merge-base --is-ancestor "$newest" "origin/$branch" 2>/dev/null; then
-      printf 'due=false\nreason=%s already ran at %s\n' "$branch" "$newest"
+      if git rev-parse --verify --quiet "origin/$branch" >/dev/null &&
+        ! git merge-base --is-ancestor origin/main "origin/$branch"; then
+        printf 'due=true\nreason=%s needs current main\n' "$branch"
+      else
+        printf 'due=false\nreason=%s already ran at %s\n' "$branch" "$newest"
+      fi
       return 0
     fi
   done < <(gh pr list --state open --json headRefName \

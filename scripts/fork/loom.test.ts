@@ -1308,7 +1308,7 @@ it("alerts once when main goes stale and once a day after, however late the watc
   expect(alerts("2026-10-15T17:50:00Z", "2026-10-15T20:47:00Z")).toBe(false);
 });
 
-it("has work only when the newest nightly is in neither main nor an open integration pull request", () => {
+it("has work for a new nightly or main changes an open integration has not checked", () => {
   const f = repositoryFixture();
   f.git("tag", NIGHTLY);
   f.git("update-ref", "refs/remotes/origin/main", "HEAD");
@@ -1350,6 +1350,16 @@ esac
   });
   // A needs-Kyle draft whose merge stopped holds nothing, but its name says it ran at the tag.
   expect(due(`integrate/${NEXT}`)).toMatchObject({ due: "false" });
+  f.git("checkout", "--quiet", "--detach", NIGHTLY);
+  f.git("commit", "--quiet", "--allow-empty", "-m", "fork changes after integration started");
+  f.git("update-ref", "refs/remotes/origin/main", "HEAD");
+  expect(due("integrate/holds-next")).toEqual({
+    due: "true",
+    reason: "integrate/holds-next needs current main",
+  });
+  f.git("merge", "--quiet", "--no-edit", NEXT);
+  f.git("update-ref", "refs/remotes/origin/integrate/holds-next", "HEAD");
+  expect(due("integrate/holds-next")).toMatchObject({ due: "false" });
   f.git("update-ref", "refs/remotes/origin/main", NEXT);
   expect(due()).toEqual({ due: "false", reason: `main has ${NEXT}` });
 });
