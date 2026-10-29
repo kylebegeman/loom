@@ -8,6 +8,7 @@ import { DeviceToolkit } from "../../mcp/toolkits/device/tools.ts";
 import { PreviewToolkit } from "../../mcp/toolkits/preview/tools.ts";
 import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools.ts";
 import { DeviceQaToolkit } from "../device-qa/mcp.ts";
+import { toolFamily } from "./toolFamilies.ts";
 
 /**
  * Tools that refuse every call without a thread credential holding the capability. McpServer lists
@@ -25,6 +26,19 @@ const unusableToolNames = (scope: McpInvocationScope): ReadonlySet<string> =>
       scope.thread !== undefined && scope.capabilities.has(capability) ? [] : names,
     ),
   );
+
+const visibleTool = (name: string, hidden: ReadonlySet<string>, scope: McpInvocationScope) => {
+  const family = toolFamily(name);
+  return !hidden.has(name) && (!scope.thread || !family || scope.capabilities.has(family));
+};
+
+export function filterSessionTools<T extends { readonly name: string }>(
+  tools: ReadonlyArray<T>,
+  scope: McpInvocationScope,
+): ReadonlyArray<T> {
+  const hidden = unusableToolNames(scope);
+  return tools.filter((tool) => visibleTool(tool.name, hidden, scope));
+}
 
 const isToolsListMessage = Schema.is(
   Schema.Struct({
@@ -45,14 +59,18 @@ const containsListMarker = (bytes: Uint8Array) =>
  * Handles both transport framings: one JSON message per line, or SSE `data:` events. Returns
  * undefined when nothing changed, so the caller sends the original bytes.
  */
-const withoutTools = (text: string, hidden: ReadonlySet<string>): string | undefined => {
+const withoutTools = (
+  text: string,
+  hidden: ReadonlySet<string>,
+  scope: McpInvocationScope,
+): string | undefined => {
   let changed = false;
   const lines = text.split("\n").map((line) => {
     const prefix = line.startsWith(SSE_DATA) ? SSE_DATA : "";
     const message = decodeJson(line.slice(prefix.length));
     if (Option.isNone(message) || !isToolsListMessage(message.value)) return line;
     const { result } = message.value;
-    const tools = result.tools.filter((tool) => !hidden.has(tool.name));
+    const tools = result.tools.filter((tool) => visibleTool(tool.name, hidden, scope));
     if (tools.length === result.tools.length) return line;
     changed = true;
     return prefix + JSON.stringify({ ...message.value, result: { ...result, tools } });
@@ -60,9 +78,9 @@ const withoutTools = (text: string, hidden: ReadonlySet<string>): string | undef
   return changed ? lines.join("\n") : undefined;
 };
 
-const filterBytes = (bytes: Uint8Array, hidden: ReadonlySet<string>) => {
+const filterBytes = (bytes: Uint8Array, hidden: ReadonlySet<string>, scope: McpInvocationScope) => {
   if (!containsListMarker(bytes)) return bytes;
-  const filtered = withoutTools(decoder.decode(bytes), hidden);
+  const filtered = withoutTools(decoder.decode(bytes), hidden, scope);
   return filtered === undefined ? bytes : encoder.encode(filtered);
 };
 
@@ -72,10 +90,10 @@ export const hideUnusableTools = (
   scope: McpInvocationScope,
 ): HttpServerResponse.HttpServerResponse => {
   const hidden = unusableToolNames(scope);
-  if (hidden.size === 0) return response;
+  if (hidden.size === 0 && !scope.thread) return response;
   const { body } = response;
   if (body._tag === "Uint8Array") {
-    const filtered = filterBytes(body.body, hidden);
+    const filtered = filterBytes(body.body, hidden, scope);
     return filtered === body.body
       ? response
       : HttpServerResponse.setBody(response, HttpBody.uint8Array(filtered, body.contentType));
@@ -85,7 +103,7 @@ export const hideUnusableTools = (
     return HttpServerResponse.setBody(
       response,
       HttpBody.stream(
-        Stream.map(body.stream, (chunk) => filterBytes(chunk, hidden)),
+        Stream.map(body.stream, (chunk) => filterBytes(chunk, hidden, scope)),
         body.contentType,
       ),
     );

@@ -9,6 +9,7 @@ import {
   type EnvReport,
   type BudgetStatus,
   type VarlockValidation,
+  DEFAULT_AGENT_TOOL_FAMILIES,
 } from "@t3tools/contracts/fork";
 import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -63,6 +64,9 @@ function profileSummary(
   // Reserve room for command/env context even when the private notes fill their 8k limit.
   return [
     `Project notes:\n${profile.agentNotes.slice(0, 3500)}`,
+    `Agent tools: ${Object.entries(profile.agentToolFamilies ?? DEFAULT_AGENT_TOOL_FAMILIES)
+      .map(([family, choice]) => `${family} ${choice}`)
+      .join(", ")}`,
     "Commands:",
     ...commands.map((c) => c.slice(0, 300)),
     "Env status (values omitted):",

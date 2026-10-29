@@ -78,7 +78,7 @@ const invocationFor = (threadId: ThreadId) => ({
   },
   client: undefined,
   requestNamespace: "model-test",
-  capabilities: new Set<McpCapability>(["orchestration"]),
+  capabilities: new Set<McpCapability>(["orchestration", "hardware"]),
   issuedAt: 0,
 });
 const inThread = <A, E, R>(effect: Effect.Effect<A, E, R>, threadId: ThreadId) =>
@@ -148,7 +148,7 @@ it.effect(
               client: undefined,
 
               requestNamespace: "model-test",
-              capabilities: new Set<McpCapability>(),
+              capabilities: new Set<McpCapability>(["hardware"]),
               issuedAt: 0,
             }),
           );
@@ -211,7 +211,7 @@ it.effect("renders with default or explicit projection and passes bed fit throug
             },
             client: undefined,
             requestNamespace: "model-test",
-            capabilities: new Set<McpCapability>(),
+            capabilities: new Set<McpCapability>(["hardware"]),
             issuedAt: 0,
           }),
         );
@@ -261,7 +261,7 @@ it.effect("forwards overhang requests and returns statistics through the tool sc
       },
       client: undefined,
       requestNamespace: "model-test",
-      capabilities: new Set<McpCapability>(),
+      capabilities: new Set<McpCapability>(["hardware"]),
       issuedAt: 0,
     };
     const result = yield* renderModelTool({
@@ -347,7 +347,7 @@ it.effect(
               client: undefined,
 
               requestNamespace: "model-test",
-              capabilities: new Set<McpCapability>(),
+              capabilities: new Set<McpCapability>(["hardware"]),
               issuedAt: 0,
             }),
           );
@@ -369,7 +369,7 @@ it.effect("rejects MCP clients without a calling project thread", () =>
         requestNamespace: "client:test",
         thread: undefined,
         client: { sessionId: "client", label: "External", access: "read-only" },
-        capabilities: new Set<McpCapability>(),
+        capabilities: new Set<McpCapability>(["hardware"]),
         issuedAt: 0,
       }),
       Effect.flip,
@@ -412,7 +412,7 @@ it.effect("refuses every tool, including settings, while agent model tools are o
       client: undefined,
       requestNamespace: "model-test",
       // Saving settings is an environment write, which needs the orchestration capability.
-      capabilities: new Set<McpCapability>(["orchestration"]),
+      capabilities: new Set<McpCapability>(["orchestration", "hardware"]),
       issuedAt: 0,
     };
     const inThread = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -590,7 +590,7 @@ it.effect("print checks use caller workspace, forward options and obey the agent
             },
             client: undefined,
             requestNamespace: "check-test",
-            capabilities: new Set<McpCapability>(),
+            capabilities: new Set<McpCapability>(["hardware"]),
             issuedAt: 0,
           }),
         );

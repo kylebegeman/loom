@@ -74,7 +74,7 @@ it.effect.each(cases)(
         );
         const scope: McpInvocationScope = {
           environmentId: EnvironmentId.make("sites-host"),
-          capabilities: new Set(["orchestration"]),
+          capabilities: new Set(["orchestration", "sites"]),
           issuedAt: 0,
           requestNamespace: "sites-test",
           thread: {
@@ -100,6 +100,13 @@ it.effect.each(cases)(
           client: { sessionId: "reader", label: "Read only", access: "read-only" },
         }).pipe(Effect.flip);
         expect(denied).toMatchObject({ code: "capability_denied" });
+        expect(calls).toBe(0);
+
+        const familyDenied = yield* invoke({
+          ...scope,
+          capabilities: new Set(["orchestration"]),
+        }).pipe(Effect.flip);
+        expect(familyDenied).toMatchObject({ code: "capability_denied" });
         expect(calls).toBe(0);
 
         const pending = yield* invoke(scope).pipe(Effect.forkChild);

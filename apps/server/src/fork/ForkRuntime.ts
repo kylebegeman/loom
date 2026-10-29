@@ -1,5 +1,6 @@
 import type { UpdatePlans } from "./machine-updates/UpdatePlans.ts";
 import type { UpdateHandoff } from "./machine-updates/UpdateHandoff.ts";
+import type { SessionToolPolicy } from "./mcp/SessionToolPolicy.ts";
 import type { AttentionRetry } from "./attention/AttentionRetry.ts";
 import type { SkillRegistryService } from "./skill-registry/SkillRegistryService.ts";
 import type { LibraryPublishingCredential } from "../auth/LibraryPublishingCredential.ts";
@@ -83,6 +84,7 @@ export type ForkServices =
   | SkillRegistryService
   | LibraryPublishingCredential
   | ProjectProfileService
+  | SessionToolPolicy
   | VaultConnections
   | VaultAccessInspector
   | VaultReadiness

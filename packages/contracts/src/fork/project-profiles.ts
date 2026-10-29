@@ -31,7 +31,23 @@ export const IntentCommand = Schema.Union([
   }),
 ]);
 export type IntentCommand = typeof IntentCommand.Type;
+export const AGENT_TOOL_FAMILIES_FEATURE = "agent-tool-families";
+export const AGENT_TOOL_FAMILIES = ["hardware", "reach", "sites"] as const;
+export type AgentToolFamily = (typeof AGENT_TOOL_FAMILIES)[number];
+export const AgentToolFamilyPreference = Schema.Literals(["auto", "always", "never"]);
+export const AgentToolFamilies = Schema.Struct({
+  hardware: AgentToolFamilyPreference,
+  reach: AgentToolFamilyPreference,
+  sites: AgentToolFamilyPreference,
+});
+export type AgentToolFamilies = typeof AgentToolFamilies.Type;
+export const DEFAULT_AGENT_TOOL_FAMILIES: AgentToolFamilies = {
+  hardware: "auto",
+  reach: "auto",
+  sites: "auto",
+};
 const profileFields = {
+  agentToolFamilies: Schema.optionalKey(AgentToolFamilies),
   agentNotes: Schema.String.check(Schema.isMaxLength(8000)),
   commands: Schema.Struct({
     dev: Schema.optionalKey(IntentCommand),

@@ -160,9 +160,10 @@ const providerInstanceId = ProviderInstanceId.make("codex");
 const fullAccessSession = {
   threadId: ThreadId.make("thread-catalog-full"),
   providerInstanceId,
-  capabilities: new Set(["preview", "device"] as const),
+  capabilities: new Set(["preview", "device", "hardware", "reach", "sites"] as const),
 };
-const CAPABILITY_TOOL = /^(preview_|t3_preview_|device_|loom_device_qa_)/;
+const CAPABILITY_TOOL =
+  /^(preview_|t3_preview_|device_|loom_device_qa_|loom_pcb_|loom_model_preview_3d_|loom_reach_|loom_site_|loom_sites$)/;
 
 it.effect("lists each session only the tools its credential can call", () =>
   Effect.gen(function* () {
@@ -178,6 +179,11 @@ it.effect("lists each session only the tools its credential can call", () =>
 
     expect(limited).toEqual(expect.arrayContaining(["delegate_task", "loom_preview_link_share"]));
     expect(limited.filter((name) => CAPABILITY_TOOL.test(name))).toEqual([]);
+    expect(
+      limited.filter((name) =>
+        /^(loom_pcb_|loom_model_preview_3d_|loom_reach_|loom_site_|loom_sites$)/.test(name),
+      ),
+    ).toEqual([]);
     expect(full).toEqual(
       expect.arrayContaining([
         "preview_status",

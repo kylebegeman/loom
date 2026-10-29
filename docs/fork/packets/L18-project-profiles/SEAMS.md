@@ -52,9 +52,17 @@ tag=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -1)
 git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
-With no packet seams, any conflict can only come from extension point seams this packet
-created. Record the tag and result.
+Rehearse the extension-point seams, especially provider credential preparation and the shared
+MCP capability filter. Record the tag and result.
 
 ## FORK.md rows
 
 None for packet seams. Extension point rows only if this packet created an extension point.
+
+## Agent tool families
+
+The `ext-mcp` seams in ProviderSessionManager prepare and compare per-project tool capabilities;
+its test covers stable reuse and replacement when the choice changes. Server wiring provides the
+shared policy before orchestration. McpInvocationContext admits the three family names, and
+McpToolAccess checks them even when an agent calls an unlisted tool directly. The eval runner
+reuses production list filtering with the real family toolkits. See `docs/fork/seams.tsv` for counts.

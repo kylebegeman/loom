@@ -199,7 +199,7 @@ is unit tested without a filesystem.
 7. Status per key: the schema's own static value counts as a default (`set` from
    `.env.schema`); a function-call value is `resolvedByVarlock`; an empty string is `empty`;
    otherwise type-checked when the type is one of `string number boolean url email port enum
-semver isoDate uuid` (simple checks, no options beyond enum values and number ranges), and
+   semver isoDate uuid` (simple checks, no options beyond enum values and number ranges), and
    `unchecked` for other types. `invalid.reason` is fixed text ("expected a URL"), never the
    value.
 8. `@import(...)`: listed in `imports`; items from local relative imports inside the root are
@@ -323,8 +323,8 @@ rare); `update` applies the patch to the stored document and re-validates.
   `varlockValidate`, `varlockCommand`, `updateSettings`.
 - `apps/web/src/fork/project-profiles/`:
   - `panel.tsx`: `{ id: "project-profiles:env", title: "Env", icon: KeyRoundIcon, shortcut:
-"E", unavailableHint: "Needs a Loom server", isAvailable: threadRef !== null &&
-loomFeatures.includes("project-profiles") }`.
+    "E", unavailableHint: "Needs a Loom server", isAvailable: threadRef !== null &&
+    loomFeatures.includes("project-profiles") }`.
   - `EnvPanel.tsx`: header (root path, schema path, Refresh, Validate with varlock, Edit
     profile), a status filter, the variable table (virtualized over 200 rows with
     `@legendapp/list`), a Commands block (mapped intents and project actions with "Run with
@@ -421,13 +421,13 @@ message text, so every provider receives them.
 - **Items** (`useItems(query)`, a hook): reads the same store and the `get` query atom for
   the project. One item, filtered by `query` against "insert project notes":
   - notes non-empty: `{ label: "Insert project notes", description: <first line, 80 chars>,
-value: { kind: "insert", notes } }`;
+    value: { kind: "insert", notes } }`;
   - notes empty: `{ label: "Add project notes", description: "Opens the project profile",
-value: { kind: "edit" } }`;
+    value: { kind: "edit" } }`;
   - loading: `{ label: "Loading project notes...", value: { kind: "none" } }` (select does
     nothing).
 - **Select**: `insert` calls `replace(trigger.rangeStart, trigger.rangeEnd,
-"Project notes:\n" + notes + "\n", { expectedText: token })`; `edit` navigates to the
+  "Project notes:\n" + notes + "\n", { expectedText: token })`; `edit` navigates to the
   profile the way "Edit profile" does and removes the `%` token.
 - The inserted text counts toward upstream's message limits like typed text; notes are at
   most 8,000 characters, well below `PROVIDER_SEND_TURN_MAX_INPUT_CHARS`.
@@ -437,7 +437,7 @@ value: { kind: "edit" } }`;
 `loom_project_profiles_get`, registered in `ForkMcpToolkitsLive`:
 
 - Parameters: `{ include: Schema.optional(Schema.Array(Schema.Literals(["notes", "commands",
-"env"]))) }` (non-empty struct as required).
+  "env"]))) }` (non-empty struct as required).
 - Description (kept to two short sentences, since it costs prompt tokens in every session):
   "Get the user's private notes, preferred commands and environment variable status for
   this project. Read it before running project commands."
@@ -485,3 +485,13 @@ value: { kind: "edit" } }`;
   cover the need.
 - **A hand-written env-spec parser**: planned as a fallback while the dependency was
   unapproved; dropped once Kyle approved `@env-spec/parser`.
+
+## Agent tool families
+
+`SessionToolPolicy` reads the existing project profile before a provider credential is prepared.
+Its profile/Sites dependencies share the same layer instances with ForkLayer and are provided
+before orchestration starts; requiring the whole ForkRuntime here would create a cycle. The
+Library metadata endpoint returns only reach/site availability for a Library project ID, so
+execution computers need no copy of the Sites integration credentials. Hardware detection
+checks only the selected workspace root and caches that evidence briefly. Profile overrides
+are read on each preparation, and credential reuse compares the resulting complete capability set.

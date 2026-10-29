@@ -1551,3 +1551,11 @@ apps/server/src/server.ts	machine-updates	3
 apps/server/src/cloud/selfUpdate.ts	machine-updates	3
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	machine-updates	6
 evals/mcp-tool-use/run.ts	machine-updates	2
+apps/server/src/orchestration-v2/ProviderSessionManager.ts	ext-mcp	5
+apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	ext-mcp	14
+apps/server/src/mcp/McpInvocationContext.ts	ext-mcp	1
+apps/server/src/mcp/McpToolAccess.ts	ext-mcp	3
+apps/server/src/server.ts	ext-mcp	2
+evals/mcp-tool-use/run.ts	ext-mcp	19
+apps/server/src/provider/AgentContextBudget.test.ts	ext-mcp	3
+apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	ext-settings	2
