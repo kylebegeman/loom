@@ -20,7 +20,7 @@ export const UpdateToolkit = Toolkit.make(
   Tool.make("loom_updates_status", {
     description:
       "Read this computer's durable update plan and current version. Waiting plans survive closed windows and server restarts; waitingAgents counts work an update would interrupt. This does not arm or install an update.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: UpdatePlanStatus,
     failure,
     dependencies,
