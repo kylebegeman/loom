@@ -433,7 +433,7 @@ packages/client-runtime/src/connection/compatibility.ts	runtime-owner	3
 apps/web/src/components/ServerUpdateAction.tsx	runtime-owner	10
 apps/web/src/components/settings/ConnectionsSettings.tsx	runtime-owner	2
 apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	runtime-owner	8
-apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	6
+apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	7
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	runtime-owner	6
 apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	3
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	runtime-owner	4

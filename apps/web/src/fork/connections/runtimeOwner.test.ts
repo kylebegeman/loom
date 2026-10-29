@@ -2,6 +2,8 @@ import { EnvironmentId, type ExecutionEnvironmentCapabilities } from "@t3tools/c
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  awaitsTrackSwitch,
+  collectChannelSwitchTargets,
   collectServerUpdateTargets,
   OS_MANAGED_SKIP_REASON,
   type UpdateEverythingMachine,
@@ -47,6 +49,30 @@ describe("a computer whose operating system owns the runtime", () => {
       ["manual", "needs a manual update"],
     ]);
   });
+
+  it.each([undefined, "boot-service", "desktop-managed"] as const)(
+    "skips OS-managed track switches even with self-update capability %s",
+    (serverSelfUpdate) => {
+      const osManaged = machine("mini", {
+        serverRuntimeOwner: "operating-system",
+        ...(serverSelfUpdate === undefined ? {} : { serverSelfUpdate }),
+      });
+      const { targets, skipped } = collectChannelSwitchTargets(
+        [
+          osManaged,
+          machine("manual", {}),
+          machine("service", { serverSelfUpdate: "boot-service" }),
+        ],
+        { channel: "latest", version: "0.0.50", databaseMigration: 0 },
+      );
+      expect(targets.map((target) => target.serverLabel)).toEqual(["service"]);
+      expect(skipped.map((entry) => [entry.label, entry.reason])).toEqual([
+        ["mini", OS_MANAGED_SKIP_REASON],
+        ["manual", "needs a manual update"],
+      ]);
+      expect(awaitsTrackSwitch(osManaged, "nightly")).toBe(false);
+    },
+  );
 
   it("reads as managed by its operating system in the fleet list instead of offering a runtime", () => {
     const behind = {

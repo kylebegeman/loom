@@ -320,6 +320,10 @@ function trackSwitchMove(
   if (cliReleaseChannelOf(config.environment.serverVersion) === "preview") {
     return { skip: "runs a preview build" };
   }
+  // fork: runtime-owner
+  if (runtimeManagedByOperatingSystem(config.environment.capabilities)) {
+    return { skip: OS_MANAGED_SKIP_REASON };
+  }
   const selfUpdate = resolveServerSelfUpdateCapability(config);
   if (selfUpdate === null) return { skip: "needs a manual update" };
   if (selfUpdate !== "desktop-managed") return { selfUpdate };
