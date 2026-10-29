@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { MessageSquareIcon } from "lucide-react";
+import { cn } from "~/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { LIBRARY_DELETED_FEATURE, type LibraryThreadSummary } from "@t3tools/contracts/fork";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
@@ -22,7 +24,13 @@ export function useRecentlyDeletedSupported() {
   );
 }
 
-export function RecentlyDeletedConversations({ projectId }: { readonly projectId?: string }) {
+export function RecentlyDeletedConversations({
+  projectId,
+  sidebar = false,
+}: {
+  readonly projectId?: string;
+  readonly sidebar?: boolean;
+}) {
   const authority = useLibraryAuthority();
   const [offsets, setOffsets] = useState([0]);
   const offset = offsets.at(-1) ?? 0;
@@ -35,27 +43,51 @@ export function RecentlyDeletedConversations({ projectId }: { readonly projectId
       : null,
   );
   return (
-    <div className="flex flex-col gap-3">
+    <div className={sidebar ? "space-y-0.5" : "flex flex-col gap-3"}>
       <LibraryErrorNotice error={query.error} onRetry={query.refresh} />
       {query.isPending ? (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p
+          role="status"
+          className={cn(
+            "text-muted-foreground",
+            sidebar ? "px-(--sidebar-row-content-inset) py-2 text-xs" : "text-sm",
+          )}
+        >
           Loading recently deleted conversations...
         </p>
       ) : null}
       {query.isSuccess && !query.data?.threads.length ? (
-        <p className="text-sm text-muted-foreground">No recently deleted conversations.</p>
+        <p
+          className={cn(
+            "text-muted-foreground",
+            sidebar ? "px-(--sidebar-row-content-inset) py-2 text-xs" : "text-sm",
+          )}
+        >
+          No recently deleted conversations.
+        </p>
       ) : null}
       {(query.data?.threads ?? []).map((thread) => (
         <Link
           key={thread.id}
           to="/library/conversations/$conversationId"
           params={{ conversationId: thread.id }}
-          className="rounded-md px-3 py-2 text-sm hover:bg-muted"
+          className={cn(
+            "flex items-start gap-2 rounded-md text-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            sidebar
+              ? "px-(--sidebar-row-content-inset) py-(--sidebar-content-inset) text-sidebar-foreground hover:bg-sidebar-row-hover"
+              : "px-3 py-2 hover:bg-muted",
+          )}
         >
-          {thread.title || "Untitled conversation"}
+          {sidebar ? (
+            <MessageSquareIcon
+              aria-hidden
+              className="mt-0.5 size-4 shrink-0 text-sidebar-muted-foreground"
+            />
+          ) : null}
+          <span className="min-w-0 truncate">{thread.title || "Untitled conversation"}</span>
         </Link>
       ))}
-      <div className="flex gap-2">
+      <div className={cn("flex gap-2", sidebar && "px-(--sidebar-row-content-inset)")}>
         {offsets.length > 1 ? (
           <Button
             size="sm"
