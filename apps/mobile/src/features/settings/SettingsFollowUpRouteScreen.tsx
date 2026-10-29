@@ -62,8 +62,8 @@ export function SettingsFollowUpRouteScreen() {
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         {/* fork: everyday-workflows */}
-        Long-press Send to choose an action for one message, including Restart turn. With a
-        hardware keyboard, hold Command while sending to switch between Send next and Send now.
+        Long-press Send to choose an action for one message, including Restart turn. With a hardware
+        keyboard, hold Command while sending to switch between Send next and Send now.
       </Text>
     </ScrollView>
   );

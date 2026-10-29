@@ -210,7 +210,13 @@ it.effect("a push to origin leaves origin's tracking branch, upstream and lease 
     expect(git("-C", checkout, "status", "-sb").split("\n")[0]).toBe("## feature...origin/feature");
 
     // The checkout cannot add a destination to the remote that Loom's push uses.
-    git("-C", checkout, "config", "remote.loom-vault-origin.pushurl", "https://elsewhere.invalid/x");
+    git(
+      "-C",
+      checkout,
+      "config",
+      "remote.loom-vault-origin.pushurl",
+      "https://elsewhere.invalid/x",
+    );
     expect((yield* push("push", "origin", "feature").pipe(Effect.flip)).reason).toBe(
       "unsafe-git-config",
     );

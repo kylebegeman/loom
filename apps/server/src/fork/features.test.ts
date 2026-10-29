@@ -74,9 +74,9 @@ describe("LOOM_SERVER_FEATURES", () => {
 
     const shared = { ...LIBRARY_PUSH_ACTIVITY, LOOM_IDENTITY_ALLOWED_SUBJECTS: "alice,bob" };
     expect(await featuresWith(shared)).not.toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
-    expect(
-      await featuresWith({ ...shared, LOOM_LIBRARY_PUSH_RECIPIENTS: "bob" }),
-    ).toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
+    expect(await featuresWith({ ...shared, LOOM_LIBRARY_PUSH_RECIPIENTS: "bob" })).toContain(
+      LIBRARY_PUSH_ACTIVITY_FEATURE,
+    );
 
     const withoutPush = { ...LIBRARY_PUSH_ACTIVITY, LOOM_LIBRARY_PUSH_ENABLED: "false" };
     expect(await featuresWith(withoutPush)).not.toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);

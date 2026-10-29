@@ -47,13 +47,14 @@ process.on('SIGTERM', () => server.close(() => process.exit(0)));
       ChildProcess.make("tar", ["-czf", archive, "-C", scratch, "t3-fixture"]),
     );
     expect(Number(yield* tar.exitCode)).toBe(0);
+    // The script fixture cannot link the bundled libatomic that Linux archives are checked for.
     yield* Effect.all(
       [
         smokeCliArchive({ archive, expectVersion: "1.2.3" }),
         smokeCliArchive({ archive, expectVersion: "1.2.3" }),
       ],
       { concurrency: "unbounded" },
-    );
+    ).pipe(Effect.provideService(HostProcess.Platform, "darwin"));
     const records = (yield* fs.readFileString(report))
       .trim()
       .split("\n")

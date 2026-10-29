@@ -40,11 +40,19 @@ describe("workspaceHandoffCheckoutProblem", () => {
   it("offers Commit & push for local changes, naming the default branch it pushes", () => {
     expect(problem(changed(["a.ts", "b.ts"]))).toEqual({
       reason: "2 changed files aren't committed. Commit and push them before moving work.",
-      fix: { action: "commit_push", label: "Commit & push", pendingLabel: "Committing and pushing…" },
+      fix: {
+        action: "commit_push",
+        label: "Commit & push",
+        pendingLabel: "Committing and pushing…",
+      },
     });
     expect(problem({ ...changed(["a.ts"]), isDefaultRef: true, refName: "main" })).toEqual({
       reason: "1 changed file isn't committed. Commit and push it before moving work.",
-      fix: { action: "commit_push", label: "Commit & push to main", pendingLabel: "Committing and pushing…" },
+      fix: {
+        action: "commit_push",
+        label: "Commit & push to main",
+        pendingLabel: "Committing and pushing…",
+      },
     });
   });
 
@@ -76,7 +84,10 @@ describe("workspaceHandoffCheckoutProblem", () => {
 });
 
 describe("workspaceHandoffCanReconnect", () => {
-  const computer = (enabled: boolean, phase: "reconnecting" | "error" | "offline" | "connected") => ({
+  const computer = (
+    enabled: boolean,
+    phase: "reconnecting" | "error" | "offline" | "connected",
+  ) => ({
     entry: { enabled },
     connection: { phase },
   });

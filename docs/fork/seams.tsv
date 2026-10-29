@@ -293,6 +293,7 @@ apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	9
 apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
+apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	machine-updates	4
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
 apps/web/src/components/CommandPalette.logic.test.ts	bots	2
 apps/web/src/components/CommandPalette.logic.test.ts	fleet-connections	2
@@ -639,6 +640,7 @@ apps/web/src/components/settings/SnapShotSetupDialog.tsx	brand	3
 apps/web/src/components/settings/StorageSettings.tsx	brand	1
 apps/web/src/components/settings/ThemeImportDialog.tsx	brand	1
 apps/web/src/components/settings/ThemePreviewCircles.tsx	brand	1
+apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	brand	1
 apps/web/src/components/settings/providerStatus.ts	brand	1
 apps/web/src/components/settings/scopedSettings.test.ts	brand	1
 apps/web/src/components/settings/scopedSettings.ts	brand	1
@@ -1572,7 +1574,7 @@ apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-l
 packages/shared/package.json	-	"./fork/compatibility"
 apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
-apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
+apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
@@ -1595,6 +1597,7 @@ apps/mobile/src/lib/attachmentDocument.ts	cloudflare-access	1
 apps/mobile/src/lib/attachmentDownload.ts	cloudflare-access	1
 apps/mobile/src/lib/runtime.ts	cloudflare-access	1
 apps/mobile/src/lib/videoThumbnails.ts	cloudflare-access	1
+apps/mobile/src/state/assets.test.ts	cloudflare-access	1
 apps/mobile/src/state/assets.ts	cloudflare-access	1
 packages/client-runtime/src/connection/outdatedHostUpdate.ts	cloudflare-access	1
 packages/client-runtime/src/rpc/session.ts	cloudflare-access	1
