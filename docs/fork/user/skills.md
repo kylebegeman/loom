@@ -40,8 +40,8 @@ with your changes. Unsaved edits stay in the Lab when switching tabs; save or re
 before changing project context.
 
 Choose a test project and an available provider account/model, enter a sample prompt,
-and select Test in new thread. Loom opens a draft containing `$skill-name` and your
-prompt. Send it when ready. Start a new session after changing a skill, since running
+and select Test in new thread. Loom opens a draft containing `/skill-name` for Claude or `$skill-name` for other providers,
+followed by your prompt. Send it when ready. Start a new session after changing a skill, since running
 agents may retain the earlier version.
 
 Skill folders are installed on the selected computer. They are not synchronized to

@@ -32,6 +32,7 @@ export default function SkillManager({
   );
   const refresh = () => {
     query.refresh();
+    appAtomRegistry.refresh(skills.inventory({ environmentId, input: { projectId } }));
     appAtomRegistry.refresh(skills.sources({ environmentId, input: {} }));
   };
   const selectTab = (next: SkillTab) => {
@@ -83,7 +84,7 @@ export default function SkillManager({
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {labDirty ? (
           <p className="text-xs text-muted-foreground">
-            Save or reload Lab edits before changing project context.
+            Save or reload Lab edits before creating another skill or changing project context.
           </p>
         ) : null}
         {operation.pending ? (

@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { ProviderInstanceId, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
@@ -26,6 +27,20 @@ const fixture = Effect.gen(function* () {
   const root = yield* files.fs.makeTempDirectoryScoped();
   const home = files.path.join(root, "home");
   yield* files.fs.makeDirectory(home);
+  const failRefresh = yield* Ref.make(false);
+  const provider: ServerProvider = {
+    instanceId: ProviderInstanceId.make("claude"),
+    driver: ProviderDriverKind.make("claude"),
+    enabled: true,
+    installed: true,
+    status: "ready",
+    auth: { status: "unknown" },
+    checkedAt: "2026-10-28T00:00:00.000Z",
+    version: null,
+    models: [],
+    slashCommands: [],
+    skills: [],
+  };
   const failSwap = yield* Ref.make(false);
   const failMetadata = yield* Ref.make(false);
   const fs = FileSystem.FileSystem.of({
@@ -54,7 +69,10 @@ const fixture = Effect.gen(function* () {
     Layer.provide(Store.layer.pipe(Layer.provide(config))),
     Layer.provide(
       Layer.mergeAll(
-        Layer.mock(Providers.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        Layer.mock(Providers.ProviderRegistry)({
+          getProviders: Ref.get(failRefresh).pipe(Effect.map((fail) => (fail ? [provider] : []))),
+          refreshInstance: () => Effect.die("Provider refresh unavailable"),
+        }),
         Layer.mock(Instances.ProviderInstanceRegistry)({ listInstances: Effect.succeed([]) }),
         Layer.mock(Projects.ProjectService)({}),
         Settings.layerTest(),
@@ -75,7 +93,7 @@ const fixture = Effect.gen(function* () {
   const target = (yield* service.inventory({ projectId: null })).targets.find(
     (value) => value.isDefault,
   )!;
-  return { service, files, root, home, target, failSwap, failMetadata };
+  return { service, files, root, home, target, failSwap, failMetadata, failRefresh };
 });
 
 it.effect(
@@ -97,6 +115,7 @@ it.effect(
         expect(
           yield* f.files.fs.readFileString(f.files.path.join(created.key, "agents", "openai.yaml")),
         ).toContain("allow_implicit_invocation: false");
+        yield* Ref.set(f.failRefresh, true);
         const edited = yield* f.service.writeSkill({
           projectId: null,
           key: created.key,
@@ -166,6 +185,11 @@ it.live(
         yield* f.files.fs.makeDirectory(skill, { recursive: true });
         const first = "---\nname: sample\ndescription: Use for a sample\n---\nOriginal body\n";
         yield* f.files.fs.writeFileString(f.files.path.join(skill, "SKILL.md"), first);
+        yield* f.files.fs.writeFileString(f.files.path.join(repo, "LICENSE"), "Repository license");
+        yield* f.files.fs.writeFileString(
+          f.files.path.join(skill, "LICENSE.source"),
+          "Bundled notice",
+        );
         yield* f.files.fs.writeFile(
           f.files.path.join(skill, "image.bin"),
           new Uint8Array([0, 255, 128]),
@@ -206,6 +230,16 @@ it.live(
           subpaths: ["skills/sample"],
           targetId: f.target.id,
         }))[0]!;
+        expect(
+          yield* f.files.fs.readFileString(
+            f.files.path.join(installed.directory, "LICENSE.source"),
+          ),
+        ).toBe("Bundled notice");
+        expect(
+          yield* f.files.fs.readFileString(
+            f.files.path.join(installed.directory, "LICENSE.source.1"),
+          ),
+        ).toBe("Repository license");
         yield* f.files.fs.writeFileString(
           f.files.path.join(skill, "SKILL.md"),
           first.replace("Original", "Updated"),
@@ -290,6 +324,16 @@ it.live(
             yield* f.files.fs.readFile(f.files.path.join(installed.directory, "image.bin")),
           ),
         ).toEqual([0, 254, 128]);
+        yield* f.files.fs.writeFileString(f.files.path.join(skill, "SKILL.md"), "Broken metadata");
+        yield* git(["add", "."]);
+        yield* git(["commit", "-m", "invalid skill"]);
+        yield* fetch("invalid");
+        expect(
+          yield* Effect.flip(f.service.previewUpdate({ projectId: null, installId: installed.id })),
+        ).toMatchObject({ reason: "invalid" });
+        expect(
+          yield* f.files.fs.readFileString(f.files.path.join(installed.directory, "SKILL.md")),
+        ).toContain("Updated body");
       }),
     ).pipe(Effect.provide(Layer.merge(base, ProcessRunner.layer.pipe(Layer.provide(base))))),
 );

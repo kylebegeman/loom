@@ -134,9 +134,14 @@ const make = Effect.gen(function* () {
     cache.set(input.projectId, { at: currentTime, value });
     return value;
   }, Effect.mapError(io));
+  const refreshCatalog = Effect.fn("SkillRegistry.refreshCatalog")((projectId: ProjectId | null) =>
+    catalog
+      .refresh(projectId)
+      .pipe(Effect.timeout("20 seconds"), Effect.ignoreCause({ log: true })),
+  );
   const changed = Effect.fn("SkillRegistry.changed")(function* (projectId: ProjectId | null) {
     cache.clear();
-    yield* catalog.refresh(projectId);
+    yield* refreshCatalog(projectId);
   });
   const entryFor = Effect.fn("SkillRegistry.entryFor")(function* (input: SkillFileInput) {
     const entry = (yield* inventory({ projectId: input.projectId, refresh: true })).entries.find(
@@ -250,6 +255,19 @@ const make = Effect.gen(function* () {
         }),
       ),
   );
+  const stageSkill = Effect.fn("SkillRegistry.stageSkill")(function* (
+    source: SkillRegistrySource,
+    subpath: string,
+    directory: string,
+  ) {
+    yield* sourceFiles.copySkill(source, subpath, directory);
+    if (source.license === null || (yield* fs.exists(path.join(directory, "LICENSE")))) return;
+    let filename = "LICENSE.source";
+    let suffix = 0;
+    while (yield* fs.exists(path.join(directory, filename)))
+      filename = `LICENSE.source.${++suffix}`;
+    yield* fs.writeFileString(path.join(directory, filename), source.license);
+  });
   const install = Effect.fn("SkillRegistry.install")(function* (input: SkillInstallInput) {
     const source = (yield* store.read).sources.find(
       (value) => value.id === input.sourceId && value.commit === input.commit,
@@ -295,9 +313,7 @@ const make = Effect.gen(function* () {
               `${name} already exists. Review its source update instead of replacing it.`,
             );
           const next = path.join(stage, name);
-          yield* sourceFiles.copySkill(source, chosen[index]!.subpath, next);
-          if (source.license !== null && !(yield* fs.exists(path.join(next, "LICENSE"))))
-            yield* fs.writeFileString(path.join(next, "LICENSE.source"), source.license);
+          yield* stageSkill(source, chosen[index]!.subpath, next);
           const record: SkillRegistryInstall = {
             id: yield* uuid,
             directory: destination,
@@ -491,9 +507,7 @@ const make = Effect.gen(function* () {
     const preview = yield* withStaging(path.dirname(record.directory), (stage) =>
       Effect.gen(function* () {
         const next = path.join(stage, "next");
-        yield* sourceFiles.copySkill(source, record.subpath, next);
-        if (source.license !== null && !(yield* fs.exists(path.join(next, "LICENSE"))))
-          yield* fs.writeFileString(path.join(next, "LICENSE.source"), source.license);
+        yield* stageSkill(source, record.subpath, next);
         const before = new Map(
           (yield* files.tree(record.directory)).map((file) => [file.relativePath, file]),
         );
@@ -579,9 +593,7 @@ const make = Effect.gen(function* () {
     const result = yield* withStaging(path.dirname(current.directory), (stage, preserve) =>
       Effect.gen(function* () {
         const next = path.join(stage, "next");
-        yield* sourceFiles.copySkill(review.source, current.subpath, next);
-        if (review.source.license !== null && !(yield* fs.exists(path.join(next, "LICENSE"))))
-          yield* fs.writeFileString(path.join(next, "LICENSE.source"), review.source.license);
+        yield* stageSkill(review.source, current.subpath, next);
         const updated: SkillRegistryInstall = {
           ...current,
           commit: review.source.commit,
@@ -646,7 +658,11 @@ const make = Effect.gen(function* () {
     return yield* inventory({ projectId: input.projectId, refresh: true });
   });
   return SkillRegistryService.of({
-    inventory,
+    inventory: Effect.fn("SkillRegistry.refreshInventory")((input) =>
+      (input.refresh ? refreshCatalog(input.projectId) : Effect.void).pipe(
+        Effect.andThen(inventory(input)),
+      ),
+    ),
     validate: Effect.fn("SkillRegistry.validate")((input) =>
       Effect.succeed(validateSkill(input.text, input.folderName)),
     ),

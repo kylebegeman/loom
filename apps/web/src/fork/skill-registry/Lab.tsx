@@ -67,6 +67,7 @@ export function Lab({
       setText(next.text);
       setValidation(next.validation);
       setValidatedText(next.text);
+      setValidationError(null);
       onDirtyChange(false);
     });
   }
@@ -116,6 +117,7 @@ export function Lab({
       setText(next.text);
       setValidation(next.validation);
       setValidatedText(next.text);
+      setValidationError(null);
       onDirtyChange(false);
       refresh();
       operation.setNotice("Skill saved. Start a new thread to use the changes.");
@@ -170,6 +172,7 @@ export function Lab({
           size="sm"
           disabled={
             !canCreate ||
+            (file !== null && text !== file.text) ||
             !target ||
             !/^[a-z0-9][a-z0-9-]{0,63}$/.test(name) ||
             !description.trim() ||
@@ -211,7 +214,7 @@ export function Lab({
             value: candidate.key,
             label: `${candidate.name} (${candidate.locations[0]?.path ?? ""})`,
           }))}
-          disabled={file !== null && text !== file.text}
+          disabled={operation.pending !== null || (file !== null && text !== file.text)}
           onChange={(key) => void open(key)}
         />
         {file ? (
@@ -222,6 +225,7 @@ export function Lab({
               <textarea
                 aria-label="SKILL.md editor"
                 spellCheck={false}
+                disabled={operation.pending !== null}
                 className="min-h-80 w-full resize-y rounded-lg border border-input bg-background p-3 font-mono text-xs leading-relaxed focus-visible:outline focus-visible:outline-ring"
                 value={text}
                 onChange={(event) => {
@@ -284,6 +288,10 @@ export function Lab({
                     setFile(null);
                     setText("");
                     setSelectedKey("");
+                    setValidation(null);
+                    setValidatedText("");
+                    setValidationError(null);
+                    onDirtyChange(false);
                     refresh();
                   }}
                 />
@@ -337,6 +345,10 @@ function TestSkill({
     ?.visibility.some(
       (item) => item.instanceId === model?.instanceId && item.enabled && item.userInvocable,
     );
+  const driver = catalog.data?.accounts.find(
+    (account) => account.instanceId === model?.instanceId,
+  )?.driver;
+  const invocation = driver === "claude" ? "/" : "$";
   const newThread = useNewThreadHandler();
   return (
     <Section title="Test in a new thread">
@@ -376,7 +388,10 @@ function TestSkill({
             if (!model || !project) return;
             const draft = await newThread(
               scopeProjectRef(environmentId, ProjectId.make(project.id)),
-              { environmentSelection: "manual", prompt: `$${name}\n\n${prompt}` },
+              {
+                environmentSelection: "manual",
+                prompt: `${invocation}${name}\n\n${prompt}`,
+              },
             );
             if (draft)
               useComposerDraftStore

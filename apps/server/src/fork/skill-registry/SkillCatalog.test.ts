@@ -3,6 +3,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as PlatformError from "effect/PlatformError";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
@@ -50,6 +52,8 @@ it.effect("merges accounts sharing a symlinked folder and keeps provider state a
         files.path.join(directory, "SKILL.md"),
         "---\nname: sample\ndescription: File description\n---\nInstructions",
       );
+      const unreadable = files.path.join(home, ".grok", "skills");
+      yield* files.fs.makeDirectory(unreadable, { recursive: true });
       const first = provider("claude", files.path.join(directory, "SKILL.md"));
       const second = {
         ...provider("claude_second", files.path.join(otherHome, "skills", "sample", "SKILL.md")),
@@ -79,10 +83,28 @@ it.effect("merges accounts sharing a symlinked folder and keeps provider state a
             }),
           ),
         ),
+        Effect.provideService(
+          FileSystem.FileSystem,
+          FileSystem.FileSystem.of({
+            ...files.fs,
+            readDirectory: (directory) =>
+              directory === unreadable
+                ? Effect.fail(
+                    PlatformError.systemError({
+                      module: "FileSystem",
+                      method: "readDirectory",
+                      _tag: "PermissionDenied",
+                      pathOrDescriptor: directory,
+                    }),
+                  )
+                : files.fs.readDirectory(directory),
+          }),
+        ),
         Effect.provideService(HostProcess.HomeDirectory, home),
         Effect.provideService(HostProcess.Environment, {}),
       );
       const inventory = yield* catalog.inventory(null, []);
+      expect(inventory.scanTruncated).toBe(true);
       expect(inventory.entries).toHaveLength(1);
       expect(inventory.entries[0]?.description).toBe("Native description");
       expect(

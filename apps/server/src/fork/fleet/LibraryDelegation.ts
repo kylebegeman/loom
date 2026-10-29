@@ -77,12 +77,17 @@ export const resolveLibraryRemotePlacement = Effect.fn("LibraryDelegation.resolv
         environmentId,
         workingCopyId: candidate.copyId!,
       };
-      const resolved = yield* forwarding.call(
-        scope,
-        ProjectLibraryToolkit.tools.loom_library_binding_resolve,
-        environmentId,
-        { project, binding },
-      );
+      const resolution = yield* forwarding
+        .call(scope, ProjectLibraryToolkit.tools.loom_library_binding_resolve, environmentId, {
+          project,
+          binding,
+        })
+        .pipe(Effect.result);
+      if (resolution._tag === "Failure") {
+        if (requestedProjectId !== undefined) continue;
+        return yield* resolution.failure;
+      }
+      const resolved = resolution.success;
       if (
         resolved.binding.projectId !== binding.projectId ||
         resolved.binding.projectRevision !== binding.projectRevision ||

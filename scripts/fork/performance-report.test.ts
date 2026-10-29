@@ -34,6 +34,26 @@ it("requires comparable complete scenarios and treats fast failed work as a fail
     observations: run(90).observations.map((item) => ({ ...item, dataset: "another dataset" })),
   };
   expect(performanceReport(run(100), changed).verdict).toBe("inconclusive");
+  const missingMetric = {
+    observations: [
+      ...run(100).observations,
+      { ...run(100).observations[0]!, units: "bytes" as const },
+    ],
+  };
+  expect(performanceReport(missingMetric, run(100)).verdict).toBe("inconclusive");
+  const duplicate = { observations: [...run(100).observations, run(100).observations[0]!] };
+  expect(performanceReport(duplicate, run(100)).verdict).toBe("inconclusive");
+  expect(performanceReport(run(100), { observations: errors.observations.slice(1) }).verdict).toBe(
+    "needs-attention",
+  );
+  expect(
+    isPerformanceRun({
+      observations: run(100).observations.map((item) => ({
+        ...item,
+        samples: item.samples.map((sample) => ({ ...sample, value: Infinity })),
+      })),
+    }),
+  ).toBe(false);
   expect(
     performanceReport(run(100), { observations: run(100).observations.slice(1) }).verdict,
   ).toBe("inconclusive");

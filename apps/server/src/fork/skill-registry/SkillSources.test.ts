@@ -71,6 +71,17 @@ it.live(
           files.path.join(skillRoot, "SKILL.md"),
           "---\nname: sample\ndescription: Use for a sample\n---\nRead the reference and use the binary asset.",
         );
+        const license = `Copyright Acme\n${"License terms.\n".repeat(3000)}`;
+        yield* files.fs.writeFileString(files.path.join(repo, "LICENSE"), license);
+        const broken = files.path.join(repo, "skills", "broken");
+        yield* files.fs.makeDirectory(broken);
+        yield* files.fs.writeFile(
+          files.path.join(broken, "SKILL.md"),
+          new Uint8Array([
+            ...new TextEncoder().encode("---\nname: broken\ndescription: Explain\n---\nBody "),
+            255,
+          ]),
+        );
         const binary = new Uint8Array([0, 255, 128, 13, 10]);
         yield* files.fs.writeFile(files.path.join(skillRoot, "asset.bin"), binary);
         yield* files.fs.writeFileString(
@@ -108,9 +119,20 @@ it.live(
         expect(Option.getOrNull(event)?.phase, Option.getOrNull(event)?.error ?? "").toBe("ready");
         const source = Option.getOrThrow(event).source!;
         expect(source.commit).toMatch(/^[a-f0-9]{40}$/);
-        expect(source.skills).toMatchObject([
-          { name: "sample", files: 3, containsScripts: true, issues: [] },
-        ]);
+        expect(source.license).toBe(license);
+        expect(source.skills.find((skill) => skill.name === "sample")).toMatchObject({
+          files: 3,
+          containsScripts: true,
+          issues: [],
+        });
+        expect(
+          source.skills.find((skill) => skill.subpath === "skills/broken")?.issues,
+        ).toContainEqual(expect.objectContaining({ severity: "error", code: "encoding" }));
+        expect(
+          yield* Effect.flip(
+            sources.copySkill(source, "skills/broken", files.path.join(root, "broken-install")),
+          ),
+        ).toMatchObject({ reason: "invalid" });
         const destination = files.path.join(root, "installed");
         yield* sources.copySkill(source, "skills/sample", destination);
         expect(

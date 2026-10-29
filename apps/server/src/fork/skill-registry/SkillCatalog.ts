@@ -229,6 +229,7 @@ export const makeSkillCatalog = Effect.gen(function* () {
         }),
       { concurrency: 2 },
     );
+    const installsByDirectory = new Map(installs.map((install) => [install.directory, install]));
     const entries = new Map<string, SkillRegistryEntry>();
     let scanned = 0;
     let scanTruncated = false;
@@ -254,7 +255,7 @@ export const makeSkillCatalog = Effect.gen(function* () {
         const containsScripts = tree.some(
           (file) => file.executable || file.relativePath.startsWith("scripts/"),
         );
-        const install = installs.find((value) => value.directory === realDir) ?? null;
+        const install = installsByDirectory.get(realDir) ?? null;
         const currentHash = install === null ? null : yield* files.treeHash(realDir);
         const writableRoot = current.targets.some(
           (target) => files.within(target.realPath, realDir) && target.realPath !== realDir,
@@ -377,29 +378,30 @@ export const makeSkillCatalog = Effect.gen(function* () {
       }
     for (const root of current.roots) {
       if (!(yield* fs.exists(root.path))) continue;
-      const names = yield* fs.readDirectory(root.path).pipe(Effect.orElseSucceed(() => []));
+      const names = yield* fs.readDirectory(root.path).pipe(
+        Effect.orElseSucceed(() => {
+          scanTruncated = true;
+          return [];
+        }),
+      );
       for (const name of names) {
         const directory = path.join(root.path, name);
         if (!(yield* fs.exists(path.join(directory, "SKILL.md")))) continue;
         yield* add(directory, root.id, root.scope).pipe(
-          Effect.catchTags({
-            SkillRegistryError: () => {
-              scanTruncated = true;
-              return Effect.void;
-            },
+          Effect.catch(() => {
+            scanTruncated = true;
+            return Effect.void;
           }),
-          Effect.ignore,
         );
       }
     }
+    const visibleNames = new Set(
+      [...entries.values()]
+        .filter((entry) => entry.visibility.length > 0)
+        .map((entry) => entry.name),
+    );
     for (const entry of entries.values()) {
-      if (
-        entry.visibility.length === 0 &&
-        [...entries.values()].some(
-          (other) =>
-            other.key !== entry.key && other.name === entry.name && other.visibility.length > 0,
-        )
-      )
+      if (entry.visibility.length === 0 && visibleNames.has(entry.name))
         entries.set(entry.key, {
           ...entry,
           problems: [

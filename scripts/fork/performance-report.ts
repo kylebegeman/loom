@@ -4,7 +4,7 @@ import * as NodeURL from "node:url";
 import * as Schema from "effect/Schema";
 
 const Sample = Schema.Struct({
-  value: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+  value: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
   work: Schema.Int.check(Schema.isGreaterThan(0)),
   errors: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
@@ -24,14 +24,27 @@ export type PerformanceRun = typeof PerformanceRun.Type;
 const median = (values: readonly number[]) => {
   const sorted = values.toSorted((a, b) => a - b),
     middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+  return sorted.length % 2
+    ? sorted[middle]!
+    : sorted[middle - 1]! + (sorted[middle]! - sorted[middle - 1]!) / 2;
 };
 export function performanceReport(baseline: PerformanceRun, candidate: PerformanceRun) {
+  const metric = (observation: typeof Observation.Type) =>
+    `${observation.scenario}:${observation.units}`;
+  const counts = (run: PerformanceRun) => {
+    const result = new Map<string, number>();
+    for (const observation of run.observations)
+      result.set(metric(observation), (result.get(metric(observation)) ?? 0) + 1);
+    return result;
+  };
+  const baselineCounts = counts(baseline);
+  const candidateCounts = counts(candidate);
   const missing = ["thread-open", "long-history", "streaming", "reconnect", "idle"].filter(
     (scenario) =>
       !baseline.observations.some((item) => item.scenario === scenario) ||
       !candidate.observations.some((item) => item.scenario === scenario),
   );
+  for (const key of baselineCounts.keys()) if (!candidateCounts.has(key)) missing.push(key);
   const rows = candidate.observations.map((next) => {
     const previous = baseline.observations.find(
       (item) => item.scenario === next.scenario && item.units === next.units,
@@ -42,6 +55,8 @@ export function performanceReport(baseline: PerformanceRun, candidate: Performan
     const errors = next.samples.reduce((sum, sample) => sum + sample.errors, 0);
     if (
       !previous ||
+      baselineCounts.get(metric(next)) !== 1 ||
+      candidateCounts.get(metric(next)) !== 1 ||
       (["dataset", "host", "workload", "cache"] as const).some(
         (field) => previous[field] !== next[field],
       ) ||
@@ -57,7 +72,7 @@ export function performanceReport(baseline: PerformanceRun, candidate: Performan
         median: current,
         range,
         errors,
-        reason: "Missing baseline, limiter or comparable dataset/host/workload/cache.",
+        reason: "Missing or ambiguous metric, limiter or comparable dataset/host/workload/cache.",
       };
     const before = previous.samples.map((sample) => sample.value),
       base = median(before),
@@ -88,10 +103,12 @@ export function performanceReport(baseline: PerformanceRun, candidate: Performan
   });
   return {
     verdict:
-      missing.length || rows.some((row) => row.verdict === "inconclusive")
-        ? "inconclusive"
-        : rows.some((row) => row.verdict === "failed" || row.verdict === "possible-regression")
-          ? "needs-attention"
+      [...baseline.observations, ...candidate.observations].some((observation) =>
+        observation.samples.some((sample) => sample.errors > 0),
+      ) || rows.some((row) => row.verdict === "failed" || row.verdict === "possible-regression")
+        ? "needs-attention"
+        : missing.length || rows.some((row) => row.verdict === "inconclusive")
+          ? "inconclusive"
           : "no-demonstrated-regression",
     missing,
     rows,

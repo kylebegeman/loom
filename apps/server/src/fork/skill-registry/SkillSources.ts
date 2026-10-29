@@ -184,8 +184,9 @@ export const makeSkillSources = Effect.gen(function* () {
     subpath: string,
     destination: string,
   ) {
-    if (!source.skills.some((skill) => skill.subpath === subpath))
-      return yield* fail("invalid", "Choose a skill from the fetched source catalog.");
+    const skill = source.skills.find((skill) => skill.subpath === subpath);
+    if (skill === undefined || skill.issues.some((issue) => issue.severity === "error"))
+      return yield* fail("invalid", "Choose a valid skill from the fetched source catalog.");
     const selected = (yield* tree(source)).filter(
       (file) => subpath === "." || file.path.startsWith(`${subpath}/`),
     );
@@ -301,8 +302,25 @@ export const makeSkillSources = Effect.gen(function* () {
                 },
               ],
             } satisfies SkillSourceSkill;
-          const text = new TextDecoder().decode(yield* blob(id, entry));
-          const validation = validateSkill(text, path.basename(subpath));
+          const bytes = yield* blob(id, entry);
+          const text = yield* Effect.try(() =>
+            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          ).pipe(Effect.orElseSucceed(() => null));
+          const validation =
+            text === null
+              ? {
+                  name: null,
+                  description: null,
+                  compatibility: undefined,
+                  issues: [
+                    {
+                      severity: "error" as const,
+                      code: "encoding",
+                      message: "SKILL.md must contain UTF-8 text.",
+                    },
+                  ],
+                }
+              : validateSkill(text, path.basename(subpath));
           const contents = entries.filter(
             (file) => subpath === "." || file.path.startsWith(`${subpath}/`),
           );
@@ -331,9 +349,7 @@ export const makeSkillSources = Effect.gen(function* () {
         entry.bytes <= SKILL_FILE_LIMIT,
     );
     const license =
-      licenseFile === undefined
-        ? null
-        : new TextDecoder().decode(yield* blob(id, licenseFile)).slice(0, 32768);
+      licenseFile === undefined ? null : new TextDecoder().decode(yield* blob(id, licenseFile));
     const source: SkillRegistrySource = {
       id,
       url,

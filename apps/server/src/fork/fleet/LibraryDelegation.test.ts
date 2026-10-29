@@ -96,6 +96,7 @@ function setup(
     readonly responses?: Record<string, unknown>;
     readonly failBindOnce?: boolean;
     readonly bound?: boolean;
+    readonly copies?: readonly string[];
   } = {},
 ) {
   let bindFailed = false;
@@ -131,19 +132,17 @@ function setup(
     launchCandidates: () =>
       Effect.succeed({
         projectId: project.id,
-        candidates: [
-          {
-            kind: "copy",
-            environmentId: there,
-            label: "Studio",
-            online: true,
-            copyId: "studio-copy",
-            freshness: "up-to-date",
-            lastUsedAt: null,
-            reasons: ["up to date"],
-            preselected: true,
-          },
-        ],
+        candidates: (options.copies ?? ["studio-copy"]).map((copyId) => ({
+          kind: "copy" as const,
+          environmentId: there,
+          label: "Studio",
+          online: true,
+          copyId,
+          freshness: "up-to-date" as const,
+          lastUsedAt: null,
+          reasons: ["up to date"],
+          preselected: true,
+        })),
       }),
   });
   const layer = Layer.mergeAll(
@@ -162,6 +161,22 @@ function setup(
     Layer.mock(PeerForwarding.PeerForwarding)({
       call: (_scope, tool, _environmentId, input) => {
         calls.push({ tool: tool.name, input });
+        if (
+          tool.name === "loom_library_binding_resolve" &&
+          typeof input === "object" &&
+          input !== null &&
+          "binding" in input &&
+          typeof input.binding === "object" &&
+          input.binding !== null &&
+          "workingCopyId" in input.binding &&
+          input.binding.workingCopyId === "missing-copy"
+        )
+          return Effect.fail(
+            new OrchestratorMcpFailure({
+              code: "target_required",
+              message: "Copy no longer exists",
+            }),
+          );
         if (options.failBindOnce && tool.name === "loom_library_thread_bind" && !bindFailed) {
           bindFailed = true;
           return Effect.fail(
@@ -198,6 +213,19 @@ it.effect("resolves the pinned Library component to its exact destination local 
         "loom_library_binding_resolve",
         "loom_library_profile_readiness",
       ]);
+    }),
+  );
+});
+
+it.effect("resolves an exact requested project despite an unavailable sibling copy", () => {
+  const f = setup({ copies: ["missing-copy", "studio-copy"] });
+  return f.run(
+    Effect.gen(function* () {
+      const placement = yield* resolveLibraryRemotePlacement(scope, there, localProject);
+      expect(placement).toEqual({ project, binding: resolved.binding, projectId: localProject });
+      expect(
+        yield* Effect.flip(resolveLibraryRemotePlacement(scope, there, undefined)),
+      ).toMatchObject({ code: "target_required" });
     }),
   );
 });
