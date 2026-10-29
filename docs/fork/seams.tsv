@@ -638,6 +638,7 @@ apps/web/src/components/settings/SettingsPanels.tsx	brand	2
 apps/web/src/components/settings/SnapShotSettings.tsx	brand	1
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	brand	3
 apps/web/src/components/settings/StorageSettings.tsx	brand	1
+apps/web/src/components/settings/SecretsSettings.tsx	brand	1
 apps/web/src/components/settings/ThemeImportDialog.tsx	brand	1
 apps/web/src/components/settings/ThemePreviewCircles.tsx	brand	1
 apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	brand	1
