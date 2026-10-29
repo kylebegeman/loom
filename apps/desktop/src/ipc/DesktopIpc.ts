@@ -136,7 +136,10 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
               event.returnValue = runSync(
                 // fork: server-weight
                 untraced === true
-                  ? handler().pipe(Effect.annotateLogs({ channel }), Effect.withTracerEnabled(false))
+                  ? handler().pipe(
+                      Effect.annotateLogs({ channel }),
+                      Effect.withTracerEnabled(false),
+                    )
                   : Effect.gen(function* () {
                       yield* Effect.annotateCurrentSpan({ channel });
                       return yield* handler();
