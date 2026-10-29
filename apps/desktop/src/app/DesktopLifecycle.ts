@@ -17,6 +17,10 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopUpdates from "../updates/DesktopUpdates.ts"; // fork: machine-updates
+import * as Option from "effect/Option"; // fork: machine-updates
+// fork: machine-updates
+import { makeIdleWindowLifetime } from "../fork/machine-updates/IdleWindowLifetime.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",
@@ -243,6 +247,19 @@ export const make = DesktopLifecycle.of({
     const electronApp = yield* ElectronApp.ElectronApp;
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    const idleState = yield* DesktopState.DesktopState; // fork: machine-updates
+    // fork: machine-updates
+    const idleWindows = yield* makeIdleWindowLifetime({
+      updates: Option.getOrNull(yield* Effect.serviceOption(DesktopUpdates.DesktopUpdates)),
+      canQuit: Effect.gen(function* () {
+        return (
+          environment.platform !== "darwin" &&
+          !(yield* Ref.get(idleState.quitting)) &&
+          Option.isNone(yield* electronWindow.currentMainOrFirst)
+        );
+      }),
+      quit: electronApp.quit,
+    });
     const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
     const runEffect = Effect.runPromiseWith(context);
     const quit: QuitState = { phase: "running", waitingSinceNanos: 0n };
@@ -278,6 +295,7 @@ export const make = DesktopLifecycle.of({
         Effect.gen(function* () {
           const state = yield* DesktopState.DesktopState;
           if (yield* Ref.get(state.quitting)) return;
+          yield* idleWindows.opened; // fork: machine-updates
           yield* desktopWindow.activate;
         }).pipe(Effect.withSpan("desktop.lifecycle.activate")),
       );
@@ -288,6 +306,7 @@ export const make = DesktopLifecycle.of({
           const app = yield* ElectronApp.ElectronApp;
           const state = yield* DesktopState.DesktopState;
           if (environment.platform !== "darwin" && !(yield* Ref.get(state.quitting))) {
+            if (yield* idleWindows.holdClose) return; // fork: machine-updates
             yield* app.quit;
           }
         }).pipe(Effect.withSpan("desktop.lifecycle.windowAllClosed")),

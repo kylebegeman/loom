@@ -34,6 +34,8 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { makeSaveBeforeUpdate } from "../fork/rollback-snapshot/RollbackSnapshot.ts"; // fork: rollback-snapshot
+// fork: machine-updates
+import { makeDesktopIdleInstall } from "../fork/machine-updates/DesktopIdleInstall.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 import {
@@ -85,15 +87,14 @@ const decodeDownloadProgressInfo = Schema.decodeUnknownEffect(DownloadProgressIn
 
 const currentIsoTimestamp = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
-// fork: machine-updates: the renderer installs an armed download once local agents are idle, so
-// the arm only exists while there is a download to install.
+// fork: machine-updates: only a downloaded update can stay armed for the main-process waiter.
 function withInstallWhenIdle(state: DesktopUpdateState, armed: boolean): DesktopUpdateState {
   if (armed && state.downloadedVersion !== null) {
     return state.installWhenIdle === true ? state : { ...state, installWhenIdle: true };
   }
   if (state.installWhenIdle === undefined) return state;
   const { installWhenIdle: _, ...unarmed } = state;
-  return unarmed;
+  return unarmed.message?.startsWith("Waiting for") ? { ...unarmed, message: null } : unarmed;
 }
 
 export class DesktopUpdateActionInProgressError extends Schema.TaggedError<DesktopUpdateActionInProgressError>()(
@@ -197,9 +198,13 @@ export class DesktopUpdates extends Context.Service<
     readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
+    // fork: machine-updates
     readonly installPrepared: (
       expectedVersion: string,
+      idleFenced?: boolean,
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
+    // fork: machine-updates
+    readonly setRemoteIdleWait?: (waiting: boolean, message?: string) => Effect.Effect<void>;
     // fork: machine-updates
     readonly setInstallWhenIdle: (armed: boolean) => Effect.Effect<DesktopUpdateState>;
   }
@@ -392,15 +397,19 @@ export const make = Effect.gen(function* () {
       .pipe(Effect.andThen(emitState));
   };
 
+  // fork: machine-updates: idle messages and updater events must modify the same current state.
   const updateState = (
     f: (state: DesktopUpdateState) => DesktopUpdateState,
   ): Effect.Effect<DesktopUpdateState> =>
-    Ref.get(updateStateRef).pipe(
-      Effect.flatMap((state) => {
-        const nextState = f(state);
-        return setState(nextState).pipe(Effect.as(nextState));
-      }),
-    );
+    stateMutex
+      .withPermits(1)(
+        Ref.modify(updateStateRef, (state) => {
+          const changed = f(state);
+          const next = withInstallWhenIdle(changed, changed.installWhenIdle === true);
+          return [next, next] as const;
+        }).pipe(Effect.tap((state) => PubSub.publish(stateChanges, state))),
+      )
+      .pipe(Effect.tap(emitState));
 
   const readAppUpdateYml = fileSystem.readFileString(environment.appUpdateYmlPath, "utf-8").pipe(
     Effect.option,
@@ -832,6 +841,15 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  // fork: machine-updates
+  const idleInstall = yield* makeDesktopIdleInstall({
+    instances: pool.list,
+    state: Ref.get(updateStateRef),
+    changes: stateChanges,
+    modify: updateState,
+    install: installWithExpectedVersion,
+  });
+
   const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
     yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
       Effect.andThen(checkForUpdates("startup")),
@@ -1112,6 +1130,8 @@ export const make = Effect.gen(function* () {
         runEffect(handleUpdateDownloaded(info));
       });
 
+      // fork: machine-updates
+      yield* idleInstall.start;
       yield* startUpdatePollers;
     }).pipe(Effect.withSpan("desktop.updates.configure")),
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
@@ -1181,9 +1201,10 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: Effect.fn("DesktopUpdates.installPrepared")(function (expectedVersion) {
-      return installWithExpectedVersion(expectedVersion);
-    }),
+    // fork: machine-updates
+    installPrepared: idleInstall.installPrepared,
+    // fork: machine-updates
+    setRemoteIdleWait: idleInstall.setRemoteIdleWait,
     // fork: machine-updates
     setInstallWhenIdle: Effect.fn("desktop.updates.setInstallWhenIdle")(function* (armed: boolean) {
       yield* Effect.annotateCurrentSpan({ armed });

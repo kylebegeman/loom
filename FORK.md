@@ -1306,18 +1306,24 @@ See [Connections help](docs/fork/user/connections.md).
 
 ### Machine update seams
 
-| File                                                        | Packet            | Why                                                                     |
-| ----------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------- |
-| `apps/web/src/components/ProviderUpdatesAction.tsx`         | `machine-updates` | Scope provider updates to permitted computers.                          |
-| `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`     | `machine-updates` | Keep the footer local to the desktop computer.                          |
-| `apps/web/src/components/sidebar/useUpdateEverything.ts`    | `machine-updates` | Share scoped local and fleet update execution.                          |
-| `apps/web/src/components/sidebar/updateEverything.logic.ts` | `machine-updates` | Keep local and fleet progress in their owning views.                    |
-| `apps/server/src/orchestration-v2/EventSink.ts`             | `machine-updates` | Hold new event commits while an idle update hands off to its installer. |
-| `apps/server/src/server.ts`                                 | `machine-updates` | Share the existing updater with durable idle plans.                     |
-| `apps/server/src/cloud/selfUpdate.ts`                       | `machine-updates` | Carry the idle preparation option to desktop updates.                   |
-| `apps/server/src/desktopUpdate/DesktopAppUpdate.ts`         | `machine-updates` | Keep idle preparation cancellable without a fixed activity timeout.     |
-| `evals/mcp-tool-use/run.ts`                                 | `machine-updates` | Evaluate the real update-plan tools.                                    |
-| `packages/shared/package.json` (no marker)                  | `machine-updates` | Share the restart-impact rule between servers and clients.              |
+| File                                                           | Packet            | Why                                                                     |
+| -------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------- |
+| `apps/web/src/components/ProviderUpdatesAction.tsx`            | `machine-updates` | Scope provider updates to permitted computers.                          |
+| `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`        | `machine-updates` | Keep the footer local to the desktop computer.                          |
+| `apps/web/src/components/sidebar/useUpdateEverything.ts`       | `machine-updates` | Share scoped local and fleet update execution.                          |
+| `apps/web/src/components/sidebar/updateEverything.logic.ts`    | `machine-updates` | Keep local and fleet progress in their owning views.                    |
+| `apps/desktop/src/updates/DesktopUpdates.ts`                   | `machine-updates` | Run idle installation in desktop main and fence owned backends.         |
+| `apps/desktop/src/app/DesktopLifecycle.ts`                     | `machine-updates` | Keep a windowless app alive for its armed update.                       |
+| `apps/desktop/src/window/DesktopApplicationMenu.ts`            | `machine-updates` | Explain that armed updates do not need an open window.                  |
+| `apps/desktop/src/updates/DesktopRemoteUpdates.ts`             | `machine-updates` | Wait and retain backend fences before remote update readiness.          |
+| `apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts`      | `machine-updates` | Retain the backend origin on internal update requests.                  |
+| `apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts` | `machine-updates` | Verify primary and WSL update-request origins.                          |
+| `apps/server/src/orchestration-v2/EventSink.ts`                | `machine-updates` | Hold new event commits while an idle update hands off to its installer. |
+| `apps/server/src/server.ts`                                    | `machine-updates` | Share the existing updater with durable idle plans.                     |
+| `apps/server/src/cloud/selfUpdate.ts`                          | `machine-updates` | Carry the idle preparation option to desktop updates.                   |
+| `apps/server/src/desktopUpdate/DesktopAppUpdate.ts`            | `machine-updates` | Keep idle preparation cancellable without a fixed activity timeout.     |
+| `evals/mcp-tool-use/run.ts`                                    | `machine-updates` | Evaluate the real update-plan tools.                                    |
+| `packages/shared/package.json` (no marker)                     | `machine-updates` | Share the restart-impact rule between servers and clients.              |
 
 ### Secure native randomness
 
