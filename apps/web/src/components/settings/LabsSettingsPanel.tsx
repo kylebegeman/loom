@@ -173,7 +173,7 @@ function SimlockHostsRow() {
           <Link to="/settings/devices" className="underline underline-offset-2">
             Devices
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          {/* fork: brand */}. An alpha that may change or break. Loom never installs Simlock.
         </>
       }
       control={

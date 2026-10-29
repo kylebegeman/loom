@@ -1320,6 +1320,8 @@ apps/server/src/bin.ts	mini-native-retention	1
 apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
+apps/server/src/device/AgentDeviceShim.ts	brand	4
+apps/server/src/device/AgentDeviceTarget.test.ts	brand	2
 apps/server/src/environment/DirectEndpoints.test.ts	directory-computers	11
 apps/server/src/environment/ServerEnvironment.test.ts	computer-naming	1
 apps/server/src/mcp/toolkits/orchestrator/handlers.ts	bots	3
@@ -1567,3 +1569,4 @@ apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
 apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
+apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
