@@ -3,8 +3,11 @@ import type {
   IntentCommand,
   ProjectProfile,
   ProjectProfilePatch,
+  AgentToolFamilies,
 } from "@t3tools/contracts/fork";
+import { DEFAULT_AGENT_TOOL_FAMILIES } from "@t3tools/contracts/fork";
 export interface ProfileDraft {
+  agentToolFamilies?: Partial<AgentToolFamilies>;
   agentNotes?: string;
   bindings?: ProjectProfile["bindings"];
   commands?: Partial<Record<CommandIntent, IntentCommand | null>>;
@@ -18,6 +21,14 @@ export function buildProfilePatch(
   draft: ProfileDraft,
 ): ProjectProfilePatch {
   const patch: ProjectProfilePatch = {
+    ...(draft.agentToolFamilies === undefined
+      ? {}
+      : {
+          agentToolFamilies: {
+            ...(profile.agentToolFamilies ?? DEFAULT_AGENT_TOOL_FAMILIES),
+            ...draft.agentToolFamilies,
+          },
+        }),
     ...(draft.bindings === undefined ? {} : { bindings: draft.bindings }),
     ...(draft.agentNotes === undefined ? {} : { agentNotes: draft.agentNotes }),
     ...(draft.dailyTokens === undefined && draft.threadTokens === undefined

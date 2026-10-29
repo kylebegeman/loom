@@ -26,6 +26,14 @@ describe("scoped project profile drafts", () => {
         env: { schemaPath: profile.env.schemaPath, varlock: "never" },
       });
       expect(buildProfilePatch(profile, {})).toEqual({});
+      expect(
+        buildProfilePatch(
+          { ...profile, agentToolFamilies: { hardware: "always", reach: "never", sites: "auto" } },
+          { agentToolFamilies: { sites: "always" } },
+        ),
+      ).toMatchObject({
+        agentToolFamilies: { hardware: "always", reach: "never", sites: "always" },
+      });
     }
   });
   it("can remove one mapping, clear a budget, and edit a literal without changing other intents", () => {

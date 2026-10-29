@@ -39,14 +39,20 @@ export const hardwareMarkers = Effect.fn("SessionToolPolicy.hardwareMarkers")(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const names = yield* fs.readDirectory(root);
-    if (
-      names.some(
-        (name) =>
-          /\.(?:kicad_pro|kicad_pcb|kicad_sch|scad)$/i.test(name) ||
-          /^tscircuit\.config\.[cm]?[jt]s$/.test(name),
+    for (const name of names) {
+      if (
+        !/\.(?:kicad_pro|kicad_pcb|kicad_sch|scad)$/i.test(name) &&
+        !/^tscircuit\.config\.[cm]?[jt]s$/.test(name)
       )
-    )
-      return true;
+        continue;
+      if (
+        yield* fs.stat(path.join(root, name)).pipe(
+          Effect.map((stat) => stat.type === "File"),
+          Effect.orElseSucceed(() => false),
+        )
+      )
+        return true;
+    }
     const packagePath = path.join(root, "package.json");
     if (!(yield* fs.exists(packagePath))) return false;
     const canonicalRoot = yield* fs.realPath(root);

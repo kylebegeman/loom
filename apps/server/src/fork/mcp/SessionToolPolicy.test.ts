@@ -25,6 +25,7 @@ it.effect.each([
   ["board.kicad_pro", "{}", true],
   ["board.kicad_pcb", "", true],
   ["case.scad", "cube(1);", true],
+  ["folder.kicad_pro", null, false],
   ["tscircuit.config.ts", "export default {}", true],
   ["package.json", '{"devDependencies":{"tscircuit":"1"}}', true],
   ["package.json", '{"dependencies":{"react":"19"}}', false],
@@ -33,7 +34,8 @@ it.effect.each([
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const root = yield* fs.makeTempDirectoryScoped();
-    yield* fs.writeFileString(`${root}/${name}`, source);
+    if (source === null) yield* fs.makeDirectory(`${root}/${name}`);
+    else yield* fs.writeFileString(`${root}/${name}`, source);
     expect(yield* hardwareMarkers(root)).toBe(expected);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

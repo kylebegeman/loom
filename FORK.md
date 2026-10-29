@@ -101,6 +101,7 @@ The shared plumbing packets register into, specified in
 
 | File                                                                                            | Marker                      | Why                                                                                                         |
 | ----------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx`                      | `ext-settings`              | Mount project agent-tool choices for each selected computer.                                                |
 | `apps/server/src/provider/AgentContextBudget.test.ts`                                           | `ext-mcp`                   | Measure the ordinary session catalog through production capability filtering.                               |
 | `apps/server/src/orchestration-v2/ProviderSessionManager.ts`                                    | `ext-mcp`                   | Prepare and reuse credentials with project tool-family capabilities.                                        |
 | `apps/server/src/orchestration-v2/ProviderSessionManager.test.ts`                               | `ext-mcp`                   | Verify stable credential reuse and replacement when tool families change.                                   |
