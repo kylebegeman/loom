@@ -85,22 +85,24 @@ export function useUpdateEverything(
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
-  // A track switch's target came from npm already.
-  const {
-    targets: behindServers,
-    skipped: unreachable,
-    waitForNpm,
-  } = channelSwitch
-    ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForNpm: [] }
+  // fork: machine-updates: no npm wait; every server off a desktop feed checks archives below.
+  const { targets: behindServers, skipped: unreachable } = channelSwitch
+    ? collectChannelSwitchTargets(machines, channelSwitch)
     : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
-  // fork: machine-updates -- published runtime archives replace the npm publication check
-  const release = useRuntimeReleaseAssets(waitForNpm.length > 0 ? targetVersion : null);
+  // fork: machine-updates -- published runtime archives replace the npm publication check.
+  // Loom publishes them for some platforms only, so every server off a desktop feed checks.
+  const archiveVersion = channelSwitch?.version ?? targetVersion; // fork: machine-updates
+  // fork: machine-updates
+  const needsArchive = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
+  // fork: machine-updates
+  const release = useRuntimeReleaseAssets(needsArchive ? archiveVersion : null);
   const assets = AsyncResult.getOrElse(release, () => []);
   const servers = behindServers.filter((server) => {
-    if (!waitForNpm.includes(server)) return true;
+    if (server.selfUpdate === "desktop-managed") return true; // fork: machine-updates
     const platform = machines.find((machine) => machine.environmentId === server.environmentId)
       ?.serverConfig?.environment.platform;
-    return platform !== undefined && isRuntimeArchivePublished(assets, targetVersion, platform);
+    // fork: machine-updates
+    return platform !== undefined && isRuntimeArchivePublished(assets, archiveVersion, platform);
   });
   const skipped: ReadonlyArray<SkippedMachine> = [
     ...unreachable,

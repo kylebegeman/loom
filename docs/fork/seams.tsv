@@ -293,8 +293,7 @@ apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	9
 apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
-apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	machine-updates	1
-apps/web/src/state/npmRelease.ts	machine-updates	2
+apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	machine-updates	4
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
 apps/web/src/components/CommandPalette.logic.test.ts	bots	2
 apps/web/src/components/CommandPalette.logic.test.ts	fleet-connections	2

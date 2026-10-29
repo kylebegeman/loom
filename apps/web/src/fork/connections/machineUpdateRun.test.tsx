@@ -96,6 +96,10 @@ function Harness({ scope }: { scope: "local" | "fleet" }) {
   return null;
 }
 beforeEach(() => {
+  Object.assign(environments[1]!.serverConfig.environment, {
+    serverVersion: "0.0.40",
+    capabilities: { serverSelfUpdate: "desktop-managed", desktopAppUpdate: true },
+  });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   fixture.run = null;
   fixture.updateServer.mockClear();
@@ -129,6 +133,24 @@ it("keeps a skipped fleet update failed and retryable instead of marking it upda
     providerFailure: null,
   });
   expect(fixture.run?.scope).toBe("fleet");
+});
+it("skips a background service whose platform has no published runtime archive", async () => {
+  // Upstream's rule lets this service skip the npm wait; Loom still needs its platform's archive.
+  Object.assign(environments[1]!.serverConfig.environment, {
+    serverVersion: "0.0.45",
+    capabilities: { serverSelfUpdate: "boot-service" },
+  });
+  await act(async () => {
+    renderer = create(<Harness scope="fleet" />);
+  });
+  expect(updates.hasUpdates).toBe(false);
+  expect(updates.skipped).toEqual([
+    {
+      environmentId: "remote",
+      label: "remote",
+      reason: "runtime archive is not published for this computer",
+    },
+  ]);
 });
 it("does not replace an update pass that is already running", async () => {
   const existing: UpdateEverythingRun = {
