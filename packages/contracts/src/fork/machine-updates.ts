@@ -6,6 +6,8 @@ import { NonNegativeInt } from "../baseSchemas.ts";
 
 export const UPDATE_PLAN_FEATURE = "machine-update-plans";
 export const UPDATE_ACTIVITY_ROUTE = "/api/loom/updates/activity";
+export const UPDATE_FENCE_ROUTE = "/api/loom/updates/fence";
+export const UPDATE_PROGRESS_ROUTE = "/api/loom/updates/progress";
 export const UPDATE_PLAN_WS_METHODS = {
   status: "loom.machine-updates.status",
   arm: "loom.machine-updates.arm",
@@ -31,8 +33,33 @@ export const UpdatePlan = Schema.Struct({
   error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(500))),
 });
 export type UpdatePlan = typeof UpdatePlan.Type;
-export const UpdateActivity = Schema.Struct({ waitingAgents: NonNegativeInt });
+export const UpdateActivity = Schema.Struct({
+  waitingAgents: NonNegativeInt,
+  plan: Schema.NullOr(UpdatePlan),
+});
 export type UpdateActivity = typeof UpdateActivity.Type;
+export const UpdateFenceRequest = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("acquire"),
+    owner: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("release"),
+    leaseId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  }),
+]);
+export const UpdateFenceLease = Schema.Struct({
+  leaseId: Schema.NullOr(Schema.String),
+  waitingAgents: NonNegativeInt,
+  expiresAt: Schema.NullOr(Schema.Number),
+});
+export type UpdateFenceLease = typeof UpdateFenceLease.Type;
+export const UpdateProgress = Schema.Struct({
+  planId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  waitingAgents: Schema.NullOr(NonNegativeInt),
+  cancelled: Schema.optional(Schema.Boolean),
+});
+export type UpdateProgress = typeof UpdateProgress.Type;
 export const UpdatePlanStatus = Schema.Struct({
   plan: Schema.NullOr(UpdatePlan),
   currentVersion: Schema.String,
@@ -53,6 +80,7 @@ const messages = {
   read: "The saved update plan could not be read.",
   write: "The update plan could not be saved.",
   activity: "This computer's agent activity could not be checked.",
+  update: "The runtime update failed. Review this computer's update settings.",
 } as const;
 export class UpdatePlanError extends Schema.TaggedError<UpdatePlanError>()("UpdatePlanError", {
   reason: Schema.Literals(Object.keys(messages) as Array<keyof typeof messages>),
