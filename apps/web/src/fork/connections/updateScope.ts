@@ -4,7 +4,7 @@ import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 export type UpdateScope = "local" | "fleet";
 
 /** A primary browser connection runs on its server, not on the browser's computer. */
-export function isLocalUpdateEnvironment(target: ConnectionTarget, desktop: boolean): boolean {
+function isLocalUpdateEnvironment(target: ConnectionTarget, desktop: boolean): boolean {
   return (
     desktop && (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target))
   );

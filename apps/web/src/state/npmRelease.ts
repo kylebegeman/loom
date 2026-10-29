@@ -42,6 +42,7 @@ export const npmReleaseAtom = Atom.family((spec: string) =>
   ).pipe(Atom.withRefresh("5 minutes"), Atom.withLabel(`npm-release:${spec}`)),
 );
 
+/** @public */ // fork: machine-updates -- runtime archives replace the npm check that used this.
 export const npmReleasePublishedAtom = Atom.family((version: string) =>
   Atom.make((get) =>
     get.result(npmReleaseAtom(version)).pipe(Effect.map((release) => release?.version === version)),
@@ -52,6 +53,7 @@ const NO_VERSION_ATOM = Atom.make(AsyncResult.success(false)).pipe(
   Atom.withLabel("npm-release-published:none"),
 );
 
+/** @public */ // fork: machine-updates -- runtime archives replace the npm check that used this.
 export function useNpmReleasePublished(version: string | null): boolean {
   const result = useAtomValue(version ? npmReleasePublishedAtom(version) : NO_VERSION_ATOM);
   return AsyncResult.getOrElse(result, () => false);
