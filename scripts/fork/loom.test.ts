@@ -764,6 +764,39 @@ it("reports true upstream provenance when Loom has a higher patch version", () =
     "Loom release\nloom-release=0.0.48-nightly.20261013.3044\nupstream=v0.0.46-nightly.20261013.3044",
   );
   expect(runMetadata(f.root, "current_upstream")).toBe("v0.0.46-nightly.20261013.3044");
+  f.git("commit", "--quiet", "--allow-empty", "-m", "next upstream");
+  f.git("tag", "v0.0.46-nightly.20261014.3100");
+  expect(runMetadata(f.root, "current_upstream")).toBe("v0.0.46-nightly.20261014.3100");
+});
+
+it("fetches genuine upstream tags before tagging fork changes", () => {
+  const upstream = repositoryFixture();
+  upstream.git("tag", "v0.0.46-nightly.20261013.3044");
+  const origin = repositoryFixture();
+  origin.git("tag", "0.0.48-nightly.20261013.3044");
+  const fork = repositoryFixture();
+  fork.git("remote", "add", "origin", origin.root);
+  fork.git("remote", "add", "upstream", upstream.root);
+  upstream.git("commit", "--quiet", "--allow-empty", "-m", "next upstream");
+  upstream.git("tag", "v0.0.46-nightly.20261014.3100");
+  fork.git("fetch", "--quiet", "--no-tags", "upstream", "main");
+  fork.git("merge", "--quiet", "--ff-only", "FETCH_HEAD");
+  fork.git("commit", "--quiet", "--allow-empty", "-m", "fork changes");
+  const scripts = NodePath.join(fork.root, "scripts/fork");
+  NodeFS.mkdirSync(scripts, { recursive: true });
+  NodeFS.symlinkSync(
+    NodePath.join(import.meta.dirname, "updates.ts"),
+    NodePath.join(scripts, "updates.ts"),
+  );
+
+  runMetadata(fork.root, "tag_main");
+
+  const tag = "loom-v0.0.49-nightly.20261014.3100";
+  expect(fork.git("rev-parse", `${tag}^{commit}`)).toBe(fork.git("rev-parse", "HEAD"));
+  expect(fork.git("for-each-ref", "--format=%(contents)", `refs/tags/${tag}`)).toContain(
+    "upstream=v0.0.46-nightly.20261014.3100",
+  );
+  expect(origin.git("rev-parse", `${tag}^{commit}`)).toBe(fork.git("rev-parse", "HEAD"));
 });
 
 it("reads upstream provenance from legacy Loom tag annotations", () => {

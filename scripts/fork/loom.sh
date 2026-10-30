@@ -123,25 +123,9 @@ die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
 
 latest_stable() { git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 1p; }
 latest_nightly() { git tag -l 'v*-nightly.*' --sort=-creatordate | sed -n 1p; }
-# Loom release versions and upstream tags can differ. Only trust provenance
-# naming a real upstream tag contained in the requested source history.
+# Loom annotations can lag later merges; genuine tags in this history prove provenance.
 upstream_at() {
-  local ref=$1 integration annotation upstream
-  integration=$(git tag -l 'loom-v*' --merged "$ref" --sort=-v:refname --sort=-creatordate | sed -n 1p)
-  if [ -n "$integration" ] && [ "$(git cat-file -t "refs/tags/$integration")" = tag ]; then
-    annotation=$(git for-each-ref --format='%(contents)' "refs/tags/$integration")
-    upstream=$(printf '%s\n' "$annotation" | sed -n 's/^upstream=\(v[^[:space:]]*\)$/\1/p' | sed -n 1p)
-    if [ -z "$upstream" ]; then
-      upstream=$(printf '%s\n' "$annotation" | sed -nE 's/^.*[Bb]uilt from upstream (v[^[:space:]]+).*$/\1/p' | sed -n 1p)
-    fi
-    if printf '%s\n' "$upstream" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
-      && git show-ref --verify --quiet "refs/tags/$upstream" \
-      && git merge-base --is-ancestor "refs/tags/$upstream" "$ref"; then
-      printf '%s\n' "$upstream"
-      return 0
-    fi
-  fi
-  git tag -l 'v[0-9]*' --merged "$ref" --sort=-v:refname --sort=-creatordate \
+  git tag -l 'v[0-9]*' --merged "$1" --sort=-v:refname --sort=-creatordate \
     | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' | sed -n 1p || true
 }
 current_upstream() { upstream_at main; }
@@ -816,12 +800,13 @@ published_record() {
 tag_main() {
   [ -z "$(git tag -l 'loom-v*' --points-at HEAD)" ] || return 0
   local upstream version
-  upstream=$(upstream_at HEAD)
   # next-version reads published tags and the publisher's reservations; a build still running
   # has only a reservation, so a checkout without it would repeat that version. --no-prune keeps
   # local upstream tags that origin does not mirror when fetch.prune is set.
   git fetch -q --no-prune origin 'refs/tags/*:refs/tags/*' \
     'refs/loom/publications/*:refs/loom/publications/*'
+  git fetch -q --no-prune upstream --tags
+  upstream=$(upstream_at HEAD)
   version=$(node scripts/fork/updates.ts next-version "$upstream")
   if upstream_status HEAD | grep -qx 'state=stale'; then
     echo "Warning: main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream nightly. Fix the upstream integration (FORK.md, Updating from upstream) before building more fork work on it." >&2
