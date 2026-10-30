@@ -165,7 +165,7 @@ apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	1
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
 apps/server/src/storageCleanup.test.ts	project-lifecycle	31
 packages/contracts/src/settings.test.ts	project-lifecycle	4
-apps/server/src/serverSettings.test.ts	project-lifecycle	3
+apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	14
 apps/mobile/app.config.ts	fleet-connect	4
 apps/mobile/app.config.ts	library-push	2
