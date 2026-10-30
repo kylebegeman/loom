@@ -13,6 +13,7 @@ import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { LoomWordmark } from "../LoomWordmark"; // fork: brand
+import { BOTS_NAVIGATION_VISIBLE } from "@t3tools/client-runtime/fork"; // fork: bots
 import { useBotsFooterEntry } from "../../fork/bots/BotsFooterEntry"; // fork: bots
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -266,15 +267,17 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         }}
       />
       {/* fork: bots */}
-      <SidebarUtilityItem
-        icon={botsEntry.icon}
-        label={botsEntry.label}
-        active={/^\/loom\/bots(?:\/|$)/.test(pathname)}
-        onClick={() => {
-          closeMobileSidebar();
-          void navigate({ to: "/loom/bots" });
-        }}
-      />
+      {BOTS_NAVIGATION_VISIBLE ? (
+        <SidebarUtilityItem
+          icon={botsEntry.icon}
+          label={botsEntry.label}
+          active={/^\/loom\/bots(?:\/|$)/.test(pathname)}
+          onClick={() => {
+            closeMobileSidebar();
+            void navigate({ to: "/loom/bots" });
+          }}
+        />
+      ) : null}
       <SidebarThreadUndoNotice />
       <SidebarUpdatePill />
     </SidebarMenu>

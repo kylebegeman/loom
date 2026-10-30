@@ -1,10 +1,10 @@
+import { hiddenNavigationTabsForPlatform } from "../../fork/usage-navigation/tabs"; // fork: usage-navigation
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Platform } from "react-native";
 import {
   NAVIGATION_TAB_LABELS,
   navigationCustomizationAvailable,
-  resolveHiddenNavigationTabs,
   enabledNavigationTabs,
   type NavigationTab,
 } from "./navigation-tab-order";
@@ -37,7 +37,11 @@ export function useHiddenNavigationTabs() {
   const saved = AsyncResult.isSuccess(preferences)
     ? preferences.value.hiddenNavigationTabs
     : undefined;
-  return navigationCustomizationAvailable() ? resolveHiddenNavigationTabs(saved) : [];
+  // fork: usage-navigation
+  return hiddenNavigationTabsForPlatform(
+    Platform.OS,
+    navigationCustomizationAvailable() ? saved : undefined,
+  );
 }
 
 export function useEnabledNavigationTabs() {

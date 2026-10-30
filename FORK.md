@@ -285,8 +285,16 @@ turned off in Settings the upstream list and menu render unchanged. See the
 [L12 packet](docs/fork/packets/L12-panel-picker/SEAMS.md) and
 [user help](docs/fork/user/panel-picker.md).
 
+iOS keeps Limits in Settings and the Threads toolbar instead of the tab bar. The
+`usage-navigation` seams apply the same hidden-tab policy to native, sidebar and
+floating navigation, including a previously selected Usage tab. Android keeps its tabs.
+
+Bots navigation is temporarily hidden across clients and the command palette by
+`BOTS_NAVIGATION_VISIBLE` in `packages/client-runtime/src/fork/bots-presentation.ts`.
+Existing definitions, runs and server tools remain available for the later bot redesign.
+
 L89 adds the Bots footer entry after Sites in `apps/web/src/components/sidebar/SidebarChrome.tsx`
-(`fork: bots`, 14 marker lines with L94's attention count) and lists `/loom/bots` as a
+(`fork: bots`, 15 marker lines with L94's attention count) and lists `/loom/bots` as a
 utility page in `apps/web/src/components/sidebar/mainAppLocation.ts`. The footer's Back shows only
 on Pull requests: Settings and Usage open as modals, and Projects, Sites and Bots keep their row. Bot runs are hidden threads: the subagent
 checks in `apps/web/src/components/Sidebar.logic.ts` (2 marker lines),

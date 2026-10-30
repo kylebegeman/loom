@@ -1,3 +1,4 @@
+import { BOTS_NAVIGATION_VISIBLE } from "@t3tools/client-runtime/fork"; // fork: bots
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import {
   navigationCustomizationAvailable,
@@ -298,8 +299,10 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
       rows: [
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
+        // fork: usage-navigation
+        ...(Platform.OS === "ios" ? [page("SettingsUsage", "chart.bar.xaxis", "Limits")] : []),
         serverPage("SettingsThreads", "text.bubble", "Threads"),
-        route("Bots", "bolt.circle", "Bots"), // fork: bots
+        ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []), // fork: bots
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
       ],
     },

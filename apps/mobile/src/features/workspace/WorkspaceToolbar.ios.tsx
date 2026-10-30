@@ -1,6 +1,6 @@
 import { useActiveNewTask } from "../../state/active-new-task";
 import { Toolbar } from "../../components/ui/Toolbar";
-import { useFocusEffect, useIsFocused } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native"; // fork: usage-navigation
 import { use, useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { isDuoDevice } from "../../lib/device-type";
@@ -30,6 +30,7 @@ export function WorkspaceToolbar(props: {
   readonly sidebar?: boolean;
 }) {
   const workspace = useWorkspaceTabs()!;
+  const navigation = useNavigation(); // fork: usage-navigation
   const activeNewTask = useActiveNewTask();
   const deviceType = useDeviceType();
   const sidebarTabs = useSidebarWorkspaceTabs();
@@ -135,6 +136,17 @@ export function WorkspaceToolbar(props: {
       separateBackground
     />
   ) : null;
+  // fork: usage-navigation
+  const limitsButton =
+    selectedTab === "threads" ? (
+      <Toolbar.Button
+        identifier="workspace-limits"
+        accessibilityLabel="Limits"
+        icon="chart.bar.xaxis"
+        onPress={() => navigation.navigate("SettingsUsage")}
+        separateBackground
+      />
+    ) : null;
   return (
     <>
       <NativeStackScreenOptions
@@ -185,6 +197,8 @@ export function WorkspaceToolbar(props: {
       {workspace.settingsOpen && !foldedSearch ? null : (
         <Toolbar placement="right">
           {searchButton}
+          {/* fork: usage-navigation */}
+          {NATIVE_LIQUID_GLASS_SUPPORTED || foldedSearch ? limitsButton : null}
           {nativeToolbarCompose && foldedSearch ? <Toolbar.Spacer width={8} /> : null}
           {composeButton}
           {selectedTab !== "threads" ||
@@ -205,6 +219,8 @@ export function WorkspaceToolbar(props: {
               onPress={focusSearch}
             />
           )}
+          {/* fork: usage-navigation */}
+          {!NATIVE_LIQUID_GLASS_SUPPORTED && !foldedSearch ? limitsButton : null}
         </Toolbar>
       )}
       <Toolbar placement="bottom">

@@ -123,12 +123,11 @@ it.each(["/settings/connections", "/usage"])(
   },
 );
 
-it("keeps highlighted navigation across Projects, Sites and Bots", async () => {
+it("keeps highlighted navigation across Projects and Sites while Bots is hidden", async () => {
   const router = await renderMenu("/projects");
   const destinations = [
     ["Projects", "/projects"],
     ["Sites", "/sites"],
-    ["Bots, attention needed", "/loom/bots"],
   ] as const;
   for (const [label, path] of destinations) {
     for (const other of [
@@ -138,6 +137,7 @@ it("keeps highlighted navigation across Projects, Sites and Bots", async () => {
       ...destinations.map(([name]) => name),
     ])
       expect(button(other)).not.toBeNull();
+    expect(button("Bots, attention needed")).toBeNull();
     expect(backButton()).toBeUndefined();
     await act(async () => button(label)!.click());
     expect(router.state.location.pathname).toBe(path);
@@ -161,6 +161,6 @@ it("keeps capability-gated destinations hidden without hiding the rest of naviga
   await renderMenu("/projects");
   expect(button("Pull requests")).toBeNull();
   expect(button("Projects")).not.toBeNull();
-  expect(button("Bots, attention needed")).not.toBeNull();
+  expect(button("Bots, attention needed")).toBeNull();
   expect(activeLabel()).toBe("Projects");
 });

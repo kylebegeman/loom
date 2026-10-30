@@ -9,6 +9,9 @@ import type {
 import { libraryProjectColor } from "./library-project.ts";
 import type { LibraryWorkflowTone } from "./library-workflows.ts";
 
+// Restore navigation when the Grok and connected model bot redesign is ready.
+export const BOTS_NAVIGATION_VISIBLE = false;
+
 type Presentation = { readonly label: string; readonly tone: LibraryWorkflowTone };
 
 export const BOT_RUN_STATES: Record<BotRunStatus, Presentation> = {

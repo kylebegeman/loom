@@ -1,3 +1,4 @@
+import { BOTS_NAVIGATION_VISIBLE } from "@t3tools/client-runtime/fork";
 import { useNavigate } from "@tanstack/react-router";
 import {
   BotIcon,
@@ -284,7 +285,7 @@ export function useBotsPaletteContext(): BotsPaletteContext | null {
   const pipelinesLive = live && host.pipelinesSupported;
   const { pipelines } = usePipelines(host.environmentId, pipelinesLive, host.connected);
   const waiting = useWaitingBotRuns(live ? host.environmentId : null);
-  if (!live) return null;
+  if (!BOTS_NAVIGATION_VISIBLE || !live) return null;
   const capabilities = host.environment?.serverConfig?.environment.capabilities;
   const current = listed.filter((bot) => bot.archivedAt === null);
   const runnable = access.canRun ? current : [];
