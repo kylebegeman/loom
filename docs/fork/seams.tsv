@@ -544,7 +544,7 @@ apps/server/src/cli/browser.ts	brand	13
 apps/server/src/cli/config.test.ts	brand	1
 apps/server/src/cli/config.ts	brand	2
 apps/server/src/cli/doctor.ts	brand	2
-apps/server/src/cli/service.ts	brand	20
+apps/server/src/cli/service.ts	brand	26
 apps/server/src/cli/service.ts	github-host-setup	3
 apps/server/src/cli/theme.ts	brand	1
 apps/server/src/cli/uninstall.ts	brand	1
