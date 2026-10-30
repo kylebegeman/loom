@@ -27,6 +27,7 @@ import { selectActiveRightPanelSurface, useRightPanelStore } from "../../rightPa
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { resolveThreadRouteTarget } from "../../threadRoutes";
 import { assetEnvironment } from "../../state/assets";
+import { readProject, readThreadShell } from "../../state/entities";
 import { useEnvironmentHttpBaseUrl, usePrimaryEnvironment } from "../../state/environments";
 import { previewEnvironment } from "../../state/preview";
 import { allReachableShellsLiveAtom } from "../../state/shell";
@@ -167,25 +168,14 @@ export function DesktopWebLinkCoordinator() {
     return threadRef;
   };
 
-  const openLink = useEffectEvent(async (url: string) => {
-    const pairingUrl = readPairingAppLink(url);
-    if (pairingUrl !== null) {
-      await pairFromLink(pairingUrl);
-      return;
-    }
-    const appPath = promptLinkAppPath(url);
-    if (appPath !== null) {
-      await router.navigate({ href: appPath });
-      return;
-    }
-    if (openChangeRequest(externalClick, url)) return;
+  const openInBrowser = useEffectEvent(async (url: string) => {
+    const routeParams = router.state.matches.at(-1)?.params ?? {};
     const isFile = url.startsWith("file:");
     // Only this machine's environment serves files, so fail before starting a thread.
     if (isFile && httpBaseUrl === null) {
       reportFailure(url);
       return;
     }
-    const routeParams = router.state.matches.at(-1)?.params ?? {};
     const threadRef =
       threadShowingBrowser(
         routeParams,
@@ -214,6 +204,39 @@ export function DesktopWebLinkCoordinator() {
     }
   });
 
+  const openLink = useEffectEvent(async (url: string) => {
+    const pairingUrl = readPairingAppLink(url);
+    if (pairingUrl !== null) {
+      await pairFromLink(pairingUrl);
+      return;
+    }
+    const appPath = promptLinkAppPath(url);
+    if (appPath !== null) {
+      await router.navigate({ href: appPath });
+      return;
+    }
+    const routeParams = router.state.matches.at(-1)?.params ?? {};
+    const routeTarget = resolveThreadRouteTarget(routeParams);
+    const activeThreadRef = routeTarget?.kind === "server" ? routeTarget.threadRef : undefined;
+    const activeThread = activeThreadRef ? readThreadShell(activeThreadRef) : null;
+    const activeProject =
+      activeThread && activeThreadRef
+        ? readProject(scopeProjectRef(activeThreadRef.environmentId, activeThread.projectId))
+        : null;
+    const commitThreadRef =
+      activeThread &&
+      sourceControlClients.parseCommitUrl(url, activeProject?.repositoryIdentity?.provider) !== null
+        ? activeThreadRef
+        : undefined;
+    // A commit the thread's workspace lacks continues here, after its lookup.
+    const openUnavailableCommit = () => {
+      queueRef.current = queueRef.current.then(() => openInBrowser(url)).catch(() => undefined);
+    };
+    if (openChangeRequest(externalClick, url, commitThreadRef, undefined, openUnavailableCommit))
+      return;
+    await openInBrowser(url);
+  });
+
   // fork: client-computer
   const receiveLink = useEffectEvent((url: string, signal: AbortSignal) => {
     if (signal.aborted) return;
@@ -222,7 +245,9 @@ export function DesktopWebLinkCoordinator() {
     const hold =
       !independent &&
       (localEnvironmentDisabled ||
-        (openPullRequestsInApp && sourceControlClients.parseChangeRequestUrl(url) !== null))
+        (openPullRequestsInApp &&
+          (sourceControlClients.parseChangeRequestUrl(url) !== null ||
+            sourceControlClients.parseCommitUrl(url) !== null)))
         ? projectsSettled(signal)
         : Promise.resolve();
     void hold.then(
