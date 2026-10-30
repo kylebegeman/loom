@@ -49,6 +49,10 @@ vi.mock("@t3tools/client-runtime/state/assets", async (importOriginal) => ({
   createAssetEnvironmentAtoms: () => ({ createUrl: state.assetQuery }),
 }));
 vi.mock("./use-atom-query-runner", () => ({ useAtomQueryRunner: () => state.mint }));
+// fork: cloudflare-access - Keep the native Access keychain out of asset URL authorization.
+vi.mock("../fork/cloudflare-access/mobileAccess", () => ({
+  mobileAccess: { token: async () => null },
+}));
 
 import { useRefreshAssetUrl, useAssetUrlState } from "./assets";
 

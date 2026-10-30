@@ -460,7 +460,7 @@ export function compareInspections(before: PcbInspection, after: PcbInspection) 
 
 const canonicalLayer = (name: string) =>
   (
-    ({
+    {
       "F.SilkS": "F.Silkscreen",
       "B.SilkS": "B.Silkscreen",
       "F.Adhes": "F.Adhesive",
@@ -471,5 +471,5 @@ const canonicalLayer = (name: string) =>
       "Cmts.User": "User.Comments",
       "Eco1.User": "User.Eco1",
       "Eco2.User": "User.Eco2",
-    }) as Record<string, string>
+    } as Record<string, string>
   )[name] ?? name;

@@ -1,10 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ExecutionEnvironmentPlatform } from "@t3tools/contracts";
+import type { DesktopUpdateChannel, ExecutionEnvironmentPlatform } from "@t3tools/contracts";
 import {
   cliArchiveFileName,
   cliArchivePlatformKey,
   cliReleaseIndexPageUrl,
   CLI_RELEASE_CHECKSUMS_FILE,
+  newestCliReleaseVersion,
+  loomReleaseDatabaseMigration,
 } from "@t3tools/shared/cliRelease";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -40,6 +42,46 @@ export const runtimeReleaseAssetsAtom = Atom.family((version: string) =>
     Atom.keepAlive,
     Atom.withLabel(`runtime-release:${version}`),
   ),
+);
+
+const ReleaseIndex = Schema.Array(
+  Schema.Struct({
+    tag_name: Schema.String,
+    draft: Schema.Boolean,
+    body: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
+const decodeReleaseIndex = Schema.decodeUnknownEffect(ReleaseIndex);
+
+/** Loom's publisher records migration compatibility in its own release body, independently of npm. */
+export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
+  Atom.make(
+    Effect.gen(function* () {
+      for (let page = 1; ; page++) {
+        const response = yield* HttpClient.get(cliReleaseIndexPageUrl(page));
+        const releases = yield* HttpClientResponse.filterStatusOk(response).pipe(
+          Effect.flatMap((ok) => ok.json),
+          Effect.flatMap(decodeReleaseIndex),
+        );
+        const version = newestCliReleaseVersion(
+          releases,
+          channel === "nightly" ? "nightly" : "stable",
+        );
+        if (version !== undefined)
+          return {
+            version,
+            databaseMigration: loomReleaseDatabaseMigration(
+              releases.find((release) => release.tag_name === version)?.body,
+              version,
+            ),
+          };
+        if (releases.length < 100) return null;
+      }
+    }).pipe(
+      Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  ).pipe(Atom.withRefresh("5 minutes"), Atom.withLabel(`loom-track-release:${channel}`)),
 );
 
 const NO_RELEASE = Atom.make(AsyncResult.success<ReadonlyArray<string>>([]));

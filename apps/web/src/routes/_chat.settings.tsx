@@ -155,7 +155,9 @@ function SettingsRouteLayout() {
     <SettingsScopeProvider
       search={rawSearch}
       singleEnvironment={
-        pathname === "/settings/providers" || FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(pathname) // fork: ext-settings
+        pathname === "/settings/providers" ||
+        pathname === "/settings/secrets" ||
+        FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(pathname) // fork: ext-settings
       }
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.

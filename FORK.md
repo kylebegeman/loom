@@ -1353,6 +1353,7 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`        | `machine-updates` | Keep app updates local and show per-computer update plans with cancellation. |
 | `apps/web/src/components/sidebar/useUpdateEverything.ts`       | `machine-updates` | Share scoped local and fleet update execution.                               |
 | `apps/web/src/components/sidebar/updateEverything.logic.ts`    | `machine-updates` | Keep local and fleet progress in their owning views.                         |
+| `apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx` | `machine-updates` | Run track switches in fleet scope to Loom's newest release on the track.     |
 | `apps/server/src/orchestration-v2/EventSink.ts`                | `machine-updates` | Hold new event commits while an idle update hands off to its installer.      |
 | `apps/server/src/server.ts`                                    | `machine-updates` | Share the existing updater with durable idle plans.                          |
 | `apps/server/src/cloud/selfUpdate.ts`                          | `machine-updates` | Carry the idle preparation option to desktop updates.                        |

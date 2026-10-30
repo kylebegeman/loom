@@ -3,7 +3,10 @@ import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
 const HOUR_SECONDS = 3600;
 const DAY_SECONDS = 24 * HOUR_SECONDS;
 
-type RenewalMetadata = Pick<LoomIdentityMetadata, "maxSessionAgeSeconds" | "sessionExchangeEnabled">;
+type RenewalMetadata = Pick<
+  LoomIdentityMetadata,
+  "maxSessionAgeSeconds" | "sessionExchangeEnabled"
+>;
 
 /**
  * A computer lets a native client renew only when it caps sign-in age, since the cap is what ends
@@ -34,7 +37,8 @@ export function identityRenewalText(input: {
   readonly renews: boolean;
 }): string {
   const limit = identityRenewalLimitSeconds(input.metadata);
-  if (limit === null) return "This computer does not renew sign-ins, so Loom asks you to sign in again every hour.";
+  if (limit === null)
+    return "This computer does not renew sign-ins, so Loom asks you to sign in again every hour.";
   return input.renews
     ? `Loom renews this sign-in on its own for up to ${limitText(limit)}, then asks you to sign in again.`
     : `A browser asks you to sign in again every hour. The Loom app renews on its own for up to ${limitText(limit)}.`;

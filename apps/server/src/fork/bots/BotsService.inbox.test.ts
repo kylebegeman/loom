@@ -61,7 +61,12 @@ describe("BotsService inbox", () => {
         yield* bots.save(reviewer(), USER_CALLER);
         const chat = ThreadId.make("chat");
         harness.shells.set(chat, { projectId, worktreePath: null, branch: null });
-        const agent = { actor: "agent", threadId: chat, projectId, runtimeMode: "full-access" } as const;
+        const agent = {
+          actor: "agent",
+          threadId: chat,
+          projectId,
+          runtimeMode: "full-access",
+        } as const;
         const end = (caller: Parameters<typeof bots.run>[1], file: string) =>
           Effect.gen(function* () {
             const run = yield* bots.run(

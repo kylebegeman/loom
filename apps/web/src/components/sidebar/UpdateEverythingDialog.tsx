@@ -58,11 +58,17 @@ interface UpdateEverythingDialogProps {
   readonly rows: ReadonlyArray<UpdateEverythingRow>;
   readonly restarts: ReadonlyArray<RestartingMachine>;
   readonly onConfirm: () => void;
+  /** Overrides the "Update N machines?" title, for an update-track switch. */
+  readonly title?: string;
+  readonly confirmLabel?: string;
+  readonly notes?: ReadonlyArray<string>;
+  /** Shown in place of running-thread counts; disables the confirm button. */
+  readonly disabledReason?: string | null;
+  /** The confirmed work is starting; it cannot be cancelled from here. */
+  readonly busy?: boolean;
   // fork: machine-updates: the app install confirm shares this dialog, and both can wait for
   // local agents instead of interrupting them.
-  readonly confirmLabel?: string;
   readonly onConfirmWhenIdle?: () => void;
-  readonly title?: string; // fork: machine-updates: the app install confirm names its version
 }
 
 type UpdateEverythingDialogContentProps = Omit<
@@ -105,9 +111,12 @@ function UpdateEverythingDialogContent({
   restarts,
   onConfirm,
   cancelRef,
-  confirmLabel = "Update", // fork: machine-updates
+  title,
+  confirmLabel = "Update",
+  notes = [],
+  disabledReason = null,
+  busy = false,
   onConfirmWhenIdle, // fork: machine-updates
-  title, // fork: machine-updates
 }: UpdateEverythingDialogContentProps) {
   // fork: machine-updates
   const impact = useAtomValue(
@@ -129,12 +138,15 @@ function UpdateEverythingDialogContent({
           Install when idle
         </Button>
       ) : null}
-      <Button onClick={onConfirm}>{confirmLabel}</Button>
+      <Button disabled={disabledReason !== null || busy} onClick={onConfirm}>
+        {confirmLabel}
+      </Button>
     </>
   );
 
-  // fork: machine-updates: the app install confirm has no update list.
-  if (title !== undefined) {
+  // fork: machine-updates: the app install confirm has no update list. Upstream's track switch
+  // also passes a title, but keeps the list.
+  if (title !== undefined && version === null && rows.length === 0) {
     return (
       <>
         <AlertDialogHeader>
@@ -159,7 +171,7 @@ function UpdateEverythingDialogContent({
     <>
       <AlertDialogHeader className="shrink-0">
         <AlertDialogTitle>
-          Update {updating.length} {updating.length === 1 ? "machine" : "machines"}?
+          {title ?? `Update ${updating.length} ${updating.length === 1 ? "machine" : "machines"}?`}
         </AlertDialogTitle>
         <AlertDialogDescription>
           {version !== null ? (
@@ -176,6 +188,11 @@ function UpdateEverythingDialogContent({
       </AlertDialogHeader>
       <ScrollArea scrollFade>
         <div className="flex flex-col gap-3 px-6 pb-4">
+          {notes.map((note) => (
+            <p key={note} className="text-muted-foreground text-sm">
+              {note}
+            </p>
+          ))}
           {/* Machine names truncate first. Provider lists wrap between names, never inside one. */}
           <div className="grid grid-cols-[minmax(4rem,max-content)_max-content_minmax(min-content,1fr)_max-content] gap-x-4 text-sm">
             <div className="col-span-full grid grid-cols-subgrid border-b pb-1.5 text-muted-foreground text-xs">
@@ -241,13 +258,16 @@ function UpdateEverythingDialogContent({
         </div>
       </ScrollArea>
       <AlertDialogFooter>
-        {/* fork: machine-updates */}
-        {impactLines.length > 0 ? (
+        {disabledReason !== null ? (
+          <p className="self-center text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
+            {disabledReason}
+          </p>
+        ) : /* fork: machine-updates */ impactLines.length > 0 ? (
           <p className="self-center whitespace-pre-line text-muted-foreground text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
             {impactLines.join("\n")}
           </p>
         ) : null}
-        <AlertDialogClose ref={cancelRef} render={<Button variant="outline" />}>
+        <AlertDialogClose ref={cancelRef} render={<Button variant="outline" disabled={busy} />}>
           Cancel
         </AlertDialogClose>
         {/* fork: machine-updates */}

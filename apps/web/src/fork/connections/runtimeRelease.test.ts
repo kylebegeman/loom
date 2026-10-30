@@ -1,8 +1,12 @@
-import { AtomRegistry } from "effect/reactivity";
+import { type Atom, AtomRegistry } from "effect/reactivity";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { afterAll, afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { isRuntimeArchivePublished, runtimeReleaseAssetsAtom } from "./runtimeRelease";
+import {
+  isRuntimeArchivePublished,
+  runtimeReleaseAssetsAtom,
+  trackReleaseAtom,
+} from "./runtimeRelease";
 
 const version = "0.0.46-nightly.20261012.3021";
 
@@ -10,8 +14,7 @@ const version = "0.0.46-nightly.20261012.3021";
 const fetchMock = vi.fn<typeof fetch>();
 vi.stubGlobal("fetch", fetchMock);
 
-async function settledCheck() {
-  const atom = runtimeReleaseAssetsAtom(version);
+async function settledCheck<A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) {
   const registry = AtomRegistry.make();
   const unmount = registry.mount(atom);
   try {
@@ -54,7 +57,7 @@ describe("runtimeReleaseAssetsAtom", () => {
       }),
     );
 
-    const result = await settledCheck();
+    const result = await settledCheck(runtimeReleaseAssetsAtom(version));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = new Request(fetchMock.mock.calls[0]?.[0] ?? "", fetchMock.mock.calls[0]?.[1]);
@@ -72,7 +75,7 @@ describe("runtimeReleaseAssetsAtom", () => {
   it("reports a missing release as unpublished", async () => {
     fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
 
-    const result = await settledCheck();
+    const result = await settledCheck(runtimeReleaseAssetsAtom(version));
 
     expect(AsyncResult.isSuccess(result)).toBe(true);
     expect(AsyncResult.getOrElse(result, () => ["unexpected"])).toEqual([]);
@@ -82,22 +85,79 @@ describe("runtimeReleaseAssetsAtom", () => {
     fetchMock.mockImplementation(async () =>
       Response.json({ draft: true, assets: [{ name: "SHA256SUMS" }] }),
     );
-    expect(AsyncResult.getOrElse(await settledCheck(), () => ["unexpected"])).toEqual([]);
+    expect(
+      AsyncResult.getOrElse(await settledCheck(runtimeReleaseAssetsAtom(version)), () => [
+        "unexpected",
+      ]),
+    ).toEqual([]);
   });
 
   it("keeps a malformed release response unknown", async () => {
     fetchMock.mockImplementation(async () =>
       Response.json({ draft: false, assets: ["not-an-asset"] }),
     );
-    expect(AsyncResult.isFailure(await settledCheck())).toBe(true);
+    expect(AsyncResult.isFailure(await settledCheck(runtimeReleaseAssetsAtom(version)))).toBe(true);
   });
 
   it("leaves a failed first check unknown, so callers cannot offer an unverified runtime", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 
-    const result = await settledCheck();
+    const result = await settledCheck(runtimeReleaseAssetsAtom(version));
 
     expect(AsyncResult.isFailure(result)).toBe(true);
     expect(AsyncResult.getOrElse(result, () => [])).toEqual([]);
+  });
+});
+
+describe("trackReleaseAtom", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("targets Loom's newest release on the track, paging past other tracks", async () => {
+    const nightlies = Array.from({ length: 100 }, (_, index) => ({
+      tag_name: `0.0.${200 - index}-nightly.20261029.${4000 - index}`,
+      draft: false,
+      body: `<!-- loom-release-metadata: ${JSON.stringify({ schemaVersion: 1, version: `0.0.${200 - index}-nightly.20261029.${4000 - index}`, sourceCommit: "a".repeat(40), databaseMigration: 38 })} -->`,
+    }));
+    fetchMock.mockImplementation(async (input) =>
+      Response.json(
+        new Request(input).url.endsWith("page=1")
+          ? [{ tag_name: "loom-v0.0.201", draft: false }, ...nightlies]
+          : [
+              { tag_name: "0.0.99", draft: true },
+              {
+                tag_name: "0.0.98",
+                draft: false,
+                body: `<!-- loom-release-metadata: ${JSON.stringify({ schemaVersion: 1, version: "0.0.98", sourceCommit: "b".repeat(40), databaseMigration: 36 })} -->`,
+              },
+            ],
+      ),
+    );
+
+    const nightly = await settledCheck(trackReleaseAtom("nightly"));
+    expect(AsyncResult.getOrElse(nightly, () => null)).toEqual({
+      version: "0.0.200-nightly.20261029.4000",
+      databaseMigration: 38,
+    });
+    const stable = await settledCheck(trackReleaseAtom("latest"));
+    expect(AsyncResult.getOrElse(stable, () => null)).toEqual({
+      version: "0.0.98",
+      databaseMigration: 36,
+    });
+    expect(
+      fetchMock.mock.calls.map(([input]) =>
+        new URL(new Request(input).url).searchParams.get("page"),
+      ),
+    ).toEqual(["1", "1", "2"]);
+  });
+
+  it("reports no release when the track has none", async () => {
+    fetchMock.mockImplementation(async () =>
+      Response.json([{ tag_name: "0.0.150-nightly.20261029.3873", draft: false }]),
+    );
+    const result = await settledCheck(trackReleaseAtom("latest"));
+    expect(AsyncResult.isSuccess(result)).toBe(true);
+    expect(AsyncResult.getOrElse(result, () => "unexpected")).toBeNull();
   });
 });

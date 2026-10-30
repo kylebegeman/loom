@@ -155,7 +155,10 @@ describe("interpretDoctorOutput", () => {
         detail: "Compacted: 22.88 GiB -> 12.87 GiB, 1817 superseded events removed.",
       },
     );
-    assert.equal(interpretDoctorOutput(0, ["No recommended repairs; nothing changed."]).outcome, "skipped");
+    assert.equal(
+      interpretDoctorOutput(0, ["No recommended repairs; nothing changed."]).outcome,
+      "skipped",
+    );
   });
 
   it("keeps the error message from the CLI's failure log, not its stack", () => {
@@ -166,7 +169,8 @@ describe("interpretDoctorOutput", () => {
       ]),
       {
         outcome: "failed",
-        detail: "Stop the Loom server and desktop app, including any version before 0.1.0, before repairing the database.",
+        detail:
+          "Stop the Loom server and desktop app, including any version before 0.1.0, before repairing the database.",
       },
     );
     assert.deepEqual(interpretDoctorOutput(134, ["Abort trap"]), {
@@ -200,7 +204,10 @@ const restartHarness = Effect.gen(function* () {
     backendEntryPath: "/app/apps/server/dist/bin.mjs",
     backendCwd: baseDir,
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
-  const layerFor = (doctor: { readonly output: string; readonly exitCode: Effect.Effect<number> }) =>
+  const layerFor = (doctor: {
+    readonly output: string;
+    readonly exitCode: Effect.Effect<number>;
+  }) =>
     Layer.mergeAll(
       Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
       DesktopState.layer,

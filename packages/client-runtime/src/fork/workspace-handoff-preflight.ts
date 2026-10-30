@@ -90,6 +90,9 @@ export function workspaceHandoffCanReconnect(computer: {
 }): boolean {
   const { phase } = computer.connection;
   return (
-    computer.entry.enabled && phase !== "connected" && phase !== "offline" && phase !== "unsupported"
+    computer.entry.enabled &&
+    phase !== "connected" &&
+    phase !== "offline" &&
+    phase !== "unsupported"
   );
 }

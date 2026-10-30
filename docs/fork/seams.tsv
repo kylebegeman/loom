@@ -163,7 +163,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
-apps/server/src/storageCleanup.test.ts	project-lifecycle	30
+apps/server/src/storageCleanup.test.ts	project-lifecycle	31
 packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	3
 packages/contracts/src/settings.ts	project-lifecycle	14
@@ -210,7 +210,7 @@ scripts/lib/public-config.test.ts	fleet-connect	1
 scripts/lib/public-config.ts	fleet-connect	1
 scripts/lib/public-config.ts	mobile-identity	2
 packages/shared/src/cliRelease.test.ts	fleet-connect	3
-packages/shared/src/cliRelease.ts	fleet-connect	3
+packages/shared/src/cliRelease.ts	fleet-connect	4
 packages/ssh/src/tunnel.ts	fleet-connect	3
 apps/mobile/src/features/settings/environment-maintenance.test.ts	fleet-connect	6
 apps/mobile/src/features/cloud/linkEnvironment.ts	fleet-connect	7
@@ -293,6 +293,7 @@ apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	9
 apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
+apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	machine-updates	4
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	2
 apps/web/src/components/CommandPalette.logic.test.ts	bots	2
 apps/web/src/components/CommandPalette.logic.test.ts	fleet-connections	2
@@ -353,7 +354,7 @@ apps/server/src/server.ts	library-projects	4
 apps/server/src/server.ts	project-lifecycle	11
 apps/server/src/server.ts	file-placement	7
 apps/server/src/storageCleanup.ts	project-checkout-management	10
-apps/server/src/storageCleanup.ts	project-lifecycle	100
+apps/server/src/storageCleanup.ts	project-lifecycle	102
 apps/server/src/vcs/VcsDriver.ts	library-projects	1
 apps/web/src/components/ChatView.tsx	checkpoint-capable	5
 apps/web/src/components/ChatView.logic.test.ts	checkpoint-capable	2
@@ -432,7 +433,7 @@ packages/client-runtime/src/connection/compatibility.ts	runtime-owner	3
 apps/web/src/components/ServerUpdateAction.tsx	runtime-owner	10
 apps/web/src/components/settings/ConnectionsSettings.tsx	runtime-owner	2
 apps/web/src/components/chat/useAutoBalanceUpdateBanner.tsx	runtime-owner	8
-apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	6
+apps/web/src/components/sidebar/updateEverything.logic.ts	runtime-owner	7
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	runtime-owner	6
 apps/web/src/components/chat/useSystemComposerBanners.tsx	runtime-owner	3
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	runtime-owner	4
@@ -637,8 +638,10 @@ apps/web/src/components/settings/SettingsPanels.tsx	brand	2
 apps/web/src/components/settings/SnapShotSettings.tsx	brand	1
 apps/web/src/components/settings/SnapShotSetupDialog.tsx	brand	3
 apps/web/src/components/settings/StorageSettings.tsx	brand	1
+apps/web/src/components/settings/SecretsSettings.tsx	brand	1
 apps/web/src/components/settings/ThemeImportDialog.tsx	brand	1
 apps/web/src/components/settings/ThemePreviewCircles.tsx	brand	1
+apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	brand	1
 apps/web/src/components/settings/providerStatus.ts	brand	1
 apps/web/src/components/settings/scopedSettings.test.ts	brand	1
 apps/web/src/components/settings/scopedSettings.ts	brand	1
@@ -1122,7 +1125,7 @@ apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
 apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
-apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	4
+apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
 apps/desktop/src/app/DesktopPreReadyPlatform.test.ts	brand	2
 apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	brand	1
 apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx	brand	4
@@ -1522,7 +1525,7 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199798
+apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199898
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
@@ -1572,7 +1575,7 @@ apps/mobile/src/features/settings/components/DatabaseStorageNotice.tsx	project-l
 packages/shared/package.json	-	"./fork/compatibility"
 apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
-apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	17
+apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
@@ -1595,6 +1598,7 @@ apps/mobile/src/lib/attachmentDocument.ts	cloudflare-access	1
 apps/mobile/src/lib/attachmentDownload.ts	cloudflare-access	1
 apps/mobile/src/lib/runtime.ts	cloudflare-access	1
 apps/mobile/src/lib/videoThumbnails.ts	cloudflare-access	1
+apps/mobile/src/state/assets.test.ts	cloudflare-access	1
 apps/mobile/src/state/assets.ts	cloudflare-access	1
 packages/client-runtime/src/connection/outdatedHostUpdate.ts	cloudflare-access	1
 packages/client-runtime/src/rpc/session.ts	cloudflare-access	1

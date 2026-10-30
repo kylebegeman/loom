@@ -5,6 +5,8 @@ import {
   newestCliReleaseVersion,
 } from "../cliRelease.ts";
 
+import { loomReleaseDatabaseMigration } from "./cli-release.ts";
+
 const version = "0.0.49-nightly.20261013.3046";
 
 describe("Loom runtime release source", () => {
@@ -33,5 +35,41 @@ describe("Loom runtime release source", () => {
     ];
     expect(newestCliReleaseVersion(releases, "nightly")).toBe(version);
     expect(newestCliReleaseVersion(releases, "stable")).toBe("0.0.48");
+  });
+});
+
+describe("Loom release migration metadata", () => {
+  const metadata = {
+    schemaVersion: 1,
+    version,
+    sourceCommit: "a".repeat(40),
+    databaseMigration: 38,
+  };
+  const body = (value: unknown) =>
+    `Notes\n\n<!-- loom-release-metadata: ${JSON.stringify(value)} -->\n`;
+
+  it("accepts only one version-pinned, valid migration record", () => {
+    expect(loomReleaseDatabaseMigration(body(metadata), version)).toBe(38);
+    expect(loomReleaseDatabaseMigration(body({ ...metadata, databaseMigration: 0 }), version)).toBe(
+      0,
+    );
+    for (const value of [
+      { ...metadata, version: "0.0.1" },
+      { ...metadata, schemaVersion: 2 },
+      { ...metadata, sourceCommit: "main" },
+      { ...metadata, databaseMigration: -1 },
+      { ...metadata, databaseMigration: 1.5 },
+      { ...metadata, databaseMigration: "38" },
+      { ...metadata, databaseMigration: Number.MAX_SAFE_INTEGER + 1 },
+    ])
+      expect(loomReleaseDatabaseMigration(body(value), version)).toBeUndefined();
+    for (const notes of [
+      null,
+      undefined,
+      "Legacy release",
+      "<!-- loom-release-metadata: not-json -->",
+      body(metadata) + body(metadata),
+    ])
+      expect(loomReleaseDatabaseMigration(notes, version)).toBeUndefined();
   });
 });

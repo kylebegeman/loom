@@ -270,7 +270,12 @@ describe("BotsStore", () => {
       yield* store.insertRun(testRun("later", "2026-10-20T14:00:00.000Z", agent));
       yield* store.markNotified("later", "2026-10-20T15:00:00.000Z", null, true);
       yield* store.insertRun(testRun("unreached", "2026-10-20T16:00:00.000Z", agent));
-      yield* store.markNotified("unreached", "2026-10-20T17:00:00.000Z", "Result delivery failed: x", false);
+      yield* store.markNotified(
+        "unreached",
+        "2026-10-20T17:00:00.000Z",
+        "Result delivery failed: x",
+        false,
+      );
 
       const page = yield* store.inbox({ dismissed: false, limit: 10 });
       expect(page.runs.filter(isBotRunHandledByCaller).map((run) => run.id)).toEqual([

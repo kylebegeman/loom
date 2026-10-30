@@ -22,6 +22,7 @@ import {
   MessagesSquareIcon,
   PanelsTopLeftIcon,
   KeyboardIcon,
+  KeyRoundIcon,
   PaletteIcon,
   SearchIcon,
   ServerIcon,
@@ -55,7 +56,7 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
-import { HammerIcon, KeyRoundIcon } from "lucide-react"; // fork: ext-settings
+import { HammerIcon } from "lucide-react"; // fork: ext-settings
 import { validateSettingsScopeSearch } from "./settingsScope";
 import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
@@ -104,6 +105,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/worktrees": FolderTreeIcon,
   "/settings/connections": ServerIcon,
   "/settings/access": ShieldCheckIcon,
+  "/settings/secrets": KeyRoundIcon,
   "/settings/maintenance": WrenchIcon,
   "/settings/labs": FlaskConicalIcon,
   "/settings/about": InfoIcon,
