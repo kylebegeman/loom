@@ -7,8 +7,9 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   resolveProviderInstanceEnabled,
+  SecretProviderId,
   ServerSettings,
-  ServerSettingsPatch, // fork: project-lifecycle
+  ServerSettingsPatch,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -33,9 +34,9 @@ import * as ServerSettingsModule from "./serverSettings.ts";
 import { ProjectPlacementRefusedError } from "./project/ProjectPlacement.ts"; // fork: file-placement
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
 
-const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch); // fork: project-lifecycle
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
+const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 
 const layerServerSettings = () =>
   ServerSettingsModule.layer.pipe(
@@ -107,7 +108,9 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         const fs = yield* FileSystem.FileSystem;
         const changes = yield* service.subscribeChanges;
         const enabled = { projectOnSettle: true, projectAfterDays: 8, logsAfterDays: 30 };
-        yield* service.updateSettings(yield* decodeSettingsPatch({ storageCleanup: enabled }));
+        yield* service.updateSettings(
+          yield* decodeServerSettingsPatch({ storageCleanup: enabled }),
+        );
         const received = Option.getOrThrow(yield* Stream.runHead(changes));
         assert.equal(received.storageCleanup.projectOnSettle, true);
         assert.equal(received.storageCleanup.projectAfterDays, 8);
@@ -117,10 +120,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.equal(saved.storageCleanup.projectOnSettle, true);
         assert.equal(saved.storageCleanup.projectAfterDays, 8);
         yield* service.updateSettings(
-          yield* decodeSettingsPatch({ storageCleanup: { projectOnSettle: false } }),
+          yield* decodeServerSettingsPatch({ storageCleanup: { projectOnSettle: false } }),
         );
         const disabled = yield* service.updateSettings(
-          yield* decodeSettingsPatch({ storageCleanup: { projectAfterDays: null } }),
+          yield* decodeServerSettingsPatch({ storageCleanup: { projectAfterDays: null } }),
         );
         assert.equal(disabled.storageCleanup.projectOnSettle, false);
         assert.equal(disabled.storageCleanup.projectAfterDays, null);
@@ -165,7 +168,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       const fs = yield* FileSystem.FileSystem;
       assert.equal((yield* service.getSettings).storageCleanup.browserArtifactsAfterDays, 14);
       yield* service.updateSettings(
-        yield* decodeSettingsPatch({ storageCleanup: { browserArtifactsAfterDays: null } }),
+        yield* decodeServerSettingsPatch({ storageCleanup: { browserArtifactsAfterDays: null } }),
       );
       const persisted = yield* decodeServerSettingsJson(
         yield* fs.readFileString(config.settingsPath),
@@ -356,6 +359,25 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       );
     }),
+  );
+
+  it.effect("stores no secret provider of an unloaded kind or with a config its kind rejects", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const write = (entry: unknown) =>
+        decodeServerSettingsPatch({ secretProviders: { personal: entry } }).pipe(
+          Effect.flatMap(service.updateSettings),
+          Effect.flip,
+        );
+      for (const entry of [
+        { kind: "one_password", label: "Personal", config: { account: "--help" } },
+        { kind: "one_password", label: "Personal" },
+        { kind: "openbao", label: "Vault", config: { address: "https://x" } },
+      ]) {
+        assert.deepInclude(yield* write(entry), { operation: "write-secret-provider" });
+      }
+      assert.deepStrictEqual((yield* service.getSettings).secretProviders, {});
+    }).pipe(Effect.provide(layerServerSettings())),
   );
 
   it.effect("saves through a symlinked settings file without replacing the link", () =>
@@ -1446,6 +1468,27 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         for (const name of secretNames) {
           assert.isTrue(Option.isSome(yield* store.get(name)), name);
         }
+        const secret = {
+          provider: SecretProviderId.make("personal"),
+          reference: "op://Private/Antigravity/token",
+        };
+        const referenced = yield* service.updateProviderInstance({
+          operation: "upsert",
+          instanceId,
+          instance: {
+            ...client.providerInstances[instanceId]!,
+            environment: [
+              { name: "API_TOKEN", value: secret, sensitive: true, valueRedacted: true },
+            ],
+          },
+        });
+        assert.isTrue(Option.isNone(yield* store.get(secretNames[1]!)));
+        assert.deepEqual(
+          ServerSettingsModule.redactServerSettingsForClient(referenced).providerInstances[
+            instanceId
+          ]?.environment,
+          [{ name: "API_TOKEN", value: secret, sensitive: true }],
+        );
         yield* service.updateSettings({
           providerInstances: {},
           sourceControlHosts: {
