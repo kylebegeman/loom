@@ -1667,40 +1667,66 @@ it("stops after LOOM_REVIEW_ROUNDS reviews when the fix does not satisfy the rev
   expect(result.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
 });
 
-it("shows the reviewer every merge and commit the branch adds to main, oldest first", () => {
-  const f = conflictFixture("");
-  f.git("update-ref", "refs/remotes/origin/main", "main");
-  const write = (file: string, text: string) =>
-    NodeFS.writeFileSync(NodePath.join(f.root, file), text);
-  write("apps/a.ts", "export const a = 2; // loom change\n");
-  write("apps/b.ts", "export const b = 2; // loom change\n");
-  f.git("commit", "--quiet", "-am", "integrate upstream one");
-  write("apps/repair.ts", "export const repaired = true;\n");
-  f.git("add", "-A");
-  f.git("commit", "--quiet", "-m", "repair after upstream one");
-  f.git("switch", "--quiet", "upstream");
-  write("apps/b.ts", "export const b = 4;\n");
-  f.git("commit", "--quiet", "-am", "upstream again");
-  f.git("tag", "v1.0.0-nightly.20261015.1");
-  f.git("switch", "--quiet", `integrate/${NIGHTLY}`);
-  const merge = NodeChildProcess.spawnSync("git", ["merge", "v1.0.0-nightly.20261015.1"], {
-    cwd: f.root,
-    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
-  });
-  expect(merge.status).not.toBe(0);
-  write("apps/b.ts", "export const b = 4; // loom change\n");
-  f.git("commit", "--quiet", "-am", "integrate upstream two");
+it.each(["integration", "main"])(
+  "shows every integration merge and repair with %s as the joining merge's first parent",
+  (firstParent) => {
+    const f = conflictFixture("");
+    const write = (file: string, text: string) =>
+      NodeFS.writeFileSync(NodePath.join(f.root, file), text);
+    write("apps/a.ts", "export const a = 2; // loom change\n");
+    write("apps/b.ts", "export const b = 2; // loom change\n");
+    f.git("commit", "--quiet", "-am", "integrate upstream one");
+    write("apps/repair.ts", "export const repaired = true;\n");
+    f.git("add", "-A");
+    f.git("commit", "--quiet", "-m", "repair after upstream one");
+    f.git("switch", "--quiet", "upstream");
+    write("apps/b.ts", "export const b = 4;\n");
+    f.git("commit", "--quiet", "-am", "upstream again");
+    f.git("tag", "v1.0.0-nightly.20261015.1");
+    const integration = `integrate/${NIGHTLY}`;
+    f.git("switch", "--quiet", integration);
+    const merge = NodeChildProcess.spawnSync("git", ["merge", "v1.0.0-nightly.20261015.1"], {
+      cwd: f.root,
+      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+    });
+    expect(merge.status).not.toBe(0);
+    write("apps/b.ts", "export const b = 4; // loom change\n");
+    f.git("commit", "--quiet", "-am", "integrate upstream two");
+    f.git("switch", "--quiet", "main");
+    write("apps/main.ts", "export const main = true;\n");
+    f.git("add", "-A");
+    f.git("commit", "--quiet", "-m", "main continues");
+    f.git("update-ref", "refs/remotes/origin/main", "main");
+    f.git("switch", "--quiet", firstParent === "main" ? "main" : integration);
+    f.git(
+      "merge",
+      "--quiet",
+      "--no-ff",
+      "-m",
+      "join main and integration",
+      firstParent === "main" ? integration : "main",
+    );
 
-  const diff = runSync(f.root, "resolution_diff").stdout;
+    const result = runSync(f.root, "resolution_diff upstream");
 
-  const order = ["integrate upstream one", "repair after upstream one", "integrate upstream two"];
-  const at = order.map((subject) => diff.indexOf(subject));
-  expect(at.every((index) => index >= 0)).toBe(true);
-  expect(at).toEqual([...at].sort((a, b) => a - b));
-  expect(diff).toContain("+export const repaired = true;");
-  expect(diff.match(/^-<<<<<<< /gm)?.length).toBe(3);
-  expect(diff).not.toMatch(/^(Commit|Merge) \S+ fork changes$/m);
-});
+    expect(result.status, result.stderr).toBe(0);
+    const diff = result.stdout;
+    const order = [
+      "integrate upstream one",
+      "repair after upstream one",
+      "integrate upstream two",
+      "join main and integration",
+    ];
+    const at = order.map((subject) => diff.indexOf(subject));
+    expect(at.every((index) => index >= 0)).toBe(true);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    expect(diff).toContain("+export const repaired = true;");
+    expect(diff.match(/^-<<<<<<< /gm)?.length).toBe(3);
+    expect(diff).not.toMatch(
+      /^(Commit|Merge) \S+ (fork changes|main continues|upstream changes|upstream again)$/m,
+    );
+  },
+);
 
 it("gives a resolution that dropped a seam one more session, told what it lost", () => {
   const f = conflictFixture(

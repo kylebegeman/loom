@@ -1519,12 +1519,11 @@ checks_with_repair() {
   done
 }
 
-# The integration on HEAD as a reviewer reads it: everything it adds to origin/main, oldest
-# first, with each merge's conflict resolution (git show --remerge-diff) and each commit's
-# patch. A branch that continued an earlier draft holds several merges, none reviewed yet.
+# Walk every parent path while excluding upstream: a joining merge can put the
+# earlier integration and its unreviewed repairs on its second parent.
 resolution_diff() {
   local commit
-  git rev-list --reverse --first-parent origin/main..HEAD | while IFS= read -r commit; do
+  git rev-list --reverse --topo-order HEAD --not origin/main "$1" | while IFS= read -r commit; do
     if git rev-parse -q --verify "$commit^2" >/dev/null; then
       git show --remerge-diff --format='Merge %h %s' "$commit"
     else
@@ -1549,7 +1548,7 @@ cmd_review_integration() {
   logs=$(resolve_logs)
   mkdir -p "$logs" && rm -f "$logs"/review-*.md "$logs"/review-fix-*.log "$logs/review-fix.md"
   while :; do
-    resolution_diff >"$logs/resolution.diff"
+    resolution_diff "$tag" >"$logs/resolution.diff"
     sed -e "s|{{tag}}|$tag|g" -e "s|{{diff}}|$logs/resolution.diff|g" "$REPO_ROOT/scripts/fork/upstream-review.md" |
       run_agent 80 default Read Glob Grep "${CLAUDE_GIT_TOOLS[@]}" >"$logs/review.md" 2>&1 || true
     cat "$logs/review.md"
