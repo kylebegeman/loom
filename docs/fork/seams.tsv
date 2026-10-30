@@ -14,7 +14,7 @@ apps/web/src/branding.ts	brand	2
 apps/web/src/components/chat/WorktreeSetupCard.tsx	library-launch-files	19
 apps/web/src/components/chat/WorktreeSetupCard.tsx	project-lifecycle	6
 apps/web/src/components/chat/useWorktreeSetup.ts	library-launch-files	8
-apps/web/src/components/sidebar/SidebarChrome.tsx	brand	2
+apps/web/src/components/sidebar/SidebarChrome.tsx	brand	3
 apps/web/src/components/chat/TimelineToolActivityIcon.tsx	brand	2
 apps/web/src/components/chat/V2LifecycleRow.tsx	brand	2
 apps/mobile/src/features/threads/thread-work-log.tsx	brand	2
@@ -570,7 +570,7 @@ apps/server/src/mcp/toolkits/device/handlers.ts	brand	1
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	brand	7
 apps/server/src/mcp/toolkits/pullRequests/tools.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts	brand	8
-apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	brand	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	brand	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts	brand	1
 apps/server/src/orchestration-v2/ContextHandoffService.ts	brand	1
