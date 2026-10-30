@@ -1032,6 +1032,7 @@ export function HomeScreen(props: HomeScreenProps) {
                     />
                   ) : null}
                   <LibrarySavedThreads
+                    pane={primaryColumn ? "sidebar" : "screen"}
                     localThreads={props.threads}
                     projectKeys={v2ScopedProjectKeys}
                     environmentId={props.selectedEnvironmentId}

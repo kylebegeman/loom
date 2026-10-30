@@ -147,6 +147,7 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/components/DiffPanel.tsx`                                                         | `ext-diff-header`           | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
 | `apps/web/src/components/chat/ChatComposer.tsx`                                                 | `ext-composer`              | Fork footer controls, prepended so upstream's from-the-end hiding keeps them; a drawer above the composer.  |
 | `apps/web/src/composer-logic.ts`, `components/chat/ChatComposer.tsx`, `ComposerCommandMenu.tsx` | `ext-composer-menu`         | Fork items join the upstream `/` list and custom triggers, with selection routed to their source.           |
+| `apps/mobile/src/features/threads/thread-list-v2-items.tsx`                                     | `library`                   | Share the thread-shelf disclosure with saved-history sections.                                              |
 
 ### Native Vault terminal connection seams
 

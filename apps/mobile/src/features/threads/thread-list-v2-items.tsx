@@ -191,7 +191,8 @@ const LEGACY_MENU_ACTIONS: MenuAction[] = [
   { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
 ];
 
-function ThreadListV2Section(props: {
+// fork: library - Saved history uses the same disclosure as the live thread shelves.
+export function ThreadListV2Section(props: {
   readonly label: string;
   readonly pane?: "screen" | "sidebar";
   readonly tone?: "default" | "snoozed";

@@ -124,6 +124,8 @@ export interface Preferences {
   readonly loomLibraryLaunches?: Readonly<Record<string, string>>;
   readonly loomLibraryFileChanges?: Readonly<Record<string, string>>;
   readonly "loom.library.authorityEnvironmentId"?: string | null;
+  readonly "loom.library.savedExpanded"?: boolean;
+  readonly "loom.library.deletedExpanded"?: boolean;
   /** Hardware Return behavior is iOS-only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   readonly followUpBehavior?: FollowUpBehavior;
@@ -211,6 +213,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     loomLibraryLaunches?: Readonly<Record<string, string>>;
     loomLibraryFileChanges?: Readonly<Record<string, string>>;
     "loom.library.authorityEnvironmentId"?: string | null;
+    "loom.library.savedExpanded"?: boolean;
+    "loom.library.deletedExpanded"?: boolean;
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
@@ -385,6 +389,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
       libraryAuthority.length <= 200)
   ) {
     preferences["loom.library.authorityEnvironmentId"] = libraryAuthority;
+  }
+  for (const key of ["loom.library.savedExpanded", "loom.library.deletedExpanded"] as const) {
+    if (typeof parsed[key] === "boolean") preferences[key] = parsed[key];
   }
   if (isLibraryLaunches(parsed.loomLibraryLaunches))
     preferences.loomLibraryLaunches = parsed.loomLibraryLaunches;

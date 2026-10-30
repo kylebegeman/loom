@@ -882,7 +882,7 @@ apps/mobile/src/features/home/HomeScreen.tsx	attention-status	5
 apps/mobile/src/features/home/HomeScreen.tsx	everyday-workflows	5
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	attention-status	16
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	everyday-workflows	1
-apps/mobile/src/features/threads/thread-list-v2-items.tsx	library	1
+apps/mobile/src/features/threads/thread-list-v2-items.tsx	library	2
 apps/mobile/src/features/threads/threadListV2.test.ts	attention-status	1
 apps/mobile/src/features/threads/threadListV2.ts	attention-status	3
 apps/mobile/src/features/threads/threadRecoveryPresentation.ts	attention-status	1
