@@ -185,7 +185,7 @@ it.effect(
             ),
         }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-          namedProjectsRoot: "/projects",
+          // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
           isScratchProject: () => Effect.succeed(false),
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({}),

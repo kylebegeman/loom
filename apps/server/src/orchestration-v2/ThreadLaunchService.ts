@@ -1353,13 +1353,13 @@ const make = Effect.gen(function* () {
       if (run?.status !== "preparing" || workspacePreparation === undefined) return;
       // fork: library-projects -- recover a delegation interrupted between its accepted command and binding.
       if (
-        projection.thread.lineage.parentThreadId !== null &&
+        thread.lineage.parentThreadId !== null &&
         Option.isSome(libraryStore) &&
         (yield* libraryStore.value.getBinding(input.threadId)) === null
       ) {
         const binding = yield* resolveLibraryBinding({
-          projectId: projection.thread.projectId,
-          callerThreadId: projection.thread.lineage.parentThreadId,
+          projectId: thread.projectId,
+          callerThreadId: thread.lineage.parentThreadId,
           workspaceStrategy: workspacePreparation,
         });
         if (binding !== null) yield* bindLibraryThread(input.threadId, binding);

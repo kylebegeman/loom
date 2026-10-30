@@ -1359,7 +1359,7 @@ apps/server/src/project/RepositoryIdentityResolver.test.ts	project-lifecycle	3
 apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	1
-apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	3
+apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	4
 apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	4
 apps/server/src/serverActivation.test.ts	server-weight	1
 apps/server/src/sourceControl/ServerSourceControlHost.ts	github-host-setup	3
