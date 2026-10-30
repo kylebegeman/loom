@@ -50,10 +50,11 @@ export const canonicalPath = Effect.fnUntraced(function* (target: string) {
 });
 
 /** Compares canonical paths; macOS and Windows volumes ignore case and Unicode form by default. */
+export const foldsPathCase = (platform: NodeJS.Platform) =>
+  platform === "darwin" || platform === "win32";
+
 export const pathKey = (platform: NodeJS.Platform) => (canonical: string) =>
-  platform === "darwin" || platform === "win32"
-    ? canonical.normalize("NFC").toLowerCase()
-    : canonical;
+  foldsPathCase(platform) ? canonical.normalize("NFC").toLowerCase() : canonical;
 
 /** The real T3 home, so paths built from it compare equal to their own realpath. */
 export const stateDirectory = Effect.fnUntraced(function* () {

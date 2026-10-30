@@ -202,12 +202,15 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig; // fork: file-placement
   const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
-  const workspaceKey = SetupMarker.pathKey(yield* HostProcess.Platform); // fork: file-placement
+  const platform = yield* HostProcess.Platform; // fork: file-placement
+  const workspaceKey = SetupMarker.pathKey(platform); // fork: file-placement
   // fork: file-placement: macOS and Windows name one folder in any case or Unicode form.
   const findWorkspaceOwner = Effect.fn("ProjectService.findWorkspaceOwner")(function* (
     workspaceRoot: string,
     projectId: ProjectId,
   ) {
+    if (!SetupMarker.foldsPathCase(platform))
+      return Option.getOrUndefined(yield* projects.findActiveByWorkspaceRoot(workspaceRoot));
     const key = workspaceKey(workspaceRoot);
     const owners = (yield* projects.list()).filter(
       (row) => workspaceKey(row.workspaceRoot) === key,
