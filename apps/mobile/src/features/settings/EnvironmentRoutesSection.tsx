@@ -12,7 +12,10 @@ import {
   isLearned,
 } from "@t3tools/client-runtime/connection";
 import { type EnvironmentId, sessionGrantsScope } from "@t3tools/contracts";
-import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import {
+  AUTH_SCOPE_OPTIONS,
+  sessionPermissionsUnavailableMessage,
+} from "@t3tools/shared/authScopeOptions";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { useState } from "react";
@@ -166,8 +169,16 @@ export function EnvironmentRoutesSection({
             </>
           ) : (
             <Text className="text-sm text-foreground-muted">
-              {/* fork: everyday-workflows */}
-              Permissions not checked. Connect this computer to view this connection’s permissions.
+              {activeRouteId === null // fork: everyday-workflows
+                ? "Permissions not checked. Connect this computer to view this connection’s permissions."
+                : sessionPermissionsUnavailableMessage({
+                connected: activeRouteId !== null,
+                failed: sessionResult._tag === "Failure",
+                rejected:
+                  sessionResult._tag !== "Failure" &&
+                  !sessionResult.waiting &&
+                  session?.authenticated === false,
+              })}
             </Text>
           )}
         </View>
