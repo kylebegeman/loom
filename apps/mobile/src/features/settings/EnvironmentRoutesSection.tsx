@@ -172,13 +172,13 @@ export function EnvironmentRoutesSection({
               {activeRouteId === null // fork: everyday-workflows
                 ? "Permissions not checked. Connect this computer to view this connection’s permissions."
                 : sessionPermissionsUnavailableMessage({
-                connected: activeRouteId !== null,
-                failed: sessionResult._tag === "Failure",
-                rejected:
-                  sessionResult._tag !== "Failure" &&
-                  !sessionResult.waiting &&
-                  session?.authenticated === false,
-              })}
+                    connected: activeRouteId !== null,
+                    failed: sessionResult._tag === "Failure",
+                    rejected:
+                      sessionResult._tag !== "Failure" &&
+                      !sessionResult.waiting &&
+                      session?.authenticated === false,
+                  })}
             </Text>
           )}
         </View>
