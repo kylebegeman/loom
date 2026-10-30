@@ -36,14 +36,16 @@ export function SessionPermissions({
   ) : (
     <p className="py-3 text-xs text-muted-foreground">
       {/* fork: identity-renewal */}
-      {connected && !session.hasError && !session.isPending && session.data?.authenticated === false
-        ? "This computer no longer accepts this device’s credential, so it grants no permissions. Sign in or pair again."
-        : sessionPermissionsUnavailableMessage({
-            connected,
-            failed: session.hasError,
-            rejected:
-              !session.hasError && !session.isPending && session.data?.authenticated === false,
-          })}
+      {!connected
+        ? "Permissions not checked. Connect to this computer to view this session’s permissions."
+        : !session.hasError && !session.isPending && session.data?.authenticated === false
+          ? "This computer no longer accepts this device’s credential, so it grants no permissions. Sign in or pair again."
+          : sessionPermissionsUnavailableMessage({
+              connected,
+              failed: session.hasError,
+              rejected:
+                !session.hasError && !session.isPending && session.data?.authenticated === false,
+            })}
     </p>
   );
 }

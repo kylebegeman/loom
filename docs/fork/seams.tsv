@@ -261,7 +261,7 @@ apps/server/src/project/ProjectService.ts	project-lifecycle	1
 apps/server/src/project/ProjectService.deletion.test.ts	file-placement	2
 apps/server/src/project/ProjectCloneTracker.ts	file-placement	28
 apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	24
-apps/server/src/project/ProjectService.test.ts	file-placement	21
+apps/server/src/project/ProjectService.test.ts	file-placement	22
 apps/server/src/ws.ts	file-placement	13
 apps/server/src/serverSettings.ts	file-placement	4
 apps/server/src/serverSettings.test.ts	file-placement	2
