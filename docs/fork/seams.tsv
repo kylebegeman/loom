@@ -345,7 +345,7 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	5
-apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	19
+apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	17
 apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
 apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
