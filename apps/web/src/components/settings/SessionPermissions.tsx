@@ -1,5 +1,8 @@
 import { type EnvironmentId, sessionGrantsScope } from "@t3tools/contracts";
-import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import {
+  AUTH_SCOPE_OPTIONS,
+  sessionPermissionsUnavailableMessage,
+} from "@t3tools/shared/authScopeOptions";
 import { useEnvironmentSessionState } from "~/state/session";
 
 export function SessionPermissions({
@@ -35,11 +38,14 @@ export function SessionPermissions({
       {/* fork: identity-renewal */}
       {!connected
         ? "Permissions not checked. Connect to this computer to view this session’s permissions."
-        : session.data?.authenticated === false
+        : !session.hasError && !session.isPending && session.data?.authenticated === false
           ? "This computer no longer accepts this device’s credential, so it grants no permissions. Sign in or pair again."
-          : session.hasError
-            ? "Could not check this session’s permissions. Reconnect to try again."
-            : "Checking this session’s permissions..."}
+          : sessionPermissionsUnavailableMessage({
+              connected,
+              failed: session.hasError,
+              rejected:
+                !session.hasError && !session.isPending && session.data?.authenticated === false,
+            })}
     </p>
   );
 }

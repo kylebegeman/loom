@@ -35,7 +35,8 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
         ? { 1: state.checkpointDiff }
         : [],
 }));
-vi.mock("@t3tools/client-runtime/state/thread-checkpoints", () => ({
+vi.mock("@t3tools/client-runtime/state/thread-checkpoints", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/state/thread-checkpoints")>()),
   deriveThreadCheckpointSummaries: () => state.checkpoints,
 }));
 vi.mock("../../state/query", () => ({

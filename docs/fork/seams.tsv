@@ -14,7 +14,7 @@ apps/web/src/branding.ts	brand	2
 apps/web/src/components/chat/WorktreeSetupCard.tsx	library-launch-files	19
 apps/web/src/components/chat/WorktreeSetupCard.tsx	project-lifecycle	6
 apps/web/src/components/chat/useWorktreeSetup.ts	library-launch-files	8
-apps/web/src/components/sidebar/SidebarChrome.tsx	brand	2
+apps/web/src/components/sidebar/SidebarChrome.tsx	brand	3
 apps/web/src/components/chat/TimelineToolActivityIcon.tsx	brand	2
 apps/web/src/components/chat/V2LifecycleRow.tsx	brand	2
 apps/mobile/src/features/threads/thread-work-log.tsx	brand	2
@@ -165,7 +165,7 @@ apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	1
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
 apps/server/src/storageCleanup.test.ts	project-lifecycle	31
 packages/contracts/src/settings.test.ts	project-lifecycle	4
-apps/server/src/serverSettings.test.ts	project-lifecycle	3
+apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	14
 apps/mobile/app.config.ts	fleet-connect	4
 apps/mobile/app.config.ts	library-push	2
@@ -255,13 +255,13 @@ apps/mobile/src/features/projects/AddProjectScreen.test.ts	fleet-connections	13
 apps/mobile/src/lib/storage.test.ts	project-home	2
 apps/server/src/ws.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.ts	project-preparation	1
-apps/server/src/project/ProjectService.ts	file-placement	32
+apps/server/src/project/ProjectService.ts	file-placement	33
 apps/server/src/project/ProjectService.ts	library-projects	10
 apps/server/src/project/ProjectService.ts	project-lifecycle	1
 apps/server/src/project/ProjectService.deletion.test.ts	file-placement	2
 apps/server/src/project/ProjectCloneTracker.ts	file-placement	28
 apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	24
-apps/server/src/project/ProjectService.test.ts	file-placement	21
+apps/server/src/project/ProjectService.test.ts	file-placement	22
 apps/server/src/ws.ts	file-placement	13
 apps/server/src/serverSettings.ts	file-placement	4
 apps/server/src/serverSettings.test.ts	file-placement	2
@@ -544,7 +544,7 @@ apps/server/src/cli/browser.ts	brand	13
 apps/server/src/cli/config.test.ts	brand	1
 apps/server/src/cli/config.ts	brand	2
 apps/server/src/cli/doctor.ts	brand	2
-apps/server/src/cli/service.ts	brand	20
+apps/server/src/cli/service.ts	brand	26
 apps/server/src/cli/service.ts	github-host-setup	3
 apps/server/src/cli/theme.ts	brand	1
 apps/server/src/cli/uninstall.ts	brand	1
@@ -570,7 +570,7 @@ apps/server/src/mcp/toolkits/device/handlers.ts	brand	1
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	brand	7
 apps/server/src/mcp/toolkits/pullRequests/tools.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts	brand	8
-apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	brand	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	brand	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/OpenCode2AdapterV2.test.ts	brand	1
 apps/server/src/orchestration-v2/ContextHandoffService.ts	brand	1
@@ -1359,7 +1359,7 @@ apps/server/src/project/RepositoryIdentityResolver.test.ts	project-lifecycle	3
 apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	1
-apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	3
+apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	4
 apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	4
 apps/server/src/serverActivation.test.ts	server-weight	1
 apps/server/src/sourceControl/ServerSourceControlHost.ts	github-host-setup	3

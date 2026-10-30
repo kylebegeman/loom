@@ -16,6 +16,7 @@ import {
   OS_MANAGED_RUNTIME_NOTE,
   runtimeManagedByOperatingSystem,
 } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
+import { sessionPermissionsUnavailableMessage } from "@t3tools/shared/authScopeOptions";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import { AsyncResult } from "effect/reactivity";
@@ -290,12 +291,15 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
               </Text>
             ) : !allowed ? (
               <Text className="px-2 text-sm text-foreground-muted">
-                {AsyncResult.isFailure(sessionResult)
-                  ? "Could not verify your permissions. Reconnect to try again."
-                  : session === null
-                    ? "Checking permissions…"
-                    : // fork: fleet-connections
-                      "This connection does not have permission to manage this computer."}
+                {AsyncResult.isFailure(sessionResult) || session === null || !session.authenticated
+                  ? sessionPermissionsUnavailableMessage({
+                      connected,
+                      failed: AsyncResult.isFailure(sessionResult),
+                      rejected:
+                        !AsyncResult.isFailure(sessionResult) && session?.authenticated === false,
+                    })
+                  : // fork: fleet-connections
+                    "This connection does not have permission to manage this computer."}
               </Text>
             ) : null}
             {error ? (
@@ -380,7 +384,10 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                       void run("refresh", async () => {
                         if (!readEnvironmentScope(environmentId, AuthOrchestrationReadScope))
                           return;
-                        const result = await refreshProviders({ environmentId, input: {} });
+                        const result = await refreshProviders({
+                          environmentId,
+                          input: { reloadSecrets: true },
+                        });
                         if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
                         setNotice("Agent status refreshed."); // fork: everyday-workflows
                       });
