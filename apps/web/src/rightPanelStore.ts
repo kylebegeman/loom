@@ -113,6 +113,7 @@ interface RightPanelStoreState {
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
+  markUserAction: (ref: ScopedThreadRef) => number;
   openSurface: (ref: ScopedThreadRef, surface: RightPanelSurface) => void; // fork: ext-panels
   /** Refused if the user chose a panel after expectedUserActionRevision was read. */
   openProactive: (
@@ -606,6 +607,16 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       closeRevisionByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
+      markUserAction: (ref) => {
+        const revision = get().getUserActionRevision(ref) + 1;
+        set((state) => ({
+          userActionRevisionByThreadKey: {
+            ...state.userActionRevisionByThreadKey,
+            [scopedThreadKey(ref)]: revision,
+          },
+        }));
+        return revision;
+      },
       // fork: ext-panels
       openSurface: (ref, surface) =>
         set((state) =>

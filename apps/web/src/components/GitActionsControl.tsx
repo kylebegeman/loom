@@ -105,7 +105,7 @@ import {
   useVcsPullAction,
 } from "../state/sourceControlActions";
 import {
-  useThreadProjection,
+  useQuietThreadProjection,
   useQuietThreadShell,
   useProject,
   useThreadShellsForProjectRefs,
@@ -1021,7 +1021,7 @@ export default function GitActionsControl({
         ? store.getDraftThreadByRef(activeThreadRef)
         : null,
   );
-  const activeServerThreadProjection = useThreadProjection(
+  const activeServerThreadProjection = useQuietThreadProjection(
     activeDraftThread !== null && activeServerThreadShell === null ? null : activeThreadRef,
   );
   const activeServerThread =

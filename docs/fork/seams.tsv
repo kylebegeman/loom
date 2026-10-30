@@ -345,7 +345,7 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	5
-apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	19
+apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	17
 apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
 apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
@@ -544,7 +544,7 @@ apps/server/src/cli/browser.ts	brand	13
 apps/server/src/cli/config.test.ts	brand	1
 apps/server/src/cli/config.ts	brand	2
 apps/server/src/cli/doctor.ts	brand	2
-apps/server/src/cli/service.ts	brand	26
+apps/server/src/cli/service.ts	brand	28
 apps/server/src/cli/service.ts	github-host-setup	3
 apps/server/src/cli/theme.ts	brand	1
 apps/server/src/cli/uninstall.ts	brand	1
@@ -1432,6 +1432,7 @@ packages/contracts/src/projectClone.ts	file-placement	2
 packages/contracts/src/server.test.ts	file-placement	2
 packages/contracts/src/sourceControl.ts	file-placement	2
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	was declined in Loom.
+packages/provider-pi/src/server/mcpExtensionSource.ts	-	launch arguments in Loom settings
 packages/shared/src/nodeSqliteClient.test.ts	library-projects	5
 packages/shared/src/usageLimits.test.ts	switchboard	1
 packages/ssh/src/auth.ts	-	Loom ssh-askpass invoked without T3_SSH_AUTH_SECRET.
