@@ -1615,3 +1615,4 @@ apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts	brand	2
 packages/client-runtime/src/state/projectRemoval.ts	brand	2
 apps/web/src/components/ThreadTerminalDrawer.browser.test.tsx	preview-links	1
 apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx	source-control-cockpit	3
+apps/web/src/components/ChatView.tsx	brand	1
