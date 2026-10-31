@@ -78,7 +78,7 @@ const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 export function AddEnvironmentDialog({
   open,
   routeTarget,
-  libraryPairing, // fork: directory-computers
+  libraryPairing = null, // fork: directory-computers
   error,
   savedEnvironments,
   onOpenChange,
@@ -86,7 +86,7 @@ export function AddEnvironmentDialog({
 }: {
   readonly open: boolean;
   readonly routeTarget: EnvironmentPresentation | null;
-  readonly libraryPairing: LibraryComputerPairing | null; // fork: directory-computers
+  readonly libraryPairing?: LibraryComputerPairing | null; // fork: directory-computers
   readonly error: string | null;
   readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
   readonly onOpenChange: (open: boolean) => void;
