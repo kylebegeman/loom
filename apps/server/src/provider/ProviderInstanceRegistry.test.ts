@@ -49,6 +49,10 @@ import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestra
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+// fork: vault-provider-credentials
+import * as VaultProviderCredentials from "../fork/vault/VaultProviderCredentials.ts";
+import { VaultError, vaultProviderReference } from "@t3tools/contracts/fork";
+import * as Redacted from "effect/Redacted";
 import type { AnyProviderDriver, ProviderInstance } from "@t3tools/provider-core/server/driver";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
@@ -178,6 +182,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     ),
     Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
     Layer.provideMerge(Layer.mock(SecretResolver.SecretResolver)({})),
+    Layer.provideMerge(Layer.mock(VaultProviderCredentials.VaultProviderCredentials)({})),
     Layer.provideMerge(
       Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
         getEnvironmentId: Effect.succeed(
@@ -804,6 +809,11 @@ describe("ProviderInstanceRegistry secret environment", () => {
     initial: Record<string, string>,
     configSchema: AnyProviderDriver["configSchema"] = Schema.Unknown,
     config: unknown = {},
+    reference: SecretReference = secret,
+    vaultCredentials: VaultProviderCredentials.VaultProviderCredentials["Service"] = {
+      read: () => Effect.fail(new VaultError({ reason: "denied" })),
+      validate: () => Effect.fail(new VaultError({ reason: "denied" })),
+    },
   ) {
     const vault = new Map(Object.entries(initial));
     const reads: Array<ReadonlyArray<string>> = [];
@@ -819,7 +829,14 @@ describe("ProviderInstanceRegistry secret environment", () => {
         Effect.sync(() => {
           created.push(input.environment);
           configs.push(input.config);
-          return { instanceId: input.instanceId, enabled: input.enabled } as ProviderInstance;
+          return {
+            instanceId: input.instanceId,
+            driverKind,
+            enabled: input.enabled,
+            snapshot: {} as ProviderInstance["snapshot"],
+            orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          } as ProviderInstance;
         }),
     };
     const gate = Deferred.makeUnsafe<void>();
@@ -843,13 +860,14 @@ describe("ProviderInstanceRegistry secret environment", () => {
         driver: driverKind,
         config,
         environment: [
-          { name: "OPENAI_API_KEY", value: secret, sensitive: true },
+          { name: "OPENAI_API_KEY", value: reference, sensitive: true },
           { name: "BASE_URL", value: "https://example.test", sensitive: false },
         ],
       },
     };
     const makeGated = makeProviderInstanceRegistry({ drivers: [driver], configMap }).pipe(
       Effect.provide(resolver),
+      Effect.provideService(VaultProviderCredentials.VaultProviderCredentials, vaultCredentials),
     );
     // Secrets are read after startup, so wait for the change that applies them.
     const make = Effect.gen(function* () {
@@ -956,6 +974,78 @@ describe("ProviderInstanceRegistry secret environment", () => {
       expect(yield* registry.getInstance(instanceId)).toBeDefined();
       expect(yield* registry.listUnavailable).toEqual([]);
       expect(fixture.created).toHaveLength(1);
+    }).pipe(Effect.scoped);
+  });
+
+  it.effect.each(["denied", "conflict", "locked"] as const)(
+    "reads Vault bindings contextually and retires credentials on %s",
+    (reason) => {
+      const reference = vaultProviderReference({
+        environmentId: EnvironmentId.make("00000000-0000-4000-8000-000000000001"),
+        itemId: "a".repeat(32),
+        expectedVersion: 1,
+      });
+      let permitted = true;
+      const consumers: Array<unknown> = [];
+      const credentials: VaultProviderCredentials.VaultProviderCredentials["Service"] = {
+        read: (_reference, consumer) =>
+          Deferred.await(fixture.gate).pipe(
+            Effect.andThen(() => {
+              consumers.push(consumer);
+              return permitted
+                ? Effect.succeed(Redacted.make("vault-api-key"))
+                : Effect.fail(new VaultError({ reason }));
+            }),
+          ),
+        validate: () => Effect.void,
+      };
+      const fixture = setup({}, Schema.Unknown, {}, reference, credentials);
+      return Effect.gen(function* () {
+        const { registry, mutator } = yield* fixture.make;
+        expect(yield* registry.getInstance(instanceId)).toBeDefined();
+        expect(fixture.created[0]?.[0]).toEqual({
+          name: "OPENAI_API_KEY",
+          value: "vault-api-key",
+          sensitive: true,
+        });
+        expect(consumers).toEqual([{ instanceId, variableName: "OPENAI_API_KEY" }]);
+        expect(fixture.reads.flat()).not.toContain(reference.reference);
+        permitted = false;
+        yield* mutator.reloadSecrets();
+        expect(yield* registry.getInstance(instanceId)).toBeUndefined();
+        const unavailable = (yield* registry.listUnavailable)[0]?.unavailableReason;
+        expect(unavailable).toContain("OPENAI_API_KEY");
+        expect(unavailable).toContain(
+          reason === "conflict"
+            ? "Choose the current Vault item version"
+            : reason === "locked"
+              ? "OpenBao is sealed"
+              : "Check its binding",
+        );
+        expect(fixture.created).toHaveLength(1);
+        expect(fixture.reads.flat()).not.toContain(reference.reference);
+        expect(fixture.invalidated.flat()).not.toContain(reference.reference);
+      }).pipe(Effect.scoped);
+    },
+  );
+
+  it.effect("never sends unsupported Vault config references to an external resolver", () => {
+    const reference = vaultProviderReference({
+      environmentId: EnvironmentId.make("00000000-0000-4000-8000-000000000001"),
+      itemId: "b".repeat(32),
+      expectedVersion: 1,
+    });
+    const fixture = setup(
+      { [secret.reference]: "sk-live" },
+      Schema.Struct({ apiKey: SettingsSecretValue }),
+      { apiKey: reference },
+    );
+    return Effect.gen(function* () {
+      const { registry } = yield* fixture.make;
+      expect(yield* registry.getInstance(instanceId)).toBeUndefined();
+      expect((yield* registry.listUnavailable)[0]?.unavailableReason).toContain("apiKey");
+      expect(fixture.reads.flat()).not.toContain(reference.reference);
+      expect(fixture.created).toEqual([]);
     }).pipe(Effect.scoped);
   });
 

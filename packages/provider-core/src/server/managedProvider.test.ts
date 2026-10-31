@@ -15,6 +15,8 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as Queue from "effect/Queue";
+import { ProviderCredentialError } from "./errors.ts";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ProviderHost from "./ProviderHost.ts";
@@ -99,6 +101,7 @@ const refreshedSnapshotSecond: ServerProvider = {
 
 function layerProviderHost(input: {
   readonly runBackgroundWork: boolean;
+  readonly beforeCredentialUse?: ProviderHost.ProviderHost["Service"]["beforeCredentialUse"];
   readonly settings?: Pick<ProviderHost.ProviderHost["Service"], "settings">["settings"];
 }) {
   return Layer.succeed(
@@ -117,6 +120,7 @@ function layerProviderHost(input: {
         changes: Stream.empty,
         subscribe: Effect.succeed(Stream.empty),
       },
+      ...(input.beforeCredentialUse ? { beforeCredentialUse: input.beforeCredentialUse } : {}),
       shouldRunBackgroundWork: () => Effect.succeed(input.runBackgroundWork),
       resolveAttachmentPath: () => null,
       credentials: () => Effect.die("unused"),
@@ -140,6 +144,50 @@ const enrichedSnapshotSecond: ServerProvider = {
 };
 
 describe("makeManagedServerProvider", () => {
+  // fork: vault-provider-credentials
+  it.effect("stops periodic probes and enrichment when credential access is revoked", () =>
+    Effect.gen(function* () {
+      let permitted = true;
+      let probes = 0;
+      let enrichments = 0;
+      const refused = yield* Queue.unbounded<void>();
+      const beforeCredentialUse = Effect.suspend(() =>
+        permitted
+          ? Effect.void
+          : Queue.offer(refused, undefined).pipe(
+              Effect.andThen(
+                Effect.fail(new ProviderCredentialError({ operation: "get", cause: "revoked" })),
+              ),
+            ),
+      );
+      const provider = yield* makeManagedServerProvider({
+        resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+        getSettings: Effect.succeed({ enabled: true }),
+        streamSettings: Stream.empty,
+        haveSettingsChanged: () => false,
+        initialSnapshot: () => Effect.succeed(initialSnapshot),
+        checkProvider: Effect.sync(() => {
+          probes++;
+          permitted = false;
+          return refreshedSnapshot;
+        }),
+        enrichSnapshot: () =>
+          Effect.sync(() => {
+            enrichments++;
+          }),
+        refreshInterval: "10 seconds",
+      }).pipe(Effect.provide(layerProviderHost({ runBackgroundWork: true, beforeCredentialUse })));
+      yield* Queue.take(refused);
+      assert.strictEqual(probes, 1);
+      assert.strictEqual(enrichments, 0);
+      yield* TestClock.adjust("10 seconds");
+      yield* Queue.take(refused);
+      assert.strictEqual(probes, 1);
+      assert.strictEqual(enrichments, 0);
+      assert.deepStrictEqual(yield* provider.getSnapshot, refreshedSnapshot);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("invalidates cached usage and queues one refresh behind an in-flight refresh", () =>
     Effect.scoped(
       Effect.gen(function* () {

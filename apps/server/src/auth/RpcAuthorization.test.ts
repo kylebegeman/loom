@@ -3,6 +3,7 @@ import {
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
+  AuthAccessWriteScope, // fork: vault-provider-credentials
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
@@ -185,6 +186,38 @@ describe("settings mutation authorization", () => {
           },
         },
       });
+      expect(handled).toBe(2);
+      // fork: vault-provider-credentials
+      const vaultInstance = {
+        driver: ProviderDriverKind.make("codex"),
+        environment: [
+          {
+            name: "OPENAI_API_KEY",
+            sensitive: true,
+            value: {
+              provider: SecretProviderId.make("loom-vault"),
+              reference: "loom-vault:environment:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1",
+            },
+          },
+        ],
+      };
+      for (const update of [
+        {
+          patch: {},
+          providerInstanceMutation: {
+            operation: "upsert" as const,
+            instanceId: ProviderInstanceId.make("codex_work"),
+            instance: vaultInstance,
+          },
+        },
+        {
+          patch: { providerInstances: { [ProviderInstanceId.make("codex_work")]: vaultInstance } },
+        },
+      ]) {
+        expect(
+          yield* client[WS_METHODS.serverUpdateSettings](update).pipe(Effect.flip),
+        ).toMatchObject({ requiredPermission: AuthAccessWriteScope });
+      }
       expect(handled).toBe(2);
       expect(
         yield* client[WS_METHODS.serverUpdateSettings]({

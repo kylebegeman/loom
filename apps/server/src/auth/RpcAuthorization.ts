@@ -30,6 +30,7 @@ import {
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
+import { vaultProviderSettingsScopes } from "@t3tools/contracts/fork"; // fork: vault-provider-credentials
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
@@ -236,10 +237,15 @@ const decodeSettingsUpdate = Schema.decodeUnknownSync(Schema.toType(SettingsUpda
 
 const requiredScopesForSettingsUpdate = (payload: unknown) => {
   const input = decodeSettingsUpdate(payload);
-  const scopes = requiredScopesForServerSettingsPatch(input.patch);
+  const scopes = [
+    ...new Set([
+      ...requiredScopesForServerSettingsPatch(input.patch),
+      ...vaultProviderSettingsScopes(input), // fork: vault-provider-credentials
+    ]),
+  ];
   if (input.providerInstanceMutation === undefined) return scopes;
   return Object.values(input.patch).every((value) => value === undefined)
-    ? [AuthProvidersManageScope]
+    ? [...new Set([AuthProvidersManageScope, ...vaultProviderSettingsScopes(input)])] // fork: vault-provider-credentials
     : [...new Set([...scopes, AuthProvidersManageScope])];
 };
 

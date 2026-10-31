@@ -45,6 +45,10 @@ import { Button } from "../ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { DraftInput } from "../ui/draft-input";
 import { SecretSourceInput, type SecretSource } from "./SecretSourceInput";
+// fork: vault-provider-credentials
+import { VaultProviderCredential } from "~/fork/vault/ProviderCredential";
+// fork: vault-provider-credentials
+import { isVaultProviderReference } from "@t3tools/contracts/fork";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -278,13 +282,38 @@ function ProviderEnvironmentFieldRow(props: {
   ) => void;
   readonly onRemove: (field: ProviderEnvironmentField) => void;
   readonly secretSources: ReadonlyArray<SecretSource>;
+  // fork: vault-provider-credentials
+  readonly vaultContext?: { environmentId: EnvironmentId; providerName: string } | undefined;
 }) {
   const inputId = `${props.idPrefix}-environment-${props.field.name}`;
   const value = props.variable?.valueRedacted ? "" : (props.variable?.value ?? "");
 
+  const secretInput = (
+    <SecretSourceInput
+      id={inputId}
+      size="sm"
+      className="min-w-0 flex-1"
+      value={value}
+      onCommit={(next) => props.onCommit(props.field, next)}
+      placeholder={props.field.placeholder}
+      configured={props.variable?.valueRedacted === true}
+      spellCheck={false}
+      aria-label={props.field.label}
+      sources={props.secretSources}
+      onSecretChange={(secret) => props.onSecretChange(props.field, secret)}
+    />
+  );
+
   return (
     <SettingsRow
-      title={<label htmlFor={inputId}>{props.field.label}</label>}
+      title={
+        // fork: vault-provider-credentials
+        isVaultProviderReference(value) ? (
+          props.field.label
+        ) : (
+          <label htmlFor={inputId}>{props.field.label}</label>
+        )
+      }
       description={props.field.description}
       control={
         <div className="flex w-full min-w-0 items-center gap-2 @min-[32rem]/settings-row:w-56">
@@ -299,20 +328,18 @@ function ProviderEnvironmentFieldRow(props: {
               placeholder={props.field.placeholder}
               spellCheck={false}
             />
-          ) : (
-            <SecretSourceInput
-              id={inputId}
-              size="sm"
-              className="min-w-0 flex-1"
+          ) : props.vaultContext ? (
+            // fork: vault-provider-credentials
+            <VaultProviderCredential
+              {...props.vaultContext}
+              variableName={props.field.name}
               value={value}
-              onCommit={(next) => props.onCommit(props.field, next)}
-              placeholder={props.field.placeholder}
-              configured={props.variable?.valueRedacted === true}
-              spellCheck={false}
-              aria-label={props.field.label}
-              sources={props.secretSources}
-              onSecretChange={(secret) => props.onSecretChange(props.field, secret)}
-            />
+              onChange={(secret) => props.onSecretChange(props.field, secret)}
+            >
+              {secretInput}
+            </VaultProviderCredential>
+          ) : (
+            secretInput
           )}
           {props.variable ? (
             <Button
@@ -335,6 +362,8 @@ export function ProviderEnvironmentSection(props: {
   readonly environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>;
   readonly onChange: (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => void;
   readonly secretSources?: ReadonlyArray<SecretSource>;
+  // fork: vault-provider-credentials
+  readonly vaultContext?: { environmentId: EnvironmentId; providerName: string } | undefined;
 }) {
   const [storedDraft, setDraft] = useState(() =>
     seedRowsDraft(props.environment, toEnvironmentDraftRows),
@@ -512,7 +541,24 @@ export function ProviderEnvironmentSection(props: {
                     sources={props.secretSources ?? []}
                     onSecretChange={(secret) => setVariableSecret(variable.id, secret)}
                   >
-                    {(parts) => layout(parts.source, parts.value)}
+                    {(parts) =>
+                      // fork: vault-provider-credentials
+                      layout(
+                        isVaultProviderReference(variable.value) ? null : parts.source,
+                        props.vaultContext ? (
+                          <VaultProviderCredential
+                            {...props.vaultContext}
+                            variableName={variable.name}
+                            value={variable.value}
+                            onChange={(secret) => setVariableSecret(variable.id, secret)}
+                          >
+                            {parts.value}
+                          </VaultProviderCredential>
+                        ) : (
+                          parts.value
+                        ),
+                      )
+                    }
                   </SecretSourceInput>
                 ) : (
                   layout(
@@ -1264,6 +1310,10 @@ export function ProviderInstanceCard({
                   onSecretChange={updateEnvironmentFieldSecret}
                   onRemove={removeEnvironmentField}
                   secretSources={secretSources}
+                  // fork: vault-provider-credentials
+                  vaultContext={
+                    environmentId ? { environmentId, providerName: displayName } : undefined
+                  }
                 />
               ))}
             </div>
@@ -1307,6 +1357,8 @@ export function ProviderInstanceCard({
           environment={genericEnvironment}
           onChange={updateGenericEnvironment}
           secretSources={secretSources}
+          // fork: vault-provider-credentials
+          vaultContext={environmentId ? { environmentId, providerName: displayName } : undefined}
         />
       </SettingsSection>
       {environmentId !== undefined && liveProvider?.driver === "acpRegistry" ? (

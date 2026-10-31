@@ -55,6 +55,28 @@ branded headers, including exclusion when a session has no device access.
 
 ## Seams in upstream files
 
+The `vault-provider-credentials` seams preserve upstream's `SecretReference` wire format and
+external-provider resolver. Loom reserves the `loom-vault` source for explicit provider environment
+bindings. Its fork service performs contextual, audited release without the generic resolver cache;
+provider construction and subsequent credential use recheck the selected item and version.
+The integration points are provider registry/hydration, settings authorization and the web/mobile
+provider settings controls. Their marker counts are checked in `docs/fork/seams.tsv` after merges.
+
+| File                                                                        | Vault provider credential seam                                   |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `apps/server/src/provider/ProviderInstanceRegistry.ts`                      | Resolve contextual bindings and guard provider use.              |
+| `apps/server/src/provider/ProviderInstanceRegistryHydration.ts`             | Supply the shared Vault credential service before hydration.     |
+| `packages/provider-core/src/server/ProviderHost.ts`                         | Offer an optional credential preflight for background work.      |
+| `packages/provider-core/src/server/managedProvider.ts`                      | Check the preflight before probes and enrichment.                |
+| `packages/provider-core/src/server/managedProvider.test.ts`                 | Cover revocation during periodic background work.                |
+| `apps/server/src/auth/RpcAuthorization.ts`                                  | Require provider-management and Vault-write authority.           |
+| `packages/contracts/src/clientRpcPermissions.ts`                            | Apply the same binding permissions to client mutations.          |
+| `apps/web/src/components/settings/ProviderInstanceCard.tsx`                 | Mount the Vault source control for sensitive environment fields. |
+| `apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx` | Mount native provider credential settings.                       |
+| `apps/server/src/provider/ProviderInstanceRegistry.test.ts`                 | Cover contextual delivery and fail-closed reload.                |
+| `apps/server/src/auth/RpcAuthorization.test.ts`                             | Cover both settings mutation paths.                              |
+| `packages/client-runtime/src/state/commandPermissions.test.ts`              | Cover destination permissions and revocation.                    |
+
 The `vault-approvals` seams in `packages/contracts/src/orchestrationV2.ts` (3 marker lines)
 add the metadata-only Vault approval card to the forward-compatible turn-item union.
 Older clients omit this unknown item while retaining the rest of the thread stream.

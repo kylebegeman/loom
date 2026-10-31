@@ -25,6 +25,21 @@ If you paste a new value and also save it to Vault, a matching name replaces the
 item. Choose **Save as new** to create a separate item. If an item changes while the card is
 open, refresh the matching item and retry.
 
+## Supply a provider API key
+
+In web or desktop, open the selected computer's provider settings, find a sensitive
+environment variable and choose **Use Vault**. On mobile, open that computer's provider
+settings and **Vault credentials**, select the provider and enter or choose its environment
+variable. Choose an active Secret item. The provider receives its value; settings retain
+only a reference to that computer, item and version. This requires provider-management and
+Vault-write access.
+
+Bindings authorize the selected provider to use a credential independently of thread grants.
+Changing the item requires selecting its new version again. Removing a binding, archiving or
+deleting its item, or protecting it against ordinary use blocks new credential use. Already
+running processes may retain values they received. Use **Refresh provider credentials** if
+a provider needs to retry after the Vault backend becomes available again.
+
 ## Choose personal or restricted access
 
 For a computer you own and control, open **Vault**, confirm **This is my personal environment**

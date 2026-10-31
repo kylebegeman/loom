@@ -1,5 +1,8 @@
 import { FORK_CLIENT_GUARDED_RPC_SCOPES } from "./fork/clientRpcPermissions.ts"; // fork: ext-core
 import * as Schema from "effect/Schema";
+import { vaultProviderSettingsScopes } from "./fork/vault-provider-credentials.ts"; // fork: vault-provider-credentials
+import { ServerSettingsPatch } from "./settings.ts"; // fork: vault-provider-credentials
+import { ProviderInstanceMutation } from "./providerInstance.ts"; // fork: vault-provider-credentials
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
   AuthAccessWriteScope,
@@ -82,6 +85,16 @@ const CLIENT_GUARDED_RPC_SCOPES = {
 }; // fork: ext-core
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 
+// fork: vault-provider-credentials
+const decodeProviderSettingsUpdate = Schema.decodeUnknownSync(
+  Schema.toType(
+    Schema.Struct({
+      patch: ServerSettingsPatch,
+      providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
+    }),
+  ),
+);
+
 const decodePrepareThread = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput);
 const decodeStackedAction = Schema.decodeUnknownSync(GitRunStackedActionInput);
 
@@ -89,6 +102,11 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  // fork: vault-provider-credentials
+  if (method === WS_METHODS.serverUpdateSettings && input !== undefined) {
+    const scopes = vaultProviderSettingsScopes(decodeProviderSettingsUpdate(input));
+    if (scopes.length > 0) return scopes;
+  }
   if (method === WS_METHODS.gitPreparePullRequestThread && input !== undefined) {
     const payload = decodePrepareThread(input);
     if (payload.mode === "worktree" && payload.threadId !== undefined)
