@@ -13,10 +13,7 @@ import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { resolveClaudeHomePath } from "../../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../../provider/Drivers/CodexHomeLayout.ts";
-import {
-  findRepositoryRoot,
-  skillOverrideSettingsPaths,
-} from "../../provider/Drivers/ClaudeSkills.ts";
+import { claudeSettingsPaths, findRepositoryRoot } from "../../provider/Drivers/ClaudeSkills.ts";
 import { resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { withCodexAppServerClient } from "../../provider/CodexProvider.ts";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
@@ -115,7 +112,7 @@ export const makeProviderControls = Effect.gen(function* () {
           cwd === null
             ? undefined
             : yield* findRepositoryRoot(cwd).pipe(Effect.provideContext(nativeContext));
-        const paths = skillOverrideSettingsPaths(
+        const paths = claudeSettingsPaths(
           path,
           home,
           cwd ?? undefined,

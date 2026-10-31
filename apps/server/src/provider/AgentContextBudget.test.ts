@@ -31,7 +31,7 @@ import { RemoteDelegation } from "../peer/RemoteDelegation.ts";
 import { PreviewManager } from "../preview/Manager.ts";
 import { PreviewBrowser } from "../preview/PreviewBrowser.ts";
 import { ManagedProjectFolders } from "../project/ManagedProjectFolders.ts";
-import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts"; // fork: file-placement
+import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts";
 import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts"; // fork: file-placement
 import { ProjectPlacement } from "../project/ProjectPlacement.ts"; // fork: file-placement
 import { ProjectService } from "../project/ProjectService.ts";
@@ -65,7 +65,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(PreviewAutomationBroker)({}),
   Layer.mock(PreviewBrowser)({}),
   Layer.mock(PreviewManager)({}),
-  Layer.mock(ProjectCloneTracker)({}), // fork: file-placement
+  Layer.mock(ProjectCloneTracker)({}),
   Layer.mock(ProjectEnrichmentService)({}), // fork: file-placement
   Layer.mock(ProjectPlacement)({}), // fork: file-placement
   Layer.mock(ProjectService)({}),

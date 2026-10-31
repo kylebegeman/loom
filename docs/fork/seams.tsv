@@ -1195,7 +1195,6 @@ packages/contracts/src/ipc.ts	open-at-login	2
 packages/contracts/src/ipc.ts	library-sign-in	2
 packages/contracts/src/ipc.ts	tailnet-ownership	5
 packages/contracts/src/worktreeSetup.ts	library-launch-files	2
-apps/desktop/src/app/DesktopClerk.ts	clerk-token-mode	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-sign-in	5
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library	1
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	webhook-delivery-issues	2

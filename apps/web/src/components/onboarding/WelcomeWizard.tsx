@@ -653,14 +653,15 @@ function PairingForm({
           </div>
           <CollapsiblePanel>
             <p className="pt-3 text-sm text-muted-foreground">
-              Run this on the computer with your code.
+              {/* fork: brand */}
+              On the computer with your code, start Loom or run{" "}
+              <code className="font-mono">loom serve</code>, then run:
             </p>
             {/* fork: brand */}
             <CommandBlock command="loom pair" className="mt-2" />
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
               {/* fork: brand */}
-              Start Loom first, or run <code className="font-mono">loom serve</code>. Add{" "}
-              <code className="font-mono">--tailscale</code> to use your tailnet.
+              On a tailnet, run <code className="font-mono">loom pair --tailscale</code> instead.
             </p>
           </CollapsiblePanel>
         </Collapsible>

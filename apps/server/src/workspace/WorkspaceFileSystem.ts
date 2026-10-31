@@ -579,6 +579,9 @@ export const make = Effect.gen(function* () {
         );
       const target = yield* resolveWriteTarget(input);
       const realTargetPath = target.realTargetPath;
+      const replacesFile = yield* fileSystem
+        .exists(realTargetPath)
+        .pipe(Effect.orElseSucceed(() => false));
 
       yield* fileSystem.makeDirectory(path.dirname(realTargetPath), { recursive: true }).pipe(
         Effect.mapError(
@@ -613,7 +616,12 @@ export const make = Effect.gen(function* () {
             cause,
           }),
       });
-      yield* workspaceEntries.refresh(input.cwd);
+      // Editor autosave overwrites existing files, which leaves the indexed paths unchanged, and
+      // fff's watcher applies the new contents on its own. A forced rescan re-walks the whole
+      // workspace, and the save would wait for it.
+      if (!replacesFile) {
+        yield* workspaceEntries.refresh(input.cwd);
+      }
       return { relativePath: target.relativePath };
     },
     // fork: project-lifecycle

@@ -129,6 +129,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadPullRequestWatch: Schema.optionalKey(Schema.Boolean),
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
   serverSelfUpdate: Schema.optionalKey(ServerSelfUpdateCapability),
+  /** Server answers server.getNpmRelease using its configured npm registry. */
+  npmReleaseLookup: Schema.optionalKey(Schema.Boolean),
   /** Manual commands must update this install, not the host's default global prefix. */
   serverInstallation: ForwardCompatibleOptional(ServerInstallation),
   // fork: runtime-owner: the operating system owns this runtime's updates. Not a serverSelfUpdate literal: that set is closed, so older clients would reject it.
