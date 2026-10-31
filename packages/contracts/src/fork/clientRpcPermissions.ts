@@ -274,6 +274,13 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PUSH.unregister]: AuthSettingsWriteScope,
   [PUSH.test]: AuthSettingsWriteScope,
   // Bot list and run history stay unguarded: clients read them with query atoms.
+  [BOT.setBadgePreferences]: AuthSettingsWriteScope,
+  [BOT.completionConfigure]: AuthSettingsWriteScope,
+  [BOT.completionSetEnabled]: AuthSettingsWriteScope,
+  [BOT.completionRemove]: AuthSettingsWriteScope,
+  [BOT.completionAcknowledge]: AuthOrchestrationOperateScope,
+  [BOT.setOperationMode]: AuthSettingsWriteScope,
+  [BOT.stopAll]: AuthOrchestrationOperateScope,
   [BOT.save]: AuthOrchestrationOperateScope,
   [BOT.archive]: AuthOrchestrationOperateScope,
   [BOT.delete]: AuthOrchestrationOperateScope,

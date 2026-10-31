@@ -173,6 +173,8 @@ export type ForkSubscriptionRpcTag =
   | typeof PREVIEW_LINKS_WS_METHODS.watch
   | typeof REACH_WS_METHODS.watch
   | typeof BOTS_WS_METHODS.watch
+  | typeof BOTS_WS_METHODS.watchOperations
+  | typeof BOTS_WS_METHODS.watchBadgePreferences
   | typeof BOTS_BATCH_WS_METHODS.watchBatches
   | typeof BOTS_TRIGGER_WS_METHODS.watchTriggers
   | typeof BOTS_PIPELINE_WS_METHODS.watchPipelines;

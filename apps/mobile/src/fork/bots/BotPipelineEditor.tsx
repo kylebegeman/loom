@@ -16,6 +16,7 @@ import {
   newParameterDraft,
   newStepDraft,
   pipelineDraft,
+  pipelineCopyDraft,
   pipelineInputFromDraft,
   stepReferences,
   type PipelineDraft,
@@ -349,6 +350,7 @@ function PipelineStepEditor({
 export function BotPipelineEditor({
   environmentId,
   pipeline,
+  templates = [],
   allBots,
   canSave,
   onSaved,
@@ -356,6 +358,7 @@ export function BotPipelineEditor({
 }: {
   readonly environmentId: EnvironmentId;
   readonly pipeline: BotPipeline | null;
+  readonly templates?: ReadonlyArray<BotPipeline>;
   readonly allBots: ReadonlyArray<BotDefinition>;
   readonly canSave: boolean;
   readonly onSaved: (pipeline: BotPipeline) => void;
@@ -366,6 +369,7 @@ export function BotPipelineEditor({
     pipeline ? pipelineDraft(pipeline) : emptyPipelineDraft(),
   );
   const [idEdited, setIdEdited] = useState(pipeline !== null);
+  const [templateSource, setTemplateSource] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checked, setChecked] = useState<{
@@ -430,6 +434,35 @@ export function BotPipelineEditor({
           <Text>
             Steps run in order. Fill each bot's inputs from pipeline inputs and earlier steps.
           </Text>
+          {pipeline === null &&
+          draft.name === "" &&
+          draft.steps.length === 0 &&
+          templates.length ? (
+            <BotSection
+              title="Start from a saved workflow"
+              description="Copies typed inputs, saved bot versions and bounded stop conditions. Check and save the draft before configuring a disabled trigger."
+            >
+              {templates.map((template) => (
+                <Button
+                  key={template.id}
+                  label={`${template.name} v${template.version}`}
+                  disabled={busy || !canSave}
+                  onPress={() => {
+                    setDraft(
+                      pipelineCopyDraft(template, new Set(templates.map((entry) => entry.id))),
+                    );
+                    setIdEdited(true);
+                    setTemplateSource(`${template.name} v${template.version}`);
+                  }}
+                />
+              ))}
+            </BotSection>
+          ) : null}
+          {templateSource ? (
+            <BotNotice
+              detail={`Draft copied from ${templateSource}. Review all steps and check before saving. This does not start runs or enable triggers.`}
+            />
+          ) : null}
           <BotInput
             label="Name"
             value={draft.name}

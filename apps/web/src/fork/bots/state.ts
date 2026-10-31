@@ -1,3 +1,4 @@
+import { useBotBadgeCount } from "./useBotBadgeCount";
 import { useEffect, useRef } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
@@ -22,7 +23,11 @@ import {
   BOTS_BATCHES_FEATURE,
   BOTS_BUDGETS_FEATURE,
   BOTS_FEATURE,
+  BOTS_OPERATIONS_FEATURE,
+  BOTS_COMPLETIONS_FEATURE,
+  BOTS_BADGE_PREFERENCES_FEATURE,
   BOTS_FROM_THREAD_FEATURE,
+  BOTS_CREATION_FEATURE,
   BOTS_INBOX_FEATURE,
   BOTS_INVOCATION_FEATURE,
   BOTS_PIPELINES_FEATURE,
@@ -53,6 +58,9 @@ export function useBotsHost() {
     environmentId: environment?.environmentId ?? null,
     connected: environment?.connection.phase === "connected",
     supported: supportsLoomFeature(capabilities, BOTS_FEATURE),
+    operationsSupported: supportsLoomFeature(capabilities, BOTS_OPERATIONS_FEATURE),
+    completionsSupported: supportsLoomFeature(capabilities, BOTS_COMPLETIONS_FEATURE),
+    badgePreferencesSupported: supportsLoomFeature(capabilities, BOTS_BADGE_PREFERENCES_FEATURE),
     startersSupported: supportsLoomFeature(capabilities, BOTS_STARTERS_FEATURE),
     invocationSupported: supportsLoomFeature(capabilities, BOTS_INVOCATION_FEATURE),
     verdictsSupported: supportsLoomFeature(capabilities, BOTS_VERDICTS_FEATURE),
@@ -60,6 +68,7 @@ export function useBotsHost() {
     inboxSupported: supportsLoomFeature(capabilities, BOTS_INBOX_FEATURE),
     budgetsSupported: supportsLoomFeature(capabilities, BOTS_BUDGETS_FEATURE),
     fromThreadSupported: supportsLoomFeature(capabilities, BOTS_FROM_THREAD_FEATURE),
+    creationSupported: supportsLoomFeature(capabilities, BOTS_CREATION_FEATURE),
     triggersSupported: supportsLoomFeature(capabilities, BOTS_TRIGGERS_FEATURE),
     versionsSupported: supportsLoomFeature(capabilities, BOTS_VERSIONS_FEATURE),
     pipelinesSupported: supportsLoomFeature(capabilities, BOTS_PIPELINES_FEATURE),
@@ -300,8 +309,13 @@ const noRun = () => undefined;
  */
 export function useBotsAttentionCount() {
   const host = useBotsHost();
+  const authoritative = useBotBadgeCount(
+    host.environmentId,
+    host.badgePreferencesSupported,
+    host.connected,
+  );
   const live = Boolean(host.environmentId && host.supported);
-  const inboxLive = live && host.inboxSupported;
+  const inboxLive = live && host.inboxSupported && !host.badgePreferencesSupported;
   const changes = useBotsChanges(host.environmentId, inboxLive && host.connected);
   const inbox = useEnvironmentQuery(
     host.environmentId && inboxLive
@@ -309,7 +323,9 @@ export function useBotsAttentionCount() {
       : null,
   );
   // Waiting runs come from this client's thread shells, so no server feature gates them.
-  const waiting = useWaitingBotRuns(live ? host.environmentId : null);
+  const waiting = useWaitingBotRuns(
+    live && !host.badgePreferencesSupported ? host.environmentId : null,
+  );
   const refresh = inbox.refresh;
   useRefreshOnReconnect(host.connected, refresh);
   useRefreshWhenBotsChangesPruned(changes, refresh);
@@ -321,5 +337,5 @@ export function useBotsAttentionCount() {
     findRun: noRun,
     bot: null,
   }).filter((item) => item.kind === "waiting").length;
-  return (page === null ? 0 : inboxNeedsPersonCount(page)) + waitingOnly;
+  return authoritative ?? (page === null ? 0 : inboxNeedsPersonCount(page)) + waitingOnly;
 }

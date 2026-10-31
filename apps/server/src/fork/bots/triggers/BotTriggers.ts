@@ -45,10 +45,12 @@ import {
   verifyWebhookSignature,
 } from "../../../scheduledTasks/webhookVerification.ts";
 import { BotBatches } from "../BotBatches.ts";
+import { makeBotOperationState } from "../BotOperationState.ts";
 import { BotPipelines } from "../pipelines/BotPipelines.ts";
 import { isoAt } from "../BotBudgets.ts";
 import { BotsService, outranks, type BotCaller } from "../BotsService.ts";
 import { makeBotTriggersStore, type StoredTrigger } from "./BotTriggersStore.ts";
+import type { TriggerDispatch } from "./dispatch.ts";
 import { eventPasses, type TriggerEvent } from "./matchers.ts";
 import { firstFireAt } from "./scheduleStep.ts";
 import { makeWebhookFieldReader, webhookEventKey } from "./webhookFields.ts";
@@ -56,8 +58,6 @@ import { makeWebhookFieldReader, webhookEventKey } from "./webhookFields.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Accepted deliveries per trigger per minute, the scheduled task limit. */
 const WEBHOOK_RATE_LIMIT_PER_MINUTE = 60;
-/** A firing row's reason until its outcome is written, so a crash in between explains itself. */
-const INTERRUPTED = "The server stopped before this firing finished.";
 const BATCH_NEEDS_LATEST =
   "A batch runs the bot's latest version; pin this trigger to it or let it follow the latest.";
 const BOTH_FOLLOWS = "A trigger follows either the latest or the stable version, not both.";
@@ -122,6 +122,7 @@ interface Outcome {
 
 export const make = Effect.gen(function* () {
   const store = yield* makeBotTriggersStore;
+  const operation = yield* makeBotOperationState;
   const bots = yield* BotsService;
   const batches = yield* BotBatches;
   const pipelines = yield* BotPipelines;
@@ -314,6 +315,9 @@ export const make = Effect.gen(function* () {
       id: existing?.trigger.id ?? `trg_${hex(yield* randomUuidV4).slice(0, 20)}`,
       botId: input.botId,
       name: input.name,
+      ...(input.completionDestinationId === undefined
+        ? {}
+        : { completionDestinationId: input.completionDestinationId }),
       ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
       event: input.event,
       mapping: input.mapping,
@@ -421,29 +425,41 @@ export const make = Effect.gen(function* () {
       .pipe(Effect.catch(storageError));
   });
 
-  /** Starts the run, or records why not as a failed run that reaches the inbox. */
-  const decide = Effect.fnUntraced(function* (
+  const prepareDispatch = Effect.fn("BotTriggers.prepareDispatch")(function* (
     stored: StoredTrigger,
     event: TriggerEvent,
     test: boolean,
     nowMs: number,
-  ): Effect.fn.Return<Outcome, BotsError> {
+    requestId: string,
+  ): Effect.fn.Return<TriggerDispatch | Outcome, BotsError> {
+    const allowed = yield* operation.checkAdmission(true).pipe(Effect.result);
+    if (allowed._tag === "Failure") {
+      if (allowed.failure.reason === "storage") return yield* allowed.failure;
+      return { outcome: "skipped", runId: null, reason: allowed.failure.message };
+    }
     const { trigger } = stored;
     const executionProjectId = trigger.projectId ?? event.projectId;
-    const bot = yield* bots.get(trigger.botId).pipe(Effect.option);
-    if (bot._tag === "None")
-      return { outcome: "skipped", runId: null, reason: "The bot was deleted." };
-    // A version that cannot run still names the bot on the skipped run it records.
+    const bot = yield* bots.get(trigger.botId).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "not_found",
+        () => Effect.succeed(null),
+      ),
+    );
+    if (bot === null) return { outcome: "skipped", runId: null, reason: "The bot was deleted." };
     const pinned = yield* bots.definitionAt(trigger.botId, versionRun(trigger)).pipe(
       Effect.map((definition) => ({ definition, problem: null })),
-      Effect.catch((error) => Effect.succeed({ definition: bot.value, problem: error.message })),
+      Effect.catchIf(
+        (error) => error.reason !== "storage",
+        (error) => Effect.succeed({ definition: bot, problem: error.message }),
+      ),
     );
     const { definition } = pinned;
-    const caller: BotCaller = {
+    const caller = {
       actor: trigger.createdBy,
       threadId: null,
       projectId: executionProjectId ?? null,
       runtimeMode: stored.creatorRuntimeMode,
+      requestScope: `trigger:${trigger.id}`,
     };
     const checkout =
       event.threadId !== undefined &&
@@ -452,14 +468,17 @@ export const make = Effect.gen(function* () {
     const input: BotsRunInput = {
       botId: definition.id,
       inputs: mapInputs(trigger.mapping, event.fields),
+      clientRequestId: requestId,
+      ...(trigger.completionDestinationId === undefined
+        ? {}
+        : { completionDestinationId: trigger.completionDestinationId }),
       ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
       ...(checkout ? { checkoutThreadId: event.threadId } : {}),
     };
-    const skip = (reason: string) =>
-      bots.recordUnstarted(definition, input, caller, reason, { triggerId: trigger.id }).pipe(
-        Effect.map((run): Outcome => ({ outcome: "skipped", runId: run.id, reason })),
-        Effect.orElseSucceed((): Outcome => ({ outcome: "skipped", runId: null, reason })),
-      );
+    const base = { definition, input, caller };
+    const skip = (reason: string): TriggerDispatch => ({ ...base, job: { _tag: "skip", reason } });
+    const refuse = (error: BotsError) =>
+      error.reason === "storage" ? Effect.fail(error) : Effect.succeed(skip(error.message));
 
     if (!test) {
       const window = yield* store
@@ -469,123 +488,218 @@ export const make = Effect.gen(function* () {
         window.lastRunAt !== null &&
         nowMs - Date.parse(window.lastRunAt) < trigger.cooldownMinutes * 60_000
       )
-        return yield* skip(
+        return skip(
           `Fired within ${trigger.cooldownMinutes} minute${trigger.cooldownMinutes === 1 ? "" : "s"} of its last run.`,
         );
       if (window.count >= trigger.dailyLimit)
-        return yield* skip(
+        return skip(
           `Already started ${trigger.dailyLimit} run${trigger.dailyLimit === 1 ? "" : "s"} in the last 24 hours.`,
         );
     }
-    // The pipeline pins its own steps' bots, so the trigger's version does not apply.
     if (trigger.pipelineId != null) {
-      if (event.items !== undefined) return yield* skip(PIPELINE_PER_FILE);
-      return yield* pipelines
-        .run(
-          {
-            pipelineId: trigger.pipelineId,
-            inputs: input.inputs,
-            ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
-            ...(event.threadId === undefined ? {} : { checkoutThreadId: event.threadId }),
+      if (event.items !== undefined) return skip(PIPELINE_PER_FILE);
+      return yield* Effect.gen(function* () {
+        const pipeline = yield* pipelines.get(trigger.pipelineId!);
+        yield* pipelines.checkRunnable(pipeline.id, caller);
+        const botVersions: Record<string, number> = {};
+        for (const step of pipeline.steps)
+          botVersions[step.id] = (yield* bots.definitionAt(
+            step.botId,
+            step.version ?? "latest",
+          )).version;
+        return {
+          ...base,
+          job: {
+            _tag: "pipeline",
+            version: pipeline.version,
+            botVersions,
+            input: {
+              pipelineId: pipeline.id,
+              inputs: input.inputs,
+              clientRequestId: requestId,
+              ...(trigger.completionDestinationId === undefined
+                ? {}
+                : { completionDestinationId: trigger.completionDestinationId }),
+              ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
+              ...(event.threadId === undefined ? {} : { checkoutThreadId: event.threadId }),
+            },
           },
-          caller,
-          { triggerId: trigger.id },
-        )
-        .pipe(
-          Effect.map((run): Outcome => ({
-            outcome: "run",
-            runId: null,
-            pipelineRunId: run.id,
-            reason: "Started a pipeline run.",
-          })),
-          Effect.catch((error) => skip(error.message)),
-        );
+        } satisfies TriggerDispatch;
+      }).pipe(Effect.catch(refuse));
     }
-
-    if (pinned.problem !== null) return yield* skip(pinned.problem);
-    const runnable = yield* bots.checkRunnable(definition, caller).pipe(Effect.flip, Effect.option);
-    if (runnable._tag === "Some") return yield* skip(runnable.value.message);
+    if (pinned.problem !== null) return skip(pinned.problem);
+    const checked = yield* bots.checkRunnable(definition, caller).pipe(Effect.result);
+    if (checked._tag === "Failure") return yield* refuse(checked.failure);
 
     if (event.items !== undefined) {
-      if (event.items.length === 0) return yield* skip("The report listed no conflicting files.");
-      if (definition.version !== bot.value.version) return yield* skip(BATCH_NEEDS_LATEST);
-      return yield* batches
-        .runBatch(
-          {
+      if (event.items.length === 0) return skip("The report listed no conflicting files.");
+      if (definition.version !== bot.version) return skip(BATCH_NEEDS_LATEST);
+      return {
+        ...base,
+        job: {
+          _tag: "batch",
+          input: {
             botId: definition.id,
+            clientRequestId: requestId,
+            ...(trigger.completionDestinationId === undefined
+              ? {}
+              : { completionDestinationId: trigger.completionDestinationId }),
             source: {
               type: "inputs",
               items: event.items.map((fields) => mapInputs(trigger.mapping, fields)),
             },
             ...(executionProjectId === undefined ? {} : { projectId: executionProjectId }),
           },
-          caller,
-          { triggerId: trigger.id },
-        )
-        .pipe(
-          Effect.map((batch): Outcome => ({
-            outcome: "run",
-            runId: null,
-            batchId: batch.id,
-            reason: `Started a batch of ${batch.total} file${batch.total === 1 ? "" : "s"}.`,
-          })),
-          Effect.catch((error) => skip(error.message)),
-        );
+        },
+      };
     }
-
-    return yield* bots.startRunWith(definition, input, caller, { triggerId: trigger.id }).pipe(
-      Effect.map((run): Outcome =>
-        run.status === "failed" && run.startedAt === null
-          ? { outcome: "skipped", runId: run.id, reason: run.error }
-          : { outcome: "run", runId: run.id, reason: null },
-      ),
-      // Budget refusals and archived bots come back as errors; the firing still shows why.
-      Effect.catch((error) =>
-        error.reason === "not_found"
-          ? Effect.succeed<Outcome>({ outcome: "skipped", runId: null, reason: error.message })
-          : skip(error.message),
-      ),
-    );
+    return { ...base, job: { _tag: "run" } };
   });
 
-  /**
-   * Fires `stored` for `event` once per event key. Returns null when this key already fired.
-   * The firing row is written first, so a crash mid-firing never starts a second run.
-   */
+  const dispatch = Effect.fn("BotTriggers.dispatch")(function* (
+    firing: BotTriggerFiring,
+    pending: TriggerDispatch,
+  ): Effect.fn.Return<Outcome, BotsError> {
+    const { definition, input, caller, job } = pending;
+    const options = { triggerId: firing.triggerId };
+    const skip = (reason: string) =>
+      bots.recordUnstarted(definition, input, caller, reason, options).pipe(
+        Effect.map((run): Outcome => ({ outcome: "skipped", runId: run.id, reason })),
+        Effect.catchIf(
+          (error) => error.reason !== "storage",
+          () => Effect.succeed<Outcome>({ outcome: "skipped", runId: null, reason }),
+        ),
+      );
+    const refuse = (error: BotsError) =>
+      error.reason === "storage" ? Effect.fail(error) : skip(error.message);
+    switch (job._tag) {
+      case "skip":
+        return yield* skip(job.reason);
+      case "pipeline":
+        return yield* pipelines
+          .run(job.input, caller, {
+            ...options,
+            expectedVersion: job.version,
+            expectedBotVersions: job.botVersions,
+          })
+          .pipe(
+            Effect.map((run): Outcome => ({
+              outcome: "run",
+              runId: null,
+              pipelineRunId: run.id,
+              reason: "Started a pipeline run.",
+            })),
+            Effect.catch(refuse),
+          );
+      case "batch":
+        return yield* batches
+          .runBatch(job.input, caller, {
+            ...options,
+            expectedVersion: definition.version,
+          })
+          .pipe(
+            Effect.map((batch): Outcome => ({
+              outcome: "run",
+              runId: null,
+              batchId: batch.id,
+              reason: `Started a batch of ${batch.total} file${batch.total === 1 ? "" : "s"}.`,
+            })),
+            Effect.catch(refuse),
+          );
+      case "run":
+        return yield* bots.startRunWith(definition, input, caller, options).pipe(
+          Effect.map((run): Outcome =>
+            run.status === "failed" && run.startedAt === null
+              ? { outcome: "skipped", runId: run.id, reason: run.error }
+              : { outcome: "run", runId: run.id, reason: null },
+          ),
+          Effect.catch(refuse),
+        );
+    }
+  });
+
+  const completeFiring = Effect.fn("BotTriggers.completeFiring")(function* (
+    firing: BotTriggerFiring,
+  ) {
+    yield* store
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* store.updateFiring(firing);
+          yield* store.setLastFired(firing.triggerId, firing.firedAt);
+        }),
+      )
+      .pipe(Effect.catch(storageError));
+    yield* store.pruneFirings(firing.triggerId).pipe(Effect.ignore({ log: true }));
+    const current = cache.get(firing.triggerId);
+    if (current !== undefined) {
+      const lastFiredAt =
+        current.trigger.lastFiredAt !== null && current.trigger.lastFiredAt > firing.firedAt
+          ? current.trigger.lastFiredAt
+          : firing.firedAt;
+      const updated = { ...current, trigger: { ...current.trigger, lastFiredAt } };
+      cache.set(firing.triggerId, updated);
+      yield* publish({ _tag: "trigger", trigger: yield* view(updated) });
+    }
+    yield* publish({ _tag: "firing", firing });
+    return firing;
+  });
+
+  const resumeFiring = Effect.fn("BotTriggers.resumeFiring")(function* (pending: {
+    readonly firing: BotTriggerFiring;
+    readonly dispatch: TriggerDispatch;
+  }) {
+    const outcome = yield* dispatch(pending.firing, pending.dispatch);
+    return yield* completeFiring({ ...pending.firing, ...outcome });
+  });
+
   const fireStored = Effect.fn("BotTriggers.fireStored")(
     function* (stored: StoredTrigger, event: TriggerEvent, test: boolean) {
-      const { trigger } = stored;
-      const firedAt = yield* nowIso;
+      const existing = yield* store
+        .getFiring(stored.trigger.id, event.key)
+        .pipe(Effect.catch(storageError));
+      if (existing !== null)
+        return existing.dispatch === null
+          ? null
+          : yield* resumeFiring({ ...existing, dispatch: existing.dispatch });
       const pending: BotTriggerFiring = {
         id: yield* randomUuidV4,
-        triggerId: trigger.id,
+        triggerId: stored.trigger.id,
         eventKey: event.key,
         eventSummary: event.summary,
-        firedAt,
-        outcome: "skipped",
+        firedAt: yield* nowIso,
+        outcome: "pending",
         runId: null,
-        reason: INTERRUPTED,
+        reason: null,
       };
-      const inserted = yield* store.insertFiring(pending).pipe(Effect.catch(storageError));
-      if (!inserted) return null;
-      const outcome = yield* decide(stored, event, test, Date.parse(firedAt));
-      const firing: BotTriggerFiring = { ...pending, ...outcome };
-      yield* store.updateFiring(firing).pipe(Effect.catch(storageError));
-      yield* store.setLastFired(trigger.id, firedAt).pipe(Effect.catch(storageError));
-      yield* store.pruneFirings(trigger.id).pipe(Effect.ignore({ log: true }));
-      const current = cache.get(trigger.id);
-      if (current !== undefined) {
-        const updated = { ...current, trigger: { ...current.trigger, lastFiredAt: firedAt } };
-        cache.set(trigger.id, updated);
-        yield* publish({ _tag: "trigger", trigger: yield* view(updated) });
+      const prepared = yield* prepareDispatch(
+        stored,
+        event,
+        test,
+        Date.parse(pending.firedAt),
+        `bot-trigger:${pending.id}`,
+      );
+      if (!("job" in prepared)) {
+        const firing = { ...pending, ...prepared };
+        if (!(yield* store.insertFiring(firing).pipe(Effect.catch(storageError)))) return null;
+        return yield* completeFiring(firing);
       }
-      yield* publish({ _tag: "firing", firing });
-      return firing;
+      if (!(yield* store.insertFiring(pending, prepared).pipe(Effect.catch(storageError))))
+        return null;
+      yield* publish({ _tag: "firing", firing: pending });
+      return yield* resumeFiring({ firing: pending, dispatch: prepared });
     },
     (effect) => fireLock.withPermits(1)(effect),
   );
 
-  /** Fires every enabled trigger whose event and filters match. Used by the event reactor. */
+  const recoverPending = Effect.fn("BotTriggers.recoverPending")(
+    function* () {
+      const pending = yield* store.pendingFirings().pipe(Effect.catch(storageError));
+      for (const firing of pending) yield* resumeFiring(firing);
+    },
+    (effect) => fireLock.withPermits(1)(effect),
+  );
+
+  /** Cursor acknowledgement waits for durable outcomes from every matching trigger. */
   const handleEvent = Effect.fn("BotTriggers.handleEvent")(function* (event: TriggerEvent) {
     for (const stored of cache.values())
       if (
@@ -593,9 +707,7 @@ export const make = Effect.gen(function* () {
         stored.trigger.event.kind !== "merge-conflict" &&
         eventPasses(stored.trigger, event)
       )
-        yield* fireStored(stored, event, false).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("Bot trigger firing failed", { cause })),
-        );
+        yield* fireStored(stored, event, false);
   });
 
   /** Fires a trigger with sample fields, past its filters, dedupe and limits. */
@@ -746,12 +858,9 @@ export const make = Effect.gen(function* () {
   ) {
     const stored = cache.get(triggerId);
     if (stored === undefined) return;
-    yield* store.setNextFire(triggerId, next).pipe(Effect.catch(storageError));
-    const updated = { ...stored, trigger: { ...stored.trigger, nextFireAt: next } };
-    cache.set(triggerId, updated);
     if (dueAt !== null)
       yield* fireStored(
-        updated,
+        stored,
         {
           kind: "schedule",
           key: `schedule:${dueAt}`,
@@ -760,7 +869,12 @@ export const make = Effect.gen(function* () {
         },
         false,
       );
-    else yield* publish({ _tag: "trigger", trigger: yield* view(updated) });
+    yield* store.setNextFire(triggerId, next).pipe(Effect.catch(storageError));
+    const current = cache.get(triggerId);
+    if (current === undefined) return;
+    const updated = { ...current, trigger: { ...current.trigger, nextFireAt: next } };
+    cache.set(triggerId, updated);
+    yield* publish({ _tag: "trigger", trigger: yield* view(updated) });
   });
 
   /** A deleted bot takes its triggers with it. */
@@ -790,8 +904,14 @@ export const make = Effect.gen(function* () {
       ? Effect.void
       : removePipelineTriggers((pipelineId) => pipelineId === change.pipelineId);
 
-  yield* bots.changes.pipe(Stream.runForEach(onBotsChange), Effect.forkIn(serviceScope));
-  yield* pipelines.changes.pipe(Stream.runForEach(onPipelinesChange), Effect.forkIn(serviceScope));
+  yield* bots.changes.pipe(
+    Stream.runForEach(onBotsChange),
+    Effect.forkIn(serviceScope, { startImmediately: true }),
+  );
+  yield* pipelines.changes.pipe(
+    Stream.runForEach(onPipelinesChange),
+    Effect.forkIn(serviceScope, { startImmediately: true }),
+  );
   // Triggers left by a pipeline deleted before its cleanup ran.
   yield* Effect.filter(
     new Set(
@@ -805,6 +925,12 @@ export const make = Effect.gen(function* () {
     Effect.catchCause((cause) => Effect.logWarning("Bot trigger cleanup failed", { cause })),
   );
 
+  yield* recoverPending().pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Bot trigger dispatch recovery failed", { cause }),
+    ),
+  );
+
   return {
     list,
     get: (triggerId: string) => requireStored(triggerId).pipe(Effect.flatMap(view)),
@@ -816,6 +942,7 @@ export const make = Effect.gen(function* () {
     test,
     firings,
     handleEvent,
+    recoverPending,
     webhook,
     scheduled,
     advanceSchedule,

@@ -20,6 +20,7 @@ import {
   needsProject,
   newParameterDraft,
   pipelineDraft,
+  pipelineCopyDraft,
   pipelineInputFromDraft,
   type BotParameterDraft,
   type PipelineDraft,
@@ -262,6 +263,7 @@ function PipelineBuilder({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [templateSource, setTemplateSource] = useState<string | null>(null);
   // The id readers point at for each step and input. It trails a half-typed id that collides
   // with another, so references never merge into the other step's while someone types.
   const stepRefIds = useRef(new Map<string, string>());
@@ -595,6 +597,42 @@ function PipelineBuilder({
       <p aria-live="polite" className="sr-only">
         {announcement}
       </p>
+      {isNew && !dirty && pipelines.length > 0 ? (
+        <div className="flex max-w-3xl flex-col items-start gap-2">
+          <Menu>
+            <MenuTrigger
+              render={<Button variant="outline" size="sm" />}
+              disabled={saving || !access.canSavePipelines}
+            >
+              Start from a saved workflow
+            </MenuTrigger>
+            <MenuPopup>
+              {pipelines.map((pipeline) => (
+                <MenuItem
+                  key={pipeline.id}
+                  onClick={() => {
+                    setDraft(pipelineCopyDraft(pipeline, takenIds));
+                    setIdEdited(true);
+                    setTemplateSource(`${pipeline.name} v${pipeline.version}`);
+                  }}
+                >
+                  {pipeline.name} v{pipeline.version}
+                </MenuItem>
+              ))}
+            </MenuPopup>
+          </Menu>
+          <p className="text-sm text-muted-foreground">
+            Use a saved recipe or pipeline as an unsaved copy. Review the bots, inputs and stop
+            conditions, then check and save it. Schedules stay separate.
+          </p>
+        </div>
+      ) : null}
+      {templateSource ? (
+        <LibraryNotice icon={WorkflowIcon}>
+          Draft copied from {templateSource}. Review all steps and check the pipeline before saving.
+          This does not start runs or enable triggers.
+        </LibraryNotice>
+      ) : null}
       <header className="flex items-start gap-4">
         <PipelineTile pipelineId={id} size="xl" neutral={id === ""} />
         <div className="grid max-w-2xl min-w-0 flex-1 gap-2">

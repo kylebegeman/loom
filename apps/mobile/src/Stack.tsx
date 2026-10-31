@@ -9,6 +9,7 @@ import { BotTriggersRouteScreen } from "./fork/bots/BotTriggersScreen";
 import { BotPipelinesRouteScreen } from "./fork/bots/BotPipelinesScreen";
 import { BotHistoryRouteScreen, BotsReplayRouteScreen } from "./fork/bots/BotHistoryScreen";
 import { BotsUsageRouteScreen } from "./fork/bots/BotsUsageScreen";
+import { BotCompletionsRouteScreen } from "./fork/bots/BotCompletionsScreen";
 import { BotsComputersRouteScreen } from "./fork/bots/BotsComputersScreen";
 import { SitesRouteScreen } from "./fork/sites/SitesScreen";
 import { PreviewLinksRouteScreen } from "./fork/preview-links/PreviewLinksScreen"; // fork: preview-links
@@ -712,6 +713,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     BotsUsage: createNativeStackScreen({
       screen: BotsUsageRouteScreen,
       linking: "bots/:environmentId/usage",
+      options: SETTINGS_PAGE_OPTIONS,
+    }),
+    BotsCompletions: createNativeStackScreen({
+      screen: BotCompletionsRouteScreen,
+      linking: "bots/:environmentId/completions",
       options: SETTINGS_PAGE_OPTIONS,
     }),
     BotsComputers: createNativeStackScreen({

@@ -191,6 +191,24 @@ describe("triageItems", () => {
     expect(waiting?.botName).toBe("Writer");
     expect(waiting?.reason).toBe("question");
     expect(waiting?.at).toBe("2026-10-20T11:00:00.000Z");
+    const listedWaiting = triageRunItem(
+      makeBotRun("awaiting", {
+        status: "running",
+        attention: {
+          kind: "approval",
+          requestId: "approval-1",
+          since: "2026-10-20T11:00:00.000Z",
+          timeoutPolicy: "wall-clock",
+        },
+      }),
+    );
+    expect(listedWaiting).toMatchObject({
+      group: "waiting",
+      reason: "approval",
+      at: "2026-10-20T11:00:00.000Z",
+    });
+    expect(triageVerb(listedWaiting, { dismissed: false, botState: "active" })).toBe("answer");
+    expect(dismissibleRuns([listedWaiting])).toEqual([]);
   });
 
   it("falls back to the thread's title and last activity before the run loads", () => {

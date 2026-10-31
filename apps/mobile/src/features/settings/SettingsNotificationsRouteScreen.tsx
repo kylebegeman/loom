@@ -44,6 +44,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { resolveAgentAwarenessPlatformPresentation } from "./SettingsRouteScreen.logic";
+import { BotBadgeSettings } from "../../fork/bots/BotBadgeSettings";
 import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
@@ -91,7 +92,12 @@ function useDeviceRegistered(): boolean {
 }
 
 export function SettingsNotificationsRouteScreen() {
-  if (!hasCloudPublicConfig() && LibraryPush.isSupported()) return <LibraryPush.Screen />; // fork: library-push
+  if (!hasCloudPublicConfig() && LibraryPush.isSupported())
+    return (
+      <LibraryPush.Screen>
+        <BotBadgeSettings />
+      </LibraryPush.Screen>
+    ); // fork: library-push
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsScreen title="Notifications">
@@ -100,8 +106,9 @@ export function SettingsNotificationsRouteScreen() {
           contentContainerClassName="px-5 pt-4"
         >
           <Text className="text-base text-foreground-muted">
-            Notifications require T3 Connect in this app build.
+            Push notifications are unavailable in this app build.
           </Text>
+          <BotBadgeSettings />
         </ScrollView>
       </SettingsScreen>
     );
@@ -473,6 +480,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
         </SettingsSection>
         {/* fork: library-push */}
         <LibraryPush.Section />
+        <BotBadgeSettings />
       </ScrollView>
     </SettingsScreen>
   );

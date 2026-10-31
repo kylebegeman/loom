@@ -51,6 +51,7 @@ vi.mock("@t3tools/client-runtime/fork", async () => {
     supportsLoomFeature: () => state.supported,
     secretSaveTarget,
     VAULT_SEARCH_DEBOUNCE_MS: 250,
+    VAULT_KIND_LABELS: { account: "Account", secret: "Secret" },
   };
 });
 vi.mock("~/state/queries", () => ({ useDebouncedValue: (value: string) => value }));
@@ -239,10 +240,19 @@ function clickButton(label: string) {
       .click();
   });
 }
+function clickRadio(label: string) {
+  act(() => {
+    Array.from(container.querySelectorAll("label"))
+      .find((element) => element.textContent?.startsWith(label))!
+      .click();
+  });
+}
 it("replaces the matching item's current version and preserves its kind", async () => {
   showMatches([matchedItem]);
   fillSecret();
   act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  clickRadio("Create new item");
+  clickRadio("Update existing item");
   await submit();
   expect(state.save).toHaveBeenCalledOnce();
   expect(state.save.mock.calls[0]?.[0]).toMatchObject({
@@ -260,7 +270,7 @@ it("saves as a new secret when the human declines replacing the matching item", 
   showMatches([matchedItem]);
   fillSecret();
   act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
-  clickButton("Save as new");
+  clickRadio("Create new item");
   await submit();
   const input = state.save.mock.calls[0]?.[0].input;
   expect(input).toMatchObject({

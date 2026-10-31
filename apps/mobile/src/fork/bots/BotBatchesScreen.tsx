@@ -1,3 +1,6 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { uuidv4 } from "../../lib/uuid";
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletionsScreen";
 import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -133,9 +136,11 @@ function BatchForm({
     refresh: true,
   });
   const runBatch = useAtomCommand(bots.runBatch, { reportFailure: false });
+  const [identify] = useState(() => makeBotRequestIdentity(uuidv4));
   const update = (patch: Partial<BatchSourceDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
   const { input, invalid } = batchFormInput(bot, draft, destination, itemParameter, values);
+  const completion = useBotCompletionSelection(environmentId, input?.projectId ?? null);
   const inputKey = JSON.stringify(input);
   const shown = preview?.inputKey === inputKey ? preview.data : null;
   const canRun = allowed && capabilities.connected && bot.archivedAt === null;
@@ -154,15 +159,16 @@ function BatchForm({
     if (active.current) setBusy(false);
   };
   const submit = async () => {
-    if (!input || !ready || busy || !canRun) return;
+    if (!input || !ready || busy || !canRun || !completion.valid) return;
     setBusy(true);
     setError(null);
     await runBatch({
       environmentId,
-      input: {
+      input: identify({
         ...input,
+        ...(completion.destinationId ? { completionDestinationId: completion.destinationId } : {}),
         ...(destination.target.type === "here" ? {} : { target: destination.target }),
-      },
+      }),
     })
       .then((result) => {
         if (active.current) onStarted(commandValue(result));
@@ -243,6 +249,7 @@ function BatchForm({
           destination={destination}
           disabled={busy}
         />
+        <BotCompletionField selection={completion} disabled={busy} />
         {bot.parameters.length > 1 ? (
           <RunChoice
             label="Each item fills"

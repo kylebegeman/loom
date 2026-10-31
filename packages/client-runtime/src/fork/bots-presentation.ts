@@ -3,14 +3,16 @@ import type {
   BotDefinition,
   BotPipelineRunStatus,
   BotRunStatus,
+  BotRun,
+  BotTriggerFiring,
+  BotCompletionDelivery,
   BotVerdictValue,
   LibraryProjectColor,
 } from "@t3tools/contracts/fork";
 import { libraryProjectColor } from "./library-project.ts";
 import type { LibraryWorkflowTone } from "./library-workflows.ts";
 
-// Restore navigation when the Grok and connected model bot redesign is ready.
-export const BOTS_NAVIGATION_VISIBLE = false;
+export const BOTS_NAVIGATION_VISIBLE = true;
 
 type Presentation = { readonly label: string; readonly tone: LibraryWorkflowTone };
 
@@ -21,6 +23,38 @@ export const BOT_RUN_STATES: Record<BotRunStatus, Presentation> = {
   failed: { label: "Failed", tone: "danger" },
   cancelled: { label: "Cancelled", tone: "neutral" },
   timed_out: { label: "Timed out", tone: "warning" },
+};
+
+export const BOT_RUN_ATTENTION_STATES: Record<
+  NonNullable<BotRun["attention"]>["kind"],
+  Presentation
+> = {
+  approval: { label: "Needs approval", tone: "warning" },
+  question: { label: "Has a question", tone: "warning" },
+};
+
+export const GROK_ROUTINE_GUIDE = "https://docs.x.ai/grok-bot/skills-routines-and-automations";
+
+export function botCompletionDeliveryLabel(delivery: BotCompletionDelivery): string {
+  if (delivery.status === "acknowledged")
+    return delivery.receiverOutcome === "failed"
+      ? "Grok outcome: failed"
+      : "Grok outcome: completed";
+  return {
+    pending: "Pending delivery",
+    retrying: "Retrying delivery",
+    sending: "Sending",
+    accepted: "Grok routine accepted",
+    failed: "Delivery failed",
+    needs_attention: "Outcome unknown, needs attention",
+    cancelled: "Delivery cancelled",
+  }[delivery.status];
+}
+
+export const BOT_TRIGGER_FIRING_STATES: Record<BotTriggerFiring["outcome"], Presentation> = {
+  pending: { label: "Pending dispatch", tone: "warning" },
+  run: { label: "Ran", tone: "success" },
+  skipped: { label: "Skipped", tone: "neutral" },
 };
 
 export const BOT_VERDICT_STATES: Record<BotVerdictValue, Presentation> = {

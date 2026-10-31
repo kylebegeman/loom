@@ -1,6 +1,7 @@
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletionsScreen";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
   type BotDefinition,
@@ -59,6 +60,17 @@ export function BotTriggerEditor({
       : triggerDraftFrom(bot, trigger, pipelineOf(trigger.pipelineId) ?? bot),
   );
   const target = pipelineOf(draft.pipelineId) ?? bot;
+  const completionProjectId = draft.projectId
+    ? (draft.projectId as ProjectId)
+    : draft.pipelineId === "" && bot.workspace.type === "project"
+      ? (bot.workspace.projectId ?? bot.scopeProjectId)
+      : null;
+  const completion = useBotCompletionSelection(
+    environmentId,
+    completionProjectId,
+    trigger?.completionDestinationId ?? "",
+  );
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = useAtomCommand(bots.saveTrigger, { reportFailure: false });
@@ -76,14 +88,20 @@ export function BotTriggerEditor({
     draft.kind === "pull-request-checks-failing" || draft.kind === "pull-request-opened";
   const built = triggerInputFromDraft(bot, draft, trigger, target);
   const submit = async () => {
-    if (busy || !canSave) return;
+    if (busy || !canSave || !completion.valid) return;
     if ("error" in built) {
       setError(built.error);
       return;
     }
     setBusy(true);
     setError(null);
-    await save({ environmentId, input: built.input })
+    await save({
+      environmentId,
+      input: {
+        ...built.input,
+        ...(completion.destinationId ? { completionDestinationId: completion.destinationId } : {}),
+      },
+    })
       .then((result) => {
         const saved = commandValue(result);
         if (active.current) onSaved(saved);
@@ -410,6 +428,11 @@ export function BotTriggerEditor({
               onChange={(follow) => update({ follow })}
             />
           ) : null}
+          <BotCompletionField selection={completion} disabled={busy} />
+          <Text className="text-xs text-foreground-muted">
+            Each firing uses this completion destination. Let Loom or Grok own the schedule, so it
+            is not scheduled twice.
+          </Text>
           <BotToggle
             label="Trigger enabled"
             value={draft.enabled}
@@ -427,7 +450,7 @@ export function BotTriggerEditor({
             <Button
               label={busy ? "Saving…" : "Save trigger"}
               tone="primary"
-              disabled={busy || !canSave}
+              disabled={busy || !canSave || !completion.valid}
               onPress={() => void submit()}
             />
             <Button label="Cancel" disabled={busy} onPress={onClose} />

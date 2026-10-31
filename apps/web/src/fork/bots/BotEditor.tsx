@@ -22,6 +22,7 @@ import {
   type BotDefinition,
   type BotDefinitionInput,
   type BotDraftResult,
+  type BotImportedDraft,
   type BotStarterStatus,
 } from "@t3tools/contracts/fork";
 import {
@@ -68,6 +69,7 @@ import {
 import { LibraryEditorBar, useUnsavedChangesGuard } from "../project-library/LibraryEditor";
 import { readinessText } from "./BotAnywhere";
 import { BotTile, StarterBadge } from "./BotIdentity";
+import { BotCreationStart } from "./BotCreationStart";
 import { BotModelPicker, useBotModelChoices } from "./BotModelPicker";
 import { ConfirmDialog, ReplayLaunchDialog, useLatestReplayId } from "./BotReplay";
 import { BotBudgetMeter } from "./BotsUsage";
@@ -798,11 +800,13 @@ export function BotEditorForm({
   environmentId,
   bot,
   fromThread,
+  imported,
   suggestionId = null,
 }: {
   readonly environmentId: EnvironmentId;
   readonly bot: BotDefinition | null;
   readonly fromThread?: BotDraftResult;
+  readonly imported?: BotImportedDraft;
   readonly suggestionId?: string | null;
 }) {
   const nav = useBotsNavigation();
@@ -820,7 +824,13 @@ export function BotEditorForm({
   );
 
   const [start] = useState(() =>
-    bot ? botDraft(bot) : fromThread ? botDraft(fromThread.draft) : emptyBotDraft(null),
+    bot
+      ? botDraft(bot)
+      : fromThread
+        ? botDraft(fromThread.draft)
+        : imported
+          ? botDraft(imported.draft)
+          : emptyBotDraft(null),
   );
   /** The saved bot the draft started from; saving expects the server to still have it. */
   const [base, setBase] = useState(bot);
@@ -829,8 +839,12 @@ export function BotEditorForm({
   /** The model's last draft, so asking again only warns about edits made since. */
   const [lastDrafted, setLastDrafted] = useState(start);
   // A drafted id is already free on the server; renaming must not trade it for a taken one.
-  const [idTouched, setIdTouched] = useState(bot !== null || fromThread !== undefined);
-  const [notes, setNotes] = useState<ReadonlyArray<string>>(fromThread?.notes ?? []);
+  const [idTouched, setIdTouched] = useState(
+    bot !== null || fromThread !== undefined || imported !== undefined,
+  );
+  const [notes, setNotes] = useState<ReadonlyArray<string>>(
+    fromThread?.notes ?? imported?.notes ?? [],
+  );
   const [refining, setRefining] = useState<string | null>(null);
   const refineAttempt = useRef(0);
   const [confirming, setConfirming] = useState<ModelWork | "starter" | null>(null);
@@ -1588,7 +1602,7 @@ export function BotEditorForm({
             <EditorField
               label="Time limit in minutes"
               htmlFor={fieldIds.timeoutMinutes}
-              hint="1 to 120. A run still going then is stopped."
+              hint="1 to 120. Includes time waiting for approval. Loom requests a stop at the limit and keeps the run active if stopping cannot be confirmed."
               problem={problemFor(fieldIds.timeoutMinutes)}
             >
               <Input
@@ -1824,6 +1838,23 @@ export function BotEditorSkeleton() {
 /** The bot editor as a full page: a new bot for `null`, else that bot. */
 export function BotEditorPage({ bot }: { readonly bot: BotDefinition | null }) {
   const { host } = useBots();
+  const [imported, setImported] = useState<BotImportedDraft | null>(null);
+  const [blank, setBlank] = useState(false);
   if (host.environmentId === null) return null;
-  return <BotEditorForm key={bot?.id ?? "new"} environmentId={host.environmentId} bot={bot} />;
+  if (bot === null && host.creationSupported && imported === null && !blank)
+    return (
+      <BotCreationStart
+        environmentId={host.environmentId}
+        onDraft={setImported}
+        onBlank={() => setBlank(true)}
+      />
+    );
+  return (
+    <BotEditorForm
+      key={bot?.id ?? imported?.draft.id ?? "new"}
+      environmentId={host.environmentId}
+      bot={bot}
+      {...(imported ? { imported } : {})}
+    />
+  );
 }

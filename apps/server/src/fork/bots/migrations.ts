@@ -228,5 +228,27 @@ export const BotsMigrations: ForkMigrationSet = {
         yield* sql`ALTER TABLE fork_bots_triggers ADD COLUMN last_delivery_refusal_json TEXT`;
       }),
     ],
+    [
+      17,
+      "DurableBotDispatch",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_bots_admissions (caller_scope TEXT NOT NULL, kind TEXT NOT NULL, request_id TEXT NOT NULL, request_hash TEXT NOT NULL, job_id TEXT NOT NULL, PRIMARY KEY (caller_scope, kind, request_id))`;
+        yield* sql`ALTER TABLE fork_bots_trigger_firings ADD COLUMN dispatch_json TEXT`;
+        yield* sql`CREATE INDEX fork_bots_trigger_pending ON fork_bots_trigger_firings (fired_at) WHERE dispatch_json IS NOT NULL`;
+        yield* sql`ALTER TABLE fork_bots_runs ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0`;
+        yield* sql`UPDATE fork_bots_runs SET notified_at = NULL WHERE notify = 1 AND delivered_at IS NULL AND notified_at IS NOT NULL AND instr(error, 'Result delivery failed:') > 0 AND instr(error, 'calling thread no longer exists') = 0 AND instr(error, 'archived') = 0`;
+      }),
+    ],
+    [
+      18,
+      "BotCompletionDestinations",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_bots_completion_destinations (id TEXT PRIMARY KEY, label TEXT NOT NULL, project_id TEXT NOT NULL, host TEXT NOT NULL, enabled INTEGER NOT NULL, fingerprint TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT)`;
+        yield* sql`CREATE TABLE fork_bots_completion_deliveries (id TEXT PRIMARY KEY, destination_id TEXT NOT NULL, kind TEXT NOT NULL, job_id TEXT NOT NULL, project_id TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, next_attempt_at TEXT NOT NULL, accepted_at TEXT, acknowledged_at TEXT, receiver_outcome TEXT, last_http_status INTEGER, reason TEXT, outcome_json TEXT, UNIQUE(kind, job_id))`;
+        yield* sql`CREATE INDEX fork_bots_completion_due ON fork_bots_completion_deliveries(status,next_attempt_at)`;
+      }),
+    ],
   ],
 };

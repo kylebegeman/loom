@@ -57,18 +57,20 @@ const TRIAGE_GROUPS: readonly TriageGroup[] = [
   "handled",
 ];
 
-type RunReason = Exclude<TriageReason, "approval" | "question">;
+type RunReason = TriageReason;
 
 const triageRunReason = (run: BotRun): RunReason =>
-  run.pipelineRunId != null
-    ? "pipeline"
-    : run.status === "failed"
-      ? "failed"
-      : run.status === "timed_out"
-        ? "timed_out"
-        : run.verdict?.source === "invalid"
-          ? "invalid"
-          : "undecided";
+  run.attention
+    ? run.attention.kind
+    : run.pipelineRunId != null
+      ? "pipeline"
+      : run.status === "failed"
+        ? "failed"
+        : run.status === "timed_out"
+          ? "timed_out"
+          : run.verdict?.source === "invalid"
+            ? "invalid"
+            : "undecided";
 
 const GROUP_OF: Record<TriageReason, TriageGroup> = {
   approval: "waiting",
@@ -117,7 +119,7 @@ export const triageRunItem = (run: BotRun): TriageItem => {
     run,
     botId: run.botId,
     botName: run.botName,
-    at: run.finishedAt ?? run.createdAt,
+    at: run.attention?.since ?? run.finishedAt ?? run.createdAt,
   };
 };
 
@@ -302,6 +304,8 @@ export const triageReasonLabel = (item: TriageItem) =>
     : REASON_LABELS[item.reason];
 
 const FALLBACK_EVIDENCE: Record<RunReason, string> = {
+  approval: "The bot needs approval. Open its thread to respond.",
+  question: "The bot has a question. Open its thread to answer.",
   failed: "No error was recorded.",
   timed_out: "It ran past its time limit.",
   undecided: "The bot could not reach a verdict.",
@@ -353,7 +357,8 @@ export const triageVerb = (
   item: TriageItem,
   options: { readonly dismissed: boolean; readonly botState: TriageBotState },
 ): TriageVerb => {
-  if (item.kind === "waiting") return "answer";
+  if (item.kind === "waiting" || item.reason === "approval" || item.reason === "question")
+    return "answer";
   if (options.dismissed) return "restore";
   switch (item.reason) {
     case "failed":

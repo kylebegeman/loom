@@ -42,6 +42,7 @@ import {
   inboxNeedsPersonCount,
   isBotTriageRun,
   makeThreadBotRunsAtom,
+  makeBotRequestIdentity,
   type BotsChanges,
   waitingBotRunThreads,
 } from "./bots.ts";
@@ -91,6 +92,32 @@ const decodeDismissInput = Schema.decodeUnknownSync(BotsDismissInput);
 const fold = (...changes: Parameters<typeof foldBotsChange>[1][]): BotsChanges =>
   changes.reduce(foldBotsChange, EMPTY_BOTS_CHANGES);
 
+describe("bot launch identity", () => {
+  it("reuses an uncertain launch identity and binds changes including its completion destination", () => {
+    let sequence = 0;
+    const identify = makeBotRequestIdentity(() => `request-${++sequence}`);
+    const first = {
+      botId: "reviewer",
+      inputs: { file: "a.ts" },
+      completionDestinationId: "grok-one",
+    };
+    const accepted = identify(first);
+    expect(
+      identify({ inputs: { file: "a.ts" }, completionDestinationId: "grok-one", botId: "reviewer" })
+        .clientRequestId,
+    ).toBe(accepted.clientRequestId);
+
+    expect(identify({ ...first }).clientRequestId).toBe(accepted.clientRequestId);
+    expect(identify({ ...first, completionDestinationId: "grok-two" }).clientRequestId).not.toBe(
+      accepted.clientRequestId,
+    );
+    expect(identify({ ...first, inputs: { file: "b.ts" } }).clientRequestId).not.toBe(
+      accepted.clientRequestId,
+    );
+    expect(identify(first).clientRequestId).toBe(accepted.clientRequestId);
+  });
+});
+
 describe("bots changes", () => {
   it("applies edits, new bots and deletions over the listed bots in name order", () => {
     const changes = fold(
@@ -138,6 +165,23 @@ describe("bots changes", () => {
     expect(status(applyRunChanges(listed, changes, { includeNew: false }))).toEqual([
       ["old", "completed"],
     ]);
+    const active = run("attention", "x", "2026-10-20T10:00:00.000Z", "running");
+    const attention = {
+      kind: "approval",
+      requestId: "approval-1",
+      since: "2026-10-20T10:01:00.000Z",
+      timeoutPolicy: "wall-clock",
+    } as const;
+    const observed = { ...active, attention };
+    expect(
+      applyRunChanges([observed], fold({ _tag: "run", run: active }), { includeNew: false })[0]
+        ?.attention,
+    ).toEqual(attention);
+    expect(
+      applyRunChanges([observed], fold({ _tag: "run", run: { ...active, status: "completed" } }), {
+        includeNew: false,
+      })[0]?.attention,
+    ).toBeUndefined();
   });
 
   it("keeps a full page to its newest runs as old runs change and new ones start", () => {
@@ -421,6 +465,24 @@ describe("bots inbox", () => {
     const inbox = applyInboxChanges(page, changes, { dismissed: false });
     expect(inbox.runs.map((entry) => entry.id)).toEqual(["r3", "r1"]);
     expect(inbox.total).toBe(5);
+    const active = run("attention", "reviewer", "2026-10-20T14:00:00.000Z", "running");
+    const observed = {
+      ...active,
+      attention: {
+        kind: "approval",
+        requestId: "approval-1",
+        since: "2026-10-20T14:01:00.000Z",
+        timeoutPolicy: "wall-clock",
+      } as const,
+    };
+    expect(
+      applyInboxChanges(
+        { runs: [observed], total: 1, hasMore: false },
+        fold({ _tag: "run", run: active }),
+        { dismissed: false },
+      ),
+    ).toMatchObject({ total: 1, runs: [{ id: "attention", attention: observed.attention }] });
+    expect(canRetryBotRun(observed)).toBe(false);
 
     const dismissed = applyInboxChanges(
       { runs: [], total: 0, hasMore: false },

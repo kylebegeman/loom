@@ -1,3 +1,6 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { randomUUID } from "~/lib/utils";
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletions";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -868,6 +871,7 @@ function RunPipelineDialog({
   const { host, bots: allBots, list: botList } = useBots();
   const access = useBotsAccess();
   const run = useAtomCommand(bots.runPipeline, { reportFailure: false });
+  const [identify] = useState(() => makeBotRequestIdentity(randomUUID));
   const { runs } = usePipelineRuns(environmentId, host.connected);
   const projects = useProjects().filter(
     (project) => project.environmentId === environmentId && !project.isScratch,
@@ -897,6 +901,20 @@ function RunPipelineDialog({
   const chosenProject =
     projects.find((project) => project.id === projectId) ??
     (pickProject && projects.length === 1 ? projects[0] : undefined);
+  const fixedCompletionProjects = [
+    ...new Set(
+      pipeline.steps.flatMap((step) => {
+        const bot = botOf(step.botId);
+        return bot?.workspace.type === "project"
+          ? (bot.workspace.projectId ?? bot.scopeProjectId ?? [])
+          : [];
+      }),
+    ),
+  ];
+  const completionProjectId =
+    chosenProject?.id ??
+    (fixedCompletionProjects.length === 1 ? fixedCompletionProjects[0]! : null);
+  const completion = useBotCompletionSelection(environmentId, completionProjectId);
   const inputErrors = runInputErrors(pipeline.parameters, values);
   const unavailable = botList.data
     ? pipeline.steps.filter((step) => {
@@ -920,7 +938,7 @@ function RunPipelineDialog({
     (pickProject && projects.length === 0);
 
   const submit = async () => {
-    if (busy || blocked) return;
+    if (busy || blocked || !completion.valid) return;
     if (Object.keys(inputErrors).length > 0 || (pickProject && chosenProject === undefined)) {
       setAttempted(true);
       return;
@@ -929,11 +947,14 @@ function RunPipelineDialog({
     setError(null);
     const result = await run({
       environmentId,
-      input: {
+      input: identify({
         pipelineId: pipeline.id,
         inputs: runInputs(pipeline, values),
+        ...(completion.destinationId && completionProjectId
+          ? { completionDestinationId: completion.destinationId, projectId: completionProjectId }
+          : {}),
         ...(pickProject && chosenProject !== undefined ? { projectId: chosenProject.id } : {}),
-      },
+      }),
     });
     setBusy(false);
     if (result._tag === "Success") {
@@ -1074,6 +1095,7 @@ function RunPipelineDialog({
           </LibraryNotice>
         ) : null}
         {runReason !== null ? <LibraryNotice icon={LockIcon}>{runReason}</LibraryNotice> : null}
+        <BotCompletionField selection={completion} disabled={busy} />
         <LibraryErrorNotice error={error} />
       </form>
     </LibraryDialog>

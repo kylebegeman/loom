@@ -6,11 +6,16 @@ import {
   BOTS_TRIGGER_WS_METHODS as BT,
   BOTS_VERSION_WS_METHODS as BV,
   BOTS_WS_METHODS as B,
+  type BotOperationMode,
+  type BotBadgePreferences,
+  type BotCompletionConfigureInput,
   type BotRemoteSettings,
   type BotVaultBinding,
   type BotsBatchInput,
   type BotsDismissSuggestionInput,
   type BotsDraftFromThreadInput,
+  type BotsDraftFromTextInput,
+  type BotsDraftFromStarterInput,
   type BotsRefineDraftInput,
   type BotsSuggestionsInput,
   type BotsDismissInput,
@@ -46,6 +51,8 @@ import { AuthOrchestrationOperateScope, type ProjectId } from "@t3tools/contract
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
+import { BotCompletions } from "./BotCompletions.ts";
+import { BotOperations } from "./BotOperations.ts";
 import { BotBatches } from "./BotBatches.ts";
 import { BotSharing } from "./BotSharing.ts";
 import { BotsService, USER_CALLER, type BotCaller } from "./BotsService.ts";
@@ -56,7 +63,31 @@ import { BotVersions } from "./versions/BotVersions.ts";
 
 export const makeBotsRpcHandlers = Effect.fn("Bots.makeRpcHandlers")(function* (auth: ForkRpcAuth) {
   const service = yield* BotsService;
+  const operations = yield* BotOperations;
+  const completions = yield* BotCompletions;
   return {
+    [B.badgePreferences]: () => auth.effect(B.badgePreferences, operations.badgePreferences()),
+    [B.setBadgePreferences]: (input: { preferences: BotBadgePreferences }) =>
+      auth.effect(B.setBadgePreferences, operations.setBadgePreferences(input.preferences)),
+    [B.badgeCount]: () => auth.effect(B.badgeCount, service.badgeCount()),
+    [B.watchBadgePreferences]: () => auth.stream(B.watchBadgePreferences, operations.badgeChanges),
+    [B.completionDestinations]: (input: Parameters<BotCompletions["Service"]["list"]>[0]) =>
+      auth.effect(B.completionDestinations, completions.list(input)),
+    [B.completionConfigure]: (input: BotCompletionConfigureInput) =>
+      auth.effect(B.completionConfigure, completions.configure(input)),
+    [B.completionSetEnabled]: (input: Parameters<BotCompletions["Service"]["setEnabled"]>[0]) =>
+      auth.effect(B.completionSetEnabled, completions.setEnabled(input)),
+    [B.completionRemove]: (input: Parameters<BotCompletions["Service"]["remove"]>[0]) =>
+      auth.effect(B.completionRemove, completions.remove(input)),
+    [B.completionDeliveries]: (input: Parameters<BotCompletions["Service"]["deliveries"]>[0]) =>
+      auth.effect(B.completionDeliveries, completions.deliveries(input)),
+    [B.completionAcknowledge]: (input: Parameters<BotCompletions["Service"]["acknowledge"]>[0]) =>
+      auth.effect(B.completionAcknowledge, completions.acknowledge(input)),
+    [B.operationState]: () => auth.effect(B.operationState, operations.state()),
+    [B.setOperationMode]: (input: { mode: BotOperationMode }) =>
+      auth.effect(B.setOperationMode, operations.setMode(input.mode)),
+    [B.stopAll]: () => auth.effect(B.stopAll, operations.stopAll()),
+    [B.watchOperations]: () => auth.stream(B.watchOperations, operations.changes),
     [B.list]: () => auth.effect(B.list, service.list().pipe(Effect.map((bots) => ({ bots })))),
     [B.save]: (input: BotsSaveInput) => auth.effect(B.save, service.save(input, USER_CALLER)),
     [B.archive]: (input: { botId: string; archived: boolean }) =>
@@ -144,6 +175,10 @@ export const makeBotDraftsRpcHandlers = Effect.fn("BotDrafts.makeRpcHandlers")(f
 ) {
   const drafts = yield* BotDrafts;
   return {
+    [BD.draftFromText]: (input: BotsDraftFromTextInput) =>
+      auth.effect(BD.draftFromText, drafts.draftFromText(input)),
+    [BD.draftFromStarter]: (input: BotsDraftFromStarterInput) =>
+      auth.effect(BD.draftFromStarter, drafts.draftFromStarter(input)),
     [BD.draftFromThread]: (input: BotsDraftFromThreadInput) =>
       auth.effect(BD.draftFromThread, drafts.draftFromThread(input.threadId)),
     [BD.refineDraft]: (input: BotsRefineDraftInput) =>

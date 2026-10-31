@@ -19,6 +19,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { toRun, type RunRow } from "./BotsStore.ts";
+import { makeBotCompletionStore, UNRESOLVED_COMPLETION_STATUSES } from "./BotCompletionStore.ts";
 
 /** Batches kept per bot; older finished batches lose their item rows, never their runs. */
 export const BATCHES_KEPT_PER_BOT = 50;
@@ -195,6 +196,7 @@ export const countItems = (items: ReadonlyArray<BotBatchItem>): BotBatchCounts =
 
 export const makeBotBatchesStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const completions = yield* makeBotCompletionStore;
 
   const runsOf = Effect.fnUntraced(function* (batchId: string) {
     const rows = yield* sql<RunRow>`SELECT * FROM fork_bots_runs WHERE batch_id = ${batchId}`;
@@ -255,7 +257,12 @@ export const makeBotBatchesStore = Effect.gen(function* () {
       finishedAt: string | null,
       note: string | null,
     ) {
-      yield* sql`UPDATE fork_bots_batches SET status = ${status}, finished_at = ${finishedAt}, note = ${note} WHERE id = ${id}`;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`UPDATE fork_bots_batches SET status = ${status}, finished_at = ${finishedAt}, note = ${note} WHERE id = ${id}`;
+          if (status !== "running") yield* completions.snapshot("batch", id);
+        }),
+      );
     }),
 
     /** A retry with the latest bot reruns that version from then on. */
@@ -332,7 +339,10 @@ export const makeBotBatchesStore = Effect.gen(function* () {
     ) {
       yield* sql.withTransaction(
         Effect.gen(function* () {
-          const stale = sql`SELECT id FROM fork_bots_batches WHERE bot_id = ${botId} AND status != 'running' AND id NOT IN (SELECT id FROM fork_bots_batches WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+          const stale = sql`SELECT id FROM fork_bots_batches WHERE bot_id = ${botId} AND status != 'running' AND NOT EXISTS (SELECT 1 FROM fork_bots_completion_deliveries notice WHERE notice.status IN ${sql.in(UNRESOLVED_COMPLETION_STATUSES)} AND (
+            (notice.kind = 'batch' AND notice.job_id = fork_bots_batches.id)
+            OR (notice.kind = 'pipeline' AND notice.job_id = fork_bots_batches.pipeline_run_id)
+          )) AND id NOT IN (SELECT id FROM fork_bots_batches WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
           yield* sql`DELETE FROM fork_bots_batch_items WHERE batch_id IN (${stale})`;
           yield* sql`DELETE FROM fork_bots_batches WHERE id IN (${stale})`;
         }),

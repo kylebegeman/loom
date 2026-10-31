@@ -82,6 +82,10 @@ import { forkParked } from "../../serverActivation.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { budgetRefusal, budgetState, BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
 import { makeBotsStore, RUNS_KEPT_PER_BOT, VERSIONS_KEPT_PER_BOT } from "./BotsStore.ts";
+import { makeBotCompletionStore } from "./BotCompletionStore.ts";
+import { makeBotAdmissions } from "./BotAdmissions.ts";
+import { makeBotBadgePreferences } from "./BotBadgePreferences.ts";
+import { makeBotOperationState } from "./BotOperationState.ts";
 import { checkParameters, renderPrompt, validateInputs, type UntrustedInputs } from "./render.ts";
 import { summarizePipelineUsage, summarizeRunUsage, summarizeUsage } from "./usage.ts";
 import { decodeVerdictReply } from "./verdict.ts";
@@ -91,6 +95,7 @@ import { changedFields } from "./versions/compare.ts";
 /** Who asked for a bot operation. */
 export interface BotCaller {
   readonly actor: BotCreator;
+  readonly requestScope?: string;
   readonly threadId: ThreadId | null;
   readonly projectId: ProjectId | null;
   /** An agent's own runtime mode; a bot may not run with a broader one. Null for people. */
@@ -128,6 +133,7 @@ export const outranks = (mode: RuntimeMode, than: RuntimeMode) =>
 
 /** After a timeout interrupt, how long to wait for the run to stop so its reply can be read. */
 const INTERRUPT_GRACE_MS = 30_000;
+const RECOVERY_RETRY_MS = 30_000;
 /** A queued run the previous server never started; a batch puts its item back to wait. */
 export const RESTARTED_BEFORE_START = "The server restarted before this run started.";
 /** Used for a recovered run whose bot was deleted meanwhile. */
@@ -159,6 +165,9 @@ interface LiveRun {
   threadRunId: RunId | null;
   /** From the version that ran, including after recovery when its version is still stored. */
   output: BotOutput;
+  pendingFinish: BotRun | null;
+  readonly finishPermit: Semaphore.Semaphore;
+  readonly timeoutMinutes: number;
 }
 
 const fail = (reason: BotsError["reason"], message: string) => new BotsError({ reason, message });
@@ -323,6 +332,10 @@ const deliveryFailure = (error: unknown) =>
 
 export const make = Effect.gen(function* () {
   const store = yield* makeBotsStore;
+  const admissions = yield* makeBotAdmissions;
+  const badgePreferences = yield* makeBotBadgePreferences;
+  const completions = yield* makeBotCompletionStore;
+  const operationState = yield* makeBotOperationState;
   const launches = yield* ThreadLaunch.ThreadLaunchService;
   const threads = yield* ThreadManagement.ThreadManagementService;
   const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
@@ -343,6 +356,8 @@ export const make = Effect.gen(function* () {
   const budgetPermit = yield* Semaphore.make(1);
   // Selection and insertion share a lock so concurrent starts reserve the same report atomically.
   const targetPermit = yield* Semaphore.make(1);
+  const admissionPermit = yield* Semaphore.make(1);
+  const remoteUpdatePermit = yield* Semaphore.make(1);
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const publish = (change: BotsChange) => PubSub.publish(changes, change).pipe(Effect.asVoid);
@@ -749,26 +764,28 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  /**
-   * Posts a finished run's result to the thread it was started from, once. The command id makes a
-   * retry after a crash replay the recorded receipt instead of posting twice. A failed delivery is
-   * noted on the run and never changes its status. Returns the run with that note.
-   */
+  /** The command receipt survives a lost acknowledgement and prevents a duplicate message. */
   const deliver = Effect.fnUntraced(function* (run: BotRun) {
     const callerThreadId = run.callerThreadId;
     if (run.notify !== true || callerThreadId === null) return run;
     const commandId = CommandId.make(`bot-run-notify:${run.id}`);
+    const originalError =
+      run.error?.replace(/(?:^|\n)Result delivery failed:[\s\S]*$/u, "") || null;
+    let permanent = false;
     const failure = yield* Effect.gen(function* () {
       if (yield* threads.hasReceipt(commandId)) return null;
       const shell = yield* threads.getThreadShell(callerThreadId);
-      if (shell === null || shell.deletedAt !== null) return "the calling thread no longer exists.";
+      if (shell === null || shell.deletedAt !== null) {
+        permanent = true;
+        return "the calling thread no longer exists.";
+      }
       yield* threads.sendToThread({
         projectId: shell.projectId,
         threadId: callerThreadId,
         commandId,
         messageId: MessageId.make(`bot-run-notify-message:${run.id}`),
         senderThreadId: run.threadId,
-        text: runResultMessage(run),
+        text: runResultMessage({ ...run, error: originalError }),
         attachments: [],
         mode: "auto",
         createdBy: "system",
@@ -776,65 +793,87 @@ export const make = Effect.gen(function* () {
       });
       return null;
     }).pipe(
-      Effect.catch((error) => Effect.succeed(deliveryFailure(error))),
+      Effect.catch((error) => {
+        permanent =
+          error._tag === "ThreadManagementThreadArchivedError" ||
+          error._tag === "ThreadManagementThreadNotFoundError";
+        return Effect.succeed(deliveryFailure(error));
+      }),
       Effect.catchDefect((defect) => Effect.succeed(errorMessage(defect))),
     );
     const error =
       failure === null
-        ? run.error
-        : [run.error, `Result delivery failed: ${failure}`].filter(Boolean).join("\n");
+        ? originalError
+        : [originalError, `Result delivery failed: ${failure}`].filter(Boolean).join("\n");
     const at = yield* nowIso;
     yield* store
-      .markNotified(run.id, at, error, failure === null)
-      .pipe(Effect.ignore({ log: true }));
-    if (failure !== null) {
-      yield* Effect.logWarning("Bot run result delivery failed", { runId: run.id, failure });
-      return { ...run, error };
-    }
-    return { ...run, error, deliveredAt: at };
+      .markNotified(run.id, at, error, failure === null, permanent)
+      .pipe(Effect.catch(storageError));
+    if (failure !== null)
+      yield* Effect.logWarning("Bot run result delivery failed", { runId: run.id, permanent });
+    return (yield* store.getRun(run.id).pipe(Effect.catch(storageError))) ?? run;
   });
 
-  /** Records a terminal state once, whichever path reaches it first. */
-  const finish = Effect.fnUntraced(function* (
-    entry: LiveRun,
-    outcome: {
-      readonly status: BotRunStatus;
-      readonly error?: string | null;
-      readonly failureClass?: OrchestrationV2ProviderFailureClass | null;
-      readonly reply?: string | null;
-      readonly usage?: BotRunUsage | null;
+  const finish = Effect.fnUntraced(
+    function* (
+      entry: LiveRun,
+      outcome: {
+        readonly status: BotRunStatus;
+        readonly error?: string | null;
+        readonly failureClass?: OrchestrationV2ProviderFailureClass | null;
+        readonly reply?: string | null;
+        readonly usage?: BotRunUsage | null;
+      },
+    ) {
+      if (isTerminalBotRunStatus(entry.run.status)) return;
+      const reply = outcome.reply == null ? null : capReply(outcome.reply);
+      const verdict =
+        outcome.status === "completed" && entry.output === "verdict"
+          ? decodeVerdictReply(outcome.reply ?? "")
+          : null;
+      const next: BotRun = entry.pendingFinish ?? {
+        ...entry.run,
+        status: outcome.status,
+        finishedAt: yield* nowIso,
+        result: reply?.text ?? null,
+        resultTruncated: reply?.truncated ?? false,
+        error: outcome.error ?? null,
+        ...(outcome.failureClass == null ? {} : { failureClass: outcome.failureClass }),
+        ...(verdict === null ? {} : { verdict }),
+        ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+      };
+      entry.pendingFinish = next;
+      yield* store.saveRun(next).pipe(Effect.catch(storageError));
+      entry.run = next;
+      entry.pendingFinish = null;
+      live.delete(next.id);
+      yield* pruneRuns(next.botId);
+      entry.run = yield* deliver(next);
+      yield* publish({ _tag: "run", run: entry.run });
     },
-  ) {
-    if (isTerminalBotRunStatus(entry.run.status)) return;
-    const reply = outcome.reply == null ? null : capReply(outcome.reply);
-    // Decoded from the whole reply, so a verdict past the stored cap still counts.
-    const verdict =
-      outcome.status === "completed" && entry.output === "verdict"
-        ? decodeVerdictReply(outcome.reply ?? "")
-        : null;
-    entry.run = {
-      ...entry.run,
-      status: outcome.status,
-      finishedAt: yield* nowIso,
-      result: reply?.text ?? null,
-      resultTruncated: reply?.truncated ?? false,
-      error: outcome.error ?? null,
-      ...(outcome.failureClass == null ? {} : { failureClass: outcome.failureClass }),
-      ...(verdict === null ? {} : { verdict }),
-      ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
-    };
-    live.delete(entry.run.id);
-    yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
-    yield* pruneRuns(entry.run.botId);
-    // Delivered before the terminal event, so that event already says whether it reached the thread.
-    entry.run = yield* deliver(entry.run);
-    yield* publish({ _tag: "run", run: entry.run });
-  });
+    (effect, entry) => effect.pipe(entry.finishPermit.withPermits(1)),
+  );
 
-  const interruptThread = (entry: LiveRun, reason: string) => {
+  const stopUnconfirmedMessage =
+    "Loom could not confirm that the bot run stopped. Open its thread or retry cancellation.";
+  const noteUnconfirmedStop = Effect.fn("BotsService.noteUnconfirmedStop")(
+    function* (entry: LiveRun) {
+      if (isTerminalBotRunStatus(entry.run.status)) return;
+      const next = { ...entry.run, error: stopUnconfirmedMessage };
+      yield* store.saveRun(next).pipe(Effect.catch(storageError));
+      entry.run = next;
+      yield* publish({ _tag: "run", run: next });
+    },
+    (effect, entry) => effect.pipe(entry.finishPermit.withPermits(1)),
+  );
+
+  const interruptThread = Effect.fn("BotsService.interruptThread")(function* (
+    entry: LiveRun,
+    reason: string,
+  ) {
     const { projectId } = entry.run;
-    if (projectId === null) return Effect.void;
-    return threads
+    if (projectId === null) return;
+    yield* threads
       .interruptThread({
         projectId,
         threadId: entry.run.threadId,
@@ -842,8 +881,19 @@ export const make = Effect.gen(function* () {
         ...(entry.threadRunId === null ? {} : { runId: entry.threadRunId }),
         reason,
       })
-      .pipe(Effect.ignore({ log: true }));
-  };
+      .pipe(
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            yield* Effect.logWarning("Bot run interruption was not confirmed", {
+              runId: entry.run.id,
+              cause,
+            });
+            yield* noteUnconfirmedStop(entry);
+            return yield* fail("launch", stopUnconfirmedMessage);
+          }),
+        ),
+      );
+  });
 
   /** The run thread holds one request, so its last assistant message is the reply. */
   const readReply = (projectId: ProjectId, threadId: ThreadId) =>
@@ -894,10 +944,21 @@ export const make = Effect.gen(function* () {
       ...(entry.threadRunId === null ? {} : { runId: entry.threadRunId }),
     };
     let waited = yield* threads.waitForThread({ ...target, timeoutMs });
-    const timedOut = waited.timedOut;
+    let timedOut = waited.timedOut;
     if (timedOut) {
-      yield* interruptThread(entry, "The bot run reached its time limit.");
-      waited = yield* threads.waitForThread({ ...target, timeoutMs: INTERRUPT_GRACE_MS });
+      const stopped = yield* interruptThread(entry, "The bot run reached its time limit.").pipe(
+        Effect.match({ onSuccess: () => true, onFailure: () => false }),
+      );
+      timedOut = stopped;
+      // Effect keeps an infinite timeout on the persisted-event stream without a timer or polling.
+      waited = yield* threads.waitForThread({
+        ...target,
+        timeoutMs: stopped ? INTERRUPT_GRACE_MS : Infinity,
+      });
+      if (waited.timedOut) {
+        yield* noteUnconfirmedStop(entry);
+        waited = yield* threads.waitForThread({ ...target, timeoutMs: Infinity });
+      }
     }
     const reply = yield* readReply(projectId, entry.run.threadId);
     const usage = yield* readUsage(projectId, entry.run.threadId);
@@ -952,8 +1013,9 @@ export const make = Effect.gen(function* () {
             status: "failed",
             error: "This computer stopped running bots for other computers before the run started.",
           });
-        entry.run = { ...entry.run, status: "running", startedAt: yield* nowIso };
-        yield* store.saveRun(entry.run).pipe(Effect.ignore({ log: true }));
+        const running: BotRun = { ...entry.run, status: "running", startedAt: yield* nowIso };
+        yield* store.saveRun(running).pipe(Effect.catch(storageError));
+        entry.run = running;
         yield* publish({ _tag: "run", run: entry.run });
         const result = yield* launches.launch({
           ...launch,
@@ -962,7 +1024,14 @@ export const make = Effect.gen(function* () {
         });
         entry.threadRunId = ThreadManagement.latestRun(result.projection)?.id ?? null;
         entry.launched = true;
-        if (entry.cancelRequested) yield* interruptThread(entry, "The bot run was cancelled.");
+        if (entry.cancelRequested)
+          yield* interruptThread(entry, "The bot run was cancelled.").pipe(
+            Effect.catch(() =>
+              Effect.sync(() => {
+                entry.cancelRequested = false;
+              }),
+            ),
+          );
         yield* awaitThread(entry, bot.timeoutMinutes * 60_000);
       }).pipe(
         Effect.catch(recordFailure(entry)),
@@ -981,6 +1050,9 @@ export const make = Effect.gen(function* () {
                 : Effect.void
               ).pipe(Effect.andThen(finish(entry, { status: "cancelled" })))
             : Effect.void,
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Bot run transition needs recovery", { runId: entry.run.id, cause }),
         ),
       ),
   );
@@ -1129,28 +1201,37 @@ export const make = Effect.gen(function* () {
     return yield* budgetFor(bot, DateTime.toEpochMillis(yield* DateTime.now));
   });
 
-  const insertRun = (run: BotRun, options: StartOptions) =>
+  const insertRun = (run: BotRun, options: StartOptions, input: BotsRunInput, caller: BotCaller) =>
     store
       .withTransaction(
-        store
-          .insertRun(run, { requestId: options.remote?.runId })
-          .pipe(
-            Effect.andThen(
-              options.onInserted === undefined ? Effect.void : options.onInserted(run),
-            ),
-          ),
+        Effect.gen(function* () {
+          if (options.batchId === undefined && options.pipelineRunId === undefined)
+            yield* operationState.checkAdmission(options.triggerId !== undefined);
+          yield* store.insertRun(run, { requestId: options.remote?.runId });
+          yield* admissions.record("run", input, caller, run.id);
+          yield* completions.prepare("run", run.id, run.projectId, input.completionDestinationId);
+          if (options.onInserted !== undefined) yield* options.onInserted(run);
+        }),
       )
       .pipe(Effect.catchTags({ SqlError: storageError }));
 
   /** Settles a remote run that never reached its computer, or that its computer gave up on. */
   const settleRemote = Effect.fnUntraced(function* (run: BotRun, settled: Partial<BotRun>) {
     const next: BotRun = { ...run, ...settled };
-    yield* store.saveRun(next).pipe(Effect.ignore({ log: true }));
+    yield* store
+      .withTransaction(
+        store
+          .saveRun(next)
+          .pipe(
+            Effect.andThen(
+              next.modelSelection !== undefined && next.modelSelection !== run.modelSelection
+                ? store.applyRemoteModel(next.id, next.modelSelection)
+                : Effect.void,
+            ),
+          ),
+      )
+      .pipe(Effect.catch(storageError));
     if (isTerminalBotRunStatus(next.status)) {
-      if (next.modelSelection !== undefined && next.modelSelection !== run.modelSelection)
-        yield* store
-          .applyRemoteModel(next.id, next.modelSelection)
-          .pipe(Effect.ignore({ log: true }));
       yield* pruneRuns(next.botId);
       const delivered = yield* deliver(next);
       yield* publish({ _tag: "run", run: delivered });
@@ -1218,9 +1299,9 @@ export const make = Effect.gen(function* () {
       ranOn,
     };
     yield* permitBot.budget === undefined
-      ? insertRun(run, options)
+      ? insertRun(run, options, input, caller)
       : checkBudget(permitBot).pipe(
-          Effect.andThen(insertRun(run, options)),
+          Effect.andThen(insertRun(run, options, input, caller)),
           budgetPermit.withPermits(1),
         );
     yield* publish({ _tag: "run", run });
@@ -1254,7 +1335,7 @@ export const make = Effect.gen(function* () {
       ...(update.usage === null ? {} : { usage: update.usage }),
       ...(update.modelSelection === null ? {} : { modelSelection: update.modelSelection }),
     });
-  });
+  }, remoteUpdatePermit.withPermits(1));
 
   /** Points a bot at its shared Library record, or makes it local again with null. */
   const setLibraryLink = Effect.fn("BotsService.setLibraryLink")(function* (
@@ -1284,6 +1365,10 @@ export const make = Effect.gen(function* () {
       permitBot: BotDefinition,
       options: StartOptions,
     ) {
+      const admitted = yield* admissions.lookup("run", input, caller);
+      if (admitted !== null) return yield* getRun(admitted);
+      if (options.batchId === undefined && options.pipelineRunId === undefined)
+        yield* operationState.checkAdmission(options.triggerId !== undefined);
       const checked = validateInputs(bot, input.inputs);
       if (!checked.ok) return yield* fail("invalid", checked.message);
       const target = input.target ?? { type: "here" };
@@ -1354,57 +1439,69 @@ export const make = Effect.gen(function* () {
         launched: false,
         threadRunId: null,
         output: bot.output ?? "text",
+        pendingFinish: null,
+        finishPermit: yield* Semaphore.make(1),
+        timeoutMinutes: bot.timeoutMinutes,
       };
-      // The stored definition's budget, so a batch pinned to an older version still honours it.
-      yield* permitBot.budget === undefined
-        ? insertRun(entry.run, options)
-        : checkBudget(permitBot).pipe(
-            Effect.andThen(insertRun(entry.run, options)),
-            budgetPermit.withPermits(1),
-          );
-      live.set(runId, entry);
-      yield* publish({ _tag: "run", run: entry.run });
-      entry.fiber = yield* execute(
-        entry,
-        bot,
-        {
-          projectId,
-          title: bot.name,
-          generateTitle: false,
-          modelSelection,
-          runtimeMode: bot.runtimeMode,
-          interactionMode: bot.interactionMode,
-          workspaceStrategy,
-          initialMessage: {
-            text: [
-              renderPrompt(
-                bot,
-                checked.values,
-                untrusted === undefined
-                  ? undefined
-                  : { ...untrusted, frameId: runId.replaceAll("-", "") },
-              ),
-              // Standalone lines, the form Vault reads as a launch requirement.
-              ...(vaultLines.length === 0 ? [] : [vaultLines.join("\n")]),
-            ].join("\n\n"),
-            attachments: [],
-            ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
-          },
-          createdBy: caller.actor,
-          creationSource: "server",
-        },
-        permitBot,
-      ).pipe(Effect.forkIn(serviceScope));
-      return entry.run;
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          // The stored definition's budget, so a batch pinned to an older version still honours it.
+          yield* permitBot.budget === undefined
+            ? insertRun(entry.run, options, input, caller)
+            : checkBudget(permitBot).pipe(
+                Effect.andThen(insertRun(entry.run, options, input, caller)),
+                budgetPermit.withPermits(1),
+              );
+          live.set(runId, entry);
+          yield* publish({ _tag: "run", run: entry.run });
+          entry.fiber = yield* execute(
+            entry,
+            bot,
+            {
+              projectId,
+              title: bot.name,
+              generateTitle: false,
+              modelSelection,
+              runtimeMode: bot.runtimeMode,
+              interactionMode: bot.interactionMode,
+              workspaceStrategy,
+              initialMessage: {
+                text: [
+                  renderPrompt(
+                    bot,
+                    checked.values,
+                    untrusted === undefined
+                      ? undefined
+                      : { ...untrusted, frameId: runId.replaceAll("-", "") },
+                  ),
+                  // Standalone lines, the form Vault reads as a launch requirement.
+                  ...(vaultLines.length === 0 ? [] : [vaultLines.join("\n")]),
+                ].join("\n\n"),
+                attachments: [],
+                ...(caller.threadId === null ? {} : { senderThreadId: caller.threadId }),
+              },
+              createdBy: caller.actor,
+              creationSource: "server",
+            },
+            permitBot,
+          ).pipe(restore, Effect.forkIn(serviceScope));
+          return entry.run;
+        }),
+      );
     },
-    (effect, _bot, input) =>
-      input.target === undefined || input.target.type === "here"
-        ? effect
-        : effect.pipe(targetPermit.withPermits(1)),
+    (effect, _bot, input) => {
+      const admission =
+        input.clientRequestId === undefined ? effect : effect.pipe(admissionPermit.withPermits(1));
+      return input.target === undefined || input.target.type === "here"
+        ? admission
+        : admission.pipe(targetPermit.withPermits(1));
+    },
   );
 
   const run = Effect.fn("BotsService.run")(function* (input: BotsRunInput, caller: BotCaller) {
     yield* checkCaller(input, caller);
+    const admitted = yield* admissions.lookup("run", input, caller);
+    if (admitted !== null) return yield* getRun(admitted);
     const bot = yield* requireBot(input.botId);
     yield* checkRunnable(bot, caller);
     return yield* start(bot, input, caller, bot, {});
@@ -1414,43 +1511,53 @@ export const make = Effect.gen(function* () {
    * Records a run that never started, as failed with `reason`, so it reaches the inbox and can be
    * retried. It does not count against the bot's budget.
    */
-  const recordUnstarted = Effect.fn("BotsService.recordUnstarted")(function* (
-    definition: BotDefinition,
-    input: BotsRunInput,
-    caller: BotCaller,
-    reason: string,
-    options: StartOptions,
-  ) {
-    const runId = options.remote?.runId ?? (yield* randomUuidV4);
-    const now = yield* nowIso;
-    const failed: BotRun = {
-      id: runId,
-      botId: definition.id,
-      botVersion: definition.version,
-      botName: definition.name,
-      threadId: botRunThreadId(runId),
-      projectId: input.projectId ?? null,
-      inputs: input.inputs,
-      status: "failed",
-      startedBy: caller.actor,
-      callerThreadId: caller.threadId,
-      createdAt: now,
-      startedAt: null,
-      finishedAt: now,
-      result: null,
-      resultTruncated: false,
-      error: reason,
-      ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
-      ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
-      ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
-      ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
-      ...(input.checkoutThreadId === undefined ? {} : { checkoutThreadId: input.checkoutThreadId }),
-      ...(options.remote === undefined ? {} : { requestedBy: options.remote.requestedBy }),
-    };
-    yield* insertRun(failed, options);
-    yield* publish({ _tag: "run", run: failed });
-    return failed;
-  });
+  const recordUnstarted = Effect.fn("BotsService.recordUnstarted")(
+    function* (
+      definition: BotDefinition,
+      input: BotsRunInput,
+      caller: BotCaller,
+      reason: string,
+      options: StartOptions,
+    ) {
+      const admitted = yield* admissions.lookup("run", input, caller);
+      if (admitted !== null) return yield* getRun(admitted);
+      if (options.batchId === undefined && options.pipelineRunId === undefined)
+        yield* operationState.checkAdmission(options.triggerId !== undefined);
+      const runId = options.remote?.runId ?? (yield* randomUuidV4);
+      const now = yield* nowIso;
+      const failed: BotRun = {
+        id: runId,
+        botId: definition.id,
+        botVersion: definition.version,
+        botName: definition.name,
+        threadId: botRunThreadId(runId),
+        projectId: input.projectId ?? null,
+        inputs: input.inputs,
+        status: "failed",
+        startedBy: caller.actor,
+        callerThreadId: caller.threadId,
+        createdAt: now,
+        startedAt: null,
+        finishedAt: now,
+        result: null,
+        resultTruncated: false,
+        error: reason,
+        ...(options.batchId === undefined ? {} : { batchId: options.batchId }),
+        ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
+        ...(options.replayId === undefined ? {} : { replayId: options.replayId }),
+        ...(options.pipelineRunId === undefined ? {} : { pipelineRunId: options.pipelineRunId }),
+        ...(input.checkoutThreadId === undefined
+          ? {}
+          : { checkoutThreadId: input.checkoutThreadId }),
+        ...(options.remote === undefined ? {} : { requestedBy: options.remote.requestedBy }),
+      };
+      yield* insertRun(failed, options, input, caller);
+      yield* publish({ _tag: "run", run: failed });
+      return failed;
+    },
+    (effect, _definition, input) =>
+      input.clientRequestId === undefined ? effect : effect.pipe(admissionPermit.withPermits(1)),
+  );
 
   /**
    * Starts a run of a pinned definition for a batch item or a trigger. The bot must still exist
@@ -1463,6 +1570,8 @@ export const make = Effect.gen(function* () {
     caller: BotCaller,
     options: StartOptions,
   ) {
+    const admitted = yield* admissions.lookup("run", input, caller);
+    if (admitted !== null) return yield* getRun(admitted);
     const current = yield* requireBot(definition.id);
     if (current.archivedAt !== null)
       return yield* fail("archived", `${current.name} is archived. Restore it to run it.`);
@@ -1476,11 +1585,56 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const withAttention = Effect.fn("BotsService.runAttention")(function* (
+    run: BotRun,
+  ): Effect.fn.Return<BotRun, BotsError> {
+    const { attention: _attention, ...snapshot } = run;
+    if (run.status !== "running" || run.ranOn != null) return snapshot;
+    const shell = yield* threads.getThreadShell(run.threadId).pipe(Effect.catch(storageError));
+    const pending = shell?.pendingRuntimeRequest;
+    if (pending == null || pending.blocking === false || pending.kind === "auth_refresh")
+      return snapshot;
+    let timeoutMinutes = live.get(run.id)?.timeoutMinutes;
+    if (timeoutMinutes === undefined) {
+      const version = yield* store
+        .getVersion(run.botId, run.botVersion)
+        .pipe(Effect.catch(storageError));
+      const current =
+        version === null
+          ? yield* store.getDefinition(run.botId).pipe(Effect.catch(storageError))
+          : null;
+      timeoutMinutes =
+        version?.definition.timeoutMinutes ?? current?.timeoutMinutes ?? FALLBACK_TIMEOUT_MINUTES;
+    }
+    const started = run.startedAt === null ? NaN : Date.parse(run.startedAt);
+    return {
+      ...snapshot,
+      attention: {
+        kind: pending.kind === "user_input" ? ("question" as const) : ("approval" as const),
+        requestId: pending.id,
+        since: DateTime.formatIso(pending.createdAt),
+        ...(Number.isFinite(started)
+          ? { deadlineAt: isoAt(started + timeoutMinutes * 60_000) }
+          : {}),
+        timeoutPolicy: "wall-clock" as const,
+      },
+    };
+  });
+
+  const badgeCount = Effect.fn("BotsService.badgeCount")(function* () {
+    if (!(yield* badgePreferences.get()).enabled) return { count: 0 };
+    const unfinished = yield* store.listUnfinishedRuns().pipe(Effect.catch(storageError));
+    const waiting = yield* Effect.forEach(unfinished, (stored) =>
+      withAttention(live.get(stored.id)?.run ?? stored),
+    );
+    return yield* badgePreferences.count(waiting);
+  });
+
   const getRun = Effect.fn("BotsService.getRun")(function* (runId: string) {
     const current =
       live.get(runId)?.run ?? (yield* store.getRun(runId).pipe(Effect.catch(storageError)));
     if (current === null) return yield* fail("not_found", "The bot run was not found.");
-    return current;
+    return yield* withAttention(current);
   });
 
   /** Records whether a finished run was good, with an optional note; null clears either. */
@@ -1547,16 +1701,51 @@ export const make = Effect.gen(function* () {
       return run;
     }
     entry.cancelRequested = true;
-    if (!entry.started && entry.fiber !== null) yield* Fiber.interrupt(entry.fiber);
+    if (!entry.started && entry.fiber !== null) {
+      yield* Fiber.interrupt(entry.fiber);
+      yield* finish(entry, { status: "cancelled" });
+    }
     // Before launch returns there is no thread yet; the launch path interrupts it after.
-    else if (entry.launched) yield* interruptThread(entry, "The bot run was cancelled.");
+    else if (entry.launched) {
+      const cancelling = entry;
+      yield* interruptThread(cancelling, "The bot run was cancelled.").pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => {
+            cancelling.cancelRequested = false;
+          }),
+        ),
+      );
+    }
     return entry.run;
   });
 
-  const inbox = (input: BotsInboxInput) =>
-    store
+  const inbox = Effect.fn("BotsService.inbox")(function* (input: BotsInboxInput) {
+    const page = yield* store
       .inbox({ dismissed: input.dismissed === true, before: input.before, limit: input.limit })
       .pipe(Effect.catch(storageError));
+    if (input.dismissed === true) return page;
+    const unfinished = yield* store.listUnfinishedRuns().pipe(Effect.catch(storageError));
+    const active = yield* Effect.forEach(
+      unfinished.filter(
+        (run) => run.requestedBy == null && run.replayId == null && run.dismissedAt == null,
+      ),
+      (stored) => withAttention(live.get(stored.id)?.run ?? stored),
+    );
+    const waiting = active.filter((run) => run.attention !== undefined);
+    const runs = [
+      ...page.runs,
+      ...waiting.filter((run) => input.before === undefined || run.createdAt < input.before),
+    ].toSorted(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+    );
+    return {
+      ...page,
+      runs: runs.slice(0, input.limit),
+      total: page.total + waiting.length,
+      hasMore: page.hasMore || runs.length > input.limit,
+    };
+  });
 
   /**
    * Reruns an inbox run with the bot as saved now, from where the old run started: its project,
@@ -1576,7 +1765,7 @@ export const make = Effect.gen(function* () {
         );
       if (old.retriedBy != null)
         return yield* fail("invalid", "This run was already retried; retry the newer run.");
-      if (!isBotInboxRun(old))
+      if (!isTerminalBotRunStatus(old.status) || !isBotInboxRun(old))
         return yield* fail(
           "invalid",
           "Only a failed, timed out or undecided run in the inbox can be retried.",
@@ -1690,15 +1879,13 @@ export const make = Effect.gen(function* () {
     return { threadId, created: true } satisfies BotsPromoteResult;
   });
 
-  const listRuns = (input: BotsListRunsInput) =>
-    store.listRuns(input).pipe(
-      Effect.map(({ runs, hasMore }) => ({
-        // Live runs carry state newer than their last write.
-        runs: runs.map((stored) => live.get(stored.id)?.run ?? stored),
-        hasMore,
-      })),
-      Effect.catch(storageError),
+  const listRuns = Effect.fn("BotsService.listRuns")(function* (input: BotsListRunsInput) {
+    const page = yield* store.listRuns(input).pipe(Effect.catch(storageError));
+    const runs = yield* Effect.forEach(page.runs, (stored) =>
+      withAttention(live.get(stored.id)?.run ?? stored),
     );
+    return { ...page, runs };
+  });
 
   /** Waits up to `timeoutMs`, or until it ends when omitted, and returns the run as it stands. */
   const awaitRun = (runId: string, timeoutMs?: number) =>
@@ -1733,7 +1920,12 @@ export const make = Effect.gen(function* () {
     const unfinished = yield* store.listUnfinishedRuns().pipe(Effect.catch(storageError));
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     for (const stored of unfinished) {
-      if (live.has(stored.id)) continue;
+      const existing = live.get(stored.id);
+      if (existing !== undefined) {
+        if (existing.pendingFinish !== null)
+          yield* finish(existing, { status: existing.pendingFinish.status });
+        continue;
+      }
       const current = yield* store
         .getDefinition(stored.botId)
         .pipe(Effect.orElseSucceed(() => null));
@@ -1749,7 +1941,11 @@ export const make = Effect.gen(function* () {
         launched: stored.status === "running",
         threadRunId: null,
         output: definition?.output ?? "text",
+        pendingFinish: null,
+        finishPermit: yield* Semaphore.make(1),
+        timeoutMinutes: definition?.timeoutMinutes ?? FALLBACK_TIMEOUT_MINUTES,
       };
+      live.set(stored.id, entry);
       if (stored.status === "queued") {
         yield* finish(entry, {
           status: "failed",
@@ -1757,7 +1953,6 @@ export const make = Effect.gen(function* () {
         });
         continue;
       }
-      live.set(stored.id, entry);
       yield* accountRecovered(stored.botId, 1);
       const limitMs = (definition?.timeoutMinutes ?? FALLBACK_TIMEOUT_MINUTES) * 60_000;
       const startedMs = stored.startedAt === null ? nowMs : Date.parse(stored.startedAt);
@@ -1766,6 +1961,12 @@ export const make = Effect.gen(function* () {
         Effect.catch(recordFailure(entry)),
         Effect.catchDefect(recordFailure(entry)),
         Effect.ensuring(accountRecovered(stored.botId, -1)),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Recovered bot run transition needs recovery", {
+            runId: stored.id,
+            cause,
+          }),
+        ),
         Effect.forkIn(serviceScope),
       );
     }
@@ -1837,6 +2038,8 @@ export const make = Effect.gen(function* () {
     archive,
     delete: remove,
     run,
+    findRequests: admissions.find,
+    badgeCount,
     startRunWith,
     setPipelineStopped,
     recordUnstarted,
@@ -1903,6 +2106,12 @@ export const BotsRecoveryLive = Layer.effectDiscard(
               Effect.logWarning("Seeding starter bots failed", { cause }),
             ),
             Effect.ensuring(bots.markSeeded),
+          ),
+        ),
+        Effect.andThen(
+          Effect.sleep(RECOVERY_RETRY_MS).pipe(
+            Effect.andThen(bots.recover().pipe(Effect.ignore({ log: true }))),
+            Effect.forever,
           ),
         ),
       ),

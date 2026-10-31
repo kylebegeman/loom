@@ -20,6 +20,9 @@ import { PullRequestService } from "../../pullRequest/PullRequestService.ts";
 import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { make } from "./BotBatches.ts";
+import { makeBotAdmissions } from "./BotAdmissions.ts";
+import { makeBotOperationState } from "./BotOperationState.ts";
+import * as SqlClient from "effect/sql/SqlClient";
 import { inProcessClient } from "./BotLibraryClient.ts";
 import { BotLibraryService, layer as libraryLayer } from "./BotLibraryService.ts";
 import { makeSharing } from "./BotSharing.ts";
@@ -168,6 +171,79 @@ const storedBatch = (
 });
 
 describe("BotBatches", () => {
+  it.effect("replays a batch admission after a lost response and rejects changed input", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches } = yield* makeBatches(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        const input = { ...lines("a.ts"), clientRequestId: "batch-lost-reply" };
+        const [first, replay] = yield* Effect.all(
+          [batches.runBatch(input, USER_CALLER), batches.runBatch(input, USER_CALLER)],
+          { concurrency: "unbounded" },
+        );
+        expect(replay.id).toBe(first.id);
+        const conflict = yield* batches
+          .runBatch({ ...input, source: { type: "lines", text: "b.ts" } }, USER_CALLER)
+          .pipe(Effect.flip);
+        expect(conflict.reason).toBe("invalid");
+        const operationState = yield* makeBotOperationState;
+        yield* operationState.setMode("paused");
+        expect((yield* batches.runBatch(input, USER_CALLER)).id).toBe(first.id);
+        const refused = yield* batches
+          .runBatch({ ...input, clientRequestId: "new-while-paused" }, USER_CALLER)
+          .pipe(Effect.flip);
+        expect(refused.message).toContain("paused");
+        yield* batches.cancel(first.id);
+      }),
+    ),
+  );
+
+  it.effect(
+    "activates an admitted batch when a retry arrives before its worker was registered",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { bots, batches } = yield* makeBatches(harness);
+          const bot = yield* bots.save(reviewer(), USER_CALLER);
+          const input = { ...lines("a.ts"), clientRequestId: "interrupted-after-admission" };
+          const store = yield* makeBotBatchesStore;
+          const admissions = yield* makeBotAdmissions;
+          const stored = storedBatch(bot, "admitted-before-interruption", "running", 0);
+          yield* store.withTransaction(
+            store
+              .insertBatch(stored, [{ label: "a.ts", inputs: { file: "a.ts" } }])
+              .pipe(
+                Effect.andThen(admissions.record("batch", input, USER_CALLER, stored.batch.id)),
+              ),
+          );
+          expect((yield* batches.runBatch(input, USER_CALLER)).id).toBe(stored.batch.id);
+          const launched = yield* harness.nextLaunch;
+          yield* harness.end(launched.threadId!, { status: "completed", reply: "Recovered." });
+          expect((yield* batches.awaitBatch(stored.batch.id)).status).toBe("finished");
+        }),
+      ),
+  );
+
+  it.effect("rolls back a batch when its request receipt cannot commit", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, batches } = yield* makeBatches(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TRIGGER fail_admission BEFORE INSERT ON fork_bots_admissions BEGIN SELECT RAISE(FAIL, 'receipt unavailable'); END`;
+        const input = { ...lines("a.ts"), clientRequestId: "receipt-fault" };
+        expect((yield* batches.runBatch(input, USER_CALLER).pipe(Effect.flip)).reason).toBe(
+          "storage",
+        );
+        expect((yield* batches.list({ limit: 10 })).batches).toEqual([]);
+        yield* sql`DROP TRIGGER fail_admission`;
+        const admitted = yield* batches.runBatch(input, USER_CALLER);
+        expect((yield* batches.runBatch(input, USER_CALLER)).id).toBe(admitted.id);
+        yield* batches.cancel(admitted.id);
+      }),
+    ),
+  );
+
   it.effect("feeds items through the bot's window with the definition it started with", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

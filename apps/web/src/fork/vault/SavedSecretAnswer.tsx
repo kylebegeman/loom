@@ -80,26 +80,25 @@ export function SavedSecretAnswer({
     busy.current = true;
     onBusyChange(true);
     setError(null);
-    try {
-      const response = await answer({
-        environmentId,
-        input: {
-          threadId: request.threadId,
-          turnItemId: request.id,
-          itemId: item.id,
-          expectedVersion: item.version,
-        },
-      });
-      if (response._tag === "Success") onAnswered();
-      else setError(message(squashAtomCommandFailure(response)));
-    } finally {
+    const response = await answer({
+      environmentId,
+      input: {
+        threadId: request.threadId,
+        turnItemId: request.id,
+        itemId: item.id,
+        expectedVersion: item.version,
+      },
+    }).finally(() => {
       busy.current = false;
       onBusyChange(false);
-    }
+    });
+    if (response._tag === "Success") onAnswered();
+    else setError(message(squashAtomCommandFailure(response)));
   };
   if (!supported) return null;
   return (
     <div className="flex min-w-0 flex-col gap-2">
+      <p className="text-xs text-muted-foreground">Or use a saved item</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"

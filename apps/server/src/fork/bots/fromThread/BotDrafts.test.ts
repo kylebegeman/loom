@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ScheduledTaskId, ThreadId } from "@t3tools/contracts";
+import { ScheduledTaskId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import { BotsError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -57,6 +57,44 @@ describe("BotDrafts.draftFromThread", () => {
         });
         const { draft } = yield* drafts.draftFromThread(source);
         expect(draft.workspace).toEqual({ type: "scratch" });
+      }),
+    ),
+  );
+});
+
+describe("BotDrafts imports", () => {
+  it.effect("prepares unsaved drafts with pinned starter inputs without a provider turn", () =>
+    withDraftsHarness((harness) =>
+      Effect.gen(function* () {
+        const drafts = yield* harness.service;
+        const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "example" };
+        const imported = yield* drafts.draftFromText({
+          text: "Brainstorm ideas without implementation.",
+          modelSelection,
+        });
+        expect(imported.drafts[0]!.draft).toMatchObject({
+          workspace: { type: "scratch" },
+          runtimeMode: "approval-required",
+          interactionMode: "plan",
+        });
+        const starter = yield* drafts.draftFromStarter({ starterId: "reviewer", modelSelection });
+        expect(
+          starter.draft.parameters.find((parameter) => parameter.name === "lens"),
+        ).toMatchObject({ type: "choice", choices: ["correctness", "surfaces", "fidelity"] });
+        expect(starter.sourceFormat).toBe("starter");
+        expect(starter.draft.interactionMode).toBe("plan");
+        const resolver = yield* drafts.draftFromStarter({
+          starterId: "merge-conflict-resolver",
+          modelSelection,
+        });
+        expect(resolver.draft.instructions).toContain("docs/fork/seams.tsv");
+        expect(resolver.draft.instructions).not.toContain("{{file2}}");
+        expect(harness.launches).toHaveLength(0);
+        expect(harness.dispatched).toHaveLength(0);
+        const invalid = yield* drafts
+          .draftFromText({ text: "[invalid", modelSelection })
+          .pipe(Effect.flip);
+        expect(invalid.reason).toBe("invalid");
       }),
     ),
   );

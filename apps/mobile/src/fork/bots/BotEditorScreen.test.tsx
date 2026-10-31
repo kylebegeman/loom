@@ -20,6 +20,8 @@ const harness = vi.hoisted(() => ({
   prevented: false,
   remove: (_event: { data: { action: object } }) => {},
 }));
+vi.mock("expo-document-picker", () => ({ getDocumentAsync: vi.fn() }));
+vi.mock("expo-file-system", () => ({ File: vi.fn() }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({

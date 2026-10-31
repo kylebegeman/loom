@@ -12,6 +12,7 @@ const harness = vi.hoisted(() => ({
   checkoutAvailable: true,
   bot: null as BotDefinition | null,
 }));
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => harness.allowed }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: harness.navigate }),
@@ -26,6 +27,7 @@ vi.mock("./state", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.run }));
 vi.mock("../../state/entities", () => ({
+  useThreadShell: () => ({ projectId: "project-a" }),
   useProjects: () => [
     { id: "project-a", title: "Project A", environmentId: "first", isScratch: false },
   ],
@@ -49,6 +51,7 @@ vi.mock("../../state/query", () => ({
   useEnvironmentQuery: () => ({
     data: {
       library: "available",
+      destinations: [],
       targets: [
         {
           environmentId: "first",
@@ -237,6 +240,7 @@ it("keeps a run form open on invalid required input and submits the chosen check
     environmentId: EnvironmentId.make("first"),
     input: {
       botId: "review",
+      clientRequestId: expect.any(String),
       inputs: { file: "src/app.ts" },
       projectId: ProjectId.make("project-a"),
       checkoutThreadId: ThreadId.make("thread-a"),
@@ -262,6 +266,7 @@ it("drops the local checkout when sending the run to another computer", async ()
     environmentId: "first",
     input: {
       botId: "review",
+      clientRequestId: expect.any(String),
       inputs: { file: "src/app.ts" },
       projectId: "project-a",
       target: { type: "environment", environmentId: "remote" },
@@ -289,6 +294,7 @@ it("requires an explicit replacement when the selected checkout disappears", asy
   await act(async () => {});
   expect(harness.run.mock.calls[0]?.[0].input).toEqual({
     botId: "review",
+    clientRequestId: expect.any(String),
     inputs: { file: "src/app.ts" },
     projectId: "project-a",
   });
@@ -319,6 +325,7 @@ it("runs from a thread's project and checkout and can post the result back", asy
     environmentId: "first",
     input: {
       botId: "review",
+      clientRequestId: expect.any(String),
       inputs: { file: "src/app.ts" },
       callerThreadId: "caller-a",
       notify: true,

@@ -1,3 +1,4 @@
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletions";
 import { useState, type ReactNode } from "react";
 import {
   BadgeXIcon,
@@ -11,7 +12,7 @@ import {
   WorkflowIcon,
   type LucideIcon,
 } from "lucide-react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import {
   BOT_TRIGGER_EVENT_FIELDS,
   BOT_TRIGGER_RETIRED_MESSAGE,
@@ -1117,6 +1118,18 @@ export function TriggerWizard({
   const [snapshot, setSnapshot] = useState(existing);
   const [baseline, setBaseline] = useState(() => draftOf(existing));
   const [draft, setDraft] = useState(baseline);
+  const completionProjectOf = (value: TriggerDraft): ProjectId | null =>
+    value.projectId
+      ? (value.projectId as ProjectId)
+      : value.pipelineId === "" && bot.workspace.type === "project"
+        ? (bot.workspace.projectId ?? bot.scopeProjectId)
+        : null;
+  const completion = useBotCompletionSelection(
+    environmentId,
+    completionProjectOf(draft),
+    snapshot?.completionDestinationId ?? "",
+  );
+
   const [revision, setRevision] = useState(0);
   const [step, setStep] = useState(existing ? TRIGGER_STEPS.length - 1 : 0);
   const [busy, setBusy] = useState(false);
@@ -1130,7 +1143,9 @@ export function TriggerWizard({
   };
   const problems = TRIGGER_STEPS.map((name) => triggerStepProblem(name, draft, context));
   const firstProblem = problems.findIndex((problem) => problem !== null);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline);
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(baseline) ||
+    completion.value !== (snapshot?.completionDestinationId ?? "");
   // A save's own change can arrive before its reply, so it is not news while the save is out.
   const changedElsewhere =
     !busy && snapshot !== null && existing !== null && existing.updatedAt !== snapshot.updatedAt;
@@ -1150,6 +1165,7 @@ export function TriggerWizard({
     setSnapshot(existing);
     setBaseline(next);
     setDraft(next);
+    completion.reset(completionProjectOf(next), existing.completionDestinationId ?? "");
     setRevision((count) => count + 1);
     setSaveError(null);
   };
@@ -1165,7 +1181,7 @@ export function TriggerWizard({
     onClose();
   };
   const submit = async () => {
-    if (busy || !canSave || changedElsewhere) return;
+    if (busy || !canSave || changedElsewhere || !completion.valid) return;
     const result = triggerInputFromDraft(bot, draft, snapshot, target);
     if ("error" in result) {
       setSaveError(result.error);
@@ -1175,7 +1191,13 @@ export function TriggerWizard({
     }
     setBusy(true);
     setSaveError(null);
-    const saved = await save({ environmentId, input: result.input });
+    const saved = await save({
+      environmentId,
+      input: {
+        ...result.input,
+        ...(completion.destinationId ? { completionDestinationId: completion.destinationId } : {}),
+      },
+    });
     setBusy(false);
     if (saved._tag === "Failure") {
       setSaveError(errorText(squashAtomCommandFailure(saved), "Could not save the trigger."));
@@ -1204,7 +1226,7 @@ export function TriggerWizard({
       {stepProblem ?? otherProblem}
     </p>
   ) : undefined;
-  const canSubmit = canSave && !busy && !changedElsewhere && firstProblem < 0;
+  const canSubmit = canSave && !busy && !changedElsewhere && firstProblem < 0 && completion.valid;
 
   const body =
     step === 0 ? (
@@ -1323,6 +1345,15 @@ export function TriggerWizard({
                   </LibraryNotice>
                 ) : null}
                 {body}
+                {last ? (
+                  <>
+                    <BotCompletionField selection={completion} disabled={busy} />
+                    <p className="text-xs text-muted-foreground">
+                      Each firing uses this completion destination. Let Loom or Grok own the
+                      schedule for this job, so it is not scheduled twice.
+                    </p>
+                  </>
+                ) : null}
               </div>
             </WizardPanel>
             <WizardFooter leading={leading}>

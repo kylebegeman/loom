@@ -12,6 +12,9 @@ import {
   isBotRunThreadId,
   type BotDraftResult,
   type BotsDismissSuggestionInput,
+  type BotsDraftFromTextInput,
+  type BotsDraftFromStarterInput,
+  type BotImportedDraft,
   type BotsRefineDraftInput,
   type BotsSuggestionsInput,
 } from "@t3tools/contracts/fork";
@@ -32,8 +35,10 @@ import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementSer
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import { forkParked } from "../../../serverActivation.ts";
 import { checkParameters } from "../render.ts";
+import { BOT_STARTERS } from "../starters.ts";
 import { briefShape, shapeKey } from "./briefShape.ts";
 import { draftFromBrief } from "./draft.ts";
+import { draftFromText as importDrafts } from "./import.ts";
 import { makeSuggestionsStore } from "./SuggestionsStore.ts";
 
 /** How long refinement may take before its drafting thread is stopped. */
@@ -90,6 +95,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const decodeParameter = Schema.decodeUnknownOption(BotParameter);
 const decodeDefinition = Schema.decodeUnknownOption(BotDefinitionInput);
 const encodeDraft = Schema.encodeSync(Schema.fromJsonString(BotDefinitionInput));
+const encodeImport = Schema.encodeSync(
+  Schema.fromJsonString(Schema.Struct({ title: Schema.String, body: Schema.String })),
+);
 
 /**
  * Merges the four fields a refinement may change into the draft. Null when the reply holds no
@@ -246,6 +254,58 @@ export const make = Effect.gen(function* () {
     return { shell, brief };
   });
 
+  const draftFromStarter = Effect.fn("BotDrafts.draftFromStarter")(function* (
+    input: BotsDraftFromStarterInput,
+  ) {
+    const starter = BOT_STARTERS.find((entry) => entry.starterId === input.starterId);
+    if (starter === undefined)
+      return yield* fail("not_found", "That bot starter is no longer available.");
+    const imported = importDrafts(
+      {
+        text: encodeImport({
+          title: starter.definition.name,
+          body: starter.definition.instructions,
+        }),
+        modelSelection: input.modelSelection,
+        ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      },
+      yield* takenIds,
+    ).drafts[0]!;
+    return {
+      ...imported,
+      sourceFormat: "starter",
+      intent: starter.definition.interactionMode === "plan" ? "planning" : imported.intent,
+      draft: {
+        ...imported.draft,
+        description: starter.definition.description,
+        instructions: starter.definition.instructions,
+        interactionMode: starter.definition.interactionMode,
+        parameters: starter.definition.parameters,
+        ...(starter.definition.output === undefined ? {} : { output: starter.definition.output }),
+        timeoutMinutes: starter.definition.timeoutMinutes,
+        maxConcurrentRuns: starter.definition.maxConcurrentRuns,
+      },
+      notes: [
+        `Based on ${starter.definition.name} starter revision ${starter.revision}. Review permissions before saving.`,
+        "The starter instructions and typed inputs are preserved. This draft requires approval and does not start runs or enable triggers.",
+      ],
+    } satisfies BotImportedDraft;
+  });
+
+  const draftFromText = Effect.fn("BotDrafts.draftFromText")(function* (
+    input: BotsDraftFromTextInput,
+  ) {
+    const ids = yield* takenIds;
+    return yield* Effect.try({
+      try: () => importDrafts(input, ids),
+      catch: (cause) =>
+        fail(
+          "invalid",
+          cause instanceof Error ? cause.message : "Loom could not import the snippet.",
+        ),
+    });
+  });
+
   const draftFromThread = Effect.fn("BotDrafts.draftFromThread")(function* (threadId: ThreadId) {
     const { shell, brief } = yield* readThread(threadId);
     const scratch = yield* folders.ensureScratchProject.pipe(
@@ -340,6 +400,8 @@ export const make = Effect.gen(function* () {
   });
 
   return {
+    draftFromText,
+    draftFromStarter,
     draftFromThread,
     refine,
     suggestions,

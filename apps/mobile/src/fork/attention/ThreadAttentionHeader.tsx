@@ -32,6 +32,7 @@ import { threadEnvironment } from "../../state/threads";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironmentQuery } from "../../state/query";
 import { bots, useBotsCapabilities, useWaitingBotRuns } from "../bots/state";
+import { useBotBadgeCount } from "../bots/useBotBadgeCount";
 import { attention, canRetryThread, retryAttentionTarget } from "./state";
 
 const key = (row: AttentionRow) => `${row.thread.environmentId}:${row.thread.id}`;
@@ -46,16 +47,22 @@ function BotsAttention({
 }) {
   const navigation = useNavigation();
   const caps = useBotsCapabilities(environmentId);
-  const waiting = useWaitingBotRuns(environmentId);
+  const configuredCount = useBotBadgeCount(
+    environmentId,
+    caps.badgePreferencesSupported,
+    caps.connected,
+  );
+  const waiting = useWaitingBotRuns(configuredCount === null ? environmentId : null);
   const inbox = useEnvironmentQuery(
-    caps.inboxSupported
+    configuredCount === null && caps.inboxSupported
       ? bots.inbox({ environmentId, input: { limit: BOTS_LIST_RUNS_MAX_LIMIT } })
       : null,
   );
   const listed = new Set(inbox.data?.runs.map((run) => `${BOT_RUN_THREAD_PREFIX}${run.id}`) ?? []);
   const count =
+    configuredCount ??
     (inbox.data ? inboxNeedsPersonCount(inbox.data) : 0) +
-    waiting.filter((thread) => !listed.has(thread.id)).length;
+      waiting.filter((thread) => !listed.has(thread.id)).length;
   return count > 0 ? (
     <Button
       tone="text"

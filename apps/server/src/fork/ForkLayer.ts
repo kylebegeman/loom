@@ -109,6 +109,8 @@ import {
   AgentReceiptsLive,
   reactorLayer as AgentReceiptsReactor,
 } from "./agent-receipts/reactor.ts";
+import * as BotOperations from "./bots/BotOperations.ts";
+import * as BotCompletions from "./bots/BotCompletions.ts";
 import * as BotBatches from "./bots/BotBatches.ts";
 import * as Bots from "./bots/BotsService.ts";
 import * as BotLibraryClient from "./bots/BotLibraryClient.ts";
@@ -566,6 +568,9 @@ const ForkServicesLive = Layer.mergeAll(
   // Batches, pipelines, triggers and replays feed runs through the one BotsService instance.
   Layer.mergeAll(
     BotTriggerReactorLive,
+    BotCompletions.BotCompletionsRecoveryLive.pipe(
+      Layer.provideMerge(BotCompletions.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+    ),
     BotTriggerScheduleLive,
     BotVersions.BotVersionsRecoveryLive.pipe(Layer.provideMerge(BotVersions.layer)),
     BotSharing.layer.pipe(
@@ -580,6 +585,7 @@ const ForkServicesLive = Layer.mergeAll(
       ),
     ),
   ).pipe(
+    Layer.provideMerge(BotOperations.layer),
     Layer.provideMerge(BotTriggers.layer),
     Layer.provideMerge(
       BotPipelines.BotPipelinesRecoveryLive.pipe(Layer.provideMerge(BotPipelines.layer)),

@@ -37,6 +37,13 @@ export function forkSettingsSearchItems(): ReadonlyArray<SettingsSearchItem> {
   return [
     ...topics,
     {
+      id: "bot-notification-dots",
+      targetId: "bot-notification-dots",
+      title: "Bot notification dots",
+      to: "/settings/general",
+      searchTerms: ["bots badge dot mute approval question failed timeout pipeline notification"],
+    },
+    {
       id: "published-pages",
       targetId: "published-pages",
       title: "Published pages",

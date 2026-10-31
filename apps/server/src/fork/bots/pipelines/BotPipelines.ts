@@ -38,6 +38,9 @@ import {
   USER_CALLER,
   type BotCaller,
 } from "../BotsService.ts";
+import { makeBotOperationState } from "../BotOperationState.ts";
+import { makeBotCompletionStore } from "../BotCompletionStore.ts";
+import { makeBotAdmissions } from "../BotAdmissions.ts";
 import { validateInputs } from "../render.ts";
 import { checkPipeline } from "./check.ts";
 import { decide, fanOutOutput, faultRunId, type Decision } from "./decide.ts";
@@ -142,6 +145,10 @@ interface Driver {
 
 export const make = Effect.gen(function* () {
   const store = yield* makePipelinesStore;
+  const admissions = yield* makeBotAdmissions;
+  const completions = yield* makeBotCompletionStore;
+  const operations = yield* makeBotOperationState;
+  const admissionPermit = yield* Semaphore.make(1);
   const bots = yield* BotsService;
   const batches = yield* BotBatches;
   const serviceScope = yield* Effect.scope;
@@ -524,6 +531,7 @@ export const make = Effect.gen(function* () {
   });
 
   const startDriver = Effect.fnUntraced(function* (pipelineRunId: string) {
+    if (drivers.has(pipelineRunId)) return;
     const self: Driver = { fiber: null };
     // Registered before it runs, so its own cleanup never races the registration.
     const registered = yield* Deferred.make<void>();
@@ -597,8 +605,19 @@ export const make = Effect.gen(function* () {
   const run = Effect.fn("BotPipelines.run")(function* (
     input: BotsRunPipelineInput,
     caller: BotCaller,
-    options: { readonly triggerId?: string | undefined } = {},
+    options: {
+      readonly triggerId?: string | undefined;
+      readonly expectedVersion?: number;
+      readonly expectedBotVersions?: Readonly<Record<string, number>>;
+    } = {},
   ) {
+    yield* bots.checkCaller({ botId: input.pipelineId, inputs: {} }, caller);
+    const prior = yield* admissions.lookup("pipeline", input, caller);
+    if (prior !== null) {
+      const { stored } = yield* load(prior);
+      if (isActiveBotPipelineRunStatus(stored.run.status)) yield* startDriver(prior);
+      return stored.run;
+    }
     const pipeline = yield* requirePipeline(input.pipelineId);
     const [first] = pipeline.steps;
     if (first === undefined) return yield* fail("invalid", "The pipeline has no steps.");
@@ -606,6 +625,17 @@ export const make = Effect.gen(function* () {
     const checked = validateInputs(pipeline, input.inputs);
     if (!checked.ok) return yield* fail("invalid", checked.message);
     const resolved = yield* resolveBots(pipeline, caller);
+    if (
+      (options.expectedVersion !== undefined && pipeline.version !== options.expectedVersion) ||
+      (options.expectedBotVersions !== undefined &&
+        Object.entries(options.expectedBotVersions).some(
+          ([stepId, version]) => resolved[stepId]?.version !== version,
+        ))
+    )
+      return yield* fail(
+        "invalid",
+        "The pipeline or its bots changed before the pending trigger could be admitted.",
+      );
     // Bots can change after the pipeline was saved; catch what no longer fits before a step runs.
     const problem = firstError(
       checkPipeline(pipeline, {
@@ -639,13 +669,29 @@ export const make = Effect.gen(function* () {
       callerRuntimeMode: caller.runtimeMode,
       triggerId: options.triggerId ?? null,
     };
-    yield* underActiveLimit(store.insertRun(stored, first.id).pipe(Effect.catch(storageError)));
+    yield* underActiveLimit(
+      store
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* operations.checkAdmission(options.triggerId !== undefined);
+            yield* store.insertRun(stored, first.id);
+            yield* admissions.record("pipeline", input, caller, stored.run.id);
+            yield* completions.prepare(
+              "pipeline",
+              stored.run.id,
+              stored.run.projectId,
+              input.completionDestinationId,
+            );
+          }),
+        )
+        .pipe(Effect.catchTags({ SqlError: storageError })),
+    );
     yield* store.pruneRuns(pipeline.id, PIPELINE_RUNS_KEPT).pipe(Effect.ignore({ log: true }));
     yield* publish({ _tag: "pipeline-run", run: stored.run });
     yield* publishAttempts(stored.run.id, 1);
     yield* startDriver(stored.run.id);
     return stored.run;
-  });
+  }, admissionPermit.withPermits(1));
 
   const cancel = Effect.fn("BotPipelines.cancel")(function* (pipelineRunId: string) {
     if (!isActiveBotPipelineRunStatus((yield* load(pipelineRunId)).stored.run.status))

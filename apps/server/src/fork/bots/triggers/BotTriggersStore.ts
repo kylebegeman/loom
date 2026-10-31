@@ -13,12 +13,17 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { TriggerDispatch } from "./dispatch.ts";
 import type { PullRequestState } from "./matchers.ts";
 import { BUDGET_WINDOW_MS, isoAt } from "../BotBudgets.ts";
 
 export const FIRINGS_KEPT_PER_TRIGGER = 500;
 /** Pull requests with no update for this long are forgotten. */
 export const PR_STATE_IDLE_MS = 90 * 24 * 60 * 60 * 1000;
+
+const dispatchJson = Schema.fromJsonString(TriggerDispatch);
+const encodeDispatch = Schema.encodeSync(dispatchJson);
+const decodeDispatch = Schema.decodeUnknownEffect(dispatchJson);
 
 const Settings = Schema.Struct({
   projectId: Schema.optionalKey(ProjectId),
@@ -69,6 +74,7 @@ interface FiringRow {
   readonly batch_id: string | null;
   readonly reason: string | null;
   readonly refusal_count: number | null;
+  readonly dispatch_json: string | null;
 }
 
 /** A trigger with what never leaves the server: the hook credentials and the creator's mode. */
@@ -118,7 +124,7 @@ const toFiring = (row: FiringRow): BotTriggerFiring => ({
   eventKey: row.event_key,
   eventSummary: row.event_summary,
   firedAt: row.fired_at,
-  outcome: row.outcome === "run" ? "run" : "skipped",
+  outcome: row.outcome === "pending" ? "pending" : row.outcome === "run" ? "run" : "skipped",
   runId: row.run_id,
   ...(row.pipeline_run_id === null ? {} : { pipelineRunId: row.pipeline_run_id }),
   ...(row.batch_id === null ? {} : { batchId: row.batch_id }),
@@ -169,7 +175,7 @@ export const makeBotTriggersStore = Effect.gen(function* () {
     }),
 
     setLastFired: Effect.fn("BotTriggersStore.setLastFired")(function* (id: string, at: string) {
-      yield* sql`UPDATE fork_bots_triggers SET last_fired_at = ${at} WHERE id = ${id}`;
+      yield* sql`UPDATE fork_bots_triggers SET last_fired_at = MAX(COALESCE(last_fired_at, ${at}), ${at}) WHERE id = ${id}`;
     }),
 
     setNextFire: Effect.fn("BotTriggersStore.setNextFire")(function* (
@@ -180,11 +186,38 @@ export const makeBotTriggersStore = Effect.gen(function* () {
     }),
 
     /** False when the trigger already fired for this event key. */
-    insertFiring: Effect.fn("BotTriggersStore.insertFiring")(function* (firing: BotTriggerFiring) {
+    insertFiring: Effect.fn("BotTriggersStore.insertFiring")(function* (
+      firing: BotTriggerFiring,
+      dispatch?: TriggerDispatch,
+    ) {
       const rows = yield* sql<{
         id: string;
-      }>`INSERT INTO fork_bots_trigger_firings (id, trigger_id, event_key, event_summary, fired_at, outcome, run_id, pipeline_run_id, batch_id, reason) VALUES (${firing.id}, ${firing.triggerId}, ${firing.eventKey}, ${firing.eventSummary}, ${firing.firedAt}, ${firing.outcome}, ${firing.runId}, ${firing.pipelineRunId ?? null}, ${firing.batchId ?? null}, ${firing.reason}) ON CONFLICT(trigger_id, event_key) DO NOTHING RETURNING id`;
+      }>`INSERT INTO fork_bots_trigger_firings (id, trigger_id, event_key, event_summary, fired_at, outcome, run_id, pipeline_run_id, batch_id, reason, dispatch_json) VALUES (${firing.id}, ${firing.triggerId}, ${firing.eventKey}, ${firing.eventSummary}, ${firing.firedAt}, ${firing.outcome}, ${firing.runId}, ${firing.pipelineRunId ?? null}, ${firing.batchId ?? null}, ${firing.reason}, ${dispatch === undefined ? null : encodeDispatch(dispatch)}) ON CONFLICT(trigger_id, event_key) DO NOTHING RETURNING id`;
       return rows.length > 0;
+    }),
+
+    getFiring: Effect.fn("BotTriggersStore.getFiring")(function* (
+      triggerId: string,
+      eventKey: string,
+    ) {
+      const rows =
+        yield* sql<FiringRow>`SELECT * FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} AND event_key = ${eventKey}`;
+      const row = rows[0];
+      if (row === undefined) return null;
+      return {
+        firing: toFiring(row),
+        dispatch: row.dispatch_json === null ? null : yield* decodeDispatch(row.dispatch_json),
+      };
+    }),
+
+    pendingFirings: Effect.fn("BotTriggersStore.pendingFirings")(function* () {
+      const rows =
+        yield* sql<FiringRow>`SELECT * FROM fork_bots_trigger_firings WHERE dispatch_json IS NOT NULL ORDER BY fired_at, id`;
+      return yield* Effect.forEach(rows, (row) =>
+        decodeDispatch(row.dispatch_json).pipe(
+          Effect.map((dispatch) => ({ firing: toFiring(row), dispatch })),
+        ),
+      );
     }),
 
     recordDeliveryRefusal: Effect.fn("BotTriggersStore.recordDeliveryRefusal")(function* (
@@ -207,7 +240,7 @@ export const makeBotTriggersStore = Effect.gen(function* () {
     }),
 
     updateFiring: Effect.fn("BotTriggersStore.updateFiring")(function* (firing: BotTriggerFiring) {
-      yield* sql`UPDATE fork_bots_trigger_firings SET outcome = ${firing.outcome}, run_id = ${firing.runId}, pipeline_run_id = ${firing.pipelineRunId ?? null}, batch_id = ${firing.batchId ?? null}, reason = ${firing.reason} WHERE id = ${firing.id}`;
+      yield* sql`UPDATE fork_bots_trigger_firings SET outcome = ${firing.outcome}, run_id = ${firing.runId}, pipeline_run_id = ${firing.pipelineRunId ?? null}, batch_id = ${firing.batchId ?? null}, reason = ${firing.reason}, dispatch_json = NULL WHERE id = ${firing.id}`;
     }),
 
     firings: Effect.fn("BotTriggersStore.firings")(function* (
@@ -230,7 +263,7 @@ export const makeBotTriggersStore = Effect.gen(function* () {
       const rows = yield* sql<{
         last: string | null;
         count: number;
-      }>`SELECT (SELECT MAX(fired_at) FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} AND outcome = 'run') AS last, (SELECT COUNT(*) FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} AND outcome = 'run' AND fired_at >= ${since}) AS count`;
+      }>`SELECT (SELECT MAX(fired_at) FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} AND (outcome = 'run' OR (outcome = 'pending' AND json_extract(dispatch_json, '$.job._tag') <> 'skip'))) AS last, (SELECT COUNT(*) FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} AND (outcome = 'run' OR (outcome = 'pending' AND json_extract(dispatch_json, '$.job._tag') <> 'skip')) AND fired_at >= ${since}) AS count`;
       return { lastRunAt: rows[0]?.last ?? null, count: rows[0]?.count ?? 0 };
     }),
 
@@ -238,7 +271,7 @@ export const makeBotTriggersStore = Effect.gen(function* () {
       // Recent skips must not erase the successful firings counted by the rolling daily limit,
       // or let a sender's retry of a recent delivery run the bot again.
       const since = isoAt(DateTime.toEpochMillis(yield* DateTime.now) - BUDGET_WINDOW_MS);
-      yield* sql`DELETE FROM fork_bots_trigger_firings WHERE fired_at < ${since} AND id IN (SELECT id FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} ORDER BY fired_at DESC, id DESC LIMIT -1 OFFSET ${FIRINGS_KEPT_PER_TRIGGER})`;
+      yield* sql`DELETE FROM fork_bots_trigger_firings WHERE dispatch_json IS NULL AND fired_at < ${since} AND id IN (SELECT id FROM fork_bots_trigger_firings WHERE trigger_id = ${triggerId} ORDER BY fired_at DESC, id DESC LIMIT -1 OFFSET ${FIRINGS_KEPT_PER_TRIGGER})`;
     }),
 
     getCursor: Effect.fn("BotTriggersStore.getCursor")(function* (eventType: string) {

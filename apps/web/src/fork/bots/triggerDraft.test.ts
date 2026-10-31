@@ -547,6 +547,7 @@ describe("firing activity", () => {
       firing("2026-10-23T11:00:00.000Z", "skipped", "Cooling down."),
       firing("2026-10-23T10:00:00.000Z", "skipped", "Cooling down."),
       firing("2026-10-23T08:00:00.000Z", "run"),
+      firing("2026-10-23T12:00:00.000Z", "pending"),
     ]);
     expect(activity.lastRun?.firedAt).toBe("2026-10-23T09:00:00.000Z");
     expect(activity.lastSkip?.firedAt).toBe("2026-10-23T11:00:00.000Z");
@@ -570,6 +571,9 @@ describe("firing activity", () => {
 
 describe("row activity", () => {
   it("names the outcome when a watched firing is the latest one", () => {
+    expect(
+      triggerRowActivity({ lastFiredAt: null }, [firing("2026-10-23T12:00:00.000Z", "pending")]),
+    ).toEqual({ kind: "pending", at: "2026-10-23T12:00:00.000Z" });
     const watched = [
       firing("2026-10-23T09:00:00.000Z", "run"),
       firing("2026-10-23T11:00:00.000Z", "skipped", "Cooling down."),

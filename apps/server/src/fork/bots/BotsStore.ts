@@ -28,12 +28,14 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { BUDGET_WINDOW_MS, isoAt } from "./BotBudgets.ts";
+import { makeBotCompletionStore, UNRESOLVED_COMPLETION_STATUSES } from "./BotCompletionStore.ts";
 
 /**
  * Runs kept per bot; older finished runs are pruned when a run finishes, except started runs the
  * budget window still counts.
  */
 export const RUNS_KEPT_PER_BOT = 500;
+const MAX_DELIVERY_ATTEMPTS = 5;
 /** Versions kept per bot, besides the current, stable, pinned and run-referenced ones. */
 export const VERSIONS_KEPT_PER_BOT = 200;
 
@@ -297,6 +299,7 @@ export interface StarterRow {
 
 export const makeBotsStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const completions = yield* makeBotCompletionStore;
 
   return {
     listDefinitions: Effect.fn("BotsStore.listDefinitions")(function* () {
@@ -480,17 +483,24 @@ export const makeBotsStore = Effect.gen(function* () {
 
     /** Writes a run's progress; who started it, with what inputs, never changes. */
     saveRun: Effect.fn("BotsStore.saveRun")(function* (run: BotRun) {
-      yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, failure_class = ${run.failureClass ?? null}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)}, input_tokens = ${run.usage?.inputTokens ?? null}, cached_input_tokens = ${run.usage?.cachedInputTokens ?? null}, output_tokens = ${run.usage?.outputTokens ?? null}, usage_status = ${run.usage?.status ?? null} WHERE id = ${run.id}`;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`UPDATE fork_bots_runs SET project_id = ${run.projectId}, status = ${run.status}, started_at = ${run.startedAt}, finished_at = ${run.finishedAt}, result = ${run.result}, result_truncated = ${run.resultTruncated ? 1 : 0}, error = ${run.error}, failure_class = ${run.failureClass ?? null}, verdict = ${run.verdict?.verdict ?? null}, verdict_json = ${run.verdict == null ? null : encodeVerdict(run.verdict)}, input_tokens = ${run.usage?.inputTokens ?? null}, cached_input_tokens = ${run.usage?.cachedInputTokens ?? null}, output_tokens = ${run.usage?.outputTokens ?? null}, usage_status = ${run.usage?.status ?? null} WHERE id = ${run.id}`;
+          if (run.status !== "queued" && run.status !== "running")
+            yield* completions.snapshot("run", run.id);
+        }),
+      );
     }),
 
-    /** Records that the result was posted, or why it was not, so it is attempted once. */
+    /** Transient failures stay recoverable until the persisted retry limit is reached. */
     markNotified: Effect.fn("BotsStore.markNotified")(function* (
       id: string,
       at: string,
       error: string | null,
       delivered: boolean,
+      permanent = false,
     ) {
-      yield* sql`UPDATE fork_bots_runs SET notified_at = ${at}, delivered_at = ${delivered ? at : null}, error = ${error} WHERE id = ${id}`;
+      yield* sql`UPDATE fork_bots_runs SET notified_at = CASE WHEN ${delivered || permanent} OR delivery_attempts + 1 >= ${MAX_DELIVERY_ATTEMPTS} THEN ${at} ELSE NULL END, delivered_at = ${delivered ? at : null}, delivery_attempts = delivery_attempts + 1, error = ${error} WHERE id = ${id} AND delivered_at IS NULL AND (${delivered} OR notified_at IS NULL)`;
     }),
 
     /** Finished runs that asked for their result to be posted and were never delivered. */
@@ -751,7 +761,11 @@ export const makeBotsStore = Effect.gen(function* () {
       const windowStart = budgeted
         ? isoAt(DateTime.toEpochMillis(yield* DateTime.now) - BUDGET_WINDOW_MS)
         : null;
-      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (started_at IS NULL OR ${windowStart} IS NULL OR finished_at <= ${windowStart}) AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+      yield* sql`DELETE FROM fork_bots_runs WHERE bot_id = ${botId} AND finished_at IS NOT NULL AND (started_at IS NULL OR ${windowStart} IS NULL OR finished_at <= ${windowStart}) AND (batch_id IS NULL OR batch_id NOT IN (SELECT id FROM fork_bots_batches WHERE status = 'running')) AND (pipeline_run_id IS NULL OR pipeline_run_id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE status IN ('running', 'waiting'))) AND NOT EXISTS (SELECT 1 FROM fork_bots_completion_deliveries notice WHERE notice.status IN ${sql.in(UNRESOLVED_COMPLETION_STATUSES)} AND (
+        (notice.kind = 'run' AND notice.job_id = fork_bots_runs.id)
+        OR (notice.kind = 'batch' AND notice.job_id = fork_bots_runs.batch_id)
+        OR (notice.kind = 'pipeline' AND (notice.job_id = fork_bots_runs.pipeline_run_id OR fork_bots_runs.batch_id IN (SELECT id FROM fork_bots_batches WHERE pipeline_run_id = notice.job_id)))
+      )) AND id NOT IN (SELECT id FROM fork_bots_runs WHERE bot_id = ${botId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
     }),
   };
 });

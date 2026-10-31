@@ -4,6 +4,8 @@ import { BOTS_WS_METHODS as B, BotsError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { makeForkRpcAuth } from "../rpcAuthorization.ts";
+import { BotCompletions } from "./BotCompletions.ts";
+import { BotOperations } from "./BotOperations.ts";
 import { BotsService } from "./BotsService.ts";
 import { makeBotsRpcHandlers } from "./rpc.ts";
 import { testRun } from "./testing/fixtures.ts";
@@ -36,13 +38,21 @@ it.effect(
           method: "bearer-access-token",
           scopes: read ? [AuthOrchestrationReadScope] : [],
         });
-      const reader = yield* makeBotsRpcHandlers(auth(true)).pipe(Effect.provide(layer));
+      const reader = yield* makeBotsRpcHandlers(auth(true)).pipe(
+        Effect.provide(
+          Layer.mergeAll(layer, Layer.mock(BotOperations)({}), Layer.mock(BotCompletions)({})),
+        ),
+      );
       expect(yield* reader[B.getRun]({ runId: run.id })).toEqual({ run });
       expect(yield* reader[B.getRun]({ runId: "missing" })).toEqual({ run: null });
       expect(yield* reader[B.getRun]({ runId: "storage" }).pipe(Effect.flip)).toMatchObject({
         reason: "storage",
       });
-      const denied = yield* makeBotsRpcHandlers(auth(false)).pipe(Effect.provide(layer));
+      const denied = yield* makeBotsRpcHandlers(auth(false)).pipe(
+        Effect.provide(
+          Layer.mergeAll(layer, Layer.mock(BotOperations)({}), Layer.mock(BotCompletions)({})),
+        ),
+      );
       expect(yield* denied[B.getRun]({ runId: run.id }).pipe(Effect.flip)).toMatchObject({
         requiredScope: AuthOrchestrationReadScope,
       });

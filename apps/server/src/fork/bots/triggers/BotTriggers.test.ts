@@ -2,23 +2,35 @@
 import * as NodeCrypto from "node:crypto";
 
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, ThreadId, type RuntimeMode } from "@t3tools/contracts";
+import {
+  EventId,
+  ProjectId,
+  ThreadId,
+  type RuntimeMode,
+  type OrchestrationV2StoredEvent,
+} from "@t3tools/contracts";
 import { botRunThreadId, type BotsSaveTriggerInput } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
+import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { BotTrigger } from "@t3tools/contracts/fork";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import * as ProjectStore from "../../../orchestration-v2/ProjectStore.ts";
+import { OrchestratorProjectionError } from "../../../orchestration-v2/Orchestrator.ts";
 import { PullRequestService } from "../../../pullRequest/PullRequestService.ts";
 import type { WebhookTriggerRequest } from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { GitVcsDriver } from "../../../vcs/GitVcsDriver.ts";
 import { WorkspaceEntries } from "../../../workspace/WorkspaceEntries.ts";
+import { makeBotOperationState } from "../BotOperationState.ts";
 import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
 import { BotsService, USER_CALLER, versionInput, type BotCaller } from "../BotsService.ts";
 import { BotPipelines, make as makeBotPipelines } from "../pipelines/BotPipelines.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotTriggers.ts";
+import { processStoredEvent } from "./BotTriggerReactor.ts";
 import { FIRINGS_KEPT_PER_TRIGGER } from "./BotTriggersStore.ts";
 import type { TriggerEvent } from "./matchers.ts";
 
@@ -28,6 +40,7 @@ const scratchReviewer = reviewer({ workspace: { type: "scratch" } });
 
 const makeTriggers = (harness: Harness) =>
   Effect.gen(function* () {
+    yield* (yield* makeBotOperationState).setMode("automatic");
     const bots = yield* harness.service;
     const projects = {
       get: () => Effect.succeedSome({ workspaceRoot: "/repo", deletedAt: null }),
@@ -50,8 +63,6 @@ const makeTriggers = (harness: Harness) =>
       Effect.provideService(BotBatches, batches),
       Effect.provideService(BotPipelines, pipelines),
     );
-    // The service follows bot changes on a forked fiber; let it subscribe.
-    yield* Effect.yieldNow;
     return { bots, batches, pipelines, triggers };
   });
 
@@ -113,6 +124,148 @@ const delivery = (
 };
 
 describe("BotTriggers", () => {
+  it.effect("records suppressed automation without saving a backlog to run after enabling it", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer(), USER_CALLER);
+        const saved = yield* triggers.save(trigger(), USER_CALLER);
+        const operation = yield* makeBotOperationState;
+        yield* operation.setMode("manual");
+        yield* triggers.handleEvent(checksFailing("suppressed", "pr/1"));
+        const [firing] = (yield* triggers.firings({ triggerId: saved.id, limit: 10 })).firings;
+        expect(firing).toMatchObject({ outcome: "skipped", runId: null });
+        expect(firing!.reason).toContain("Automatic");
+        expect(yield* triggers.store.pendingFirings()).toHaveLength(0);
+        expect(harness.launches).toHaveLength(0);
+        yield* operation.setMode("automatic");
+        yield* triggers.handleEvent(checksFailing("suppressed", "pr/1"));
+        expect(harness.launches).toHaveLength(0);
+        yield* triggers.handleEvent(checksFailing("new", "pr/2"));
+        yield* harness.nextLaunch;
+        expect(harness.launches).toHaveLength(1);
+      }),
+    ),
+  );
+  it.effect("retains the event cursor until failed sibling admission is recovered", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { bots, triggers } = yield* makeTriggers(harness);
+        yield* bots.save(reviewer({ maxConcurrentRuns: 5 }), USER_CALLER);
+        const first = yield* triggers.save(trigger({ projectId }), USER_CALLER);
+        const second = yield* triggers.save(trigger({ projectId }), USER_CALLER);
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE unavailable_trigger (id TEXT)`;
+        yield* sql`INSERT INTO unavailable_trigger (id) VALUES (${second.id})`;
+        yield* sql`CREATE TRIGGER fail_sibling BEFORE INSERT ON fork_bots_trigger_firings
+          WHEN NEW.trigger_id = (SELECT id FROM unavailable_trigger)
+          BEGIN SELECT RAISE(FAIL, 'sibling unavailable'); END`;
+        const at = "1970-01-01T00:00:00.000Z";
+        const stored: OrchestrationV2StoredEvent = {
+          sequence: 1,
+          commandId: null,
+          event: {
+            id: EventId.make("checks-failed"),
+            type: "thread.pull-request-link-updated",
+            threadId: ThreadId.make("thread-a"),
+            occurredAt: DateTime.makeUnsafe(at),
+            payload: {
+              host: "github.com",
+              repository: "acme/app",
+              number: 12,
+              url: "https://github.com/acme/app/pull/12",
+              source: "agent",
+              linkedAt: at,
+              stack: null,
+              snapshot: {
+                state: "open",
+                title: "Fix it",
+                headBranch: "fix/it",
+                baseBranch: "main",
+                isDraft: false,
+                updatedAt: null,
+                syncedAt: at,
+                checksState: "failing",
+              },
+            },
+          },
+        };
+        const unreadable = yield* processStoredEvent(
+          triggers,
+          {
+            getThreadShell: () =>
+              Effect.fail(new OrchestratorProjectionError({ threadId: stored.event.threadId })),
+          },
+          stored,
+        ).pipe(Effect.result);
+        expect(unreadable).toMatchObject({
+          _tag: "Failure",
+          failure: { _tag: "OrchestratorProjectionError" },
+        });
+        expect(yield* triggers.store.getCursor(stored.event.type)).toBeNull();
+        expect(harness.launches).toHaveLength(0);
+        const threads = { getThreadShell: () => Effect.succeed(null) };
+        const failed = yield* processStoredEvent(triggers, threads, stored).pipe(Effect.result);
+        expect(failed).toMatchObject({ _tag: "Failure", failure: { reason: "storage" } });
+        expect(yield* triggers.store.getCursor(stored.event.type)).toBeNull();
+        expect(yield* triggers.store.getPullRequest("github.com/acme/app#12")).toBeNull();
+        yield* harness.nextLaunch;
+        yield* sql`DROP TRIGGER fail_sibling`;
+
+        yield* processStoredEvent(triggers, threads, stored);
+        yield* harness.nextLaunch;
+        expect(yield* triggers.store.getCursor(stored.event.type)).toBe(1);
+        expect(yield* triggers.store.getPullRequest("github.com/acme/app#12")).toMatchObject({
+          checksState: "failing",
+        });
+        for (const saved of [first, second])
+          expect(
+            (yield* triggers.firings({ triggerId: saved.id, limit: 10 })).firings,
+          ).toHaveLength(1);
+        expect(harness.launches).toHaveLength(2);
+      }),
+    ),
+  );
+  it.effect.each(["admission", "linkage"] as const)(
+    "recovers a firing after a storage failure during %s without another run",
+    (stage) =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const { bots, triggers } = yield* makeTriggers(harness);
+          yield* bots.save(reviewer(), USER_CALLER);
+          const saved = yield* triggers.save(trigger(), USER_CALLER);
+          const sql = yield* SqlClient.SqlClient;
+          if (stage === "admission")
+            yield* sql`CREATE TRIGGER fail_trigger_dispatch BEFORE INSERT ON fork_bots_runs BEGIN SELECT RAISE(FAIL, 'admission unavailable'); END`;
+          else
+            yield* sql`CREATE TRIGGER fail_trigger_dispatch BEFORE UPDATE ON fork_bots_trigger_firings BEGIN SELECT RAISE(FAIL, 'linkage unavailable'); END`;
+
+          const failure = yield* triggers
+            .handleEvent(checksFailing("recoverable", "pr/1"))
+            .pipe(Effect.result);
+          expect(failure).toMatchObject({ _tag: "Failure", failure: { reason: "storage" } });
+          if (stage === "linkage") yield* harness.nextLaunch;
+          yield* sql`DROP TRIGGER fail_trigger_dispatch`;
+
+          expect(yield* triggers.store.pendingFirings()).toHaveLength(1);
+          yield* bots.save(
+            reviewer({ instructions: "Changed {{file}}.", expectedVersion: 1 }),
+            USER_CALLER,
+          );
+          yield* triggers.recoverPending();
+          if (stage === "admission") yield* harness.nextLaunch;
+          yield* triggers.handleEvent(checksFailing("recoverable", "pr/changed"));
+          const { firings } = yield* triggers.firings({ triggerId: saved.id, limit: 10 });
+          expect(firings).toHaveLength(1);
+          expect(firings[0]).toMatchObject({ outcome: "run", reason: null });
+          expect(firings[0]!.runId).toBe((yield* bots.listRuns({ limit: 10 })).runs[0]!.id);
+          expect(harness.launches).toHaveLength(1);
+          expect(harness.launches[0]!.initialMessage?.text).toContain("Review ");
+          expect(harness.launches[0]!.initialMessage?.text).toContain("pr/1");
+          expect(yield* triggers.store.pendingFirings()).toHaveLength(0);
+        }),
+      ),
+  );
   it.effect("keeps daily limits and delivery dedupe after newer skipped firings fill history", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -615,11 +768,19 @@ describe("BotTriggers", () => {
         yield* pipelines.save(checksPipeline("checks"), USER_CALLER);
         yield* pipelines.save(checksPipeline("triage"), USER_CALLER);
         const direct = yield* triggers.save(trigger(), USER_CALLER);
-        yield* triggers.save(trigger({ pipelineId: "checks" }), USER_CALLER);
+        const checks = yield* triggers.save(trigger({ pipelineId: "checks" }), USER_CALLER);
         const triage = yield* triggers.save(trigger({ pipelineId: "triage" }), USER_CALLER);
 
+        const removed = yield* triggers.changes.pipe(
+          Stream.filter(
+            (change) => change._tag === "trigger-deleted" && change.triggerId === checks.id,
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkChild({ startImmediately: true }),
+        );
         yield* pipelines.delete("checks");
-        yield* Effect.yieldNow;
+        yield* Fiber.join(removed);
         const ids = (list: ReadonlyArray<{ readonly id: string }>) =>
           list.map((entry) => entry.id).toSorted();
         expect(ids(yield* triggers.list("reviewer"))).toEqual([direct.id, triage.id].toSorted());
@@ -645,9 +806,17 @@ describe("BotTriggers", () => {
       Effect.gen(function* () {
         const { bots, triggers } = yield* makeTriggers(harness);
         yield* bots.save(reviewer(), USER_CALLER);
-        yield* triggers.save(trigger(), USER_CALLER);
+        const saved = yield* triggers.save(trigger(), USER_CALLER);
+        const removed = yield* triggers.changes.pipe(
+          Stream.filter(
+            (change) => change._tag === "trigger-deleted" && change.triggerId === saved.id,
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkChild({ startImmediately: true }),
+        );
         yield* bots.delete("reviewer");
-        yield* Effect.yieldNow;
+        yield* Fiber.join(removed);
         expect(yield* triggers.list("reviewer")).toEqual([]);
       }),
     ),
@@ -672,9 +841,24 @@ it.effect(
         expect(saved.projectId).toBe(projectId);
         const reload = yield* makeTriggers(harness);
         expect((yield* reload.triggers.list())[0]?.projectId).toBe(projectId);
-        const firing = yield* triggers.test({ triggerId: saved.id, fields: {} });
-        expect(firing.outcome).toBe("run");
-        const run = yield* bots.getRun(firing.runId!);
+        const sql = yield* SqlClient.SqlClient;
+        const dueAt = saved.nextFireAt!;
+        const nextAt = "1970-01-01T02:00:00.000Z";
+        yield* sql`CREATE TRIGGER fail_schedule_admission BEFORE INSERT ON fork_bots_runs
+          BEGIN SELECT RAISE(FAIL, 'admission unavailable'); END`;
+        const failure = yield* triggers
+          .advanceSchedule(saved.id, dueAt, nextAt)
+          .pipe(Effect.result);
+        expect(failure).toMatchObject({ _tag: "Failure", failure: { reason: "storage" } });
+        expect((yield* triggers.get(saved.id)).nextFireAt).toBe(dueAt);
+        yield* sql`DROP TRIGGER fail_schedule_admission`;
+        yield* triggers.advanceSchedule(saved.id, dueAt, nextAt);
+        yield* harness.nextLaunch;
+        const [firing] = (yield* triggers.firings({ triggerId: saved.id, limit: 10 })).firings;
+        expect(firing!.outcome).toBe("run");
+        expect((yield* triggers.get(saved.id)).nextFireAt).toBe(nextAt);
+        expect((yield* triggers.get(saved.id)).lastFiredAt).not.toBeNull();
+        const run = yield* bots.getRun(firing!.runId!);
         expect(run.projectId).toBe(projectId);
       }),
     ),

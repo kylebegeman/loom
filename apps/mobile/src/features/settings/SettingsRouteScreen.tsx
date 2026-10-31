@@ -157,6 +157,16 @@ function LocalSettingsRouteScreen() {
         environmentsRow(Object.keys(savedConnectionsById).length),
         libraryRow, // fork: library-sign-in
         ...LibraryPush.rows(), // fork: library-push
+        ...(!LibraryPush.isSupported()
+          ? [
+              {
+                id: "SettingsNotifications",
+                icon: "bell.badge" as const,
+                label: "Notifications",
+                target: "SettingsNotifications" as const,
+              },
+            ]
+          : []),
       ]}
     />
   );

@@ -1,3 +1,4 @@
+import { BOT_TRIGGER_FIRING_STATES } from "@t3tools/client-runtime/fork";
 import { useCallback, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -64,7 +65,7 @@ function FiringRows({
     firings.map((firing) => (
       <View key={firing.id} className="gap-1 rounded-xl border border-border-subtle p-3">
         <Text>
-          {firing.outcome === "run" ? "Ran" : "Skipped"}: {firing.eventSummary}
+          {BOT_TRIGGER_FIRING_STATES[firing.outcome].label}: {firing.eventSummary}
         </Text>
         <Text className="text-xs text-foreground-muted">
           {time(firing.firedAt)}
@@ -329,6 +330,9 @@ function TriggerCard({
       <View className="gap-3 p-4">
         <Text accessibilityRole="header" className="text-lg font-t3-semibold">
           {trigger.name}
+        </Text>
+        <Text className="text-xs text-foreground-muted">
+          Completion destination: {trigger.completionDestinationId ?? "Keep the result in Loom"}
         </Text>
         <Text>
           {bot?.name ?? "Deleted bot"}

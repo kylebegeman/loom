@@ -42,6 +42,9 @@ import {
   type StoredBatch,
 } from "./BotBatchesStore.ts";
 import { BotsService, RESTARTED_BEFORE_START, type BotCaller } from "./BotsService.ts";
+import { makeBotOperationState } from "./BotOperationState.ts";
+import { makeBotCompletionStore } from "./BotCompletionStore.ts";
+import { makeBotAdmissions } from "./BotAdmissions.ts";
 import { renderBatchReport } from "./batchReport.ts";
 import { cutLabel, makeBatchSources, type SourceCheckout } from "./batchSources.ts";
 import { validateInputs } from "./render.ts";
@@ -85,6 +88,10 @@ interface Prepared {
 
 export const make = Effect.gen(function* () {
   const store = yield* makeBotBatchesStore;
+  const admissions = yield* makeBotAdmissions;
+  const completions = yield* makeBotCompletionStore;
+  const operations = yield* makeBotOperationState;
+  const admissionPermit = yield* Semaphore.make(1);
   const bots = yield* BotsService;
   const sources = yield* makeBatchSources;
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -449,8 +456,15 @@ export const make = Effect.gen(function* () {
   const runBatch = Effect.fn("BotBatches.runBatch")(function* (
     input: BotsBatchInput,
     caller: BotCaller,
-    options: { readonly triggerId?: string } = {},
+    options: { readonly triggerId?: string; readonly expectedVersion?: number } = {},
   ) {
+    yield* bots.checkCaller({ botId: input.botId, inputs: {} }, caller);
+    const prior = yield* admissions.lookup("batch", input, caller);
+    if (prior !== null) {
+      const { batch } = yield* load(prior);
+      if (batch.status === "running") yield* startFeeder(prior);
+      return batch;
+    }
     const prepared = yield* prepare(input, caller);
     const firstInvalid = prepared.invalid[0];
     if (firstInvalid !== undefined)
@@ -459,6 +473,11 @@ export const make = Effect.gen(function* () {
         `${prepared.invalid.length} item${prepared.invalid.length === 1 ? " is" : "s are"} not valid. ${firstInvalid.label}: ${firstInvalid.message}`,
       );
     const { bot } = prepared;
+    if (options.expectedVersion !== undefined && bot.version !== options.expectedVersion)
+      return yield* fail(
+        "invalid",
+        "The bot changed before the pending trigger could be admitted.",
+      );
     const stored: StoredBatch = {
       batch: {
         id: yield* randomUuidV4,
@@ -483,13 +502,27 @@ export const make = Effect.gen(function* () {
       target: input.target ?? null,
       ...(options.triggerId === undefined ? {} : { triggerId: options.triggerId }),
     };
-    yield* store.insertBatch(stored, prepared.valid).pipe(Effect.catch(storageError));
+    yield* store
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* operations.checkAdmission(options.triggerId !== undefined);
+          yield* store.insertBatch(stored, prepared.valid);
+          yield* admissions.record("batch", input, caller, stored.batch.id);
+          yield* completions.prepare(
+            "batch",
+            stored.batch.id,
+            stored.batch.projectId,
+            input.completionDestinationId,
+          );
+        }),
+      )
+      .pipe(Effect.catchTags({ SqlError: storageError }));
     yield* store.pruneBatches(bot.id, BATCHES_KEPT_PER_BOT).pipe(Effect.ignore({ log: true }));
     const { batch } = yield* load(stored.batch.id);
     yield* publish({ _tag: "batch", batch });
     yield* startFeeder(batch.id);
     return batch;
-  });
+  }, admissionPermit.withPermits(1));
 
   /**
    * Starts a batch over items a pipeline step already rendered and checked, with the definition

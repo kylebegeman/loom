@@ -45,6 +45,7 @@ vi.mock("@t3tools/client-runtime/fork", async () => {
     createVaultCoreAtoms: () => ({ save: { permissionAtom: () => null }, list: () => "matches" }),
     secretSaveTarget,
     VAULT_SEARCH_DEBOUNCE_MS: 250,
+    VAULT_KIND_LABELS: { account: "Account", secret: "Secret" },
   };
 });
 vi.mock("../../state/entities", async () => {
@@ -114,6 +115,23 @@ vi.mock("../../components/ui/AppText", () => ({
       disabled={!editable}
       onChange={(event) => onChangeText(event.target.value)}
     />
+  ),
+}));
+vi.mock("../../components/ui/ListChoiceRow", () => ({
+  ListChoiceRow: ({
+    label,
+    selected,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    selected: boolean;
+    disabled: boolean;
+    onPress: () => void;
+  }) => (
+    <button role="radio" aria-checked={selected} disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
   ),
 }));
 vi.mock("../../components/ui/Button", () => ({
@@ -286,10 +304,15 @@ function clickButton(label: string) {
       .click();
   });
 }
+function clickRadio(label: string) {
+  clickButton(label);
+}
 it("replaces the matching item's current version and preserves its kind", async () => {
   showMatches([matchedItem]);
   fillSecret();
   act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
+  clickRadio("Create new item");
+  clickRadio("Update existing item");
   await submit();
   expect(state.save).toHaveBeenCalledOnce();
   expect(state.save.mock.calls[0]?.[0]).toMatchObject({
@@ -307,7 +330,7 @@ it("saves as a new secret when the human declines replacing the matching item", 
   showMatches([matchedItem]);
   fillSecret();
   act(() => container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click());
-  clickButton("Save as new");
+  clickRadio("Create new item");
   await submit();
   const input = state.save.mock.calls[0]?.[0].input;
   expect(input).toMatchObject({

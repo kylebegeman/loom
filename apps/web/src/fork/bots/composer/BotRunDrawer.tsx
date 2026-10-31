@@ -1,3 +1,5 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { randomUUID } from "~/lib/utils";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BotIcon } from "lucide-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -8,6 +10,8 @@ import type { BotDefinition } from "@t3tools/contracts/fork";
 import { ComposerBanner } from "~/components/chat/ComposerBanner";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
+import { useThreadShell } from "~/state/entities";
+import { BotCompletionField, useBotCompletionSelection } from "../BotCompletions";
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { ForkComposerContext } from "../../composer/registry";
 import { LibraryErrorNotice } from "../../project-library/LibraryControls";
@@ -33,6 +37,14 @@ function BotRunDrawerForm({
   const [values, setValues] = useState(() => initialRunValues(bot));
   const [attempted, setAttempted] = useState(false);
   const [notify, setNotify] = useState(false);
+  const [identify] = useState(() => makeBotRequestIdentity(randomUUID));
+  const thread = useThreadShell({ environmentId, threadId });
+  const completion = useBotCompletionSelection(
+    environmentId,
+    bot.workspace.type === "project"
+      ? (bot.workspace.projectId ?? thread?.projectId ?? null)
+      : null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = useAtomCommand(bots.run, { reportFailure: false });
@@ -50,7 +62,7 @@ function BotRunDrawerForm({
   }, []);
 
   const submit = async () => {
-    if (busy || !canRun) return;
+    if (busy || !canRun || !completion.valid) return;
     setAttempted(true);
     if (Object.keys(errors).length > 0) {
       setError(null);
@@ -64,12 +76,15 @@ function BotRunDrawerForm({
       // The server takes the project and checkout from the calling thread.
       const result = await run({
         environmentId,
-        input: {
+        input: identify({
           botId: bot.id,
           inputs: runInputs(bot, values),
           callerThreadId: threadId,
+          ...(completion.destinationId
+            ? { completionDestinationId: completion.destinationId }
+            : {}),
           ...(notify ? { notify: true } : {}),
-        },
+        }),
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onClose();
@@ -112,6 +127,7 @@ function BotRunDrawerForm({
         <Switch checked={notify} onCheckedChange={setNotify} />
         Post the result to this thread
       </label>
+      <BotCompletionField selection={completion} disabled={busy} />
       <LibraryErrorNotice error={error} />
       {canRun ? null : (
         <p role="status" className="text-sm text-muted-foreground">

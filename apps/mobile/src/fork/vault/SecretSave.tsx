@@ -7,11 +7,13 @@ import {
   supportsLoomFeature,
   secretSaveTarget,
   VAULT_SEARCH_DEBOUNCE_MS,
+  VAULT_KIND_LABELS,
 } from "@t3tools/client-runtime/fork";
 import { VAULT_SECRET_FEATURE } from "@t3tools/contracts/fork";
 import { useEnvironmentQuery } from "../../state/query";
 import { useDebouncedValue } from "../../state/queries";
 import { Button } from "../../components/ui/Button";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import * as Redacted from "effect/Redacted";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentServerConfig } from "../../state/entities";
@@ -42,7 +44,11 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
         })
       : null,
   );
-  const target = secretSaveTarget(matches.data?.items ?? [], name, saveAsNew);
+  const matchingItem = secretSaveTarget(matches.data?.items ?? [], name, false);
+  const target = saveAsNew ? null : matchingItem;
+  const lookupPending =
+    matchingSupported && (query !== name.trim().slice(0, 100) || matches.isPending);
+  const lookupFailed = matchingSupported && !matches.isPending && !matches.isSuccess;
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const beforeReply = async (secret: string) => {
@@ -81,50 +87,84 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
   };
   const control = (disabled: boolean) =>
     supported || enabled ? (
-      <View className="gap-2">
+      <View className="gap-3">
         <View className="flex-row items-center gap-2">
           <Switch
-            accessibilityLabel="Also save to Vault"
+            accessibilityLabel="Also save a copy to Vault"
             value={enabled}
             disabled={disabled || saved || (!allowed && !enabled)}
             onValueChange={setEnabled}
           />
-          <Text>{target ? `Replace value of ${target.label}` : "Also save to Vault as"}</Text>
+          <Text className="flex-1 text-sm">Also save a copy to Vault</Text>
         </View>
         {enabled ? (
-          <TextInput
-            accessibilityLabel="Vault item name"
-            value={name}
-            maxLength={200}
-            editable={!disabled && !saved && allowed}
-            onChangeText={setName}
-          />
-        ) : null}
-        {enabled && matchingSupported ? (
-          <Button
-            label={saveAsNew ? "Use matching item" : "Save as new"}
-            tone="text"
-            disabled={disabled || saved}
-            onPress={() => setSaveAsNew(!saveAsNew)}
-          />
+          <View className="gap-2">
+            <Text className="text-xs font-t3-medium text-foreground-muted">Vault item name</Text>
+            <TextInput
+              accessibilityLabel="Vault item name"
+              value={name}
+              maxLength={200}
+              editable={!disabled && !saved && allowed}
+              onChangeText={setName}
+            />
+            {lookupPending ? (
+              <Text accessibilityRole="summary" className="text-xs text-foreground-muted">
+                Checking saved items…
+              </Text>
+            ) : lookupFailed ? (
+              <Text accessibilityRole="alert" className="text-xs text-danger-foreground">
+                Could not check saved items. Refresh the lookup before saving to Vault.
+              </Text>
+            ) : matchingItem ? (
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="How to save this Vault copy"
+                className="overflow-hidden rounded-xl border border-border-subtle"
+              >
+                <ListChoiceRow
+                  label="Update existing item"
+                  description={`${matchingItem.label} · ${VAULT_KIND_LABELS[matchingItem.kind]} · Version ${matchingItem.version} · ${matchingItem.id.slice(0, 8)}`}
+                  selected={!saveAsNew}
+                  disabled={disabled || saved || !allowed}
+                  onPress={() => setSaveAsNew(false)}
+                />
+                <ListChoiceRow
+                  label="Create new item"
+                  description="Keep the existing item unchanged."
+                  selected={saveAsNew}
+                  separated
+                  disabled={disabled || saved || !allowed}
+                  onPress={() => setSaveAsNew(true)}
+                />
+              </View>
+            ) : name.trim() ? (
+              <Text className="text-xs text-foreground-muted">
+                A new Vault item will be created.
+              </Text>
+            ) : null}
+          </View>
         ) : null}
         {saved ? (
-          <Text accessibilityRole="summary">
+          <Text accessibilityRole="summary" className="text-xs text-foreground-muted">
             Saved to Vault as {name}. The private request still needs to finish.
           </Text>
         ) : null}
-        {error && matchingSupported ? (
+        {enabled && matchingSupported && (error || lookupFailed) ? (
           <Button
             label="Refresh matching item"
             tone="text"
-            disabled={disabled}
+            disabled={disabled || saved}
             onPress={() => {
               matches.refresh();
               setError(null);
             }}
           />
         ) : null}
-        {error ? <Text accessibilityRole="alert">{error}</Text> : null}
+        {error ? (
+          <Text accessibilityRole="alert" className="text-xs text-danger-foreground">
+            {error}
+          </Text>
+        ) : null}
       </View>
     ) : null;
   return { beforeReply, control, saved };

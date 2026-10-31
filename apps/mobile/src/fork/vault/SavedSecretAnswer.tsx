@@ -94,6 +94,7 @@ export function SavedSecretAnswer({
   if (!supported) return null;
   return (
     <View className="gap-2">
+      <Text className="text-xs text-foreground-muted">Or use a saved item</Text>
       <Button
         label={exact && !open ? `Use saved item: ${exact.label}` : "Use saved item"}
         tone="secondary"

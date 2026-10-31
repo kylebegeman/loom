@@ -119,6 +119,7 @@ function PendingSecretRequestForm(props: {
           </Text>
         ) : null}
       </View>
+      <Text className="font-t3-medium text-xs text-foreground-muted">Private value</Text>
       <TextInput
         accessibilityLabel={item.label}
         placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}

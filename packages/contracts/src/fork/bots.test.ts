@@ -43,6 +43,20 @@ describe("isBotInboxRun", () => {
   it("holds failed, timed out and undecided runs", () => {
     expect(isBotInboxRun(run({ status: "failed" }))).toBe(true);
     expect(isBotInboxRun(run({ status: "timed_out" }))).toBe(true);
+    const attention = {
+      kind: "approval",
+      requestId: "approval-1",
+      since: "2026-10-20T10:01:00.000Z",
+      timeoutPolicy: "wall-clock",
+    } as const;
+    expect(isBotInboxRun(run({ status: "running", attention }))).toBe(true);
+    expect(isBotInboxRun(run({ status: "running", attention, pipelineRunId: "pipeline-1" }))).toBe(
+      true,
+    );
+    expect(
+      isBotInboxRun(run({ status: "completed", attention, pipelineRunId: "pipeline-1" })),
+    ).toBe(false);
+
     expect(isBotInboxRun(run({ verdict: verdict("needs_attention") }))).toBe(true);
   });
 

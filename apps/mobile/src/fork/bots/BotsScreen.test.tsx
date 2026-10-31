@@ -224,9 +224,12 @@ vi.mock("./BotSuggestions", () => ({ BotSuggestions: () => null }));
 vi.mock("./BotRunDetailScreen", () => ({ BotRunHistory: () => <span>Run history details</span> }));
 vi.mock("./state", () => {
   const command = (name: string) => ({ name, permissionAtom: () => null });
+  const changes = { bots: new Map(), runs: new Map(), pruned: 0 };
   return {
     bots: {
       save: command("save"),
+      setOperationMode: command("setOperationMode"),
+      stopAll: command("stopAll"),
       run: command("run"),
       archive: command("archive"),
       delete: command("delete"),
@@ -249,9 +252,10 @@ vi.mock("./state", () => {
       pipelinesSupported: true,
       inboxSupported: true,
     }),
+    useBotsChanges: () => changes,
     useBotsCollection: () => ({
       bots: harness.bots,
-      changes: { bots: new Map(), runs: new Map(), pruned: 0 },
+      changes,
       query: { error: null, isPending: false },
       refresh: harness.refresh,
     }),

@@ -19,6 +19,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import type { StepOutput } from "./templates.ts";
+import { makeBotCompletionStore, UNRESOLVED_COMPLETION_STATUSES } from "../BotCompletionStore.ts";
 
 /** Runs kept per pipeline; older finished runs lose their attempts too, never their bot runs. */
 export const PIPELINE_RUNS_KEPT = 100;
@@ -227,6 +228,7 @@ export interface RunUpdate {
 
 export const makePipelinesStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const completions = yield* makeBotCompletionStore;
 
   const insertAttempt = Effect.fn("PipelinesStore.insertAttempt")(function* (
     pipelineRunId: string,
@@ -291,7 +293,17 @@ export const makePipelinesStore = Effect.gen(function* () {
     }),
 
     updateRun: Effect.fn("PipelinesStore.updateRun")(function* (id: string, update: RunUpdate) {
-      yield* sql`UPDATE fork_bots_pipeline_runs SET status = ${update.status}, retry_at = ${update.retryAt}, cursor_step_id = ${update.cursorStepId}, final_verdict = ${update.finalVerdict}, stopped_run_id = ${update.stoppedRunId}, error = ${update.error}, finished_at = ${update.finishedAt} WHERE id = ${id}`;
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`UPDATE fork_bots_pipeline_runs SET status = ${update.status}, retry_at = ${update.retryAt}, cursor_step_id = ${update.cursorStepId}, final_verdict = ${update.finalVerdict}, stopped_run_id = ${update.stoppedRunId}, error = ${update.error}, finished_at = ${update.finishedAt} WHERE id = ${id}`;
+          if (
+            update.status === "completed" ||
+            update.status === "failed" ||
+            update.status === "cancelled"
+          )
+            yield* completions.snapshot("pipeline", id);
+        }),
+      );
     }),
 
     /** Newest first. Fetches one extra row to report whether more exist. */
@@ -390,7 +402,7 @@ export const makePipelinesStore = Effect.gen(function* () {
     pruneRuns: Effect.fn("PipelinesStore.pruneRuns")(function* (pipelineId: string, keep: number) {
       yield* sql.withTransaction(
         Effect.gen(function* () {
-          const stale = sql`SELECT id FROM fork_bots_pipeline_runs WHERE pipeline_id = ${pipelineId} AND status NOT IN ('running', 'waiting') AND id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE pipeline_id = ${pipelineId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
+          const stale = sql`SELECT id FROM fork_bots_pipeline_runs WHERE pipeline_id = ${pipelineId} AND status NOT IN ('running', 'waiting') AND NOT EXISTS (SELECT 1 FROM fork_bots_completion_deliveries notice WHERE notice.status IN ${sql.in(UNRESOLVED_COMPLETION_STATUSES)} AND notice.kind = 'pipeline' AND notice.job_id = fork_bots_pipeline_runs.id) AND id NOT IN (SELECT id FROM fork_bots_pipeline_runs WHERE pipeline_id = ${pipelineId} ORDER BY created_at DESC, id DESC LIMIT ${keep})`;
           yield* sql`DELETE FROM fork_bots_pipeline_attempts WHERE pipeline_run_id IN (${stale})`;
           yield* sql`DELETE FROM fork_bots_pipeline_runs WHERE id IN (${stale})`;
         }),

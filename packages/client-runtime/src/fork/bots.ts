@@ -1,3 +1,4 @@
+import { stableStringify } from "@t3tools/shared/relaySigning";
 import {
   BOTS_ANYWHERE_WS_METHODS as BA,
   BOTS_BATCH_WS_METHODS as BB,
@@ -48,6 +49,20 @@ import {
  * Dropping half at once keeps each list's refetch after a prune rare.
  */
 export const BOTS_CHANGES_MAX_RUNS = 500;
+/** A failed launch keeps its request identity while the same form remains open. */
+export const makeBotRequestIdentity = (newId: () => string) => {
+  const attempts = new Map<string, string>();
+  return <Input extends object>(input: Input): Input & { readonly clientRequestId: string } => {
+    const content = stableStringify(input);
+    let clientRequestId = attempts.get(content);
+    if (clientRequestId === undefined) {
+      clientRequestId = newId();
+      attempts.set(content, clientRequestId);
+    }
+    return { ...input, clientRequestId };
+  };
+};
+
 const BOTS_CHANGES_KEPT_RUNS = BOTS_CHANGES_MAX_RUNS / 2;
 
 /** Changes seen since the watch started, overlaid on lists fetched once. */
@@ -104,6 +119,29 @@ export const applyBotChanges = (
   return [...merged.values()].sort(byName);
 };
 
+/** Live transitions own terminal state; a fresh query owns derived attention. */
+export const mergeBotRunSnapshot = (
+  watched: BotRun | null | undefined,
+  queried: BotRun | null | undefined,
+): BotRun | null => {
+  const base =
+    watched &&
+    (isTerminalBotRunStatus(watched.status) ||
+      !queried ||
+      (!isTerminalBotRunStatus(queried.status) && watched.status === "running"))
+      ? watched
+      : queried;
+  if (!base) return null;
+  const attention = isTerminalBotRunStatus(base.status)
+    ? undefined
+    : queried
+      ? queried.attention
+      : watched?.attention;
+  if (base.attention === attention) return base;
+  const { attention: _attention, ...rest } = base;
+  return attention ? { ...rest, attention } : rest;
+};
+
 const newestFirst = (left: BotRun, right: BotRun) =>
   right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
 
@@ -128,7 +166,7 @@ export const applyRunChanges = (
     limit !== undefined && listed.length >= limit ? listed.at(-1)?.createdAt : undefined;
   const merged = new Map(listed.map((run) => [run.id, run]));
   for (const [id, run] of changes.runs) {
-    if (merged.has(id)) merged.set(id, run);
+    if (merged.has(id)) merged.set(id, mergeBotRunSnapshot(run, merged.get(id))!);
     else if (
       options.includeNew &&
       (options.botId === undefined || run.botId === options.botId) &&
@@ -205,7 +243,7 @@ export const isBotTriageRun = (run: BotRun, dismissed: boolean): boolean =>
  * pipeline reruns. Anything else can be run again with the same inputs instead.
  */
 export const canRetryBotRun = (run: BotRun): boolean =>
-  run.pipelineRunId == null && isBotInboxRun(run);
+  isTerminalBotRunStatus(run.status) && run.pipelineRunId == null && isBotInboxRun(run);
 
 /**
  * Loaded inbox pages with watched changes applied, the totals kept without a refetch. A changed run
@@ -221,8 +259,9 @@ export const applyInboxChanges = (
   const merged = new Map(page.runs.map((run) => [run.id, run]));
   let total = page.total;
   let handled = page.handled;
-  for (const [id, run] of changes.runs) {
+  for (const [id, changed] of changes.runs) {
     const before = merged.get(id);
+    const run = mergeBotRunSnapshot(changed, before)!;
     if (before === undefined && page.hasMore && oldest !== undefined && run.createdAt < oldest)
       continue;
     const now = isBotTriageRun(run, options.dismissed);
@@ -643,6 +682,59 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     ).pipe(Atom.withLabel(`loom:bots:thread-runs:${key}`));
   });
   return {
+    badgePreferences: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:badge-preferences",
+      tag: B.badgePreferences,
+    }),
+    badgePreferenceChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:bots:badge-preference-changes",
+      tag: B.watchBadgePreferences,
+    }),
+    setBadgePreferences: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:set-badge-preferences",
+      tag: B.setBadgePreferences,
+    }),
+    badgeCount: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:badge-count",
+      tag: B.badgeCount,
+    }),
+    completionDestinations: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:completion-destinations",
+      tag: B.completionDestinations,
+    }),
+    completionConfigure: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:completion-configure",
+      tag: B.completionConfigure,
+    }),
+    completionSetEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:completion-set-enabled",
+      tag: B.completionSetEnabled,
+    }),
+    completionRemove: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:completion-remove",
+      tag: B.completionRemove,
+    }),
+    completionDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:completion-deliveries",
+      tag: B.completionDeliveries,
+    }),
+    completionAcknowledge: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:completion-acknowledge",
+      tag: B.completionAcknowledge,
+    }),
+    operationState: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:bots:operation-state",
+      tag: B.operationState,
+    }),
+    operationChanges: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:bots:operation-changes",
+      tag: B.watchOperations,
+    }),
+    setOperationMode: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:set-operation-mode",
+      tag: B.setOperationMode,
+    }),
+    stopAll: createEnvironmentRpcCommand(runtime, { label: "loom:bots:stop-all", tag: B.stopAll }),
     list: createEnvironmentRpcQueryAtomFamily(runtime, { label: "loom:bots:list", tag: B.list }),
     listRuns,
     getRun: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -709,6 +801,14 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
     retryBatch: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:retry-batch",
       tag: BB.retryBatch,
+    }),
+    draftFromStarter: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:draft-from-starter",
+      tag: BD.draftFromStarter,
+    }),
+    draftFromText: createEnvironmentRpcCommand(runtime, {
+      label: "loom:bots:draft-from-text",
+      tag: BD.draftFromText,
     }),
     draftFromThread: createEnvironmentRpcCommand(runtime, {
       label: "loom:bots:draft-from-thread",

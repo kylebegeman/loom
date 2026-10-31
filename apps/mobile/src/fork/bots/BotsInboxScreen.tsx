@@ -7,6 +7,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_LIST_RUNS_MAX_LIMIT,
   isBotRunHandledByCaller,
+  isTerminalBotRunStatus,
   type BotRun,
 } from "@t3tools/contracts/fork";
 import {
@@ -126,13 +127,15 @@ function Inbox({ environmentId }: { readonly environmentId: EnvironmentId }) {
           separated={index > 0}
           onOpen={() => navigation.navigate("BotsRunDetail", { environmentId, runId: run.id })}
           actions={
-            <Button
-              label={dismissed ? "Restore" : "Dismiss"}
-              accessibilityLabel={`${dismissed ? "Restore" : "Dismiss"} ${run.botName} run`}
-              tone="text"
-              disabled={!canAct}
-              onPress={() => void update([run.id], !dismissed)}
-            />
+            isTerminalBotRunStatus(run.status) ? (
+              <Button
+                label={dismissed ? "Restore" : "Dismiss"}
+                accessibilityLabel={`${dismissed ? "Restore" : "Dismiss"} ${run.botName} run`}
+                tone="text"
+                disabled={!canAct}
+                onPress={() => void update([run.id], !dismissed)}
+              />
+            ) : undefined
           }
         />
       ))}

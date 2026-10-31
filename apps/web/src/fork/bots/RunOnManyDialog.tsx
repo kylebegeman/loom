@@ -1,3 +1,6 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { randomUUID } from "~/lib/utils";
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletions";
 import { useId, useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -323,6 +326,7 @@ function RunOnManyWizard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const runBatch = useAtomCommand(bots.runBatch, { reportFailure: false });
+  const [identify] = useState(() => makeBotRequestIdentity(randomUUID));
   const formId = useId();
   const inputId = (name: string) => `${formId}-${name}`;
 
@@ -335,6 +339,7 @@ function RunOnManyWizard({
     projects.find((project) => project.id === chosenProjectId) ?? projects[0] ?? null;
   const projectId = fixedProjectId ?? (pickProject ? (chosenProject?.id ?? null) : null);
   const project = projects.find((candidate) => candidate.id === projectId) ?? null;
+  const completion = useBotCompletionSelection(environmentId, projectId);
   const fileSource = readsFiles(draft.type);
   const shells = useThreadShells(fileSource);
   const checkouts =
@@ -387,7 +392,11 @@ function RunOnManyWizard({
   const itemsReady = settled && previewed !== null && preview.error === null && total > 0;
   const invalidItems = itemsReady ? previewed.invalid : [];
   const canSubmit =
-    !busy && canStart && itemsReady && (invalidItems.length === 0 || sharedErrorCount > 0);
+    !busy &&
+    canStart &&
+    itemsReady &&
+    completion.valid &&
+    (invalidItems.length === 0 || sharedErrorCount > 0);
 
   const targetQuery = useEnvironmentQuery(
     host.anywhereSupported && target.type === "environment"
@@ -413,7 +422,11 @@ function RunOnManyWizard({
     // Items are found on this computer; only their runs go where the target says.
     await runBatch({
       environmentId,
-      input: target.type === "here" ? input : { ...input, target },
+      input: identify({
+        ...input,
+        ...(target.type === "here" ? {} : { target }),
+        ...(completion.destinationId ? { completionDestinationId: completion.destinationId } : {}),
+      }),
     })
       .then((result) => {
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -666,6 +679,7 @@ function RunOnManyWizard({
                         onChange={setTarget}
                       />
                     ) : null}
+                    <BotCompletionField selection={completion} disabled={busy} />
                     <section
                       aria-label="What starting does"
                       className="flex flex-col gap-1 rounded-xl bg-muted/50 px-4 py-3 text-sm dark:bg-accent/50"

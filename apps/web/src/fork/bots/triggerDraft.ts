@@ -429,7 +429,9 @@ export interface FiringActivity {
  * trigger held back by its cooldown would otherwise read as having just run.
  */
 export function firingActivity(firings: readonly BotTriggerFiring[]): FiringActivity {
-  const newestFirst = firings.toSorted((left, right) => right.firedAt.localeCompare(left.firedAt));
+  const newestFirst = firings
+    .filter((firing) => firing.outcome !== "pending")
+    .toSorted((left, right) => right.firedAt.localeCompare(left.firedAt));
   const lastRun = newestFirst.find((firing) => firing.outcome === "run") ?? null;
   const lastSkip = newestFirst.find((firing) => firing.outcome === "skipped") ?? null;
   const runIndex = lastRun === null ? newestFirst.length : newestFirst.indexOf(lastRun);
@@ -449,6 +451,7 @@ export type TriggerRowActivity =
   /** Fired, with an outcome only its firings know: `lastFiredAt` counts skips too. */
   | { readonly kind: "fired"; readonly at: string }
   | { readonly kind: "ran"; readonly at: string }
+  | { readonly kind: "pending"; readonly at: string }
   | { readonly kind: "skipped"; readonly at: string };
 
 /**
@@ -465,7 +468,7 @@ export function triggerRowActivity(
   );
   const last = trigger.lastFiredAt;
   if (newest !== null && (last === null || newest.firedAt >= last))
-    return { kind: newest.outcome === "run" ? "ran" : "skipped", at: newest.firedAt };
+    return { kind: newest.outcome === "run" ? "ran" : newest.outcome, at: newest.firedAt };
   return last === null ? { kind: "never" } : { kind: "fired", at: last };
 }
 

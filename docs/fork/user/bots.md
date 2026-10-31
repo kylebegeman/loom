@@ -41,9 +41,40 @@ from thread**, keeping that thread's checkout as the run context.
 Bots live on the server you are connected to and run there. When that server is offline or runs
 an older Loom, the page says so.
 
+## Controlling jobs
+
+The operation mode applies to the selected computer, across web, desktop, mobile and agents.
+Bots start in **Manual** until you choose another mode. **Paused** refuses new jobs. **Manual** allows jobs you or
+an agent start directly. **Automatic** also allows trigger firings, including **Fire once**.
+Changing the mode leaves jobs that were already accepted running or queued.
+
+**Stop all jobs** first pauses new jobs, then cancels accepted runs, batches and pipelines on that
+computer, including runs it sent to another computer. History and completed work stay available.
+If a computer cannot acknowledge a cancellation, Loom keeps the paused mode and names the jobs
+that still need stopping. Check those jobs before turning new work on again.
+
+The mode requires permission to change settings. Stopping jobs requires permission to operate
+agents. If an older server does not offer these controls, update that computer before relying on
+pausing to stop new work.
+
 ## Making a bot
 
-Choose **New bot** and fill in:
+Choose **New bot**, then a starting point:
+
+- **From prompt or snippet** accepts pasted instructions or a text file. Import plain text,
+  Markdown with frontmatter, a fenced `loom-snippet` JSON export, or a `snippets.json` array.
+  Choose one snippet when an export contains several.
+- **From thread** turns a conversation's opening request into a reusable draft.
+- **Starter** opens a separate draft with a starter's typed inputs.
+- **Blank** opens an empty editor.
+
+Imports preserve existing `{{placeholders}}` and suggest inputs for concrete values. Review each
+input's type and default. Old snippet IDs, scopes and enabled flags do not carry authority into
+Loom. Text and starter imports begin with approval required; review whether the instructions
+ask for active fixes or ideas only, then choose permissions and mode explicitly.
+
+The draft stays unsaved until you create it. Creating a bot does not start a run or enable a
+schedule. Review these settings before saving:
 
 - **Instructions.** Refer to an input as `{{name}}`. A placeholder that matches no input stays
   as written in the run, so a typo shows in the thread.
@@ -59,6 +90,12 @@ Choose **New bot** and fill in:
   [Verdicts](#verdicts).
 
 Editing a bot changes later runs only. Each run records the version it used.
+
+For several bots working in sequence, choose **Build an automation**. In a new pipeline, start
+from a saved workflow or recipe to copy its typed inputs, saved bot versions and stop conditions
+into a new draft. The source name and version are shown for review. Check the pipeline and save
+it before adding a schedule or event trigger. New triggers start disabled; enable them separately
+when the inputs and limits are ready.
 
 ## Starter bots
 
@@ -88,6 +125,20 @@ checkout: the project root or the worktree of one of the project's threads.
 
 Bot runs stay out of the thread list and do not send completion or failure notifications. A run
 that stops to ask for an approval or an answer does notify you.
+
+## Notification dots
+
+On web and desktop, open **Settings > General > Notifications > Bot notification
+dots**. On mobile, open **Settings > Notifications**. Choose what makes the Bots
+badge light up on each computer: approvals, questions, failed or timed out
+runs, undecided verdicts, stopped pipelines, and unconfirmed or failed result
+deliveries. Turn the badge off, choose individual categories, or mute specific
+bots. **Reset defaults** enables every category and unmutes all bots.
+
+These preferences belong to the execution computer and apply across devices
+connected to it. They change the badge only. Needs you, run history, and the jobs
+themselves remain available. Result delivery includes an external receiver that
+has accepted a result but has not acknowledged completion.
 
 ## Runs
 

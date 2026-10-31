@@ -1,3 +1,6 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { uuidv4 } from "../../lib/uuid";
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletionsScreen";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -94,6 +97,19 @@ function PipelineRunForm({
   const checkoutBots = stepBots.filter(runsInCheckout);
   const fixedProjects = [...new Set(checkoutBots.flatMap((bot) => fixedProject(bot) ?? []))];
   const checkoutProject = projectId || (fixedProjects.length === 1 ? fixedProjects[0] : "") || "";
+  const completionProjects = [
+    ...new Set(
+      stepBots.flatMap((bot) =>
+        bot.workspace.type === "project" ? (fixedProject(bot) ?? []) : [],
+      ),
+    ),
+  ];
+  const completionProjectId =
+    projectId || (completionProjects.length === 1 ? completionProjects[0] : null);
+  const completion = useBotCompletionSelection(
+    environmentId,
+    completionProjectId ? (completionProjectId as ProjectId) : null,
+  );
   const checkouts = checkoutChoices(shells, checkoutProject);
   const [checkoutThreadId, setCheckoutThreadId] = useState("");
   const checkout = checkouts.find((choice) => choice.threadId === checkoutThreadId);
@@ -101,8 +117,9 @@ function PipelineRunForm({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
   const run = useAtomCommand(bots.runPipeline, { reportFailure: false });
+  const [identify] = useState(() => makeBotRequestIdentity(uuidv4));
   const start = async () => {
-    if (busy || !canRun) return;
+    if (busy || !canRun || !completion.valid) return;
     if (pickProject && !projectId) {
       setError("Choose a project for this pipeline.");
       return;
@@ -120,12 +137,18 @@ function PipelineRunForm({
         const inputs = parameterInputs(pipeline.parameters, values);
         return run({
           environmentId,
-          input: {
+          input: identify({
             pipelineId: pipeline.id,
             inputs,
+            ...(completion.destinationId && completionProjectId
+              ? {
+                  completionDestinationId: completion.destinationId,
+                  projectId: completionProjectId as ProjectId,
+                }
+              : {}),
             ...(projectId ? { projectId: projectId as ProjectId } : {}),
             ...(checkout ? { checkoutThreadId: checkout.threadId as ThreadId } : {}),
-          },
+          }),
         });
       })
       .then((result) => {
@@ -173,6 +196,7 @@ function PipelineRunForm({
               }}
             />
           ) : null}
+          <BotCompletionField selection={completion} disabled={busy} />
           {checkoutProject ? (
             <RunChoice
               label="Checkout for caller-checkout steps"
@@ -657,6 +681,7 @@ function PipelinesScreen({
             <BotPipelineEditor
               environmentId={environmentId}
               pipeline={editing.pipeline}
+              templates={pipelines}
               allBots={collection.bots}
               canSave={caps.connected && saveAllowed}
               onClose={() => setEditing(null)}

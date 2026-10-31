@@ -24,7 +24,7 @@ type Threads = Pick<
 /** Matches one stored event against every trigger; pull request state is shared by all of them. */
 const handleStoredEvent = Effect.fnUntraced(function* (
   triggers: Pick<BotTriggers["Service"], "handleEvent" | "store">,
-  threads: Threads,
+  threads: Pick<Threads, "getThreadShell">,
   stored: OrchestrationV2StoredEvent,
 ) {
   const { event } = stored;
@@ -38,9 +38,7 @@ const handleStoredEvent = Effect.fnUntraced(function* (
   const link = event.payload;
   const key = pullRequestKey(link);
   const previous = yield* triggers.store.getPullRequest(key);
-  const shell = yield* threads
-    .getThreadShell(event.threadId)
-    .pipe(Effect.orElseSucceed(() => null));
+  const shell = yield* threads.getThreadShell(event.threadId);
   const { next, events } = matchPullRequestLink(
     link,
     { threadId: event.threadId, projectId: shell?.projectId ?? null },
@@ -49,6 +47,15 @@ const handleStoredEvent = Effect.fnUntraced(function* (
   );
   for (const matched of events) yield* triggers.handleEvent(matched);
   if (next !== null) yield* triggers.store.setPullRequest(key, next, occurredAt);
+});
+
+export const processStoredEvent = Effect.fn("BotTriggerReactor.processStoredEvent")(function* (
+  triggers: Pick<BotTriggers["Service"], "handleEvent" | "store">,
+  threads: Pick<Threads, "getThreadShell">,
+  stored: OrchestrationV2StoredEvent,
+) {
+  yield* handleStoredEvent(triggers, threads, stored);
+  yield* triggers.store.setCursor(stored.event.type, stored.sequence);
 });
 
 /**
@@ -60,14 +67,9 @@ const follow = Effect.fn("BotTriggerReactor.follow")(
   function* (triggers: BotTriggers["Service"], threads: Threads, eventType: WatchedEvent) {
     const afterSequence = (yield* triggers.store.getCursor(eventType)) ?? 0;
     // The bounded stream can drop a slow reader; the cursor makes resubscribing lossless.
-    yield* threads.streamStoredEventsFrom({ afterSequence, eventType }).pipe(
-      Stream.runForEach((stored) =>
-        handleStoredEvent(triggers, threads, stored).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("Bot trigger event failed", { cause })),
-          Effect.andThen(triggers.store.setCursor(eventType, stored.sequence)),
-        ),
-      ),
-    );
+    yield* threads
+      .streamStoredEventsFrom({ afterSequence, eventType })
+      .pipe(Stream.runForEach((stored) => processStoredEvent(triggers, threads, stored)));
   },
   (effect, _triggers, _threads, eventType) =>
     effect.pipe(

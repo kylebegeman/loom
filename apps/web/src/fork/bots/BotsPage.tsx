@@ -25,6 +25,8 @@ import type { LibraryLayout } from "../project-library/LibraryCollection";
 import { LibraryPageFrame } from "../project-library/LibraryPageFrame";
 import { LibraryTabs, type LibraryTab } from "../project-library/LibraryTabs";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
+import { GrokCompanionSection } from "./BotCompletions";
+import { BotOperationsControls } from "./BotOperationsControls";
 import { ComputersButton, ComputersOverlay } from "./BotAnywhere";
 import { BatchPage } from "./BotBatches";
 import { BotPage } from "./BotDetail";
@@ -215,6 +217,8 @@ export function BotsPage() {
           This connection can look at bots but cannot run or change them.
         </LibraryNotice>
       ) : null}
+      {ready && host.operationsSupported ? <BotOperationsControls /> : null}
+      {route.kind === "index" && ready ? <GrokCompanionSection /> : null}
       {body}
       {ready ? (
         <>

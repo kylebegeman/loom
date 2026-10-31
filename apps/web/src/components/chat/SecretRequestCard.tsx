@@ -126,7 +126,8 @@ function PendingSecretRequestForm(props: {
       // leaves it alone so the reason can still be copied.
       onClick={(event) => {
         if (!(event.target instanceof Element)) return;
-        if (event.target.closest("input, button, a")) return;
+        if (event.target.closest("input, button, a, label, [role=radio], [role=radiogroup]"))
+          return;
         if (window.getSelection()?.isCollapsed === false) return;
         document.getElementById(inputId)?.focus();
       }}
@@ -139,8 +140,9 @@ function PendingSecretRequestForm(props: {
           <p className="text-sm wrap-anywhere text-muted-foreground">{item.reason}</p>
         ) : null}
       </div>
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <span className="text-xs font-medium text-muted-foreground">Private value</span>
+        <div className="min-w-0">
           <Input
             id={inputId}
             // Password fields prompt to save credentials; this secret is not a login.
@@ -161,9 +163,6 @@ function PendingSecretRequestForm(props: {
             onChange={(event) => setSecret(event.currentTarget.value)}
           />
         </div>
-        <Button type="submit" disabled={submitting || secret.trim().length === 0}>
-          Save securely
-        </Button>
       </div>
       {/* fork: vault-core */}
       {vaultSave.control(submitting)}
@@ -183,22 +182,22 @@ function PendingSecretRequestForm(props: {
           {error}
         </p>
       ) : null}
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <p
-          id={privacyId}
-          className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
-        >
-          <ShieldCheckIcon className="size-3.5 shrink-0" aria-hidden />
-          {secretRequestPrivacyNote(item)}
-        </p>
+      <p id={privacyId} className="flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground">
+        <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+        {secretRequestPrivacyNote(item)}
+      </p>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button
           type="button"
-          size="xs"
+          size="sm"
           variant="ghost-muted"
           disabled={submitting}
           onClick={() => void send({ type: "decline" })}
         >
           Decline
+        </Button>
+        <Button type="submit" disabled={submitting || secret.trim().length === 0}>
+          Save securely
         </Button>
       </div>
     </form>

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
+  EnvironmentId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeRequestId,
   ThreadId,
   type ServerSettings,
 } from "@t3tools/contracts";
@@ -14,8 +16,11 @@ import {
   type BotStarterId,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import { makeBotsStore } from "./BotsStore.ts";
 import { USER_CALLER, versionInput } from "./BotsService.ts";
@@ -61,6 +66,271 @@ describe("BotsService", () => {
     ),
   );
 
+  it.effect("does not launch work before its running state is durable", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        yield* sql`CREATE TRIGGER refuse_running BEFORE UPDATE ON fork_bots_runs WHEN NEW.status = 'running' BEGIN SELECT RAISE(FAIL, 'injected running write failure'); END`;
+        harness.state.autoOutcome = { status: "completed", reply: "Should never run." };
+        const run = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
+          USER_CALLER,
+        );
+        const ended = yield* bots.awaitRun(run.id);
+        expect(ended).toMatchObject({ status: "failed" });
+        expect(harness.launches).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("retains a queued recovery transition until its terminal state is durable", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const store = yield* makeBotsStore;
+        const bots = yield* harness.service;
+        yield* store.insertRun({
+          ...storedRun("pending-write", "reviewer", 1),
+          status: "queued",
+          finishedAt: null,
+        });
+        yield* sql`CREATE TRIGGER refuse_terminal BEFORE UPDATE ON fork_bots_runs WHEN NEW.finished_at IS NOT NULL BEGIN SELECT RAISE(FAIL, 'injected terminal write failure'); END`;
+        expect(yield* Effect.flip(bots.recover())).toMatchObject({ reason: "storage" });
+        expect(yield* bots.getRun("pending-write")).toMatchObject({
+          status: "queued",
+          finishedAt: null,
+        });
+        yield* sql`DROP TRIGGER refuse_terminal`;
+        yield* bots.recover();
+        expect(yield* bots.getRun("pending-write")).toMatchObject({
+          status: "failed",
+          error: "The server restarted before this run started.",
+        });
+      }),
+    ),
+  );
+
+  it.effect("keeps a cancelled queued run live until its terminal write can recover", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const input = { botId: "reviewer", inputs: { file: "a.ts" }, projectId };
+        const first = yield* bots.run(input, USER_CALLER);
+        yield* harness.nextLaunch;
+        const queued = yield* bots.run(input, USER_CALLER);
+        yield* sql`CREATE TRIGGER refuse_cancel BEFORE UPDATE ON fork_bots_runs WHEN NEW.status = 'cancelled' BEGIN SELECT RAISE(FAIL, 'injected cancellation write failure'); END`;
+        expect(yield* Effect.flip(bots.cancel(queued.id))).toMatchObject({ reason: "storage" });
+        expect(yield* bots.getRun(queued.id)).toMatchObject({ status: "queued" });
+        expect(bots.activeRunCount("reviewer")).toBe(2);
+        yield* sql`DROP TRIGGER refuse_cancel`;
+        yield* bots.recover();
+        expect(yield* bots.getRun(queued.id)).toMatchObject({ status: "cancelled" });
+        yield* harness.end(first.threadId, { status: "completed", reply: "Done." });
+        yield* bots.awaitRun(first.id);
+        expect(harness.launches).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("returns a storage failure before reporting or delivering a remote completion", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const store = yield* makeBotsStore;
+        const bots = yield* harness.service;
+        harness.shells.set("chat", { projectId, worktreePath: null, branch: null });
+        const run = {
+          ...storedRun("remote-write", "reviewer", 1),
+          status: "running" as const,
+          finishedAt: null,
+          callerThreadId: ThreadId.make("chat"),
+          notify: true,
+          ranOn: { environmentId: EnvironmentId.make("remote"), label: "Remote" },
+        };
+        yield* store.insertRun(run);
+        yield* sql`CREATE TRIGGER refuse_remote_terminal BEFORE UPDATE ON fork_bots_runs WHEN NEW.id = 'remote-write' AND NEW.finished_at IS NOT NULL BEGIN SELECT RAISE(FAIL, 'injected remote write failure'); END`;
+        const update = {
+          _tag: "terminal" as const,
+          label: "Remote",
+          status: "completed" as const,
+          startedAt: run.startedAt,
+          finishedAt: "2026-10-20T10:01:00.000Z",
+          result: "Remote proof.",
+          resultTruncated: false,
+          error: null,
+          verdict: null,
+          usage: null,
+          modelSelection: null,
+        };
+        expect(yield* Effect.flip(bots.applyRemoteUpdate(run.id, update))).toMatchObject({
+          reason: "storage",
+        });
+        expect(yield* bots.getRun(run.id)).toMatchObject({ status: "running", finishedAt: null });
+        expect(harness.sent).toEqual([]);
+        yield* sql`DROP TRIGGER refuse_remote_terminal`;
+        expect(yield* bots.applyRemoteUpdate(run.id, update)).toMatchObject({
+          status: "completed",
+          result: "Remote proof.",
+        });
+        expect(harness.sent).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("replays caller-scoped admissions across restart and rolls back a failed receipt", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer({ maxConcurrentRuns: 2 }), USER_CALLER);
+        const caller = {
+          ...USER_CALLER,
+          actor: "agent" as const,
+          runtimeMode: "full-access" as const,
+          requestScope: "oauth:first",
+        };
+        const input = {
+          botId: "reviewer",
+          inputs: { file: "a.ts" },
+          projectId,
+          clientRequestId: "grok-job",
+        };
+        const [first, replay] = yield* Effect.all(
+          [bots.run(input, caller), bots.run(input, caller)],
+          { concurrency: "unbounded" },
+        );
+        expect(replay.id).toBe(first.id);
+        yield* harness.nextLaunch;
+        expect(
+          yield* Effect.flip(bots.run({ ...input, inputs: { file: "b.ts" } }, caller)),
+        ).toMatchObject({ reason: "invalid" });
+        const other = yield* bots.run(input, { ...caller, requestScope: "oauth:second" });
+        expect(other.id).not.toBe(first.id);
+        yield* harness.nextLaunch;
+        yield* harness.end(first.threadId, { status: "completed", reply: "First result." });
+        yield* harness.end(other.threadId, { status: "completed", reply: "Other result." });
+        yield* bots.awaitRun(first.id);
+        yield* bots.awaitRun(other.id);
+        const restarted = yield* harness.service;
+        expect((yield* restarted.run(input, caller)).id).toBe(first.id);
+        expect(harness.launches).toHaveLength(2);
+        yield* sql`CREATE TRIGGER refuse_receipt BEFORE INSERT ON fork_bots_admissions WHEN NEW.request_id = 'retry-after-failed-insert' BEGIN SELECT RAISE(FAIL, 'injected receipt write failure'); END`;
+        const retry = { ...input, clientRequestId: "retry-after-failed-insert" };
+        expect(yield* Effect.flip(restarted.run(retry, caller))).toMatchObject({
+          reason: "storage",
+        });
+        expect((yield* restarted.listRuns({ limit: 10 })).runs).toHaveLength(2);
+        yield* sql`DROP TRIGGER refuse_receipt`;
+        const admitted = yield* restarted.run(retry, caller);
+        yield* harness.nextLaunch;
+        yield* harness.end(admitted.threadId, { status: "completed", reply: "Recovered." });
+        expect(yield* restarted.awaitRun(admitted.id)).toMatchObject({ result: "Recovered." });
+      }),
+    ),
+  );
+
+  it.effect(
+    "queries authoritative approval and question state through resume and cancellation",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          yield* TestClock.setTime(Date.parse("2026-10-20T10:00:00.000Z"));
+          const bots = yield* harness.service;
+          const store = yield* makeBotsStore;
+          yield* bots.save(reviewer(), USER_CALLER);
+          yield* store.insertRun({
+            ...storedRun("older-failure", "reviewer", 1),
+            status: "failed",
+            createdAt: "2026-10-18T10:00:00.000Z",
+          });
+          yield* store.insertRun({
+            ...storedRun("dismissed-failure", "reviewer", 1),
+            status: "failed",
+            createdAt: "2026-10-19T10:00:00.000Z",
+          });
+          yield* store.setDismissed(["dismissed-failure"], "2026-10-19T11:00:00.000Z");
+          const run = yield* bots.run(
+            { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
+            USER_CALLER,
+          );
+          yield* harness.nextLaunch;
+          const request = {
+            id: RuntimeRequestId.make("approval"),
+            kind: "command" as const,
+            createdAt: DateTime.makeUnsafe("2026-10-20T10:01:00.000Z"),
+            blocking: true,
+          };
+          harness.shells.set(run.threadId, { projectId, pendingRuntimeRequest: request });
+          const approval = {
+            kind: "approval",
+            requestId: "approval",
+            since: "2026-10-20T10:01:00.000Z",
+            deadlineAt: "2026-10-20T10:05:00.000Z",
+            timeoutPolicy: "wall-clock",
+          };
+          expect((yield* bots.getRun(run.id)).attention).toEqual(approval);
+          expect((yield* bots.listRuns({ limit: 10 })).runs[0]?.attention).toEqual(approval);
+          expect(yield* bots.inbox({ limit: 1 })).toMatchObject({
+            total: 2,
+            runs: [{ id: run.id, attention: approval }],
+            hasMore: true,
+          });
+          expect(yield* bots.inbox({ limit: 1, before: run.createdAt })).toMatchObject({
+            total: 2,
+            runs: [{ id: "older-failure" }],
+            hasMore: false,
+          });
+          expect(yield* bots.inbox({ limit: 10, dismissed: true })).toMatchObject({
+            total: 1,
+            runs: [{ id: "dismissed-failure" }],
+          });
+          expect(yield* Effect.flip(bots.retry({ runId: run.id }, USER_CALLER))).toMatchObject({
+            reason: "invalid",
+          });
+          harness.state.shellError = new Error("Shell unavailable.");
+          expect(yield* Effect.flip(bots.getRun(run.id))).toMatchObject({ reason: "storage" });
+          harness.state.shellError = null;
+          harness.shells.set(run.threadId, {
+            projectId,
+            pendingRuntimeRequest: {
+              ...request,
+              id: RuntimeRequestId.make("question"),
+              kind: "user_input",
+              blocking: false,
+            },
+          });
+          expect((yield* bots.getRun(run.id)).attention).toBeUndefined();
+          harness.shells.set(run.threadId, {
+            projectId,
+            pendingRuntimeRequest: {
+              ...request,
+              id: RuntimeRequestId.make("question"),
+              kind: "user_input",
+              blocking: true,
+            },
+          });
+          expect((yield* bots.getRun(run.id)).attention).toMatchObject({
+            kind: "question",
+            requestId: "question",
+          });
+          harness.shells.set(run.threadId, { projectId, pendingRuntimeRequest: null });
+          expect((yield* bots.getRun(run.id)).attention).toBeUndefined();
+          expect(yield* bots.inbox({ limit: 10 })).toMatchObject({
+            total: 1,
+            runs: [{ id: "older-failure" }],
+          });
+          harness.shells.set(run.threadId, { projectId, pendingRuntimeRequest: request });
+          yield* bots.cancel(run.id);
+          expect(yield* bots.awaitRun(run.id)).toMatchObject({ status: "cancelled" });
+          expect((yield* bots.getRun(run.id)).attention).toBeUndefined();
+        }),
+      ),
+  );
+
   it.effect("queues runs past the bot's concurrency limit and cancels a queued one", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -97,16 +367,94 @@ describe("BotsService", () => {
         const bots = yield* harness.service;
         yield* bots.save(reviewer(), USER_CALLER);
         harness.state.timeOut = true;
+        const waitGate = yield* Deferred.make<void>();
+        harness.state.waitGate = waitGate;
         const run = yield* bots.run(
           { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
           USER_CALLER,
         );
+        yield* harness.nextLaunch;
+        harness.shells.set(run.threadId, {
+          projectId,
+          pendingRuntimeRequest: {
+            id: RuntimeRequestId.make("timeout-approval"),
+            kind: "command",
+            createdAt: DateTime.makeUnsafe(0),
+            blocking: true,
+          },
+        });
+        expect((yield* bots.getRun(run.id)).attention).toMatchObject({
+          kind: "approval",
+          timeoutPolicy: "wall-clock",
+        });
+        yield* Deferred.succeed(waitGate, undefined);
         expect(yield* bots.awaitRun(run.id, 60_000)).toMatchObject({
           status: "timed_out",
           result: "Partial notes.",
           error: "The run passed its 5 minute limit and was stopped.",
         });
         expect(harness.interrupted).toEqual([run.threadId]);
+        expect((yield* bots.getRun(run.id)).attention).toBeUndefined();
+      }),
+    ),
+  );
+
+  it.effect("keeps a running job truthful after an unconfirmed cancellation and allows retry", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        for (const next of ["complete", "retry"] as const) {
+          const run = yield* bots.run(
+            { botId: "reviewer", inputs: { file: `${next}.ts` }, projectId },
+            USER_CALLER,
+          );
+          yield* harness.nextLaunch;
+          harness.state.interruptError = new Error("Interrupt transport unavailable.");
+          expect(yield* Effect.flip(bots.cancel(run.id))).toMatchObject({ reason: "launch" });
+          expect(yield* bots.getRun(run.id)).toMatchObject({
+            status: "running",
+            error:
+              "Loom could not confirm that the bot run stopped. Open its thread or retry cancellation.",
+          });
+          harness.state.interruptError = null;
+          if (next === "complete")
+            yield* harness.end(run.threadId, { status: "completed", reply: "Finished normally." });
+          else yield* bots.cancel(run.id);
+          expect(yield* bots.awaitRun(run.id)).toMatchObject({
+            status: next === "complete" ? "completed" : "cancelled",
+          });
+        }
+        expect(harness.interrupted).toHaveLength(1);
+      }),
+    ),
+  );
+
+  it.effect("keeps monitoring a timed-out run when its stop request fails", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        harness.state.timeOut = true;
+        harness.state.interruptError = new Error("Interrupt transport unavailable.");
+        const run = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
+          USER_CALLER,
+        );
+        yield* harness.nextLaunch;
+        expect((yield* harness.nextWait).timeoutMs).toBe(5 * 60_000);
+        expect((yield* harness.nextWait).timeoutMs).toBe(Infinity);
+        expect(yield* bots.getRun(run.id)).toMatchObject({
+          status: "running",
+          error:
+            "Loom could not confirm that the bot run stopped. Open its thread or retry cancellation.",
+        });
+        yield* harness.end(run.threadId, { status: "completed", reply: "Actual outcome." });
+        expect(yield* bots.awaitRun(run.id)).toMatchObject({
+          status: "completed",
+          result: "Actual outcome.",
+          error: null,
+        });
       }),
     ),
   );
@@ -919,6 +1267,41 @@ describe("BotsService invocation", () => {
         });
       }),
     ),
+  );
+
+  it.effect(
+    "retries transient result delivery and replays an accepted send without posting twice",
+    () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          const bots = yield* harness.service;
+          yield* bots.save(reviewer(), USER_CALLER);
+          harness.shells.set("chat", { projectId, worktreePath: null, branch: null });
+          const caller = yield* bots.threadCaller(callerId);
+          harness.state.sendError = new Error("Temporary delivery outage.");
+          const run = yield* bots.run(
+            { botId: "reviewer", inputs: { file: "a.ts" }, projectId, notify: true },
+            caller,
+          );
+          yield* harness.end(run.threadId, { status: "completed", reply: "Done." });
+          expect(yield* bots.awaitRun(run.id)).toMatchObject({
+            status: "completed",
+            error: "Result delivery failed: Temporary delivery outage.",
+          });
+          harness.state.sendError = null;
+          harness.state.sendAfterReceiptError = new Error("Acknowledgement lost.");
+          yield* bots.recover();
+          expect(harness.sent).toHaveLength(1);
+          yield* bots.recover();
+          expect(harness.sent).toHaveLength(1);
+          expect(yield* bots.getRun(run.id)).toMatchObject({
+            status: "completed",
+            result: "Done.",
+            error: null,
+            deliveredAt: expect.any(String),
+          });
+        }),
+      ),
   );
 
   it.effect("delivers a result a stopped server never posted, once", () =>

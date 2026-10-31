@@ -3,7 +3,13 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import {
+  EnvironmentId,
+  ProjectId,
+  SecretRef,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
 import { OrchestrationV2ProviderFailureClass } from "../orchestrationV2.ts";
 import { ProviderInteractionMode, RuntimeMode } from "../providerPolicy.ts";
@@ -12,6 +18,25 @@ import { LibraryId } from "./project-library.ts";
 import { VaultAccessAction } from "./vault-access.ts";
 
 export const BOTS_FEATURE = "bots";
+export const BOTS_COMPLETIONS_FEATURE = "bots-completions";
+export const BOTS_OPERATIONS_FEATURE = "bots-operations";
+export const BOTS_BADGE_PREFERENCES_FEATURE = "bots-badge-preferences";
+export const BotOperationMode = Schema.Literals(["paused", "manual", "automatic"]);
+export type BotOperationMode = typeof BotOperationMode.Type;
+export const BotOperationState = Schema.Struct({ mode: BotOperationMode });
+export type BotOperationState = typeof BotOperationState.Type;
+export const BotStopAllResult = Schema.Struct({
+  mode: Schema.Literal("paused"),
+  cancelled: Schema.Struct({ runs: Schema.Int, batches: Schema.Int, pipelines: Schema.Int }),
+  failures: Schema.Array(
+    Schema.Struct({
+      kind: Schema.Literals(["run", "batch", "pipeline"]),
+      id: Schema.String,
+      message: Schema.String,
+    }),
+  ),
+});
+export type BotStopAllResult = typeof BotStopAllResult.Type;
 export const BOTS_RUN_DETAILS_FEATURE = "bots-run-details";
 export const BOTS_STARTERS_FEATURE = "bots-starters";
 export const BOTS_INVOCATION_FEATURE = "bots-invocation";
@@ -20,12 +45,28 @@ export const BOTS_BATCHES_FEATURE = "bots-batches";
 export const BOTS_INBOX_FEATURE = "bots-inbox";
 export const BOTS_BUDGETS_FEATURE = "bots-budgets";
 export const BOTS_FROM_THREAD_FEATURE = "bots-from-thread";
+export const BOTS_CREATION_FEATURE = "bots-creation";
 export const BOTS_TRIGGERS_FEATURE = "bots-triggers";
 export const BOTS_VERSIONS_FEATURE = "bots-versions";
 export const BOTS_PIPELINES_FEATURE = "bots-pipelines";
 export const BOTS_ANYWHERE_FEATURE = "bots-anywhere";
 
 export const BOTS_WS_METHODS = {
+  badgePreferences: "loom.bots.badgePreferences",
+  setBadgePreferences: "loom.bots.setBadgePreferences",
+  badgeCount: "loom.bots.badgeCount",
+  watchBadgePreferences: "loom.bots.watchBadgePreferences",
+  completionDestinations: "loom.bots.completionDestinations",
+  completionConfigure: "loom.bots.completionConfigure",
+  completionSetEnabled: "loom.bots.completionSetEnabled",
+  completionRemove: "loom.bots.completionRemove",
+  completionDeliveries: "loom.bots.completionDeliveries",
+  completionAcknowledge: "loom.bots.completionAcknowledge",
+
+  operationState: "loom.bots.operationState",
+  setOperationMode: "loom.bots.setOperationMode",
+  stopAll: "loom.bots.stopAll",
+  watchOperations: "loom.bots.watchOperations",
   list: "loom.bots.list",
   save: "loom.bots.save",
   archive: "loom.bots.archive",
@@ -76,6 +117,46 @@ export const isBotRunThreadId = (threadId: string): boolean =>
   threadId.startsWith(BOT_RUN_THREAD_PREFIX);
 
 export const BotId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/));
+
+export const BotBadgePreferences = Schema.Struct({
+  enabled: Schema.Boolean,
+  approvals: Schema.Boolean,
+  questions: Schema.Boolean,
+  failed: Schema.Boolean,
+  timedOut: Schema.Boolean,
+  needsAttention: Schema.Boolean,
+  stoppedPipelines: Schema.Boolean,
+  deliveryFailures: Schema.Boolean,
+  mutedBotIds: Schema.Array(BotId).check(Schema.isMaxLength(200)),
+});
+export type BotBadgePreferences = typeof BotBadgePreferences.Type;
+export const DEFAULT_BOT_BADGE_PREFERENCES: BotBadgePreferences = {
+  enabled: true,
+  approvals: true,
+  questions: true,
+  failed: true,
+  timedOut: true,
+  needsAttention: true,
+  stoppedPipelines: true,
+  deliveryFailures: true,
+  mutedBotIds: [],
+};
+export const BOT_BADGE_CATEGORIES = [
+  { key: "approvals", label: "Approval requests" },
+  { key: "questions", label: "Questions" },
+  { key: "failed", label: "Failed runs" },
+  { key: "timedOut", label: "Timed out runs" },
+  { key: "needsAttention", label: "Needs attention verdicts" },
+  { key: "stoppedPipelines", label: "Stopped pipelines" },
+  { key: "deliveryFailures", label: "Unconfirmed or failed result deliveries" },
+] as const;
+export const BotsSetBadgePreferencesInput = Schema.Struct({ preferences: BotBadgePreferences });
+export type BotsSetBadgePreferencesInput = typeof BotsSetBadgePreferencesInput.Type;
+export const BotBadgeCount = Schema.Struct({
+  count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type BotBadgeCount = typeof BotBadgeCount.Type;
+
 export type BotId = typeof BotId.Type;
 
 export const BotParameterName = Schema.String.check(
@@ -326,6 +407,15 @@ export const BotRun = Schema.Struct({
   result: Schema.NullOr(Schema.String),
   resultTruncated: Schema.Boolean,
   error: Schema.NullOr(Schema.String),
+  attention: Schema.optionalKey(
+    Schema.Struct({
+      kind: Schema.Literals(["approval", "question"]),
+      requestId: Schema.String,
+      since: Schema.String,
+      deadlineAt: Schema.optionalKey(Schema.String),
+      timeoutPolicy: Schema.Literal("wall-clock"),
+    }),
+  ),
   /** How the provider failed a failed run, when it said. Absent for a run that ran elsewhere. */
   failureClass: Schema.optionalKey(Schema.NullOr(OrchestrationV2ProviderFailureClass)),
   /** Whether the result is posted to the calling thread when the run ends. Absent means no. */
@@ -368,28 +458,29 @@ export const BotRun = Schema.Struct({
 export type BotRun = typeof BotRun.Type;
 
 /**
- * A finished run a person should look at, dismissed or not: it failed, timed out, or could not
- * decide, and no newer run retried it. A `fail` verdict is an answer, and a cancelled run was a
- * choice, so neither counts.
+ * A run waiting on a person, or a finished run that failed, timed out or could not decide.
+ * A fail verdict is an answer, and a cancelled run was a choice, so neither counts.
  */
 export const needsBotAttention = (run: BotRun): boolean =>
   run.retriedBy == null &&
-  (run.status === "failed" ||
+  ((run.attention !== undefined && !isTerminalBotRunStatus(run.status)) ||
+    run.status === "failed" ||
     run.status === "timed_out" ||
     (run.status === "completed" && run.verdict?.verdict === "needs_attention"));
 
 /**
- * The server's inbox query selects the same runs in SQL; keep the two in step. A pipeline's runs
- * stay out, since its gates handle their outcomes, except the one that stopped it.
+ * The service joins waiting runs to the terminal rows selected in SQL. A pipeline's terminal
+ * steps stay out except the one that stopped it; an active step waiting on a person stays visible.
  */
 export const isBotInboxRun = (run: BotRun): boolean =>
   run.dismissedAt == null &&
   run.replayId == null &&
   // A run for another computer belongs in that computer's inbox.
   run.requestedBy == null &&
-  (run.pipelineRunId == null
-    ? needsBotAttention(run)
-    : run.pipelineStopped === true && run.retriedBy == null);
+  ((run.attention !== undefined && !isTerminalBotRunStatus(run.status)) ||
+    (run.pipelineRunId == null
+      ? needsBotAttention(run)
+      : run.pipelineStopped === true && run.retriedBy == null));
 
 /**
  * An agent's run whose result was posted back to its calling thread. That agent already has the
@@ -439,7 +530,84 @@ export const BotTarget = Schema.Union([
 ]);
 export type BotTarget = typeof BotTarget.Type;
 
+export const BotCompletionDestinationId = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/),
+);
+export const BotCompletionDestination = Schema.Struct({
+  id: BotCompletionDestinationId,
+  label: Schema.String,
+  projectId: ProjectId,
+  host: Schema.String,
+  enabled: Schema.Boolean,
+  createdAt: Schema.String,
+  deletedAt: Schema.NullOr(Schema.String),
+});
+export type BotCompletionDestination = typeof BotCompletionDestination.Type;
+const completionSettings = {
+  id: BotCompletionDestinationId,
+  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
+  projectId: ProjectId,
+  enabled: Schema.Boolean,
+};
+export const BotCompletionConfigureInput = Schema.Struct({
+  ...completionSettings,
+  url: Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096))),
+  key: Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096))),
+});
+export type BotCompletionConfigureInput = typeof BotCompletionConfigureInput.Type;
+export const BotCompletionConfigureRefsInput = Schema.Struct({
+  ...completionSettings,
+  urlSecretRef: SecretRef,
+  keySecretRef: SecretRef,
+});
+export type BotCompletionConfigureRefsInput = typeof BotCompletionConfigureRefsInput.Type;
+export const BotCompletionDelivery = Schema.Struct({
+  id: Schema.String,
+  destinationId: BotCompletionDestinationId,
+  kind: Schema.Literals(["run", "batch", "pipeline"]),
+  jobId: Schema.String,
+  projectId: ProjectId,
+  status: Schema.Literals([
+    "pending",
+    "retrying",
+    "sending",
+    "accepted",
+    "acknowledged",
+    "failed",
+    "needs_attention",
+    "cancelled",
+  ]),
+  attempts: Schema.Int,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  acceptedAt: Schema.NullOr(Schema.String),
+  acknowledgedAt: Schema.NullOr(Schema.String),
+  receiverOutcome: Schema.NullOr(Schema.Literals(["completed", "failed"])),
+  lastHttpStatus: Schema.NullOr(Schema.Int),
+  reason: Schema.NullOr(Schema.String),
+});
+export type BotCompletionDelivery = typeof BotCompletionDelivery.Type;
+export const BotCompletionListInput = Schema.Struct({ projectId: Schema.optionalKey(ProjectId) });
+export const BotCompletionDeliveriesInput = Schema.Struct({
+  destinationId: Schema.optionalKey(BotCompletionDestinationId),
+  projectId: Schema.optionalKey(ProjectId),
+});
+export const BotCompletionSetEnabledInput = Schema.Struct({
+  id: BotCompletionDestinationId,
+  enabled: Schema.Boolean,
+});
+export const BotCompletionRemoveInput = Schema.Struct({ id: BotCompletionDestinationId });
+export const BotCompletionAcknowledgeInput = Schema.Struct({
+  deliveryId: Schema.String,
+  projectId: ProjectId,
+  outcome: Schema.Literals(["completed", "failed"]),
+});
+
 export const BotsRunInput = Schema.Struct({
+  completionDestinationId: Schema.optionalKey(BotCompletionDestinationId),
+  clientRequestId: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+  ),
   botId: BotId,
   inputs: BotInputs,
   projectId: Schema.optionalKey(ProjectId),
@@ -452,6 +620,27 @@ export const BotsRunInput = Schema.Struct({
   target: Schema.optionalKey(BotTarget),
 });
 export type BotsRunInput = typeof BotsRunInput.Type;
+
+export const BotRequestMatch = Schema.Struct({
+  kind: Schema.Literals(["run", "batch", "pipeline"]),
+  id: Schema.String,
+  projectId: Schema.NullOr(ProjectId),
+  createdAt: Schema.String,
+});
+export type BotRequestMatch = typeof BotRequestMatch.Type;
+
+export const BotsFindRequestsInput = Schema.Struct({
+  clientRequestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+  kind: Schema.optionalKey(BotRequestMatch.fields.kind),
+  projectId: Schema.optionalKey(ProjectId),
+});
+export type BotsFindRequestsInput = typeof BotsFindRequestsInput.Type;
+
+export const BotsFindRequestsResult = Schema.Struct({
+  matches: Schema.Array(BotRequestMatch),
+  hasMore: Schema.Boolean,
+});
+export type BotsFindRequestsResult = typeof BotsFindRequestsResult.Type;
 
 export const BotsListRunsInput = Schema.Struct({
   botId: Schema.optionalKey(BotId),
@@ -601,6 +790,70 @@ const BB = BOTS_BATCH_WS_METHODS;
 const BotRef = Schema.Struct({ botId: BotId });
 
 export const BotsRpcGroup = RpcGroup.make(
+  Rpc.make(M.badgePreferences, {
+    payload: Schema.Struct({}),
+    success: BotBadgePreferences,
+    error: errors,
+  }),
+  Rpc.make(M.setBadgePreferences, {
+    payload: BotsSetBadgePreferencesInput,
+    success: BotBadgePreferences,
+    error: errors,
+  }),
+  Rpc.make(M.badgeCount, { payload: Schema.Struct({}), success: BotBadgeCount, error: errors }),
+  Rpc.make(M.watchBadgePreferences, {
+    payload: Schema.Struct({}),
+    success: BotBadgePreferences,
+    error: errors,
+    stream: true,
+  }),
+  Rpc.make(M.completionDestinations, {
+    payload: BotCompletionListInput,
+    success: Schema.Struct({ destinations: Schema.Array(BotCompletionDestination) }),
+    error: errors,
+  }),
+  Rpc.make(M.completionConfigure, {
+    payload: BotCompletionConfigureInput,
+    success: BotCompletionDestination,
+    error: errors,
+  }),
+  Rpc.make(M.completionSetEnabled, {
+    payload: BotCompletionSetEnabledInput,
+    success: BotCompletionDestination,
+    error: errors,
+  }),
+  Rpc.make(M.completionRemove, {
+    payload: BotCompletionRemoveInput,
+    success: Schema.Void,
+    error: errors,
+  }),
+  Rpc.make(M.completionDeliveries, {
+    payload: BotCompletionDeliveriesInput,
+    success: Schema.Struct({ deliveries: Schema.Array(BotCompletionDelivery) }),
+    error: errors,
+  }),
+  Rpc.make(M.completionAcknowledge, {
+    payload: BotCompletionAcknowledgeInput,
+    success: BotCompletionDelivery,
+    error: errors,
+  }),
+  Rpc.make(M.operationState, {
+    payload: Schema.Struct({}),
+    success: BotOperationState,
+    error: errors,
+  }),
+  Rpc.make(M.setOperationMode, {
+    payload: BotOperationState,
+    success: BotOperationState,
+    error: errors,
+  }),
+  Rpc.make(M.stopAll, { payload: Schema.Struct({}), success: BotStopAllResult, error: errors }),
+  Rpc.make(M.watchOperations, {
+    payload: Schema.Struct({}),
+    success: BotOperationState,
+    error: errors,
+    stream: true,
+  }),
   Rpc.make(M.list, {
     payload: Schema.Struct({}),
     success: Schema.Struct({ bots: Schema.Array(BotDefinition) }),
@@ -799,6 +1052,10 @@ export const BotBatchChange = Schema.Union([
 export type BotBatchChange = typeof BotBatchChange.Type;
 
 export const BotsBatchInput = Schema.Struct({
+  completionDestinationId: Schema.optionalKey(BotCompletionDestinationId),
+  clientRequestId: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+  ),
   botId: BotId,
   projectId: Schema.optionalKey(ProjectId),
   source: BotBatchSource,
@@ -888,6 +1145,8 @@ export const BotBatchesRpcGroup = RpcGroup.make(
 
 export const BOTS_DRAFT_WS_METHODS = {
   draftFromThread: "loom.bots.draftFromThread",
+  draftFromText: "loom.bots.draftFromText",
+  draftFromStarter: "loom.bots.draftFromStarter",
   refineDraft: "loom.bots.refineDraft",
   suggestions: "loom.bots.suggestions",
   dismissSuggestion: "loom.bots.dismissSuggestion",
@@ -914,6 +1173,34 @@ export const BotDraftResult = Schema.Struct({
   notes: Schema.Array(Schema.String),
 });
 export type BotDraftResult = typeof BotDraftResult.Type;
+
+export const BotsDraftFromTextInput = Schema.Struct({
+  text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100_000)),
+  modelSelection: ModelSelection,
+  projectId: Schema.optionalKey(ProjectId),
+});
+export type BotsDraftFromTextInput = typeof BotsDraftFromTextInput.Type;
+
+export const BotsDraftFromStarterInput = Schema.Struct({
+  starterId: BotStarterId,
+  modelSelection: ModelSelection,
+  projectId: Schema.optionalKey(ProjectId),
+});
+export type BotsDraftFromStarterInput = typeof BotsDraftFromStarterInput.Type;
+
+export const BotImportedDraft = Schema.Struct({
+  draft: BotDefinitionInput,
+  sourceFormat: Schema.Literals(["prompt", "markdown", "snippet", "collection", "starter"]),
+  intent: Schema.Literals(["edits", "planning", "unspecified"]),
+  notes: Schema.Array(Schema.String),
+});
+export type BotImportedDraft = typeof BotImportedDraft.Type;
+
+export const BotTextDraftResult = Schema.Struct({
+  drafts: Schema.Array(BotImportedDraft).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
+  notes: Schema.Array(Schema.String),
+});
+export type BotTextDraftResult = typeof BotTextDraftResult.Type;
 
 export const BotSuggestionId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
 
@@ -956,6 +1243,16 @@ export type BotsDismissSuggestionInput = typeof BotsDismissSuggestionInput.Type;
 const BD = BOTS_DRAFT_WS_METHODS;
 
 export const BotDraftsRpcGroup = RpcGroup.make(
+  Rpc.make(BD.draftFromStarter, {
+    payload: BotsDraftFromStarterInput,
+    success: BotImportedDraft,
+    error: errors,
+  }),
+  Rpc.make(BD.draftFromText, {
+    payload: BotsDraftFromTextInput,
+    success: BotTextDraftResult,
+    error: errors,
+  }),
   Rpc.make(BD.draftFromThread, {
     payload: BotsDraftFromThreadInput,
     success: BotDraftResult,
@@ -1113,6 +1410,7 @@ export const checkTriggerMapping = (
 };
 
 const TriggerFields = {
+  completionDestinationId: Schema.optionalKey(BotCompletionDestinationId),
   projectId: Schema.optionalKey(ProjectId),
   botId: BotId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(120)),
@@ -1170,7 +1468,7 @@ export const BotTriggerFiring = Schema.Struct({
   /** For example "acme/app#12 checks failing". */
   eventSummary: Schema.String,
   firedAt: Schema.String,
-  outcome: Schema.Literals(["run", "skipped"]),
+  outcome: Schema.Literals(["pending", "run", "skipped"]),
   runId: Schema.NullOr(BotRunId),
   /** What a firing started when that was a pipeline or a batch; older servers omit these. */
   pipelineRunId: Schema.optionalKey(Schema.NullOr(BotPipelineRunId)),
@@ -1625,6 +1923,10 @@ export const BotsSavePipelineInput = Schema.Struct({
 export type BotsSavePipelineInput = typeof BotsSavePipelineInput.Type;
 
 export const BotsRunPipelineInput = Schema.Struct({
+  completionDestinationId: Schema.optionalKey(BotCompletionDestinationId),
+  clientRequestId: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+  ),
   pipelineId: BotPipelineId,
   inputs: BotInputs,
   projectId: Schema.optionalKey(ProjectId),

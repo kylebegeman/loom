@@ -389,6 +389,7 @@ function TriageTile({
 }
 
 function VerbButton({
+  environmentId,
   verb,
   item,
   busy,
@@ -396,6 +397,7 @@ function VerbButton({
   onAct,
   onReview,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly verb: TriageVerb;
   readonly item: TriageItem;
   readonly busy: TriageBusy | null;
@@ -405,7 +407,7 @@ function VerbButton({
 }) {
   const { label, busy: busyLabel, icon: Icon } = VERBS[verb];
   const name = `${label} the ${item.botName} run`;
-  if (verb === "answer" && item.kind === "waiting")
+  if (verb === "answer")
     return (
       <Button
         shape="pill"
@@ -415,7 +417,14 @@ function VerbButton({
         render={
           <Link
             to="/$environmentId/$threadId"
-            params={{ environmentId: item.thread.environmentId, threadId: item.thread.id }}
+            params={
+              item.kind === "waiting"
+                ? { environmentId: item.thread.environmentId, threadId: item.thread.id }
+                : {
+                    environmentId: item.run.ranOn?.environmentId ?? environmentId,
+                    threadId: item.run.threadId,
+                  }
+            }
           />
         }
       >
@@ -423,7 +432,7 @@ function VerbButton({
         {label}
       </Button>
     );
-  if (verb === "answer" || verb === "review")
+  if (verb === "review")
     return (
       <Button shape="pill" size="xs" variant="outline" aria-label={name} onClick={onReview}>
         <Icon />
@@ -478,7 +487,11 @@ function TriageMenu({
   const run = item.run;
   const runId = triageRunId(item);
   const retryable =
-    item.kind === "run" && !ctx.dismissed && item.reason !== "pipeline" && botState === "active";
+    item.kind === "run" &&
+    isTerminalBotRunStatus(item.run.status) &&
+    !ctx.dismissed &&
+    item.reason !== "pipeline" &&
+    botState === "active";
   const links = run ? [run.pipelineRunId, run.batchId, run.callerThreadId].some(Boolean) : false;
   return (
     <Menu>
@@ -828,6 +841,7 @@ function TriageRow({
       </div>
       <div className="col-start-2 flex items-center gap-0.5 sm:col-start-auto">
         <VerbButton
+          environmentId={environmentId}
           verb={verb}
           item={item}
           busy={busy}

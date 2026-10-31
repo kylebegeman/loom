@@ -1,3 +1,6 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { uuidv4 } from "../../lib/uuid";
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletionsScreen";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -8,7 +11,7 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
-import { useProjects, useThreadShells } from "../../state/entities";
+import { useProjects, useThreadShells, useThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotPage, BotNotice } from "./BotControls";
@@ -313,17 +316,30 @@ function BotRunForm({
   const [values, setValues] = useState(() => initialRunValues(bot));
   const [notify, setNotify] = useState(false);
   const destination = useBotRunDestination(environmentId, bot);
+  const callerThread = useThreadShell(
+    callerThreadId ? { environmentId, threadId: callerThreadId as ThreadId } : null,
+  );
+  const completion = useBotCompletionSelection(
+    environmentId,
+    bot.workspace.type === "scratch"
+      ? null
+      : (fixedProject(bot) ??
+          callerThread?.projectId ??
+          ((destination.projectId as ProjectId) || null)),
+  );
+
   const checkoutMissing =
     !callerThreadId &&
     destination.usesCheckout &&
     destination.checkoutId !== "" &&
     destination.checkoutThreadId === null;
   const run = useAtomCommand(bots.run, { reportFailure: false });
+  const [identify] = useState(() => makeBotRequestIdentity(uuidv4));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = useBotActionLifetime();
   const submit = async () => {
-    if (busy || !canRun || checkoutMissing) return;
+    if (busy || !canRun || checkoutMissing || !completion.valid) return;
     if (!callerThreadId && destination.projectRequired && !destination.projectId) {
       setError("Choose a project first.");
       return;
@@ -334,8 +350,11 @@ function BotRunForm({
       .then(() =>
         run({
           environmentId,
-          input: {
+          input: identify({
             botId: bot.id,
+            ...(completion.destinationId
+              ? { completionDestinationId: completion.destinationId }
+              : {}),
             inputs: parameterInputs(bot.parameters, values),
             ...(callerThreadId
               ? { callerThreadId: callerThreadId as ThreadId, ...(notify ? { notify: true } : {}) }
@@ -348,7 +367,7 @@ function BotRunForm({
                     : {}),
                 }),
             ...(destination.target.type === "here" ? {} : { target: destination.target }),
-          },
+          }),
         }),
       )
       .then((result) => {
@@ -408,6 +427,7 @@ function BotRunForm({
           disabled={busy}
         />
       )}
+      <BotCompletionField selection={completion} disabled={busy} />
       <BotNotice
         error={error}
         detail={

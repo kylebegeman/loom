@@ -54,7 +54,9 @@ import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
 import type { AgentReceipts } from "./agent-receipts/AgentReceipts.ts";
+import type { BotCompletions } from "./bots/BotCompletions.ts";
 import type { BotBatches } from "./bots/BotBatches.ts";
+import type { BotOperations } from "./bots/BotOperations.ts";
 import type { BotsService } from "./bots/BotsService.ts";
 import type { BotLibraryClient } from "./bots/BotLibraryClient.ts";
 import type { BotLibraryService } from "./bots/BotLibraryService.ts";
@@ -134,7 +136,9 @@ export type ForkServices =
   | CodeGraphService
   | AgentReceipts
   | BotsService
+  | BotOperations
   | BotBatches
+  | BotCompletions
   | BotDrafts
   | BotTriggers
   | BotVersions

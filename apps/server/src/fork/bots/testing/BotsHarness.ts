@@ -64,6 +64,7 @@ export interface ThreadOutcome {
 /** Fake launch and thread services: a test decides when and how each run thread ends. */
 const makeHarness = Effect.gen(function* () {
   const launched = yield* Queue.unbounded<ThreadLaunch.ThreadLaunchInput>();
+  const waiting = yield* Queue.unbounded<ThreadManagement.ThreadManagementWaitInput>();
   const launches: Array<ThreadLaunch.ThreadLaunchInput> = [];
   const interrupted: Array<string> = [];
   const outcomes = new Map<string, Deferred.Deferred<ThreadOutcome>>();
@@ -76,7 +77,12 @@ const makeHarness = Effect.gen(function* () {
   const turns = new Map<string, Array<TurnTokenUsage | undefined>>();
   const state = {
     timeOut: false,
+    waitGate: null as Deferred.Deferred<void> | null,
+    shellError: null as unknown,
+    interruptError: null as unknown,
     sendError: null as unknown,
+    sendAfterReceiptError: null as unknown,
+    autoOutcome: null as ThreadOutcome | null,
     usageError: false,
     settings: { defaultModelSelection: model as ModelSelection | null, providerInstances: {} },
   };
@@ -131,14 +137,23 @@ const makeHarness = Effect.gen(function* () {
 
   const threads = {
     getThreadShell: (threadId: string) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
+        if (state.shellError !== null) return Effect.fail(state.shellError);
         const shell = shells.get(threadId);
-        return shell === undefined ? null : { deletedAt: null, archivedAt: null, ...shell };
+        return Effect.succeed(
+          shell === undefined ? null : { deletedAt: null, archivedAt: null, ...shell },
+        );
       }),
     waitForThread: Effect.fn("waitForThread")(function* (
       input: ThreadManagement.ThreadManagementWaitInput,
     ) {
-      if (state.timeOut && !interrupted.includes(input.threadId))
+      yield* Queue.offer(waiting, input);
+      if (state.waitGate !== null) yield* Deferred.await(state.waitGate);
+      if (
+        state.timeOut &&
+        Number.isFinite(input.timeoutMs) &&
+        !interrupted.includes(input.threadId)
+      )
         return {
           threadId: input.threadId,
           run: threadRun(input.threadId, "running"),
@@ -154,6 +169,7 @@ const makeHarness = Effect.gen(function* () {
     interruptThread: Effect.fn("interruptThread")(function* (
       input: ThreadManagement.ThreadManagementInterruptInput,
     ) {
+      if (state.interruptError !== null) return yield* Effect.fail(state.interruptError);
       interrupted.push(input.threadId);
       yield* end(input.threadId, { status: "interrupted", reply: "Partial notes." });
       return {};
@@ -179,6 +195,8 @@ const makeHarness = Effect.gen(function* () {
       if (state.sendError !== null) return yield* Effect.fail(state.sendError);
       sent.push(input);
       receipts.add(input.commandId);
+      if (state.sendAfterReceiptError !== null)
+        return yield* Effect.fail(state.sendAfterReceiptError);
       return {};
     }),
     dispatch: (command: OrchestrationV2ServerCommand) =>
@@ -192,6 +210,7 @@ const makeHarness = Effect.gen(function* () {
     launch: Effect.fn("launch")(function* (input: ThreadLaunch.ThreadLaunchInput) {
       launches.push(input);
       yield* Queue.offer(launched, input);
+      if (state.autoOutcome !== null) yield* end(input.threadId!, state.autoOutcome);
       return {
         threadId: input.threadId!,
         projection: { runs: [{ id: `run-${input.threadId}`, ordinal: 1, status: "running" }] },
@@ -228,6 +247,7 @@ const makeHarness = Effect.gen(function* () {
     shells,
     end,
     nextLaunch: Queue.take(launched),
+    nextWait: Queue.take(waiting),
     provide,
     service: provide(make),
   };

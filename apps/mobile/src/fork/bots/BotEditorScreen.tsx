@@ -8,6 +8,7 @@ import {
   BOTS_MAX_VAULT_SLOTS,
   type BotDefinition,
   type BotDraftResult,
+  type BotImportedDraft,
   type BotParameterType,
   type VaultAccessAction,
 } from "@t3tools/contracts/fork";
@@ -32,6 +33,7 @@ import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotChoice, BotInput, BotNotice, BotPage, BotSection, BotToggle } from "./BotControls";
 import { BotModelField } from "./BotModelField";
+import { BotCreationStart } from "./BotCreationStart";
 import { RUNTIME_MODE_LABELS } from "./runLogic";
 import { bots, useBotsCapabilities, useBotsCollection } from "./state";
 
@@ -234,6 +236,8 @@ function BotEditorRoute({
   const currentBot =
     botId === undefined ? null : collection.bots.find((entry) => entry.id === botId);
   const [loadedBot, setLoadedBot] = useState(currentBot ?? null);
+  const [imported, setImported] = useState<BotImportedDraft | null>(null);
+  const [blank, setBlank] = useState(false);
   if (currentBot && loadedBot === null) setLoadedBot(currentBot);
   const bot = currentBot ?? loadedBot;
   if (botId !== undefined && !bot) {
@@ -266,13 +270,34 @@ function BotEditorRoute({
       </BotPage>
     );
   }
+  if (
+    botId === undefined &&
+    !sourceThreadId &&
+    host.creationSupported &&
+    imported === null &&
+    !blank
+  )
+    return (
+      <BotCreationStart
+        environmentId={environmentId}
+        onDraft={setImported}
+        onBlank={() => setBlank(true)}
+      />
+    );
   return (
     <BotEditor
-      key={botId ?? "new"}
+      key={botId ?? imported?.draft.id ?? "new"}
       environmentId={environmentId}
       bot={bot ?? null}
       unavailable={botId !== undefined && currentBot === undefined}
-      initialDraft={bot ? botDraft(bot) : emptyBotDraft(scheduledTaskDefaultModel(config, null))}
+      initialDraft={
+        bot
+          ? botDraft(bot)
+          : imported
+            ? botDraft(imported.draft)
+            : emptyBotDraft(scheduledTaskDefaultModel(config, null))
+      }
+      {...(imported ? { imported } : {})}
       {...(sourceThreadId === undefined ? {} : { sourceThreadId })}
       {...(suggestionId === undefined ? {} : { suggestionId })}
     />
@@ -283,6 +308,7 @@ function BotEditor({
   environmentId,
   bot,
   initialDraft,
+  imported,
   sourceThreadId,
   suggestionId,
   unavailable,
@@ -290,6 +316,7 @@ function BotEditor({
   readonly environmentId: EnvironmentId;
   readonly bot: BotDefinition | null;
   readonly initialDraft: BotDraft;
+  readonly imported?: BotImportedDraft;
   readonly unavailable: boolean;
   readonly sourceThreadId?: string;
   readonly suggestionId?: string;
@@ -304,11 +331,11 @@ function BotEditor({
   const [draft, setDraft] = useState(initialDraft);
   // Version 0 tells the server this creates a bot, so a taken id fails instead of overwriting.
   const [expectedVersion, setExpectedVersion] = useState(bot?.version ?? 0);
-  const [idTouched, setIdTouched] = useState(bot !== null);
+  const [idTouched, setIdTouched] = useState(bot !== null || imported !== undefined);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notes, setNotes] = useState<ReadonlyArray<string>>([]);
+  const [notes, setNotes] = useState<ReadonlyArray<string>>(imported?.notes ?? []);
   const [fromThread, setFromThread] = useState<BotDraftResult | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const attempts = useRef(0);

@@ -1,4 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { mergeBotRunSnapshot } from "@t3tools/client-runtime/fork";
+import { useThreadShell } from "../../state/entities";
+import { BOT_RUN_ATTENTION_STATES } from "@t3tools/client-runtime/fork";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
@@ -66,7 +69,7 @@ function BotRunSummary({
   /** Off inside one bot's own list, where the inputs tell its runs apart better than its name. */
   readonly showBot?: boolean;
 }) {
-  const tone = BOT_RUN_STATES[run.status].tone;
+  const tone = run.attention ? "warning" : BOT_RUN_STATES[run.status].tone;
   const summary = runSummary(run);
   return (
     <View className="flex-row items-start gap-3">
@@ -83,7 +86,14 @@ function BotRunSummary({
             {showBot ? run.botName : summary || "No inputs"}
           </Text>
           {run.verdict ? <BotVerdictBadge verdict={run.verdict.verdict} /> : null}
-          {showsRunState(run) ? <BotRunStateBadge status={run.status} /> : null}
+          {run.attention ? (
+            <LibraryStateBadge
+              tone="warning"
+              label={BOT_RUN_ATTENTION_STATES[run.attention.kind].label}
+            />
+          ) : showsRunState(run) ? (
+            <BotRunStateBadge status={run.status} />
+          ) : null}
         </View>
         <Text numberOfLines={1} className="text-xs tabular-nums text-foreground-muted">
           {runMeta(run)}
@@ -96,6 +106,18 @@ function BotRunSummary({
         {run.verdict ? (
           <Text numberOfLines={2} className="text-sm text-foreground">
             {run.verdict.summary}
+          </Text>
+        ) : null}
+        {run.attention ? (
+          <Text accessibilityRole="alert" className="text-sm text-warning-foreground">
+            {run.attention.kind === "approval"
+              ? "Open the thread to approve or refuse the request."
+              : "Open the thread to answer the question."}{" "}
+            The time limit continues while waiting
+            {run.attention.deadlineAt
+              ? ` and ends at ${new Date(run.attention.deadlineAt).toLocaleString()}`
+              : ""}
+            .
           </Text>
         ) : null}
         {run.error ? (
@@ -122,7 +144,9 @@ export function BotRunRow({
   readonly onOpen: () => void;
   readonly actions?: ReactNode;
 }) {
-  const state = BOT_RUN_STATES[run.status].label;
+  const state = run.attention
+    ? BOT_RUN_ATTENTION_STATES[run.attention.kind].label
+    : BOT_RUN_STATES[run.status].label;
   const verdict = run.verdict ? `, ${BOT_VERDICT_STATES[run.verdict.verdict].label}` : "";
   return (
     <View className={cn(separated && "border-t border-border-subtle")}>
@@ -529,10 +553,24 @@ function RunDetail({
   const query = capabilities.runDetailsSupported ? detail : recent;
   useRefreshWhenBotsChangesPruned(changes, query.refresh);
   useBotsReconnect(capabilities.connected, query.refresh);
-  const run =
-    changes.runs.get(runId) ??
-    detail.data?.run ??
-    recent.data?.runs.find((candidate) => candidate.id === runId);
+  const run = mergeBotRunSnapshot(
+    changes.runs.get(runId),
+    detail.data?.run ?? recent.data?.runs.find((candidate) => candidate.id === runId),
+  );
+  const shell = useThreadShell(
+    run
+      ? { environmentId: run.ranOn?.environmentId ?? environmentId, threadId: run.threadId }
+      : null,
+  );
+  const requestState = shell
+    ? `${shell.hasPendingApprovals}:${shell.hasPendingUserInput}:${shell.pendingRuntimeRequestAt ?? ""}`
+    : null;
+  const refreshRun = query.refresh;
+  const active = run !== null && !isTerminalBotRunStatus(run.status);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Live thread attention changes invalidate the server-derived run snapshot.
+  useEffect(() => {
+    if (active && requestState !== null) refreshRun();
+  }, [active, requestState, refreshRun]);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [raw, setRaw] = useState<boolean | null>(null);
   const rawShown = raw ?? (!run?.verdict || run.verdict.source === "invalid");
@@ -733,7 +771,14 @@ function RunHeader({ run }: { readonly run: BotRun }) {
           </Text>
           <View className="flex-row flex-wrap items-center gap-1.5">
             {run.verdict ? <BotVerdictBadge verdict={run.verdict.verdict} /> : null}
-            {showsRunState(run) ? <BotRunStateBadge status={run.status} /> : null}
+            {run.attention ? (
+              <LibraryStateBadge
+                tone="warning"
+                label={BOT_RUN_ATTENTION_STATES[run.attention.kind].label}
+              />
+            ) : showsRunState(run) ? (
+              <BotRunStateBadge status={run.status} />
+            ) : null}
             {run.replayId ? <LibraryStateBadge tone="neutral" label="Replay" /> : null}
           </View>
           <Text className="text-xs tabular-nums text-foreground-muted">{runMeta(run)}</Text>

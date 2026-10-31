@@ -1,3 +1,4 @@
+import { BOT_TRIGGER_FIRING_STATES } from "@t3tools/client-runtime/fork";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -327,8 +328,8 @@ function firingTicks(firings: readonly BotTriggerFiring[], count: number, now: n
     ...EMPTY_TICK_KEYS.slice(0, count - shown.length).map((key) => ({ key, tone: null })),
     ...shown.map((firing) => ({
       key: firing.id,
-      tone: firing.outcome === "run" ? ("success" as const) : ("neutral" as const),
-      label: `${firing.outcome === "run" ? "Ran" : "Skipped"} ${runTime(firing.firedAt, now) ?? ""}: ${firing.eventSummary}`,
+      tone: BOT_TRIGGER_FIRING_STATES[firing.outcome].tone,
+      label: `${BOT_TRIGGER_FIRING_STATES[firing.outcome].label} ${runTime(firing.firedAt, now) ?? ""}: ${firing.eventSummary}`,
     })),
   ];
   return { ticks, shown, padding: count - shown.length };
@@ -469,6 +470,8 @@ function TriggerActivity({
       return <p className="text-xs text-muted-foreground">Never fired</p>;
     case "ran":
       return <p className="truncate text-xs">Ran {runTime(activity.at, now)}</p>;
+    case "pending":
+      return <p className="truncate text-xs text-warning-foreground">Pending dispatch</p>;
     case "skipped":
       return (
         <p className="flex min-w-0 items-center gap-1.5 text-xs">
@@ -1080,8 +1083,8 @@ function FiringRow({
             Open pipeline
           </Button>
         ) : null}
-        <LibraryStateBadge tone={ran ? "success" : "neutral"}>
-          {ran ? "Ran" : "Skipped"}
+        <LibraryStateBadge tone={BOT_TRIGGER_FIRING_STATES[firing.outcome].tone}>
+          {BOT_TRIGGER_FIRING_STATES[firing.outcome].label}
         </LibraryStateBadge>
       </span>
       {firing.reason ? (
@@ -1514,6 +1517,10 @@ function TriggerSheet({
 
   const inputs = target ? mappingLines(target, trigger.mapping) : [];
   const rows = [
+    {
+      label: "Completion destination",
+      value: trigger.completionDestinationId ?? "Keep the result in Loom",
+    },
     {
       label: isPipeline ? "Starts" : "Runs",
       value:

@@ -1,3 +1,5 @@
+import { makeBotRequestIdentity } from "@t3tools/client-runtime/fork";
+import { randomUUID } from "~/lib/utils";
 import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
@@ -33,6 +35,7 @@ import {
   LibraryField,
   LibraryNotice,
 } from "../project-library/LibraryControls";
+import { BotCompletionField, useBotCompletionSelection } from "./BotCompletions";
 import { BotTargetField } from "./BotAnywhere";
 import { RUNTIME_MODE_LABELS } from "./editorLogic";
 import { focusFirstInputError, runInputErrors, runValuesFrom, shortDescription } from "./runForm";
@@ -182,6 +185,7 @@ export function BotRunForm({
   readonly onRunOnMany?: (() => void) | undefined;
 }) {
   const host = useBotsHost();
+  const [identify] = useState(() => makeBotRequestIdentity(randomUUID));
   const { canRun, canSave } = useBotsAccess();
   const formId = useId();
   const inputId = (name: string) => `${formId}-${name}`;
@@ -221,6 +225,10 @@ export function BotRunForm({
       : { type: "here" },
   );
   const targetProjectId = sentProjectId === "" ? null : (sentProjectId as ProjectId);
+  const completion = useBotCompletionSelection(
+    environmentId,
+    bot.workspace.type === "scratch" ? null : (targetProjectId ?? fixedProjectId),
+  );
   // The same request BotTargetField makes, read here only to hold its place while it loads.
   const targets = useEnvironmentQuery(
     host.anywhereSupported
@@ -277,14 +285,21 @@ export function BotRunForm({
       );
       return;
     }
+    if (!completion.valid) {
+      setError("Choose an available completion destination or keep the result in Loom.");
+      return;
+    }
     setBusy(true);
     setError(null);
     // The async wrapper lets a throw while building the input reach the same handlers.
     await (async () => {
       const result = await run({
         environmentId,
-        input: {
+        input: identify({
           botId: bot.id,
+          ...(completion.destinationId
+            ? { completionDestinationId: completion.destinationId }
+            : {}),
           inputs: runInputs(bot, values),
           // A checkout run without a thread runs in the root of the project it names.
           ...(sentProjectId === "" ? {} : { projectId: sentProjectId as ProjectId }),
@@ -292,7 +307,7 @@ export function BotRunForm({
             ? {}
             : { checkoutThreadId: checkout.threadId as ThreadId }),
           ...(localRun ? {} : { target: sentTarget }),
-        },
+        }),
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       onStarted(result.value);
@@ -461,6 +476,7 @@ export function BotRunForm({
             ) : null}
           </div>
         ) : null}
+        <BotCompletionField selection={completion} disabled={busy} />
         <dl className="flex flex-col gap-1.5 text-xs">
           {place ? <RunFact label="Where">{place}</RunFact> : null}
           <RunFact label="Runs with">

@@ -13,6 +13,7 @@ import { BotBatches, make as makeBotBatches } from "../BotBatches.ts";
 import { BotsService, USER_CALLER, versionInput } from "../BotsService.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotPipelines.ts";
+import { makeBotOperationState } from "../BotOperationState.ts";
 
 const WAIT_MS = 60_000;
 
@@ -99,6 +100,36 @@ const makePipelines = (harness: Harness) =>
   });
 
 describe("BotPipelines", () => {
+  it.effect("replays a pipeline admission after a lost response and rejects changed input", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const { pipelines } = yield* makePipelines(harness);
+        yield* pipelines.save({ pipeline: reviewFixVerify(1) }, USER_CALLER);
+        const input = {
+          pipelineId: "review-fix",
+          inputs: { file: "a.ts" },
+          projectId,
+          clientRequestId: "pipeline-lost-reply",
+        };
+        const first = yield* pipelines.run(input, USER_CALLER);
+        const replay = yield* pipelines.run(input, USER_CALLER);
+        expect(replay.id).toBe(first.id);
+        const conflict = yield* pipelines
+          .run({ ...input, inputs: { file: "b.ts" } }, USER_CALLER)
+          .pipe(Effect.flip);
+        expect(conflict.reason).toBe("invalid");
+        const operationState = yield* makeBotOperationState;
+        yield* operationState.setMode("paused");
+        expect((yield* pipelines.run(input, USER_CALLER)).id).toBe(first.id);
+        const refused = yield* pipelines
+          .run({ ...input, clientRequestId: "new-while-paused" }, USER_CALLER)
+          .pipe(Effect.flip);
+        expect(refused.message).toContain("paused");
+        yield* pipelines.cancel(first.id);
+      }),
+    ),
+  );
+
   it.effect("reviews, fixes each finding, loops back on a failed verify and completes", () =>
     withHarness((harness) =>
       Effect.gen(function* () {

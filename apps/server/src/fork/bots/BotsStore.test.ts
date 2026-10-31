@@ -18,6 +18,54 @@ const withStore = <A, E>(use: (store: BotsStore) => Effect.Effect<A, E, SqlClien
   }).pipe(Effect.provide(SqlitePersistenceMemory));
 
 describe("BotsStore", () => {
+  it.effect("keeps acknowledged delivery when an older failed attempt finishes later", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.insertRun(
+          testRun("delivered", "2026-10-20T10:00:00Z", {
+            notify: true,
+            callerThreadId: ThreadId.make("caller"),
+          }),
+        );
+        const deliveredAt = "2026-10-20T11:00:00Z";
+        yield* store.markNotified("delivered", deliveredAt, null, true);
+        yield* store.markNotified(
+          "delivered",
+          "2026-10-20T11:00:01Z",
+          "Result delivery failed: stale attempt.",
+          false,
+        );
+        expect(yield* store.getRun("delivered")).toMatchObject({ deliveredAt, error: null });
+        expect(yield* store.listUndeliveredRuns()).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("bounds transient delivery retries and settles permanent refusals", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const at = "2026-10-20T10:00:00.000Z";
+        const notify = { callerThreadId: ThreadId.make("chat"), notify: true };
+        yield* store.insertRun(testRun("transient", at, notify));
+        yield* store.insertRun(testRun("permanent", at, notify));
+        yield* store.markNotified(
+          "permanent",
+          at,
+          "Result delivery failed: the calling thread is archived.",
+          false,
+          true,
+        );
+        for (let attempt = 1; attempt <= 5; attempt++) {
+          yield* store.markNotified("transient", at, "Result delivery failed: unavailable.", false);
+          expect((yield* store.listUndeliveredRuns()).map((run) => run.id)).toEqual(
+            attempt < 5 ? ["transient"] : [],
+          );
+        }
+        expect((yield* store.getRun("transient"))?.deliveredAt ?? null).toBeNull();
+      }),
+    ),
+  );
+
   it.effect("round-trips definitions and upserts by id", () =>
     withStore((store) =>
       Effect.gen(function* () {

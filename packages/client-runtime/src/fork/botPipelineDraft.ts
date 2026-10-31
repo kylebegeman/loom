@@ -1,6 +1,7 @@
 import type { ModelSelection } from "@t3tools/contracts";
 import {
   BOTS_PIPELINE_MAX_ROUNDS,
+  slugFromName,
   BotPipelineInput,
   type BotDefinition,
   type BotPipelineGate,
@@ -120,6 +121,20 @@ export const pipelineDraft = (pipeline: BotPipelineInput): PipelineDraft => ({
     target: step.target ?? { type: "here" },
   })),
 });
+
+export const pipelineCopyDraft = (
+  template: BotPipelineInput,
+  takenIds: ReadonlySet<string>,
+): PipelineDraft => {
+  const name = `${template.name.slice(0, 115).trim()} copy`;
+  const base = slugFromName(name);
+  let id = base;
+  for (let suffix = 2; takenIds.has(id); suffix += 1) {
+    const ending = `-${suffix}`;
+    id = `${base.slice(0, 64 - ending.length).replace(/-+$/, "")}${ending}`;
+  }
+  return pipelineDraft({ ...template, id, name });
+};
 
 /** Stop is the default of every gate, so it is left out of the saved step. */
 const stepInput = (step: PipelineStepDraft): BotPipelineStep => {

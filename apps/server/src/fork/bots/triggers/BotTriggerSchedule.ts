@@ -13,9 +13,16 @@ const MAX_SLEEP_MS = 60_000;
 
 /** Fires every due schedule trigger once; returns the earliest time one is due next. */
 const scheduleTick = Effect.fnUntraced(function* (
-  triggers: Pick<BotTriggers["Service"], "scheduled" | "advanceSchedule">,
+  triggers: Pick<BotTriggers["Service"], "scheduled" | "advanceSchedule" | "recoverPending">,
   now: DateTime.Zoned,
 ) {
+  yield* triggers
+    .recoverPending()
+    .pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Bot trigger dispatch recovery failed", { cause }),
+      ),
+    );
   let earliest: number | null = null;
   for (const { trigger } of triggers.scheduled()) {
     if (trigger.event.kind !== "schedule") continue;

@@ -43,6 +43,9 @@ const INPUT =
 export const replaceInputs = (text: string, limit = DRAFT_MAX_PLACEHOLDERS): ReplacedInputs => {
   const byValue = new Map<string, Placeholder>();
   const overflow = new Set<string>();
+  const reserved = new Set(
+    [...text.matchAll(/\{\{\s*([A-Za-z_][A-Za-z0-9_]{0,39})\s*\}\}/g)].map((match) => match[1]),
+  );
   const counts: Record<PlaceholderKind, number> = { pr: 0, file: 0 };
   const placeholder = (kind: PlaceholderKind, value: string, written: string) => {
     const key = `${kind}:${value}`;
@@ -52,9 +55,13 @@ export const replaceInputs = (text: string, limit = DRAFT_MAX_PLACEHOLDERS): Rep
         overflow.add(key);
         return null;
       }
-      counts[kind] += 1;
+      let name: string;
+      do {
+        counts[kind] += 1;
+        name = counts[kind] === 1 ? kind : `${kind}${counts[kind]}`;
+      } while (reserved.has(name));
       found = {
-        name: counts[kind] === 1 ? kind : `${kind}${counts[kind]}`,
+        name,
         kind,
         value,
         written: [],

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";
 import {
@@ -10,7 +10,12 @@ import {
   type BotRun,
   type BotTriggerId,
 } from "@t3tools/contracts/fork";
-import { canRetryBotRun, isBotTriageRun, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  canRetryBotRun,
+  isBotTriageRun,
+  supportsLoomFeature,
+  mergeBotRunSnapshot,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   ArchiveIcon,
@@ -51,7 +56,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { toastManager } from "~/components/ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
-import { useProjects, useThreadShells } from "~/state/entities";
+import { useProjects, useThreadShells, useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery, useEnvironmentQueryRefresh } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
@@ -209,7 +214,7 @@ function RunSheet({
   );
   const local = changes.runs.get(runId) ?? knownRun(runId);
   const lookup = useEnvironmentQuery(
-    environmentId && local === null && lookupSupported
+    environmentId && lookupSupported && (local === null || !isTerminalBotRunStatus(local.status))
       ? bots.getRun({ environmentId, input: { runId } })
       : null,
   );
@@ -219,11 +224,24 @@ function RunSheet({
       ? bots.listRuns({ environmentId, input: runsListInput({}) })
       : null,
   );
-  const run =
-    local ??
-    lookup.data?.run ??
-    recent.data?.runs.find((candidate) => candidate.id === runId) ??
-    null;
+  const run = mergeBotRunSnapshot(
+    local,
+    lookup.data?.run ?? recent.data?.runs.find((candidate) => candidate.id === runId),
+  );
+  const shell = useThreadShell(
+    run && environmentId
+      ? { environmentId: run.ranOn?.environmentId ?? environmentId, threadId: run.threadId }
+      : null,
+  );
+  const requestState = shell
+    ? `${shell.hasPendingApprovals}:${shell.hasPendingUserInput}:${shell.pendingRuntimeRequestAt ?? ""}`
+    : null;
+  const refreshRun = lookup.refresh;
+  const active = run !== null && !isTerminalBotRunStatus(run.status);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Live thread attention changes invalidate the server-derived run snapshot.
+  useEffect(() => {
+    if (active && requestState !== null) refreshRun();
+  }, [active, requestState, refreshRun]);
   return (
     <Sheet
       open
@@ -687,6 +705,36 @@ function RunDetail({
             </p>
           ) : null}
           {run.error ? <RunError error={run.error} /> : null}
+          {run.attention ? (
+            <LibraryNotice
+              icon={MessageSquareIcon}
+              tone="warning"
+              action={
+                <Button
+                  size="xs"
+                  variant="outline"
+                  render={
+                    <Link
+                      to="/$environmentId/$threadId"
+                      params={{ environmentId: threadEnvironmentId, threadId: run.threadId }}
+                    />
+                  }
+                >
+                  Answer in thread
+                </Button>
+              }
+            >
+              {run.attention.kind === "approval"
+                ? "This bot needs approval."
+                : "This bot has a question."}{" "}
+              Its time limit continues while waiting
+              {run.attention.deadlineAt
+                ? ` and ends at ${new Date(run.attention.deadlineAt).toLocaleString()}`
+                : ""}
+              .
+            </LibraryNotice>
+          ) : null}
+
           {run.pipelineStopped && run.pipelineRunId ? (
             <LibraryNotice
               icon={TriangleAlertIcon}

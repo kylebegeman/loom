@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   supportsLoomFeature,
   secretSaveTarget,
   VAULT_SEARCH_DEBOUNCE_MS,
+  VAULT_KIND_LABELS,
 } from "@t3tools/client-runtime/fork";
 import { VAULT_SECRET_FEATURE, type VaultItemPage, type VaultError } from "@t3tools/contracts/fork";
 import { Atom, AsyncResult } from "effect/reactivity";
@@ -17,6 +18,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { randomUUID } from "~/lib/utils";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
+import { Radio, RadioGroup } from "~/components/ui/radio-group";
 import { vault } from "./state";
 const EMPTY = Atom.make(AsyncResult.initial<VaultItemPage, VaultError>(false));
 const newId = () => randomUUID().replaceAll("-", "");
@@ -29,6 +31,7 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
   );
   const save = useAtomCommand(vault.save, { reportFailure: false, reportDefect: false });
   const [id] = useState(newId);
+  const nameId = useId();
   const [enabled, setEnabled] = useState(false);
   const [name, setName] = useState(initialName.slice(0, 200));
   const [saveAsNew, setSaveAsNew] = useState(false);
@@ -45,11 +48,16 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
     : EMPTY;
   const matches = useAtomValue(matchAtom);
   const refresh = useAtomRefresh(matchAtom);
-  const target = secretSaveTarget(
+  const matchingItem = secretSaveTarget(
     Option.getOrNull(AsyncResult.value(matches))?.items ?? [],
     name,
-    saveAsNew,
+    false,
   );
+  const target = saveAsNew ? null : matchingItem;
+  const lookupPending =
+    matchingSupported &&
+    (query !== name.trim().slice(0, 100) || matches.waiting || matches._tag === "Initial");
+  const lookupFailed = matchingSupported && matches._tag === "Failure";
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const beforeReply = async (secret: string) => {
@@ -88,52 +96,91 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
   };
   const control = (disabled: boolean) =>
     supported || enabled ? (
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-3">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
             checked={enabled}
             disabled={disabled || saved || (!allowed && !enabled)}
             onCheckedChange={setEnabled}
           />
-          {target ? `Replace value of ${target.label}` : "Also save to Vault as"}
+          Also save a copy to Vault
         </label>
         {enabled ? (
-          <Input
-            aria-label="Vault item name"
-            value={name}
-            maxLength={200}
-            disabled={disabled || saved || !allowed}
-            onChange={(event) => setName(event.target.value)}
-          />
-        ) : null}
-        {enabled && matchingSupported ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={disabled || saved}
-            onClick={() => setSaveAsNew(!saveAsNew)}
-          >
-            {saveAsNew ? "Use matching item" : "Save as new"}
-          </Button>
+          <div className="flex min-w-0 flex-col gap-2">
+            <label htmlFor={nameId} className="text-xs font-medium text-muted-foreground">
+              Vault item name
+            </label>
+            <Input
+              id={nameId}
+              value={name}
+              maxLength={200}
+              disabled={disabled || saved || !allowed}
+              onChange={(event) => setName(event.target.value)}
+            />
+            {lookupPending ? (
+              <p role="status" className="text-xs text-muted-foreground">
+                Checking saved items…
+              </p>
+            ) : lookupFailed ? (
+              <p role="alert" className="text-xs text-destructive">
+                Could not check saved items. Refresh the lookup before saving to Vault.
+              </p>
+            ) : matchingItem ? (
+              <RadioGroup
+                aria-label="How to save this Vault copy"
+                value={saveAsNew ? "new" : "update"}
+                disabled={disabled || saved || !allowed}
+                onValueChange={(value) => setSaveAsNew(value === "new")}
+              >
+                <label className="flex min-w-0 cursor-pointer items-start gap-2.5 text-sm">
+                  <span className="pt-0.5">
+                    <Radio value="update" />
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span>Update existing item</span>
+                    <span className="text-xs wrap-anywhere text-muted-foreground">
+                      {matchingItem.label} · {VAULT_KIND_LABELS[matchingItem.kind]} · Version{" "}
+                      {matchingItem.version} · {matchingItem.id.slice(0, 8)}
+                    </span>
+                  </span>
+                </label>
+                <label className="flex min-w-0 cursor-pointer items-start gap-2.5 text-sm">
+                  <span className="pt-0.5">
+                    <Radio value="new" />
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span>Create new item</span>
+                    <span className="text-xs text-muted-foreground">
+                      Keep the existing item unchanged.
+                    </span>
+                  </span>
+                </label>
+              </RadioGroup>
+            ) : name.trim() ? (
+              <p className="text-xs text-muted-foreground">A new Vault item will be created.</p>
+            ) : null}
+          </div>
         ) : null}
         {saved ? (
           <p role="status" className="text-xs text-muted-foreground">
             Saved to Vault as {name}. The private request still needs to finish.
           </p>
         ) : null}
-        {error && matchingSupported ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              refresh();
-              setError(null);
-            }}
-          >
-            Refresh matching item
-          </Button>
+        {enabled && matchingSupported && (error || lookupFailed) ? (
+          <div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled || saved}
+              onClick={() => {
+                refresh();
+                setError(null);
+              }}
+            >
+              Refresh matching item
+            </Button>
+          </div>
         ) : null}
         {error ? (
           <p role="alert" className="text-xs text-destructive">

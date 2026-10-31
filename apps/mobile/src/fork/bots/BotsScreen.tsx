@@ -1,3 +1,4 @@
+import { useBotBadgeCount } from "./useBotBadgeCount";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
@@ -38,6 +39,7 @@ import {
   BotToggle,
 } from "./BotControls";
 import { useBotActionLifetime } from "./useBotActionLifetime";
+import { BotOperationsControls } from "./BotOperationsControls";
 import { BotSuggestions } from "./BotSuggestions";
 import { BotRunHistory } from "./BotRunDetailScreen";
 import { BotRowsSkeleton, BotSpecGrid, BotTile, BotsOutline, BotsSection } from "./BotIdentity";
@@ -136,6 +138,12 @@ function useBotsMenu(environmentId: EnvironmentId | null) {
         title: "Usage and budgets",
         onPress: () => navigation.navigate("BotsUsage", { environmentId }),
       });
+    if (capabilities.completionsSupported)
+      items.push({
+        id: "completions",
+        title: "Grok companion",
+        onPress: () => navigation.navigate("BotsCompletions", { environmentId }),
+      });
     if (capabilities.anywhereSupported)
       items.push({
         id: "computers",
@@ -169,9 +177,14 @@ function BotsCatalog({
   const [restoring, setRestoring] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const menu = useBotsMenu(environmentId);
-  const waiting = useWaitingBotRuns(environmentId);
+  const badgeCount = useBotBadgeCount(
+    environmentId,
+    capabilities.badgePreferencesSupported,
+    capabilities.connected,
+  );
+  const waiting = useWaitingBotRuns(capabilities.badgePreferencesSupported ? null : environmentId);
   const inbox = useEnvironmentQuery(
-    environmentId && capabilities.inboxSupported
+    environmentId && capabilities.inboxSupported && !capabilities.badgePreferencesSupported
       ? bots.inbox({ environmentId, input: { limit: BOTS_LIST_RUNS_MAX_LIMIT } })
       : null,
   );
@@ -183,12 +196,13 @@ function BotsCatalog({
   useBotsReconnect(capabilities.connected, inbox.refresh);
   useBotsReconnect(capabilities.connected, starters.refresh);
   // Runs their calling agent already has stay in the inbox but need no one.
-  const attention =
-    (inbox.data
-      ? inboxNeedsPersonCount(
-          applyInboxChanges(inbox.data, collection.changes, { dismissed: false }),
-        )
-      : 0) + waiting.length;
+  const inboxPage = inbox.data
+    ? applyInboxChanges(inbox.data, collection.changes, { dismissed: false })
+    : null;
+  const waitingOnly = waiting.filter(
+    (thread) => !inboxPage?.runs.some((run) => run.threadId === thread.id),
+  ).length;
+  const attention = badgeCount ?? (inboxPage ? inboxNeedsPersonCount(inboxPage) : 0) + waitingOnly;
   const filtered = collection.bots.filter(
     (bot) =>
       (archived || bot.archivedAt === null) &&
@@ -225,6 +239,9 @@ function BotsCatalog({
     ) : null;
   const header = (
     <View className="gap-5 pb-4">
+      {environmentId && capabilities.operationsSupported ? (
+        <BotOperationsControls environmentId={environmentId} />
+      ) : null}
       {computers.length > 1 || (computers.length === 1 && computers[0]?.value !== environmentId) ? (
         <BotChoice
           label="Computer"

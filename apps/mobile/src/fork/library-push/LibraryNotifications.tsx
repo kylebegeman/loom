@@ -6,7 +6,7 @@ import {
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import { AsyncResult } from "effect/reactivity";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -46,7 +46,7 @@ import {
 export const isSupported = supportsLibraryPushBuild;
 
 /** Notifications in a build without T3 Connect, where Library push is all there is. */
-export function Screen() {
+export function Screen({ children }: { readonly children?: ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <SettingsScreen title="Notifications">
@@ -58,6 +58,7 @@ export function Screen() {
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         <Section />
+        {children}
       </ScrollView>
     </SettingsScreen>
   );

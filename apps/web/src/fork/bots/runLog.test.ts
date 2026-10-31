@@ -204,6 +204,19 @@ describe("run presentation", () => {
     });
     expect(runOutcome(attention)).toMatchObject({ label: "Needs attention", tone: "warning" });
     expect(runOutcome(makeBotRun("b", { status: "timed_out" })).label).toBe("Timed out");
+    expect(
+      runOutcome(
+        makeBotRun("awaiting", {
+          status: "running",
+          attention: {
+            kind: "approval",
+            requestId: "approval-1",
+            since: "2026-10-20T11:00:00.000Z",
+            timeoutPolicy: "wall-clock",
+          },
+        }),
+      ),
+    ).toMatchObject({ label: "Needs approval", tone: "warning" });
   });
 
   it("names the most specific origin", () => {

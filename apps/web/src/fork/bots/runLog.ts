@@ -1,3 +1,4 @@
+import { BOT_RUN_ATTENTION_STATES } from "@t3tools/client-runtime/fork";
 import {
   BOT_RUN_STATES,
   BOT_VERDICT_STATES,
@@ -193,6 +194,7 @@ export interface RunOutcome {
 }
 
 export function runOutcome(run: BotRun): RunOutcome {
+  if (run.attention) return { ...BOT_RUN_ATTENTION_STATES[run.attention.kind], emphasis: "pill" };
   if (run.status === "completed" && run.verdict) {
     const state = BOT_VERDICT_STATES[run.verdict.verdict];
     return { ...state, emphasis: run.verdict.verdict === "pass" ? "plain" : "pill" };

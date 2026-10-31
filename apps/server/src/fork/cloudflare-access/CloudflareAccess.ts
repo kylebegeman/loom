@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ByteSize from "effect/ByteSize";
+import type * as Types from "effect/Types";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -160,7 +161,14 @@ const make = Effect.gen(function* () {
 export const layer = Layer.effect(CloudflareAccess, make);
 
 // Access admits the request; Loom still authenticates and authorizes its own credential.
-export const guardLayer = HttpRouter.middleware(
+// Bind middleware channels so the parallel checker does not infer unknown request requirements.
+export const guardLayer = HttpRouter.middleware<
+  Types.unhandled,
+  HttpServerRequest.HttpServerRequest,
+  never,
+  CloudflareAccess,
+  true
+>(
   Effect.map(
     CloudflareAccess,
     (access) =>
