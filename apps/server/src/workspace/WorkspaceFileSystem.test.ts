@@ -450,6 +450,10 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           Layer.fresh(WorkspaceFileSystem.layer).pipe(
             Layer.provide(layerKnownWorkspacesTest),
             Layer.provide(WorkspacePaths.layer),
+            // fork: project-lifecycle -- managed checkout restoration reads ServerConfig.
+            Layer.provide(
+              ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-wfs-" }),
+            ),
             Layer.provide(
               Layer.mock(WorkspaceEntries.WorkspaceEntries)({
                 refresh: () => Effect.die("An overwrite rescanned the workspace."),

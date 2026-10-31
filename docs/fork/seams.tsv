@@ -1365,6 +1365,7 @@ apps/server/src/serverActivation.test.ts	server-weight	1
 apps/server/src/sourceControl/ServerSourceControlHost.ts	github-host-setup	3
 apps/server/src/terminal/Manager.ts	project-lifecycle	6
 apps/server/src/workspace/WorkspaceEntries.ts	project-lifecycle	3
+apps/server/src/workspace/WorkspaceFileSystem.test.ts	project-lifecycle	1
 apps/server/src/workspace/WorkspaceFileSystem.ts	project-lifecycle	5
 apps/server/src/workspace/WorkspacePaths.test.ts	project-lifecycle	2
 apps/server/src/workspace/WorkspacePaths.ts	project-lifecycle	4
