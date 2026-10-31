@@ -208,6 +208,7 @@ it.live("restores checkpoint files before preparing the lane and running worktre
                 });
                 return {} as never;
               }),
+            getShell: () => Effect.succeed("/bin/sh"),
             subscribe: (onEvent) =>
               Effect.sync(() => {
                 listeners.add(onEvent);
