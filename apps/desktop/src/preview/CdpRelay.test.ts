@@ -133,7 +133,7 @@ describe("CDP relay", () => {
       return {};
     });
     const connect = async () => {
-      relay = createCdpRelayConnection(makeTarget(send), (raw) => written.push(JSON.parse(raw)));
+      relay = makeRelay(makeTarget(send), (raw) => written.push(JSON.parse(raw)));
       relay.receive(JSON.stringify({ id: 1, method: "Target.setAutoAttach", params: {} }));
       await settle();
       written.length = 0;
@@ -155,7 +155,7 @@ describe("CDP relay", () => {
   // fork: browser-timeout-recovery
   it("resets Runtime only once and leaves child execution contexts alone", async () => {
     const send = vi.fn<CdpRelayTarget["send"]>(async () => ({}));
-    const relay = createCdpRelayConnection(makeTarget(send), () => {});
+    const relay = makeRelay(makeTarget(send), () => {});
     for (const [id, sessionId] of [
       [1, "t3-preview-page"],
       [2, "t3-preview-page"],
