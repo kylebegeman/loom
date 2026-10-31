@@ -27,7 +27,6 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 // fork: file-placement
-import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";

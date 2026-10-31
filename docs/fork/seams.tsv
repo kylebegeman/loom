@@ -1076,7 +1076,7 @@ apps/server/src/mcp/toolkits/attachment/handlers.ts	mcp-refusals	1
 apps/server/src/mcp/toolkits/core.test.ts	mcp-refusals	3
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	agent-catalog	1
 apps/server/src/mcp/toolkits/project/handlers.ts	mcp-refusals	2
-apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	8
+apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	7
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mobile-surface-hint	4
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-launch-files	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mobile-surface-hint	2

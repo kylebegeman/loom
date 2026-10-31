@@ -22,7 +22,6 @@ import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import { makeProjectCloneHooks } from "../../../project/ProjectCloneCompletion.ts"; // fork: file-placement
-import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts"; // fork: file-placement
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../../../serverSettings.ts";

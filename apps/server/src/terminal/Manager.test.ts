@@ -2,7 +2,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
-  ProjectId, // fork: project-lifecycle
   type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalOpenInput,
