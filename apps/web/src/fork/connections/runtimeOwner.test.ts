@@ -41,7 +41,6 @@ describe("a computer whose operating system owns the runtime", () => {
         machine("service", { serverSelfUpdate: "boot-service" }),
       ],
       "0.0.50",
-      true,
     );
     expect(targets.map((target) => target.serverLabel)).toEqual(["service"]);
     expect(skipped.map((entry) => [entry.label, entry.reason])).toEqual([
