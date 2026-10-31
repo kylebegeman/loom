@@ -46,7 +46,10 @@ export function botCompletionDeliveryLabel(delivery: BotCompletionDelivery): str
     sending: "Sending",
     accepted: "Grok routine accepted",
     failed: "Delivery failed",
-    needs_attention: "Outcome unknown, needs attention",
+    needs_attention:
+      delivery.reason === "outcome_unknown"
+        ? "Outcome unknown, needs attention"
+        : "Delivery needs attention",
     cancelled: "Delivery cancelled",
   }[delivery.status];
 }

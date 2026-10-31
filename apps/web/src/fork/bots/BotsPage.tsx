@@ -8,6 +8,7 @@ import {
   CloudOffIcon,
   LockIcon,
   PlusIcon,
+  MessagesSquareIcon,
   RefreshCwIcon,
   WorkflowIcon,
   ZapIcon,
@@ -25,7 +26,7 @@ import type { LibraryLayout } from "../project-library/LibraryCollection";
 import { LibraryPageFrame } from "../project-library/LibraryPageFrame";
 import { LibraryTabs, type LibraryTab } from "../project-library/LibraryTabs";
 import { projectColorStyle } from "../project-library/ProjectIdentity";
-import { GrokCompanionSection } from "./BotCompletions";
+import { GrokCompanionPanel } from "./BotCompletions";
 import { BotOperationsControls } from "./BotOperationsControls";
 import { ComputersButton, ComputersOverlay } from "./BotAnywhere";
 import { BatchPage } from "./BotBatches";
@@ -202,7 +203,7 @@ export function BotsPage() {
     <LibraryPageFrame
       section={{ label: "Bots", to: "/loom/bots" }}
       libraryStatus={false}
-      heading={!HERO_ROUTES.has(route.kind)}
+      heading={route.kind !== "index" && !HERO_ROUTES.has(route.kind)}
       style={projectColorStyle(selected ? botColor(selected) : BOTS_COLOR)}
       {...(title ? { title } : {})}
     >
@@ -217,8 +218,9 @@ export function BotsPage() {
           This connection can look at bots but cannot run or change them.
         </LibraryNotice>
       ) : null}
-      {ready && host.operationsSupported ? <BotOperationsControls /> : null}
-      {route.kind === "index" && ready ? <GrokCompanionSection /> : null}
+      {route.kind !== "index" && ready && host.operationsSupported ? (
+        <BotOperationsControls />
+      ) : null}
       {body}
       {ready ? (
         <>
@@ -338,6 +340,7 @@ const INDEX_TABS: Record<BotsIndexTab, { readonly label: string; readonly icon: 
   runs: { label: "Runs", icon: ActivityIcon },
   pipelines: { label: "Pipelines", icon: WorkflowIcon },
   triggers: { label: "Triggers", icon: ZapIcon },
+  companion: { label: "Grok companion", icon: MessagesSquareIcon },
 };
 
 /** The index: every bot, every run, every pipeline and every trigger, one view each. */
@@ -411,13 +414,27 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
 
   return (
     <>
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-4">
-        <div className="flex min-h-5 max-w-2xl min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-          {host.budgetsSupported && allBots.length ? (
-            <BotsUsageClause days={days} />
-          ) : (
-            "Reusable jobs with a fixed brief. Every run starts from the same instructions, inputs and settings."
-          )}
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="flex min-w-0 flex-1 basis-80 items-start gap-3.5">
+          <div
+            aria-hidden
+            className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-(--project-color)/10 text-(--project-color)"
+          >
+            <BotIcon className="size-6" />
+          </div>
+          <div className="max-w-xl min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Bots</h1>
+              {host.budgetsSupported && allBots.length ? (
+                <div className="text-xs text-muted-foreground">
+                  <BotsUsageClause days={days} />
+                </div>
+              ) : null}
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Create reusable jobs, connect them into workflows, and follow their results.
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <ComputersButton />
@@ -442,6 +459,7 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
           </Button>
         </div>
       </header>
+      {host.operationsSupported ? <BotOperationsControls /> : null}
       {list.data ? (
         <LibraryTabs
           label="Bots views"
@@ -461,6 +479,8 @@ function BotsIndex({ hostLabel }: { readonly hostLabel: string }) {
             <PipelinesView />
           ) : tab === "triggers" ? (
             <TriggersView />
+          ) : tab === "companion" ? (
+            <GrokCompanionPanel />
           ) : (
             <BotsCollection />
           )}

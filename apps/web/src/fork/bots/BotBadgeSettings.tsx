@@ -11,11 +11,12 @@ import { applyBotChanges, supportsLoomFeature } from "@t3tools/client-runtime/fo
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
+import { Switch } from "~/components/ui/switch";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useSettingsSearchTarget } from "~/components/settings/settingsLayout";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryErrorNotice } from "../project-library/LibraryControls";
+import { LibraryErrorNotice, LibraryStateBadge } from "../project-library/LibraryControls";
 import { bots, useBotsChanges } from "./state";
 
 function ComputerBadgeSettings({
@@ -60,10 +61,17 @@ function ComputerBadgeSettings({
   return (
     <section
       aria-label={`Bot notification dots on ${label}`}
-      className="space-y-4 rounded-xl border border-border p-4"
+      className="space-y-5 border-t border-border/60 pt-5"
     >
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">{label}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-medium">{label}</h3>
+          {preferences ? (
+            <LibraryStateBadge tone={preferences.enabled ? "active" : "neutral"}>
+              {preferences.enabled ? "Dots enabled" : "Dots off"}
+            </LibraryStateBadge>
+          ) : null}
+        </div>
         {preferences ? (
           <Button
             variant="ghost"
@@ -93,72 +101,90 @@ function ComputerBadgeSettings({
         <>
           <label
             htmlFor={`${id}-enabled`}
-            className="flex items-center justify-between gap-3 text-sm font-medium"
+            className="flex items-center justify-between gap-4 rounded-lg bg-muted/25 p-3.5 text-sm font-medium"
           >
-            <span>Show bot notification dots</span>
-            <Checkbox
+            <span className="grid gap-1">
+              <span>Show bot notification dots</span>
+              <span className="text-xs font-normal leading-relaxed text-muted-foreground">
+                {preferences.enabled
+                  ? "Use the updates selected below."
+                  : "Your selections stay saved while dots are off."}
+              </span>
+            </span>
+            <Switch
               id={`${id}-enabled`}
+              aria-label="Show bot notification dots"
               checked={preferences.enabled}
               disabled={disabled}
               onCheckedChange={(enabled) => void save({ ...preferences, enabled })}
             />
           </label>
-          <div className="space-y-3">
-            {BOT_BADGE_CATEGORIES.map(({ key, label: category }) => (
-              <label
-                key={key}
-                htmlFor={`${id}-${key}`}
-                className="flex items-center justify-between gap-3 text-sm"
-              >
-                <span>{category}</span>
-                <Checkbox
-                  id={`${id}-${key}`}
-                  checked={preferences[key]}
-                  disabled={disabled}
-                  onCheckedChange={(checked) => void save({ ...preferences, [key]: checked })}
-                />
-              </label>
-            ))}
-          </div>
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium">Mute individual bots</h4>
-            {rows.length ? (
-              rows.map((bot) => (
-                <label
-                  key={bot.id}
-                  htmlFor={`${id}-bot-${bot.id}`}
-                  className="flex items-center justify-between gap-3 text-sm"
-                >
-                  <span>{bot.name}</span>
-                  <Checkbox
-                    id={`${id}-bot-${bot.id}`}
-                    aria-label={`Mute ${bot.name}`}
-                    checked={preferences.mutedBotIds.includes(bot.id)}
-                    disabled={
-                      disabled ||
-                      (!preferences.mutedBotIds.includes(bot.id) &&
-                        preferences.mutedBotIds.length >= 200)
-                    }
-                    onCheckedChange={(muted) =>
-                      void save({
-                        ...preferences,
-                        mutedBotIds: muted
-                          ? [...preferences.mutedBotIds, bot.id]
-                          : preferences.mutedBotIds.filter((value) => value !== bot.id),
-                      })
-                    }
-                  />
-                </label>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {collection.error
-                  ? "The bot list is unavailable."
-                  : collection.isPending
-                    ? "Loading bots…"
-                    : "No bots to mute yet."}
+          <div className="grid items-start gap-6 sm:grid-cols-2">
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium">Updates that count</h4>
+              <div className="divide-y divide-border/50">
+                {BOT_BADGE_CATEGORIES.map(({ key, label: category }) => (
+                  <label
+                    key={key}
+                    htmlFor={`${id}-${key}`}
+                    className="flex items-center justify-between gap-4 py-2.5 text-sm"
+                  >
+                    <span>{category}</span>
+                    <Checkbox
+                      id={`${id}-${key}`}
+                      checked={preferences[key]}
+                      disabled={disabled}
+                      onCheckedChange={(checked) => void save({ ...preferences, [key]: checked })}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium">Mute individual bots</h4>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Muted bots stay in Needs you and run history.
               </p>
-            )}
+              <div className="divide-y divide-border/50">
+                {rows.length ? (
+                  rows.map((bot) => (
+                    <label
+                      key={bot.id}
+                      htmlFor={`${id}-bot-${bot.id}`}
+                      className="flex items-center justify-between gap-4 py-2.5 text-sm"
+                    >
+                      <span className="min-w-0 wrap-anywhere">{bot.name}</span>
+                      <Checkbox
+                        id={`${id}-bot-${bot.id}`}
+                        aria-label={`Mute ${bot.name}`}
+                        checked={preferences.mutedBotIds.includes(bot.id)}
+                        disabled={
+                          disabled ||
+                          (!preferences.mutedBotIds.includes(bot.id) &&
+                            preferences.mutedBotIds.length >= 200)
+                        }
+                        onCheckedChange={(muted) =>
+                          void save({
+                            ...preferences,
+                            mutedBotIds: muted
+                              ? [...preferences.mutedBotIds, bot.id]
+                              : preferences.mutedBotIds.filter((value) => value !== bot.id),
+                          })
+                        }
+                      />
+                    </label>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {collection.error
+                      ? "The bot list is unavailable."
+                      : collection.isPending
+                        ? "Loading bots…"
+                        : "No bots to mute yet."}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
           {!canSave ? (
             <p className="text-xs text-muted-foreground">
@@ -184,11 +210,11 @@ export function BotBadgeSettings() {
   const { environments } = useSettingsScope();
   const target = useSettingsSearchTarget<HTMLDivElement>("bot-notification-dots");
   return (
-    <div ref={target} id="bot-notification-dots" className="space-y-3">
+    <div ref={target} id="bot-notification-dots" className="space-y-4 py-2">
       <h2 className="text-sm font-medium">Bot notification dots</h2>
       <p className="text-sm text-muted-foreground">
-        Choose what lights up the Bots badge on each computer. These preferences apply across your
-        connected devices. Muted items stay in Needs you and run history.
+        Choose which updates light up the Bots badge. Preferences belong to each computer and apply
+        across your connected devices.
       </p>
       {environments.length === 0 ? (
         <p className="text-sm text-muted-foreground">

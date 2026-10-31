@@ -17,8 +17,9 @@ that the hosted caller can reach it. The environment's
 `/.well-known/t3/environment` metadata must report
 `capabilities.supportsExecution: true` to run work. A Library-only server can supply
 history while refusing execution. Loom Reach currently blocks MCP, OAuth and sign-in
-routes; a working Reach connection is not an MCP endpoint. Use an existing reachable
-HTTPS environment route, such as T3 Connect when configured.
+routes; a working Reach connection is not an MCP endpoint. Use a dedicated Loom-owned
+HTTPS route to the execution computer for hosted MCP access. Retired T3 Connect is not
+a fallback for this setup.
 
 In Grok Bot, add a custom MCP server with that address and choose OAuth. Approve only
 the sign-in you just started, checking its callback host. Loom uses PKCE; no pasted

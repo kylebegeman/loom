@@ -41,6 +41,15 @@ vi.mock("react-native", () => ({
 vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
+vi.mock("../../components/ui/SegmentedControl", () => ({ SegmentedControl: () => null }));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/RowPressable", () => ({
+  RowPressable: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("./BotIdentity", () => ({
+  BotsOutline: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  BotsSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+}));
 vi.mock("../../components/ui/Button", () => ({
   Button: ({
     label,

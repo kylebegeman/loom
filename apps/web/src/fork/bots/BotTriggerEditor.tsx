@@ -1046,7 +1046,7 @@ function ReviewStep({
           </span>
           <span className="text-xs text-muted-foreground">
             {draft.enabled
-              ? "It fires as soon as it is saved."
+              ? "It can start jobs when this computer is in Automatic mode."
               : "It is saved paused. Turn it on from the trigger when ready."}
           </span>
         </span>
@@ -1346,13 +1346,16 @@ export function TriggerWizard({
                 ) : null}
                 {body}
                 {last ? (
-                  <>
+                  <section
+                    aria-label="Completion follow-up"
+                    className="grid gap-3 rounded-xl bg-muted/25 p-4"
+                  >
                     <BotCompletionField selection={completion} disabled={busy} />
-                    <p className="text-xs text-muted-foreground">
-                      Each firing uses this completion destination. Let Loom or Grok own the
-                      schedule for this job, so it is not scheduled twice.
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Each firing uses this destination. Give this job one schedule owner, Loom or
+                      Grok, to avoid starting it twice.
                     </p>
-                  </>
+                  </section>
                 ) : null}
               </div>
             </WizardPanel>

@@ -560,6 +560,8 @@ type CollectionItem = {
 };
 
 type CollectionContext = {
+  readonly canRun: boolean;
+  readonly onRun: (bot: BotDefinition) => void;
   readonly usage: UsageReading;
   readonly runs: {
     readonly full: boolean;
@@ -591,7 +593,19 @@ function BotCard({
             {formatModelSlugName(bot.modelSelection.model)}
           </p>
         </div>
-        <BotActionsMenu bot={bot} />
+        <div className="relative flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            shape="pill"
+            aria-label={`Run ${bot.name}`}
+            disabled={!context.canRun}
+            onClick={() => context.onRun(bot)}
+          >
+            <PlayIcon />
+          </Button>
+          <BotActionsMenu bot={bot} />
+        </div>
       </div>
       {bot.description.trim() ? (
         <p className="line-clamp-2 text-xs leading-4.5 text-muted-foreground">{bot.description}</p>
@@ -841,6 +855,8 @@ export function BotsCollection() {
     starter: starters.starterOf(bot),
   }));
   const context: CollectionContext = {
+    canRun: access.canRun,
+    onRun: (bot) => nav.overlay({ run: bot.id }),
     usage: {
       supported: usageSupported,
       loading: usageSupported && usage.isPending && !usage.usage,

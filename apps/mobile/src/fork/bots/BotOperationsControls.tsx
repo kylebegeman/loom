@@ -6,6 +6,10 @@ import type { BotOperationMode } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { LibraryStateBadge } from "../library/LibraryStateBadge";
+import { BotsOutline } from "./BotIdentity";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotChoice, BotNotice } from "./BotControls";
@@ -32,6 +36,7 @@ export function BotOperationsControls({
   const canStop = useAtomValue(bots.stopAll.permissionAtom(environmentId));
   const setMode = useAtomCommand(bots.setOperationMode, { reportFailure: false });
   const stopAll = useAtomCommand(bots.stopAll, { reportFailure: false });
+  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!host.operationsSupported) return null;
@@ -53,39 +58,76 @@ export function BotOperationsControls({
       );
     setBusy(false);
   };
-  return (
-    <View className="gap-3 rounded-xl border border-border-subtle p-4">
-      {state.data ? (
-        <BotChoice
-          label={`New jobs on ${host.label}`}
-          value={state.data.mode}
-          options={MODES}
-          disabled={!canSet || !host.connected || busy}
-          onChange={(mode) => void change(mode)}
-        />
-      ) : (
-        <Text className="text-xs text-foreground-muted">
-          {!host.connected
-            ? "Connect to read the operation mode."
+  const mode = state.data?.mode;
+  const label = MODES.find((entry) => entry.value === mode)?.label;
+  const summary =
+    mode === "paused"
+      ? "New jobs are paused"
+      : mode === "automatic"
+        ? "You, agents and triggers can start jobs"
+        : mode === "manual"
+          ? "You and agents can start jobs"
+          : !host.connected
+            ? "Connect to read the mode"
             : state.error
-              ? "Operation mode unavailable."
-              : "Loading operation mode…"}
-        </Text>
-      )}
-      <Text className="text-xs text-foreground-muted">
-        Paused refuses new jobs. Manual allows you and agents to start jobs. Automatic also allows
-        triggers. Accepted work continues when the mode changes. Stop all jobs pauses new jobs and
-        cancels accepted work, including jobs sent to other computers.
-      </Text>
-      <Button
-        label="Stop all jobs"
-        tone="danger"
-        disabled={!canStop || !host.connected || busy}
-        onPress={() => void stop()}
-      />
-      {error || state.error ? (
-        <BotNotice error={error ?? state.error} onRetry={state.refresh} />
+              ? "Mode unavailable"
+              : "Loading mode…";
+  return (
+    <BotsOutline>
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel={`Bot operation: ${label ?? summary}`}
+        accessibilityHint="Shows operation modes and the control to stop all jobs"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(!expanded)}
+        className="min-h-16 flex-row items-center gap-3 px-4 py-3"
+      >
+        <SymbolView
+          name={mode === "paused" ? "pause" : "bolt.circle"}
+          size={21}
+          tintColorClassName="accent-icon-muted"
+        />
+        <View className="min-w-0 flex-1 gap-0.5">
+          <Text className="text-sm font-t3-medium">New jobs on {host.label}</Text>
+          <Text className="text-xs text-foreground-muted">{summary}</Text>
+        </View>
+        {label ? (
+          <LibraryStateBadge tone={mode === "paused" ? "warning" : "neutral"} label={label} />
+        ) : null}
+        <SymbolView
+          name={expanded ? "chevron.up" : "chevron.down"}
+          size={12}
+          tintColorClassName="accent-icon-muted"
+        />
+      </RowPressable>
+      {expanded ? (
+        <View className="gap-4 border-t border-border-subtle p-4">
+          {state.data ? (
+            <BotChoice
+              label="Allow new jobs"
+              value={state.data.mode}
+              options={MODES}
+              disabled={!canSet || !host.connected || busy}
+              onChange={(next) => void change(next)}
+            />
+          ) : null}
+          <Text className="text-xs text-foreground-muted">
+            Automatic also allows triggers. Changing the mode leaves accepted work running. Stop all
+            jobs pauses new jobs and cancels accepted work, including jobs sent to other computers.
+          </Text>
+          <Button
+            label="Stop all jobs"
+            tone="danger"
+            disabled={!canStop || !host.connected || busy}
+            onPress={() => void stop()}
+          />
+        </View>
       ) : null}
-    </View>
+      {error || state.error ? (
+        <View className="px-4 pb-4">
+          <BotNotice error={error ?? state.error} onRetry={state.refresh} />
+        </View>
+      ) : null}
+    </BotsOutline>
   );
 }

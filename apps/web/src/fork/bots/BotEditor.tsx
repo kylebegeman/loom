@@ -508,7 +508,10 @@ function EditorSection({
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <div className="min-w-0 flex-1 basis-64">
-          <h2 id={headingId} className="flex items-baseline gap-1.5 text-sm font-semibold">
+          <h2
+            id={headingId}
+            className="flex items-baseline gap-1.5 text-base font-semibold tracking-tight"
+          >
             {title}
             {count ? (
               <span className="text-xs font-normal tabular-nums text-muted-foreground">
@@ -1177,8 +1180,11 @@ export function BotEditorForm({
     <div className="flex min-w-0 flex-col" onKeyDown={onKeyDown}>
       <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-3">
         <BotTile bot={base ?? { id: current.id.trim() || "new-bot" }} size="md" />
-        <div className="min-w-0 flex-1 basis-64">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+        <div className="min-w-0 flex-1 basis-64 space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {base ? `Edit ${base.name}` : "Review and save your bot"}
+          </h2>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm leading-relaxed text-muted-foreground">
             {base ? (
               <>
                 <span className="tabular-nums">Editing v{base.version}</span>
@@ -1210,7 +1216,9 @@ export function BotEditorForm({
                 . Nothing is saved until you create it.
               </span>
             ) : (
-              <span>Every run follows these instructions and settings, whoever starts it.</span>
+              <span>
+                Set its brief and boundaries. Every run follows the version you save here.
+              </span>
             )}
           </div>
         </div>

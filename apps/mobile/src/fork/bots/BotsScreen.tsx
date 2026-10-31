@@ -17,7 +17,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { RowPressable } from "../../components/ui/RowPressable";
@@ -172,6 +172,7 @@ function BotsCatalog({
   const canCreate = useAtomValue(bots.save.permissionAtom(environmentId));
   const canRestore = useAtomValue(bots.restoreStarter.permissionAtom(environmentId));
   const restore = useAtomCommand(bots.restoreStarter, { reportFailure: false });
+  const [computerOpen, setComputerOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [archived, setArchived] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
@@ -237,18 +238,107 @@ function BotsCatalog({
         }
       />
     ) : null;
+  const shortcuts: ReadonlyArray<{
+    readonly label: string;
+    readonly icon: AppSymbolName;
+    readonly show: boolean;
+    readonly open: () => void;
+  }> = environmentId
+    ? [
+        {
+          label: attention > 0 ? `Needs you (${attention})` : "Needs you",
+          icon: "person.badge.clock",
+          show: capabilities.inboxSupported,
+          open: () => navigation.navigate("BotsInbox", { environmentId }),
+        },
+        {
+          label: "Runs",
+          icon: "clock",
+          show: true,
+          open: () => navigation.navigate("BotsRuns", { environmentId }),
+        },
+        {
+          label: "Pipelines",
+          icon: "arrow.triangle.branch",
+          show: capabilities.pipelinesSupported,
+          open: () => navigation.navigate("BotsPipelines", { environmentId }),
+        },
+        {
+          label: "Triggers",
+          icon: "bolt.circle",
+          show: capabilities.triggersSupported,
+          open: () => navigation.navigate("BotsTriggers", { environmentId }),
+        },
+        {
+          label: "Grok companion",
+          icon: "bubble.left.and.bubble.right",
+          show: capabilities.completionsSupported,
+          open: () => navigation.navigate("BotsCompletions", { environmentId }),
+        },
+      ]
+    : [];
   const header = (
-    <View className="gap-5 pb-4">
-      {environmentId && capabilities.operationsSupported ? (
-        <BotOperationsControls environmentId={environmentId} />
+    <View className="gap-4 pb-4">
+      {showList ? (
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="min-w-0 flex-1 gap-1">
+            <Text accessibilityRole="header" className="text-2xl font-t3-semibold">
+              {collection.query.isPending && !collection.bots.length
+                ? "Saved bots"
+                : plural(activeCount, "bot")}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Computer: ${capabilities.label}`}
+              accessibilityState={{ expanded: computerOpen, disabled: computers.length < 2 }}
+              disabled={computers.length < 2}
+              hitSlop={8}
+              onPress={() => setComputerOpen(!computerOpen)}
+              className="min-h-8 flex-row items-center gap-1.5 self-start active:opacity-70"
+            >
+              <Text numberOfLines={1} className="shrink text-sm text-foreground-muted">
+                {capabilities.label}
+              </Text>
+              {computers.length > 1 ? (
+                <SymbolView
+                  name={computerOpen ? "chevron.up" : "chevron.down"}
+                  size={11}
+                  tintColorClassName="accent-icon-muted"
+                />
+              ) : null}
+            </Pressable>
+          </View>
+          {collection.bots.length ? newBot : null}
+        </View>
       ) : null}
-      {computers.length > 1 || (computers.length === 1 && computers[0]?.value !== environmentId) ? (
+      {computerOpen || (computers.length === 1 && computers[0]?.value !== environmentId) ? (
         <BotChoice
           label="Computer"
           value={environmentId ?? ""}
           options={computers}
           onChange={onComputer}
         />
+      ) : null}
+      {environmentId && capabilities.operationsSupported ? (
+        <BotOperationsControls environmentId={environmentId} />
+      ) : null}
+      {showList && shortcuts.some((shortcut) => shortcut.show) ? (
+        <View className="flex-row flex-wrap gap-2">
+          {shortcuts
+            .filter((shortcut) => shortcut.show)
+            .map((shortcut) => (
+              <RowPressable
+                key={shortcut.label}
+                accessibilityRole="button"
+                accessibilityLabel={shortcut.label}
+                onPress={shortcut.open}
+                className="min-h-11 flex-row items-center gap-2 rounded-full bg-subtle px-3.5 py-2"
+              >
+                <SymbolView name={shortcut.icon} size={15} tintColorClassName="accent-icon-muted" />
+                <Text className="text-sm font-t3-medium">{shortcut.label}</Text>
+              </RowPressable>
+            ))}
+        </View>
       ) : null}
       {!environmentId ? (
         <EmptyState
@@ -305,36 +395,12 @@ function BotsCatalog({
           )
         ) : (
           <>
-            <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
+            {archivedCount ? (
               <Text className="text-xs tabular-nums text-foreground-muted">
-                {[
-                  plural(activeCount, "bot"),
-                  archivedCount ? `${archivedCount} archived` : null,
-                  `on ${capabilities.label}`,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+                {archivedCount} archived
               </Text>
-              {capabilities.inboxSupported && attention > 0 ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open inbox, ${attention} ${attention === 1 ? "needs" : "need"} you`}
-                  onPress={() => {
-                    if (environmentId) navigation.navigate("BotsInbox", { environmentId });
-                  }}
-                  className="active:opacity-70"
-                >
-                  <LibraryStateBadge
-                    tone="warning"
-                    label={`${attention} ${attention === 1 ? "needs" : "need"} you`}
-                  />
-                </Pressable>
-              ) : null}
-            </View>
-            <View className="flex-row flex-wrap gap-2">
-              {newBot}
-              {fromThread}
-            </View>
+            ) : null}
+            {fromThread}
             <BotInput
               label="Find a bot"
               value={filter}

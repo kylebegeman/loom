@@ -15,6 +15,7 @@ import {
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useCompactWorkspaceTabs } from "../../features/workspace/useSystemWorkspaceTabBar";
+import { useWorkspaceSurface } from "../../features/workspace/useWorkspaceSurface";
 import { cn } from "../../lib/cn";
 import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { useDeviceType } from "../../native/native-layout-metrics";
@@ -36,16 +37,22 @@ export function BotPage({
   readonly scroll?: boolean;
 }) {
   const pageBack = useWorkspacePageBack();
+  const workspaceSurface = useWorkspaceSurface();
   const insets = useSafeAreaInsets();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
   const { layout } = useAdaptiveWorkspaceLayout();
-  const surface = deviceType === "duo-folded" ? "bg-screen" : "bg-sheet";
+  const surface =
+    deviceType === "duo-folded"
+      ? "bg-screen"
+      : pageBack === undefined
+        ? workspaceSurface.className
+        : "bg-sheet";
   return (
     <View collapsable={false} className={cn("flex-1", surface)}>
       <AppBar
         title={title}
-        sidebar={false}
+        sidebar={pageBack === undefined}
         hideBottomBorder
         onBack={back ? pageBack : undefined}
         actions={actions}

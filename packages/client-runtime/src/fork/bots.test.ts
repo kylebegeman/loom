@@ -13,6 +13,7 @@ import type {
   BotTrigger,
   BotTriggerFiring,
 } from "@t3tools/contracts/fork";
+import { botCompletionDeliveryLabel } from "./bots-presentation.ts";
 import { BotsDismissInput } from "@t3tools/contracts/fork";
 import {
   applyBatchChanges,
@@ -752,5 +753,35 @@ describe("bot versions", () => {
     expect(botVersionLabel({ version: 4, stableVersion: 2 })).toBe("v4, stable v2");
     expect(botVersionLabel({ version: 4, stableVersion: 4 })).toBe("v4");
     expect(botVersionLabel({ version: 4 })).toBe("v4");
+  });
+});
+
+describe("completion delivery presentation", () => {
+  it("reserves unknown outcome for sends whose acceptance could not be confirmed", () => {
+    for (const [reason, expected] of [
+      ["outcome_unknown", "Outcome unknown, needs attention"],
+      ["credentials_unavailable", "Delivery needs attention"],
+      ["destination_invalid", "Delivery needs attention"],
+      [null, "Delivery needs attention"],
+    ] as const) {
+      expect(
+        botCompletionDeliveryLabel({
+          id: "delivery",
+          destinationId: "chief",
+          kind: "run",
+          jobId: "run",
+          projectId: "project" as import("@t3tools/contracts").ProjectId,
+          status: "needs_attention",
+          attempts: 1,
+          createdAt: "2026-10-31T00:00:00.000Z",
+          updatedAt: "2026-10-31T00:00:00.000Z",
+          acceptedAt: null,
+          acknowledgedAt: null,
+          receiverOutcome: null,
+          lastHttpStatus: null,
+          reason,
+        }),
+      ).toBe(expected);
+    }
   });
 });

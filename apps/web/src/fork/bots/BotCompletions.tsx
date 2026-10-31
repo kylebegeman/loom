@@ -14,6 +14,14 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Redacted from "effect/Redacted";
+import {
+  ArrowUpRightIcon,
+  PlugZapIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  SendIcon,
+  ShieldCheckIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -27,7 +35,13 @@ import { useEnvironment } from "~/state/environments";
 import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { LibraryErrorNotice, LibraryField } from "../project-library/LibraryControls";
+import {
+  LibraryErrorNotice,
+  LibraryField,
+  LibraryNotice,
+  LibrarySection,
+  LibraryStateBadge,
+} from "../project-library/LibraryControls";
 import { bots, useBotsHost, useRefreshOnReconnect } from "./state";
 
 const failureText = (cause: unknown) =>
@@ -139,33 +153,31 @@ export function BotCompletionField({
   );
 }
 
-export function GrokCompanionSection() {
+export function GrokCompanionPanel() {
   const host = useBotsHost();
   const environmentId = host.environmentId;
-  const [open, setOpen] = useState(false);
   if (!environmentId || !host.completionsSupported) return null;
   return (
-    <section className="grid gap-3 rounded-xl border border-border p-4" aria-label="Grok companion">
-      <div className="grid gap-1">
-        <h2 className="text-sm font-medium">Grok companion</h2>
-        <p className="text-xs text-muted-foreground">
-          Grok Bot coordinates hosted work beside Loom. Grok Build remains a separate coding
-          provider.
-        </p>
-      </div>
-      <details
-        className="grid gap-3"
-        open={open}
-        onToggle={(event) => setOpen(event.currentTarget.open)}
-      >
-        <summary className="cursor-pointer text-sm">
-          Completion destinations and delivery history
-        </summary>
-        <div className="pt-4">
-          {open ? <CompletionManagement environmentId={environmentId} /> : null}
+    <div className="grid gap-7">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight">Grok companion</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Keep your chief Bot informed when Loom finishes a job. Each project has its own
+            destinations, and each run chooses whether to send a result.
+          </p>
         </div>
-      </details>
-    </section>
+        <Button
+          variant="outline"
+          shape="pill"
+          size="sm"
+          render={<a href={GROK_ROUTINE_GUIDE} target="_blank" rel="noreferrer" />}
+        >
+          Setup guide <ArrowUpRightIcon />
+        </Button>
+      </header>
+      <CompletionManagement environmentId={environmentId} />
+    </div>
   );
 }
 
@@ -199,6 +211,8 @@ function CompletionManagement({ environmentId }: { readonly environmentId: Envir
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const visibleDestinations =
+    destinations.data?.destinations.filter((destination) => destination.deletedAt === null) ?? [];
   const refresh = () => {
     destinations.refresh();
     deliveries.refresh();
@@ -260,238 +274,320 @@ function CompletionManagement({ environmentId }: { readonly environmentId: Envir
     setBusy(false);
   };
   return (
-    <div className="grid gap-5">
-      <p className="text-xs text-muted-foreground">
-        Create a webhook routine in Grok, then save its URL and key here. The destination belongs to
-        one project. Each job chooses whether to send its completion.{" "}
-        <a
-          href={GROK_ROUTINE_GUIDE}
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2"
+    <div className="grid gap-7">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="w-full sm:max-w-sm">
+          {projects.length ? (
+            <LibraryField label="Project">
+              <Select
+                value={projectId ?? ""}
+                disabled={busy}
+                onValueChange={(value) => setProject(value ?? "")}
+              >
+                <SelectTrigger size="sm">
+                  <SelectValue>
+                    {projects.find((project) => project.id === projectId)?.title ??
+                      "Choose a project"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.title}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </LibraryField>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Add a project on this computer to configure result delivery.
+            </p>
+          )}
+        </div>
+        <Button
+          shape="pill"
+          size="sm"
+          variant="outline"
+          disabled={!connected || busy}
+          onClick={refresh}
         >
-          Grok routines guide
-        </a>
-      </p>
-      {projects.length ? (
-        <LibraryField label="Project">
-          <Select
-            value={projectId ?? ""}
-            disabled={busy}
-            onValueChange={(value) => setProject(value ?? "")}
-          >
-            <SelectTrigger size="sm">
-              <SelectValue>
-                {projects.find((project) => project.id === projectId)?.title ?? "Choose a project"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.title}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </LibraryField>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Add a project on this computer before configuring completion delivery.
-        </p>
-      )}
-      {!connected ? (
-        <p className="text-sm text-muted-foreground">
-          Reconnect this computer to change destinations or refresh delivery status.
-        </p>
-      ) : null}
-      <div className="flex justify-end">
-        <Button size="sm" variant="outline" disabled={!connected || busy} onClick={refresh}>
-          Refresh deliveries
+          <RefreshCwIcon /> Refresh deliveries
         </Button>
       </div>
+      {!connected ? (
+        <LibraryNotice icon={PlugZapIcon}>
+          Reconnect this computer to update destinations or delivery status.
+        </LibraryNotice>
+      ) : null}
       <LibraryErrorNotice
         error={error ?? destinations.error ?? deliveries.error}
         onRetry={refresh}
       />
-      {destinations.isPending && !destinations.data ? (
-        <p className="text-xs text-muted-foreground">Loading destinations…</p>
-      ) : null}
-      {destinations.data?.destinations
-        .filter((destination) => destination.deletedAt === null)
-        .map((destination) => (
-          <div
-            key={destination.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"
-          >
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{destination.label}</p>
-              <p className="text-xs text-muted-foreground">
-                {destination.host} · {destination.enabled ? "Enabled" : "Disabled"} ·{" "}
-                {destination.id}
+      <div className="grid items-start gap-8 xl:grid-cols-2">
+        <LibrarySection
+          title="Completion destinations"
+          icon={PlugZapIcon}
+          count={visibleDestinations.length}
+        >
+          {destinations.isPending && !destinations.data ? (
+            <p className="py-4 text-sm text-muted-foreground">Loading destinations…</p>
+          ) : visibleDestinations.length === 0 && projectId && !destinations.error ? (
+            <div className="space-y-1 rounded-xl bg-muted/25 p-5">
+              <p className="text-sm font-medium">Connect a Grok routine</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Create a webhook routine in Grok, then add its private address and key below.
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={busy || !connected || !canEnable}
-                onClick={() => void toggle(destination)}
-              >
-                {destination.enabled ? "Disable" : "Enable"}
-              </Button>
-              <Button
-                size="xs"
-                variant="destructive-outline"
-                disabled={busy || !connected || !canRemove}
-                onClick={() => void removeDestination(destination)}
-              >
-                Remove
-              </Button>
+          ) : null}
+          {visibleDestinations.length ? (
+            <div className="divide-y divide-border/60 rounded-xl border border-border/60 px-4">
+              {visibleDestinations.map((destination) => (
+                <div key={destination.id} className="grid gap-3 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="min-w-0 text-sm font-medium wrap-anywhere">
+                      {destination.label}
+                    </h3>
+                    <LibraryStateBadge tone={destination.enabled ? "success" : "neutral"}>
+                      {destination.enabled ? "Enabled" : "Disabled"}
+                    </LibraryStateBadge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{destination.host}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="min-w-0 text-xs text-muted-foreground wrap-anywhere">
+                      {destination.id}
+                    </span>
+                    <div className="flex gap-1.5">
+                      <Button
+                        shape="pill"
+                        size="xs"
+                        variant="outline"
+                        disabled={busy || !connected || !canEnable}
+                        onClick={() => void toggle(destination)}
+                      >
+                        {destination.enabled ? "Disable" : "Enable"}
+                      </Button>
+                      <Button
+                        shape="pill"
+                        size="xs"
+                        variant="destructive-outline"
+                        disabled={busy || !connected || !canRemove}
+                        onClick={() => void removeDestination(destination)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        ))}
-      {destinations.data?.destinations.filter((destination) => destination.deletedAt === null)
-        .length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No completion destination for this project yet.
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">
-        Disabling holds pending deliveries. Removing a destination cancels its pending deliveries
-        and removes its credentials; history remains.
-      </p>
-      {canConfigure ? (
-        <details>
-          <summary className="cursor-pointer text-sm">Add a completion destination</summary>
-          <form
-            className="mt-4 grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-          >
-            <LibraryField label="Identifier">
-              <Input
-                disabled={busy}
-                value={id}
-                onChange={(event) => setId(event.target.value)}
-                required
-                pattern="[a-z0-9][a-z0-9-]{0,63}"
-                autoComplete="off"
-              />
-            </LibraryField>
-            <LibraryField label="Label">
-              <Input
-                disabled={busy}
-                value={label}
-                onChange={(event) => setLabel(event.target.value)}
-                required
-                maxLength={120}
-              />
-            </LibraryField>
-            <LibraryField label="Grok routine URL">
-              <Input
-                disabled={busy}
-                type="password"
-                autoComplete="new-password"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                required
-              />
-            </LibraryField>
-            <LibraryField label="Webhook key">
-              <Input
-                disabled={busy}
-                type="password"
-                autoComplete="new-password"
-                value={key}
-                onChange={(event) => setKey(event.target.value)}
-                required
-              />
-            </LibraryField>
-            <p className="text-xs text-muted-foreground">
-              Saved URLs and keys are never shown. To replace credentials, create a destination with
-              a new identifier.
-            </p>
-            <div>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!projectId || !connected || busy || !url || !key}
-              >
-                Save destination
-              </Button>
-            </div>
-          </form>
-        </details>
-      ) : null}
-      <div className="grid gap-3">
-        <h3 className="text-sm font-medium">Recent deliveries</h3>
-        <p className="text-xs text-muted-foreground">
-          This is a snapshot. Refresh to check progress. Accepted means Grok received the routine
-          request; only an acknowledged outcome confirms its follow-up work. If the outcome is
-          unknown, check Grok before recording it.
-        </p>
-        {deliveries.isPending && !deliveries.data ? (
-          <p className="text-xs text-muted-foreground">Loading deliveries…</p>
-        ) : deliveries.data?.deliveries.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No completion deliveries for this project yet.
+          ) : null}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Disable to hold pending deliveries. Remove to cancel unsent deliveries and delete saved
+            credentials. Delivery history remains.
           </p>
-        ) : null}
-        {deliveries.data?.deliveries.map((delivery) => (
-          <div key={delivery.id} className="grid gap-2 rounded-lg border border-border p-3">
-            <p className="text-sm font-medium">{botCompletionDeliveryLabel(delivery)}</p>
-            <p className="text-xs text-muted-foreground">
-              {delivery.kind} · {delivery.jobId} · {delivery.attempts} attempts ·{" "}
-              {new Date(delivery.updatedAt).toLocaleString()}
-            </p>
-            {delivery.reason ? (
-              <p className="text-xs text-muted-foreground">{delivery.reason}</p>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="xs"
-                variant="outline"
-                render={
-                  <Link
-                    to="/loom/bots"
-                    search={
-                      delivery.kind === "run"
-                        ? { runId: delivery.jobId }
-                        : delivery.kind === "batch"
-                          ? { batch: delivery.jobId }
-                          : { pipelineRun: delivery.jobId }
-                    }
-                  />
-                }
+          {canConfigure ? (
+            <details className="group rounded-xl bg-muted/20 p-4">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <PlusIcon aria-hidden className="size-4" /> Add a destination
+              </summary>
+              <form
+                autoComplete="off"
+                className="mt-5 grid gap-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void save();
+                }}
               >
-                Open job
-              </Button>
-              {canAcknowledge &&
-              (delivery.status === "accepted" || delivery.status === "needs_attention") ? (
-                <>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+                  <LibraryField label="Name">
+                    <Input
+                      disabled={busy}
+                      value={label}
+                      onChange={(event) => setLabel(event.target.value)}
+                      required
+                      maxLength={120}
+                    />
+                  </LibraryField>
+                  <LibraryField label="Identifier">
+                    <Input
+                      disabled={busy}
+                      value={id}
+                      onChange={(event) => setId(event.target.value)}
+                      required
+                      pattern="[a-z0-9][a-z0-9-]{0,63}"
+                      autoComplete="off"
+                    />
+                  </LibraryField>
+                </div>
+                <LibraryField label="Private routine URL">
+                  <Input
+                    disabled={busy}
+                    type="password"
+                    autoComplete="new-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-bwignore
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    required
+                  />
+                </LibraryField>
+                <LibraryField label="Webhook key">
+                  <Input
+                    disabled={busy}
+                    type="password"
+                    autoComplete="new-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-bwignore
+                    value={key}
+                    onChange={(event) => setKey(event.target.value)}
+                    required
+                  />
+                </LibraryField>
+                <div className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                  <ShieldCheckIcon aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+                  <p>
+                    Saved addresses and keys stay private. Use a new identifier when replacing
+                    credentials.
+                  </p>
+                </div>
+                <div>
                   <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={busy || !connected}
-                    onClick={() => void recordOutcome(delivery, "completed")}
+                    type="submit"
+                    shape="pill"
+                    size="sm"
+                    disabled={!projectId || !connected || busy || !url || !key}
                   >
-                    Confirm Grok completed
+                    {busy ? "Saving…" : "Save destination"}
                   </Button>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={busy || !connected}
-                    onClick={() => void recordOutcome(delivery, "failed")}
-                  >
-                    Confirm Grok failed
-                  </Button>
-                </>
-              ) : null}
+                </div>
+              </form>
+            </details>
+          ) : null}
+        </LibrarySection>
+        <LibrarySection
+          title="Delivery history"
+          icon={SendIcon}
+          count={deliveries.data?.deliveries.length}
+        >
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Accepted means Grok received the routine request. Confirm an outcome after checking its
+            work in Grok. Refresh to see the latest state.
+          </p>
+          {deliveries.isPending && !deliveries.data ? (
+            <p className="py-4 text-sm text-muted-foreground">Loading deliveries…</p>
+          ) : deliveries.data?.deliveries.length === 0 ? (
+            <div className="space-y-1 rounded-xl bg-muted/25 p-5">
+              <p className="text-sm font-medium">Results will appear here</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Choose an enabled destination when starting a bot, batch or pipeline in this
+                project.
+              </p>
             </div>
+          ) : null}
+          <div className="divide-y divide-border/60">
+            {deliveries.data?.deliveries.map((delivery) => (
+              <article key={delivery.id} className="grid gap-3 py-4 first:pt-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <LibraryStateBadge
+                    tone={
+                      delivery.receiverOutcome === "completed"
+                        ? "success"
+                        : delivery.receiverOutcome === "failed" || delivery.status === "failed"
+                          ? "danger"
+                          : delivery.status === "needs_attention"
+                            ? "warning"
+                            : delivery.status === "accepted"
+                              ? "active"
+                              : "neutral"
+                    }
+                  >
+                    {botCompletionDeliveryLabel(delivery)}
+                  </LibraryStateBadge>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {visibleDestinations.find(
+                      (destination) => destination.id === delivery.destinationId,
+                    )?.label ?? delivery.destinationId}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    <span className="capitalize">{delivery.kind}</span> result{" "}
+                    <span className="wrap-anywhere">{delivery.jobId}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    <time dateTime={delivery.updatedAt}>
+                      {new Date(delivery.updatedAt).toLocaleString()}
+                    </time>
+                    {" · "}
+                    {delivery.attempts} {delivery.attempts === 1 ? "attempt" : "attempts"}
+                  </p>
+                </div>
+                {delivery.reason ? (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {delivery.reason === "outcome_unknown"
+                      ? "Check Grok before confirming this outcome. Loom will not send it again automatically."
+                      : delivery.reason.replaceAll("_", " ")}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    shape="pill"
+                    size="xs"
+                    variant="outline"
+                    render={
+                      <Link
+                        to="/loom/bots"
+                        search={
+                          delivery.kind === "run"
+                            ? { runId: delivery.jobId }
+                            : delivery.kind === "batch"
+                              ? { batch: delivery.jobId }
+                              : { pipelineRun: delivery.jobId }
+                        }
+                      />
+                    }
+                  >
+                    Open job
+                  </Button>
+                  {canAcknowledge &&
+                  (delivery.status === "accepted" ||
+                    (delivery.status === "needs_attention" &&
+                      delivery.reason === "outcome_unknown")) ? (
+                    <>
+                      <Button
+                        shape="pill"
+                        size="xs"
+                        variant="outline"
+                        disabled={busy || !connected}
+                        onClick={() => void recordOutcome(delivery, "completed")}
+                      >
+                        Confirm Grok completed
+                      </Button>
+                      <Button
+                        shape="pill"
+                        size="xs"
+                        variant="outline"
+                        disabled={busy || !connected}
+                        onClick={() => void recordOutcome(delivery, "failed")}
+                      >
+                        Confirm Grok failed
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </article>
+            ))}
           </div>
-        ))}
+        </LibrarySection>
       </div>
     </div>
   );

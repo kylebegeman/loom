@@ -40,6 +40,14 @@ const harness = vi.hoisted(() => ({
   run: null as BotPipelineRun | null,
   reconnect: [] as Array<() => void>,
 }));
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/RowPressable", () => ({
+  RowPressable: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../library/libraryProjectColors", () => ({
+  useLibraryProjectColorValue: () => () => "#000000",
+}));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: (permission: string) => !harness.denied.has(permission),
   useAtomRefresh: () => harness.firstRefresh,

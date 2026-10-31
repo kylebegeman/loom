@@ -52,6 +52,15 @@ describe("tabs", () => {
   it("offers only the views this host supports", () => {
     expect(indexTabs(everything)).toEqual(["bots", "runs", "pipelines", "triggers"]);
     expect(indexTabs(nothing)).toEqual(["bots", "runs"]);
+    expect(indexTabs({ ...everything, completionsSupported: true })).toEqual([
+      "bots",
+      "runs",
+      "pipelines",
+      "triggers",
+      "companion",
+    ]);
+    expect(parseBotsSearch({ tab: "companion" })).toEqual({ tab: "companion" });
+    expect(selectedTab(indexTabs(nothing), "companion")).toBe("bots");
     expect(botPageTabs(nothing)).toEqual(["overview", "runs"]);
   });
 

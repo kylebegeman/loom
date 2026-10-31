@@ -147,6 +147,9 @@ vi.mock("../../components/ui/ListChoiceRow", () => ({
   ),
 }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/RowPressable", () => ({
+  RowPressable: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
 vi.mock("../library/libraryProjectColors", () => ({
   useLibraryProjectColorValue: () => () => "#000000",
 }));

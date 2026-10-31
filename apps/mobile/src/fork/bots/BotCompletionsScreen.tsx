@@ -9,11 +9,15 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import * as Redacted from "effect/Redacted";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { useProjects } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotChoice, BotInput, BotNotice, BotPage, BotSection } from "./BotControls";
 import { bots, useBotsCapabilities, useBotsReconnect } from "./state";
+import { BotsOutline, BotsSection } from "./BotIdentity";
 
 const failureText = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The completion request failed.";
@@ -93,7 +97,7 @@ export function BotCompletionField({
       !selection.query.error &&
       selection.destinations.length === 0 ? (
         <Text className="text-xs text-foreground-muted">
-          Add a destination from the Bots tools menu under Grok companion first.
+          Add a destination in Bots → Grok companion first.
         </Text>
       ) : null}
       <BotNotice
@@ -125,6 +129,7 @@ function CompletionManagement({ environmentId }: { readonly environmentId: Envir
     (project) => project.environmentId === environmentId && !project.isScratch,
   );
   const [chosenProject, setProject] = useState<string>(projects[0]?.id ?? "");
+  const [projectOpen, setProjectOpen] = useState(false);
   const projectId = projects.find((project) => project.id === chosenProject)?.id ?? null;
   const destinations = useEnvironmentQuery(
     host.completionsSupported && projectId
@@ -223,91 +228,159 @@ function CompletionManagement({ environmentId }: { readonly environmentId: Envir
   };
   return (
     <BotPage title="Grok companion">
-      <Text className="text-sm text-foreground-muted">
-        Grok Bot coordinates hosted work beside Loom. Grok Build remains a separate coding provider.
-        Create a webhook routine in Grok and save its URL and key here. Each job chooses whether to
-        send its completion.
-      </Text>
-      <Button
-        label="Grok routines guide"
-        tone="text"
-        onPress={() =>
-          void Linking.openURL(GROK_ROUTINE_GUIDE).catch(() =>
-            setError("Could not open the Grok routines guide."),
-          )
-        }
-      />
+      <View className="gap-2">
+        <Text accessibilityRole="header" className="text-2xl font-t3-semibold">
+          Keep Grok in the loop
+        </Text>
+        <Text className="text-sm text-foreground-muted">
+          Send job results to your chief Bot and track delivery here. Each job chooses whether to
+          send a result.
+        </Text>
+      </View>
       {!host.completionsSupported ? (
         <Text>Update this computer to manage completion destinations.</Text>
       ) : (
         <>
           {projects.length ? (
-            <BotChoice
-              label="Project"
-              value={projectId ?? ""}
-              options={projects.map((project) => ({ value: project.id, label: project.title }))}
-              disabled={busy}
-              onChange={setProject}
-            />
+            <BotsOutline>
+              <RowPressable
+                accessibilityRole="button"
+                accessibilityLabel={`Project: ${projects.find((entry) => entry.id === projectId)?.title ?? "Choose a project"}`}
+                accessibilityState={{ expanded: projectOpen, disabled: busy }}
+                disabled={busy}
+                onPress={() => setProjectOpen(!projectOpen)}
+                className="min-h-16 flex-row items-center gap-3 p-4"
+              >
+                <SymbolView name="folder" size={21} tintColorClassName="accent-icon-muted" />
+                <View className="min-w-0 flex-1 gap-0.5">
+                  <Text className="text-xs text-foreground-muted">Project</Text>
+                  <Text className="text-sm font-t3-medium">
+                    {projects.find((entry) => entry.id === projectId)?.title ?? "Choose a project"}
+                  </Text>
+                </View>
+                <SymbolView
+                  name={projectOpen ? "chevron.up" : "chevron.down"}
+                  size={12}
+                  tintColorClassName="accent-icon-muted"
+                />
+              </RowPressable>
+              {projectOpen ? (
+                <View className="border-t border-border-subtle p-4">
+                  <BotChoice
+                    label="Choose a project"
+                    value={projectId ?? ""}
+                    options={projects.map((project) => ({
+                      value: project.id,
+                      label: project.title,
+                    }))}
+                    disabled={busy}
+                    onChange={(value) => {
+                      setProject(value);
+                      setProjectOpen(false);
+                    }}
+                  />
+                </View>
+              ) : null}
+            </BotsOutline>
           ) : (
             <Text>Add a project on this computer before configuring completion delivery.</Text>
           )}
           {!host.connected ? (
             <Text>Reconnect {host.label} to change destinations or refresh delivery status.</Text>
           ) : null}
-          <Button label="Refresh deliveries" disabled={!host.connected || busy} onPress={refresh} />
+          <View className="flex-row flex-wrap gap-2">
+            <Button
+              label="Refresh deliveries"
+              icon="arrow.clockwise"
+              tone="text"
+              disabled={!host.connected || busy}
+              onPress={refresh}
+            />
+            <Button
+              label="Setup guide"
+              icon="arrow.up.right"
+              tone="text"
+              onPress={() =>
+                void Linking.openURL(GROK_ROUTINE_GUIDE).catch(() =>
+                  setError("Could not open the Grok routines guide."),
+                )
+              }
+            />
+          </View>
           <BotNotice
             error={error ?? destinations.error ?? deliveries.error}
             {...(error || destinations.error || deliveries.error ? { onRetry: refresh } : {})}
           />
-          <BotSection
-            title="Completion destinations"
-            description="Disabling holds pending deliveries. Removing a destination cancels pending deliveries and removes its credentials; history remains."
-          >
-            {destinations.isPending && !destinations.data ? (
-              <Text>Loading destinations…</Text>
-            ) : null}
-            {destinations.data?.destinations.filter((destination) => destination.deletedAt === null)
-              .length === 0 ? (
-              <Text>No completion destination for this project yet.</Text>
-            ) : null}
-            {destinations.data?.destinations
-              .filter((destination) => destination.deletedAt === null)
-              .map((destination) => (
-                <View
-                  key={destination.id}
-                  className="gap-2 rounded-xl border border-border-subtle p-3"
-                >
-                  <Text className="font-t3-medium">{destination.label}</Text>
-                  <Text className="text-xs text-foreground-muted">
-                    {destination.host} · {destination.enabled ? "Enabled" : "Disabled"} ·{" "}
-                    {destination.id}
+          <BotsSection title="Completion destinations">
+            <BotsOutline>
+              {destinations.isPending && !destinations.data ? (
+                <Text>Loading destinations…</Text>
+              ) : null}
+              {destinations.data?.destinations.filter(
+                (destination) => destination.deletedAt === null,
+              ).length === 0 ? (
+                <View className="gap-1 p-4">
+                  <Text className="text-sm font-t3-medium">Connect your chief Bot</Text>
+                  <Text className="text-sm text-foreground-muted">
+                    Create a webhook routine in Grok, then add its private URL and key here.
                   </Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    <Button
-                      label={destination.enabled ? "Disable" : "Enable"}
-                      disabled={!host.connected || busy || !canEnable}
-                      onPress={() => void toggle(destination)}
-                    />
-                    <Button
-                      label="Remove"
-                      tone="danger"
-                      disabled={!host.connected || busy || !canRemove}
-                      onPress={() => void removeDestination(destination)}
-                    />
-                  </View>
                 </View>
-              ))}
-          </BotSection>
+              ) : null}
+              {destinations.data?.destinations
+                .filter((destination) => destination.deletedAt === null)
+                .map((destination, index) => (
+                  <View
+                    key={destination.id}
+                    className={index > 0 ? "gap-3 border-t border-border-subtle p-4" : "gap-3 p-4"}
+                  >
+                    <View className="flex-row items-start justify-between gap-3">
+                      <View className="min-w-0 flex-1 gap-1">
+                        <Text className="font-t3-medium">{destination.label}</Text>
+                        <Text className="text-xs text-foreground-muted">{destination.host}</Text>
+                      </View>
+                      <LibraryStateBadge
+                        tone={destination.enabled ? "success" : "neutral"}
+                        label={destination.enabled ? "Enabled" : "Disabled"}
+                      />
+                    </View>
+                    <View className="flex-row flex-wrap gap-2">
+                      <Button
+                        label={destination.enabled ? "Disable" : "Enable"}
+                        tone="text"
+                        disabled={!host.connected || busy || !canEnable}
+                        onPress={() => void toggle(destination)}
+                      />
+                      <RowPressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${destination.label}`}
+                        accessibilityState={{ disabled: !host.connected || busy || !canRemove }}
+                        disabled={!host.connected || busy || !canRemove}
+                        onPress={() => void removeDestination(destination)}
+                        className="min-h-12 items-center justify-center self-start rounded-full px-4 active:opacity-70"
+                      >
+                        <Text className="text-sm font-t3-medium text-danger-foreground">
+                          Remove
+                        </Text>
+                      </RowPressable>
+                    </View>
+                  </View>
+                ))}
+            </BotsOutline>
+            <Text className="text-xs text-foreground-muted">
+              Disable to hold pending deliveries. Removing a destination removes its credentials;
+              recorded history remains.
+            </Text>
+          </BotsSection>
           {canConfigure ? (
-            <BotSection title="Add a destination">
+            <View className="gap-4">
               <Button
                 label={adding ? "Close destination form" : "Add completion destination"}
+                icon={adding ? "xmark" : "plus"}
                 disabled={busy}
                 onPress={() => setAdding(!adding)}
               />
               {adding ? (
-                <>
+                <BotSection title="Private routine details">
                   <BotInput label="Identifier" value={id} onChangeText={setId} disabled={busy} />
                   <BotInput label="Label" value={label} onChangeText={setLabel} disabled={busy} />
                   <BotInput
@@ -330,53 +403,74 @@ function CompletionManagement({ environmentId }: { readonly environmentId: Envir
                   </Text>
                   <Button
                     label="Save destination"
+                    tone="primary"
                     disabled={
                       !projectId || !host.connected || busy || !id || !label || !url || !key
                     }
                     onPress={() => void save()}
                   />
-                </>
+                </BotSection>
               ) : null}
-            </BotSection>
+            </View>
           ) : null}
-          <BotSection
-            title="Recent deliveries"
-            description="This is a snapshot. Refresh to check progress. Accepted means Grok received the routine request; an acknowledged outcome confirms follow-up work. If the outcome is unknown, check Grok before recording it."
-          >
-            {deliveries.isPending && !deliveries.data ? (
-              <Text>Loading deliveries…</Text>
-            ) : deliveries.data?.deliveries.length === 0 ? (
-              <Text>No completion deliveries for this project yet.</Text>
-            ) : null}
-            {deliveries.data?.deliveries.map((delivery) => (
-              <View key={delivery.id} className="gap-2 rounded-xl border border-border-subtle p-3">
-                <Text className="font-t3-medium">{botCompletionDeliveryLabel(delivery)}</Text>
-                <Text className="text-xs text-foreground-muted">
-                  {delivery.kind} · {delivery.jobId} · {delivery.attempts} attempts ·{" "}
-                  {new Date(delivery.updatedAt).toLocaleString()}
+          <BotsSection title="Recent deliveries">
+            <Text className="text-xs text-foreground-muted">
+              Refresh to check progress. Accepted means Grok received the request; a confirmed
+              outcome records its follow-up work. Check Grok before recording an unknown outcome.
+            </Text>
+            <BotsOutline>
+              {deliveries.isPending && !deliveries.data ? (
+                <Text>Loading deliveries…</Text>
+              ) : deliveries.data?.deliveries.length === 0 ? (
+                <Text className="p-4 text-sm text-foreground-muted">
+                  No results sent yet. Choose this destination when starting a project job.
                 </Text>
-                {delivery.reason ? (
-                  <Text className="text-xs text-foreground-muted">{delivery.reason}</Text>
-                ) : null}
-                <Button label="Open job" onPress={() => openJob(delivery)} />
-                {canAcknowledge &&
-                (delivery.status === "accepted" || delivery.status === "needs_attention") ? (
-                  <>
-                    <Button
-                      label="Confirm Grok completed"
-                      disabled={!host.connected || busy}
-                      onPress={() => void recordOutcome(delivery, "completed")}
-                    />
-                    <Button
-                      label="Confirm Grok failed"
-                      disabled={!host.connected || busy}
-                      onPress={() => void recordOutcome(delivery, "failed")}
-                    />
-                  </>
-                ) : null}
-              </View>
-            ))}
-          </BotSection>
+              ) : null}
+              {deliveries.data?.deliveries.map((delivery, index) => (
+                <View
+                  key={delivery.id}
+                  className={index > 0 ? "gap-3 border-t border-border-subtle p-4" : "gap-3 p-4"}
+                >
+                  <Text className="text-sm font-t3-medium">
+                    {botCompletionDeliveryLabel(delivery)}
+                  </Text>
+                  <Text className="text-xs text-foreground-muted">
+                    {delivery.kind === "run"
+                      ? "Bot run"
+                      : delivery.kind === "batch"
+                        ? "Batch"
+                        : "Pipeline"}{" "}
+                    · {new Date(delivery.updatedAt).toLocaleString()} · {delivery.attempts}{" "}
+                    {delivery.attempts === 1 ? "attempt" : "attempts"}
+                  </Text>
+                  {delivery.reason ? (
+                    <Text className="text-xs text-foreground-muted">{delivery.reason}</Text>
+                  ) : null}
+                  <Button label="Open job" tone="text" onPress={() => openJob(delivery)} />
+                  {canAcknowledge &&
+                  (delivery.status === "accepted" ||
+                    (delivery.status === "needs_attention" &&
+                      delivery.reason === "outcome_unknown")) ? (
+                    <>
+                      <Button
+                        label="Confirm Grok completed"
+                        disabled={!host.connected || busy}
+                        onPress={() => void recordOutcome(delivery, "completed")}
+                      />
+                      <Button
+                        label="Confirm Grok failed"
+                        disabled={!host.connected || busy}
+                        onPress={() => void recordOutcome(delivery, "failed")}
+                      />
+                    </>
+                  ) : null}
+                </View>
+              ))}
+            </BotsOutline>
+          </BotsSection>
+          <Text className="text-xs text-foreground-muted">
+            Grok Bot coordinates hosted work. Grok Build is the separate coding provider in Loom.
+          </Text>
         </>
       )}
     </BotPage>

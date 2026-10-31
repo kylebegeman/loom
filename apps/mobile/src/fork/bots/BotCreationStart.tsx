@@ -12,6 +12,9 @@ import {
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { Button } from "../../components/ui/Button";
+import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { scheduledTaskDefaultModel } from "../../features/settings/scheduledTaskDraft";
 import { useEnvironmentServerConfig, useProjects, useThreadShells } from "../../state/entities";
@@ -19,6 +22,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { BotChoice, BotInput, BotNotice, BotPage, BotSection } from "./BotControls";
 import { BotModelField } from "./BotModelField";
+import { BotsOutline, BotsSection } from "./BotIdentity";
 import { bots, useBotsCapabilities } from "./state";
 
 export function BotCreationStart({
@@ -42,6 +46,7 @@ export function BotCreationStart({
   );
   const starters = useEnvironmentQuery(bots.listStarters({ environmentId, input: {} }));
   const [point, setPoint] = useState<"prompt" | "thread" | "starter">("prompt");
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
   const [model, setModel] = useState<ModelSelection | null>(null);
   const modelSelection = model ?? scheduledTaskDefaultModel(config, null);
   const [text, setText] = useState("");
@@ -105,28 +110,34 @@ export function BotCreationStart({
   };
   return (
     <BotPage title="New bot" back>
-      <BotNotice
-        error={error}
-        detail="Start with instructions, a conversation or a starter. Review the draft before saving. Creating a bot does not run it or enable an automation."
-      />
-      <BotSection title="Starting point">
-        <BotChoice
-          label="Start from"
-          value={point}
-          options={[
-            { value: "prompt", label: "From prompt or snippet" },
-            { value: "thread", label: "From thread" },
-            { value: "starter", label: "Starter" },
-          ]}
-          onChange={(value) => {
-            setPoint(value);
-            setError(null);
-            setDrafts([]);
-          }}
-          disabled={disabled}
-        />
-        <Button label="Start blank" onPress={onBlank} disabled={disabled} />
-      </BotSection>
+      <View className="gap-2">
+        <Text accessibilityRole="header" className="text-2xl font-t3-semibold">
+          Give a repeatable job its own bot
+        </Text>
+        <Text className="text-sm text-foreground-muted">
+          Start with instructions you already use. Review inputs and permissions before saving.
+        </Text>
+      </View>
+      <View className="gap-3">
+        <View accessibilityState={{ disabled }} pointerEvents={disabled ? "none" : "auto"}>
+          <SegmentedControl
+            selected={point}
+            options={[
+              { value: "prompt", label: "Prompt", accessibilityLabel: "From prompt or snippet" },
+              { value: "thread", label: "Thread", accessibilityLabel: "From thread" },
+              { value: "starter", label: "Starter" },
+            ]}
+            onSelect={(value) => {
+              if (disabled) return;
+              setPoint(value);
+              setError(null);
+              setDrafts([]);
+            }}
+          />
+        </View>
+        <Button label="Start blank" tone="text" onPress={onBlank} disabled={disabled} />
+      </View>
+      <BotNotice error={error} />
       {point === "thread" ? (
         <BotSection title="Conversation">
           {threads.length ? (
@@ -144,6 +155,7 @@ export function BotCreationStart({
           )}
           <Button
             label="Draft from thread"
+            tone="primary"
             disabled={disabled || !threadId}
             onPress={() =>
               navigation.navigate("BotsCreate", { environmentId, sourceThreadId: threadId })
@@ -196,47 +208,77 @@ export function BotCreationStart({
               </>
             )}
           </BotSection>
-          <BotSection
-            title="Execution defaults"
-            description="Drafts start with approval required. Review editing permissions before saving. Set up schedules separately after saving."
-          >
-            <BotModelField
-              environmentId={environmentId}
-              value={modelSelection}
-              onChange={setModel}
-              disabled={disabled}
-            />
-            <BotChoice
-              label="Project"
-              value={project}
-              options={[
-                { value: "", label: "Scratch folder" },
-                ...projects.map((entry) => ({ value: entry.id, label: entry.title })),
-              ]}
-              onChange={setProject}
-              disabled={disabled}
-            />
+          <BotsOutline>
+            <RowPressable
+              accessibilityRole="button"
+              accessibilityLabel="Draft model and workspace"
+              accessibilityState={{ expanded: defaultsOpen }}
+              onPress={() => setDefaultsOpen(!defaultsOpen)}
+              className="min-h-16 flex-row items-center gap-3 p-4"
+            >
+              <View className="min-w-0 flex-1 gap-1">
+                <Text className="text-sm font-t3-medium">Model and workspace</Text>
+                <Text numberOfLines={2} className="text-xs text-foreground-muted">
+                  {modelSelection?.model ?? "Choose a model"} in{" "}
+                  {projects.find((entry) => entry.id === project)?.title ?? "a scratch folder"}
+                </Text>
+              </View>
+              <SymbolView
+                name={defaultsOpen ? "chevron.up" : "chevron.down"}
+                size={12}
+                tintColorClassName="accent-icon-muted"
+              />
+            </RowPressable>
+            {defaultsOpen ? (
+              <View className="gap-4 border-t border-border-subtle p-4">
+                <BotModelField
+                  environmentId={environmentId}
+                  value={modelSelection}
+                  onChange={setModel}
+                  disabled={disabled}
+                />
+                <BotChoice
+                  label="Project"
+                  value={project}
+                  options={[
+                    { value: "", label: "Scratch folder" },
+                    ...projects.map((entry) => ({ value: entry.id, label: entry.title })),
+                  ]}
+                  onChange={setProject}
+                  disabled={disabled}
+                />
+              </View>
+            ) : null}
+          </BotsOutline>
+          <View className="gap-3">
+            <Text className="text-xs text-foreground-muted">
+              Drafts ask before actions. Creating a bot does not run it or enable a schedule. Review
+              editing permissions in the next step.
+            </Text>
             <Button
               label={busy ? "Preparing draft…" : "Review draft"}
+              tone="primary"
+              loading={busy}
               disabled={
                 disabled || !modelSelection || (point === "prompt" ? !text.trim() : !starterId)
               }
               onPress={() => void read()}
             />
-          </BotSection>
+          </View>
         </>
       )}
       {host.pipelinesSupported ? (
-        <BotSection
-          title="Automations"
-          description="Combine saved bots in sequence, review inputs and stop conditions, then configure a schedule or event trigger."
-        >
+        <BotsSection title="Need a sequence of jobs?">
+          <Text className="text-sm text-foreground-muted">
+            Use a pipeline to combine saved bots with inputs and stop conditions.
+          </Text>
           <Button
             label="Build an automation"
+            tone="text"
             disabled={disabled}
             onPress={() => navigation.navigate("BotsPipelines", { environmentId })}
           />
-        </BotSection>
+        </BotsSection>
       ) : null}
       {notes.map((note) => (
         <Text key={note} className="text-sm text-foreground-muted">
@@ -244,28 +286,40 @@ export function BotCreationStart({
         </Text>
       ))}
       {drafts.length ? (
-        <BotSection title="Choose a snippet to review">
-          {drafts.map((entry) => (
-            <View key={entry.draft.id} className="gap-2 rounded-xl border border-border-subtle p-3">
-              <Text className="font-t3-medium">{entry.draft.name}</Text>
-              <Text className="text-sm text-foreground-muted">
-                {entry.draft.description || entry.draft.instructions.slice(0, 160)}
-              </Text>
-              <Text className="text-xs text-foreground-muted">
-                {entry.intent === "edits"
-                  ? "Requests changes"
-                  : entry.intent === "planning"
-                    ? "Ideas and planning"
-                    : "Review permissions"}
-              </Text>
-              <Button
-                label={`Review ${entry.draft.name}`}
-                onPress={() => onDraft(entry)}
+        <BotsSection title="Choose a snippet to review" detail={`${drafts.length} found`}>
+          <BotsOutline>
+            {drafts.map((entry, index) => (
+              <RowPressable
+                key={entry.draft.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Review ${entry.draft.name}`}
+                accessibilityState={{ disabled }}
                 disabled={disabled}
-              />
-            </View>
-          ))}
-        </BotSection>
+                onPress={() => onDraft(entry)}
+                className={
+                  index > 0
+                    ? "flex-row items-center gap-3 border-t border-border-subtle p-4"
+                    : "flex-row items-center gap-3 p-4"
+                }
+              >
+                <View className="min-w-0 flex-1 gap-1">
+                  <Text className="font-t3-medium">{entry.draft.name}</Text>
+                  <Text numberOfLines={3} className="text-sm text-foreground-muted">
+                    {entry.draft.description || entry.draft.instructions.slice(0, 160)}
+                  </Text>
+                  <Text className="text-xs text-foreground-muted">
+                    {entry.intent === "edits"
+                      ? "Requests changes"
+                      : entry.intent === "planning"
+                        ? "Ideas and planning"
+                        : "Review permissions"}
+                  </Text>
+                </View>
+                <SymbolView name="chevron.right" size={13} tintColorClassName="accent-icon-muted" />
+              </RowPressable>
+            ))}
+          </BotsOutline>
+        </BotsSection>
       ) : null}
     </BotPage>
   );

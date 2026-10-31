@@ -39,6 +39,7 @@ const BotsSearchInput = Schema.Struct({
       "inbox",
       "usage",
       "computers",
+      "companion",
     ]),
   ),
   /** Which runs the Runs view lists. */
@@ -92,7 +93,14 @@ const BotsSearchInput = Schema.Struct({
 type BotsSearchInput = typeof BotsSearchInput.Type;
 
 /** The views the page has now. A bot's page shows Overview, Runs and Versions; the index the rest. */
-export type BotsTab = "bots" | "overview" | "runs" | "versions" | "pipelines" | "triggers";
+export type BotsTab =
+  | "bots"
+  | "overview"
+  | "runs"
+  | "versions"
+  | "pipelines"
+  | "triggers"
+  | "companion";
 export type BotsSearch = Omit<BotsSearchInput, "tab"> & { readonly tab?: BotsTab | undefined };
 
 /**
@@ -202,9 +210,13 @@ type TabCapabilities = {
   readonly pipelinesSupported: boolean;
   readonly triggersSupported: boolean;
   readonly versionsSupported: boolean;
+  readonly completionsSupported?: boolean;
 };
 
-export type BotsIndexTab = Extract<BotsTab, "bots" | "runs" | "pipelines" | "triggers">;
+export type BotsIndexTab = Extract<
+  BotsTab,
+  "bots" | "runs" | "pipelines" | "triggers" | "companion"
+>;
 export type BotPageTab = Extract<BotsTab, "overview" | "runs" | "versions">;
 
 /** The index's views this host offers, in the order they read. */
@@ -213,6 +225,7 @@ export const indexTabs = (host: TabCapabilities): readonly BotsIndexTab[] => [
   "runs",
   ...(host.pipelinesSupported ? (["pipelines"] as const) : []),
   ...(host.triggersSupported ? (["triggers"] as const) : []),
+  ...(host.completionsSupported ? (["companion"] as const) : []),
 ];
 
 /** A bot page's views this host offers. */

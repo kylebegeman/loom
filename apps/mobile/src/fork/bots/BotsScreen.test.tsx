@@ -355,6 +355,7 @@ it("uses the selected computer for definitions and clears a caller thread when s
   expect(harness.navigate).toHaveBeenLastCalledWith("BotsCreate", {
     environmentId: EnvironmentId.make("first"),
   });
+  act(() => button("Computer: first").click());
   const picker = container.querySelector<HTMLSelectElement>('[aria-label="Computer"]')!;
   act(() => {
     picker.value = "second";
