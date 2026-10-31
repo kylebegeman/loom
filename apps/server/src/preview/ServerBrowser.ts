@@ -1507,7 +1507,8 @@ const make = Effect.gen(function* () {
       Effect.try({
         try: () => {
           // fork: preview-popups
-          if (input.automationOwner !== undefined) assertTabCapacity(input.automationOwner, headroom);
+          if (input.automationOwner !== undefined)
+            assertTabCapacity(input.automationOwner, headroom);
           pendingTabs.set(key, reservation);
         },
         catch: ServerBrowserPage.toOperationError,
