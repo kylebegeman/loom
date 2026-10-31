@@ -119,7 +119,15 @@ export function WorkspaceConnectionTitle(props: {
 
   if (status === null) {
     return props.grow ? (
-      <View style={{ alignItems: "center", flex: 1, flexDirection: "row", minWidth: 0 }}>
+      <View
+        style={{
+          alignItems: "center",
+          flex: 1,
+          flexDirection: "row",
+          minHeight: Platform.OS === "ios" && size === "pageTitle" ? 44 : undefined,
+          minWidth: 0,
+        }}
+      >
         {props.brand}
       </View>
     ) : (
@@ -127,7 +135,6 @@ export function WorkspaceConnectionTitle(props: {
     );
   }
 
-  // fork: fleet-connections -- iOS shows the status beside the brand; Android keeps the fade-in title
   const statusButton = (
     <Pressable
       accessibilityHint={
@@ -143,21 +150,29 @@ export function WorkspaceConnectionTitle(props: {
         // fork: fleet-connections
         {
           flexShrink: 1,
-          marginLeft: Platform.OS === "ios" ? 0 : (props.statusOffset ?? 0),
-          minHeight: Platform.OS === "ios" ? 28 : undefined,
+          marginLeft:
+            Platform.OS === "ios"
+              ? (props.statusOffset ?? brandTitleOffset())
+              : (props.statusOffset ?? 0),
+          minHeight: Platform.OS === "ios" ? 16 : undefined,
+          gap: Platform.OS === "ios" ? 4 : 7 * scale,
         },
-        Platform.OS === "android" && { gap: 7 * scale },
       ]}
     >
       {status.showsProgress ? (
         <AppActivityIndicator
           colorClassName={"accent-icon-muted"}
           size={Platform.OS === "android" ? Math.round(20 * scale) : "small"}
+          style={
+            Platform.OS === "ios"
+              ? { width: 14, height: 14, transform: [{ scale: 0.7 }] }
+              : undefined
+          }
         />
       ) : (
         <SymbolView
           name="wifi.slash"
-          size={Math.round((size === "pageTitle" ? 17 : 15) * scale)}
+          size={Platform.OS === "ios" ? 12 : Math.round((size === "pageTitle" ? 17 : 15) * scale)}
           tintColorClassName={"accent-icon-muted"}
           type="monochrome"
         />
@@ -172,6 +187,7 @@ export function WorkspaceConnectionTitle(props: {
         style={{
           flexShrink: 1,
           fontSize: (Platform.OS === "ios" ? 12 : size === "pageTitle" ? 20 : 16) * scale,
+          lineHeight: Platform.OS === "ios" ? 14 : undefined,
         }}
       >
         {status.label}
@@ -183,14 +199,22 @@ export function WorkspaceConnectionTitle(props: {
     return (
       <View
         style={[
-          // fork: fleet-connections
-          { alignItems: "center", flexDirection: "row", gap: 10, maxWidth: props.maxWidth },
-          props.grow ? { flex: 1, minWidth: 0 } : null,
+          {
+            alignItems: "flex-start",
+            justifyContent: "center",
+            maxWidth: props.maxWidth,
+            minHeight: size === "pageTitle" ? 44 : undefined,
+            minWidth: 0,
+          },
+          props.grow ? { flex: 1 } : null,
         ]}
       >
-        {/* fork: fleet-connections */}
-        {props.brand}
-        <StatusFadeIn animate={status.fadeIn}>{statusButton}</StatusFadeIn>
+        <View style={{ alignSelf: "stretch", flexDirection: "row", minWidth: 0 }}>
+          {props.brand}
+        </View>
+        <StatusFadeIn animate={status.fadeIn} maxWidth={props.maxWidth}>
+          {statusButton}
+        </StatusFadeIn>
       </View>
     );
   }

@@ -1014,11 +1014,7 @@ function ThreadNavigationSidebarPane(
               grow
               onPress={props.onOpenEnvironmentSettings}
               size="pageTitle"
-              brand={
-                <View className="h-11 flex-1 justify-center">
-                  <CompactBrandTitle allowFontScaling={false} />
-                </View>
-              }
+              brand={<CompactBrandTitle allowFontScaling={false} />}
             />
             <View className="flex-row items-center gap-2.5">
               <Menu actions={listMenuActions} onPressAction={handleListMenuAction}>
