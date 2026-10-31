@@ -1338,6 +1338,7 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/server/src/environment/ServerEnvironment.ts`                           | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/server/src/ws.ts`                                                      | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/web/src/cloud/publicConfig.ts`                                         | `connect-compat`    | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/web/src/components/settings/AddEnvironmentDialog.browser.test.tsx`     | `fleet-connections` | Find the dialog's Connect computer buttons.                                |
 | `apps/web/src/components/settings/ConnectionsSettings.tsx`                   | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/web/src/components/settings/settingsSearch.ts`                         | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/web/src/state/environments.ts`                                         | `computer-naming`   | Publish and project the canonical computer name.                           |

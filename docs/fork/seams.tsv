@@ -1056,6 +1056,7 @@ apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	fleet-connect
 apps/mobile/src/features/threads/DraftEnvironmentControl.tsx	fleet-connections	1
 apps/web/src/components/chat/useComposerSend.ts	fleet-connections	15
 apps/web/src/components/chat/useSystemComposerBanners.tsx	fleet-connections	8
+apps/web/src/components/settings/AddEnvironmentDialog.browser.test.tsx	fleet-connections	5
 apps/web/src/components/settings/AddEnvironmentDialog.tsx	fleet-connections	9
 apps/web/src/components/settings/AuthorizedClientsSettings.tsx	fleet-connections	1
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	fleet-connections	32
