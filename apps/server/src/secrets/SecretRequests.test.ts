@@ -35,6 +35,7 @@ const withService = <A, E>(
   }) => Effect.Effect<A, E>,
   options: {
     readonly threadId?: ThreadId;
+    readonly turnItemIds?: ReadonlyArray<TurnItemId>;
     readonly delivery?: "file";
     readonly directory?: string;
     readonly runStatus?: string;
@@ -46,7 +47,9 @@ const withService = <A, E>(
   Effect.gen(function* () {
     const stored = new Map<string, Uint8Array>();
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
-    let secretStatus = "pending";
+    const secretStatuses = new Map(
+      (options.turnItemIds ?? [turnItemId]).map((id) => [id, "pending"]),
+    );
     let failedRecords = options.failedRecords ?? 0;
     const requestThreadId = options.threadId ?? threadId;
     const layerDependencies = Layer.mergeAll(
@@ -97,19 +100,17 @@ const withService = <A, E>(
           Effect.succeed({
             thread: { projectId },
             runs: [{ id: "run-1", status: options.runStatus ?? "running" }],
-            turnItems: [
-              {
-                id: turnItemId,
-                threadId: requestThreadId,
-                runId: "run-1",
-                nodeId: "node-root",
-                type: "secret_request",
-                label: "GitHub token",
-                reason: "Used as GH_TOKEN.",
-                ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
-                secretStatus,
-              },
-            ],
+            turnItems: Array.from(secretStatuses, ([id, secretStatus]) => ({
+              id,
+              threadId: requestThreadId,
+              runId: "run-1",
+              nodeId: "node-root",
+              type: "secret_request",
+              label: "GitHub token",
+              reason: "Used as GH_TOKEN.",
+              ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
+              secretStatus,
+            })),
           } as never),
         dispatch: (command) => {
           if (command.type === "secret_request.record" && failedRecords > 0) {
@@ -119,9 +120,12 @@ const withService = <A, E>(
           return Effect.sync(() => {
             dispatched.push(command);
             if (options.closedFirst && command.type === "secret_request.record") {
-              secretStatus = "cancelled";
-            } else if (command.type === "secret_request.record" && secretStatus === "pending") {
-              secretStatus = command.secretStatus;
+              secretStatuses.set(command.turnItemId, "cancelled");
+            } else if (
+              command.type === "secret_request.record" &&
+              secretStatuses.get(command.turnItemId) === "pending"
+            ) {
+              secretStatuses.set(command.turnItemId, command.secretStatus);
             }
             return {} as never;
           });
@@ -164,21 +168,27 @@ it.effect("a saved answer becomes a one-use ref, and the thread only learns it w
 );
 
 it.effect("two concurrent uses of one ref hand the value out once", () =>
-  withService(({ service }) =>
-    Effect.gen(function* () {
-      yield* service.answer({
-        threadId,
-        turnItemId,
-        answer: { type: "save", secret: "ghp_secret" },
-      });
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      const results = yield* Effect.forEach(
-        [service.consume({ ref, projectId }), service.consume({ ref, projectId })],
-        Effect.result,
-        { concurrency: "unbounded" },
-      );
-      assert.deepEqual(results.map((result) => result._tag).toSorted(), ["Failure", "Success"]);
-    }),
+  Effect.forEach(["consume", "transfer"] as const, (operation) =>
+    withService(({ service }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "ghp_secret" },
+        });
+        const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
+        const use =
+          operation === "consume"
+            ? service.consume({ ref, projectId })
+            : service.transfer({ ref, projectId, operationId: "vault:item:save" }, (value) =>
+                Effect.yieldNow.pipe(Effect.as(value)),
+              );
+        const results = yield* Effect.forEach([use, use], Effect.result, {
+          concurrency: "unbounded",
+        });
+        assert.deepEqual(results.map((result) => result._tag).toSorted(), ["Failure", "Success"]);
+      }),
+    ),
   ),
 );
 
@@ -476,34 +486,58 @@ it.effect("a secret the card promised to keep from the agent is never written to
 );
 
 // fork: ext-vault
-it.effect("retains failed private transfers for their original operation only", () =>
-  withService(({ service }) =>
-    Effect.gen(function* () {
-      yield* service.answer({
-        threadId,
-        turnItemId,
-        answer: { type: "save", secret: "private-transfer-value" },
-      });
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      const input = { ref, projectId, operationId: "vault:item:save" };
-      yield* service.transfer(input, () => Effect.fail("backend-unavailable")).pipe(Effect.flip);
-      const other = yield* service
-        .transfer({ ...input, operationId: "another-destination" }, () => Effect.succeed("copied"))
-        .pipe(Effect.flip);
-      assert.equal(other.reason, "ref_unavailable");
-      const ordinary = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
-      assert.equal(ordinary.reason, "ref_unavailable");
-      assert.equal(
-        yield* service.transfer(input, (value) => Effect.succeed(value.length)),
-        "private-transfer-value".length,
-      );
-      assert.equal(
-        (yield* service.consume({ ref, projectId }).pipe(Effect.flip)).reason,
-        "ref_unavailable",
-      );
-    }),
-  ),
-);
+it.effect("retains failed paired private transfers for their original operations only", () => {
+  const keyTurnItemId = TurnItemId.make("turn-item:secret-request:key");
+  return withService(
+    ({ service }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "private-transfer-value" },
+        });
+        yield* service.answer({
+          threadId,
+          turnItemId: keyTurnItemId,
+          answer: { type: "save", secret: "private-key-value" },
+        });
+        const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
+        const keyRef = Option.getOrThrow(
+          yield* service.savedRef({ threadId, turnItemId: keyTurnItemId }),
+        );
+        const input = { ref, projectId, operationId: "bot-completion:chief:url" };
+        const keyInput = { ref: keyRef, projectId, operationId: "bot-completion:chief:key" };
+        yield* service
+          .transfer(input, () =>
+            service.transfer(keyInput, () => Effect.fail("backend-unavailable")),
+          )
+          .pipe(Effect.flip);
+        for (const claimed of [input, keyInput]) {
+          const other = yield* service
+            .transfer({ ...claimed, operationId: "another-destination" }, () =>
+              Effect.succeed("copied"),
+            )
+            .pipe(Effect.flip);
+          assert.equal(other.reason, "ref_unavailable");
+          const ordinary = yield* service.consume(claimed).pipe(Effect.flip);
+          assert.equal(ordinary.reason, "ref_unavailable");
+        }
+        assert.deepEqual(
+          yield* service.transfer(input, (value) =>
+            service.transfer(keyInput, (key) => Effect.succeed([value, key])),
+          ),
+          ["private-transfer-value", "private-key-value"],
+        );
+        for (const consumed of [input, keyInput]) {
+          assert.equal(
+            (yield* service.consume(consumed).pipe(Effect.flip)).reason,
+            "ref_unavailable",
+          );
+        }
+      }),
+    { turnItemIds: [turnItemId, keyTurnItemId] },
+  );
+});
 
 // fork: ext-vault
 it.effect("keeps committed transfers bound when source cleanup fails", () =>

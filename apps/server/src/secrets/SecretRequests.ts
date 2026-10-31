@@ -23,6 +23,7 @@ import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as TxReentrantLock from "effect/TxReentrantLock";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as Metrics from "../observability/Metrics.ts";
@@ -236,11 +237,11 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  // Serialize get/remove so concurrent consumers cannot read the same one-use ref.
-  const consumeLock = yield* Semaphore.make(1);
+  // Transfers can compose private inputs on one fiber; other consumers must remain excluded.
+  const consumeLock = yield* TxReentrantLock.make();
   const consume: SecretRequests["Service"]["consume"] = (input) =>
     consumeRef(input).pipe(
-      consumeLock.withPermits(1),
+      (effect) => TxReentrantLock.withWriteLock(consumeLock, effect),
       Effect.tap(() => Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "used" })),
       Effect.tapError(() =>
         Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "rejected" }),
@@ -341,7 +342,7 @@ const make = Effect.gen(function* () {
         Effect.mapError((cause) => new SecretRequestError({ reason: "store_failed", cause })),
       );
       return yield* removeStored;
-    }).pipe(consumeLock.withPermits(1));
+    }).pipe((effect) => TxReentrantLock.withWriteLock(consumeLock, effect));
   });
 
   // fork: ext-vault
@@ -377,7 +378,7 @@ const make = Effect.gen(function* () {
       yield* Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "used" });
       return result;
     },
-    consumeLock.withPermits(1),
+    (effect) => TxReentrantLock.withWriteLock(consumeLock, effect),
   );
 
   const sweepExpired = Effect.gen(function* () {
