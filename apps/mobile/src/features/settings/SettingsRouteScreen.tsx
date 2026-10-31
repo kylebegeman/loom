@@ -320,7 +320,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
       title: "Code",
       rows: [
         // fork: project-home - Library projects are Projects; a computer's checkouts are its folders.
-        route("Library", "folder", "Projects"),
+        route("Library", "briefcase", "Projects"),
         page(
           "SettingsProjectOverview",
           "folder",

@@ -25,6 +25,7 @@ import IconBan from "@tabler/icons-react-native/IconBan";
 import IconBellRinging from "@tabler/icons-react-native/IconBellRinging";
 import IconBolt from "@tabler/icons-react-native/IconBolt";
 import IconBox from "@tabler/icons-react-native/IconBox";
+import IconBriefcase from "@tabler/icons-react-native/IconBriefcase";
 import IconBrain from "@tabler/icons-react-native/IconBrain";
 import IconCamera from "@tabler/icons-react-native/IconCamera";
 import IconCar from "@tabler/icons-react-native/IconCar";
@@ -206,6 +207,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "exclamationmark.circle": IconAlertCircle,
   eye: IconEye,
   "eye.slash": IconEyeOff,
+  briefcase: IconBriefcase,
   folder: IconFolder,
   "folder.badge.plus": IconFolderPlus,
   "folder.fill": IconFolder,

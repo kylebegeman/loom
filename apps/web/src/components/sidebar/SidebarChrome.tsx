@@ -2,7 +2,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ChartNoAxesColumnIcon,
-  FolderKanbanIcon, // fork: project-home
+  BriefcaseBusinessIcon, // fork: project-home
   GlobeIcon, // fork: sites-navigation
   SettingsIcon,
 } from "lucide-react";
@@ -314,7 +314,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       />
       {/* fork: project-home */}
       <SidebarUtilityItem
-        icon={<FolderKanbanIcon />}
+        icon={<BriefcaseBusinessIcon />}
         label="Projects"
         active={/^\/(?:projects|library)(?:\/|$)/.test(pathname)}
         onClick={handleProjectsClick}

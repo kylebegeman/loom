@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import "../index.css";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
@@ -51,7 +52,7 @@ vi.mock("../state/environments", async (original) => ({
         environmentId: "local",
         label: "Local",
         connection: { phase: "connected" },
-        entry: { target: { _tag: "PrimaryConnectionTarget" } },
+        entry: { enabled: true, target: { _tag: "PrimaryConnectionTarget" } },
         serverConfig: {
           environment: { platform: { os: "linux" }, capabilities: { projectCloneTracking: true } },
           settings: { addProjectBaseDirectory: "/workspace/" },
@@ -93,6 +94,20 @@ vi.mock("../state/query", async (original) => ({
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
 }));
+vi.mock("../fork/commandPalette/registry", () => ({
+  useForkCommandPaletteItems: () => ({ items: [], searchItems: [] }),
+}));
+// Exercise the palette's folder and clone inputs without the Library's project-creation takeover.
+vi.mock("../fork/project-library/LibraryActionHost", () => ({
+  LibraryActionHost: () => null,
+  useLibraryPaletteTakeover: () => {},
+  useLibraryPaletteSession: () => ({
+    session: null,
+    isOpen: false,
+    close: () => {},
+    finishClose: () => {},
+  }),
+}));
 
 // The real palette and Base UI input must agree that confirming composition is typing.
 describe.each(["repository", "folder", "destination"] as const)("add-project %s", (step) => {
@@ -102,7 +117,9 @@ describe.each(["repository", "folder", "destination"] as const)("add-project %s"
   ])("keeps Enter in the input during composition: %j", async (composition) => {
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
     await act(() => openCommandPalette({ open: "add-project" }));
-    await page.getByText(step === "folder" ? "Local folder" : "Git URL", { exact: true }).click();
+    await page
+      .getByText(step === "folder" ? "Existing folder" : "Git URL", { exact: true })
+      .click();
     const input = () => page.getByRole("combobox");
     if (step === "destination") {
       await input().fill("https://example.com/team/project.git");

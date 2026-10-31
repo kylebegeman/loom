@@ -73,6 +73,7 @@ import {
   ChevronRightIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
+  BriefcaseBusinessIcon,
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
@@ -1421,7 +1422,7 @@ function OpenCommandPaletteDialog(props: {
     value: "action:library-projects",
     title: "Projects",
     searchTerms: ["library", "projects", "switch"],
-    icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+    icon: <BriefcaseBusinessIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       setOpen(false);
       await navigate({ to: "/projects" });
