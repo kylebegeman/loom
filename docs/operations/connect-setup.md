@@ -1,19 +1,24 @@
 # T3 Connect setup
 
-Deployment and client configuration for T3 Connect. The [architecture note](../internals/t3-connect.md)
-explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment) owns relay
-provisioning instructions.
+Legacy deployment and client configuration for T3 Connect. Loom's replacement uses
+[Loom Identity, Library discovery and Reach](../fork/user/connections.md).
+Use a [dedicated Loom-owned HTTPS route](../fork/user/grok-bot.md#reuse-or-connect-one-bot)
+for hosted MCP access. Enabling T3 Connect is not part of that setup.
+
+For deliberate compatibility work, the [architecture note](../internals/t3-connect.md)
+explains the trust boundaries; the [relay README](../../infra/relay/README.md#deployment)
+owns legacy relay provisioning instructions.
 
 ## Public application configuration
 
-T3 Connect is disabled in a fresh clone. To build against the production deployment, copy the
-repository-root example:
+T3 Connect stays disabled in a fresh clone and when copying the repository-root example:
 
 ```sh
 cp .env.example .env
 ```
 
-For another deployment, set these values in the repository-root `.env` or `.env.local`:
+To test the legacy production service, explicitly uncomment the Clerk and relay values
+in that file. For another legacy deployment, set these values in `.env` or `.env.local`:
 
 ```dotenv
 T3CODE_CLERK_PUBLISHABLE_KEY=<publishable key>
