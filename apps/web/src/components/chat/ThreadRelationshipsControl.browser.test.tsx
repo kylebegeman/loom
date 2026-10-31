@@ -70,7 +70,7 @@ it.each([
   );
 
   if (action === "merge") {
-    await screen.getByRole("button", { name: "Merge back to source conversation" }).click();
+    await screen.getByRole("button", { name: "Send latest turn to source thread" }).click(); // fork: source-control-cockpit
   } else {
     await screen.getByRole("button", { name: "More thread actions" }).click();
     await page.getByRole("menuitem", { name: "Disconnect agent session" }).click();
@@ -80,7 +80,7 @@ it.each([
   await expect
     .element(
       screen.getByRole("button", {
-        name: action === "merge" ? "Merge back to source conversation" : "More thread actions",
+        name: action === "merge" ? "Send latest turn to source thread" : "More thread actions", // fork: source-control-cockpit
       }),
     )
     .toBeEnabled();
@@ -100,7 +100,7 @@ it.each([
 
   const runAction = async () => {
     if (action === "merge") {
-      await screen.getByRole("button", { name: "Merge back to source conversation" }).click();
+      await screen.getByRole("button", { name: "Send latest turn to source thread" }).click(); // fork: source-control-cockpit
     } else {
       await screen.getByRole("button", { name: "More thread actions" }).click();
       await page.getByRole("menuitem", { name: "Disconnect agent session" }).click();

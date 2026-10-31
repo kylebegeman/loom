@@ -58,6 +58,10 @@ vi.mock("../state/terminal", () => ({ terminalEnvironment: { write: {}, resize: 
 vi.mock("../state/preview", () => ({ previewEnvironment: { open: {} } }));
 vi.mock("../editorPreferences", () => ({ useOpenInPreferredEditor: () => () => {} }));
 vi.mock("./preview/openTerminalLinkInPreview", () => ({ openTerminalLinkInPreview: () => {} }));
+// fork: preview-links -- the real module reaches the session and local API mocked above.
+vi.mock("../fork/preview-links/navigation", () => ({
+  openEnvironmentUrlExternally: async () => {},
+}));
 vi.mock("~/localApi", () => ({ readLocalApi: () => null }));
 vi.mock("../hooks/useSettings", async () => {
   const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts/settings");
