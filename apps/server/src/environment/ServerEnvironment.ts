@@ -286,6 +286,7 @@ export const make = Effect.gen(function* () {
       projectCloneTracking: true,
       ignoredFileListing: true,
       triage: true,
+      npmReleaseLookup: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(selfUpdateEnabled ? {} : { serverRuntimeOwner: OS_RUNTIME_OWNER }), // fork: runtime-owner

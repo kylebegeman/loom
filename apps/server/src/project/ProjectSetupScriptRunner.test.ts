@@ -3,12 +3,12 @@ import { assert, describe, expect, it, vi } from "@effect/vitest"; // fork: proj
 // fork: project-lifecycle
 import {
   ProjectId,
+  TerminalNotRunningError,
   ThreadId,
   type TerminalEvent,
   type TerminalSessionSnapshot,
 } from "@t3tools/contracts";
 import { ProjectLifecycleError } from "@t3tools/contracts/fork"; // fork: project-lifecycle
-import * as HostProcess from "@t3tools/shared/HostProcess";
 // fork: project-lifecycle
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 import * as Deferred from "effect/Deferred";
@@ -45,6 +45,7 @@ const openSnapshot = (history: string): TerminalSessionSnapshot => ({
 const makeHarness = Effect.fn(function* (options: {
   readonly history?: string;
   readonly opening?: Deferred.Deferred<void>;
+  readonly shell?: string | null;
 }) {
   const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const writes = yield* Queue.unbounded<string>();
@@ -55,6 +56,10 @@ const makeHarness = Effect.fn(function* (options: {
         ? Deferred.succeed(options.opening, undefined).pipe(Effect.andThen(Effect.never))
         : Effect.void
       ).pipe(Effect.as(openSnapshot(options.history ?? ""))),
+    getShell: () =>
+      options.shell === null
+        ? Effect.fail(new TerminalNotRunningError({ threadId, terminalId }))
+        : Effect.succeed(options.shell ?? "/bin/zsh"),
     subscribe: (listener) =>
       Effect.sync(() => {
         listeners.add(listener);
@@ -75,8 +80,6 @@ const makeHarness = Effect.fn(function* (options: {
         NodeCrypto.layer,
       ),
     ),
-    Effect.provideService(HostProcess.Platform, "darwin"),
-    Effect.provideService(HostProcess.Environment, { SHELL: "/bin/zsh" }),
   );
   const start = runner.runForThread({
     threadId,
@@ -101,7 +104,12 @@ const makeHarness = Effect.fn(function* (options: {
   return { start, listeners, writes, outputLines, emit };
 });
 
-const setup = Effect.fn(function* (options: { readonly history?: string } = {}) {
+const setup = Effect.fn(function* (
+  options: {
+    readonly history?: string;
+    readonly shell?: string | null;
+  } = {},
+) {
   const harness = yield* makeHarness(options);
   const result = yield* harness.start;
   const completion = result.status === "started" ? result.completion : undefined;
@@ -110,6 +118,15 @@ const setup = Effect.fn(function* (options: { readonly history?: string } = {}) 
 });
 
 describe("ProjectSetupScriptRunner", () => {
+  it.effect("writes immediately when the spawned fallback is PowerShell", () =>
+    Effect.gen(function* () {
+      const { writes } = yield* setup({
+        shell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      });
+      expect(yield* Queue.take(writes)).toContain("$global:LASTEXITCODE");
+    }),
+  );
+
   it.effect("shows a startup prompt and types only once the line editor starts", () =>
     Effect.gen(function* () {
       const { result, writes, outputLines, emit } = yield* setup();
@@ -169,14 +186,21 @@ describe("ProjectSetupScriptRunner", () => {
     }),
   );
 
-  it.effect("does not type into a shell that exits during startup", () =>
-    Effect.gen(function* () {
-      const { completion, writes, emit } = yield* setup();
-      yield* emit({ ...event, type: "exited", exitCode: 1, exitSignal: null });
-      expect(yield* completion).toMatchObject({ exitCode: null });
-      yield* TestClock.adjust("1 minute");
-      expect(yield* Queue.size(writes)).toBe(0);
-    }),
+  it.effect.each([false, true])(
+    "does not type into a shell that exits during startup (before shell lookup: %s)",
+    (beforeShellLookup) =>
+      Effect.gen(function* () {
+        const { completion, writes, emit, listeners } = yield* setup(
+          beforeShellLookup ? { shell: null } : {},
+        );
+        if (!beforeShellLookup) {
+          yield* emit({ ...event, type: "exited", exitCode: 1, exitSignal: null });
+        }
+        expect(yield* completion).toMatchObject({ exitCode: null });
+        yield* TestClock.adjust("1 minute");
+        expect(yield* Queue.size(writes)).toBe(0);
+        expect(listeners.size).toBe(0);
+      }),
   );
 });
 
@@ -238,6 +262,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
                   ),
                   Effect.as({} as never),
                 ),
+              getShell: () => Effect.succeed("/bin/zsh"), // fork: project-lifecycle
               subscribe: (listener) =>
                 Effect.sync(() => {
                   listeners.add(listener);

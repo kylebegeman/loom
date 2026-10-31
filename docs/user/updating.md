@@ -45,6 +45,10 @@ including threads waiting on background work. The pass updates providers before
 restarting their servers. It leaves this computer's desktop app update on its own
 sidebar control.
 
+Each server checks that it can install the release before it restarts. If the
+release is not available to a server yet, its update fails, the server keeps
+running, and you can retry.
+
 Background services stay on their release channel and appear once their platform's
 runtime archive and checksums are published. Remote desktop apps install from
 their own update feeds. Failed fleet updates stay in the Computers view with
@@ -168,6 +172,16 @@ could not start" window instead of the app. If a newer version is available,
 choose **Update** to install it. If not, the window links to the last version
 that started on your computer. Download and install it to go back. Use **Copy
 details** to include the error in a bug report.
+
+## Registries and proxies
+
+Each server checks T3 Code releases, and providers installed with npm, through
+its own npm, so the checks use npm's configured registry, authentication, and
+proxy settings. Providers installed with Homebrew or pnpm check through those
+tools.
+Configure npm on the server's machine. If that registry cannot be reached, the
+release shows as unavailable; T3 Code does not try the public registry instead.
+Machines without npm check the public npm registry directly.
 
 ## Update providers
 

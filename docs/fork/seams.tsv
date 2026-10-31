@@ -586,6 +586,7 @@ apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
 apps/server/src/preview/PreviewBrowserHost.ts	brand	4
+apps/server/src/preview/PreviewBrowserHost.test.ts	brand	1
 apps/server/src/project/ManagedProjectFolders.ts	brand	1
 apps/server/src/provider/AntigravityProvider.ts	brand	1
 apps/server/src/provider/ClaudeProvider.ts	brand	2
@@ -1075,7 +1076,7 @@ apps/server/src/mcp/toolkits/attachment/handlers.ts	mcp-refusals	1
 apps/server/src/mcp/toolkits/core.test.ts	mcp-refusals	3
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	agent-catalog	1
 apps/server/src/mcp/toolkits/project/handlers.ts	mcp-refusals	2
-apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	8
+apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	7
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mobile-surface-hint	4
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-launch-files	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mobile-surface-hint	2
@@ -1195,7 +1196,6 @@ packages/contracts/src/ipc.ts	open-at-login	2
 packages/contracts/src/ipc.ts	library-sign-in	2
 packages/contracts/src/ipc.ts	tailnet-ownership	5
 packages/contracts/src/worktreeSetup.ts	library-launch-files	2
-apps/desktop/src/app/DesktopClerk.ts	clerk-token-mode	3
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library-sign-in	5
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	library	1
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	webhook-delivery-issues	2
@@ -1365,6 +1365,7 @@ apps/server/src/serverActivation.test.ts	server-weight	1
 apps/server/src/sourceControl/ServerSourceControlHost.ts	github-host-setup	3
 apps/server/src/terminal/Manager.ts	project-lifecycle	6
 apps/server/src/workspace/WorkspaceEntries.ts	project-lifecycle	3
+apps/server/src/workspace/WorkspaceFileSystem.test.ts	project-lifecycle	1
 apps/server/src/workspace/WorkspaceFileSystem.ts	project-lifecycle	5
 apps/server/src/workspace/WorkspacePaths.test.ts	project-lifecycle	2
 apps/server/src/workspace/WorkspacePaths.ts	project-lifecycle	4
@@ -1458,7 +1459,7 @@ apps/mobile/src/state/threadOutboxDelivery.permissions.test.ts	failed-run-retry	
 apps/mobile/src/state/threadOutboxDelivery.test.ts	failed-run-retry	5
 apps/mobile/src/features/threads/use-new-task-project-defaults.ts	file-placement	1
 apps/web/src/components/AddProjectToMachineDialog.browser.test.tsx	file-placement	8
-apps/server/src/provider/AgentContextBudget.test.ts	file-placement	9
+apps/server/src/provider/AgentContextBudget.test.ts	file-placement	7
 apps/web/src/shortcuts/commandPaletteCommands.ts	library-palette	4
 apps/web/src/shortcuts/commandPaletteCommands.ts	source-control-cockpit	5
 packages/provider-fx/src/server/status.ts	brand	2
@@ -1608,3 +1609,10 @@ packages/shared/package.json	-	"./fork/cloudflare-access"
 apps/mobile/src/features/workspace/navigation-tabs.ts	usage-navigation	2
 apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx	usage-navigation	5
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	usage-navigation	1
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	brand	1
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	brand	1
+apps/web/src/components/GitHubStarPrompt.tsx	brand	1
+apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts	brand	2
+packages/client-runtime/src/state/projectRemoval.ts	brand	2
+apps/web/src/components/ThreadTerminalDrawer.browser.test.tsx	preview-links	1
+apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx	source-control-cockpit	3

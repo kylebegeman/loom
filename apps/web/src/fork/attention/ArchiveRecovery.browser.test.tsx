@@ -65,7 +65,7 @@ vi.mock(import("../../components/settings/settingsLayout"), async (original) => 
 }));
 vi.mock(import("../../components/ProjectFavicon"), async (original) => ({
   ...(await original()),
-  ProjectFavicon: () => null,
+  ProjectFavicon: () => <span />,
 }));
 import { ArchivedThreadsPanel } from "../../components/settings/ArchivedThreadsPanel";
 

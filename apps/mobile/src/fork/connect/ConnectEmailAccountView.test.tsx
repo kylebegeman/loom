@@ -19,6 +19,7 @@ const harness = vi.hoisted(() => ({
   openURL: vi.fn(),
   alert: vi.fn<(title: string, message: string, buttons?: readonly AlertAction[]) => void>(),
   deregister: vi.fn(),
+  refreshRelayEnvironments: vi.fn(),
   relay: {
     accountId: "account-1" as string | null,
     data: [] as RelayClientEnvironmentRecord[] | null,
@@ -42,7 +43,13 @@ vi.mock("../../features/cloud/managedRelayState", () => ({
   useManagedRelayEnvironments: () => harness.relay,
   deregisterManagedRelayEnvironmentCommand: {},
 }));
-vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.deregister }));
+vi.mock("../../state/relay", () => ({
+  relayEnvironmentDiscovery: { refreshAfterMutation: "refreshRelayEnvironments" },
+}));
+vi.mock("../../state/use-atom-command", () => ({
+  useAtomCommand: (command: unknown) =>
+    command === "refreshRelayEnvironments" ? harness.refreshRelayEnvironments : harness.deregister,
+}));
 vi.mock("../../lib/copyTextWithHaptic", () => ({ copyTextWithHaptic: vi.fn() }));
 vi.mock("../../native/NativeHeaderToolbar", () => ({
   NativeHeaderToolbar: Object.assign(

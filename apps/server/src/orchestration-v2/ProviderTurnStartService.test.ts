@@ -2174,6 +2174,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
                     Effect.andThen(output(input, "\x1b[?2004h")),
                     Effect.as({} as never),
                   ),
+                getShell: () => Effect.succeed("/bin/sh"), // fork: mini-native-retention
                 subscribe: (onEvent) =>
                   Effect.sync(() => {
                     listeners.add(onEvent);

@@ -21,14 +21,8 @@ import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { openClerkTokenStorage } from "./ClerkTokenStore.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
-// fork: clerk-token-mode
-import {
-  CLERK_TOKEN_STORE,
-  clerkTokenFile,
-  ownerOnlyTokenStorage,
-  restrictTokenFile,
-} from "../fork/clerk-tokens/OwnerOnlyTokenStorage.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
@@ -91,12 +85,13 @@ export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHos
     : __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__,
 );
 
-function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
+function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean, userDataPath: string) {
   return createClerkBridge({
-    storage: ownerOnlyTokenStorage(
-      clerkTokenFile(stateDir),
-      storage({ path: stateDir, name: CLERK_TOKEN_STORE }),
-    ), // fork: clerk-token-mode
+    storage: openClerkTokenStorage(
+      stateDir,
+      (directory) => storage({ path: directory }),
+      userDataPath,
+    ),
     manageSingleInstanceLock: false,
     passkeys: true,
     renderer: {
@@ -139,16 +134,10 @@ export const make = Effect.gen(function* () {
     if (handleOpenUrl(url)) event.preventDefault();
   });
 
-  // fork: clerk-token-mode
-  yield* Effect.try(() => restrictTokenFile(clerkTokenFile(environment.stateDir))).pipe(
-    Effect.catch((cause) =>
-      Effect.logWarning("Could not make the Clerk token file owner-only", cause),
-    ),
-  );
-
   yield* Effect.acquireRelease(
     Effect.try({
-      try: () => createDesktopClerkBridge(environment.stateDir, environment.isDevelopment),
+      try: () =>
+        createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
       catch: (cause) =>
         new DesktopClerkBridgeInitializationError({
           stateDir: environment.stateDir,

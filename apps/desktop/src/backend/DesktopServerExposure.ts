@@ -502,6 +502,30 @@ function resolveRuntimeState(input: {
   };
 }
 
+// A network-accessible backend binds every interface, so a new Wi-Fi network
+// or DHCP lease changes only the address worth advertising, not the binding.
+const withCurrentAdvertisedHost = (
+  state: RuntimeState,
+  networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
+  advertisedHostOverride: Option.Option<string>,
+): RuntimeState => {
+  if (state.mode !== "network-accessible") {
+    return state;
+  }
+  const override = Option.getOrUndefined(advertisedHostOverride);
+  const exposure = resolveDesktopServerExposure({
+    mode: state.mode,
+    port: state.port,
+    networkInterfaces,
+    ...(override ? { advertisedHostOverride: override } : {}),
+  });
+  return {
+    ...state,
+    endpointUrl: Option.fromNullishOr(exposure.endpointUrl),
+    advertisedHost: Option.fromNullishOr(exposure.advertisedHost),
+  };
+};
+
 const tailscaleIpv4AddressKey = (
   networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
 ): string =>
@@ -562,9 +586,16 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
     );
 
+  const readCurrentState = (currentNetworkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces) =>
+    Ref.get(stateRef).pipe(
+      Effect.map((state) =>
+        withCurrentAdvertisedHost(state, currentNetworkInterfaces, config.desktopLanHostOverride),
+      ),
+    );
+
   // fork: tailnet-ownership
   const getState = Effect.gen(function* () {
-    const state = yield* Ref.get(stateRef);
+    const state = yield* readCurrentState(yield* readNetworkInterfaces);
     return toContractState(
       state,
       state.tailscaleServeEnabled
@@ -692,8 +723,8 @@ export const make = Effect.gen(function* () {
   );
 
   const getAdvertisedEndpoints = Effect.gen(function* () {
-    const state = yield* Ref.get(stateRef);
     const currentNetworkInterfaces = yield* readNetworkInterfaces;
+    const state = yield* readCurrentState(currentNetworkInterfaces);
     const coreEndpoints = resolveDesktopCoreAdvertisedEndpoints({
       port: state.port,
       exposure: toResolvedExposure(state),

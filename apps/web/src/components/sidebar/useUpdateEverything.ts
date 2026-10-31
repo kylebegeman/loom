@@ -28,7 +28,7 @@ import {
   collectUpdateEverythingResult,
   describeUpdateEverything,
   runUpdateEverything,
-  type SkippedMachine,
+  type SkippedMachine, // fork: machine-updates
   type UpdateRunMachine,
 } from "./updateEverything.logic";
 import {
@@ -88,7 +88,7 @@ export function useUpdateEverything(
   // fork: machine-updates: no npm wait; every server off a desktop feed checks archives below.
   const { targets: behindServers, skipped: unreachable } = channelSwitch
     ? collectChannelSwitchTargets(machines, channelSwitch)
-    : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
+    : collectServerUpdateTargets(machines, targetVersion);
   // fork: machine-updates -- published runtime archives replace the npm publication check.
   // Loom publishes them for some platforms only, so every server off a desktop feed checks.
   const archiveVersion = channelSwitch?.version ?? targetVersion; // fork: machine-updates
