@@ -21,7 +21,11 @@ routes; a working Reach connection is not an MCP endpoint. Use a dedicated Loom-
 HTTPS route to the execution computer for hosted MCP access. Retired T3 Connect is not
 a fallback for this setup.
 
-In Grok Bot, add a custom MCP server with that address and choose OAuth. Approve only
+In Grok Bot, open **Connect apps** from the sidebar; on mobile, use your avatar,
+then **Connect apps**. Connections belong to your account. You can ask your existing
+Bot to add a custom MCP server by URL and follow its Connect card. For a development
+pilot, give it a separate name such as **Loom Bots Dev** and keep the existing
+connection. Use the HTTPS MCP address above and choose OAuth. Approve only
 the sign-in you just started, checking its callback host. Loom uses PKCE; no pasted
 token or invented client secret is needed. Read only access supports discovery. Use
 Supervised access for the first execution pilot. Connector access covers the whole
