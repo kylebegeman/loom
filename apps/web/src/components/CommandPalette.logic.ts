@@ -450,10 +450,9 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
 }): CommandPaletteActionItem[] {
   // Callers order these: recents by last use, search results by rank.
   const visibleThreads = input.threads.filter(
+    // fork: bots - runs are listed on the Bots page
     (thread) =>
-      thread.archivedAt === null &&
-      !isSidebarHiddenThread(thread) &&
-      !isBotRunThreadId(thread.id), // fork: bots - runs are listed on the Bots page
+      thread.archivedAt === null && !isSidebarHiddenThread(thread) && !isBotRunThreadId(thread.id),
   );
 
   return visibleThreads.map((thread) => {

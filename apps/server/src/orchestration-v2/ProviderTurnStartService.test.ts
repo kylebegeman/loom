@@ -1061,27 +1061,6 @@ function makeLocalCommandHarness(input: {
   const open = vi.fn(() =>
     input.sideChat !== undefined
       ? Effect.succeed(sideChatSession as never)
-      : // fork: mini-native-retention
-        input.restoredWorkspace
-      ? input.restoredWorkspace.beforeOpen.pipe(
-          Effect.as({
-            driver: providerThread.driver,
-            providerSession: projection.providerSessions[0] ?? {
-              id: providerSessionId,
-              driver: providerThread.driver,
-              providerInstanceId: newInstanceId,
-              status: "ready",
-              cwd: input.restoredWorkspace.cwd,
-              model: null,
-              capabilities: CodexProviderCapabilitiesV2,
-              createdAt: now,
-              updatedAt: now,
-              lastError: null,
-            },
-            ensureThread: () => Effect.succeed(providerThread),
-            resumeThread: () => Effect.succeed(providerThread),
-          } as never),
-        )
       : input.interruptOpen === true
         ? Effect.interrupt
         : "historyReadFailureAfterFallback" in input
@@ -1111,6 +1090,31 @@ function makeLocalCommandHarness(input: {
                   } as never)
                 : Effect.die("A local command must not open a native session."),
   );
+  // fork: mini-native-retention
+  const restoredWorkspace = input.restoredWorkspace;
+  if (restoredWorkspace) {
+    open.mockImplementation(() =>
+      restoredWorkspace.beforeOpen.pipe(
+        Effect.as({
+          driver: providerThread.driver,
+          providerSession: projection.providerSessions[0] ?? {
+            id: providerSessionId,
+            driver: providerThread.driver,
+            providerInstanceId: newInstanceId,
+            status: "ready",
+            cwd: restoredWorkspace.cwd,
+            model: null,
+            capabilities: CodexProviderCapabilitiesV2,
+            createdAt: now,
+            updatedAt: now,
+            lastError: null,
+          },
+          ensureThread: () => Effect.succeed(providerThread),
+          resumeThread: () => Effect.succeed(providerThread),
+        } as never),
+      ),
+    );
+  }
   const startRootRun = vi.fn<
     (input: RunExecutionService.RunExecutionServiceV2StartRootRunInput) => Effect.Effect<void>
   >((runInput) =>
