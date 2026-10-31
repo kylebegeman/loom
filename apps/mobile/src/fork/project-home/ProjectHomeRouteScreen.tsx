@@ -35,7 +35,7 @@ import { pinProjectHomeView } from "./projectHomeView";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { environmentPresentations } from "../../state/presentation";
+import { environmentPresentations, threadListEnvironmentsAtom } from "../../state/presentation";
 import {
   useReleaseThreadCheckout,
   useThreadListActions,
@@ -53,7 +53,6 @@ import { useProjects, useNavigationThreadShells, useServerConfigs } from "../../
 import { useEnvironments } from "../../state/environments";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
-import { threadListEnvironmentsAtom } from "../../state/server";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { useWorkspacePageBack } from "../library/workspacePageBack";
