@@ -25,7 +25,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Menu } from "../../components/ui/Menu"; // fork: everyday-workflows
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
-import { relativeTime } from "../../lib/time";
+import { RelativeTime } from "../../components/RelativeTime";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useServerConfigs } from "../../state/entities";
 import { useEnvironmentScope } from "../../state/session";
@@ -195,7 +195,6 @@ function ArchivedThreadRow(props: {
     props.thread.environmentId,
     AuthOrchestrationOperateScope,
   );
-  const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
   // fork: everyday-workflows
   const subtitle = [
     Platform.OS === "ios" ? null : props.environmentLabel,
@@ -223,7 +222,7 @@ function ArchivedThreadRow(props: {
             {props.thread.title}
           </Text>
           <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
-            {timestamp}
+            <RelativeTime timestamp={props.thread.archivedAt ?? props.thread.updatedAt} />
           </Text>
         </View>
         {subtitle.length > 0 ? (

@@ -93,20 +93,43 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           );
           // Only a thread with no saved work may start over from the project's current branch.
           if (ready.length === 0) {
+            // Push keeps the tracking ref current, so recovery reads it without fetching.
+            const pushedRef = `refs/remotes/origin/${input.branch}`;
+            if (yield* git.hasCommit({ cwd: root, refName: pushedRef }))
+              return { cwd: root, refName: pushedRef, newRefName: input.branch, path: cwd };
             // Recovery can follow an external checkout, before the status cache expires.
             yield* git.invalidateLocalStatus(root);
-            const { refName: baseRef } = yield* git.localStatus({ cwd: root });
-            if (baseRef === null)
-              return yield* new WorkspacePreparationError({
-                message: `Could not recreate branch '${input.branch}' at ${cwd}: the project workspace has no current branch to start it from (detached HEAD?).`,
+            const { refName: currentBranch } = yield* git.localStatus({ cwd: root });
+            if (currentBranch !== null) {
+              const refName = `refs/heads/${currentBranch}`;
+              return {
+                cwd: root,
+                refName,
+                newRefName: input.branch,
+                baseRefName: refName,
+                path: cwd,
+              };
+            }
+            if (yield* git.hasCommit({ cwd: root, refName: "refs/remotes/origin/HEAD" })) {
+              const { commitSha } = yield* git.resolveRemoteTrackingCommit({
+                cwd: root,
+                refName: "HEAD",
+                fallbackRemoteName: "origin",
               });
-            return {
-              cwd: root,
-              refName: `refs/heads/${baseRef}`,
-              newRefName: input.branch,
-              baseRefName: `refs/heads/${baseRef}`,
-              path: cwd,
-            };
+              // Start from the commit so the thread branch does not track the default branch.
+              return {
+                cwd: root,
+                refName: commitSha,
+                newRefName: input.branch,
+                baseRefName: "refs/remotes/origin/HEAD",
+                path: cwd,
+              };
+            }
+            if (yield* git.hasCommit({ cwd: root, refName: "HEAD" }))
+              return { cwd: root, refName: "HEAD", newRefName: input.branch, path: cwd };
+            return yield* new WorkspacePreparationError({
+              message: `Could not recreate branch '${input.branch}' at ${cwd}: the project workspace has no commit to start it from.`,
+            });
           }
           const checkpoint = ready
             .filter((checkpoint) => scopesHere.has(checkpoint.scopeId))
