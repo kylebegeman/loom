@@ -78,7 +78,7 @@ const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 export function AddEnvironmentDialog({
   open,
   routeTarget,
-  libraryPairing, // fork: directory-computers
+  libraryPairing = null, // fork: directory-computers
   error,
   savedEnvironments,
   onOpenChange,
@@ -86,7 +86,7 @@ export function AddEnvironmentDialog({
 }: {
   readonly open: boolean;
   readonly routeTarget: EnvironmentPresentation | null;
-  readonly libraryPairing: LibraryComputerPairing | null; // fork: directory-computers
+  readonly libraryPairing?: LibraryComputerPairing | null; // fork: directory-computers
   readonly error: string | null;
   readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
   readonly onOpenChange: (open: boolean) => void;
@@ -128,6 +128,7 @@ export function AddEnvironmentDialog({
   const [sshHostSuggestionsOpen, setSshHostSuggestionsOpen] = useState(false);
   const highlightedSshHostRef = useRef<DesktopDiscoveredSshHost | undefined>(undefined);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
+  const savedBackendSessionRef = useRef(0);
   // fork: directory-computers: a Library row opens the form on its own address, and that
   // address must not prefill the next plain form.
   const [seededPairing, setSeededPairing] = useState(libraryPairing);
@@ -165,7 +166,20 @@ export function AddEnvironmentDialog({
   const hasSshHostSuggestionContent =
     desktopBridge !== undefined &&
     (isLoadingDiscoveredSshHosts || unsavedDiscoveredSshHosts.length > 0);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      savedBackendSessionRef.current += 1;
+      setSavedBackendMode("remote");
+      setSavedBackendHost("");
+      setSavedBackendPairingCode("");
+      setSavedBackendSshHost("");
+      setSavedBackendSshUsername("");
+      setSavedBackendSshPort("");
+    }
+    onOpenChange(nextOpen);
+  };
   const connectSavedBackendSshTarget = async (target: DesktopSshEnvironmentTarget) => {
+    const session = savedBackendSessionRef.current;
     setIsAddingSavedBackend(true);
     onErrorChange(null);
     const result = await connectSshEnvironment({
@@ -176,19 +190,14 @@ export function AddEnvironmentDialog({
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
     });
     if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) {
+      if (session === savedBackendSessionRef.current && !isAtomCommandInterrupted(result)) {
         pipe(squashAtomCommandFailure(result), formatDesktopSshConnectionError, onErrorChange);
       }
       setIsAddingSavedBackend(false);
       return;
     }
 
-    setSavedBackendHost("");
-    setSavedBackendPairingCode("");
-    setSavedBackendSshHost("");
-    setSavedBackendSshUsername("");
-    setSavedBackendSshPort("");
-    onOpenChange(false);
+    handleOpenChange(false);
     toastManager.add({
       type: "success",
       title: routeTarget ? "Route added" : "Computer connected", // fork: fleet-connections
@@ -262,12 +271,7 @@ export function AddEnvironmentDialog({
       return;
     }
 
-    setSavedBackendHost("");
-    setSavedBackendPairingCode("");
-    setSavedBackendSshHost("");
-    setSavedBackendSshUsername("");
-    setSavedBackendSshPort("");
-    onOpenChange(false);
+    handleOpenChange(false);
     toastManager.add(
       routeTarget
         ? {
@@ -295,6 +299,7 @@ export function AddEnvironmentDialog({
   const handleSelectSshHostSuggestion = async (target: DesktopDiscoveredSshHost) => {
     if (isAddingSavedBackend || !desktopBridge) return;
 
+    const session = savedBackendSessionRef.current;
     setIsAddingSavedBackend(true);
     onErrorChange(null);
     setSavedBackendSshHost(target.alias);
@@ -302,7 +307,13 @@ export function AddEnvironmentDialog({
     try {
       resolved = await desktopBridge.resolveSshHost(target.alias);
     } catch (error) {
-      onErrorChange(formatDesktopSshConnectionError(error));
+      if (session === savedBackendSessionRef.current) {
+        onErrorChange(formatDesktopSshConnectionError(error));
+      }
+      setIsAddingSavedBackend(false);
+      return;
+    }
+    if (session !== savedBackendSessionRef.current) {
       setIsAddingSavedBackend(false);
       return;
     }
@@ -457,7 +468,7 @@ export function AddEnvironmentDialog({
       }
       return;
     }
-    onOpenChange(false);
+    handleOpenChange(false);
     toastManager.add({
       type: "success",
       title: "Route added",
@@ -487,11 +498,7 @@ export function AddEnvironmentDialog({
         <ComputerIdentityConnect
           address={savedBackendHost}
           {...(routeTarget ? { entry: routeTarget.entry } : {})}
-          onConnected={() => {
-            onOpenChange(false);
-            setSavedBackendHost("");
-            setSavedBackendPairingCode("");
-          }}
+          onConnected={() => handleOpenChange(false)}
         />
       ) : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
@@ -632,7 +639,7 @@ export function AddEnvironmentDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
         <TooltipTrigger
           render={

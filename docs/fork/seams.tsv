@@ -896,7 +896,6 @@ apps/server/src/mcp/toolkits/thread/handlers.ts	bots	2
 apps/server/src/mcp/toolkits/thread/tools.ts	attention-status	2
 apps/server/src/orchestration-v2/ProjectionStore.test.ts	attention-status	1
 apps/server/src/orchestration-v2/ProjectionStore.ts	attention-status	6
-apps/server/src/orchestration-v2/ProjectionStore.ts	goal-history	2
 apps/web/src/components/CommandPalette.tsx	attention-status	4
 apps/web/src/components/Sidebar.logic.test.ts	attention-status	1
 apps/web/src/components/Sidebar.logic.ts	attention-status	8
@@ -1057,6 +1056,7 @@ apps/mobile/src/features/connection/PullRequestRoutingSettings.tsx	fleet-connect
 apps/mobile/src/features/threads/DraftEnvironmentControl.tsx	fleet-connections	1
 apps/web/src/components/chat/useComposerSend.ts	fleet-connections	15
 apps/web/src/components/chat/useSystemComposerBanners.tsx	fleet-connections	8
+apps/web/src/components/settings/AddEnvironmentDialog.browser.test.tsx	fleet-connections	5
 apps/web/src/components/settings/AddEnvironmentDialog.tsx	fleet-connections	9
 apps/web/src/components/settings/AuthorizedClientsSettings.tsx	fleet-connections	1
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	fleet-connections	32
@@ -1616,3 +1616,4 @@ apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts	brand	2
 packages/client-runtime/src/state/projectRemoval.ts	brand	2
 apps/web/src/components/ThreadTerminalDrawer.browser.test.tsx	preview-links	1
 apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx	source-control-cockpit	3
+apps/web/src/components/ChatView.tsx	brand	1

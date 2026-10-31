@@ -9,6 +9,7 @@ import { environmentEndpointUrl } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ChatAttachmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { connectionAtomRuntime } from "~/connection/runtime";
@@ -49,7 +50,7 @@ const protectedLibraryResourceUrl = Effect.fn("web.library.resourceAccess")(func
       httpBaseUrl: connection.httpBaseUrl,
       bearerToken: authorization.token,
     });
-    url.searchParams.set("wsTicket", ticket.ticket);
+    url.searchParams.set("wsTicket", Redacted.value(ticket.ticket));
     return url.href;
   }
   const signer = yield* Effect.serviceOption(ManagedRelay.ManagedRelayDpopSigner);
@@ -67,7 +68,7 @@ const protectedLibraryResourceUrl = Effect.fn("web.library.resourceAccess")(func
     accessToken: authorization.accessToken,
     dpopProof: proof,
   });
-  url.searchParams.set("wsTicket", ticket.ticket);
+  url.searchParams.set("wsTicket", Redacted.value(ticket.ticket));
   return url.href;
 });
 

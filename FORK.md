@@ -334,10 +334,10 @@ preserves Codex-created `generated_images` directories in account shadow homes.
 Keep it during upstream merges until upstream accepts these directories without
 preventing provider startup. The Pro Max account schema fix comes from upstream.
 
-The `goal-history` seam in `ProjectionStore.ts` and `TurnStartReads.test.ts` loads earlier
-`/goal` prompts into the SQLite turn-start context, as the in-memory store already does, so
-a context handoff that a `/goal` turn deferred still reaches the next turn. Keep it during
-upstream merges until upstream's turn-start query includes them.
+The `goal-history` seam in `TurnStartReads.test.ts` checks that earlier `/goal` prompts reach
+the SQLite turn-start context, so a context handoff that a `/goal` turn deferred still reaches
+the next turn. Upstream's turn-start query has loaded them since v0.1.6-nightly.20261031.3969,
+which replaced the fork's `ProjectionStore.ts` seam; the test stays until upstream covers it.
 
 The `codex-login-email` seam in `CodexProvider.ts` names a Codex account from its
 home's `auth.json` when a custom `model_provider` makes Codex report no account, so
@@ -1338,6 +1338,7 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/server/src/environment/ServerEnvironment.ts`                           | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/server/src/ws.ts`                                                      | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/web/src/cloud/publicConfig.ts`                                         | `connect-compat`    | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/web/src/components/settings/AddEnvironmentDialog.browser.test.tsx`     | `fleet-connections` | Find the dialog's Connect computer buttons.                                |
 | `apps/web/src/components/settings/ConnectionsSettings.tsx`                   | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/web/src/components/settings/settingsSearch.ts`                         | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/web/src/state/environments.ts`                                         | `computer-naming`   | Publish and project the canonical computer name.                           |

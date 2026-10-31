@@ -298,8 +298,8 @@ export function storageCleanupActivityAt(thread: OrchestrationV2ThreadShell): nu
 
 // fork: project-lifecycle -- generalized from one owner to the set of chain owners.
 /**
- * The top-level holders, when every other holder is in a complete subagent chain within this
- * worktree that reaches one of them under the same root; otherwise undefined.
+ * The top-level holders, when every other holder is in a complete subagent or side chat chain
+ * within this worktree that reaches one of them under the same root; otherwise undefined.
  */
 function worktreeOwners<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineage">>(
   threads: ReadonlyArray<T>,
@@ -313,7 +313,10 @@ function worktreeOwners<T extends Pick<OrchestrationV2ThreadShell, "id" | "linea
     const chain: T[] = [];
     let current = thread;
     while (!ownerIds.has(current.id)) {
-      if (chain.includes(current) || current.lineage.relationshipToParent !== "subagent")
+      if (
+        chain.includes(current) ||
+        (current.lineage.relationshipToParent !== "subagent" && current.lineage.sideChat !== true)
+      )
         return undefined;
       chain.push(current);
       const parent = byId.get(current.lineage.parentThreadId!);
@@ -326,7 +329,7 @@ function worktreeOwners<T extends Pick<OrchestrationV2ThreadShell, "id" | "linea
   return owners;
 }
 
-/** Only a complete subagent chain within this worktree shares ownership. */
+/** Only a complete subagent or side chat chain within this worktree shares ownership. */
 function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineage">>(
   threads: ReadonlyArray<T>,
 ) {
