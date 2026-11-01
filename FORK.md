@@ -253,6 +253,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
 | `evals/mcp-tool-use/run.ts`                                    | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
 | `evals/mcp-tool-use/run.ts`                                    | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |
+| `evals/mcp-tool-use/run.ts`                                    | `upstream-supervisor` | Include the upstream sync tools so evals see the real tool list.             |
 | `packages/client-runtime/src/state/commandPermissions.test.ts` | `project-lifecycle`   | Verify restore requires the destination computer’s operate scope.            |
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
