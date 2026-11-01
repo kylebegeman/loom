@@ -24,7 +24,7 @@ import { LibraryStateDot } from "../project-library/LibraryControls";
 const updatePlans = createUpdatePlanAtoms(connectionAtomRuntime);
 const NO_PLAN = Atom.make(AsyncResult.initial<UpdatePlanStatus>());
 
-export function useUpdatePlan(environmentId: EnvironmentId, advertised: boolean) {
+function useUpdatePlan(environmentId: EnvironmentId, advertised: boolean) {
   const result = useAtomValue(
     advertised ? updatePlans.status({ environmentId, input: {} }) : NO_PLAN,
   );
