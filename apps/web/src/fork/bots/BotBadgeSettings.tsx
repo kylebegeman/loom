@@ -13,7 +13,7 @@ import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Switch } from "~/components/ui/switch";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
-import { useSettingsSearchTarget } from "~/components/settings/settingsLayout";
+import { SettingsRow } from "~/components/settings/settingsLayout";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryErrorNotice, LibraryStateBadge } from "../project-library/LibraryControls";
@@ -208,31 +208,31 @@ function ComputerBadgeSettings({
 
 export function BotBadgeSettings() {
   const { environments } = useSettingsScope();
-  const target = useSettingsSearchTarget<HTMLDivElement>("bot-notification-dots");
   return (
-    <div ref={target} id="bot-notification-dots" className="space-y-4 py-2">
-      <h2 className="text-sm font-medium">Bot notification dots</h2>
-      <p className="text-sm text-muted-foreground">
-        Choose which updates light up the Bots badge. Preferences belong to each computer and apply
-        across your connected devices.
-      </p>
-      {environments.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Connect a computer to customize its bot notification dots.
-        </p>
-      ) : null}
-      {environments.map((environment) => (
-        <ComputerBadgeSettings
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          label={environment.label}
-          connected={environment.connection.phase === "connected"}
-          supported={supportsLoomFeature(
-            environment.serverConfig?.environment.capabilities,
-            BOTS_BADGE_PREFERENCES_FEATURE,
-          )}
-        />
-      ))}
-    </div>
+    <SettingsRow
+      id="bot-notification-dots"
+      title="Bot notification dots"
+      description="Choose which updates light up the Bots badge. Preferences belong to each computer and apply across your connected devices."
+    >
+      <div className="min-w-0 space-y-4 pt-4 pb-3">
+        {environments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Connect a computer to customize its bot notification dots.
+          </p>
+        ) : null}
+        {environments.map((environment) => (
+          <ComputerBadgeSettings
+            key={environment.environmentId}
+            environmentId={environment.environmentId}
+            label={environment.label}
+            connected={environment.connection.phase === "connected"}
+            supported={supportsLoomFeature(
+              environment.serverConfig?.environment.capabilities,
+              BOTS_BADGE_PREFERENCES_FEATURE,
+            )}
+          />
+        ))}
+      </div>
+    </SettingsRow>
   );
 }
