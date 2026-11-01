@@ -43,7 +43,7 @@ export const UpstreamToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_upstream_configure", {
     description:
-      "Human administrator-only standing authorization for the fixed loom-upstream.yml workflow on main, one selected Vault GitHub item/version/repository, exact project and chief sessionId. Requires a full-access administrator client; agent threads cannot grant standing authority. Use the owner Connections settings. Save disabled until activation is approved. A changed login needs an owner rebind; keep receipts. enabled:false blocks new dispatches. This does not grant general Vault, shell, merge or publisher authority.",
+      "Human administrator-only standing authorization for the fixed loom-upstream.yml workflow on main, one selected Vault GitHub item/version/repository, exact project and chief sessionId. Requires a full-access administrator client; agent threads cannot grant standing authority. Use the owner Settings > Computers > Upstream supervisor section. Save disabled until activation is approved. A changed login needs an owner rebind; keep receipts. enabled:false blocks new dispatches. This does not grant general Vault, shell, merge or publisher authority.",
     parameters: UpstreamSupervisorConfigInput,
     success: UpstreamSupervisorConfig,
     failure,

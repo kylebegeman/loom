@@ -169,8 +169,9 @@ accepted by Grok or deletes the Grok routine. Pause that routine separately if n
 ## Supervise upstream nightlies
 
 A Grok chief can supervise Loom's existing upstream integration workflow. In Settings >
-Connections > Upstream supervisor, choose the exact project, repository, existing Vault
-GitHub connection and the chief's current login. Save the configuration
+Computers > Upstream supervisor, select the computer, then choose the exact project,
+repository, existing Vault GitHub connection and the chief's current login. You can also
+find Upstream supervisor through Settings search. Save the configuration
 paused, review it, then enable it from your administrator session. The hosted chief
 cannot activate or rebind its own authorization. This does not grant it general GitHub
 or Vault access.
