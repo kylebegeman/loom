@@ -332,7 +332,6 @@ it("pairs with Local environment disabled, where there is no primary environment
   );
 });
 
-// fork: client-computer
 it("holds a launch PR link with Local environment disabled until discovery settles", async () => {
   setup();
   state.localEnvironmentDisabled = true;

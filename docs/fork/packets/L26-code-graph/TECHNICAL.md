@@ -239,7 +239,9 @@ No foreign keys into upstream tables.
     the session while the panel is closed. `state.ts`'s `openImpact` writes the Impact view
     and the diff's files into it, then opens the single `forkPanelSurface("code-graph")`.
   - `diffHeaderAction.tsx`: `codeGraphDiffHeaderAction`, an icon button that renders null
-    without a thread, files or the feature, and makes no request until clicked.
+    without a thread, files or the feature, and makes no request until clicked. The button
+    (`DiffImpactButton.tsx`) loads lazily, so the diff panel's static imports stay free of
+    thread state and the panel registry.
   - `NeighborhoodGraph.tsx` and `radialLayout.ts`: a static SVG, focus in the center, direct
     neighbors on an inner ring grouped by relation, second hops on an outer ring.
   - `impactSummary.ts`: Markdown of at most 40 lines (files nearest first, then the ten most

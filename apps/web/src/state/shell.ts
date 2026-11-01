@@ -22,7 +22,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { isHostedStaticApp } from "../hostedPairing";
-import { isLocalEnvironmentDisabled } from "../localEnvironment"; // fork: client-computer
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
@@ -124,14 +124,18 @@ export function createAllEnvironmentProjectSnapshotsReadyAtom(input: {
 // fork: client-computer A desktop that runs no agents never registers a primary, and it loads every
 // fork: client-computer computer it saves before its catalog is ready, so that catalog is final.
 const clientComputer = typeof window !== "undefined" && isLocalEnvironmentDisabled();
-const requiresPrimaryEnvironment = !isHostedStaticApp() && !clientComputer; // fork: client-computer
 
 export const allEnvironmentProjectSnapshotsReadyAtom =
   createAllEnvironmentProjectSnapshotsReadyAtom({
     catalogValueAtom: environmentCatalog.catalogValueAtom,
     shellStateValueAtom: environmentShell.stateValueAtom,
-    requiresPrimaryEnvironment, // fork: client-computer
+    requiresPrimaryEnvironment: expectsPrimaryEnvironment(),
   });
+
+/** Hosted clients and desktops with the local environment disabled never discover a primary. */
+export function expectsPrimaryEnvironment(): boolean {
+  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
+}
 
 // fork: client-computer
 export function createAllReachableShellsLiveAtom(input: {
@@ -170,6 +174,6 @@ export const allReachableShellsLiveAtom = createAllReachableShellsLiveAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,
   connectionStateAtom: environmentCatalog.stateAtom,
-  requiresPrimaryEnvironment,
+  requiresPrimaryEnvironment: expectsPrimaryEnvironment(),
   clientComputer,
 });

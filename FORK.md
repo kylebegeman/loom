@@ -246,37 +246,41 @@ The renderer follows the web app's React version, which comes from the workspace
 
 ### Packet seams
 
-| File                                                           | Packet                | Why                                                                          |
-| -------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
-| `apps/web/src/hooks/useThreadActionMenu.ts`                    | `attention-status`    | Retry failed runs and resume held queues from the conversation header.       |
-| `apps/web/src/components/Sidebar.tsx`                          | `library-projects`    | Use the Library retention setting in single and bulk delete confirmations.   |
-| `apps/web/src/hooks/useThreadActions.permissions.test.ts`      | `library-projects`    | Await async confirmation while preserving permission rechecks.               |
-| `apps/web/src/hooks/useThreadActions.ts`                       | `library-projects`    | Explain saved Library retention before deleting an archived thread.          |
-| `apps/web/src/hooks/useThreadActionMenu.ts`                    | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
-| `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `attention-status`    | Isolate retry state and verify header retry permission checks.               |
-| `apps/web/src/hooks/useThreadActionMenu.test.ts`               | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
-| `apps/mobile/src/features/home/useThreadListActions.ts`        | `project-library`     | Show confirmed Library retention when deleting a saved conversation.         |
-| `apps/mobile/src/features/home/useThreadListActions.test.ts`   | `project-library`     | Isolate Library confirmation and preserve deletion permission checks.        |
-| `docs/user/faq.md`                                             | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
-| `apps/server/src/project/AgentSessionScanner.ts`               | `file-placement`      | Exclude canonical aliases of managed worktree roots during session import.   |
-| `apps/server/src/project/AgentSessionScanner.test.ts`          | `file-placement`      | Cover session import exclusion through symlinked roots.                      |
-| `apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx`  | `project-lifecycle`   | Isolate native checkout status in the route recovery test.                   |
-| `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`       | `project-lifecycle`   | Show released checkout state in the native conversation header.              |
-| `apps/mobile/src/features/threads/thread-list-v2-items.tsx`    | `project-lifecycle`   | Show checkout state and route the applicable checkout action.                |
-| `apps/web/src/components/Sidebar.tsx`                          | `project-lifecycle`   | Release or restore the selected checkout using lifecycle status.             |
-| `apps/web/src/components/chat/ChatHeader.tsx`                  | `project-lifecycle`   | Show released checkout state in the conversation header.                     |
-| `apps/web/src/components/sidebar/SidebarThreadRow.tsx`         | `project-lifecycle`   | Show the released checkout state beside its conversation.                    |
-| `apps/web/src/components/threadActionMenu.logic.test.ts`       | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
-| `apps/web/src/components/threadActionMenu.logic.ts`            | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
-| `docs/user/project-settings.md`                                | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
-| `evals/mcp-tool-use/run.ts`                                    | `attention-status`    | Use the guarded failed-run retry tool in agent evals.                        |
-| `evals/mcp-tool-use/run.ts`                                    | `vault-core`          | Use the real Vault item query tools in agent evals.                          |
-| `evals/mcp-tool-use/run.ts`                                    | `vault-references`    | Include saved-reference tools for private-request guidance.                  |
-| `evals/mcp-tool-use/run.ts`                                    | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
-| `evals/mcp-tool-use/run.ts`                                    | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
-| `evals/mcp-tool-use/run.ts`                                    | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |
-| `evals/mcp-tool-use/run.ts`                                    | `upstream-supervisor` | Include the upstream sync tools so evals see the real tool list.             |
-| `packages/client-runtime/src/state/commandPermissions.test.ts` | `project-lifecycle`   | Verify restore requires the destination computer’s operate scope.            |
+| File                                                            | Packet                | Why                                                                          |
+| --------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `apps/web/src/hooks/useThreadActionMenu.ts`                     | `attention-status`    | Retry failed runs and resume held queues from the conversation header.       |
+| `apps/web/src/components/Sidebar.tsx`                           | `library-projects`    | Use the Library retention setting in single and bulk delete confirmations.   |
+| `apps/web/src/hooks/useThreadActions.permissions.test.ts`       | `library-projects`    | Await async confirmation while preserving permission rechecks.               |
+| `apps/web/src/hooks/useThreadActions.ts`                        | `library-projects`    | Explain saved Library retention before deleting an archived thread.          |
+| `apps/web/src/hooks/useThreadActionMenu.ts`                     | `project-lifecycle`   | Use released checkout state and Restore in the conversation header menu.     |
+| `apps/web/src/hooks/useThreadActionMenu.test.ts`                | `attention-status`    | Isolate retry state and verify header retry permission checks.               |
+| `apps/web/src/hooks/useThreadActionMenu.test.ts`                | `project-lifecycle`   | Cover header restoration and the permission recheck after menu selection.    |
+| `apps/mobile/src/features/home/useThreadListActions.ts`         | `project-library`     | Show confirmed Library retention when deleting a saved conversation.         |
+| `apps/mobile/src/features/home/useThreadListActions.test.ts`    | `project-library`     | Isolate Library confirmation and preserve deletion permission checks.        |
+| `docs/user/faq.md`                                              | `fleet-connections`   | Keep connection troubleshooting pointed at Loom's Computers settings.        |
+| `apps/server/src/project/AgentSessionScanner.ts`                | `file-placement`      | Exclude canonical aliases of managed worktree roots during session import.   |
+| `apps/server/src/project/AgentSessionScanner.test.ts`           | `file-placement`      | Cover session import exclusion through symlinked roots.                      |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx`   | `project-lifecycle`   | Isolate native checkout status in the route recovery test.                   |
+| `apps/mobile/src/features/threads/ThreadRouteScreen.tsx`        | `project-lifecycle`   | Show released checkout state in the native conversation header.              |
+| `apps/mobile/src/features/threads/thread-list-v2-items.tsx`     | `project-lifecycle`   | Show checkout state and route the applicable checkout action.                |
+| `apps/web/src/components/Sidebar.tsx`                           | `project-lifecycle`   | Release or restore the selected checkout using lifecycle status.             |
+| `apps/web/src/components/chat/ChatHeader.tsx`                   | `project-lifecycle`   | Show released checkout state in the conversation header.                     |
+| `apps/web/src/components/sidebar/SidebarThreadRow.tsx`          | `project-lifecycle`   | Show the released checkout state beside its conversation.                    |
+| `apps/web/src/components/threadActionMenu.logic.test.ts`        | `project-lifecycle`   | Check both checkout actions and permissions.                                 |
+| `apps/web/src/components/threadActionMenu.logic.ts`             | `project-lifecycle`   | Offer Restore for a released checkout and Release for present files.         |
+| `docs/user/project-settings.md`                                 | `project-lifecycle`   | Explain release status and manual restore beside the existing release guide. |
+| `evals/mcp-tool-use/run.ts`                                     | `attention-status`    | Use the guarded failed-run retry tool in agent evals.                        |
+| `evals/mcp-tool-use/run.ts`                                     | `vault-core`          | Use the real Vault item query tools in agent evals.                          |
+| `evals/mcp-tool-use/run.ts`                                     | `vault-references`    | Include saved-reference tools for private-request guidance.                  |
+| `evals/mcp-tool-use/run.ts`                                     | `project-lifecycle`   | Use the real checkout restore tool schema in agent evals.                    |
+| `evals/mcp-tool-use/run.ts`                                     | `directory-computers` | Use the real Library forget tool schema in agent evals.                      |
+| `evals/mcp-tool-use/run.ts`                                     | `bots-triggers`       | Use the real Bot tools to verify retired trigger guidance.                   |
+| `evals/mcp-tool-use/run.ts`                                     | `upstream-supervisor` | Include the upstream sync tools so evals see the real tool list.             |
+| `packages/client-runtime/src/state/commandPermissions.test.ts`  | `project-lifecycle`   | Verify restore requires the destination computer’s operate scope.            |
+| `apps/mobile/src/features/threads/ThreadMarkdownImage.test.tsx` | `cloudflare-access`   | Keep the native Access keychain out of markdown image tests.                 |
+| `apps/server/src/orchestration-v2/ThreadFork.execution.test.ts` | `deleted-history`     | Expect the deleted-source refusal that rejects a side chat first.            |
+| `apps/server/src/process/externalLauncher.test.ts`              | `hermetic-tests`      | Keep the host's installed editors out of the Insiders bundle case.           |
+| `apps/server/src/usage/UsageService.test.ts`                    | `hermetic-tests`      | Pin the clock so removed-directory usage stays inside retention.             |
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
 (`fork: model-print-check`) so the worker ships beside `bin.mjs`. The single-file executable
@@ -474,7 +478,7 @@ recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 
 keeps its New thread button enabled when No project or a Library is the only way to start,
 and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
 (2 marker lines) keeps `file:` links on the primary, since their path names that machine.
-Its `client-computer` seams (5 markers; 3 in its browser test) wait for remote discovery before
+Its `client-computer` seams (5 markers; 2 in its browser test) wait for remote discovery before
 opening web links, keep pairing independent of discovery and cancel held links on unmount.
 
 The `library-projects` seams in `WorktreeMcpService.ts` (15 marker lines) coordinate an existing conversation's
@@ -538,7 +542,7 @@ before truncating. `ThreadSettlementService.ts` (11) reuses one settings read pe
 settings change and asks for a storage sweep only once a settled thread is done with its
 worktree, which lets the lane watchdog cache ready lanes. `ServerBrowserContexts.ts` (1) caps
 the preview browser's disk cache at 128 MiB. Tests carry the rest: `FoundationPersistence.test.ts`
-(8), `ThreadSettlementService.test.ts` (6), `DatabaseStorage.test.ts` (4),
+(8), `ThreadSettlementService.test.ts` (3), `DatabaseStorage.test.ts` (4),
 `Scheduler.test.ts` (3) and `observability.test.ts` (2).
 On desktop, `DesktopIpc.ts` (5) lets a sync IPC method run with the tracer off, so its nested
 spans are skipped too, and `ipc/methods/localEnvironment.ts` (1) and `ipc/methods/window.ts`
@@ -589,6 +593,12 @@ The `test-temp-isolation` seam in `apps/server/src/git/GitManager.test.ts` (9) c
 test's extra worktree inside its own scoped temp directory. Upstream placed them beside the
 scoped repository, so every run left orphaned worktree folders in `$TMPDIR`.
 
+The `hermetic-tests` seams keep upstream tests independent of the host and today's date.
+`externalLauncher.test.ts` (3 marker lines) hides the host's real editor installs from the
+macOS VS Code Insiders case, and `UsageService.test.ts` (2) pins the clock in the
+removed-directory usage case so its saved usage is not pruned. Upstream's `main` pins that
+clock itself after this nightly; drop the `UsageService.test.ts` seam once that lands.
+
 The `agent-work` seams add one Delete all for archived subagent and bot run conversations to
 Settings > Archived. Parent conversations keep their agent receipts and runs keep their results,
 so the rule (`isAgentWorkThread` in `@t3tools/client-runtime/fork`) never includes an
@@ -609,8 +619,11 @@ can get past (usage limit, provider or transport error, unknown), using the rule
 and still refuses permission and validation failures; `runtimeLayer.test.ts` (1) marks its
 cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
 `MessagesTimeline.tsx` (7) adds Retry to a failed root error row. On mobile,
-`ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
-recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
+`ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (7) wire Resume and Retry into the
+recovery notice and pass it the held-queue flag, since upstream's `onResumeQueue` is also set for
+a resumable run. The notice keeps its own Resume beside the composer's: it stays available while
+a draft hides the composer's and continues in the thread's saved modes.
+`UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
 (1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
 
 The `attention-status` seams in `evals/mcp-tool-use/run.ts` (2) include the retry toolkit in model-facing tests. The fork retry service shares guarded manual continuation across RPC and MCP.
@@ -1382,7 +1395,7 @@ See [Connections help](docs/fork/user/connections.md).
 
 | File                                                           | Packet            | Why                                                                          |
 | -------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------- |
-| `apps/web/src/components/ProviderUpdatesAction.tsx`            | `machine-updates` | Scope provider updates to permitted computers.                               |
+| `apps/web/src/components/ProviderUpdatesAction.tsx`            | `machine-updates` | Limit provider updates to the chosen computers and skip switched-off ones.   |
 | `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`        | `machine-updates` | Keep app updates local and show per-computer update plans with cancellation. |
 | `apps/web/src/components/sidebar/useUpdateEverything.ts`       | `machine-updates` | Share scoped local and fleet update execution.                               |
 | `apps/web/src/components/sidebar/updateEverything.logic.ts`    | `machine-updates` | Keep local and fleet progress in their owning views.                         |

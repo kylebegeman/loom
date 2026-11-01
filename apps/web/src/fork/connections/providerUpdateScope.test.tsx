@@ -32,14 +32,13 @@ vi.mock("~/state/environments", () => ({
     ),
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => fixture.update }));
-vi.mock("~/state/server", async () => {
-  const { Atom } = await import("effect/reactivity");
-  return {
-    serverEnvironment: {
-      updateProvider: { permissionAtom: (id: string) => Atom.make(fixture.permissions.has(id)) },
-    },
-  };
-});
+vi.mock("~/state/server", () => ({ serverEnvironment: { updateProvider: {} } }));
+vi.mock("~/state/session", () => ({
+  useEnvironmentsWithScope: (entries: ReadonlyArray<{ environmentId: string }>) =>
+    new Set(
+      entries.map((entry) => entry.environmentId).filter((id) => fixture.permissions.has(id)),
+    ),
+}));
 vi.mock("~/components/ui/toast", () => ({
   toastManager: { add: vi.fn() },
   stackedThreadToast: (value: unknown) => value,

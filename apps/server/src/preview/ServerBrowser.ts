@@ -618,7 +618,11 @@ const make = Effect.gen(function* () {
     if (url === "about:blank" || url.startsWith("chrome-error://")) return;
     const title = (await tab.page.title().catch(() => "")).slice(0, 512);
     if (tab.loading || tab.page.url() !== url) return;
-    report(tab, { _tag: "Success", url: url.slice(0, 2048), title });
+    report(tab, {
+      _tag: "Success",
+      url: ServerBrowserPage.withoutDataPayload(url).slice(0, 2048),
+      title,
+    });
   };
 
   const reportLiveTabs = () => {
@@ -1049,8 +1053,9 @@ const make = Effect.gen(function* () {
       tabs.set(currentKey, tab); // fork: browser-timeout-recovery
       recoveryPages.delete(currentKey); // fork: browser-timeout-recovery
       reportLiveTabs();
+      // A desktop page navigates on its own and can finish loading before these listeners attach.
+      if (desktop) void page.waitForLoadState("load").then(() => reportLoaded(tab), constVoid);
       // fork: browser-timeout-recovery -- a recovered tab restores its page.
-      if (desktop) void reportLoaded(tab);
       // A popup is already loading its own URL, and the desktop loads its tab's.
       const initialUrl =
         retainedContext !== undefined && recovery?.url !== "about:blank"
@@ -1680,7 +1685,7 @@ const make = Effect.gen(function* () {
         ...blocked, // fork: preview-popups
       };
     }
-    const url = tab.page.url();
+    const url = ServerBrowserPage.withoutDataPayload(tab.page.url());
     const viewport = tab.desktop ? await layoutSize(tab) : tab.page.viewportSize();
     const status = {
       available: true,
@@ -1704,7 +1709,10 @@ const make = Effect.gen(function* () {
         .filter((candidate) => candidate.threadId === tab.threadId)
         .map((candidate) => ({
           tabId: candidate.tabId,
-          url: candidate.page.url() === "about:blank" ? null : candidate.page.url(),
+          url:
+            candidate.page.url() === "about:blank"
+              ? null
+              : ServerBrowserPage.withoutDataPayload(candidate.page.url()),
           ...(candidate.openerTabId === undefined ? {} : { openerTabId: candidate.openerTabId }),
           owner: tabOwner(candidate),
           ownedByCaller: candidate.control.agentId === agentSessionId,
