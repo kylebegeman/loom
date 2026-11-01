@@ -3,6 +3,7 @@ import { ArrowLeftIcon } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { Button, InlineButton } from "~/components/ui/button";
 import { SidebarInset } from "~/components/ui/sidebar";
+import { useNavigateToMainApp } from "~/components/sidebar/mainAppLocation";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -45,6 +46,7 @@ export function LibraryPageFrame({
   readonly children: ReactNode;
 }) {
   const authority = useLibraryAuthority();
+  const navigateToMainApp = useNavigateToMainApp();
   // No commands, so this asks only whether the Library session works. An expired session can keep
   // the socket connected while every guarded action on the page turns off.
   const access = useLibraryAccessBlock(libraryStatus ? authority.authorityId : null, []);
@@ -54,6 +56,16 @@ export function LibraryPageFrame({
   return (
     <SidebarInset style={style} className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
+        <Button
+          shape="pill"
+          size="sm"
+          variant="ghost"
+          aria-label="Back to conversation"
+          onClick={() => void navigateToMainApp()}
+        >
+          <ArrowLeftIcon aria-hidden />
+          Back
+        </Button>
         <WorkspaceBreadcrumb ariaLabel={`${section.label} breadcrumb`}>
           {title ? (
             <>
