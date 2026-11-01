@@ -1,3 +1,4 @@
+import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { RotateCcwIcon } from "lucide-react";
@@ -5,7 +6,9 @@ import { Button } from "../components/ui/button";
 import { FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS } from "../fork/settings/navigation"; // fork: ext-settings
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 
-import { LoomSettingsWorkbench } from "../fork/settings/SettingsWorkbench"; // fork: ext-settings
+import { AppRouteModal, AppRouteModalClose } from "../components/AppRouteModal";
+import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
+import { SettingsSidebarNav } from "../components/settings/SettingsSidebarNav";
 import {
   SettingsScopeProvider,
   useSettingsScope,
@@ -106,6 +109,7 @@ function SettingsScopeBoundary({ pathname, children }: { pathname: string; child
 }
 
 function SettingsContentLayout() {
+  const contentArea = workspaceAreaProps("settings", 1, "Settings content");
   const location = useLocation();
   const { search, environment } = useSettingsScope();
   const contentScopeKey =
@@ -117,20 +121,29 @@ function SettingsContentLayout() {
   const [restoreSignal, setRestoreSignal] = useState(0);
 
   return (
-    <LoomSettingsWorkbench
-      pathname={location.pathname}
-      actions={
-        location.pathname === "/settings/general" ? (
-          <RestoreDeviceDefaultsButton onRestored={() => setRestoreSignal((value) => value + 1)} />
-        ) : null
-      }
-    >
-      <div key={`${contentScopeKey}:${restoreSignal}`} className="flex min-h-0 flex-1 flex-col">
-        <SettingsScopeBoundary pathname={location.pathname}>
-          <Outlet />
-        </SettingsScopeBoundary>
+    <AppRouteModal label="Settings">
+      <div className="relative flex min-h-0 flex-1">
+        <SettingsSidebarNav pathname={location.pathname} />
+        <div {...contentArea} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
+            <SettingsBreadcrumb pathname={location.pathname} />
+            <div className="ms-auto flex shrink-0 items-center gap-1">
+              {location.pathname === "/settings/general" ? (
+                <RestoreDeviceDefaultsButton
+                  onRestored={() => setRestoreSignal((value) => value + 1)}
+                />
+              ) : null}
+              <AppRouteModalClose />
+            </div>
+          </header>
+          <div key={`${contentScopeKey}:${restoreSignal}`} className="min-h-0 flex flex-1 flex-col">
+            <SettingsScopeBoundary pathname={location.pathname}>
+              <Outlet />
+            </SettingsScopeBoundary>
+          </div>
+        </div>
       </div>
-    </LoomSettingsWorkbench>
+    </AppRouteModal>
   );
 }
 

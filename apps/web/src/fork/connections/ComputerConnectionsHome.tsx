@@ -21,6 +21,7 @@ import { ComputerHealthSummary } from "../connection-health/ComputerHealthSummar
 
 export function ComputerConnectionsHome({
   primaryEnvironment,
+  librarySettings,
   primaryActions,
   computerRows,
   discoveredRows,
@@ -29,6 +30,7 @@ export function ComputerConnectionsHome({
   onPairComputer,
 }: {
   readonly primaryEnvironment: EnvironmentPresentation | null;
+  readonly librarySettings: ReactNode;
   readonly primaryActions?: ReactNode;
   readonly computerRows: ReactNode;
   readonly discoveredRows: ReactNode;
@@ -42,10 +44,6 @@ export function ComputerConnectionsHome({
 }) {
   return (
     <>
-      <p className="px-3 text-sm leading-relaxed text-muted-foreground sm:px-4">
-        Choose where to work. Your Library keeps your computers and saved conversations available
-        across devices. Each computer runs its own agents and keeps its working files.
-      </p>
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Your computers"
@@ -79,6 +77,7 @@ export function ComputerConnectionsHome({
         {discoveredRows}
       </SettingsSection>
       <CompatibilityNotice />
+      {librarySettings}
       <LibraryComputers onPair={onPairComputer} />
       <LibraryReach />
       <LibraryPushSection />

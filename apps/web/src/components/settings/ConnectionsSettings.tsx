@@ -143,6 +143,7 @@ import { AddEnvironmentDialog, type LibraryComputerPairing } from "./AddEnvironm
 
 // fork: fleet-connections
 import { ComputerConnectionsHome } from "~/fork/connections/ComputerConnectionsHome";
+import { ComputersSettingsPage } from "~/fork/connections/ComputersSettingsPage";
 import { RenameComputer } from "~/fork/connections/RenameComputer";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -1504,9 +1505,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     );
 
   return (
-    <SettingsPageContainer>
-      {/* fork: library-sign-in */}
-      <LibrarySignInSettings />
+    <ComputersSettingsPage>
       {desktopBridge ? (
         <SettingsSection id="this-app" title="This app">
           <LocalEnvironmentSetting />
@@ -1514,6 +1513,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       ) : null}
       {/* fork: fleet-connections */}
       <ComputerConnectionsHome
+        librarySettings={<LibrarySignInSettings />}
         // fork: directory-computers
         onPairComputer={(environmentId, httpBaseUrl) => {
           setRouteTarget(null);
@@ -1591,6 +1591,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
       {/* fork: ext-settings */}
       <ForkSettingsTopics page="/settings/connections" />
-    </SettingsPageContainer>
+    </ComputersSettingsPage>
   );
 }
