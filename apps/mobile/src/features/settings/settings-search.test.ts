@@ -66,3 +66,12 @@ describe("filterSettingsSections", () => {
     expect(filterSettingsSections([{ rows: [] }, ...SECTIONS], "").length).toBe(SECTIONS.length);
   });
 });
+
+it.each(["branch override", "repository default", "project blueprint"])(
+  "finds Projects for %s",
+  (query) => {
+    expect(
+      filterSettingsSections([{ rows: [{ id: "Library", label: "Projects" }] }], query),
+    ).toEqual([{ rows: [{ id: "Library", label: "Projects" }] }]);
+  },
+);

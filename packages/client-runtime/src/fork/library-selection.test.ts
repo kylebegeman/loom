@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { LibraryProject } from "@t3tools/contracts/fork";
-import { libraryRouteParams, resolveLibrarySelection } from "./library-selection.ts";
+import { EnvironmentId } from "@t3tools/contracts";
+import {
+  libraryRouteParams,
+  resolveLibrarySelection,
+  resolveLibraryAuthorityId,
+} from "./library-selection.ts";
 const project: LibraryProject = {
   id: "new-project",
   title: "New project",
@@ -61,4 +66,20 @@ describe("Library selection across create and route changes", () => {
     });
     expect(libraryRouteParams(null).projectId).toBeUndefined();
   });
+});
+
+it("requires agreeing enrolled Library reports and confirmation from that exact authority", () => {
+  const authority = { environmentId: EnvironmentId.make("library"), isAuthority: true };
+  const execution = {
+    environmentId: EnvironmentId.make("execution"),
+    isAuthority: false,
+    destination: { environmentId: authority.environmentId, url: "https://library.example" },
+  };
+  const other = { environmentId: EnvironmentId.make("other-library"), isAuthority: true };
+  expect(resolveLibraryAuthorityId([execution, authority])).toBe(authority.environmentId);
+  expect(resolveLibraryAuthorityId([execution])).toBeNull();
+  expect(resolveLibraryAuthorityId([execution, authority, other])).toBeNull();
+  expect(resolveLibraryAuthorityId([execution, authority, other], execution.environmentId)).toBe(
+    authority.environmentId,
+  );
 });

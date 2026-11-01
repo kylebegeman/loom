@@ -2,11 +2,17 @@ import * as LibraryConnection from "./LibraryConnection.ts";
 import { libraryJsonBody } from "./transfer.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Timeline from "./LibraryTimeline.ts";
+import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import {
   LibraryProjectsRead,
+  LibraryBlueprint,
+  LibraryWorkstream,
+  LibraryPreservationEntry,
+  LibraryBriefProposalsRequest,
+  LibraryBriefProposalPage,
   LibraryConversationsRead,
   LibraryConversationLookup,
   LibraryHistoryRead,
@@ -90,6 +96,10 @@ export class LibraryPublisher extends Context.Service<
     readonly projects: (
       input: typeof LibraryProjectsRead.Type,
     ) => Effect.Effect<readonly LibraryProject[], LibraryError>;
+    readonly workstreams: ProjectWorkflows["Service"]["workstreams"];
+    readonly blueprint: ProjectWorkflows["Service"]["blueprint"];
+    readonly preservation: ProjectWorkflows["Service"]["preservation"];
+    readonly briefProposals: LibraryService.LibraryService["Service"]["briefProposals"];
     readonly conversations: (
       input: typeof LibraryConversationsRead.Type,
     ) => Effect.Effect<LibraryThreadIndex, LibraryError>;
@@ -256,6 +266,10 @@ const make = Effect.gen(function* () {
     );
     return LibraryPublisher.of({
       enabled,
+      workstreams: Effect.fn("LibraryPublisher.workstreams")(() => blocked),
+      blueprint: Effect.fn("LibraryPublisher.blueprint")(() => blocked),
+      preservation: Effect.fn("LibraryPublisher.preservation")(() => blocked),
+      briefProposals: Effect.fn("LibraryPublisher.briefProposals")(() => blocked),
       projects: Effect.fn("LibraryPublisher.projects")(function () {
         return blocked;
       }),
@@ -354,6 +368,7 @@ const make = Effect.gen(function* () {
   });
   if (connection.kind === "authority") {
     const localLibrary = yield* LibraryService.LibraryService;
+    const workflows = yield* ProjectWorkflows;
     const localTimeline = yield* Timeline.LibraryTimeline;
     const localLaunch = yield* Launch.LibraryLaunchCandidates;
     const localAssets = yield* Assets.LibraryAssetService;
@@ -401,6 +416,10 @@ const make = Effect.gen(function* () {
     return LibraryPublisher.of({
       enabled: true,
       projects: localLibrary.projects,
+      workstreams: workflows.workstreams,
+      blueprint: workflows.blueprint,
+      preservation: workflows.preservation,
+      briefProposals: localLibrary.briefProposals,
       conversations: localLibrary.conversations,
       lookupThread: localLibrary.lookupThread,
       history: Effect.fn("LibraryPublisher.history")(function (input) {
@@ -610,18 +629,30 @@ const make = Effect.gen(function* () {
     route: string,
     input: Schema.Codec<I, IE>,
     output: Schema.Codec<O, OE>,
+    operation?: string,
   ) =>
     Effect.fn(`LibraryPublisher.read.${route}`)(function* (value: I) {
       const body = yield* Schema.encodeEffect(Schema.fromJsonString(input))(value).pipe(
         Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
       );
+      const unsupported = () =>
+        new LibraryError({
+          reason: "blocked",
+          detail: `This Library version does not support shared ${operation}. Update Loom on the Library; this computer's enrollment does not need replacing.`,
+        });
       const response = yield* execute(
         HttpClientRequest.post(endpoint(`/api/loom/library/${route}`)).pipe(
           HttpClientRequest.bodyText(body, "application/json"),
         ),
         true,
         true,
+      ).pipe(
+        Effect.mapError((error) =>
+          operation && error.reason === "not-found" ? unsupported() : error,
+        ),
       );
+      if (operation && !response.headers["content-type"]?.includes("application/json"))
+        return yield* unsupported();
       return yield* response.json.pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(output)),
         Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
@@ -896,6 +927,30 @@ const make = Effect.gen(function* () {
     publishDocuments,
     decisions,
     projects,
+    workstreams: readCatalog(
+      "workstreams/read",
+      Schema.Struct({ projectId: LibraryId }),
+      Schema.Array(LibraryWorkstream),
+      "workstreams",
+    ),
+    blueprint: readCatalog(
+      "blueprint/read",
+      Schema.Struct({ projectId: LibraryId }),
+      LibraryBlueprint,
+      "blueprints",
+    ),
+    preservation: readCatalog(
+      "preservation/read",
+      Schema.Struct({ projectId: Schema.optional(LibraryId) }),
+      Schema.Array(LibraryPreservationEntry),
+      "preservation reads",
+    ),
+    briefProposals: readCatalog(
+      "brief-proposals/read",
+      LibraryBriefProposalsRequest,
+      LibraryBriefProposalPage,
+      "brief-proposal reads",
+    ),
     conversations,
     lookupThread,
     history,

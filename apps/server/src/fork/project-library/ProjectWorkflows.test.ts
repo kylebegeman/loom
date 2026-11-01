@@ -64,6 +64,38 @@ const run = <A, E, R>(
   }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
 
 describe("Project workflows", () => {
+  it.effect(
+    "refuses workflow mutations on an execution computer even with cached project data",
+    () =>
+      run((service, library) =>
+        Effect.gen(function* () {
+          const project = yield* library.createProject({ requestId: "create", title: "Example" });
+          const execution = yield* ProjectWorkflows.ProjectWorkflows.pipe(
+            Effect.provide(ProjectWorkflows.layer),
+            Effect.provideService(LibraryService.LibraryService, {
+              ...library,
+              info: library.info.pipe(Effect.map((info) => ({ ...info, isAuthority: false }))),
+            }),
+          );
+          expect(
+            (yield* execution
+              .saveWorkstream({
+                requestId: "save",
+                id: "stream",
+                projectId: project.id,
+                expectedRevision: 0,
+                title: "Work",
+                goal: "",
+                state: "active",
+                references: [],
+              })
+              .pipe(Effect.flip)).reason,
+          ).toBe("not-authority");
+          expect(yield* service.workstreams({ projectId: project.id })).toEqual([]);
+        }),
+      ),
+  );
+
   it.effect("persists workstreams with idempotent receipts, CAS, blockers and reopen", () =>
     run((service, library) =>
       Effect.gen(function* () {

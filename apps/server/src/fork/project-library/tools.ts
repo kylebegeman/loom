@@ -233,7 +233,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_library_project_update", {
     description:
-      "Save a new project context revision with optimistic conflict checks. Existing conversations keep their pinned context.",
+      "Edit shared project fields through this computer's enrolled Library. Read the latest project first and use its revision. Omitted fields stay unchanged; resourceUpdates changes only named resource IDs, and defaultBranch:null follows the repository default. Retry an unconfirmed response with the identical requestId and input. Existing conversations keep their pinned context.",
     parameters: updateProjectParameters,
     success: Library.LibraryProject,
     failure,

@@ -1,3 +1,4 @@
+import * as Stream from "effect/Stream";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import { describe, expect, it } from "@effect/vitest";
@@ -22,6 +23,7 @@ import { HttpRouter } from "effect/http";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import * as Library from "./LibraryService.ts";
+import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryHttpRoutes } from "./http.ts";
 import { source, resource, archiveFor } from "./Library.testkit.ts";
 const encodeIngest = Schema.encodeEffect(
@@ -40,6 +42,10 @@ const fixture = Effect.gen(function* () {
   const library = yield* Library.LibraryService.pipe(
     Effect.provide(
       Layer.mock(Library.LibraryService)({
+        briefProposals: () =>
+          Ref.update(calls, (count) => count + 1).pipe(
+            Effect.as({ proposals: [], nextOffset: null }),
+          ),
         projects: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as([])),
         conversations: (input) =>
           Ref.update(calls, (count) => count + 1).pipe(
@@ -80,8 +86,28 @@ const fixture = Effect.gen(function* () {
       }),
     ),
   );
-  // Only the Library service is used by these transport routes.
-  const runtime = Context.make(Library.LibraryService, library) as Context.Context<ForkServices>;
+  const workflows = ProjectWorkflows.of({
+    changes: Stream.empty,
+    changed: Effect.void,
+    workstreams: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as([])),
+    blueprint: () =>
+      Ref.update(calls, (count) => count + 1).pipe(
+        Effect.as({
+          format: "loom-project",
+          version: 1,
+          title: "App",
+          brief: "",
+          resources: [],
+          connections: [],
+        }),
+      ),
+    preservation: () => Ref.update(calls, (count) => count + 1).pipe(Effect.as([])),
+    saveWorkstream: () => Effect.die("unused"),
+    applyBlueprint: () => Effect.die("unused"),
+  });
+  const runtime = Context.make(Library.LibraryService, library).pipe(
+    Context.add(ProjectWorkflows, workflows),
+  ) as Context.Context<ForkServices>;
   const app = LibraryHttpRoutes.pipe(
     Layer.provide(Layer.succeed(ForkRuntime, runtime)),
     HttpRouter.provideRequest(
@@ -139,12 +165,16 @@ describe("Library host HTTP publishing boundaries", () => {
           ["projects/list", {}],
           ["conversations/list", { projectId: "project", offset: 1, limit: 1 }],
           ["history/search", { query: "fix", limit: 1 }],
+          ["workstreams/read", { projectId: "project" }],
+          ["blueprint/read", { projectId: "project" }],
+          ["preservation/read", { projectId: "project" }],
+          ["brief-proposals/read", { projectId: "project" }],
         ] as const)
           expect((yield* f.request(path, yield* encodeJson(input))).status).toBe(200);
         expect(
           (yield* f.request("conversations/list", yield* encodeJson({ limit: 201 }))).status,
         ).toBe(400);
-        expect(yield* Ref.get(f.calls)).toBe(3);
+        expect(yield* Ref.get(f.calls)).toBe(7);
         for (const subject of ["mcp-client", "other-client"]) {
           yield* Ref.update(f.session, (session) => ({ ...session, subject }));
           expect((yield* f.request("projects/list", "{}")).status).toBe(403);
@@ -155,7 +185,7 @@ describe("Library host HTTP publishing boundaries", () => {
           scopes: [AuthLibraryRecoveryReadScope],
         }));
         expect((yield* f.request("projects/list", "{}")).status).toBe(403);
-        expect(yield* Ref.get(f.calls)).toBe(3);
+        expect(yield* Ref.get(f.calls)).toBe(7);
       }),
     ),
   );

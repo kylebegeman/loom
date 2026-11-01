@@ -95,6 +95,7 @@ export * from "./bots.ts";
 export * from "./library-push.ts";
 
 export * from "./project-workflows.ts";
+export * from "./project-management.ts";
 
 export * from "./library-agent-reads.ts";
 export * from "./thread-attention.ts";

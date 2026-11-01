@@ -1,4 +1,5 @@
-import type { LibraryProject } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { LibraryInfo, LibraryProject } from "@t3tools/contracts/fork";
 
 /** App-shell navigation reads the deepest active route, outside the leaf route's React context. */
 export function libraryRouteParams(params: unknown) {
@@ -40,4 +41,21 @@ export function resolveLibrarySelection(input: {
         ? input.catalog.map((entry) => (entry.id === project.id ? project : entry))
         : input.catalog;
   return { id, project, projects };
+}
+
+/** Only a confirmed authority matching the connected computers can initialize an empty choice. */
+export function resolveLibraryAuthorityId(
+  reports: readonly Pick<LibraryInfo, "environmentId" | "isAuthority" | "destination">[],
+  primaryId: EnvironmentId | null = null,
+) {
+  const primary = primaryId ? reports.find((report) => report.environmentId === primaryId) : null;
+  const candidates = new Set(
+    (primary ? [primary] : reports).flatMap((report) => {
+      const id = report.isAuthority ? report.environmentId : report.destination?.environmentId;
+      return id ? [id] : [];
+    }),
+  );
+  if (candidates.size !== 1) return null;
+  const id = [...candidates][0]!;
+  return reports.some((report) => report.environmentId === id && report.isAuthority) ? id : null;
 }

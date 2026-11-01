@@ -637,6 +637,13 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
             <Text selectable className="text-xs text-foreground-muted">
               {libraryResourceLocation(resource)}
             </Text>
+            {resource.kind !== "link" ? (
+              <Text className="text-xs text-foreground-muted">
+                {resource.defaultBranch
+                  ? `Override: ${resource.defaultBranch}`
+                  : "Follows repository default"}
+              </Text>
+            ) : null}
           </View>
         ))}
         {p.resources.length === 0 ? (
@@ -645,7 +652,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           </Text>
         ) : null}
         <Button
-          label={p.resources.length ? "Edit project" : "Add repositories or links"}
+          label={p.resources.length ? "Edit repositories and links" : "Add repositories or links"}
           tone="text"
           disabled={!authority.ready || p.archived}
           onPress={() => navigation.navigate("LibraryEdit", { projectId: p.id })}

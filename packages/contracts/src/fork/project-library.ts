@@ -671,12 +671,6 @@ export const LibraryEraseConversation = Schema.Struct({
 });
 export type LibraryEraseConversation = typeof LibraryEraseConversation.Type;
 
-export const LibraryManagementRequest = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),
-  Schema.Struct({ kind: Schema.Literal("update"), input: LibraryUpdateProjectRequest }),
-  Schema.Struct({ kind: Schema.Literal("archive"), input: LibraryArchiveProjectRequest }),
-]);
-export type LibraryManagementRequest = typeof LibraryManagementRequest.Type;
 export const LibraryManagementActor = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("agent"),
@@ -711,15 +705,6 @@ export const LibraryManagementStatus = Schema.Struct({
   expiresAt: Schema.NullOr(Schema.Number),
 });
 export type LibraryManagementStatus = typeof LibraryManagementStatus.Type;
-export const LibraryManagementInvocation = Schema.Struct({
-  sourceEnvironmentId: EnvironmentId,
-  authorityId: LibraryId,
-  authorityEpoch: PositiveInt,
-  delegation: ManagementToken,
-  proof: ManagementToken,
-  request: LibraryManagementRequest,
-});
-export type LibraryManagementInvocation = typeof LibraryManagementInvocation.Type;
 
 export const LIBRARY_WS_METHODS = {
   managementStatus: "loom.library.managementStatus",

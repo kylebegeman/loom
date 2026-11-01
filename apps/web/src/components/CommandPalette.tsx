@@ -1,3 +1,4 @@
+import { openLibraryAction } from "~/fork/project-library/actions";
 // fork: attention-status
 import { useThreadAttention } from "../fork/attention/ThreadAttention";
 // fork: source-control-cockpit
@@ -170,7 +171,11 @@ import {
   SITES_MANAGEMENT_FEATURE, // fork: sites
 } from "@t3tools/contracts/fork";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: sites
-import { useLibraryAuthority, useLibraryPermission } from "~/fork/project-library/state"; // fork: sites
+import {
+  readLibraryAuthorityId,
+  useLibraryAuthority,
+  useLibraryPermission,
+} from "~/fork/project-library/state"; // fork: sites
 import { sites } from "~/fork/sites/state"; // fork: sites
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
@@ -1359,6 +1364,10 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const openNewProjectFlow = () => {
+    if (readLibraryAuthorityId() !== null) {
+      openLibraryAction("create-project");
+      return;
+    }
     const firstOption = newProjectEnvironmentOptions[0];
     if (firstOption) startNewProject(firstOption.environmentId, null);
     else openAddProjectFlow();

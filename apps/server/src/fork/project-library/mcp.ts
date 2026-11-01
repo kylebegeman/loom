@@ -1,4 +1,3 @@
-import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryManagement } from "./LibraryManagement.ts";
 import { AuthSessionId } from "@t3tools/contracts";
 import { ProjectOperations } from "./ProjectOperations.ts";
@@ -67,7 +66,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       );
     });
     const manage = Effect.fn("ProjectLibrary.manage")(function* (
-      request: Library.LibraryManagementRequest,
+      request: Library.LibraryProjectManagementRequest,
     ) {
       const invocation = yield* McpInvocationContext;
       return yield* onHost(
@@ -93,19 +92,35 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
     });
     return {
       loom_library_workstreams: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.workstreams(input))),
+        onHost(Effect.flatMap(Publisher.LibraryPublisher, (service) => service.workstreams(input))),
       ),
       loom_library_workstream_save: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.saveWorkstream(input))),
+        Effect.gen(function* () {
+          const invocation = yield* McpInvocationContext;
+          return yield* onHost(
+            Effect.flatMap(LibraryManagement, (service) =>
+              invocation.thread
+                ? service.saveWorkstreamAgent(input, invocation.thread)
+                : invocation.client
+                  ? service.saveWorkstream(input, {
+                      kind: "client",
+                      sessionId: AuthSessionId.make(invocation.client.sessionId),
+                    })
+                  : Effect.fail(operationCallerMissing()),
+            ),
+          );
+        }),
       ),
       loom_library_blueprint: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.blueprint(input))),
+        onHost(Effect.flatMap(Publisher.LibraryPublisher, (service) => service.blueprint(input))),
       ),
       loom_library_blueprint_apply: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.applyBlueprint(input))),
+        manage({ kind: "apply-blueprint", input }),
       ),
       loom_library_preservation: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(ProjectWorkflows, (service) => service.preservation(input))),
+        onHost(
+          Effect.flatMap(Publisher.LibraryPublisher, (service) => service.preservation(input)),
+        ),
       ),
       loom_library_operations: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(ProjectOperations, (service) => service.list(input))),
@@ -306,7 +321,9 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_brief_proposals: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.briefProposals(input))),
+        onHost(
+          Effect.flatMap(Publisher.LibraryPublisher, (service) => service.briefProposals(input)),
+        ),
       ),
       loom_library_history_flush: McpToolAccess.writesEnvironment((input) =>
         onHost(

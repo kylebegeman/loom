@@ -1,6 +1,10 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useFocusEffect } from "@react-navigation/native";
-import { createProjectLibraryAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createProjectLibraryAtoms,
+  resolveLibraryAuthorityId,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { AuthOrchestrationReadScope, EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_PROJECT_PROFILE_FEATURE,
@@ -8,7 +12,7 @@ import {
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironments } from "../../state/environments";
@@ -76,15 +80,38 @@ export function useLibraryAuthority() {
   const connected =
     presentation?.entry.enabled === true && presentation.connection.phase === "connected";
   const supported = supportsLoomFeature(config?.environment.capabilities, "project-library");
-  const sourceId = environments.find(
-    (entry) =>
-      entry.entry.enabled &&
-      entry.connection.phase === "connected" &&
-      entry.serverConfig?.environment.capabilities.supportsExecution !== false,
-  )?.environmentId;
-  const sourceInfo = useEnvironmentQuery(
-    !environmentId && sourceId ? library.info({ environmentId: sourceId, input: {} }) : null,
+  const reports = useEnvironmentQuery(
+    !environmentId
+      ? library.authorityReports(
+          JSON.stringify(
+            environments
+              .filter(
+                (entry) =>
+                  entry.entry.enabled &&
+                  entry.connection.phase === "connected" &&
+                  supportsLoomFeature(
+                    entry.serverConfig?.environment.capabilities,
+                    "project-library",
+                  ),
+              )
+              .map((entry) => entry.environmentId)
+              .sort(),
+          ),
+        )
+      : null,
   );
+  const candidate =
+    reports.data && !reports.isPending ? resolveLibraryAuthorityId(reports.data) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- initializes an empty Library preference from already authenticated, agreeing authority reports
+  useEffect(() => {
+    if (AsyncResult.isSuccess(preferences) && !environmentId && candidate)
+      void save({
+        transform: (current) =>
+          current["loom.library.authorityEnvironmentId"]
+            ? {}
+            : { "loom.library.authorityEnvironmentId": candidate },
+      });
+  }, [preferences, environmentId, candidate, save]);
   const info = useEnvironmentQuery(
     environmentId ? library.info({ environmentId, input: {} }) : null,
   );
@@ -116,7 +143,7 @@ export function useLibraryAuthority() {
       "Library server",
     info,
     computers: info.data?.computers ?? [],
-    destination: sourceInfo.data?.destination,
+    destination: reports.data?.find((report) => report.destination)?.destination,
     select,
   } as const;
 }

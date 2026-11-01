@@ -26,6 +26,16 @@ export function ProjectSettingsLanding() {
     <SettingsPageContainer>
       <SettingsSection id="project-overview" title="Projects" hideTitle>
         <SettingsRow
+          id="project-details"
+          title="Project details and setup"
+          description="Edit a project's name, brief, repositories, branch overrides and shared setup in Projects."
+          control={
+            <Button size="sm" variant="outline" render={<Link to="/library" />}>
+              Open Projects
+            </Button>
+          }
+        />
+        <SettingsRow
           title="Working files"
           description="Choose whether each project's working files stay on a computer after you settle work."
           control={

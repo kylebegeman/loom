@@ -58,6 +58,18 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["branch override", "repository default", "project blueprint"])(
+    "finds ordinary project controls for %s",
+    (query) => {
+      expect(searchSettings(query)).toContainEqual(
+        expect.objectContaining({ id: "project-details", to: "/settings/projects" }),
+      );
+      const target = getSettingsSearchTargetScope("project-details")!;
+      expect(isSettingsSearchScopeAvailable(target.scope, "all")).toBe(true);
+      expect(isSettingsSearchScopeAvailable(target.scope, "project")).toBe(true);
+    },
+  );
+
   // fork: fleet-connections
   it.each(["rename computer", "friendly name", "nickname"])(
     "finds shared computer naming from %s",

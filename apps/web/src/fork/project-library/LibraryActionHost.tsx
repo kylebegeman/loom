@@ -43,7 +43,7 @@ import {
   useLibraryProjects,
   useSelectedLibraryProject,
 } from "./state";
-import { onLibraryAction } from "./actions";
+import { onLibraryAction, openLibraryAction } from "./actions";
 import { useLibraryNewConversation } from "./useLibraryNewConversation";
 import { claimCommandPaletteRequests, type CommandPaletteOpenDetail } from "~/commandPaletteBus";
 import { dispatchCommandPalette } from "~/commandPaletteStore";
@@ -120,6 +120,14 @@ export function useLibraryPaletteSession() {
 export function useLibraryPaletteTakeover() {
   const tryLibraryConversation = useLibraryNewConversation();
   const claim = useStableCallback((detail: CommandPaletteOpenDetail) => {
+    if (
+      detail.open === "add-project" &&
+      detail.environmentId === undefined &&
+      readLibraryAuthorityId() !== null
+    ) {
+      openLibraryAction("create-project");
+      return true;
+    }
     if (detail.open === "new-thread-in") {
       void tryLibraryConversation().then((started) =>
         dispatchCommandPalette(

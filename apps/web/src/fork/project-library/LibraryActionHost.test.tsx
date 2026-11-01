@@ -25,6 +25,9 @@ const state = vi.hoisted(() => ({
   revision: 0,
   listeners: new Set<() => void>(),
 }));
+vi.mock("./useLibraryNewConversation", () => ({
+  useLibraryNewConversation: () => vi.fn(async () => false),
+}));
 vi.mock("./useNoProjectStart", () => ({ useNoProjectStart: () => state.noProject }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => state.navigate,
@@ -257,13 +260,21 @@ function DraftStep({
   ) : null;
 }
 
-import { LibraryActionHost, useLibraryPaletteSession } from "./LibraryActionHost";
+import { openCommandPalette } from "~/commandPaletteBus";
+import { useCommandPaletteMount } from "~/commandPaletteStore";
+import {
+  LibraryActionHost,
+  useLibraryPaletteSession,
+  useLibraryPaletteTakeover,
+} from "./LibraryActionHost";
 import { LibraryConnectHost } from "./LibraryConnectDialog";
 import { openLibraryAction, takeLibraryClone, type LibraryConversationDefaults } from "./actions";
 import { isLibraryPaletteOpen, requestLibraryConnect } from "./libraryPaletteSession";
 
 function HostHarness() {
+  useCommandPaletteMount();
   const palette = useLibraryPaletteSession();
+  useLibraryPaletteTakeover();
   return palette.isOpen && palette.session ? (
     <LibraryActionHost key={palette.session.id} session={palette.session} onClose={palette.close} />
   ) : null;
@@ -848,4 +859,10 @@ it("offers an offline quick start using the host's files and grants", async () =
   expect(launch().autoStart).toMatchObject({
     launch: { environmentId: "dorothy", workingCopyId: "beta-copy" },
   });
+});
+
+it("opens the shared project creation flow without requiring an execution computer first", async () => {
+  await act(() => openCommandPalette({ open: "add-project" }));
+  expect(button("Empty project")).toBeDefined();
+  expect(button("Git repository")).toBeDefined();
 });

@@ -160,6 +160,10 @@ const fixture = Effect.gen(function* () {
   });
   const publisher = Publisher.LibraryPublisher.of({
     projects: () => Effect.die("unused"),
+    workstreams: () => Effect.die("unused"),
+    blueprint: () => Effect.die("unused"),
+    preservation: () => Effect.die("unused"),
+    briefProposals: () => Effect.die("unused"),
     conversations: () => Effect.die("unused"),
     lookupThread: () => Effect.die("unused"),
     history: () => Effect.die("unused"),
@@ -541,6 +545,10 @@ describe("durable Library history replication", () => {
             Effect.provide(Replication.layer),
             Effect.provideService(Publisher.LibraryPublisher, {
               projects: () => Effect.die("unused"),
+              workstreams: () => Effect.die("unused"),
+              blueprint: () => Effect.die("unused"),
+              preservation: () => Effect.die("unused"),
+              briefProposals: () => Effect.die("unused"),
               conversations: () => Effect.die("unused"),
               lookupThread: () => Effect.die("unused"),
               history: () => Effect.die("unused"),
@@ -2325,6 +2333,10 @@ describe("durable Library history replication", () => {
     Effect.gen(function* () {
       const publisher = Publisher.LibraryPublisher.of({
         projects: () => Effect.die("unused"),
+        workstreams: () => Effect.die("unused"),
+        blueprint: () => Effect.die("unused"),
+        preservation: () => Effect.die("unused"),
+        briefProposals: () => Effect.die("unused"),
         conversations: () => Effect.die("unused"),
         lookupThread: () => Effect.die("unused"),
         history: () => Effect.die("unused"),

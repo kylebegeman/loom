@@ -65,8 +65,23 @@ export function ProjectBlueprint({
       : searchable.indexOf(needle, field.selectionEnd);
     const match =
       index >= 0 ? index : backwards ? searchable.lastIndexOf(needle) : searchable.indexOf(needle);
-    field.focus();
     field.setSelectionRange(match, match + search.length);
+    const measurement = field.cloneNode(false) as HTMLTextAreaElement;
+    measurement.removeAttribute("id");
+    measurement.setAttribute("aria-hidden", "true");
+    Object.assign(measurement.style, {
+      position: "absolute",
+      visibility: "hidden",
+      width: `${field.getBoundingClientRect().width}px`,
+      height: "0px",
+      minHeight: "0px",
+      maxHeight: "none",
+      fieldSizing: "fixed",
+    });
+    measurement.value = field.value.slice(0, match + search.length);
+    field.after(measurement);
+    field.scrollTop = measurement.scrollHeight - field.clientHeight / 2;
+    measurement.remove();
     findInput.current?.focus();
   };
   const download = () => {

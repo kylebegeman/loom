@@ -116,6 +116,14 @@ export const LibrarySaveWorkstream = Schema.Struct({
 });
 export type LibrarySaveWorkstream = typeof LibrarySaveWorkstream.Type;
 
+export const LibraryApplyBlueprintRequest = Schema.Struct({
+  requestId: LibraryRequestId,
+  projectId: LibraryId,
+  expectedRevision: NonNegativeInt,
+  blueprint: LibraryBlueprint,
+});
+export type LibraryApplyBlueprintRequest = typeof LibraryApplyBlueprintRequest.Type;
+
 export const LibraryLaunchOperation = Schema.Struct({
   project: LibraryProject,
   binding: LibraryThreadBinding,
@@ -204,12 +212,7 @@ export const ProjectWorkflowsRpcGroup = RpcGroup.make(
   Rpc.make(W.saveWorkstream, { payload: LibrarySaveWorkstream, success: LibraryWorkstream, error }),
   Rpc.make(W.blueprint, { payload: { projectId: LibraryId }, success: LibraryBlueprint, error }),
   Rpc.make(W.applyBlueprint, {
-    payload: {
-      requestId: LibraryRequestId,
-      projectId: LibraryId,
-      expectedRevision: NonNegativeInt,
-      blueprint: LibraryBlueprint,
-    },
+    payload: LibraryApplyBlueprintRequest,
     success: LibraryProject,
     error,
   }),

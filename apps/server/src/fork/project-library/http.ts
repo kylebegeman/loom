@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LibraryManagementInvocation,
+  LibraryBriefProposalsRequest,
   LibraryProjectsRead,
   LibraryEraseConversation,
   LibrarySetDeletedPreferences,
@@ -45,6 +46,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as Timeline from "./LibraryTimeline.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as LibraryService from "./LibraryService.ts";
+import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryManagement } from "./LibraryManagement.ts";
 
 // Large established threads retain complete tool history. Clients browse bounded windows.
@@ -58,6 +60,10 @@ const decodeVerify = Schema.decodeUnknownEffect(Schema.Struct({ requestId: Libra
 const decodeImport = Schema.decodeUnknownEffect(Schema.toCodecJson(LibraryImportShadowRequest));
 const decodeComputer = Schema.decodeUnknownEffect(LibraryRegisterComputerRequest);
 const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityRequest);
+const decodeBriefProposals = Schema.decodeUnknownEffect(LibraryBriefProposalsRequest);
+const decodePreservation = Schema.decodeUnknownEffect(
+  Schema.Struct({ projectId: Schema.optional(LibraryId) }),
+);
 const decodeManagement = Schema.decodeUnknownEffect(LibraryManagementInvocation);
 const decodeProjectRead = Schema.decodeUnknownEffect(Schema.Struct({ projectId: LibraryId }));
 const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefProposal);
@@ -75,6 +81,10 @@ const encodeHistory = Schema.encodeEffect(Schema.toCodecJson(LibraryThreadArchiv
 const handler = (
   operation:
     | "manage"
+    | "workstreams"
+    | "blueprint"
+    | "preservation"
+    | "brief-proposals"
     | "projects"
     | "deleted-preferences"
     | "set-deleted-preferences"
@@ -181,6 +191,35 @@ const handler = (
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
         );
         return HttpServerResponse.jsonUnsafe(yield* library.eraseConversation(input, session));
+      }
+      if (operation === "workstreams" || operation === "blueprint") {
+        const input = yield* decodeProjectRead(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        const workflows = yield* ProjectWorkflows;
+        return HttpServerResponse.jsonUnsafe(
+          yield* operation === "workstreams"
+            ? workflows.workstreams(input)
+            : workflows.blueprint(input),
+          { headers: { "cache-control": "no-store" } },
+        );
+      }
+      if (operation === "preservation") {
+        const input = yield* decodePreservation(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(
+          yield* Effect.flatMap(ProjectWorkflows, (workflows) => workflows.preservation(input)),
+          { headers: { "cache-control": "no-store" } },
+        );
+      }
+      if (operation === "brief-proposals") {
+        const input = yield* decodeBriefProposals(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.briefProposals(input), {
+          headers: { "cache-control": "no-store" },
+        });
       }
       if (operation === "projects") {
         const input = yield* decodeProjectsRead(body).pipe(
@@ -368,6 +407,26 @@ export const LibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/workstreams/read",
+        handler("workstreams").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/blueprint/read",
+        handler("blueprint").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/preservation/read",
+        handler("preservation").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/brief-proposals/read",
+        handler("brief-proposals").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       HttpRouter.add(
         "POST",
         "/api/loom/library/projects/manage",

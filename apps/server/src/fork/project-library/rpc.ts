@@ -101,9 +101,21 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
         ),
       ),
     [L.updateProject]: (input: Parameters<typeof library.updateProject>[0]) =>
-      auth.effect(L.updateProject, library.updateProject(input)),
+      auth.effect(
+        L.updateProject,
+        management.execute(
+          { kind: "update", input },
+          { kind: "client", sessionId: session.sessionId },
+        ),
+      ),
     [L.archiveProject]: (input: Parameters<typeof library.archiveProject>[0]) =>
-      auth.effect(L.archiveProject, library.archiveProject(input)),
+      auth.effect(
+        L.archiveProject,
+        management.execute(
+          { kind: "archive", input },
+          { kind: "client", sessionId: session.sessionId },
+        ),
+      ),
     [L.registerCopy]: (input: Parameters<typeof library.registerCopy>[0]) =>
       auth.effect(L.registerCopy, library.registerCopy(input)),
     [L.copies]: (input: Parameters<typeof library.copies>[0]) =>

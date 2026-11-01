@@ -39,6 +39,7 @@ import { LibraryConnectionService } from "./LibraryConnection.ts";
 import * as Management from "./LibraryManagement.ts";
 import { LibraryPublisher } from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
+import * as Workflows from "./ProjectWorkflows.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 
 const authority = EnvironmentId.make("library");
@@ -97,7 +98,12 @@ const fixture = Effect.gen(function* () {
   const supported = yield* Ref.make(true);
   const sent = yield* Ref.make<LibraryManagementInvocation[]>([]);
   const lostReply = yield* Ref.make(false);
+  const workflows = yield* Workflows.ProjectWorkflows.pipe(
+    Effect.provide(Workflows.layer),
+    Effect.provideService(Catalog.LibraryService, catalog),
+  );
   const dependencies = Layer.mergeAll(
+    Layer.succeed(Workflows.ProjectWorkflows, workflows),
     Layer.succeed(Catalog.LibraryService, catalog),
     Layer.mock(LibraryPublisher)({
       enabled: true,
@@ -225,6 +231,7 @@ const fixture = Effect.gen(function* () {
   };
   return {
     catalog,
+    workflows,
     project,
     owner,
     active,
@@ -277,6 +284,41 @@ describe("authority-routed project management", () => {
           expect(
             (yield* f.catalog.project({ projectId: f.project.id })).resources[0]?.defaultBranch,
           ).toBeNull();
+          const streamInput = {
+            requestId: "workstream",
+            id: "release",
+            projectId: f.project.id,
+            expectedRevision: 0,
+            title: "Ship release",
+            goal: "Finish shared work",
+            state: "active" as const,
+            references: [],
+          };
+          const stream = yield* f.first.manager.saveWorkstream(streamInput, f.actor);
+          expect(stream.revision).toBe(1);
+          expect(yield* second.manager.saveWorkstream(streamInput, f.actor)).toEqual(stream);
+          expect(
+            (yield* f.first.manager
+              .saveWorkstream({ ...streamInput, requestId: "stale-stream" }, f.actor)
+              .pipe(Effect.flip)).reason,
+          ).toBe("revision-conflict");
+          const blueprint = yield* f.workflows.blueprint({ projectId: f.project.id });
+          const applied = yield* second.manager.execute(
+            {
+              kind: "apply-blueprint",
+              input: {
+                requestId: "blueprint",
+                projectId: f.project.id,
+                expectedRevision: followed.revision,
+                blueprint: { ...blueprint, brief: "Shared setup" },
+              },
+            },
+            f.actor,
+          );
+          expect(applied.brief).toBe("Shared setup");
+          expect((yield* f.catalog.project({ projectId: f.project.id })).brief).toBe(
+            "Shared setup",
+          );
         }),
       ),
   );

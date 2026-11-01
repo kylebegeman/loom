@@ -33,6 +33,7 @@ import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import * as Timeline from "./LibraryTimeline.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
+import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import { source, resource, archiveFor, copyFor } from "./Library.testkit.ts";
@@ -143,6 +144,19 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
           assets: "local",
         };
       else if (pathname.endsWith("/projects/list")) response = [project];
+      else if (pathname.endsWith("/workstreams/read") || pathname.endsWith("/preservation/read"))
+        response = [];
+      else if (pathname.endsWith("/brief-proposals/read"))
+        response = { proposals: [], nextOffset: null };
+      else if (pathname.endsWith("/blueprint/read"))
+        response = {
+          format: "loom-project",
+          version: 1,
+          title: project.title,
+          brief: "",
+          resources: project.resources,
+          connections: [],
+        };
       else if (pathname.endsWith("/conversations/list"))
         response = { threads: [], nextOffset: null };
       else if (pathname.endsWith("/conversations/lookup")) response = null;
@@ -249,6 +263,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(LibraryService.LibraryService)({}),
+            Layer.mock(ProjectWorkflows)({}),
             Layer.mock(Timeline.LibraryTimeline)({}),
             Layer.mock(Launch.LibraryLaunchCandidates)({}),
             Layer.mock(Assets.LibraryAssetService)({ mode: "local" }),
@@ -349,6 +364,15 @@ describe("authenticated Library publishing", () => {
           expect(
             (yield* f.publisher.launchCandidates({ projectId: project.id })).candidates,
           ).toEqual([]);
+          expect(yield* f.publisher.workstreams({ projectId: project.id })).toEqual([]);
+          expect((yield* f.publisher.blueprint({ projectId: project.id })).title).toBe(
+            project.title,
+          );
+          expect(yield* f.publisher.preservation({ projectId: project.id })).toEqual([]);
+          expect(yield* f.publisher.briefProposals({ projectId: project.id })).toEqual({
+            proposals: [],
+            nextOffset: null,
+          });
           expect(yield* Ref.get(f.requests)).toEqual([
             "/api/loom/library/projects/list",
             "/api/loom/library/conversations/list",
@@ -357,6 +381,10 @@ describe("authenticated Library publishing", () => {
             "/api/loom/library/history/search",
             "/api/loom/library/timeline/read",
             "/api/loom/library/launch-candidates",
+            "/api/loom/library/workstreams/read",
+            "/api/loom/library/blueprint/read",
+            "/api/loom/library/preservation/read",
+            "/api/loom/library/brief-proposals/read",
           ]);
         }),
       ),

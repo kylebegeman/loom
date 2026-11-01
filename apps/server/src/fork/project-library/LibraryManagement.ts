@@ -13,6 +13,9 @@ import {
   LibraryManagementInvocation,
   LibraryManagementRequest,
   LibraryProject,
+  LibraryWorkstream,
+  type LibrarySaveWorkstream,
+  type LibraryProjectManagementRequest,
   type LibraryManagementEnrollment,
   type LibraryManagementStatus,
 } from "@t3tools/contracts/fork";
@@ -42,6 +45,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { DirectoryService } from "../directory/DirectoryService.ts";
 import { isVaultRunRunning } from "../vault/active-run.ts";
 import { LibraryConnectionService } from "./LibraryConnection.ts";
+import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryPublisher } from "./LibraryPublisher.ts";
 import { LibraryService } from "./LibraryService.ts";
 
@@ -55,6 +59,7 @@ const encodeRequest = Schema.encodeSync(Schema.fromJsonString(LibraryManagementR
 const encodeDelegation = Schema.encodeEffect(delegationCodec);
 const decodeDelegation = Schema.decodeEffect(delegationCodec);
 const decodeInvocation = Schema.decodeUnknownEffect(LibraryManagementInvocation);
+const decodeWorkstream = Schema.decodeUnknownEffect(LibraryWorkstream);
 const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
 const DelegationClaims = Schema.Struct({
   sessionId: AuthSessionId,
@@ -77,6 +82,7 @@ const RequestClaims = Schema.Struct({
 });
 const decodeDelegationClaims = Schema.decodeUnknownEffect(DelegationClaims);
 const decodeRequestClaims = Schema.decodeUnknownEffect(RequestClaims);
+const isLibraryError = Schema.is(LibraryError);
 const decodeErrorResponse = Schema.decodeUnknownEffect(
   Schema.Struct({ reason: LibraryError.fields.reason, detail: LibraryError.fields.detail }),
 );
@@ -112,22 +118,31 @@ export class LibraryManagement extends Context.Service<
       delegation: LibraryManagementDelegation,
     ) => Effect.Effect<void, LibraryError>;
     readonly execute: (
-      request: LibraryManagementRequest,
+      request: LibraryProjectManagementRequest,
       actor: LibraryManagementActor,
     ) => Effect.Effect<LibraryProject, LibraryError>;
     readonly executeAgent: (
-      request: LibraryManagementRequest,
+      request: LibraryProjectManagementRequest,
       caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
     ) => Effect.Effect<LibraryProject, LibraryError>;
+    readonly saveWorkstream: (
+      input: LibrarySaveWorkstream,
+      actor: LibraryManagementActor,
+    ) => Effect.Effect<LibraryWorkstream, LibraryError>;
+    readonly saveWorkstreamAgent: (
+      input: LibrarySaveWorkstream,
+      caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+    ) => Effect.Effect<LibraryWorkstream, LibraryError>;
     readonly accept: (
       input: LibraryManagementInvocation,
       source: EnvironmentId,
-    ) => Effect.Effect<LibraryProject, LibraryError>;
+    ) => Effect.Effect<LibraryProject | LibraryWorkstream, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryManagement") {}
 
 const make = Effect.gen(function* () {
   const library = yield* LibraryService;
+  const workflows = yield* ProjectWorkflows;
   const publisher = yield* LibraryPublisher;
   const connection = yield* LibraryConnectionService;
   const secrets = yield* ServerSecretStore;
@@ -200,6 +215,10 @@ const make = Effect.gen(function* () {
         return yield* library.updateProject(request.input);
       case "archive":
         return yield* library.archiveProject(request.input);
+      case "apply-blueprint":
+        return yield* workflows.applyBlueprint(request.input);
+      case "save-workstream":
+        return yield* workflows.saveWorkstream(request.input);
     }
   });
   const authorizeActor = Effect.fn("LibraryManagement.authorizeActor")(function* (
@@ -356,13 +375,18 @@ const make = Effect.gen(function* () {
       return yield* deny();
     return yield* dispatch(input.request);
   });
-  const execute = Effect.fn("LibraryManagement.execute")(function* (
+  const send = Effect.fn("LibraryManagement.send")(function* <A>(
     request: LibraryManagementRequest,
     actor: LibraryManagementActor,
+    decode: (value: unknown) => Effect.Effect<A, Schema.SchemaError>,
   ) {
     yield* authorizeActor(actor);
     const destination = yield* connection.current;
-    if (destination.kind === "authority") return yield* dispatch(request);
+    if (destination.kind === "authority")
+      return yield* dispatch(request).pipe(
+        Effect.flatMap(decode),
+        Effect.mapError((error) => (isLibraryError(error) ? error : unavailable())),
+      );
     if (destination.kind !== "remote") {
       if (destination.kind === "unavailable") {
         const status = yield* connection.status;
@@ -444,18 +468,38 @@ const make = Effect.gen(function* () {
       const error = yield* decodeErrorResponse(body).pipe(Effect.mapError(unavailable));
       return yield* new LibraryError(error);
     }
-    return yield* decodeProject(body).pipe(Effect.mapError(unavailable));
+    return yield* decode(body).pipe(Effect.mapError(unavailable));
   });
-  const executeAgent = Effect.fn("LibraryManagement.executeAgent")(function* (
-    request: LibraryManagementRequest,
-    caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
-  ) {
+  const execute = Effect.fn("LibraryManagement.execute")(
+    (request: LibraryProjectManagementRequest, actor: LibraryManagementActor) =>
+      send(request, actor, decodeProject),
+  );
+  const saveWorkstream = Effect.fn("LibraryManagement.saveWorkstream")(
+    (input: LibrarySaveWorkstream, actor: LibraryManagementActor) =>
+      send({ kind: "save-workstream", input }, actor, decodeWorkstream),
+  );
+  const agentActor = Effect.fn("LibraryManagement.agentActor")(function* (caller: {
+    readonly threadId: ThreadId;
+    readonly providerInstanceId: ProviderInstanceId;
+  }) {
     const thread = yield* threads
       .getThreadShell(caller.threadId)
       .pipe(Effect.mapError(unavailable));
     if (!thread?.activeRunId)
       return yield* deny("This agent turn has ended. Project management requires an active turn.");
-    return yield* execute(request, { ...caller, kind: "agent", runId: thread.activeRunId });
+    return { ...caller, kind: "agent" as const, runId: thread.activeRunId };
+  });
+  const executeAgent = Effect.fn("LibraryManagement.executeAgent")(function* (
+    request: LibraryProjectManagementRequest,
+    caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+  ) {
+    return yield* execute(request, yield* agentActor(caller));
+  });
+  const saveWorkstreamAgent = Effect.fn("LibraryManagement.saveWorkstreamAgent")(function* (
+    input: LibrarySaveWorkstream,
+    caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+  ) {
+    return yield* saveWorkstream(input, yield* agentActor(caller));
   });
   const status = Effect.gen(function* () {
     const destination = yield* connection.current;
@@ -479,6 +523,15 @@ const make = Effect.gen(function* () {
       expiresAt: delegation?.expiresAt ?? null,
     };
   });
-  return LibraryManagement.of({ status, issue, install, execute, executeAgent, accept });
+  return LibraryManagement.of({
+    status,
+    issue,
+    install,
+    execute,
+    executeAgent,
+    saveWorkstream,
+    saveWorkstreamAgent,
+    accept,
+  });
 });
 export const layer = Layer.effect(LibraryManagement, make);

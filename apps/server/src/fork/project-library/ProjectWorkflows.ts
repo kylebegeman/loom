@@ -106,6 +106,7 @@ const make = Effect.gen(function* () {
   }, Effect.mapError(io));
   const saveWorkstream = Effect.fn("ProjectWorkflows.saveWorkstream")(
     function* (input: LibrarySaveWorkstream) {
+      if (!(yield* library.info).isAuthority) return yield* fail("not-authority");
       yield* library.project(input);
       const request = yield* encodeWorkstreamInput(input);
       const receipts = yield* sql<{
@@ -238,6 +239,7 @@ const make = Effect.gen(function* () {
       expectedRevision: number;
       blueprint: LibraryBlueprint;
     }) {
+      if (!(yield* library.info).isAuthority) return yield* fail("not-authority");
       const blueprint = yield* decodeBlueprint(input.blueprint).pipe(
         Effect.mapError(() =>
           fail(

@@ -9,7 +9,17 @@ const state = vi.hoisted(() => ({
   ready: true,
   primaryId: null as string | null,
   hosted: false,
-  authorityId: "library",
+  authorityId: "library" as string | null,
+  persistedAuthority: null as string | null,
+  select: vi.fn(),
+  reports: new Map<
+    string,
+    {
+      environmentId: string;
+      isAuthority: boolean;
+      destination?: { environmentId: string; url: string };
+    }
+  >(),
   environments: [] as unknown[],
   projects: new Map<string, readonly LibraryProject[]>(),
   copies: new Map<string, readonly LibraryWorkingCopy[]>(),
@@ -49,6 +59,14 @@ vi.mock("@t3tools/client-runtime/fork", async (original) => {
   return {
     ...(await original<typeof import("@t3tools/client-runtime/fork")>()),
     createProjectLibraryAtoms: () => ({
+      authorityReports: (ids: string) =>
+        Atom.make(
+          AsyncResult.success(
+            (JSON.parse(ids) as string[]).flatMap((id) =>
+              state.reports.has(id) ? [state.reports.get(id)!] : [],
+            ),
+          ),
+        ),
       projects: ({ environmentId }: { environmentId: string }) => projects(environmentId),
       copies: ({ environmentId }: { environmentId: string }) => copies(environmentId),
       project: () => project,
@@ -58,7 +76,8 @@ vi.mock("@t3tools/client-runtime/fork", async (original) => {
   };
 });
 vi.mock("~/hooks/useLocalStorage", () => ({
-  useLocalStorage: () => [state.authorityId, () => {}],
+  getLocalStorageItem: () => state.persistedAuthority ?? state.authorityId,
+  useLocalStorage: () => [state.authorityId, state.select],
 }));
 vi.mock("~/state/presentation", () => ({
   useEnvironmentPresentation: () => ({ isReady: state.ready, presentation: null }),
@@ -74,7 +93,12 @@ vi.mock("~/state/session", () => ({
 vi.mock("~/hostedPairing", () => ({ isHostedStaticApp: () => state.hosted }));
 vi.mock("~/localEnvironment", () => ({ isLocalEnvironmentDisabled: () => false }));
 
-import { useLibraryAccessBlock, useLibraryProjects, useLibraryProject } from "./state";
+import {
+  useLibraryAuthority,
+  useLibraryAccessBlock,
+  useLibraryProjects,
+  useLibraryProject,
+} from "./state";
 import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
 
 let root: Root;
@@ -93,6 +117,10 @@ async function renderBlock() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.environments = [];
+  state.authorityId = "library";
+  state.persistedAuthority = null;
+  state.select.mockClear();
+  state.reports.clear();
   state.projects.clear();
   state.copies.clear();
   state.catalogReads = [];
@@ -241,3 +269,36 @@ it("retries the execution computer's Library identity after a failed offline loo
   await act(() => container.querySelector("button")!.click());
   expect(result()).toEqual({ error: null, projects: [] });
 });
+
+it.each(["connected", "saved", "missing", "not-authority", "changed-choice"])(
+  "resolves the exact enrolled Library for %s",
+  async (condition) => {
+    state.authorityId = condition === "saved" ? "other-library" : null;
+    state.primaryId = "execution";
+    if (condition === "changed-choice") state.persistedAuthority = "other-library";
+    state.reports.set("execution", {
+      environmentId: "execution",
+      isAuthority: false,
+      destination: { environmentId: "library", url: "https://library.example" },
+    });
+    state.reports.set("library", {
+      environmentId: "library",
+      isAuthority: condition !== "not-authority",
+    });
+    state.environments = (condition === "missing" ? ["execution"] : ["execution", "library"]).map(
+      (environmentId) => ({
+        environmentId,
+        entry: { enabled: true },
+        connection: { phase: "connected" },
+        serverConfig: { environment: { capabilities: { loomFeatures: ["project-library"] } } },
+      }),
+    );
+    function Consumer() {
+      useLibraryAuthority();
+      return null;
+    }
+    await act(async () => root.render(<Consumer />));
+    if (condition === "connected") expect(state.select).toHaveBeenCalledWith("library");
+    else expect(state.select).not.toHaveBeenCalled();
+  },
+);

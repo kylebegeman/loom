@@ -57,7 +57,7 @@ export interface SettingsSearchItem {
   readonly to: SettingsPath;
   readonly targetId?: string;
   readonly searchTerms?: ReadonlyArray<string>;
-  readonly scope?: SettingsSearchScope;
+  readonly scope?: SettingsSearchScope | null;
   readonly desktopOnly?: boolean;
   readonly macOnly?: boolean;
   readonly windowsOnly?: boolean;
@@ -231,6 +231,15 @@ const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
   .join(" ");
 
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "project-details",
+    scope: null,
+    title: "Project details and setup",
+    to: "/settings/projects",
+    searchTerms: [
+      "project brief name repositories repository default branch override follow remote blueprint setup shared",
+    ],
+  },
   {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
@@ -1337,7 +1346,7 @@ export function getSettingsSearchTargetScope(targetId: string) {
   return item
     ? {
         title: item.title,
-        scope: item.scope ?? SETTINGS_CATEGORY_SCOPES[item.to],
+        scope: item.scope === undefined ? SETTINGS_CATEGORY_SCOPES[item.to] : item.scope,
         ...(item.requiresThreadAutoSettlement ? { requiresThreadAutoSettlement: true } : {}),
       }
     : null;

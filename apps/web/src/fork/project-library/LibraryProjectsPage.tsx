@@ -292,7 +292,7 @@ export function LibraryProjectsPage() {
           {importAvailable ? (
             <Button shape="pill" size="sm" variant="outline" onClick={() => setImporting({})}>
               <FolderPlusIcon />
-              Add to Library
+              Add existing folder
             </Button>
           ) : null}
           <Button shape="pill" size="sm" onClick={createProject}>
@@ -534,7 +534,7 @@ export function LibraryProjectsPage() {
         <FoldedSection
           title="On your computers"
           count={looseFolders.length}
-          hint="Open a project and start a thread. Your Library connection is optional."
+          hint="Folders on your computers. Add one to Projects to keep its brief, repositories and conversations together."
         >
           <ul>
             {looseFolders.map(({ key, title, ref, member }) => {
@@ -583,7 +583,7 @@ export function LibraryProjectsPage() {
                         setImporting({ hostId: ref.environmentId, title, rootPath: root })
                       }
                     >
-                      Add to Library
+                      Add to Projects
                     </Button>
                   ) : null}
                 </li>

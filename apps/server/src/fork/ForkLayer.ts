@@ -287,6 +287,7 @@ const layerLibraryService = LibraryService.layer.pipe(
 
 const layerProjectWorkflows = ProjectWorkflows.layer.pipe(Layer.provide(layerLibraryService));
 const layerLibraryPublisher = LibraryPublisher.layer.pipe(
+  Layer.provide(layerProjectWorkflows),
   Layer.provide(LibraryTimeline.layer),
   Layer.provide(LibraryLaunchCandidates.layer.pipe(Layer.provide(layerLibraryService))),
   Layer.provide(FetchHttpClient.layer),
@@ -343,6 +344,7 @@ export const layerReachLibrary = ReachProvisioner.layer.pipe(
 );
 
 const layerLibraryManagement = LibraryManagement.layer.pipe(
+  Layer.provide(layerProjectWorkflows),
   Layer.provide(layerLibraryService),
   Layer.provide(layerLibraryPublisher),
   Layer.provide(layerDirectory),

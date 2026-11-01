@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createProjectLibraryAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createProjectLibraryAtoms,
+  resolveLibraryAuthorityId,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { EnvironmentId, type AuthEnvironmentScope } from "@t3tools/contracts";
 import {
   LibraryId,
@@ -66,12 +70,32 @@ export function useLibraryAuthority() {
       ? projectLibrary.info({ environmentId: primaryId, input: {} })
       : null,
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- initializes the local storage library authority once the primary server reports it is one
+  const reports = useEnvironmentQuery(
+    !authorityId
+      ? projectLibrary.authorityReports(
+          JSON.stringify(
+            environments
+              .filter(
+                (entry) =>
+                  entry.entry.enabled &&
+                  entry.connection.phase === "connected" &&
+                  supportsLoomFeature(
+                    entry.serverConfig?.environment.capabilities,
+                    PROJECT_LIBRARY_FEATURE,
+                  ),
+              )
+              .map((entry) => entry.environmentId)
+              .sort(),
+          ),
+        )
+      : null,
+  );
+  const candidate =
+    reports.data && !reports.isPending ? resolveLibraryAuthorityId(reports.data, primaryId) : null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- saves the exact confirmed authority discovered through already authenticated connections
   useEffect(() => {
-    // A designated authority can initialize an empty choice, never replace a saved one.
-    if (!authorityId && primaryId && primaryInfo.data?.isAuthority === true)
-      setAuthorityId(primaryId);
-  }, [authorityId, primaryId, primaryInfo.data?.isAuthority, setAuthorityId]);
+    if (!authorityId && candidate && readLibraryAuthorityId() === null) setAuthorityId(candidate);
+  }, [authorityId, candidate, setAuthorityId]);
   const info = useEnvironmentQuery(
     authorityId ? projectLibrary.info({ environmentId: authorityId, input: {} }) : null,
   );

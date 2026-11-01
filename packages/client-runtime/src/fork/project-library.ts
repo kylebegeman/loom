@@ -23,7 +23,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { persistQuery } from "../state/queryPersistence.ts";
 import { libraryThreadSaveStatusIsFinal } from "./library-save-state.ts";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
@@ -147,6 +147,12 @@ export function createProjectLibraryAtoms<R, E>(
       get(workflowChanges({ environmentId, input: {} })),
     ]),
   );
+  const info = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:library:info",
+    tag: L.info,
+    refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    persistence: persistQuery(LibraryInfo),
+  });
   return {
     refreshes,
     prepareManagement: createEnvironmentRpcCommand(runtime, {
@@ -255,12 +261,16 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:inspect-folder",
       tag: L.inspectFolder,
     }),
-    info: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "loom:library:info",
-      tag: L.info,
-      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
-      persistence: persistQuery(LibraryInfo),
-    }),
+    info,
+    authorityReports: Atom.family((environmentIds: string) =>
+      Atom.make((get) =>
+        AsyncResult.all(
+          (JSON.parse(environmentIds) as EnvironmentId[]).map((environmentId) =>
+            get(info({ environmentId, input: {} })),
+          ),
+        ),
+      ),
+    ),
     projects: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:projects",
       tag: L.projects,
