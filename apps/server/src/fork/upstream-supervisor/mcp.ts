@@ -5,6 +5,8 @@ import {
   UpstreamSupervisorDispatchInput,
   UpstreamSupervisorError,
   UpstreamSupervisorReceipt,
+  UpstreamSupervisorRetryInput,
+  UpstreamSupervisorRetryReceipt,
   UpstreamSupervisorStatus,
   UpstreamSupervisorStatusInput,
 } from "@t3tools/contracts/fork";
@@ -32,7 +34,7 @@ const dependencies = [McpInvocationContext, ThreadManagementService];
 export const UpstreamToolkit = Toolkit.make(
   Tool.make("loom_upstream_status", {
     description:
-      "Read the owner-configured upstream supervisor, exact main commit, recent integration runs and durable dispatch receipts for projectId. Only the approved chief login or a full-access administrator client can use its selected GitHub connection. Agent threads cannot use this standing authorization. After a lost dispatch response, inspect this status; unknown is not permission to submit another key. Pass runIds for older known workflow runs. unavailable:true means remote state could not be read. No merge or publication is started.",
+      "Read the owner-configured upstream supervisor, exact main commit, recent integration runs and durable dispatch and retry receipts for projectId. Only the approved chief login or a full-access administrator client can use its selected GitHub connection. Agent threads cannot use this standing authorization. After a lost dispatch response, inspect this status; unknown is not permission to submit another key. Pass runIds for older known workflow runs. unavailable:true means remote state could not be read. No merge or publication is started.",
     parameters: UpstreamSupervisorStatusInput,
     success: UpstreamSupervisorStatus,
     failure,
@@ -55,6 +57,15 @@ export const UpstreamToolkit = Toolkit.make(
       "Request one existing upstream integration workflow for an exact official v* targetTag and expectedMainSha from current status. Requires owner-configured project/chief authorization and an enabled controller. Use a stable clientRequestId; changed inputs or a new key for the same tag/main are refused. Active integrations and stale main block submission. accepted means GitHub accepted dispatch, not merged or released. After unknown or a lost response inspect loom_upstream_status and follow its run; never resend or invent a key. CI retains checks/review/merge and the signed publisher remains separate. A leaf bot cannot dispatch.",
     parameters: UpstreamSupervisorDispatchInput,
     success: UpstreamSupervisorReceipt,
+    failure,
+    failureMode: "return",
+    dependencies,
+  }),
+  Tool.make("loom_upstream_retry_failed", {
+    description:
+      "Retry only failed jobs of one exact completed failed loom-upstream.yml run on main, once after its original attempt1. Requires enabled owner-bound project/chief authorization, current main matching the run head, and expectedAttempt1. Use the diagnosed runId, exact expectedMainSha and stable clientRequestId. Repeating identical input returns its saved receipt; changed input, a fresh key for the same run or attempt2 is refused across restarts and chief rebinds. accepted means GitHub accepted retry, not passed, merged or published. After unknown or a lost response, read loom_upstream_status with runIds:[runId] and its retryReceipts; never resend with a new key. Active integrations block retries. Existing CI review, merge and publisher gates remain. No general workflow control is granted. A leaf bot or Loom agent thread cannot retry.",
+    parameters: UpstreamSupervisorRetryInput,
+    success: UpstreamSupervisorRetryReceipt,
     failure,
     failureMode: "return",
     dependencies,
@@ -107,6 +118,17 @@ export const upstreamHandlers = McpToolAccess.toLayer(
           return yield* onHost(
             Effect.flatMap(Upstream.UpstreamSupervisor, (service) =>
               service.configure(input, caller),
+            ),
+          );
+        }),
+      ),
+      loom_upstream_retry_failed: McpToolAccess.writes((input) =>
+        Effect.gen(function* () {
+          yield* refuseBotRunSpawn(yield* McpInvocationContext);
+          const caller = yield* actor();
+          return yield* onHost(
+            Effect.flatMap(Upstream.UpstreamSupervisor, (service) =>
+              service.retryFailed(input, caller),
             ),
           );
         }),

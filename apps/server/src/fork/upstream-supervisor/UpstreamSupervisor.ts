@@ -6,6 +6,8 @@ import {
   UpstreamSupervisorDispatchInput,
   UpstreamSupervisorError,
   UpstreamSupervisorReceipt,
+  UpstreamSupervisorRetryInput,
+  UpstreamSupervisorRetryReceipt,
   type UpstreamSupervisorStatus,
   type UpstreamWorkflowSnapshot,
   VaultError,
@@ -45,6 +47,10 @@ export class UpstreamSupervisor extends Context.Service<
       input: UpstreamSupervisorDispatchInput,
       actor: UpstreamSupervisorActor,
     ) => Effect.Effect<UpstreamSupervisorReceipt, UpstreamSupervisorError>;
+    readonly retryFailed: (
+      input: UpstreamSupervisorRetryInput,
+      actor: UpstreamSupervisorActor,
+    ) => Effect.Effect<UpstreamSupervisorRetryReceipt, UpstreamSupervisorError>;
   }
 >()("t3/fork/upstream-supervisor/UpstreamSupervisor") {}
 
@@ -53,16 +59,24 @@ const StoredReceipt = Schema.Struct({
   repository: UpstreamSupervisorConfig.fields.connection.fields.repository,
   receipt: UpstreamSupervisorReceipt,
 });
+const StoredRetryReceipt = Schema.Struct({
+  repository: UpstreamSupervisorConfig.fields.connection.fields.repository,
+  receipt: UpstreamSupervisorRetryReceipt,
+});
 const State = Schema.Struct({
   version: Schema.Literal(1),
   config: Schema.NullOr(UpstreamSupervisorConfig),
   configuredBy: Schema.optionalKey(Schema.NullOr(Schema.String)),
   receipts: Schema.Array(StoredReceipt).check(Schema.isMaxLength(1000)),
+  retryReceipts: Schema.optionalKey(
+    Schema.Array(StoredRetryReceipt).check(Schema.isMaxLength(1000)),
+  ),
 });
 type State = typeof State.Type;
 const stateJson = Schema.fromJsonString(State);
 const isConfigInput = Schema.is(UpstreamSupervisorConfigInput);
 const isDispatchInput = Schema.is(UpstreamSupervisorDispatchInput);
+const isRetryInput = Schema.is(UpstreamSupervisorRetryInput);
 const failure = (reason: UpstreamSupervisorError["reason"]) =>
   new UpstreamSupervisorError({ reason });
 const sameGrant = (a: UpstreamSupervisorConfig, b: UpstreamSupervisorConfig) =>
@@ -78,6 +92,16 @@ const unresolved = (r: UpstreamSupervisorReceipt) =>
   r.status === "unknown" ||
   (r.status === "accepted" && (r.run === null || r.run.status !== "completed"));
 
+const unresolvedRetry = (r: UpstreamSupervisorRetryReceipt) =>
+  r.status === "retrying" ||
+  r.status === "unknown" ||
+  (r.status === "accepted" &&
+    (r.run === null || r.run.attempt <= r.expectedAttempt || r.run.status !== "completed"));
+const sameRetry = (receipt: UpstreamSupervisorRetryReceipt, input: UpstreamSupervisorRetryInput) =>
+  receipt.runId === input.runId &&
+  receipt.expectedAttempt === input.expectedAttempt &&
+  receipt.expectedMainSha === input.expectedMainSha;
+
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -90,12 +114,13 @@ const make = Effect.gen(function* () {
   const read = Effect.fn("UpstreamSupervisor.read")(
     function* () {
       if (!(yield* fs.exists(statePath)))
-        return { version: 1, config: null, receipts: [] } satisfies State;
+        return { version: 1, config: null, receipts: [], retryReceipts: [] } satisfies State;
       const stat = yield* fs.stat(statePath);
       if (stat.size > 2 * 1024 * 1024) return yield* failure("storage");
-      return yield* fs
+      const saved = yield* fs
         .readFileString(statePath)
         .pipe(Effect.flatMap(Schema.decodeEffect(stateJson)));
+      return { ...saved, retryReceipts: saved.retryReceipts ?? [] };
     },
     Effect.mapError(() => failure("storage")),
   );
@@ -190,14 +215,50 @@ const make = Effect.gen(function* () {
         changed = true;
         return { ...entry, receipt: { ...receipt, status, run } };
       });
-      if (changed) yield* write({ ...state, receipts });
-      return receipts
-        .filter(
-          (entry) =>
-            entry.projectId === current.projectId &&
-            entry.repository === current.connection.repository,
+      const retryReceipts = state.retryReceipts.map((entry) => {
+        const receipt = entry.receipt;
+        if (
+          receipt.projectId !== current.projectId ||
+          entry.repository !== current.connection.repository
         )
-        .map((entry) => entry.receipt);
+          return entry;
+        const observed = snapshot.runs.find(
+          (run) => run.id === receipt.runId && run.headSha === receipt.expectedMainSha,
+        );
+        const run = observed ?? receipt.run;
+        const status =
+          receipt.status === "retrying" || receipt.status === "unknown"
+            ? run && run.attempt > receipt.expectedAttempt
+              ? ("accepted" as const)
+              : ("unknown" as const)
+            : receipt.status;
+        if (
+          status === receipt.status &&
+          run?.attempt === receipt.run?.attempt &&
+          run?.status === receipt.run?.status &&
+          run?.conclusion === receipt.run?.conclusion
+        )
+          return entry;
+        changed = true;
+        return { ...entry, receipt: { ...receipt, status, run } };
+      });
+      if (changed) yield* write({ ...state, receipts, retryReceipts });
+      return {
+        receipts: receipts
+          .filter(
+            (entry) =>
+              entry.projectId === current.projectId &&
+              entry.repository === current.connection.repository,
+          )
+          .map((entry) => entry.receipt),
+        retryReceipts: retryReceipts
+          .filter(
+            (entry) =>
+              entry.receipt.projectId === current.projectId &&
+              entry.repository === current.connection.repository,
+          )
+          .map((entry) => entry.receipt),
+      };
     }).pipe(lock.withPermit);
   });
   const configure = Effect.fn("UpstreamSupervisor.configure")(function* (
@@ -224,7 +285,8 @@ const make = Effect.gen(function* () {
       const state = yield* read();
       if (
         state.config &&
-        state.receipts.some((entry) => unresolved(entry.receipt)) &&
+        (state.receipts.some((entry) => unresolved(entry.receipt)) ||
+          state.retryReceipts.some((entry) => unresolvedRetry(entry.receipt))) &&
         (state.config.projectId !== input.projectId ||
           state.config.connection.repository !== input.connection.repository.toLowerCase())
       )
@@ -246,7 +308,14 @@ const make = Effect.gen(function* () {
     yield* actor.authorize;
     const saved = yield* read();
     if (saved.config === null && actor.owner)
-      return { config: null, workflow: UPSTREAM_WORKFLOW, mainSha: null, runs: [], receipts: [] };
+      return {
+        config: null,
+        workflow: UPSTREAM_WORKFLOW,
+        mainSha: null,
+        runs: [],
+        receipts: [],
+        retryReceipts: [],
+      };
     const selectedProject = actor.owner && saved.config ? saved.config.projectId : projectId;
     const current = yield* grant(selectedProject, actor);
     const result = yield* github
@@ -257,6 +326,14 @@ const make = Effect.gen(function* () {
           runIds: [
             ...new Set([
               ...runIds,
+              ...saved.retryReceipts
+                .filter(
+                  (entry) =>
+                    entry.receipt.projectId === current.projectId &&
+                    entry.repository === current.connection.repository &&
+                    unresolvedRetry(entry.receipt),
+                )
+                .map((entry) => entry.receipt.runId),
               ...saved.receipts
                 .filter(
                   (entry) =>
@@ -285,6 +362,14 @@ const make = Effect.gen(function* () {
         mainSha: null,
         runs: [],
         receipts: retained.slice(-30).map((entry) => entry.receipt),
+        retryReceipts: (yield* read()).retryReceipts
+          .filter(
+            (entry) =>
+              entry.receipt.projectId === selectedProject &&
+              entry.repository === current.connection.repository,
+          )
+          .slice(-30)
+          .map((entry) => entry.receipt),
       };
     }
     const receipts = yield* reconcile(current, result.success.snapshot);
@@ -292,7 +377,8 @@ const make = Effect.gen(function* () {
       config: current,
       workflow: UPSTREAM_WORKFLOW,
       ...result.success.snapshot,
-      receipts: receipts.slice(-30),
+      receipts: receipts.receipts.slice(-30),
+      retryReceipts: receipts.retryReceipts.slice(-30),
     };
   });
   const dispatch = Effect.fn("UpstreamSupervisor.dispatch")(function* (
@@ -359,7 +445,10 @@ const make = Effect.gen(function* () {
           return yield* failure("conflict");
         return false;
       }
-      if (state.receipts.some((entry) => unresolved(entry.receipt)))
+      if (
+        state.receipts.some((entry) => unresolved(entry.receipt)) ||
+        state.retryReceipts.some((entry) => unresolvedRetry(entry.receipt))
+      )
         return yield* failure("active");
       if (
         state.receipts.length >= 1000 ||
@@ -430,6 +519,138 @@ const make = Effect.gen(function* () {
     }).pipe(lock.withPermit);
     return next;
   });
-  return UpstreamSupervisor.of({ configure, status, dispatch });
+  const retryFailed = Effect.fn("UpstreamSupervisor.retryFailed")(function* (
+    input: UpstreamSupervisorRetryInput,
+    actor: UpstreamSupervisorActor,
+  ) {
+    if (!isRetryInput(input)) return yield* failure("invalid");
+    const current = yield* grant(input.projectId, actor, undefined, true);
+    const prior = (yield* read()).retryReceipts.find(
+      (entry) =>
+        entry.receipt.projectId === input.projectId &&
+        entry.repository === current.connection.repository &&
+        entry.receipt.clientRequestId === input.clientRequestId,
+    );
+    if (prior) {
+      if (!sameRetry(prior.receipt, input)) return yield* failure("conflict");
+      return prior.receipt.status === "retrying"
+        ? { ...prior.receipt, status: "unknown" as const }
+        : prior.receipt;
+    }
+    if (input.expectedAttempt !== 1) return yield* failure("conflict");
+    const observed = yield* status(input.projectId, actor, [input.runId]);
+    if (observed.unavailable) return yield* failure("unavailable");
+    if (observed.mainSha !== input.expectedMainSha) return yield* failure("stale");
+    if (observed.runs.some((run) => run.status !== "completed")) return yield* failure("active");
+    const run = observed.runs.find((entry) => entry.id === input.runId);
+    if (run && run.headSha !== input.expectedMainSha) return yield* failure("stale");
+    if (
+      !run ||
+      run.status !== "completed" ||
+      run.conclusion !== "failure" ||
+      run.attempt !== input.expectedAttempt
+    )
+      return yield* failure("conflict");
+    const hash = yield* crypto
+      .digest(
+        "SHA-256",
+        new TextEncoder().encode(
+          ["retry-failed", input.projectId, current.connection.repository, input.clientRequestId]
+            .map((part) => `${part.length}:${part}`)
+            .join(""),
+        ),
+      )
+      .pipe(Effect.mapError(() => failure("unavailable")));
+    const receipt: UpstreamSupervisorRetryReceipt = {
+      ...input,
+      id: Buffer.from(hash).toString("hex"),
+      status: "retrying",
+      createdAt: DateTime.formatIso(yield* DateTime.now),
+      httpStatus: null,
+      run,
+    };
+    const admitted = yield* Effect.gen(function* () {
+      yield* grant(input.projectId, actor, current, true);
+      const state = yield* read();
+      const same = state.retryReceipts.find(
+        (entry) =>
+          entry.receipt.projectId === input.projectId &&
+          entry.repository === current.connection.repository &&
+          entry.receipt.clientRequestId === input.clientRequestId,
+      );
+      if (same) {
+        if (!sameRetry(same.receipt, input)) return yield* failure("conflict");
+        return false;
+      }
+      if (
+        state.retryReceipts.some(
+          (entry) =>
+            entry.repository === current.connection.repository &&
+            entry.receipt.runId === input.runId,
+        )
+      )
+        return yield* failure("conflict");
+      if (
+        state.receipts.some((entry) => unresolved(entry.receipt)) ||
+        state.retryReceipts.some((entry) => unresolvedRetry(entry.receipt))
+      )
+        return yield* failure("active");
+      if (state.retryReceipts.length >= 1000) return yield* failure("conflict");
+      yield* write({
+        ...state,
+        retryReceipts: [
+          ...state.retryReceipts,
+          { repository: current.connection.repository, receipt },
+        ],
+      });
+      return true;
+    }).pipe(lock.withPermit);
+    if (!admitted) {
+      const saved = (yield* read()).retryReceipts.find((entry) => entry.receipt.id === receipt.id);
+      if (!saved) return yield* failure("storage");
+      return saved.receipt.status === "retrying"
+        ? { ...saved.receipt, status: "unknown" as const }
+        : saved.receipt;
+    }
+    const result = yield* github
+      .upstreamWorkflow(
+        current.connection,
+        {
+          action: "retry-failed",
+          runId: input.runId,
+          expectedAttempt: input.expectedAttempt,
+          expectedMainSha: input.expectedMainSha,
+        },
+        brokerGuard(current, actor, true),
+      )
+      .pipe(Effect.result);
+    const next: UpstreamSupervisorRetryReceipt =
+      result._tag === "Failure"
+        ? { ...receipt, status: result.failure._tag === "VaultError" ? "refused" : "unknown" }
+        : {
+            ...receipt,
+            status: result.success.httpStatus === 201 ? "accepted" : "refused",
+            httpStatus: result.success.httpStatus,
+          };
+    yield* Effect.gen(function* () {
+      const state = yield* read();
+      yield* write({
+        ...state,
+        retryReceipts: state.retryReceipts.map((entry) =>
+          entry.receipt.id === receipt.id
+            ? {
+                ...entry,
+                receipt:
+                  entry.receipt.run && entry.receipt.run.attempt > receipt.expectedAttempt
+                    ? { ...next, status: "accepted" as const, run: entry.receipt.run }
+                    : next,
+              }
+            : entry,
+        ),
+      });
+    }).pipe(lock.withPermit);
+    return next;
+  });
+  return UpstreamSupervisor.of({ configure, status, dispatch, retryFailed });
 });
 export const layer = Layer.effect(UpstreamSupervisor, make);

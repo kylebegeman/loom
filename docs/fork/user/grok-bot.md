@@ -189,8 +189,21 @@ or published result. If the response is lost or the receipt says **Unknown**, in
 resend with a fresh key: Loom also refuses another request for the same tag and base
 commit. The chief should report an unresolved outcome for an owner to investigate.
 
+For a completed first attempt that failed, the chief can request one retry of its failed
+jobs while its source still matches current `main`. The retry is bound to that run and
+attempt, and its saved receipt survives restarts and changes to the chief login. Repeating
+the same request reads the receipt; it does not restart the jobs again. A second retry,
+a different source, or another active integration needs owner attention. After an unknown
+response, inspect status and the same workflow run before taking another action.
+
+Use one observation routine in the existing Grok chief to follow runs and report new
+exceptions. Keep GitHub's integration schedule, Loom's fallback alerts, and the signed
+publisher. The bot-job completion routine is separate; it does not receive GitHub workflow
+events. Read the supervisor's authoritative status during each observation and preserve
+known run IDs and attempts between observations.
+
 Signing in again does not transfer this authority. Rebind the supervisor to the new login
-in Settings; its existing dispatch receipts remain available. A changed
+in Settings; its existing dispatch and retry receipts remain available. A changed
 GitHub connection version also needs a new configuration review. Pause the supervisor
 in Settings to stop new requests. Already dispatched GitHub work continues and must be stopped separately if that is intended.
 

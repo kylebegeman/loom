@@ -70,6 +70,12 @@ export class VaultGitHub extends Context.Service<
             readonly targetTag: string;
             readonly expectedMainSha: string;
             readonly requestId: string;
+          }
+        | {
+            readonly action: "retry-failed";
+            readonly runId: number;
+            readonly expectedAttempt: number;
+            readonly expectedMainSha: string;
           },
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<
@@ -156,6 +162,7 @@ const UpstreamGitHubRuns = Schema.Struct({
 const UpstreamGitHubKnownRun = Schema.Struct({
   ...UpstreamGitHubRun.fields,
   workflow_id: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  head_branch: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(300))),
 });
 const UpstreamGitHubWorkflow = Schema.Struct({
   id: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
@@ -299,13 +306,21 @@ const make = Effect.gen(function* () {
   )(
     function* (input, operation, authorize) {
       yield* authorize;
-      if (!isTarget(input) || (operation.action !== "status" && operation.action !== "dispatch"))
+      if (!isTarget(input) || !["status", "dispatch", "retry-failed"].includes(operation.action))
         return yield* fail("invalid-input");
       if (
         operation.action === "dispatch" &&
         (!isUpstreamTag(operation.targetTag) ||
           !isUpstreamSha(operation.expectedMainSha) ||
           !isUpstreamRequestId(operation.requestId))
+      )
+        return yield* fail("invalid-input");
+      if (
+        operation.action === "retry-failed" &&
+        (!Number.isSafeInteger(operation.runId) ||
+          operation.runId < 1 ||
+          operation.expectedAttempt !== 1 ||
+          !isUpstreamSha(operation.expectedMainSha))
       )
         return yield* fail("invalid-input");
       if (
@@ -324,10 +339,12 @@ const make = Effect.gen(function* () {
       const current = yield* session(record, repository);
       const request = Effect.fn("VaultGitHub.upstreamRequest")(function* (
         path: string,
-        body?: {
-          ref: string;
-          inputs: { target: string; supervisor_request_id: string; expected_main_sha: string };
-        },
+        body?:
+          | {
+              ref: string;
+              inputs: { target: string; supervisor_request_id: string; expected_main_sha: string };
+            }
+          | Record<string, never>,
       ) {
         yield* authorize;
         yield* check(input);
@@ -353,7 +370,11 @@ const make = Effect.gen(function* () {
           Effect.mapError(() => new VaultGitHubError({ reason: "unavailable" })),
         );
         if (body) {
-          if (response.status === 204 || (response.status >= 400 && response.status < 500))
+          if (
+            response.status === 201 ||
+            response.status === 204 ||
+            (response.status >= 400 && response.status < 500)
+          )
             return { status: response.status, body: null };
           return yield* new VaultGitHubError({ reason: "unavailable" });
         }
@@ -404,7 +425,14 @@ const make = Effect.gen(function* () {
       });
       const normalized = yield* Effect.forEach(runs.workflow_runs, normalize);
       const known: Array<UpstreamWorkflowRun> = [];
-      if (operation.action === "status" && operation.runIds?.length) {
+      const knownRunIds =
+        operation.action === "status"
+          ? operation.runIds
+          : operation.action === "retry-failed"
+            ? [operation.runId]
+            : undefined;
+      let retryRun: typeof UpstreamGitHubKnownRun.Type | undefined;
+      if (knownRunIds?.length) {
         const workflow = yield* request(
           `/repos/${repository}/actions/workflows/${UPSTREAM_WORKFLOW}`,
         ).pipe(
@@ -417,7 +445,7 @@ const make = Effect.gen(function* () {
         );
         if (workflow.path !== `.github/workflows/${UPSTREAM_WORKFLOW}`)
           return yield* new VaultGitHubError({ reason: "invalid-response" });
-        for (const id of new Set(operation.runIds)) {
+        for (const id of new Set(knownRunIds)) {
           const run = yield* request(`/repos/${repository}/actions/runs/${id}`).pipe(
             Effect.flatMap((response) => decodeUpstreamKnownRun(response.body)),
             Effect.mapError((error) =>
@@ -428,6 +456,7 @@ const make = Effect.gen(function* () {
           );
           if (run.id !== id || run.workflow_id !== workflow.id)
             return yield* new VaultGitHubError({ reason: "invalid-response" });
+          if (operation.action === "retry-failed") retryRun = run;
           known.push(yield* normalize(run));
         }
       }
@@ -454,6 +483,46 @@ const make = Effect.gen(function* () {
           ),
         );
         if (active.workflow_runs.length > 0) return yield* fail("conflict");
+      }
+      if (operation.action === "retry-failed") {
+        const validRun = (run: typeof UpstreamGitHubKnownRun.Type) =>
+          run.id === operation.runId &&
+          run.head_branch === UPSTREAM_REF &&
+          run.status === "completed" &&
+          run.conclusion === "failure" &&
+          run.run_attempt === operation.expectedAttempt &&
+          run.head_sha === operation.expectedMainSha;
+        if (!retryRun || !validRun(retryRun)) return yield* fail("conflict");
+        const latestRef = yield* request(`/repos/${repository}/git/ref/heads/${UPSTREAM_REF}`).pipe(
+          Effect.flatMap((response) => decodeUpstreamRef(response.body)),
+          Effect.mapError((error) =>
+            error._tag === "SchemaError"
+              ? new VaultGitHubError({ reason: "invalid-response" })
+              : error,
+          ),
+        );
+        const latestRun = yield* request(
+          `/repos/${repository}/actions/runs/${operation.runId}`,
+        ).pipe(
+          Effect.flatMap((response) => decodeUpstreamKnownRun(response.body)),
+          Effect.mapError((error) =>
+            error._tag === "SchemaError"
+              ? new VaultGitHubError({ reason: "invalid-response" })
+              : error,
+          ),
+        );
+        if (
+          latestRef.object.sha !== operation.expectedMainSha ||
+          latestRun.workflow_id !== retryRun.workflow_id ||
+          !validRun(latestRun)
+        )
+          return yield* fail("conflict");
+        yield* normalize(latestRun);
+        const response = yield* request(
+          `/repos/${repository}/actions/runs/${operation.runId}/rerun-failed-jobs`,
+          {},
+        );
+        return { snapshot, httpStatus: response.status };
       }
       const target = yield* request(
         `/repos/pingdotgg/t3code/git/ref/tags/${encodeURIComponent(operation.targetTag)}`,

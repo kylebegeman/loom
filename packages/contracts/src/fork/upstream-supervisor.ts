@@ -37,6 +37,14 @@ export const UpstreamSupervisorDispatchInput = Schema.Struct({
   expectedMainSha: UpstreamCommitSha,
 });
 export type UpstreamSupervisorDispatchInput = typeof UpstreamSupervisorDispatchInput.Type;
+export const UpstreamSupervisorRetryInput = Schema.Struct({
+  projectId: ProjectId,
+  clientRequestId: UpstreamSupervisorDispatchInput.fields.clientRequestId,
+  runId: PositiveInt,
+  expectedAttempt: PositiveInt,
+  expectedMainSha: UpstreamCommitSha,
+});
+export type UpstreamSupervisorRetryInput = typeof UpstreamSupervisorRetryInput.Type;
 export const UpstreamWorkflowRun = Schema.Struct({
   id: PositiveInt,
   attempt: PositiveInt,
@@ -64,6 +72,15 @@ export const UpstreamSupervisorReceipt = Schema.Struct({
   run: Schema.NullOr(UpstreamWorkflowRun),
 });
 export type UpstreamSupervisorReceipt = typeof UpstreamSupervisorReceipt.Type;
+export const UpstreamSupervisorRetryReceipt = Schema.Struct({
+  ...UpstreamSupervisorRetryInput.fields,
+  id: UpstreamRequestId,
+  status: Schema.Literals(["retrying", "accepted", "unknown", "refused"]),
+  createdAt: IsoDateTime,
+  httpStatus: Schema.NullOr(Schema.Int),
+  run: Schema.NullOr(UpstreamWorkflowRun),
+});
+export type UpstreamSupervisorRetryReceipt = typeof UpstreamSupervisorRetryReceipt.Type;
 export const UpstreamSupervisorStatus = Schema.Struct({
   unavailable: Schema.optionalKey(Schema.Boolean),
   config: Schema.NullOr(UpstreamSupervisorConfig),
@@ -71,6 +88,7 @@ export const UpstreamSupervisorStatus = Schema.Struct({
   mainSha: Schema.NullOr(UpstreamCommitSha),
   runs: UpstreamWorkflowSnapshot.fields.runs,
   receipts: Schema.Array(UpstreamSupervisorReceipt),
+  retryReceipts: Schema.optionalKey(Schema.Array(UpstreamSupervisorRetryReceipt)),
 });
 export type UpstreamSupervisorStatus = typeof UpstreamSupervisorStatus.Type;
 export class UpstreamSupervisorError extends Schema.TaggedError<UpstreamSupervisorError>()(

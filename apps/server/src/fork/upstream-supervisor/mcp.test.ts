@@ -63,6 +63,22 @@ it.effect("hosted chief can request bounded control but cannot grant itself owne
             runs: [],
             receipts: [],
           }),
+        retryFailed: (value, actor) =>
+          actor.authorize.pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                callers.push(actor);
+                return {
+                  ...value,
+                  id: "d".repeat(64),
+                  status: "accepted" as const,
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  httpStatus: 201,
+                  run: null,
+                };
+              }),
+            ),
+          ),
         dispatch: (_value, actor) =>
           actor.authorize.pipe(
             Effect.andThen(
@@ -155,5 +171,36 @@ it.effect("hosted chief can request bounded control but cannot grant itself owne
       true,
     );
     expect(callers).toHaveLength(1);
+    const retry = {
+      projectId,
+      clientRequestId: "retry-one",
+      runId: 42,
+      expectedAttempt: 1,
+      expectedMainSha: input.expectedMainSha,
+    };
+    for (const [access, linked] of [
+      ["read-only", false],
+      ["auto-accept-edits", true],
+      ["auto-accept-edits", false],
+    ] as const) {
+      const outcome = yield* invoke(
+        toolkit.handle("loom_upstream_retry_failed", retry).pipe(Effect.flatMap(Stream.runCollect)),
+        access,
+        linked,
+      );
+      if (access === "auto-accept-edits" && !linked)
+        expect(outcome[0]?.result).toMatchObject({ runId: 42, status: "accepted" });
+    }
+    const agentRetryDenied = yield* toolkit.handle("loom_upstream_retry_failed", retry).pipe(
+      Effect.flatMap(Stream.runCollect),
+      Effect.provideService(McpInvocationContext, agentScope),
+      Effect.provide(
+        Layer.mock(ThreadManagementService)({
+          getThreadShell: (id) => Effect.succeed(liveThreadShell(id)),
+        }),
+      ),
+    );
+    expect(agentRetryDenied[0]?.result).toMatchObject({ reason: "denied" });
+    expect(callers).toHaveLength(2);
   }),
 );

@@ -355,7 +355,9 @@ function SupervisorActivity({ status }: { readonly status: UpstreamSupervisorSta
         <p className="text-xs leading-relaxed text-muted-foreground">
           Activity loads with the supervisor status.
         </p>
-      ) : status.runs.length === 0 && status.receipts.length === 0 ? (
+      ) : status.runs.length === 0 &&
+        status.receipts.length === 0 &&
+        (status.retryReceipts?.length ?? 0) === 0 ? (
         <p className="text-xs leading-relaxed text-muted-foreground">
           No recorded integrations. Workflow runs and requests will appear here.
         </p>
@@ -406,6 +408,41 @@ function SupervisorActivity({ status }: { readonly status: UpstreamSupervisorSta
                     }
                   >
                     {receipt.run?.conclusion ?? receipt.status}
+                  </LibraryStateBadge>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {(status.retryReceipts?.length ?? 0) > 0 ? (
+            <ul className="space-y-3" aria-label="Failed-job retry requests">
+              {status.retryReceipts?.map((receipt) => (
+                <li key={receipt.id} className="min-w-0 space-y-1.5 text-xs">
+                  {receipt.run ? (
+                    <a
+                      href={receipt.run.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block wrap-anywhere font-medium underline-offset-4 hover:underline"
+                    >
+                      Retry run {receipt.runId} after attempt {receipt.expectedAttempt}
+                    </a>
+                  ) : (
+                    <p className="wrap-anywhere font-medium">
+                      Retry run {receipt.runId} after attempt {receipt.expectedAttempt}
+                    </p>
+                  )}
+                  <LibraryStateBadge
+                    tone={
+                      receipt.status === "refused"
+                        ? "danger"
+                        : receipt.status === "unknown"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
+                    {receipt.run && receipt.run.attempt > receipt.expectedAttempt
+                      ? `Attempt ${receipt.run.attempt}: ${receipt.run.conclusion ?? receipt.run.status}`
+                      : receipt.status}
                   </LibraryStateBadge>
                 </li>
               ))}

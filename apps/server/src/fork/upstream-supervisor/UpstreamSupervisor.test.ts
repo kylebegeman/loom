@@ -22,6 +22,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as VaultGitHub from "../vault/VaultGitHub.ts";
@@ -125,7 +126,10 @@ const fixture = Effect.gen(function* () {
             yield* authorize;
             posts++;
             yield* afterPost;
-            return { snapshot, httpStatus: postStatus };
+            return {
+              snapshot,
+              httpStatus: action.action === "retry-failed" && postStatus === 204 ? 201 : postStatus,
+            };
           }),
       }),
     ),
@@ -321,35 +325,59 @@ it.layer(NodeServices.layer)("upstream supervisor", (it) => {
     "does not send or replace prior state when persisting the intent fails at %s",
     (operation) =>
       Effect.gen(function* () {
-        const f = yield* fixture;
-        const service = yield* f.service;
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        yield* service.configure(configuration, owner);
-        const before = yield* fs.readFileString(f.statePath);
-        const failedFs: FileSystem.FileSystem = {
-          ...fs,
-          writeFileString: (filePath, contents, options) =>
-            fs.writeFileString(
-              operation === "write" ? path.join(f.baseDir, "unavailable", "state.json") : filePath,
-              contents,
-              options,
-            ),
-          open: (filePath, options) =>
-            Effect.gen(function* () {
-              const file = yield* fs.open(filePath, options);
-              if (operation !== "file sync" || !filePath.endsWith(".pending")) return file;
-              const closedFile = yield* Effect.scoped(fs.open(filePath));
-              return { ...file, sync: closedFile.sync };
-            }),
-        };
-        const blocked = yield* f.service.pipe(
-          Effect.provideService(FileSystem.FileSystem, failedFs),
-        );
-        expect((yield* blocked.dispatch(request, chief).pipe(Effect.flip)).reason).toBe("storage");
-        expect(f.posts()).toBe(0);
-        expect(yield* fs.readFileString(f.statePath)).toBe(before);
-        expect((yield* service.status(projectId, chief)).receipts).toEqual([]);
+        for (const kind of ["dispatch", "retry"] as const) {
+          const f = yield* fixture;
+          const service = yield* f.service;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* service.configure(configuration, owner);
+          if (kind === "retry")
+            f.setSnapshot({
+              mainSha,
+              runs: [{ ...workflowRun("scheduled"), conclusion: "failure" }],
+            });
+          const before = yield* fs.readFileString(f.statePath);
+          const failedFs: FileSystem.FileSystem = {
+            ...fs,
+            writeFileString: (filePath, contents, options) =>
+              fs.writeFileString(
+                operation === "write"
+                  ? path.join(f.baseDir, "unavailable", "state.json")
+                  : filePath,
+                contents,
+                options,
+              ),
+            open: (filePath, options) =>
+              Effect.gen(function* () {
+                const file = yield* fs.open(filePath, options);
+                if (operation !== "file sync" || !filePath.endsWith(".pending")) return file;
+                const closedFile = yield* Effect.scoped(fs.open(filePath));
+                return { ...file, sync: closedFile.sync };
+              }),
+          };
+          const blocked = yield* f.service.pipe(
+            Effect.provideService(FileSystem.FileSystem, failedFs),
+          );
+          const pending =
+            kind === "dispatch"
+              ? blocked.dispatch(request, chief).pipe(Effect.asVoid)
+              : blocked
+                  .retryFailed(
+                    {
+                      projectId,
+                      clientRequestId: "durable-retry",
+                      runId: 42,
+                      expectedAttempt: 1,
+                      expectedMainSha: mainSha,
+                    },
+                    chief,
+                  )
+                  .pipe(Effect.asVoid);
+          expect((yield* pending.pipe(Effect.flip)).reason).toBe("storage");
+          expect(f.posts()).toBe(0);
+          expect(yield* fs.readFileString(f.statePath)).toBe(before);
+          expect((yield* service.status(projectId, chief)).receipts).toEqual([]);
+        }
       }),
   );
 
@@ -411,5 +439,286 @@ it.layer(NodeServices.layer)("upstream supervisor", (it) => {
       ).toBe("conflict");
       expect(f.posts()).toBe(1);
     }),
+  );
+  it.effect("retries one failed original run durably without resetting its retry budget", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const service = yield* f.service;
+      yield* service.configure(configuration, owner);
+      const failed = { ...workflowRun("scheduled"), conclusion: "failure" };
+      f.setSnapshot({ mainSha, runs: [failed] });
+      const input = {
+        projectId,
+        clientRequestId: "recover-run-42",
+        runId: 42,
+        expectedAttempt: 1,
+        expectedMainSha: mainSha,
+      };
+      const fs = yield* FileSystem.FileSystem;
+      const legacy = JSON.parse(yield* fs.readFileString(f.statePath)) as Record<string, unknown>;
+      delete legacy.retryReceipts;
+      yield* fs.writeFileString(f.statePath, JSON.stringify(legacy));
+      const first = yield* service.retryFailed(input, chief);
+      expect(first).toMatchObject({
+        status: "accepted",
+        runId: 42,
+        expectedAttempt: 1,
+        httpStatus: 201,
+      });
+      const restarted = yield* f.service;
+      expect(yield* restarted.retryFailed(input, chief)).toEqual(first);
+      for (const changed of [
+        { ...input, expectedMainSha: "c".repeat(40) },
+        { ...input, expectedAttempt: 2 },
+        { ...input, clientRequestId: "fresh-key" },
+      ]) {
+        expect((yield* restarted.retryFailed(changed, chief).pipe(Effect.flip)).reason).toBe(
+          "conflict",
+        );
+      }
+      f.setSessions([session(), session("new-chief-session")]);
+      yield* restarted.configure({ ...configuration, clientSessionId: "new-chief-session" }, owner);
+      const rebound = { ...chief, sessionId: "new-chief-session" };
+      expect(yield* restarted.retryFailed(input, rebound)).toEqual(first);
+      f.setSnapshot({
+        mainSha,
+        runs: [{ ...failed, attempt: 2, status: "in_progress", conclusion: null }],
+      });
+      expect((yield* restarted.status(projectId, rebound)).retryReceipts?.[0]?.run?.attempt).toBe(
+        2,
+      );
+      f.setSnapshot({ mainSha, runs: [{ ...failed, attempt: 2 }] });
+      expect(
+        (yield* restarted
+          .retryFailed({ ...input, clientRequestId: "another", expectedAttempt: 2 }, rebound)
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      expect((yield* restarted.status(projectId, rebound)).retryReceipts?.[0]?.run?.status).toBe(
+        "completed",
+      );
+      const nextProject = ProjectId.make("another-project");
+      yield* restarted.configure(
+        { ...configuration, projectId: nextProject, clientSessionId: "new-chief-session" },
+        owner,
+      );
+      f.setSnapshot({ mainSha, runs: [failed] });
+      expect(
+        (yield* restarted
+          .retryFailed(
+            { ...input, projectId: nextProject, clientRequestId: "project-bypass" },
+            rebound,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      expect(f.posts()).toBe(1);
+    }),
+  );
+
+  it.effect.each(["stale", "active", "success", "attempt", "head"] as const)(
+    "refuses a failed-job retry for %s state before saving or posting",
+    (scenario) =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const service = yield* f.service;
+        yield* service.configure(configuration, owner);
+        const failed = { ...workflowRun("scheduled"), conclusion: "failure" };
+        f.setSnapshot({
+          mainSha: scenario === "stale" ? "c".repeat(40) : mainSha,
+          runs: [
+            {
+              ...failed,
+              conclusion: scenario === "success" ? "success" : "failure",
+              attempt: scenario === "attempt" ? 2 : 1,
+              headSha: scenario === "head" ? "c".repeat(40) : mainSha,
+            },
+            ...(scenario === "active" ? [{ ...workflowRun("other", "queued"), id: 43 }] : []),
+          ],
+        });
+        const result = yield* service
+          .retryFailed(
+            {
+              projectId,
+              clientRequestId: "retry",
+              runId: 42,
+              expectedAttempt: 1,
+              expectedMainSha: mainSha,
+            },
+            chief,
+          )
+          .pipe(Effect.flip);
+        expect(result.reason).toBe(
+          scenario === "stale" || scenario === "head"
+            ? "stale"
+            : scenario === "active"
+              ? "active"
+              : "conflict",
+        );
+        expect(f.posts()).toBe(0);
+        expect((yield* service.status(projectId, chief)).retryReceipts ?? []).toEqual([]);
+      }),
+  );
+
+  it.effect.each(["lost reply", "interrupted send", "receipt write failure"] as const)(
+    "never resends an uncertain failed-job retry after %s and restart",
+    (scenario) =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        let failWrites = false;
+        const failedFs: FileSystem.FileSystem = {
+          ...fs,
+          writeFileString: (file, contents, options) =>
+            fs.writeFileString(
+              failWrites ? path.join(f.baseDir, "missing", "state.json") : file,
+              contents,
+              options,
+            ),
+        };
+        const service = yield* f.service.pipe(
+          Effect.provideService(FileSystem.FileSystem, failedFs),
+        );
+        yield* service.configure(configuration, owner);
+        const failed = { ...workflowRun("scheduled"), conclusion: "failure" };
+        f.setSnapshot({ mainSha, runs: [failed] });
+        const input = {
+          projectId,
+          clientRequestId: "retry-unknown",
+          runId: 42,
+          expectedAttempt: 1,
+          expectedMainSha: mainSha,
+        };
+        if (scenario === "lost reply") {
+          f.setAfterPost(Effect.fail(new VaultGitHubError({ reason: "unavailable" })));
+          expect((yield* service.retryFailed(input, chief)).status).toBe("unknown");
+        } else if (scenario === "receipt write failure") {
+          f.setAfterPost(
+            Effect.sync(() => {
+              failWrites = true;
+            }),
+          );
+          expect((yield* service.retryFailed(input, chief).pipe(Effect.flip)).reason).toBe(
+            "storage",
+          );
+          failWrites = false;
+        } else {
+          const posted = yield* Deferred.make<void>();
+          const finish = yield* Deferred.make<void>();
+          f.setAfterPost(
+            Deferred.succeed(posted, undefined).pipe(Effect.andThen(Deferred.await(finish))),
+          );
+          const pending = yield* service.retryFailed(input, chief).pipe(Effect.forkScoped);
+          yield* Deferred.await(posted);
+          yield* Fiber.interrupt(pending);
+        }
+        const restarted = yield* f.service;
+        expect((yield* restarted.retryFailed(input, chief)).status).toBe("unknown");
+        expect(
+          (yield* restarted
+            .retryFailed({ ...input, clientRequestId: "unknown-bypass" }, chief)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        f.setSnapshot({
+          mainSha,
+          runs: [{ ...failed, attempt: 2, status: "queued", conclusion: null }],
+        });
+        expect((yield* restarted.status(projectId, chief)).retryReceipts?.[0]).toMatchObject({
+          runId: 42,
+          run: { attempt: 2 },
+        });
+        expect(f.posts()).toBe(1);
+      }),
+  );
+
+  it.effect.each(["pause", "session", "version"] as const)(
+    "rechecks a failed-job retry grant after remote waits for %s changes",
+    (scenario) =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const service = yield* f.service;
+        yield* service.configure(configuration, owner);
+        f.setSnapshot({ mainSha, runs: [{ ...workflowRun("scheduled"), conclusion: "failure" }] });
+        const reading = yield* Deferred.make<void>();
+        const proceed = yield* Deferred.make<void>();
+        f.setBeforeStatus(
+          Deferred.succeed(reading, undefined).pipe(Effect.andThen(Deferred.await(proceed))),
+        );
+        const pending = yield* service
+          .retryFailed(
+            {
+              projectId,
+              clientRequestId: "grant-race",
+              runId: 42,
+              expectedAttempt: 1,
+              expectedMainSha: mainSha,
+            },
+            chief,
+          )
+          .pipe(Effect.result, Effect.forkScoped);
+        yield* Deferred.await(reading);
+        if (scenario === "session") f.setSessions([]);
+        else
+          yield* service.configure(
+            scenario === "pause"
+              ? { ...configuration, enabled: false }
+              : {
+                  ...configuration,
+                  connection: { ...configuration.connection, expectedVersion: 3 },
+                  enabled: false,
+                },
+            owner,
+          );
+        yield* Deferred.succeed(proceed, undefined);
+        expect((yield* Fiber.join(pending))._tag).toBe("Failure");
+        expect(f.posts()).toBe(0);
+      }),
+  );
+  it.effect.each(["accepted", "refused"] as const)(
+    "reserves one failed-job retry under concurrent keys and retains its %s result",
+    (outcome) =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const service = yield* f.service;
+        yield* service.configure(configuration, owner);
+        f.setSnapshot({ mainSha, runs: [{ ...workflowRun("scheduled"), conclusion: "failure" }] });
+        f.setPostStatus(outcome === "accepted" ? 204 : 422);
+        const entered = yield* Queue.unbounded<void>();
+        const proceed = yield* Deferred.make<void>();
+        f.setBeforeStatus(
+          Queue.offer(entered, undefined).pipe(Effect.andThen(Deferred.await(proceed))),
+        );
+        const input = {
+          projectId,
+          clientRequestId: "retry-one",
+          runId: 42,
+          expectedAttempt: 1,
+          expectedMainSha: mainSha,
+        };
+        const pending = yield* Effect.all(
+          [
+            service.retryFailed(input, chief).pipe(Effect.result),
+            service
+              .retryFailed({ ...input, clientRequestId: "retry-two" }, chief)
+              .pipe(Effect.result),
+          ],
+          { concurrency: "unbounded" },
+        ).pipe(Effect.forkScoped);
+        yield* Queue.take(entered);
+        yield* Queue.take(entered);
+        yield* Deferred.succeed(proceed, undefined);
+        const results = yield* Fiber.join(pending);
+        expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+        expect(results.filter((result) => result._tag === "Failure")).toHaveLength(1);
+        const saved = (yield* service.status(projectId, chief)).retryReceipts?.[0];
+        expect(saved?.status).toBe(outcome);
+        const restarted = yield* f.service;
+        expect(
+          yield* restarted.retryFailed(
+            { ...input, clientRequestId: saved!.clientRequestId },
+            chief,
+          ),
+        ).toEqual(saved);
+        expect(f.posts()).toBe(1);
+      }),
   );
 });
