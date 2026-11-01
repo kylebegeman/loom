@@ -1097,7 +1097,7 @@ packages/shared/src/t3McpToolPresentation.ts	attention-status	2
 packages/shared/src/t3McpToolPresentation.ts	mini-native-retention	2
 apps/mobile/src/features/threads/ThreadDetailScreen.tsx	failed-run-retry	5
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	source-control-cockpit	1
-apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	5
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	6
 apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1

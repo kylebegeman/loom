@@ -8,6 +8,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import { useRememberThreadProject } from "./useRememberThreadProject";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
+import { makeQueuedMessageMetadata } from "../../lib/commandMetadata"; // fork: failed-run-retry
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup"; // fork: library-launch-files
@@ -818,6 +819,7 @@ function ThreadRouteContent(
   const handleContinueRun = async (runId: RunId) => {
     if (!selectedThread) return;
     // Continues this run in the thread's saved modes, then resumes a held queue without re-continuing.
+    const metadata = makeQueuedMessageMetadata();
     const result = await resumeThread({
       thread: selectedThread,
       resumableRunId: runId,
@@ -825,8 +827,8 @@ function ThreadRouteContent(
       runtimeMode: selectedThread.runtimeMode,
       interactionMode: selectedThread.interactionMode,
       modelSelection: null,
-      messageId: MessageId.make(uuidv4()),
-      createdAt: new Date().toISOString(),
+      messageId: MessageId.make(metadata.messageId),
+      createdAt: metadata.createdAt,
       setRuntimeMode: setThreadRuntimeMode,
       setInteractionMode: setThreadInteractionMode,
       startTurn: continueThreadRun,
