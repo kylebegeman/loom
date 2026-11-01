@@ -122,6 +122,8 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
 }));
 // fork: github-host-setup
 vi.mock("./components/GitHubHostSetupSettings", () => ({ GitHubHostSetupSettings: () => null }));
+// fork: vault-provider-credentials
+vi.mock("../../fork/vault/ProviderCredentials", () => ({ VaultProviderCredentials: () => null }));
 vi.mock("./components/DatabaseStorageNotice", () => ({ DatabaseStorageNotice: () => null }));
 vi.mock("./components/SettingsSection", () => ({ SettingsSection: Children }));
 vi.mock("../../components/ui/ListChoiceRow", () => ({ ListChoiceRow: () => null }));
