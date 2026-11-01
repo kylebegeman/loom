@@ -33,6 +33,8 @@ export class ProviderHost extends Context.Service<
   ProviderHost,
   {
     readonly paths: ProviderHostPaths;
+    // fork: vault-provider-credentials -- Captured by background probes before they use an instance credential.
+    readonly beforeCredentialUse?: Effect.Effect<void, ProviderCredentialError>;
     readonly settings: {
       readonly get: Effect.Effect<ServerSettings, ServerSettingsError>;
       /** Runs `use` on a settings snapshot that no settings write can change until it finishes. */

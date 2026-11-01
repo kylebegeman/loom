@@ -22,6 +22,16 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as Redacted from "effect/Redacted";
+
+// fork: vault-provider-credentials
+import { isVaultProviderReference, type VaultError } from "@t3tools/contracts/fork";
+import * as VaultProviderCredentials from "../fork/vault/VaultProviderCredentials.ts";
+import {
+  guardVaultProviderCredentials,
+  withVaultProviderCredentialGuards,
+  vaultProviderCredentialMessage,
+} from "../fork/vault/provider-credential-guards.ts";
 
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 
@@ -89,6 +99,7 @@ const withoutSecretReferences = (
 
 const readInstanceSecrets = Effect.fn("ProviderInstanceRegistry.readInstanceSecrets")(function* <R>(
   driver: AnyProviderDriver<R> | undefined,
+  instanceId: ProviderInstanceId,
   entry: ProviderInstanceConfig,
 ) {
   const variables = entry.environment ?? [];
@@ -96,28 +107,50 @@ const readInstanceSecrets = Effect.fn("ProviderInstanceRegistry.readInstanceSecr
   const references = [
     ...secretReferencesIn(variables),
     ...configFields.map(({ reference }) => reference),
-  ];
+  ].filter((reference) => !isVaultProviderReference(reference));
   const values =
     references.length === 0 ? [] : yield* (yield* SecretResolver.SecretResolver).read(references);
   const unreadable: Array<string> = [];
+  let unreadableVault = false;
+  let vaultFailure: VaultError | undefined;
   let index = 0;
-  const environment: ResolvedProviderInstanceEnvironment = variables.flatMap((variable) => {
-    if (typeof variable.value === "string") return [{ ...variable, value: variable.value }];
-    const secret = values[index++];
-    if (secret === undefined) {
-      unreadable.push(variable.name);
-      return [];
+  const environment: Array<ResolvedProviderInstanceEnvironment[number]> = [];
+  for (const variable of variables) {
+    if (typeof variable.value === "string") {
+      environment.push({ ...variable, value: variable.value });
+      continue;
     }
-    return [{ ...variable, value: secret, sensitive: true }];
-  });
+    // fork: vault-provider-credentials -- Vault reads require the exact provider and slot.
+    let secret: string | undefined;
+    if (isVaultProviderReference(variable.value)) {
+      const result = yield* (yield* VaultProviderCredentials.VaultProviderCredentials)
+        .read(variable.value, { instanceId, variableName: variable.name })
+        .pipe(Effect.result);
+      if (result._tag === "Success") secret = Redacted.value(result.success);
+      else {
+        unreadableVault = true;
+        vaultFailure ??= result.failure;
+      }
+    } else {
+      secret = values[index++];
+    }
+    if (secret === undefined) unreadable.push(variable.name);
+    else environment.push({ ...variable, value: secret, sensitive: true });
+  }
   const config: Record<string, string> = {};
-  for (const { field } of configFields) {
+  for (const { field, reference } of configFields) {
+    // fork: vault-provider-credentials -- Only environment slots support application bindings.
+    if (isVaultProviderReference(reference)) {
+      unreadable.push(field);
+      unreadableVault = true;
+      continue;
+    }
     const secret = values[index++];
     if (secret === undefined) unreadable.push(field);
     else config[field] = secret;
   }
   const secrets: InstanceSecrets = { environment, config };
-  return { secrets, unreadable };
+  return { secrets, unreadable, unreadableVault, vaultFailure };
 });
 
 /** Conflicting saved flags must preserve any explicit disable. */
@@ -152,7 +185,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   | { readonly kind: "live"; readonly live: LiveEntry }
   | { readonly kind: "unavailable"; readonly snapshot: ServerProvider },
   never,
-  R | SecretResolver.SecretResolver
+  R | SecretResolver.SecretResolver | VaultProviderCredentials.VaultProviderCredentials
 > {
   const { driversById, parentScope, instanceId, rawInstanceId, entry, deferSecrets } = input;
   const driver = driversById.get(entry.driver);
@@ -205,11 +238,12 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
       }),
     };
   }
-  const { secrets, unreadable } = enabled
-    ? yield* readInstanceSecrets(driver, entry)
+  const { secrets, unreadable, vaultFailure } = enabled
+    ? yield* readInstanceSecrets(driver, instanceId, entry)
     : {
         secrets: { environment: withoutSecretReferences(entry.environment ?? []), config: {} },
         unreadable: [],
+        vaultFailure: undefined,
       };
   // Starting with a blank credential would fail later with a less useful error, or fall back to
   // whatever the server inherited.
@@ -221,15 +255,19 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        reason: `Could not read ${unreadable.join(", ")} from its secret provider. Unlock it, then refresh.`,
+        reason: vaultFailure
+          ? `Could not use ${unreadable.join(", ")} from Vault. ${vaultProviderCredentialMessage(vaultFailure)}`
+          : `Could not read ${unreadable.join(", ")} from its secret provider. Unlock it, then refresh.`,
       }),
     };
   }
 
   const childScope = yield* Scope.fork(parentScope);
 
-  const createResult = yield* driver
-    .create({
+  const createResult = yield* withVaultProviderCredentialGuards(
+    instanceId,
+    enabled ? (entry.environment ?? []) : [],
+    driver.create({
       instanceId,
       displayName: entry.displayName,
       accentColor: entry.accentColor,
@@ -239,8 +277,8 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         Object.keys(secrets.config).length === 0
           ? typedConfig
           : { ...typedConfig, ...secrets.config },
-    })
-    .pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);
+    }),
+  ).pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);
   if (createResult._tag === "Failure") {
     yield* Effect.logError("Failed to create provider instance", {
       instanceId: rawInstanceId,
@@ -263,7 +301,11 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   return {
     kind: "live" as const,
     live: {
-      instance: createResult.success,
+      // fork: vault-provider-credentials
+      instance: yield* guardVaultProviderCredentials(
+        createResult.success,
+        enabled ? (entry.environment ?? []) : [],
+      ),
       scope: childScope,
       entry,
       secrets,
@@ -279,7 +321,11 @@ const makeReconcile = <R>(input: {
   configMap: ProviderInstanceConfigMap,
   rebuild?: ReadonlySet<ProviderInstanceId>,
   deferSecrets?: boolean,
-) => Effect.Effect<void, never, R | SecretResolver.SecretResolver>) => {
+) => Effect.Effect<
+  void,
+  never,
+  R | SecretResolver.SecretResolver | VaultProviderCredentials.VaultProviderCredentials
+>) => {
   const { state, driversById, parentScope } = input;
   return (configMap, rebuild = new Set(), deferSecrets = false) =>
     Effect.gen(function* () {
@@ -328,7 +374,11 @@ const makeReconcile = <R>(input: {
             ? []
             : secretReferencesOf(driversById, entry);
         }),
-      ).pipe(Effect.map((perEntry) => perEntry.flat()));
+      ).pipe(
+        Effect.map((perEntry) =>
+          perEntry.flat().filter((reference) => !isVaultProviderReference(reference)),
+        ),
+      );
       if (references.length > 0 && !deferSecrets) {
         yield* (yield* SecretResolver.SecretResolver).read(references);
       }
@@ -408,7 +458,10 @@ export const makeProviderInstanceRegistry = Effect.fn(
     readonly mutator: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape;
   },
   never,
-  R | SecretResolver.SecretResolver | Scope.Scope
+  | R
+  | SecretResolver.SecretResolver
+  | VaultProviderCredentials.VaultProviderCredentials
+  | Scope.Scope
 > {
   const driversById = new Map<ProviderDriverKind, AnyProviderDriver<R>>(
     input.drivers.map((driver) => [driver.driverKind, driver]),
@@ -420,7 +473,9 @@ export const makeProviderInstanceRegistry = Effect.fn(
   // scopes to the *caller's* scope instead of the registry's.
   const parentScope = yield* Scope.Scope;
 
-  const driverContext = yield* Effect.context<R | SecretResolver.SecretResolver>();
+  const driverContext = yield* Effect.context<
+    R | SecretResolver.SecretResolver | VaultProviderCredentials.VaultProviderCredentials
+  >();
 
   const entries = yield* Ref.make<ReadonlyMap<ProviderInstanceId, LiveEntry>>(new Map());
   const unavailable = yield* Ref.make<ReadonlyMap<ProviderInstanceId, ServerProvider>>(new Map());
@@ -454,20 +509,28 @@ export const makeProviderInstanceRegistry = Effect.fn(
         );
         if (targets.length === 0) return;
         const resolver = yield* SecretResolver.SecretResolver;
-        const references = targets.flatMap(([, entry]) => secretReferencesOf(driversById, entry));
-        yield* resolver.invalidate(references);
-        yield* resolver.read(references);
+        const references = targets
+          .flatMap(([, entry]) => secretReferencesOf(driversById, entry))
+          .filter((reference) => !isVaultProviderReference(reference));
+        if (references.length > 0) {
+          yield* resolver.invalidate(references);
+          yield* resolver.read(references);
+        }
         const live = yield* Ref.get(entries);
         const rebuild = new Set<ProviderInstanceId>();
         for (const [rawInstanceId, entry] of targets) {
           const current = live.get(ProviderInstanceId.make(rawInstanceId));
           if (current === undefined) continue;
-          const { secrets, unreadable } = yield* readInstanceSecrets(
+          const { secrets, unreadable, unreadableVault } = yield* readInstanceSecrets(
             driversById.get(entry.driver),
+            current.instance.instanceId,
             entry,
           );
-          // A failed re-read keeps the working instance and the value it already holds.
-          if (unreadable.length === 0 && !Equal.equals(secrets, current.secrets)) {
+          // fork: vault-provider-credentials -- Vault denial retires stale credentials; external unlock failures preserve continuity.
+          if (
+            unreadableVault ||
+            (unreadable.length === 0 && !Equal.equals(secrets, current.secrets))
+          ) {
             rebuild.add(current.instance.instanceId);
           }
         }
@@ -495,7 +558,12 @@ export const makeProviderInstanceRegistry = Effect.fn(
     // The read waits outside the lock so other mutations are not held for a vault prompt; a
     // configuration saved meanwhile has already reconciled itself.
     yield* Effect.gen(function* () {
-      yield* (yield* SecretResolver.SecretResolver).read(startupReferences);
+      // fork: vault-provider-credentials
+      const externalReferences = startupReferences.filter(
+        (reference) => !isVaultProviderReference(reference),
+      );
+      if (externalReferences.length > 0)
+        yield* (yield* SecretResolver.SecretResolver).read(externalReferences);
       yield* semaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* Ref.get(configMapRef);
@@ -538,7 +606,7 @@ export const layer = <R>(input: {
 }): Layer.Layer<
   ProviderInstanceRegistry | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
   never,
-  R | SecretResolver.SecretResolver
+  R | SecretResolver.SecretResolver | VaultProviderCredentials.VaultProviderCredentials
 > =>
   Layer.effectContext(
     makeProviderInstanceRegistry(input).pipe(
@@ -551,5 +619,5 @@ export const layer = <R>(input: {
   ) as Layer.Layer<
     ProviderInstanceRegistry | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
     never,
-    R | SecretResolver.SecretResolver
+    R | SecretResolver.SecretResolver | VaultProviderCredentials.VaultProviderCredentials
   >;

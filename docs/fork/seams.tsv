@@ -1621,3 +1621,15 @@ packages/client-runtime/src/state/projectRemoval.ts	brand	2
 apps/web/src/components/ThreadTerminalDrawer.browser.test.tsx	preview-links	1
 apps/web/src/components/chat/ThreadRelationshipsControl.browser.test.tsx	source-control-cockpit	3
 apps/web/src/components/ChatView.tsx	brand	1
+apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx	vault-provider-credentials	2
+apps/server/src/auth/RpcAuthorization.test.ts	vault-provider-credentials	2
+apps/server/src/auth/RpcAuthorization.ts	vault-provider-credentials	3
+apps/server/src/provider/ProviderInstanceRegistryHydration.ts	vault-provider-credentials	4
+apps/web/src/components/settings/ProviderInstanceCard.tsx	vault-provider-credentials	9
+packages/client-runtime/src/state/commandPermissions.test.ts	vault-provider-credentials	5
+packages/contracts/src/clientRpcPermissions.ts	vault-provider-credentials	5
+apps/server/src/provider/ProviderInstanceRegistry.ts	vault-provider-credentials	6
+apps/server/src/provider/ProviderInstanceRegistry.test.ts	vault-provider-credentials	1
+packages/provider-core/src/server/ProviderHost.ts	vault-provider-credentials	1
+packages/provider-core/src/server/managedProvider.ts	vault-provider-credentials	2
+packages/provider-core/src/server/managedProvider.test.ts	vault-provider-credentials	1

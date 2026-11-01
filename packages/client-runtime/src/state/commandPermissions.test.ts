@@ -14,6 +14,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   AuthAccessReadScope,
+  AuthProvidersManageScope, // fork: vault-provider-credentials
   AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -23,6 +24,9 @@ import {
   AuthTerminalOperateScope, // fork: pcb-preview
   AuthSourceControlWriteScope,
   ThreadId,
+  ProviderInstanceId, // fork: vault-provider-credentials
+  ProviderDriverKind, // fork: vault-provider-credentials
+  SecretProviderId, // fork: vault-provider-credentials
   EnvironmentId,
   ORCHESTRATION_V2_WS_METHODS,
   ScheduledTaskId,
@@ -534,6 +538,63 @@ it.effect(
         expect(yield* readLinks).toEqual({ links: [] });
       }),
     ),
+);
+
+// fork: vault-provider-credentials
+it.effect("requires the destination's provider and Vault grants when saving a Vault binding", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      registry.mount(sessions(other));
+      const policy = createCommandPermissions(runtime, WS_METHODS.serverUpdateSettings);
+      const input = {
+        patch: {},
+        providerInstanceMutation: {
+          operation: "upsert" as const,
+          instanceId: ProviderInstanceId.make("codex_work"),
+          instance: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [
+              {
+                name: "OPENAI_API_KEY",
+                sensitive: true,
+                value: {
+                  provider: SecretProviderId.make("loom-vault"),
+                  reference: "loom-vault:target:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1",
+                },
+              },
+            ],
+          },
+        },
+      };
+      const setScopes = (scopes: NonNullable<AuthSessionState["scopes"]>) =>
+        registry.set(
+          sessions(env),
+          AsyncResult.success({ ...grant(false), scopes, permissions: scopes }),
+        );
+      registry.set(
+        sessions(other),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthProvidersManageScope, AuthAccessWriteScope],
+          permissions: [AuthProvidersManageScope, AuthAccessWriteScope],
+        }),
+      );
+      setScopes([AuthProvidersManageScope]);
+      expect(registry.get(policy.permissionAtom(env, input))).toBe(false);
+      expect(yield* policy.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: AuthAccessWriteScope,
+      });
+      setScopes([AuthProvidersManageScope, AuthAccessWriteScope]);
+      expect(registry.get(policy.permissionAtom(env, input))).toBe(true);
+      yield* policy.authorize(registry, env, input);
+      setScopes([AuthAccessWriteScope]);
+      expect(registry.get(policy.permissionAtom(env, input))).toBe(false);
+      expect(yield* policy.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
+        requiredPermission: AuthProvidersManageScope,
+      });
+    }),
+  ),
 );
 
 it.effect("requires access management to answer a link request", () =>

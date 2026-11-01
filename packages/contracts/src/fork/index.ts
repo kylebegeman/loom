@@ -104,3 +104,4 @@ export * from "./open-at-login.ts";
 export * from "./project-storage.ts";
 
 export * from "./upstream-supervisor.ts";
+export * from "./vault-provider-credentials.ts";

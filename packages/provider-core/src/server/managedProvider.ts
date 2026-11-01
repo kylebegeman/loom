@@ -111,14 +111,19 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       return;
     }
 
-    const fiber = yield* input
-      .enrichSnapshot({
-        settings,
-        snapshot,
-        getSnapshot: Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot)),
-        publishSnapshot: (nextSnapshot) => publishEnrichedSnapshot(generation, nextSnapshot),
-      })
-      .pipe(Effect.ignoreCause({ log: true }), Effect.forkIn(scope));
+    // fork: vault-provider-credentials
+    const fiber = yield* (host.beforeCredentialUse ?? Effect.void).pipe(
+      Effect.andThen(() =>
+        input.enrichSnapshot!({
+          settings,
+          snapshot,
+          getSnapshot: Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot)),
+          publishSnapshot: (nextSnapshot) => publishEnrichedSnapshot(generation, nextSnapshot),
+        }),
+      ),
+      Effect.ignoreCause({ log: true }),
+      Effect.forkIn(scope),
+    );
 
     yield* Ref.set(enrichmentFiberRef, fiber);
   });
@@ -149,6 +154,17 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       return state.snapshot;
     }
 
+    // fork: vault-provider-credentials -- SDK-backed probes can bypass the Effect process spawner.
+    yield* (host.beforeCredentialUse ?? Effect.void).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ServerSettingsError({
+            settingsPath: "<provider credential>",
+            operation: "read-file",
+            cause,
+          }),
+      ),
+    );
     const probedSnapshot = yield* input.checkProvider;
     const { snapshot: nextSnapshot, generation: nextGeneration } = yield* Ref.modify(
       snapshotStateRef,

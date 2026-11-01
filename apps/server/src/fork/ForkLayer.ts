@@ -55,9 +55,8 @@ import * as VaultBrokers from "./vault/VaultBrokers.ts";
 import * as BrokerCrypto from "./vault/BrokerCrypto.ts";
 import * as VaultAccess from "./vault/VaultAccess.ts";
 import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
-import * as VaultCore from "./vault/VaultCore.ts";
+import { layerCore as layerVaultCore, layerStore as layerVaultStore } from "./vault/layers.ts";
 import * as VaultSecretRequests from "./vault/VaultSecretRequests.ts";
-import * as OpenBaoStore from "./vault/OpenBaoStore.ts";
 import * as SitesService from "./sites/SitesService.ts";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPublisher.ts";
@@ -158,9 +157,6 @@ import { ForkRuntime, type ForkServices } from "./ForkRuntime.ts";
 import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
-
-const layerVaultStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer));
-const layerVaultCore = VaultCore.layer.pipe(Layer.provide(layerVaultStore));
 
 const layerVaultTestAccounts = VaultTestAccounts.layer.pipe(
   Layer.provide(Layer.merge(layerVaultCore, layerVaultStore)),

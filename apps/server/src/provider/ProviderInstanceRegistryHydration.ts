@@ -18,6 +18,8 @@ import * as Stream from "effect/Stream";
 
 import * as Settings from "../serverSettings.ts";
 import * as SecretResolver from "../secrets/SecretResolver.ts";
+import { layerProviderCredentials } from "../fork/vault/layers.ts"; // fork: vault-provider-credentials
+import type { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts"; // fork: vault-provider-credentials
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "./builtInDrivers.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
@@ -37,6 +39,7 @@ type ProviderInstanceRegistryHydrationEnv =
       | ProviderHost.ProviderHost
     >
   | Settings.ServerSettingsService
+  | ServerEnvironmentIdentity // fork: vault-provider-credentials
   | BackgroundPolicy.BackgroundPolicy
   | ServerConfig.ServerConfig
   | Path.Path
@@ -173,13 +176,9 @@ export const layer: Layer.Layer<
       Layer.provide(AcpRegistrySupport.layerFromHost),
       Layer.provide(ProviderHostLive.layer),
       Layer.provide(SecretResolver.layer),
+      Layer.provide(Layer.orDie(layerProviderCredentials)), // fork: vault-provider-credentials
     );
 
     return layerSettingsWatcher(settingsChanges).pipe(Layer.provideMerge(layerMutable));
   }),
-) as Layer.Layer<
-  | ProviderInstanceRegistry.ProviderInstanceRegistry
-  | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
-  never,
-  ProviderInstanceRegistryHydrationEnv
->;
+);

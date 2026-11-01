@@ -1,3 +1,4 @@
+import { VaultProviderCredentials } from "../../fork/vault/ProviderCredentials"; // fork: vault-provider-credentials
 import * as Dialog from "../../components/ui/Dialog";
 import {
   isAtomCommandInterrupted,
@@ -86,6 +87,12 @@ export function SettingsProviderAccountsRouteScreen() {
                     ) : null}
                   </>
                 )}
+                {/* fork: vault-provider-credentials */}
+                <VaultProviderCredentials
+                  environmentId={environment.environmentId}
+                  connected={environment.connection.phase === "connected"}
+                  computerName={environment.label}
+                />
               </SettingsSection>
             ))
           )}
