@@ -61,7 +61,7 @@ const layerTest = (input: {
   readonly platform: NodeJS.Platform;
   readonly env?: Record<string, string>;
   readonly resolveExecutable?: (command: string) => string | undefined;
-  readonly fileSystem?: FileSystem.FileSystem;
+  readonly fileSystem?: FileSystem.FileSystem; // fork: hermetic-tests
   readonly onSpawn?: (command: ChildProcess.StandardCommand) => void;
   readonly onUnref?: () => void;
   readonly spawnResult?: (command: ChildProcess.StandardCommand) => MockSpawnResult | undefined;
@@ -86,6 +86,7 @@ const layerTest = (input: {
   );
 
   return Layer.mergeAll(
+    // fork: hermetic-tests
     ExternalLauncher.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -627,6 +628,7 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
         layerTest({
           platform: "darwin",
           env: { HOME: home, PATH: path.join(home, "empty") },
+          // fork: hermetic-tests: keep the host's real editor installs out of this case.
           fileSystem: {
             ...fs,
             readDirectory: (directory) =>

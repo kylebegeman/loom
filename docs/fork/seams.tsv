@@ -344,6 +344,7 @@ apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	project-lifecyc
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	project-lifecycle	17
 apps/server/src/orchestration-v2/Orchestrator.ts	deleted-history	4
 apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
+apps/server/src/orchestration-v2/ThreadFork.execution.test.ts	deleted-history	1
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	5
@@ -800,6 +801,8 @@ apps/server/src/git/GitWorkflowService.test.ts	checkpoint-capable	6
 apps/server/src/git/GitWorkflowService.test.ts	project-lifecycle	3
 apps/server/src/server.ts	project-root-worktree	1
 apps/server/src/git/GitManager.test.ts	test-temp-isolation	6
+apps/server/src/process/externalLauncher.test.ts	hermetic-tests	3
+apps/server/src/usage/UsageService.test.ts	hermetic-tests	2
 apps/web/src/hooks/useThreadActions.ts	agent-work	3
 apps/web/src/components/settings/ArchivedThreadsPanel.tsx	agent-work	4
 apps/mobile/src/features/home/useThreadListActions.ts	agent-work	2
@@ -1600,6 +1603,7 @@ apps/mobile/src/components/MediaImagePreview.tsx	cloudflare-access	1
 apps/mobile/src/components/MediaVideoPlayer.tsx	cloudflare-access	1
 apps/mobile/src/components/VideoPreviewModal.ios.tsx	cloudflare-access	1
 apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx	cloudflare-access	1
+apps/mobile/src/features/threads/ThreadMarkdownImage.test.tsx	cloudflare-access	1
 apps/mobile/src/features/voice-input/usePlaybackAudioPlayer.ts	cloudflare-access	1
 apps/mobile/src/fork/identity-renewal/mobileIdentityRenewal.ts	cloudflare-access	1
 apps/mobile/src/fork/library/LibrarySignInStatus.tsx	cloudflare-access	1

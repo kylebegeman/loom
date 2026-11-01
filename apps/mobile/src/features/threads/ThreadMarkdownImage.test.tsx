@@ -35,6 +35,7 @@ vi.mock("../../components/ui/NativePresentation", () => ({
 }));
 vi.mock("../../state/mediaActions", () => ({ useMediaActions: () => ({ actions: [] }) }));
 vi.mock("../../state/assets", () => ({ useAssetUrlState: vi.fn() }));
+// fork: cloudflare-access - Keep the native Access keychain out of asset image sources.
 vi.mock("../../fork/cloudflare-access/mobileAccess", () => ({
   mobileAccess: { peekToken: () => null },
 }));
