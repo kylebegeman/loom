@@ -13,6 +13,8 @@ import {
   Project,
   ProjectCreatePayload,
   ProjectUpdatePayload,
+  ProjectSettingsSnapshot,
+  ProjectSettingsChange,
   ProjectId,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
@@ -99,6 +101,29 @@ const ProjectUpdateTool = Tool.make("t3_project_update", {
     ...ProjectUpdatePayload.fields,
   }),
 }).annotate(Tool.Destructive, true);
+const ProjectSettingsReadTool = Tool.make("t3_project_settings_read", {
+  ...shared,
+  description:
+    "Read a project's effective settings, overrides, inheritance sources and revision. Works for existing folders without adding them to the Library.",
+  parameters: Schema.Struct({
+    environmentId: OrchestratorMcpEnvironmentTarget,
+    projectId: Schema.optionalKey(ProjectId),
+  }),
+  success: ProjectSettingsSnapshot,
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false);
+const ProjectSettingsUpdateTool = Tool.make("t3_project_settings_update", {
+  ...shared,
+  description:
+    "Change authorized project settings from chat, including browser/device access, model and worktree defaults. Read settings first and pass expectedRevision; settings changes only named fields, inherit removes named overrides. Lost responses can be retried unchanged. Access changes apply to this conversation immediately. Omit projectId for this conversation's project. Hardware/Reach/Sites preferences use loom_project_profiles_update.",
+  parameters: Schema.Struct({
+    ...ProjectSettingsChange.fields,
+    environmentId: OrchestratorMcpEnvironmentTarget,
+    projectId: Schema.optionalKey(ProjectId),
+  }),
+  success: ProjectSettingsSnapshot,
+}).annotate(Tool.Destructive, false);
 const ProjectDeleteTool = Tool.make("t3_project_delete", {
   ...shared,
   description: "Delete one project. Nonempty needs `force: true`. Folder on disk stays.",
@@ -198,6 +223,8 @@ export const ProjectToolkit = Toolkit.make(
   ProjectReadTool,
   ProjectCreateTool,
   ProjectUpdateTool,
+  ProjectSettingsReadTool,
+  ProjectSettingsUpdateTool,
   ProjectDeleteTool,
   ProjectCloneTool,
 );

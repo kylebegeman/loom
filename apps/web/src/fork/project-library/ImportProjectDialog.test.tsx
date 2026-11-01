@@ -754,3 +754,11 @@ it("opens on the folder it was asked to add and only offers an unfinished import
   expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
   expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
 });
+
+it("adds a folder already selected by the user without another confirmation", async () => {
+  const onSaved = vi.fn();
+  await mount({ initialRootPath: "/Users/kyle/Developer", autoAddInitial: true, onSaved });
+  expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
+  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+});

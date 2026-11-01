@@ -101,6 +101,7 @@ export const clientModeCeiling = (client: McpClientCaller | undefined): ClientMo
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
   readonly capabilities: ReadonlySet<McpCapability>;
+  readonly advertisedCapabilities?: ReadonlySet<McpCapability>;
   readonly issuedAt: number;
   readonly requestNamespace: string;
   readonly thread: McpThreadCaller | undefined;

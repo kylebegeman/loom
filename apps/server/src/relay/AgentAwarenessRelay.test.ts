@@ -266,6 +266,8 @@ const makeTestRelay = Effect.fnUntraced(function* (
     }),
     Effect.provideService(ProjectService.ProjectService, {
       create: unused,
+      readSettings: () => Effect.die("unused"),
+      updateSettings: () => Effect.die("unused"),
       bootstrap: unused,
       update: unused,
       delete: unused,

@@ -2289,22 +2289,12 @@ it.effect(
         );
         assert.equal((yield* registry.resolve(originalToken!))?.thread.threadId, threadId);
 
-        // fork: ext-mcp
         families = new Set(["hardware"]);
-        // fork: ext-mcp
         yield* manager.detach({ providerSessionId, threadId });
-        // fork: ext-mcp
         yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
-        // fork: ext-mcp
         const replacement = yield* mcpSessions.read(threadId);
-        // fork: ext-mcp
-        assert.notEqual(replacement?.providerSessionId, original?.providerSessionId);
-        // fork: ext-mcp
-        const token = replacement!.authorizationHeader.replace(/^Bearer\s+/, "");
-        // fork: ext-mcp
-        assert.isTrue((yield* registry.resolve(token))?.capabilities.has("hardware"));
-        // fork: ext-mcp
-        assert.isUndefined(yield* registry.resolve(originalToken!));
+        assert.equal(replacement?.providerSessionId, original?.providerSessionId);
+        assert.isDefined(yield* registry.resolve(originalToken!));
 
         yield* manager.close(providerSessionId);
         assert.isUndefined(yield* registry.resolve(originalToken!));
@@ -2319,6 +2309,7 @@ it.effect(
             // fork: ext-mcp
             sessionToolPolicy: {
               isAuthority: false,
+              refresh: (scope) => Effect.succeed(scope),
               localContext: () => Effect.succeed({ reach: false, sites: false }),
               forThread: () => Effect.sync(() => families),
             },

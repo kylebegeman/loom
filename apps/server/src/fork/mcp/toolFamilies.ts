@@ -12,9 +12,6 @@ export const toolFamily = (name: string): AgentToolFamily | undefined =>
         ? "sites"
         : undefined;
 
-export const sameCapabilities = (left: ReadonlySet<string>, right: ReadonlySet<string>) =>
-  left.size === right.size && [...left].every((capability) => right.has(capability));
-
 export const requireToolFamily = Effect.fn("Mcp.requireToolFamily")(function* (
   family: AgentToolFamily,
 ) {
@@ -22,6 +19,6 @@ export const requireToolFamily = Effect.fn("Mcp.requireToolFamily")(function* (
   if (scope.thread && !scope.capabilities.has(family))
     return yield* new OrchestratorMcpFailure({
       code: "capability_denied",
-      message: `${family} tools are disabled for this agent session. Change Tools for agents in the project settings, then start a new agent session.`,
+      message: `${family} tools are turned off for this project. With the user's authorization, use loom_project_profiles_update to change agentToolFamilies.${family}, then retry in this conversation.`,
     });
 });

@@ -6,6 +6,7 @@ import {
   DeviceOperationError,
   LOCAL_DEVICE_HOST_ID,
   ThreadId,
+  ProjectId,
   type DeviceSummary,
   type ServerSettings as Settings,
   type SshDeviceHostConfig,
@@ -289,6 +290,7 @@ const fixture = Effect.fn("fixture")(function* (
     Effect.provideService(
       ServerSettings.ServerSettingsService,
       ServerSettings.ServerSettingsService.of({
+        updateProjectSettings: () => Effect.die("Unexpected project settings mutation"),
         updateProviderInstance: () => Effect.die("Unexpected provider mutation"),
         withSettingsSnapshot: (use) => Effect.flatMap(Ref.get(settings), use),
         start: Effect.void,
@@ -530,6 +532,19 @@ describe("device setup consent", () => {
       expect(agentStops).toEqual(["stop"]);
       expect((yield* service.state).onboardingCompleted).toBe(true);
       expect((yield* Ref.get(settings)).deviceOnboardingCompleted).toBe(true);
+      const projectId = ProjectId.make("device-project");
+      yield* Ref.update(settings, (current) => ({
+        ...current,
+        projectSettingsOverrides: { [projectId]: { enableAgentDeviceAccess: true } },
+      }));
+      expect(yield* service.agentReadinessIfSupported(undefined, projectId)).not.toBeNull();
+      expect(yield* service.agentReadinessIfSupported()).toBeNull();
+      yield* Ref.update(settings, (current) => ({
+        ...current,
+        enableAgentDeviceAccess: true,
+        projectSettingsOverrides: { [projectId]: { enableAgentDeviceAccess: false } },
+      }));
+      expect(yield* service.agentReadinessIfSupported(undefined, projectId)).toBeNull();
     }).pipe(Effect.scoped),
   );
 });

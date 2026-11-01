@@ -50,7 +50,6 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import { SessionToolPolicy } from "../fork/mcp/SessionToolPolicy.ts"; // fork: ext-mcp
-import { sameCapabilities } from "../fork/mcp/toolFamilies.ts"; // fork: ext-mcp
 import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -519,7 +518,6 @@ export const layerWithOptions = (
                     resolved !== undefined &&
                     resolved.thread.threadId === threadId &&
                     resolved.thread.providerInstanceId === providerInstanceId &&
-                    sameCapabilities(resolved.capabilities, capabilities) && // fork: ext-mcp
                     // A credential issued while the lineage read failed is replaced once it works.
                     (resolved.thread.subagent === true) === subagent
                   ) {

@@ -32,6 +32,7 @@ export const IntentCommand = Schema.Union([
 ]);
 export type IntentCommand = typeof IntentCommand.Type;
 export const AGENT_TOOL_FAMILIES_FEATURE = "agent-tool-families";
+export const LIVE_AGENT_TOOL_POLICY_FEATURE = "live-agent-tool-policy";
 export const AGENT_TOOL_FAMILIES = ["hardware", "reach", "sites"] as const;
 export type AgentToolFamily = (typeof AGENT_TOOL_FAMILIES)[number];
 export const AgentToolFamilyPreference = Schema.Literals(["auto", "always", "never"]);
@@ -75,11 +76,18 @@ export const ProjectProfile = Schema.Struct({
   updatedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectProfile = typeof ProjectProfile.Type;
-export const ProjectProfilePatch = Schema.Struct(
-  Object.fromEntries(
+export const ProjectProfilePatch = Schema.Struct({
+  ...(Object.fromEntries(
     Object.entries(profileFields).map(([key, value]) => [key, Schema.optionalKey(value)]),
-  ) as { [K in keyof typeof profileFields]: Schema.optionalKey<(typeof profileFields)[K]> },
-);
+  ) as { [K in keyof typeof profileFields]: Schema.optionalKey<(typeof profileFields)[K]> }),
+  agentToolFamilies: Schema.optionalKey(
+    Schema.Struct({
+      hardware: Schema.optionalKey(AgentToolFamilyPreference),
+      reach: Schema.optionalKey(AgentToolFamilyPreference),
+      sites: Schema.optionalKey(AgentToolFamilyPreference),
+    }),
+  ),
+});
 export type ProjectProfilePatch = typeof ProjectProfilePatch.Type;
 export const defaultProjectProfile = (projectId: ProjectId): ProjectProfile => ({
   projectId,
@@ -178,6 +186,7 @@ export class ProjectProfileError extends Schema.TaggedError<ProjectProfileError>
       "unsupported-platform",
       "sharing-disabled",
       "invalid-profile",
+      "revision-conflict",
     ]),
   },
 ) {
@@ -195,6 +204,7 @@ export class ProjectProfileError extends Schema.TaggedError<ProjectProfileError>
       "unsupported-platform": "This command cannot be safely wrapped on this platform.",
       "sharing-disabled": "Sharing this environment's profiles with agents is disabled.",
       "invalid-profile": "The project profile is invalid.",
+      "revision-conflict": "Project preferences changed. Read them again before saving.",
     };
     return messages[this.reason];
   }
@@ -206,6 +216,7 @@ export const ProjectProfileTarget = Schema.Struct({
 export type ProjectProfileTarget = typeof ProjectProfileTarget.Type;
 export const ProjectProfileUpdate = Schema.Struct({
   projectId: ProjectId,
+  expectedUpdatedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   patch: ProjectProfilePatch,
 });
 export type ProjectProfileUpdate = typeof ProjectProfileUpdate.Type;

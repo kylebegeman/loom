@@ -195,6 +195,28 @@ it.layer(layerTest)("ProjectService", (it) => {
         ],
       });
       assert.equal(created.workspaceRoot, "/work/project");
+      const initialSettings = yield* service.readSettings(projectId);
+      const request = {
+        projectId,
+        expectedRevision: initialSettings.revision,
+        settings: { enableAgentBrowserAccess: true },
+      };
+      const savedSettings = yield* service.updateSettings(request);
+      assert.equal(savedSettings.effective.enableAgentBrowserAccess, true);
+      assert.deepEqual(yield* service.updateSettings(request), savedSettings);
+      assert.equal(
+        (yield* Effect.flip(
+          service.updateSettings({ ...request, settings: { defaultAutoPull: false } }),
+        ))._tag,
+        "ProjectSettingsConflictError",
+      );
+      const inheritedSettings = yield* service.updateSettings({
+        projectId,
+        expectedRevision: savedSettings.revision,
+        inherit: ["enableAgentBrowserAccess"],
+      });
+      assert.isUndefined(inheritedSettings.overrides.enableAgentBrowserAccess);
+
       assert.isNull(created.repositoryIdentity);
       assert.isNull(created.faviconPath);
 

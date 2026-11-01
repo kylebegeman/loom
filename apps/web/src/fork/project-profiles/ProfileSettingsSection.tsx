@@ -8,6 +8,7 @@ import {
   type IntentCommand,
   AGENT_TOOL_FAMILIES,
   AGENT_TOOL_FAMILIES_FEATURE,
+  LIVE_AGENT_TOOL_POLICY_FEATURE,
   DEFAULT_AGENT_TOOL_FAMILIES,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -341,6 +342,7 @@ export function ProfileEditor({
                 environmentId: record.environmentId,
                 input: {
                   projectId: record.projectId,
+                  expectedUpdatedAt: record.profile.updatedAt,
                   patch: buildProfilePatch(record.profile, draft),
                 },
               });
@@ -394,6 +396,11 @@ export function ProfileEditor({
       AGENT_TOOL_FAMILIES_FEATURE,
     ),
   );
+  const livePolicy = records.every((record) =>
+    loomFeaturesOf(configs.get(record.environmentId)?.environment.capabilities).includes(
+      LIVE_AGENT_TOOL_POLICY_FEATURE,
+    ),
+  );
   return (
     <LoomSettingsPanel
       title="Private project profile"
@@ -403,8 +410,9 @@ export function ProfileEditor({
         <div className="space-y-3">
           <h3 className="text-sm font-medium">Tools for agents</h3>
           <p className="text-sm text-muted-foreground">
-            Applies to the next agent session. Automatic shows Hardware for board or CAD projects,
-            Reach when your Library has a Reach zone, and Sites when the project links a site.
+            {livePolicy
+              ? "Applies immediately to current conversations. Automatic allows tools when requested and shows relevant tools for the project."
+              : "Some selected computers apply changes when the agent session next starts. Update Loom on those computers for changes in current conversations."}
           </p>
           {AGENT_TOOL_FAMILIES.map((family) => {
             const value = mixedValue(

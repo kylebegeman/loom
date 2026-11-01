@@ -48,7 +48,7 @@ import * as SourceControlRepositoryService from "../../sourceControl/SourceContr
 import * as StorageCleanup from "../../storageCleanup.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
-import { hideUnusableTools } from "./sessionToolList.ts";
+import { filterSessionTools, hideUnusableTools } from "./sessionToolList.ts";
 
 // Listing tools never calls these; they only satisfy the production layer.
 const layerStubServices = Layer.mergeAll(
@@ -373,4 +373,12 @@ it("passes tool call results through untouched", () => {
     { contentType: "application/json" },
   );
   expect(hideUnusableTools(result, scope([]))).toBe(result);
+});
+
+it("discovers the 3D viewer on demand while retaining an explicit hardware opt-out", () => {
+  const tools = [{ name: "loom_model_preview_3d_editor" }, { name: "loom_pcb_status" }];
+  expect(
+    filterSessionTools(tools, { ...scope(["hardware"]), advertisedCapabilities: new Set() }),
+  ).toEqual([tools[0]]);
+  expect(filterSessionTools(tools, scope([]))).toEqual([]);
 });

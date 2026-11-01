@@ -17,6 +17,7 @@ it.effect("only a signed-in publisher reads the Library's public tool evidence",
     let queried: string | undefined;
     const policy = SessionToolPolicy.of({
       isAuthority: true,
+      refresh: (scope) => Effect.succeed(scope),
       forThread: () => Effect.die("unused"),
       localContext: (projectId) =>
         Effect.sync(() => {

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { ProjectPreservationCenter } from "./ProjectPreservation";
 import { useRef, useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
@@ -163,26 +164,34 @@ export function LibraryProjectsPage() {
     catalog.computers.find((entry) => entry.environmentId === id)?.label ??
     "Saved computer";
   // Folders already behind a project copy are part of that project, not loose folders.
-  const looseFolders = localProjects.flatMap((group) =>
-    group.memberProjectRefs.flatMap((ref) => {
-      if (libraryHoldsLocalRefs([], [ref], activeCopies)) return [];
-      const member = group.memberProjects.find(
-        (entry) => entry.environmentId === ref.environmentId && entry.id === ref.projectId,
-      );
-      if (!member) return [];
-      if (computer && ref.environmentId !== computer) return [];
-      if (
-        query.trim() &&
-        !`${group.displayName} ${member.workspaceRoot} ${hostLabel(ref.environmentId)}`
-          .toLowerCase()
-          .includes(query.trim().toLowerCase())
-      )
-        return [];
-      return [
-        { key: `${ref.environmentId}:${ref.projectId}`, title: group.displayName, ref, member },
-      ];
-    }),
-  );
+  const looseFolders = localProjects
+    .filter((group) => !group.isScratch)
+    .flatMap((group) =>
+      group.memberProjectRefs.flatMap((ref) => {
+        if (libraryHoldsLocalRefs([], [ref], activeCopies)) return [];
+        const member = group.memberProjects.find(
+          (entry) => entry.environmentId === ref.environmentId && entry.id === ref.projectId,
+        );
+        if (!member) return [];
+        if (computer && ref.environmentId !== computer) return [];
+        if (
+          query.trim() &&
+          !`${group.displayName} ${member.workspaceRoot} ${hostLabel(ref.environmentId)}`
+            .toLowerCase()
+            .includes(query.trim().toLowerCase())
+        )
+          return [];
+        return [
+          {
+            key: `${ref.environmentId}:${ref.projectId}`,
+            title: group.displayName,
+            ref,
+            member,
+            projectKey: group.projectKey,
+          },
+        ];
+      }),
+    );
   const entries = projectEntries(
     catalog.query.data ?? [],
     activeCopies,
@@ -537,7 +546,7 @@ export function LibraryProjectsPage() {
           hint="Folders on your computers. Add one to Projects to keep its brief, repositories and conversations together."
         >
           <ul>
-            {looseFolders.map(({ key, title, ref, member }) => {
+            {looseFolders.map(({ key, title, ref, member, projectKey }) => {
               const root = member.workspaceRoot;
               return (
                 <li
@@ -573,6 +582,23 @@ export function LibraryProjectsPage() {
                     onClick={() => void startThread(ref)}
                   >
                     New thread
+                  </Button>
+                  <Button
+                    shape="pill"
+                    size="xs"
+                    variant="ghost"
+                    render={
+                      <Link
+                        to="/settings/projects"
+                        search={{
+                          project: projectKey,
+                          machine: ref.environmentId,
+                          checkout: member.physicalProjectKey,
+                        }}
+                      />
+                    }
+                  >
+                    Settings
                   </Button>
                   {importAvailable ? (
                     <Button

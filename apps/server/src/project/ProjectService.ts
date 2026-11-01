@@ -1,5 +1,12 @@
 import {
   CommandId,
+  type ServerSettings as Settings,
+  ProviderInstanceId,
+  ProjectSettingsSnapshot,
+  ProjectSettingsChange,
+  ProjectSettingsOverrides,
+  ProjectSettingsConflictError,
+  resolveProjectProviderInstanceEnabled,
   type OrchestrationProjectShell,
   ProjectId,
   type Project,
@@ -8,6 +15,11 @@ import {
   type ProjectSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { stableStringify } from "@t3tools/shared/relaySigning";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: file-placement
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
@@ -48,7 +60,10 @@ import * as LanesRoots from "../fork/project-lifecycle/lanesRoots.ts"; // fork: 
 import { makeLibraryCheckoutOwners } from "./libraryCheckoutOwnership.ts"; // fork: file-placement
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as SetupMarker from "../workspace/setupMarker.ts"; // fork: file-placement
+import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+
+const decodeSettingsOverrides = Schema.decodeEffect(ProjectSettingsOverrides);
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -152,6 +167,12 @@ export class ProjectService extends Context.Service<
       { readonly project: Project; readonly created: boolean },
       ProjectServiceError
     >;
+    readonly readSettings: (
+      projectId: ProjectId,
+    ) => Effect.Effect<ProjectSettingsSnapshot, ProjectServiceError>;
+    readonly updateSettings: (
+      input: ProjectSettingsChange,
+    ) => Effect.Effect<ProjectSettingsSnapshot, ProjectServiceError | ProjectSettingsConflictError>;
     readonly update: (input: ProjectUpdateInput) => Effect.Effect<Project, ProjectServiceError>;
     readonly delete: (input: ProjectDeleteInput) => Effect.Effect<Project, ProjectServiceError>;
     readonly getById: (
@@ -185,6 +206,7 @@ export class ProjectService extends Context.Service<
 >()("t3/project/ProjectService") {}
 
 export const make = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto.pipe(Effect.provide(NodeCrypto.layer));
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
@@ -194,6 +216,9 @@ export const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const projectFiles = yield* T3ProjectFileLoader.T3ProjectFileLoader.pipe(
+    Effect.provide(T3ProjectFileLoader.layer),
+  );
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
   // fork: file-placement
@@ -715,7 +740,104 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const settingsRevision = Effect.fn("ProjectService.settingsRevision")(
+    (overrides: ProjectSettingsOverrides) =>
+      crypto.digest("SHA-256", new TextEncoder().encode(stableStringify(overrides))).pipe(
+        Effect.map(Hex.encode),
+        Effect.mapError((cause) => new ProjectOperationError({ operation: "read-project", cause })),
+      ),
+  );
+  const settingsSnapshot = Effect.fn("ProjectService.settingsSnapshot")(function* (
+    project: Project,
+    settings: Settings,
+  ) {
+    const resolved = resolveProjectSettings(
+      settings,
+      project.id,
+      project,
+      Option.getOrNull(yield* projectFiles.load(project.workspaceRoot)),
+    );
+    const effective = yield* decodeSettingsOverrides({
+      ...resolved.settings,
+      providerInstances: Object.fromEntries(
+        Object.keys(settings.providerInstances).map((id) => [
+          id,
+          {
+            enabled: resolveProjectProviderInstanceEnabled(
+              settings,
+              project.id,
+              ProviderInstanceId.make(id),
+            ),
+          },
+        ]),
+      ),
+    }).pipe(
+      Effect.mapError((cause) => new ProjectOperationError({ operation: "read-project", cause })),
+    );
+    return {
+      projectId: project.id,
+      revision: yield* settingsRevision(settings.projectSettingsOverrides[project.id] ?? {}),
+      overrides: settings.projectSettingsOverrides[project.id] ?? {},
+      effective,
+      sources: resolved.sources,
+    };
+  });
+  const settingsProject = Effect.fn("ProjectService.settingsProject")(function* (
+    projectId: ProjectId,
+  ) {
+    const project = yield* getById(projectId);
+    if (Option.isNone(project)) return yield* new ProjectNotFoundError({ projectId });
+    return project.value;
+  });
+  const readSettings = Effect.fn("ProjectService.readSettings")(function* (projectId: ProjectId) {
+    const project = yield* settingsProject(projectId);
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(
+        (cause) => new ProjectOperationError({ operation: "read-project", projectId, cause }),
+      ),
+    );
+    return yield* settingsSnapshot(project, settings);
+  });
+  const updateSettings = Effect.fn("ProjectService.updateSettings")(function* (
+    input: ProjectSettingsChange,
+  ) {
+    const project = yield* settingsProject(input.projectId);
+    const saved = yield* serverSettings
+      .updateProjectSettings(input.projectId, (current) =>
+        Effect.gen(function* () {
+          yield* settingsProject(input.projectId);
+          const next = { ...current, ...input.settings };
+          if (input.settings?.providerInstances)
+            next.providerInstances = {
+              ...current.providerInstances,
+              ...input.settings.providerInstances,
+            };
+          for (const key of input.inherit ?? []) delete next[key];
+          if (
+            (yield* settingsRevision(current)) !== input.expectedRevision &&
+            stableStringify(current) !== stableStringify(next)
+          )
+            return yield* new ProjectSettingsConflictError({ projectId: input.projectId });
+          return Object.keys(next).length ? next : null;
+        }),
+      )
+      .pipe(
+        Effect.mapError((cause) =>
+          cause._tag === "ProjectSettingsConflictError"
+            ? cause
+            : new ProjectOperationError({
+                operation: "dispatch-project-command",
+                projectId: input.projectId,
+                cause,
+              }),
+        ),
+      );
+    return yield* settingsSnapshot(project, saved);
+  });
+
   return ProjectService.of({
+    readSettings,
+    updateSettings,
     create,
     bootstrap,
     update,

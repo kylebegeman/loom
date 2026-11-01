@@ -374,6 +374,30 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         .pipe(Effect.mapError(projectFailure));
     }),
   ),
+  t3_project_settings_read: McpToolAccess.reads((input) =>
+    Effect.gen(function* () {
+      const context = yield* readCaller();
+      const projectId = yield* resolveProjectId(context, input.projectId);
+      return yield* (yield* Project.ProjectService)
+        .readSettings(projectId)
+        .pipe(Effect.mapError(projectFailure));
+    }),
+  ),
+  t3_project_settings_update: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      const context = yield* readCaller();
+      const projectId = yield* resolveProjectId(context, input.projectId);
+      return yield* (yield* Project.ProjectService)
+        .updateSettings({ ...input, projectId })
+        .pipe(
+          Effect.mapError((error) =>
+            error._tag === "ProjectSettingsConflictError"
+              ? new OrchestratorMcpFailure({ code: "invalid_request", message: error.message })
+              : projectFailure(error),
+          ),
+        );
+    }),
+  ),
   t3_project_delete: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       const projects = yield* Project.ProjectService;

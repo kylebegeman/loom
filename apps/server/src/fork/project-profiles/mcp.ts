@@ -1,4 +1,7 @@
-import { ProjectProfileError } from "@t3tools/contracts/fork";
+import { OrchestratorMcpFailure, ProjectId } from "@t3tools/contracts";
+import { readCaller, resolveProjectId } from "../../mcp/threadAccess.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { ProjectProfile, ProjectProfileUpdate, ProjectProfileError } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -17,12 +20,52 @@ export const ProjectProfilesToolkit = Toolkit.make(
   })
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_project_profiles_read", {
+    description:
+      "Read this project's private preferences and Tools for agents policy. Omit projectId for this conversation's project. No environment secrets are returned.",
+    parameters: Schema.Struct({ projectId: Schema.optionalKey(ProjectId) }),
+    success: ProjectProfile,
+    failure: Schema.Union([ProjectProfileError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_project_profiles_update", {
+    description:
+      "Update authorized private project preferences without opening Settings. Read loom_project_profiles_read first and pass expectedUpdatedAt. Patch only fields requested by the user. agentToolFamilies accepts hardware/reach/sites: auto allows on demand, always also advertises, never disables. Changes apply in this conversation immediately; retry the tool without restarting the session.",
+    parameters: Schema.Struct({
+      ...ProjectProfileUpdate.fields,
+      projectId: Schema.optionalKey(ProjectId),
+      expectedUpdatedAt: ProjectProfile.fields.updatedAt,
+    }),
+    success: ProjectProfile,
+    failure: Schema.Union([ProjectProfileError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  }).annotate(Tool.Destructive, false),
 );
 export const projectProfilesHandlers = McpToolAccess.toLayer(
   ProjectProfilesToolkit,
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return {
+      loom_project_profiles_read: McpToolAccess.reads((input) =>
+        Effect.gen(function* () {
+          const projectId = yield* resolveProjectId(yield* readCaller(), input.projectId);
+          return yield* withForkRuntime(
+            Effect.flatMap(ProjectProfileService, (service) => service.get(projectId)),
+          ).pipe(Effect.provideService(ForkRuntime, runtime));
+        }),
+      ),
+      loom_project_profiles_update: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const projectId = yield* resolveProjectId(yield* readCaller(), input.projectId);
+          return yield* withForkRuntime(
+            Effect.flatMap(ProjectProfileService, (service) =>
+              service.update({ ...input, projectId }),
+            ),
+          ).pipe(Effect.provideService(ForkRuntime, runtime));
+        }),
+      ),
       loom_project_profiles_get: McpToolAccess.reads((input) =>
         Effect.gen(function* () {
           const invocation = yield* McpInvocationContext;

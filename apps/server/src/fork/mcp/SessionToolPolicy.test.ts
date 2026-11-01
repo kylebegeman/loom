@@ -1,6 +1,12 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { defaultProjectProfile, type AgentToolFamilies } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
@@ -15,6 +21,7 @@ import { ProjectProfileService } from "../project-profiles/ProjectProfileService
 import { LibraryWorkspaceStore } from "../project-library/LibraryWorkspaceStore.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { DirectoryService } from "../directory/DirectoryService.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { SitesService } from "../sites/SitesService.ts";
 import { hardwareMarkers, layer, SessionToolPolicy } from "./SessionToolPolicy.ts";
 
@@ -48,17 +55,54 @@ it.effect(
       const root = yield* fs.makeTempDirectoryScoped();
       let preferences: AgentToolFamilies | undefined;
       let siteReads = 0;
+      let browser = false;
       let libraryConnection: LibraryConnection = { kind: "authority" };
       const program = Effect.gen(function* () {
         const policy = yield* SessionToolPolicy;
         expect([...(yield* policy.forThread(threadId))]).toEqual(["reach", "sites"]);
+        const scope = {
+          environmentId: EnvironmentId.make("computer"),
+          requestNamespace: "unchanged-session",
+          capabilities: new Set(["orchestration"] as const),
+          issuedAt: 0,
+          thread: {
+            threadId,
+            providerSessionId: "unchanged-session",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+          client: undefined,
+        };
+        const automatic = yield* policy.refresh(scope);
+        expect(automatic.capabilities.has("hardware")).toBe(true);
+        expect(automatic.capabilities.has("preview")).toBe(false);
+        browser = true;
+        expect((yield* policy.refresh(scope)).capabilities.has("preview")).toBe(true);
+        expect((yield* policy.refresh(scope)).requestNamespace).toBe("unchanged-session");
+
         yield* fs.writeFileString(`${root}/board.kicad_pro`, "{}");
         expect([...(yield* policy.forThread(threadId))]).toEqual(["reach", "sites"]);
         yield* TestClock.adjust("31 seconds");
         expect([...(yield* policy.forThread(threadId))]).toEqual(["hardware", "reach", "sites"]);
         preferences = { hardware: "never", reach: "never", sites: "never" };
+        browser = false;
+        const previouslyEnabled = {
+          ...scope,
+          capabilities: new Set([
+            "orchestration",
+            "hardware",
+            "reach",
+            "sites",
+            "preview",
+            "device",
+          ] as const),
+        };
+        const revoked = yield* policy.refresh(previouslyEnabled);
+        expect([...revoked.capabilities]).toEqual(["orchestration"]);
         const before = siteReads;
         expect([...(yield* policy.forThread(threadId))]).toEqual([]);
+        expect((yield* policy.refresh(scope)).capabilities.has("hardware")).toBe(false);
+        browser = false;
+        expect((yield* policy.refresh(scope)).capabilities.has("preview")).toBe(false);
         expect(siteReads).toBe(before);
         preferences = { hardware: "always", reach: "always", sites: "always" };
         expect([...(yield* policy.forThread(threadId))]).toEqual(["hardware", "reach", "sites"]);
@@ -103,6 +147,12 @@ it.effect(
         }),
         Layer.mock(LibraryConnectionService)({ current: Effect.sync(() => libraryConnection) }),
         Layer.mock(DirectoryService)({}),
+        Layer.mock(ServerSettingsService)({
+          getSettings: Effect.sync(() => ({
+            ...DEFAULT_SERVER_SETTINGS,
+            enableAgentBrowserAccess: browser,
+          })),
+        }),
         Layer.mock(SitesService)({
           snapshot: Effect.sync(() => {
             siteReads++;

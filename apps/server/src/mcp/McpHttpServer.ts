@@ -56,6 +56,8 @@ import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import { FORK_MCP_TOOLKITS } from "../fork/mcp/index.ts"; // fork: ext-mcp
+import { SessionToolPolicy } from "../fork/mcp/SessionToolPolicy.ts";
+import { ForkRuntime, withForkRuntime } from "../fork/ForkRuntime.ts";
 import { hideUnusableTools } from "../fork/mcp/sessionToolList.ts"; // fork: agent-catalog
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
@@ -224,7 +226,14 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         offerOAuth: Option.isSome(clients) && !looksLikeProviderToken(token),
       });
     }
-    const limited = withModeLimit(invocation, request);
+    const fork = yield* ForkRuntime;
+    const refreshed =
+      fork === undefined
+        ? invocation
+        : yield* withForkRuntime(
+            Effect.flatMap(SessionToolPolicy, (policy) => policy.refresh(invocation)),
+          );
+    const limited = withModeLimit(refreshed, request);
     if (limited === undefined) return invalidModeLimit;
     const linkedEnvironments = yield* linksEnabled;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
@@ -234,7 +243,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         linkedEnvironments,
       }),
       Effect.map(normalizeMcpHttpResponse),
-      Effect.map((response) => hideUnusableTools(response, invocation)), // fork: agent-catalog
+      Effect.map((response) => hideUnusableTools(response, refreshed)), // fork: agent-catalog
     );
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));

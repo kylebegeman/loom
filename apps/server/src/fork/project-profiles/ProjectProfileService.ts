@@ -11,6 +11,7 @@ import {
   type VarlockValidation,
   DEFAULT_AGENT_TOOL_FAMILIES,
 } from "@t3tools/contracts/fork";
+import { stableStringify } from "@t3tools/shared/relaySigning";
 import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -138,13 +139,39 @@ const make = Effect.gen(function* () {
   });
   const update = Effect.fn("ProjectProfiles.update")(function* (input: ProjectProfileUpdate) {
     const current = yield* get(input.projectId);
+    const { agentToolFamilies, ...patch } = input.patch;
     const next = {
       ...current,
-      ...input.patch,
+      ...patch,
+      ...(agentToolFamilies
+        ? {
+            agentToolFamilies: {
+              ...DEFAULT_AGENT_TOOL_FAMILIES,
+              ...current.agentToolFamilies,
+              ...agentToolFamilies,
+            },
+          }
+        : {}),
       projectId: input.projectId,
-      updatedAt: DateTime.formatIso(yield* DateTime.now),
+      updatedAt: current.updatedAt,
     };
-    return yield* store.put(next);
+    if (stableStringify(next) === stableStringify(current)) return current;
+    if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt)
+      return yield* new ProjectProfileError({ reason: "revision-conflict" });
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+    return yield* store.put({
+      ...next,
+      updatedAt: DateTime.formatIso(
+        DateTime.makeUnsafe(
+          Math.max(
+            now,
+            current.updatedAt === null
+              ? now
+              : DateTime.toEpochMillis(DateTime.makeUnsafe(current.updatedAt)) + 1,
+          ),
+        ),
+      ),
+    });
   }, lock.withPermit);
   const envReport = Effect.fn("ProjectProfiles.envReport")(function* (input: ProjectProfileTarget) {
     const root = yield* checkout(input);

@@ -13,6 +13,7 @@ import * as Option from "effect/Option";
 import * as DeviceService from "../../../device/DeviceService.ts";
 import { threadWorkspaceRoot } from "../../../project/threadWorkspaceRoot.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import { loadCaller } from "../../threadAccess.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { DeviceScreenshotToolkit, DeviceStandardToolkit, DeviceToolkit } from "./tools.ts";
 
@@ -90,7 +91,7 @@ const requireDeviceAccess = McpInvocationContext.requireThreadMcpCapability("dev
     () =>
       new DeviceToolUnavailableError({
         reason:
-          "Agent device access is turned off for this environment. Ask the user to turn on Agent device access in Settings > Integrations > Devices; it applies when the agent session next starts, such as in a new thread.",
+          "Agent device access is turned off for this project. With the user's authorization, read t3_project_settings_read and use t3_project_settings_update to enableAgentDeviceAccess, then retry in this conversation.",
       }),
   ),
 );
@@ -232,7 +233,10 @@ const handlers = {
       const hostId = yield* resolveHostId(state.hosts, input.hostId);
       const target = yield* pickDevice(state, { ...input, hostId });
       // Resolve consent and agent connectivity before booting or registering a session.
-      if (!(yield* devices.agentReadinessIfSupported(target.hostId))) {
+      const projectId = (yield* loadCaller().pipe(
+        Effect.mapError((error) => new DeviceToolUnavailableError({ reason: error.message })),
+      )).caller?.projectId;
+      if (!(yield* devices.agentReadinessIfSupported(target.hostId, projectId))) {
         return yield* new DeviceToolUnavailableError({
           reason:
             "Agent device access requires enabled device support, agent access, and an available simulator platform on this host.",
@@ -259,7 +263,7 @@ const handlers = {
         hostId: session.hostId,
         deviceId: session.deviceId,
       };
-      const agent = yield* devices.agentTarget(opened);
+      const agent = yield* devices.agentTarget({ ...opened, ...(projectId ? { projectId } : {}) });
       const hostKind = after.hosts.find((host) => host.id === device.hostId)?.kind;
       const targetArgs = [
         ...(agent.agentDeviceId === null

@@ -80,6 +80,7 @@ export function ImportProjectDialog({
   initialHostId: requestedHostId,
   initialRootPath,
   initialTitle,
+  autoAddInitial = false,
 }: {
   readonly open?: boolean;
   readonly embedded?: boolean;
@@ -87,6 +88,7 @@ export function ImportProjectDialog({
   readonly initialHostId?: EnvironmentId | undefined;
   readonly initialRootPath?: string | undefined;
   readonly initialTitle?: string | undefined;
+  readonly autoAddInitial?: boolean;
   readonly onSaved: (project: LibraryProject, copy?: LibraryWorkingCopy) => void;
   readonly onClose: () => void;
 }) {
@@ -316,34 +318,6 @@ export function ImportProjectDialog({
     if (result._tag === "Success")
       setLookups((previous) => new Map(previous).set(key, result.value));
   };
-  const inspectedInitial = useRef(false);
-  const inspectInitial = useEffectEvent(() => {
-    void inspectFolder();
-  });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- inspects the initial folder once its host connects and the library query loads
-  useEffect(() => {
-    if (
-      !inspectedInitial.current &&
-      open &&
-      initialRootPath &&
-      hostId &&
-      canInspect &&
-      host?.connection.phase === "connected" &&
-      !library.query.isPending &&
-      !saved
-    ) {
-      inspectedInitial.current = true;
-      inspectInitial();
-    }
-  }, [
-    open,
-    initialRootPath,
-    hostId,
-    canInspect,
-    host?.connection.phase,
-    library.query.isPending,
-    saved,
-  ]);
   const matches = inspection ? matchingProjects(inspection, registeredCopies ?? []) : [];
   const owner = libraryFolderOwner(libraryFolderRegistrations(inspection), library.query.data);
   const ownerIssue = issueFor(owner, projectId);
@@ -479,6 +453,45 @@ export function ImportProjectDialog({
     setBusy(false);
     return true;
   };
+  const inspectedInitial = useRef(false);
+  const inspectInitial = useEffectEvent(async () => {
+    const target = await inspectFolder();
+    if (
+      !autoAddInitial ||
+      !target?.report?.exists ||
+      target.action.kind === "choose" ||
+      target.issue ||
+      !canAdd(target.action.kind === "create")
+    )
+      return;
+    setProgress("Adding folder...");
+    await submit({ ...target, inspection: target.report });
+    setProgress(null);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- inspects the initial folder once its host connects and the library query loads
+  useEffect(() => {
+    if (
+      !inspectedInitial.current &&
+      open &&
+      initialRootPath &&
+      hostId &&
+      canInspect &&
+      host?.connection.phase === "connected" &&
+      !library.query.isPending &&
+      !saved
+    ) {
+      inspectedInitial.current = true;
+      inspectInitial();
+    }
+  }, [
+    open,
+    initialRootPath,
+    hostId,
+    canInspect,
+    host?.connection.phase,
+    library.query.isPending,
+    saved,
+  ]);
   const openChoice = (from: "project" | "folders") => {
     setChooseFrom(from);
     setSearch("");

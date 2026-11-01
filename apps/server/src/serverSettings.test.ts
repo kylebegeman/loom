@@ -2064,3 +2064,38 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(layerServerSettings())),
   );
 });
+
+it.effect(
+  "merges simultaneous narrow project settings writes without losing sibling settings",
+  () =>
+    Effect.gen(function* () {
+      const settings = yield* ServerSettingsModule.ServerSettingsService;
+      const projectId = ProjectId.make("project-chat-settings");
+      yield* settings.updateSettings({
+        projectSettingsOverrides: {
+          [projectId]: { defaultAutoPull: false },
+          [ProjectId.make("other")]: { enableAgentDeviceAccess: true },
+        },
+      });
+      yield* Effect.all(
+        [
+          settings.updateProjectSettings(projectId, (entry) =>
+            Effect.succeed({ ...entry, enableAgentBrowserAccess: true }),
+          ),
+          settings.updateProjectSettings(projectId, (entry) =>
+            Effect.succeed({ ...entry, branchNamePrefix: "work/" }),
+          ),
+        ],
+        { concurrency: "unbounded" },
+      );
+      const result = yield* settings.getSettings;
+      assert.deepEqual(result.projectSettingsOverrides[projectId], {
+        defaultAutoPull: false,
+        enableAgentBrowserAccess: true,
+        branchNamePrefix: "work/",
+      });
+      assert.deepEqual(result.projectSettingsOverrides[ProjectId.make("other")], {
+        enableAgentDeviceAccess: true,
+      });
+    }).pipe(Effect.provide(ServerSettingsModule.layerTest())),
+);

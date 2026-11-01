@@ -210,6 +210,8 @@ function makeHarness(options: HarnessOptions = {}) {
     Layer.mock(TerminalManager.TerminalManager)({ close: closeTerminal }),
     Layer.succeed(ProjectService.ProjectService, {
       create: () => Effect.die("unused"),
+      readSettings: () => Effect.die("unused"),
+      updateSettings: () => Effect.die("unused"),
       bootstrap: () => Effect.die("unused"),
       update: () => Effect.die("unused"),
       delete: () => Effect.die("unused"),

@@ -4,6 +4,9 @@ import {
   DEFAULT_AGENT_TOOL_FAMILIES,
   type AgentToolFamily,
 } from "@t3tools/contracts/fork";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ByteSize from "effect/ByteSize";
 import * as Clock from "effect/Clock";
@@ -88,10 +91,12 @@ export class SessionToolPolicy extends Context.Service<
     readonly forThread: (threadId: ThreadId) => Effect.Effect<ReadonlySet<AgentToolFamily>>;
     readonly localContext: (projectId?: string) => Effect.Effect<SessionToolContext>;
     readonly isAuthority: boolean;
+    readonly refresh: (scope: McpInvocationScope) => Effect.Effect<McpInvocationScope>;
   }
 >()("t3/fork/mcp/SessionToolPolicy") {}
 
 const make = Effect.gen(function* () {
+  const settings = yield* ServerSettingsService;
   const projects = yield* ProjectStoreV2;
   const projections = yield* ProjectionStoreV2;
   const profiles = yield* ProjectProfileService;
@@ -150,6 +155,50 @@ const make = Effect.gen(function* () {
   return SessionToolPolicy.of({
     isAuthority,
     localContext,
+    refresh: Effect.fn("SessionToolPolicy.refresh")(function* (scope) {
+      if (!scope.thread) return scope;
+      const threadId = scope.thread.threadId;
+      const baseline = new Set(
+        [...scope.capabilities].filter(
+          (capability) => !["hardware", "reach", "sites", "preview", "device"].includes(capability),
+        ),
+      );
+      const capabilities = new Set(baseline);
+      const advertisedCapabilities = new Set(scope.capabilities);
+      return yield* Effect.gen(function* () {
+        const thread = yield* projections.getThread(threadId);
+        if (thread.deletedAt)
+          return { ...scope, capabilities, advertisedCapabilities: capabilities };
+        const project = yield* projects.get(thread.projectId);
+        if (Option.isNone(project))
+          return { ...scope, capabilities, advertisedCapabilities: capabilities };
+        const profile = yield* profiles.get(thread.projectId);
+        const preferences = profile.agentToolFamilies ?? DEFAULT_AGENT_TOOL_FAMILIES;
+        for (const family of AGENT_TOOL_FAMILIES) {
+          if (preferences[family] !== "never") capabilities.add(family);
+          if (preferences[family] === "always") advertisedCapabilities.add(family);
+          if (preferences[family] === "never") advertisedCapabilities.delete(family);
+        }
+        const effective = resolveProjectSettings(
+          yield* settings.getSettings,
+          thread.projectId,
+        ).settings;
+        for (const [capability, enabled] of [
+          ["preview", effective.enableAgentBrowserAccess],
+          ["device", effective.enableAgentDeviceAccess],
+        ] as const) {
+          if (enabled) capabilities.add(capability);
+          else advertisedCapabilities.delete(capability);
+        }
+        return { ...scope, capabilities, advertisedCapabilities };
+      }).pipe(
+        Effect.orElseSucceed(() => ({
+          ...scope,
+          capabilities: baseline,
+          advertisedCapabilities: baseline,
+        })),
+      );
+    }),
     forThread: Effect.fn("SessionToolPolicy.forThread")(
       function* (threadId) {
         const thread = yield* projections.getThread(threadId);

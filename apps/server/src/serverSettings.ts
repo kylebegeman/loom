@@ -257,6 +257,13 @@ export class ServerSettingsService extends Context.Service<
       patch: ServerSettingsPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
+    readonly updateProjectSettings: <A, R>(
+      projectId: ProjectId,
+      update: (
+        current: ProjectSettingsOverrides,
+      ) => Effect.Effect<ProjectSettingsOverrides | null, A, R>,
+    ) => Effect.Effect<ServerSettings, A | ServerSettingsError, R>;
+
     readonly updateProviderInstance: (
       mutation: ProviderInstanceMutation,
       patch?: ServerSettingsPatch,
@@ -294,9 +301,9 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
   const writeSemaphore = yield* Semaphore.make(1);
   const getSettings = Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider));
 
-  const updateTestSettings = (
-    update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
-  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+  const updateTestSettings = <E, R>(
+    update: (current: ServerSettings) => Effect.Effect<ServerSettings, E, R>,
+  ): Effect.Effect<ServerSettings, E | ServerSettingsError, R> =>
     writeSemaphore.withPermits(1)(
       Ref.get(currentSettingsRef).pipe(
         Effect.flatMap(update),
@@ -313,6 +320,14 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
     updateSettings: (patch) =>
       updateTestSettings((currentSettings) =>
         Effect.succeed(applyServerSettingsPatch(currentSettings, patch)),
+      ),
+    updateProjectSettings: (projectId, update) =>
+      updateTestSettings((current) =>
+        update(current.projectSettingsOverrides[projectId] ?? {}).pipe(
+          Effect.map((entry) =>
+            applyServerSettingsPatch(current, { projectSettingsOverrides: { [projectId]: entry } }),
+          ),
+        ),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateTestSettings((currentSettings) =>
@@ -1095,9 +1110,9 @@ const make = Effect.gen(function* () {
     );
   };
 
-  const updateAndPersistSettings = (
-    update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
-  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+  const updateAndPersistSettings = <E, R>(
+    update: (current: ServerSettings) => Effect.Effect<ServerSettings, E, R>,
+  ): Effect.Effect<ServerSettings, E | ServerSettingsError, R> =>
     writeSemaphore.withPermits(1)(
       Effect.gen(function* () {
         const { settings: current, parseFailure } = yield* reloadSettings;
@@ -1248,6 +1263,14 @@ const make = Effect.gen(function* () {
         ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
           Effect.andThen(guardProjectsFolder(settingsPath, current, patch)), // fork: file-placement
           Effect.as(applyServerSettingsPatch(current, patch)),
+        ),
+      ),
+    updateProjectSettings: (projectId, update) =>
+      updateAndPersistSettings((current) =>
+        update(current.projectSettingsOverrides[projectId] ?? {}).pipe(
+          Effect.map((entry) =>
+            applyServerSettingsPatch(current, { projectSettingsOverrides: { [projectId]: entry } }),
+          ),
         ),
       ),
     updateProviderInstance: (mutation, patch = {}) =>

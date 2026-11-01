@@ -98,6 +98,7 @@ it("edits mixed notes and one budget across checkouts while preserving each unto
       environmentId: one,
       input: {
         projectId,
+        expectedUpdatedAt: null,
         patch: {
           agentNotes: "Shared private instructions.",
           budgets: { dailyTokens: 3000, threadTokens: 100 },
@@ -108,6 +109,7 @@ it("edits mixed notes and one budget across checkouts while preserving each unto
       environmentId: two,
       input: {
         projectId,
+        expectedUpdatedAt: null,
         patch: {
           agentNotes: "Shared private instructions.",
           budgets: { dailyTokens: 3000, threadTokens: 200 },

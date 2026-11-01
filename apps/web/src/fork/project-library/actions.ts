@@ -7,6 +7,7 @@ import type {
 export type LibraryAction = "create-project" | "import-folder" | "new-conversation";
 export interface LibraryConversationDefaults {
   readonly environmentId?: EnvironmentId;
+  readonly folderPath?: string;
   readonly workingCopyId?: string;
   readonly resourceId?: string;
   readonly resourceIds?: readonly string[];

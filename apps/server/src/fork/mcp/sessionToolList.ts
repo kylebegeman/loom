@@ -10,11 +10,7 @@ import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools
 import { DeviceQaToolkit } from "../device-qa/mcp.ts";
 import { toolFamily } from "./toolFamilies.ts";
 
-/**
- * Tools that refuse every call without a thread credential holding the capability. McpServer lists
- * every tool to every session, so the auth middleware drops these from tools/list instead. That is
- * exact because a credential's capabilities are fixed, and a new one is issued when access changes.
- */
+// Discovery follows the current project policy while calls retain their own permission checks.
 const CAPABILITY_TOOLS: ReadonlyArray<readonly [McpCapability, ReadonlyArray<string>]> = [
   ["preview", [...Object.keys(PreviewToolkit.tools), ...Object.keys(PreviewControlsToolkit.tools)]],
   ["device", [...Object.keys(DeviceToolkit.tools), ...Object.keys(DeviceQaToolkit.tools)]],
@@ -29,7 +25,14 @@ const unusableToolNames = (scope: McpInvocationScope): ReadonlySet<string> =>
 
 const visibleTool = (name: string, hidden: ReadonlySet<string>, scope: McpInvocationScope) => {
   const family = toolFamily(name);
-  return !hidden.has(name) && (!scope.thread || !family || scope.capabilities.has(family));
+  return (
+    !hidden.has(name) &&
+    (!scope.thread ||
+      !family ||
+      (scope.capabilities.has(family) &&
+        ((scope.advertisedCapabilities ?? scope.capabilities).has(family) ||
+          name === "loom_model_preview_3d_editor")))
+  );
 };
 
 export function filterSessionTools<T extends { readonly name: string }>(

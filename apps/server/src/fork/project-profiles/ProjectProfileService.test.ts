@@ -113,6 +113,26 @@ describe("environment-local project profile service", () => {
           patch: { budgets: { dailyTokens: 1000, threadTokens: null } },
         });
         expect((yield* service.get(projectId)).agentNotes).toBe("private");
+        yield* service.update({
+          projectId,
+          patch: { agentToolFamilies: { hardware: "always", reach: "never", sites: "auto" } },
+        });
+        yield* service.update({ projectId, patch: { agentToolFamilies: { hardware: "auto" } } });
+        expect((yield* service.get(projectId)).agentToolFamilies).toEqual({
+          hardware: "auto",
+          reach: "never",
+          sites: "auto",
+        });
+        expect(
+          (yield* Effect.flip(
+            service.update({
+              projectId,
+              expectedUpdatedAt: null,
+              patch: { agentToolFamilies: { hardware: "never" } },
+            }),
+          )).reason,
+        ).toBe("revision-conflict");
+
         expect(
           yield* service.varlockCommand({ projectId, threadId, target: { intent: "test" } }),
         ).toEqual({ cwd: "/worktree", commandLine: "varlock run -- sh -c 'current test'" });

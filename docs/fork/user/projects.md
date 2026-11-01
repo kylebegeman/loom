@@ -1,6 +1,6 @@
 # Projects and starting work
 
-A Library project keeps a shared brief, repositories, links and conversations. Its files
+A project keeps a shared brief, repositories, links and conversations. Its files
 can live on several computers. Removing a working copy does not delete the project or
 its saved conversations.
 
@@ -43,6 +43,16 @@ remove those files from that project, restoring it first if it is archived. If t
 is no longer in your Library, choose another folder.
 Loom checks which project owns a folder with your Library, so adding one needs the Library
 connected.
+
+## Change settings from a conversation
+
+Ask your agent to change project settings, such as its model, worktree defaults or tools.
+An authorized agent can read the current values and change the fields you requested.
+Browser, device and Tools for agents changes apply to the current conversation. An
+explicitly disabled tool stays disabled until you authorize changing that preference.
+
+Folders that have not been added to shared Projects also have **Settings** in Projects.
+You do not need to add a folder to your Library to configure the agents working in it.
 
 ## See what needs attention
 

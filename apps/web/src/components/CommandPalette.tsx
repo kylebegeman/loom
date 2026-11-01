@@ -2102,6 +2102,14 @@ function OpenCommandPaletteDialog(props: {
 
     const cwd = resolveProjectPathForDispatch(rawCwd, input.currentProjectCwd);
     if (cwd.length === 0) return;
+    if (!input.createWorkspaceRootIfMissing && readLibraryAuthorityId() !== null) {
+      setOpen(false);
+      openLibraryAction("import-folder", undefined, {
+        environmentId: input.environmentId,
+        folderPath: cwd,
+      });
+      return;
+    }
 
     const existing = findProjectByPath(
       projects.filter((project) => project.environmentId === input.environmentId),

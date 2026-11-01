@@ -2499,7 +2499,7 @@ const fleetTrace = (id: string): SampleRun => {
       failed: id === "ACC-01",
       output:
         id === "ACC-01"
-          ? "Agent device access is turned off for this environment."
+          ? "Agent device access is turned off for this project."
           : JSON.stringify({ device: { hostId: target.hostId, id: target.deviceId } }),
     },
   ];
@@ -2816,7 +2816,7 @@ it.effect("fleet case worlds survive decoding and reach the product-backed runne
       const opened = yield* tools.call("device_open", target);
       if (id === "ACC-01") {
         assert.isTrue(opened.isError);
-        assert.include(opened.text, "Agent device access is turned off for this environment.");
+        assert.include(opened.text, "Agent device access is turned off for this project.");
         continue;
       }
       assert.isFalse(opened.isError);

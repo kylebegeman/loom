@@ -6,6 +6,7 @@ import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import {
   AGENT_TOOL_FAMILIES,
   AGENT_TOOL_FAMILIES_FEATURE,
+  LIVE_AGENT_TOOL_POLICY_FEATURE,
   DEFAULT_AGENT_TOOL_FAMILIES,
   type AgentToolFamily,
   type AgentToolFamilies,
@@ -42,6 +43,10 @@ export function AgentToolFamiliesSection({
     config?.environment.capabilities,
     AGENT_TOOL_FAMILIES_FEATURE,
   );
+  const livePolicy = supportsLoomFeature(
+    config?.environment.capabilities,
+    LIVE_AGENT_TOOL_POLICY_FEATURE,
+  );
   const query = useEnvironmentQuery(
     supported ? profiles.profile({ environmentId, input: { projectId } }) : null,
   );
@@ -63,7 +68,11 @@ export function AgentToolFamiliesSection({
     setError(null);
     void update({
       environmentId,
-      input: { projectId, patch: { agentToolFamilies: { ...preferences, [family]: choice } } },
+      input: {
+        projectId,
+        expectedUpdatedAt: profile.updatedAt,
+        patch: { agentToolFamilies: { ...preferences, [family]: choice } },
+      },
     })
       .then((result) => {
         if (result._tag === "Failure") return Promise.reject(squashAtomCommandFailure(result));
@@ -79,7 +88,11 @@ export function AgentToolFamiliesSection({
   return (
     <SettingsSection
       title={`Tools for agents · ${computerLabel}`}
-      footer="Applies to the next agent session. Automatic shows Hardware for board or CAD projects, Reach when your Library has a Reach zone, and Sites when the project links a site."
+      footer={
+        livePolicy
+          ? "Applies immediately to current conversations. Automatic allows tools when requested and shows relevant tools for the project."
+          : "This computer applies changes when the agent session next starts. Update Loom on that computer for changes in current conversations."
+      }
     >
       {!profile ? (
         <View className="gap-2 p-4">

@@ -181,7 +181,7 @@ export function LibraryActionHost({
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState(BLANK_DRAFT);
   const [gitUrl, setGitUrl] = useState("");
-  const [initialFolder, setInitialFolder] = useState("");
+  const [initialFolder, setInitialFolder] = useState(session.defaults?.folderPath ?? "");
   // A start a project row or a folder just added promised, `pending` until it runs or its settings
   // show instead. `run` remounts the settings so they begin from its defaults.
   const scratchStarting = useRef(false);
@@ -615,6 +615,7 @@ export function LibraryActionHost({
           open={step === "import"}
           initialHostId={defaults?.environmentId}
           initialRootPath={initialFolder}
+          autoAddInitial={!!session.defaults?.folderPath}
           onBack={back}
           onClose={onClose}
           // The folder just added is where the user means to work, so it starts there when the
