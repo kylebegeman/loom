@@ -478,18 +478,15 @@ syncBuiltinESMExports();
             );
           }),
       );
-      const result = yield* cli(
-        f.root,
-        [
-          "seal",
-          f.snapshotFile,
-          f.archiveFile,
-          "--key-file",
-          fifo,
-          "--environment-id",
-          f.input.environmentId,
-        ],
-      );
+      const result = yield* cli(f.root, [
+        "seal",
+        f.snapshotFile,
+        f.archiveFile,
+        "--key-file",
+        fifo,
+        "--environment-id",
+        f.input.environmentId,
+      ]);
       expect(result.code).toBe(1);
       expect(result.stdout + result.stderr).toContain("Vault archive operation refused");
       expect(
