@@ -73,6 +73,7 @@ beforeEach(() => {
     onReconnect: () => {},
     onOpenConnection: () => {},
     onResumeQueue: null,
+    queueHeld: false,
   };
 });
 
@@ -93,7 +94,7 @@ describe("queue resume recovery", () => {
       .fn<() => Promise<void>>()
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(retry.promise);
-    props = { ...props, onResumeQueue: resume };
+    props = { ...props, onResumeQueue: resume, queueHeld: true };
     await act(() => root.render(<ThreadRecoveryNotice {...props} />));
 
     await act(() => button().click());
@@ -119,7 +120,9 @@ describe("queue resume recovery", () => {
     expect(button().disabled).toBe(false);
     expect(container.textContent).not.toContain(expected);
 
-    await act(() => root.render(<ThreadRecoveryNotice {...props} onResumeQueue={null} />));
+    await act(() =>
+      root.render(<ThreadRecoveryNotice {...props} onResumeQueue={null} queueHeld={false} />),
+    );
     expect(container.textContent).toBe("");
   });
 });
@@ -129,7 +132,12 @@ describe("failed run recovery", () => {
     const attempt = Promise.withResolvers<void>();
     const onContinue = vi.fn<() => Promise<void>>().mockReturnValueOnce(attempt.promise);
     const resumeQueue = vi.fn<() => Promise<void>>();
-    props = { ...props, onResumeQueue: resumeQueue, continuableRun: { failed: true, onContinue } };
+    props = {
+      ...props,
+      onResumeQueue: resumeQueue,
+      queueHeld: true,
+      continuableRun: { failed: true, onContinue },
+    };
     await act(() => root.render(<ThreadRecoveryNotice {...props} />));
     expect(container.textContent).toContain("Run failed");
     expect(button().textContent).toBe("Retry");
@@ -143,6 +151,21 @@ describe("failed run recovery", () => {
     });
     expect(container.textContent).toContain("Could not continue the run. Try again.");
     expect(button().disabled).toBe(false);
+  });
+
+  it("mentions queued messages only while the queue is held", async () => {
+    const onContinue = vi.fn<() => Promise<void>>();
+    props = {
+      ...props,
+      onResumeQueue: vi.fn<() => Promise<void>>(),
+      continuableRun: { failed: false, onContinue },
+    };
+    await act(() => root.render(<ThreadRecoveryNotice {...props} />));
+    expect(container.textContent).toContain("Run stopped");
+    expect(container.textContent).not.toContain("Queued messages run after it.");
+
+    await act(() => root.render(<ThreadRecoveryNotice {...props} queueHeld />));
+    expect(container.textContent).toContain("Queued messages run after it.");
   });
 });
 

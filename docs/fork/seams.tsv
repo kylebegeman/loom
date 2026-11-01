@@ -273,7 +273,7 @@ apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	2
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1
 apps/web/src/hooks/useHandleNewThread.ts	project-home	6
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	5
-apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	2
+apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	3
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	5
 apps/mobile/src/features/threads/new-task-flow-provider.test.tsx	project-home	1
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	2
@@ -1099,9 +1099,9 @@ packages/contracts/src/orchestratorMcp.ts	agent-catalog	4
 packages/contracts/src/previewAutomation.ts	preview-popups	1
 packages/shared/src/t3McpToolPresentation.ts	attention-status	2
 packages/shared/src/t3McpToolPresentation.ts	mini-native-retention	2
-apps/mobile/src/features/threads/ThreadDetailScreen.tsx	failed-run-retry	5
+apps/mobile/src/features/threads/ThreadDetailScreen.tsx	failed-run-retry	7
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	source-control-cockpit	1
-apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	6
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	7
 apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1

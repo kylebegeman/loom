@@ -283,6 +283,7 @@ export interface ThreadDetailScreenProps {
   readonly onStopThread: () => void;
   /** Present while the thread's queue is held. */
   readonly onResumeQueue: (() => Promise<void>) | null;
+  readonly queueHeld: boolean; // fork: failed-run-retry
   readonly continuableRun: ContinuableRunAction | null; // fork: failed-run-retry
   readonly onRetryLimitedRun: (() => Promise<void>) | null; // fork: failed-run-retry
   readonly onSendMessage: (
@@ -1540,6 +1541,7 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
                     onOpenConnection={props.onOpenConnectionEditor}
                     onReviewFiles={props.onOpenConversationDetails}
                     onResumeQueue={props.onResumeQueue}
+                    queueHeld={props.queueHeld} // fork: failed-run-retry
                     continuableRun={props.continuableRun} // fork: failed-run-retry
                   />
                   {props.queuedRunEdit !== null ? (

@@ -1284,6 +1284,7 @@ function ThreadRouteContent(
           onResumeQueue={
             composer.queueHeld || composer.resumableRunId !== null ? handleResumeQueue : null
           }
+          queueHeld={composer.queueHeld} // fork: failed-run-retry
           continuableRun={continuableRunAction} // fork: failed-run-retry
           onRetryLimitedRun={retryLimitedRun} // fork: failed-run-retry
           onSendMessage={composer.onSendMessage}
