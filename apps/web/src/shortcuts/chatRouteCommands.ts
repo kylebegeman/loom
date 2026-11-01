@@ -100,12 +100,17 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     const start = readNewConversationShortcut();
     if (!start) return false;
     claim(event);
+    const groups = readProjectGroups();
     void start(command, {
       ...readThreadContext(),
       showProjectPicker:
         !getClientSettings().boringSidebarEnabled &&
         !getClientSettings().legacySidebarEnabled &&
-        readProjectGroupCount() > 1,
+        !shouldCreateNewThreadInCurrentProject(
+          false,
+          groups.filter((group) => !group.archived).length,
+          groups.length,
+        ),
     });
     return true;
   };
