@@ -145,47 +145,73 @@ const enrichedSnapshotSecond: ServerProvider = {
 
 describe("makeManagedServerProvider", () => {
   // fork: vault-provider-credentials
-  it.effect("stops periodic probes and enrichment when credential access is revoked", () =>
-    Effect.gen(function* () {
-      let permitted = true;
-      let probes = 0;
-      let enrichments = 0;
-      const refused = yield* Queue.unbounded<void>();
-      const beforeCredentialUse = Effect.suspend(() =>
-        permitted
-          ? Effect.void
-          : Queue.offer(refused, undefined).pipe(
-              Effect.andThen(
-                Effect.fail(new ProviderCredentialError({ operation: "get", cause: "revoked" })),
+  it.effect.each([false, true])(
+    "stops periodic probes and enrichment after revocation, usage recovery: %s",
+    (usageRecovery) =>
+      Effect.gen(function* () {
+        let permitted = true;
+        let probes = 0;
+        let enrichments = 0;
+        let usageProbes = 0;
+        const snapshot: ServerProvider = {
+          ...refreshedSnapshot,
+          ...(usageRecovery
+            ? {
+                usageLimits: {
+                  checkedAt: refreshedSnapshot.checkedAt,
+                  windows: [],
+                  unavailable: { reason: "probeFailed" },
+                },
+              }
+            : {}),
+        };
+        const credentialAttempts = yield* Queue.unbounded<void>();
+        const beforeCredentialUse = Effect.suspend(() =>
+          permitted
+            ? Effect.void
+            : Queue.offer(credentialAttempts, undefined).pipe(
+                Effect.andThen(
+                  Effect.fail(new ProviderCredentialError({ operation: "get", cause: "revoked" })),
+                ),
               ),
-            ),
-      );
-      const provider = yield* makeManagedServerProvider({
-        resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
-        getSettings: Effect.succeed({ enabled: true }),
-        streamSettings: Stream.empty,
-        haveSettingsChanged: () => false,
-        initialSnapshot: () => Effect.succeed(initialSnapshot),
-        checkProvider: Effect.sync(() => {
-          probes++;
-          permitted = false;
-          return refreshedSnapshot;
-        }),
-        enrichSnapshot: () =>
-          Effect.sync(() => {
-            enrichments++;
+        );
+        const provider = yield* makeManagedServerProvider({
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: () => false,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          checkProvider: Effect.sync(() => {
+            probes++;
+            permitted = false;
+            return snapshot;
           }),
-        refreshInterval: "10 seconds",
-      }).pipe(Effect.provide(layerProviderHost({ runBackgroundWork: true, beforeCredentialUse })));
-      yield* Queue.take(refused);
-      assert.strictEqual(probes, 1);
-      assert.strictEqual(enrichments, 0);
-      yield* TestClock.adjust("10 seconds");
-      yield* Queue.take(refused);
-      assert.strictEqual(probes, 1);
-      assert.strictEqual(enrichments, 0);
-      assert.deepStrictEqual(yield* provider.getSnapshot, refreshedSnapshot);
-    }).pipe(Effect.scoped),
+          enrichSnapshot: () =>
+            Effect.sync(() => {
+              enrichments++;
+            }),
+          ...(usageRecovery
+            ? {
+                checkUsageLimits: Effect.sync(() => {
+                  usageProbes++;
+                  return undefined;
+                }).pipe(Effect.tap(() => Queue.offer(credentialAttempts, undefined))),
+              }
+            : {}),
+          refreshInterval: "10 seconds",
+        }).pipe(
+          Effect.provide(layerProviderHost({ runBackgroundWork: true, beforeCredentialUse })),
+        );
+        yield* Queue.take(credentialAttempts);
+        assert.strictEqual(probes, 1);
+        assert.strictEqual(enrichments, 0);
+        yield* TestClock.adjust("10 seconds");
+        yield* Queue.take(credentialAttempts);
+        assert.strictEqual(probes, 1);
+        assert.strictEqual(enrichments, 0);
+        assert.strictEqual(usageProbes, 0);
+        assert.deepStrictEqual(yield* provider.getSnapshot, snapshot);
+      }).pipe(Effect.scoped),
   );
 
   it.effect("invalidates cached usage and queues one refresh behind an in-flight refresh", () =>

@@ -240,6 +240,9 @@ export function DesktopWebLinkCoordinator() {
   // fork: client-computer
   const receiveLink = useEffectEvent((url: string, signal: AbortSignal) => {
     if (signal.aborted) return;
+    // A connected server publishes its config before its project snapshot, so a source control
+    // link delivered at launch would miss its project and fall through to the browser. Hold
+    // those links until discovery settles; an ordinary link never waits for it.
     // Pairing and app navigation do not need a discovered project or a computer that runs agents.
     const independent = readPairingAppLink(url) !== null || promptLinkAppPath(url) !== null;
     const hold =

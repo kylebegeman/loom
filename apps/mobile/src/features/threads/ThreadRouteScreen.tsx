@@ -8,6 +8,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import { useRememberThreadProject } from "./useRememberThreadProject";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
+import { makeQueuedMessageMetadata } from "../../lib/commandMetadata"; // fork: failed-run-retry
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupBlocksSend } from "@t3tools/client-runtime/worktree-setup"; // fork: library-launch-files
@@ -26,7 +27,7 @@ import {
   AuthTerminalReadScope,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
-  MessageId, // fork: failed-run-retry
+  MessageId,
   ThreadId,
   type ProjectScript,
   type RunId, // fork: failed-run-retry
@@ -63,6 +64,10 @@ import {
 } from "../../state/use-remote-environment-registry";
 import { useKnownTerminalSessions } from "../../state/use-terminal-session";
 import { uuidv4 } from "../../lib/uuid";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
 import { useThreadSelection } from "../../state/use-thread-selection";
@@ -81,7 +86,6 @@ import { ThreadScreenBinding, ThreadScreenFallback, ThreadScreenHost } from "./T
 import { draftRouteIdentity } from "./thread-route-state";
 import { NewTaskDraftRouteScreen, type NewTaskDraftRouteParams } from "./NewTaskDraftRouteScreen";
 import { GitOverviewSheet } from "./git/GitOverviewSheet";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"; // fork: attention-status
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
@@ -115,6 +119,7 @@ import {
   threadRouteOpensDraft,
 } from "./thread-route-hydration";
 import { ThreadHeader } from "./ThreadHeader";
+import { resumeThread } from "./resume-thread";
 import { useThreadConversationDetails } from "./useThreadConversationDetails"; // fork: library
 import {
   useAndroidWorkspaceBack,
@@ -422,10 +427,20 @@ function ThreadRouteContent(
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, "thread interrupt");
-  const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
-  // fork: failed-run-retry - The recovery notice shows why a continuation failed.
-  const startContinuation = useAtomCommand(threadEnvironment.startTurn, {
-    label: "continue run",
+  const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, {
+    label: "resume queue",
+    reportFailure: false,
+  });
+  const continueThreadRun = useAtomCommand(threadEnvironment.startTurn, {
+    label: "continue thread",
+    reportFailure: false,
+  });
+  const setThreadRuntimeMode = useAtomCommand(threadEnvironment.setRuntimeMode, {
+    label: "set thread runtime mode",
+    reportFailure: false,
+  });
+  const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
+    label: "set thread interaction mode",
     reportFailure: false,
   });
   const loadEarlierHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
@@ -766,11 +781,28 @@ function ThreadRouteContent(
 
   const handleResumeQueue = async () => {
     if (!selectedThread) return;
-    // fork: attention-status -- a failed resume reaches the composer
-    const result = await resumeThreadQueue({
-      environmentId: selectedThread.environmentId,
-      input: { threadId: selectedThread.id },
+    const result = await resumeThread({
+      thread: selectedThread,
+      resumableRunId: composer.resumableRunId,
+      queueHeld: composer.queueHeld,
+      runtimeMode: composer.runtimeMode ?? selectedThread.runtimeMode,
+      interactionMode: composer.interactionMode ?? selectedThread.interactionMode,
+      modelSelection: composer.modelSelection,
+      messageId: MessageId.make(uuidv4()),
+      createdAt: new Date().toISOString(),
+      setRuntimeMode: setThreadRuntimeMode,
+      setInteractionMode: setThreadInteractionMode,
+      startTurn: continueThreadRun,
+      resumeQueue: resumeThreadQueue,
     });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      Dialog.alert(
+        "Could not resume thread",
+        error instanceof Error ? error.message : "Try again.",
+      );
+    }
+    // fork: attention-status -- a failed resume reaches the composer
     if (result._tag === "Failure") throw squashAtomCommandFailure(result); // fork: attention-status
   };
 
@@ -786,25 +818,23 @@ function ThreadRouteContent(
         });
   const handleContinueRun = async (runId: RunId) => {
     if (!selectedThread) return;
-    const result = await startContinuation({
-      environmentId: selectedThread.environmentId,
-      input: {
-        threadId: selectedThread.id,
-        creationSource: "mobile",
-        manualContinuationOfRunId: runId,
-        message: {
-          messageId: MessageId.make(uuidv4()),
-          role: "user",
-          text: "Continue where you left off.",
-          attachments: [],
-        },
-        runtimeMode: selectedThread.runtimeMode,
-        interactionMode: selectedThread.interactionMode,
-        dispatchMode: "start",
-      },
+    // Continues this run in the thread's saved modes, then resumes a held queue without re-continuing.
+    const metadata = makeQueuedMessageMetadata();
+    const result = await resumeThread({
+      thread: selectedThread,
+      resumableRunId: runId,
+      queueHeld: composer.queueHeld,
+      runtimeMode: selectedThread.runtimeMode,
+      interactionMode: selectedThread.interactionMode,
+      modelSelection: null,
+      messageId: MessageId.make(metadata.messageId),
+      createdAt: metadata.createdAt,
+      setRuntimeMode: setThreadRuntimeMode,
+      setInteractionMode: setThreadInteractionMode,
+      startTurn: continueThreadRun,
+      resumeQueue: resumeThreadQueue,
     });
     if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-    if (composer.queueHeld) await handleResumeQueue();
   };
   const limited = continuable?.failure?.class === "usage_limit";
   const continuableRunAction =
@@ -1251,7 +1281,10 @@ function ThreadRouteContent(
           onRemoveDraftImage={composer.onRemoveDraftImage}
           serverConfig={serverConfig}
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
-          onResumeQueue={composer.queueHeld ? handleResumeQueue : null}
+          onResumeQueue={
+            composer.queueHeld || composer.resumableRunId !== null ? handleResumeQueue : null
+          }
+          queueHeld={composer.queueHeld} // fork: failed-run-retry
           continuableRun={continuableRunAction} // fork: failed-run-retry
           onRetryLimitedRun={retryLimitedRun} // fork: failed-run-retry
           onSendMessage={composer.onSendMessage}

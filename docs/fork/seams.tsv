@@ -76,7 +76,7 @@ packages/contracts/src/clientRpcPermissions.ts	ext-core	4
 apps/web/src/reopenClosedView.ts	ext-panels	1
 apps/web/src/closedViewStore.ts	ext-panels	2
 apps/web/src/components/DiffPanel.tsx	ext-diff-header	2
-apps/web/src/components/DiffPanel.tsx	checkpoint-capable	13
+apps/web/src/components/DiffPanel.tsx	checkpoint-capable	11
 apps/server/src/auth/RpcAuthorization.ts	ext-core	1
 packages/client-runtime/src/state/runtime.ts	ext-core	4
 packages/client-runtime/src/state/usage.test.ts	ext-core	1
@@ -273,8 +273,9 @@ apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	2
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1
 apps/web/src/hooks/useHandleNewThread.ts	project-home	6
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	5
-apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	2
+apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	3
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	5
+apps/mobile/src/features/threads/new-task-flow-provider.test.tsx	project-home	1
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
 apps/web/src/components/settings/ProjectsSettings.tsx	project-home	2
@@ -290,7 +291,7 @@ apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
 apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1
-apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	9
+apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	4
 apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
@@ -346,7 +347,7 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	deleted-history	2
 apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	5
-apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	17
+apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	15
 apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
 apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
@@ -423,7 +424,9 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	ext-vault-pref
 apps/server/src/orchestration-v2/ProviderTurnControlService.ts	ext-vault-preflight	2
 apps/server/src/scheduledTasks/ScheduledTaskService.ts	vault-scheduled-outcomes	7
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	vault-scheduled-outcomes	2
+apps/web/src/components/settings/ScheduledTasksSettings.tsx	brand	1
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	vault-scheduled-outcomes	2
+apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	brand	1
 apps/server/src/cloud/selfUpdate.ts	runtime-owner	6
 apps/server/vite.config.ts	runtime-owner	1
 apps/server/src/environment/ServerEnvironment.ts	runtime-owner	7
@@ -762,7 +765,7 @@ apps/server/src/scheduling/Scheduler.test.ts	server-weight	3
 apps/server/src/orchestration-v2/ProjectionMaintenance.ts	server-weight	10
 apps/server/src/orchestration-v2/FoundationPersistence.test.ts	server-weight	13
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	server-weight	15
-apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	6
+apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	3
 apps/server/src/persistence/DatabaseStorage.ts	server-weight	7
 apps/server/src/persistence/DatabaseStorage.test.ts	server-weight	4
 apps/server/src/persistence/Sqlite.ts	server-weight	1
@@ -1079,6 +1082,7 @@ apps/server/src/mcp/toolkits/core.test.ts	mcp-refusals	3
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	agent-catalog	1
 apps/server/src/mcp/toolkits/project/handlers.ts	mcp-refusals	2
 apps/server/src/mcp/toolkits/project/handlers.ts	file-placement	7
+apps/server/src/peer/RemoteDelegation.test.ts	mcp-refusals	2
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mobile-surface-hint	4
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-launch-files	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mobile-surface-hint	2
@@ -1095,7 +1099,7 @@ packages/contracts/src/orchestratorMcp.ts	agent-catalog	4
 packages/contracts/src/previewAutomation.ts	preview-popups	1
 packages/shared/src/t3McpToolPresentation.ts	attention-status	2
 packages/shared/src/t3McpToolPresentation.ts	mini-native-retention	2
-apps/mobile/src/features/threads/ThreadDetailScreen.tsx	failed-run-retry	5
+apps/mobile/src/features/threads/ThreadDetailScreen.tsx	failed-run-retry	7
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	source-control-cockpit	1
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	failed-run-retry	7
 apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
@@ -1206,7 +1210,7 @@ apps/mobile/src/features/threads/ThreadDetailScreen.tsx	library	3
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	library	7
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	everyday-workflows	2
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library-launch-files	6
-apps/mobile/src/features/threads/ThreadRouteScreen.tsx	attention-status	3
+apps/mobile/src/features/threads/ThreadRouteScreen.tsx	attention-status	2
 apps/server/src/environment/DirectEndpoints.ts	background-check-health	3
 apps/server/src/environment/DirectEndpoints.ts	directory-computers	4
 apps/server/src/mcp/OrchestratorMcpService.test.ts	webhook-delivery-issues	1
@@ -1360,7 +1364,7 @@ apps/server/src/project/ProjectMutation.ts	project-home	3
 apps/server/src/project/RepositoryIdentityResolver.test.ts	project-lifecycle	3
 apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
-apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	1
+apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	2
 apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	4
 apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	4
 apps/server/src/serverActivation.test.ts	server-weight	1
@@ -1495,8 +1499,8 @@ apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
 apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
 apps/web/src/components/CommandPalette.tsx	library-only	1
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	5
-apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	3
-apps/web/src/state/shell.ts	client-computer	8
+apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
+apps/web/src/state/shell.ts	client-computer	5
 apps/web/src/state/shell.test.ts	client-computer	7
 docs/user/updating.md	client-computer	1
 docs/user/faq.md	fleet-connections	1

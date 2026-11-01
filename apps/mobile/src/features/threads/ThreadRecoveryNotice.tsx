@@ -34,6 +34,7 @@ export function ThreadRecoveryNotice(props: {
   readonly onOpenConnection: () => void;
   readonly onReviewFiles?: () => void;
   readonly onResumeQueue: (() => Promise<void>) | null;
+  readonly queueHeld: boolean;
   /** Present while the latest run stopped or failed in a way it can continue from. */
   readonly continuableRun?: ContinuableRunAction | null;
 }) {
@@ -52,7 +53,7 @@ export function ThreadRecoveryNotice(props: {
       runId: props.runId,
       items,
     }),
-    queueHeld: props.onResumeQueue !== null,
+    queueHeld: props.queueHeld,
     canOperate: props.canOperate,
     computer: { ...computer, signIn: computer.signIn !== null },
     stoppedRun: props.continuableRun

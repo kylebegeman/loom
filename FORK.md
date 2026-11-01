@@ -474,7 +474,7 @@ recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 
 keeps its New thread button enabled when No project or a Library is the only way to start,
 and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
 (2 marker lines) keeps `file:` links on the primary, since their path names that machine.
-Its `client-computer` seams (5 markers; 3 in its browser test) wait for remote discovery before
+Its `client-computer` seams (5 markers; 2 in its browser test) wait for remote discovery before
 opening web links, keep pairing independent of discovery and cancel held links on unmount.
 
 The `library-projects` seams in `WorktreeMcpService.ts` (15 marker lines) coordinate an existing conversation's
@@ -538,7 +538,7 @@ before truncating. `ThreadSettlementService.ts` (11) reuses one settings read pe
 settings change and asks for a storage sweep only once a settled thread is done with its
 worktree, which lets the lane watchdog cache ready lanes. `ServerBrowserContexts.ts` (1) caps
 the preview browser's disk cache at 128 MiB. Tests carry the rest: `FoundationPersistence.test.ts`
-(8), `ThreadSettlementService.test.ts` (6), `DatabaseStorage.test.ts` (4),
+(8), `ThreadSettlementService.test.ts` (3), `DatabaseStorage.test.ts` (4),
 `Scheduler.test.ts` (3) and `observability.test.ts` (2).
 On desktop, `DesktopIpc.ts` (5) lets a sync IPC method run with the tracer off, so its nested
 spans are skipped too, and `ipc/methods/localEnvironment.ts` (1) and `ipc/methods/window.ts`
@@ -609,8 +609,11 @@ can get past (usage limit, provider or transport error, unknown), using the rule
 and still refuses permission and validation failures; `runtimeLayer.test.ts` (1) marks its
 cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
 `MessagesTimeline.tsx` (7) adds Retry to a failed root error row. On mobile,
-`ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
-recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
+`ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (7) wire Resume and Retry into the
+recovery notice and pass it the held-queue flag, since upstream's `onResumeQueue` is also set for
+a resumable run. The notice keeps its own Resume beside the composer's: it stays available while
+a draft hides the composer's and continues in the thread's saved modes.
+`UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
 (1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
 
 The `attention-status` seams in `evals/mcp-tool-use/run.ts` (2) include the retry toolkit in model-facing tests. The fork retry service shares guarded manual continuation across RPC and MCP.
@@ -1382,7 +1385,7 @@ See [Connections help](docs/fork/user/connections.md).
 
 | File                                                           | Packet            | Why                                                                          |
 | -------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------- |
-| `apps/web/src/components/ProviderUpdatesAction.tsx`            | `machine-updates` | Scope provider updates to permitted computers.                               |
+| `apps/web/src/components/ProviderUpdatesAction.tsx`            | `machine-updates` | Limit provider updates to the chosen computers and skip switched-off ones.   |
 | `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`        | `machine-updates` | Keep app updates local and show per-computer update plans with cancellation. |
 | `apps/web/src/components/sidebar/useUpdateEverything.ts`       | `machine-updates` | Share scoped local and fleet update execution.                               |
 | `apps/web/src/components/sidebar/updateEverything.logic.ts`    | `machine-updates` | Keep local and fleet progress in their owning views.                         |

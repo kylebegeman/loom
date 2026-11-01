@@ -1,11 +1,14 @@
-import { PROVIDER_DISPLAY_NAMES, type EnvironmentId } from "@t3tools/contracts"; // fork: machine-updates
+import {
+  AuthProvidersManageScope,
+  PROVIDER_DISPLAY_NAMES,
+  type EnvironmentId, // fork: machine-updates
+} from "@t3tools/contracts";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useRef, useState } from "react";
-import { useAtomValue } from "@effect/atom-react"; // fork: machine-updates
-import { Atom } from "effect/reactivity"; // fork: machine-updates
 
 import { useEnvironmentProviders, useEnvironments } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
+import { useEnvironmentsWithScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import {
   canOneClickUpdateProviderCandidate,
@@ -20,29 +23,20 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 // fork: machine-updates - Scoped callers must not send provider updates to other computers.
 export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) {
   const { environments } = useEnvironments();
-  // fork: machine-updates - Only computers this session may maintain are offered.
-  const permittedAtom = Atom.make(
-    (get) =>
-      new Set(
-        environments
-          .filter((environment) =>
-            get(serverEnvironment.updateProvider.permissionAtom(environment.environmentId)),
-          )
-          .map((environment) => environment.environmentId),
-      ),
-  );
-  const permitted = useAtomValue(permittedAtom); // fork: machine-updates
+  const manageableIds = useEnvironmentsWithScope(environments, AuthProvidersManageScope);
   const providersByEnvironment = useEnvironmentProviders();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
   const machines = environments.flatMap((environment) => {
-    if (!permitted.has(environment.environmentId)) return []; // fork: machine-updates
     // fork: machine-updates
     if (environmentIds !== undefined && !environmentIds.has(environment.environmentId)) return [];
     const providers = providersByEnvironment.get(environment.environmentId) ?? [];
-    // fork: machine-updates - Switched-off computers are not updated.
-    if (!environment.entry.enabled || environment.connection.phase !== "connected") {
+    if (
+      environment.entry?.enabled === false || // fork: machine-updates - Switched-off computers are skipped.
+      environment.connection.phase !== "connected" ||
+      !manageableIds.has(environment.environmentId)
+    ) {
       return [];
     }
     const candidates = collectProviderUpdateCandidates(providers).filter((candidate) =>

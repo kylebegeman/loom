@@ -52,6 +52,7 @@ vi.mock("../../state/use-thread-detail", () => ({
 vi.mock("../../state/use-thread-composer-state", () => ({
   useThreadComposerState: () => ({
     queueHeld: true,
+    resumableRunId: null,
     selectedThreadFeed: [],
     selectedThreadActivityRun: null,
     activeWorkStartedAt: null,
@@ -114,7 +115,7 @@ vi.mock("@react-navigation/native", () => ({
   useFocusEffect: () => {},
   StackActions: {},
 }));
-vi.mock("../../components/ui/Dialog", () => ({}));
+vi.mock("../../components/ui/Dialog", () => ({ alert: () => {} }));
 vi.mock("../../fork/library/useEmptyConversationLeave", () => ({
   useEmptyConversationLeave: () => undefined, // fork: library
 }));

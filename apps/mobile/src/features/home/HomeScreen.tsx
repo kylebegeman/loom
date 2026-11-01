@@ -76,6 +76,7 @@ import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { useThreadListSearchMatches } from "../threads/useThreadListSearchMatches";
 import { useThreadListV2 } from "../threads/useThreadListV2";
 import { useThreadListNow } from "../threads/use-thread-list-now";
+import { useSearchScrollRestoration } from "../workspace/useSearchScrollRestoration";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/presentation";
@@ -365,16 +366,15 @@ export function HomeScreen(props: HomeScreenProps) {
   );
   const searchMode = workspace?.state.tabs.threads.searchMode;
   const restoredOffset = workspace?.state.tabs.threads.scrollOffset;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the thread list's saved scroll offset through the list ref when search goes back to resting
-  useEffect(() => {
-    // fork: project-navigation
-    if (navigationView !== "threads" || searchMode !== "resting" || restoredOffset === undefined)
-      return;
-    listRef.current?.scrollToOffset({
+  useSearchScrollRestoration(searchMode, () => {
+    // fork: project-navigation (the Projects view shares this list but not its saved offset)
+    if (navigationView !== "threads") return; // fork: project-navigation
+    if (restoredOffset === undefined) return;
+    void listRef.current?.scrollToOffset({
       offset: restoredOffset - (Platform.OS === "ios" ? insets.top : 0),
       animated: false,
     });
-  }, [searchMode, insets.top, restoredOffset, navigationView]); // fork: project-navigation
+  });
   const swipeRowActivation = createSwipeRowActivation();
   const activateVisibleRows = (rows: ReadonlyArray<HomeNavigationItem>) => {
     // fork: project-navigation
