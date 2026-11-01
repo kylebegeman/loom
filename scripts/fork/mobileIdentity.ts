@@ -34,7 +34,7 @@ function flag(env: Environment, key: string): boolean {
 }
 
 export function resolveMobileAppVariant(value: string | undefined): MobileAppVariant {
-  if (value === undefined || value.trim() === "") return "production";
+  if (value === undefined) return "production";
   if (value === "development" || value === "preview" || value === "production") return value;
   throw new Error("APP_VARIANT must be development, preview, or production.");
 }

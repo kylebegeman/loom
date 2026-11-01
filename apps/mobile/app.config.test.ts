@@ -28,6 +28,9 @@ it.each([
   ["production", "com.t3tools.t3code"],
 ])("keeps the iOS and Android identifiers for APP_VARIANT=%j", async (value, identifier) => {
   const config = await loadConfig(value);
-  expect(config.ios?.bundleIdentifier).toBe(identifier);
+  // fork: mobile-identity -- iOS uses Loom's bundle IDs; Android keeps upstream's package
+  expect(config.ios?.bundleIdentifier).toBe(
+    identifier.replace("t3tools.t3code", "kylebegeman.loom"),
+  );
   expect(config.android?.package).toBe(identifier);
 });

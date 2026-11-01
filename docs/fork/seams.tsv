@@ -127,6 +127,7 @@ packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	19
 apps/mobile/app.config.ts	mobile-identity	24
+apps/mobile/app.config.test.ts	mobile-identity	1
 apps/mobile/src/App.tsx	mobile-identity	1
 apps/mobile/src/lib/appLinking.ts	mobile-identity	1
 apps/mobile/src/lib/appLinking.test.ts	mobile-identity	3
