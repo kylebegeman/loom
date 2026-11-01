@@ -981,8 +981,8 @@ apps/server/src/git/GitWorkflowService.ts	project-lifecycle	5
 apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
-apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
-apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
+apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	13
+apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	22
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1

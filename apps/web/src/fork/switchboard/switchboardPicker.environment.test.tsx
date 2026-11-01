@@ -63,7 +63,7 @@ const Picker = withSwitchboardEntries(function TestPicker(input: {
     instanceId: typeof activeInstanceId,
     model: string,
   ) => string | null;
-  readonly footer?: ReactNode;
+  readonly switchboardNote?: ReactNode;
 }) {
   return (
     <div>
@@ -75,7 +75,7 @@ const Picker = withSwitchboardEntries(function TestPicker(input: {
           {entry.instanceId}
         </button>
       ))}
-      {input.footer}
+      {input.switchboardNote}
     </div>
   );
 });

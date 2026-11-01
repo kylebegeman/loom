@@ -323,6 +323,40 @@ it.effect("refuses to stage or commit unresolved merge paths", () =>
   }).pipe(Effect.scoped, Effect.provide(layerTest)),
 );
 
+// fork: source-control-cockpit -- conflicts outside the selection or without markers stay refused.
+it.effect.each(["cherry-pick", "modify/delete merge"] as const)(
+  "refuses a commit that would hide a %s conflict",
+  (scenario) =>
+    Effect.gen(function* () {
+      const cwd = yield* makeTmpDir();
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const { initialBranch } = yield* initRepoWithCommit(cwd);
+      yield* git(cwd, ["checkout", "-b", "feature"]);
+      if (scenario === "cherry-pick") yield* writeTextFile(cwd, "README.md", "feature\n");
+      else yield* git(cwd, ["rm", "-q", "README.md"]);
+      yield* git(cwd, ["commit", "-qam", "feature"]);
+      yield* git(cwd, ["checkout", initialBranch]);
+      yield* writeTextFile(cwd, "README.md", "main\n");
+      yield* git(cwd, ["commit", "-am", "main"]);
+      yield* driver.execute({
+        operation: "test.conflict",
+        cwd,
+        args: scenario === "cherry-pick" ? ["cherry-pick", "feature"] : ["merge", "feature"],
+        allowNonZeroExit: true,
+      });
+      yield* writeTextFile(cwd, "other.txt", "other\n");
+      const head = yield* git(cwd, ["rev-parse", "HEAD"]);
+      const error = yield* Effect.flip(
+        driver.commit(cwd, "unsafe", "", {
+          stage: scenario === "cherry-pick" ? { filePaths: ["other.txt"] } : {},
+        }),
+      );
+      assert.equal(error.reason, "unresolved_conflicts");
+      assert.equal(yield* git(cwd, ["diff", "--name-only", "--diff-filter=U"]), "README.md");
+      assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), head);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+);
+
 // fork: source-control-cockpit -- real worktree markers, staged continuation, stale confirmation and abort.
 it.effect.each(["merge", "rebase", "cherry-pick", "revert"] as const)(
   "recovers a conflicted %s in a linked worktree",

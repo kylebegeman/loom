@@ -2144,13 +2144,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ]);
     return output.split("\0").filter((file) => file.length > 0);
   });
-  // When staging, an unmerged path outside the selection or resolved in the worktree may proceed.
   const refuseUnmergedPaths = Effect.fn("GitVcsDriver.refuseUnmergedPaths")(function* (
     cwd: string,
     staging?: { readonly filePaths?: readonly string[] | undefined },
   ) {
     let unmerged = yield* readUnmergedPaths(cwd);
-    if (staging && unmerged.length > 0) {
+    // fork: source-control-cockpit -- only a merge defers to upstream's partial-commit refusal and worktree resolutions.
+    if (staging && unmerged.length > 0 && (yield* readOperation(cwd)) === "merge") {
       const selected = staging.filePaths;
       const candidates = selected?.length
         ? unmerged.filter((file) => selected.includes(file))
@@ -2159,12 +2159,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "rev-parse",
         "--show-toplevel",
       ])).trim();
+      // Modify/delete and binary conflicts write no markers, so they stay unresolved until staged.
+      const stages = yield* runGitStdout("GitVcsDriver.unmergedPaths.stages", cwd, [
+        "ls-files",
+        "--unmerged",
+        "--full-name",
+        "-z",
+        "--",
+        ":/",
+      ]);
+      const bothSides = (file: string) =>
+        stages.includes(` 2\t${file}\0`) && stages.includes(` 3\t${file}\0`);
       const marked: string[] = [];
       for (const file of candidates) {
         const text = yield* fileSystem
           .readFileString(path.join(topLevel, file))
           .pipe(Effect.orElseSucceed(() => ""));
-        if (/^<{7}(?:[ \r]|$)[\s\S]*?^>{7}(?:[ \r]|$)/m.test(text)) marked.push(file);
+        if (
+          !bothSides(file) ||
+          text.includes("\0") ||
+          /^<{7}(?:[ \r]|$)[\s\S]*?^>{7}(?:[ \r]|$)/m.test(text)
+        )
+          marked.push(file);
       }
       unmerged = marked;
     }
