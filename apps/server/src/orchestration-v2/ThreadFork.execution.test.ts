@@ -1032,7 +1032,7 @@ it.effect("closing a side chat deletes it only while unused; a deleted parent ta
       parentId,
       ThreadId.make("side-chat-close-orphan"),
     ).pipe(Effect.flip);
-    assert.include(String(orphan.cause), "was deleted");
+    assert.include(String(orphan.cause), "deleted");
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 

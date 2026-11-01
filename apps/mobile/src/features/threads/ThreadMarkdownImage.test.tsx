@@ -35,6 +35,9 @@ vi.mock("../../components/ui/NativePresentation", () => ({
 }));
 vi.mock("../../state/mediaActions", () => ({ useMediaActions: () => ({ actions: [] }) }));
 vi.mock("../../state/assets", () => ({ useAssetUrlState: vi.fn() }));
+vi.mock("../../fork/cloudflare-access/mobileAccess", () => ({
+  mobileAccess: { peekToken: () => null },
+}));
 
 import { RegistryContext } from "@effect/atom-react";
 import { AtomRegistry } from "effect/reactivity";
