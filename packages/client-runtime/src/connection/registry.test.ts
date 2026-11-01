@@ -2653,6 +2653,7 @@ describe("EnvironmentRegistry routes", () => {
                 }),
               authorizeDpop: () => Effect.die("unused"),
               authorizeDpopHttp: () => Effect.die("unused"),
+              renewDpopBeforeExpiry: () => Effect.die("unused"),
             }),
             Effect.provideService(
               HttpClient.HttpClient,
