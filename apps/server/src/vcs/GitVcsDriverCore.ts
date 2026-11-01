@@ -2144,10 +2144,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ]);
     return output.split("\0").filter((file) => file.length > 0);
   });
+  // When staging, an unmerged path outside the selection or resolved in the worktree may proceed.
   const refuseUnmergedPaths = Effect.fn("GitVcsDriver.refuseUnmergedPaths")(function* (
     cwd: string,
+    staging?: { readonly filePaths?: readonly string[] | undefined },
   ) {
-    if ((yield* readUnmergedPaths(cwd)).length > 0) {
+    let unmerged = yield* readUnmergedPaths(cwd);
+    if (staging && unmerged.length > 0) {
+      const selected = staging.filePaths;
+      const candidates = selected?.length
+        ? unmerged.filter((file) => selected.includes(file))
+        : unmerged;
+      const topLevel = (yield* runGitStdout("GitVcsDriver.unmergedPaths.topLevel", cwd, [
+        "rev-parse",
+        "--show-toplevel",
+      ])).trim();
+      const marked: string[] = [];
+      for (const file of candidates) {
+        const text = yield* fileSystem
+          .readFileString(path.join(topLevel, file))
+          .pipe(Effect.orElseSucceed(() => ""));
+        if (/^<{7}(?:[ \r]|$)[\s\S]*?^>{7}(?:[ \r]|$)/m.test(text)) marked.push(file);
+      }
+      unmerged = marked;
+    }
+    if (unmerged.length > 0) {
       return yield* new GitCommandError({
         operation: "GitVcsDriver.commit",
         command: "git",
@@ -2552,7 +2573,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     env?: NodeJS.ProcessEnv,
   ) {
     // fork: source-control-cockpit -- check the real index before add/reset hides conflicts.
-    yield* refuseUnmergedPaths(cwd);
+    yield* refuseUnmergedPaths(cwd, { filePaths });
     const config = env
       ? ["-c", "core.splitIndex=false", "-c", "splitIndex.sharedIndexExpire=never"]
       : [];
@@ -2714,7 +2735,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     options?: GitVcsDriver.GitCommitOptions,
   ) {
     // fork: source-control-cockpit -- direct driver callers also get the typed refusal.
-    yield* refuseUnmergedPaths(cwd);
+    if (options?.stage === undefined) yield* refuseUnmergedPaths(cwd);
     if (options?.stage !== undefined) {
       yield* stageCommitChanges(cwd, options.stage.filePaths);
     }
