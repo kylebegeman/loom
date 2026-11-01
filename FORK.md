@@ -452,7 +452,7 @@ recognises scratch projects on computers that cannot run them. `Sidebar.tsx` (5 
 keeps its New thread button enabled when No project or a Library is the only way to start,
 and starts No project when there is no project to start in. `DesktopWebLinkCoordinator.tsx`
 (2 marker lines) keeps `file:` links on the primary, since their path names that machine.
-Its `client-computer` seams (5 markers; 3 in its browser test) wait for remote discovery before
+Its `client-computer` seams (5 markers; 2 in its browser test) wait for remote discovery before
 opening web links, keep pairing independent of discovery and cancel held links on unmount.
 
 The `library-projects` seams in `WorktreeMcpService.ts` (15 marker lines) coordinate an existing conversation's
@@ -587,7 +587,7 @@ can get past (usage limit, provider or transport error, unknown), using the rule
 and still refuses permission and validation failures; `runtimeLayer.test.ts` (1) marks its
 cases. On web, `ChatView.tsx` (5) gives the composer's Resume the same rule and
 `MessagesTimeline.tsx` (7) adds Retry to a failed root error row. On mobile,
-`ThreadRouteScreen.tsx` (7) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
+`ThreadRouteScreen.tsx` (5) and `ThreadDetailScreen.tsx` (5) wire Resume and Retry into the
 recovery notice, and `UsageLimitRecoveryCard.tsx` (4) adds Retry now. `ComposerPendingApprovalPanel.tsx`
 (1) drops an em dash from approval copy, and `docs/user/thread-sidebar.md` (1) explains Resume.
 
