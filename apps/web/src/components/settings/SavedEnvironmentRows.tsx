@@ -93,6 +93,7 @@ type SavedBackendListRowProps = {
   onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   onRemove: (environment: EnvironmentPresentation) => void;
   onAddRoute: (environment: EnvironmentPresentation) => void;
+  readonly showWorkActions?: boolean;
 };
 
 function savedBackendStatus(environment: EnvironmentPresentation): {
@@ -132,6 +133,7 @@ export function SavedBackendListRow({
   onSetEnabled,
   onRemove,
   onAddRoute,
+  showWorkActions = true,
 }: SavedBackendListRowProps) {
   // fork: fleet-connections
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -330,7 +332,7 @@ export function SavedBackendListRow({
             />
           ) : null}
           {/* fork: fleet-connections */}
-          <ComputerWorkActions environment={environment} />
+          {showWorkActions ? <ComputerWorkActions environment={environment} /> : null}
           <ComputerConnectionDetails
             label={environment.label}
             open={detailsOpen}

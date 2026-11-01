@@ -1,6 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
-import { ArrowUpRightIcon, FolderIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, FolderIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import {
   AuthOrchestrationOperateScope,
@@ -12,6 +11,14 @@ import { noProjectWorkspaceRoot } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { Button } from "~/components/ui/button";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "~/components/ui/menu";
 import {
   readyAgentCount,
   recentConversationForComputer,
@@ -27,8 +34,13 @@ import { Alert, useAction } from "~/fork/apple-build-tooling/parts";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-/** Work remains available beside the connection that owns its projects and history. */
-export function ComputerWorkActions({ environment }: { environment: EnvironmentPresentation }) {
+export function ComputerWorkActions({
+  environment,
+  presentation = "details",
+}: {
+  readonly environment: EnvironmentPresentation;
+  readonly presentation?: "card" | "details";
+}) {
   const projects = useProjects();
   const threads = useThreadShells();
   const providersByEnvironment = useEnvironmentProviders();
@@ -41,17 +53,14 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
     AuthOrchestrationOperateScope,
   );
   const action = useAction();
-  const [choosingProject, setChoosingProject] = useState(false);
   if (environment.serverConfig?.environment.capabilities.supportsExecution === false) {
     return (
-      <p className="py-3 text-xs text-muted-foreground">
-        Keeps your projects and conversations. Work runs on your other computers.
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        Stores your projects and conversations. Start work on one of your other computers.
       </p>
     );
   }
   const connected = environment.entry.enabled && environment.connection.phase === "connected";
-  // The scratch folder still hides this computer's No project home from its project list, but
-  // only a computer that can run work offers to start one.
   const scratchRoot = scratchWorkspaceRootFor(environment.environmentId);
   const canStartScratch =
     noProjectWorkspaceRoot(environment.connection.phase, environment.serverConfig) !== null;
@@ -59,35 +68,75 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
     (project) =>
       project.environmentId === environment.environmentId && project.workspaceRoot !== scratchRoot,
   );
-  const recentConversation = recentConversationForComputer(
-    threads,
-    projects,
-    environment.environmentId,
-  );
-  const recentProject = projects.find(
-    (project) =>
-      project.environmentId === environment.environmentId &&
-      project.id === recentConversation?.projectId,
-  );
+  const recentConversations = [];
+  let remainingThreads = threads;
+  for (let index = 0; index < (presentation === "card" ? 1 : 3); index++) {
+    const recent = recentConversationForComputer(
+      remainingThreads,
+      projects,
+      environment.environmentId,
+    );
+    if (recent === null) break;
+    recentConversations.push(recent);
+    remainingThreads = remainingThreads.filter((thread) => thread !== recent);
+  }
   const agentsReady = readyAgentCount(providersByEnvironment.get(environment.environmentId) ?? []);
   const choiceCount = machineProjects.length + (canStartScratch ? 1 : 0);
-  const addProject = () =>
-    openCommandPalette({ open: "add-project", environmentId: environment.environmentId });
+  const canCreateThread = connected && agentsReady > 0 && canStartWork && !action.busy;
   const startInProject = async (projectId: ProjectId) => {
-    const projectRef = scopeProjectRef(environment.environmentId, projectId);
-    await handleNewThread(projectRef);
+    await handleNewThread(scopeProjectRef(environment.environmentId, projectId));
   };
+  const newThreadButton = (
+    <Button
+      shape="pill"
+      size="xs"
+      variant="outline"
+      disabled={!canCreateThread}
+      title={!canStartWork ? "This connection does not have permission to start work" : undefined}
+    />
+  );
 
   return (
-    <div className="space-y-3 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-auto text-xs text-muted-foreground">
-          {connected
-            ? `${agentsReady} ${agentsReady === 1 ? "agent" : "agents"} ready${machineProjects.length ? `, ${machineProjects.length} ${machineProjects.length === 1 ? "project" : "projects"}` : ""}`
-            : "Projects appear when connected"}
+    <div className={presentation === "card" ? "flex flex-1 flex-col gap-4" : "space-y-4"}>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        {connected ? (
+          <span>
+            {agentsReady} {agentsReady === 1 ? "agent" : "agents"} ready
+          </span>
+        ) : (
+          <span>Reconnect to start work</span>
+        )}
+        <span>
+          {machineProjects.length} {machineProjects.length === 1 ? "project" : "projects"}
         </span>
+      </div>
+      {presentation === "card" && recentConversations[0] ? (
+        <Link
+          to="/$environmentId/$threadId"
+          params={buildThreadRouteParams(
+            scopeThreadRef(environment.environmentId, recentConversations[0].id),
+          )}
+          className="flex min-w-0 items-start gap-2 text-sm leading-relaxed outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <MessageSquareIcon
+            aria-hidden
+            className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+          />
+          <span className="line-clamp-2 min-w-0">
+            {recentConversations[0].title || "Untitled thread"}
+          </span>
+        </Link>
+      ) : null}
+      <div
+        className={
+          presentation === "card"
+            ? "mt-auto flex flex-wrap items-center gap-2 border-t border-border/60 pt-3"
+            : "flex flex-wrap items-center gap-2"
+        }
+      >
         {!environment.entry.enabled ? (
           <Button
+            shape="pill"
             size="xs"
             variant="outline"
             disabled={action.busy}
@@ -105,6 +154,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
           </Button>
         ) : !connected ? (
           <Button
+            shape="pill"
             size="xs"
             variant="outline"
             disabled={
@@ -122,6 +172,7 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
           </Button>
         ) : agentsReady === 0 ? (
           <Button
+            shape="pill"
             size="xs"
             variant="outline"
             render={
@@ -130,31 +181,62 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
           >
             Set up agents
           </Button>
-        ) : choiceCount > 0 ? (
+        ) : choiceCount > 1 ? (
+          <Menu>
+            <MenuTrigger render={newThreadButton}>
+              <PlusIcon aria-hidden />
+              New thread
+              <ChevronDownIcon aria-hidden />
+            </MenuTrigger>
+            <MenuPopup align="start" width="content">
+              <MenuGroup>
+                <MenuGroupLabel>Start on {environment.label}</MenuGroupLabel>
+                {canStartScratch ? (
+                  <MenuItem
+                    disabled={!canCreateThread}
+                    onClick={() =>
+                      void action.act(() => startScratchThread(environment.environmentId))
+                    }
+                  >
+                    <MessageSquareIcon aria-hidden />
+                    No project
+                  </MenuItem>
+                ) : null}
+                {machineProjects.map((project) => (
+                  <MenuItem
+                    key={project.id}
+                    disabled={!canCreateThread}
+                    onClick={() => void action.act(() => startInProject(project.id))}
+                  >
+                    <FolderIcon aria-hidden />
+                    <span className="max-w-56 truncate">{project.title}</span>
+                  </MenuItem>
+                ))}
+              </MenuGroup>
+            </MenuPopup>
+          </Menu>
+        ) : choiceCount === 1 ? (
           <Button
+            shape="pill"
             size="xs"
             variant="outline"
-            disabled={action.busy || !canStartWork}
+            disabled={!canCreateThread}
             title={
               !canStartWork ? "This connection does not have permission to start work" : undefined
             }
-            aria-expanded={choiceCount > 1 ? choosingProject : undefined}
-            aria-controls={
-              choiceCount > 1 ? `computer-projects-${environment.environmentId}` : undefined
-            }
             onClick={() => {
-              if (choiceCount > 1) setChoosingProject((open) => !open);
-              else if (canStartScratch)
+              if (canStartScratch)
                 void action.act(() => startScratchThread(environment.environmentId));
               else if (machineProjects[0])
                 void action.act(() => startInProject(machineProjects[0]!.id));
             }}
           >
-            New conversation
-            <ArrowUpRightIcon aria-hidden />
+            <PlusIcon aria-hidden />
+            New thread
           </Button>
         ) : null}
         <Button
+          shape="pill"
           size="xs"
           variant="ghost"
           disabled={!connected || action.busy || !canStartWork}
@@ -165,92 +247,94 @@ export function ComputerWorkActions({ environment }: { environment: EnvironmentP
                 ? "This connection does not have permission to add projects"
                 : undefined
           }
-          onClick={addProject}
+          onClick={() =>
+            openCommandPalette({ open: "add-project", environmentId: environment.environmentId })
+          }
         >
-          <PlusIcon aria-hidden />
           Add project
         </Button>
       </div>
-      {action.error && <Alert>{action.error}</Alert>}
-      {connected && agentsReady === 0 && (
+      {action.error ? <Alert>{action.error}</Alert> : null}
+      {connected && agentsReady === 0 ? (
         <AgentReadiness environmentId={environment.environmentId} />
-      )}
-      {choosingProject && connected && agentsReady > 0 && (
-        <div
-          id={`computer-projects-${environment.environmentId}`}
-          className="space-y-1 rounded-lg bg-muted/30 p-2"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-medium">Start on {environment.label}</p>
-            <Button size="xs" variant="ghost" onClick={() => setChoosingProject(false)}>
-              Cancel
-            </Button>
-          </div>
-          {canStartScratch && (
-            <button
-              disabled={action.busy || !canStartWork}
-              onClick={() => void action.act(() => startScratchThread(environment.environmentId))}
-              className="flex w-full items-start gap-2 rounded-md p-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
-            >
-              <MessageSquareIcon
-                aria-hidden
-                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-              />
-              <span>
-                <span className="block text-sm font-medium">No project</span>
-                <span className="block text-xs text-muted-foreground">
-                  Start immediately in a temporary workspace
-                </span>
-              </span>
-            </button>
-          )}
-          {machineProjects.map((project) => (
-            <button
-              key={project.id}
-              disabled={action.busy || !canStartWork}
-              onClick={() => void action.act(() => startInProject(project.id))}
-              className="flex w-full min-w-0 items-start gap-2 rounded-md p-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
-            >
-              <FolderIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">{project.title}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {project.workspaceRoot}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-      {recentConversation && (
-        <div className="flex min-w-0 flex-col items-start gap-2 rounded-lg bg-muted/30 p-2.5 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 w-full items-start gap-2 sm:flex-1 sm:items-center">
-            <MessageSquareIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="break-words text-xs font-medium sm:truncate">
-                {recentConversation.title || "Untitled conversation"}
+      ) : null}
+      {presentation === "details" ? (
+        <div className="grid gap-8 pt-2 @min-[44rem]/computers:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <section className="min-w-0 space-y-3" aria-label="Projects on this computer">
+            <h3 className="text-sm font-medium">Projects</h3>
+            {machineProjects.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {connected
+                  ? "No projects yet. Add a folder or clone a repository to get started."
+                  : "Connect this computer to see its projects."}
               </p>
-              <p className="break-words text-xs text-muted-foreground sm:truncate">
-                {recentProject?.title ?? "Recent conversation"}
-              </p>
-            </div>
-          </div>
-          <Button
-            size="xs"
-            variant="outline"
-            render={
-              <Link
-                to="/$environmentId/$threadId"
-                params={buildThreadRouteParams(
-                  scopeThreadRef(environment.environmentId, recentConversation.id),
-                )}
-              />
-            }
-          >
-            Continue recent work
-          </Button>
+            ) : (
+              <ul className="space-y-1">
+                {machineProjects.map((project) => (
+                  <li key={project.id} className="flex min-w-0 items-center gap-3 py-2">
+                    <FolderIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{project.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {project.workspaceRoot}
+                      </p>
+                    </div>
+                    <Button
+                      shape="pill"
+                      size="icon-xs"
+                      variant="ghost-muted"
+                      disabled={!canCreateThread}
+                      aria-label={`New thread in ${project.title}`}
+                      title={`New thread in ${project.title}`}
+                      onClick={() => void action.act(() => startInProject(project.id))}
+                    >
+                      <PlusIcon aria-hidden />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section className="min-w-0 space-y-3" aria-label="Recent threads on this computer">
+            <h3 className="text-sm font-medium">Recent threads</h3>
+            {recentConversations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No thread history yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {recentConversations.map((thread) => {
+                  const project = machineProjects.find((entry) => entry.id === thread.projectId);
+                  return (
+                    <li key={thread.id}>
+                      <Link
+                        to="/$environmentId/$threadId"
+                        params={buildThreadRouteParams(
+                          scopeThreadRef(environment.environmentId, thread.id),
+                        )}
+                        className="flex min-w-0 items-start gap-3 rounded-lg py-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      >
+                        <MessageSquareIcon
+                          aria-hidden
+                          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {thread.title || "Untitled thread"}
+                          </span>
+                          {project ? (
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {project.title}
+                            </span>
+                          ) : null}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -265,6 +349,7 @@ function AgentReadiness({ environmentId }: { environmentId: EnvironmentId }) {
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span>Agents need setup or a fresh status check.</span>
       <Button
+        shape="pill"
         size="xs"
         variant="ghost"
         disabled={action.busy || !canRefresh}
@@ -277,7 +362,7 @@ function AgentReadiness({ environmentId }: { environmentId: EnvironmentId }) {
       >
         {action.busy ? "Checking..." : "Check agents"}
       </Button>
-      {action.error && <Alert>{action.error}</Alert>}
+      {action.error ? <Alert>{action.error}</Alert> : null}
     </div>
   );
 }

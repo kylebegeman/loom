@@ -149,6 +149,9 @@ import {
 import { FleetUpdatesSection } from "~/fork/connections/FleetUpdatesSection";
 import { ComputersSettingsPage } from "~/fork/connections/ComputersSettingsPage";
 import { RenameComputer } from "~/fork/connections/RenameComputer";
+import { ComputerConnectionDetails } from "~/fork/connections/ComputerConnectionDetails";
+import { ComputerReachSection } from "~/fork/reach/ComputerReach";
+import { ComputerHealthSummary } from "~/fork/connection-health/ComputerHealthSummary";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1542,38 +1545,37 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         </ComputerLibrarySettings>
       }
     >
-      {desktopBridge ? (
-        <SettingsSection id="this-app" title="This app">
-          <LocalEnvironmentSetting />
-        </SettingsSection>
-      ) : null}
-      {/* fork: fleet-connections */}
       <ComputerConnectionsHome
         primaryEnvironment={primaryEnvironment}
-        primaryActions={
-          primaryEnvironment ? <RenameComputer environment={primaryEnvironment} /> : null
+        environments={[...(primaryEnvironment ? [primaryEnvironment] : []), ...listedEnvironments]}
+        renderComputerDetails={(environment) =>
+          environment.environmentId === primaryEnvironmentId ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Computer name</span>
+                <RenameComputer environment={environment} />
+              </div>
+              <ComputerHealthSummary environment={environment} />
+              <ComputerConnectionDetails label={environment.label}>
+                <ComputerReachSection environment={environment} />
+              </ComputerConnectionDetails>
+            </div>
+          ) : (
+            <SavedBackendListRow
+              environment={environment}
+              showWorkActions={false}
+              removingEnvironmentId={removingSavedEnvironmentId}
+              onSetEnabled={handleSetSavedBackendEnabled}
+              onRemove={handleRemoveSavedBackend}
+              onAddRoute={(target) => {
+                setRouteTarget(target);
+                setSavedBackendError(null);
+                setAddBackendDialogOpen(true);
+              }}
+            />
+          )
         }
         isReady={isReady}
-        // fork: fleet-connections
-        computerRows={
-          <>
-            {listedEnvironments.map((environment) => (
-              <SavedBackendListRow
-                key={environment.environmentId}
-                environment={environment}
-                removingEnvironmentId={removingSavedEnvironmentId}
-                onSetEnabled={handleSetSavedBackendEnabled}
-                onRemove={handleRemoveSavedBackend}
-                onAddRoute={(target) => {
-                  setRouteTarget(target);
-                  setSavedBackendError(null);
-                  setAddBackendDialogOpen(true);
-                }}
-              />
-            ))}
-          </>
-        }
-        // fork: fleet-connections
         discoveredRows={
           hasCloudPublicConfig() || primaryEnvironment === null ? (
             <CloudRemoteEnvironmentRows
@@ -1581,7 +1583,30 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
               savedEnvironments={savedEnvironments}
             />
           ) : null
-        } // fork: fleet-connections
+        }
+        appSettings={
+          desktopBridge ? (
+            <SettingsSection id="this-app" title="This app">
+              <LocalEnvironmentSetting />
+            </SettingsSection>
+          ) : null
+        }
+        routing={
+          peerLinkHosts.length > 0 || loadBalancingEnvironments.length > 1 ? (
+            <>
+              {peerLinkHosts.map((environment, index) => (
+                <LinkedEnvironmentsSettings
+                  key={environment.environmentId}
+                  environmentId={environment.environmentId}
+                  environmentLabel={peerLinkHosts.length > 1 ? environment.label : null}
+                  isSearchTarget={index === 0}
+                />
+              ))}
+              <LoadBalancingSettings environments={loadBalancingEnvironments} />
+              <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
+            </>
+          ) : null
+        }
       />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
@@ -1595,16 +1620,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
           }}
         />
       ) : null}
-      {peerLinkHosts.map((environment, index) => (
-        <LinkedEnvironmentsSettings
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          environmentLabel={peerLinkHosts.length > 1 ? environment.label : null}
-          isSearchTarget={index === 0}
-        />
-      ))}
-      <LoadBalancingSettings environments={loadBalancingEnvironments} />
-      <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
     </ComputersSettingsPage>
   );
 }

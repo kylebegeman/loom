@@ -646,7 +646,7 @@ export function AddEnvironmentDialog({
             <DialogTrigger
               render={
                 // fork: fleet-connections
-                <Button size="xs" variant="ghost-muted" aria-label="Connect computer">
+                <Button shape="pill" size="sm" aria-label="Connect computer">
                   <PlusIcon className="size-3" />
                   {/* fork: fleet-connections */}
                   <span>Connect computer</span>
