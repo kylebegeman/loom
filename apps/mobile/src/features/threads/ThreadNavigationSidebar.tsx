@@ -258,7 +258,8 @@ function ThreadNavigationSidebarPane(
       }),
     [projects, options.selectedEnvironmentId, options.projectGroupingMode],
   );
-  const projectFilter = useLibraryProjectFilter( // fork: library
+  // fork: library
+  const projectFilter = useLibraryProjectFilter(
     pickableProjectGroups(projectScopes), // fork: library
     resolvedProjectKey, // fork: library
   ); // fork: library

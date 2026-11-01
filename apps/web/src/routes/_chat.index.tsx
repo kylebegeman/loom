@@ -71,7 +71,8 @@ function IndexDraftLanding() {
 
   const mostRecentProject =
     primaryReady && !libraryOnly // fork: library-only
-      ? resolveIndexDraftProject( // fork: fleet-connections
+      ? // fork: fleet-connections
+        resolveIndexDraftProject(
           projects.filter((project) => project.archivedAt == null),
           threads,
           executionEnvironments,
