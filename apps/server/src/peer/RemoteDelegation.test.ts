@@ -38,6 +38,7 @@ import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import { idleThreadProjection, liveThreadShell } from "../mcp/McpToolAccess.testkit.ts";
+import { ENDED_RUN_REPAIR } from "../mcp/OrchestratorMcpService.ts"; // fork: mcp-refusals
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -979,7 +980,7 @@ it.effect.each(["no active parent run", "a newer run owned by another provider"]
               text: JSON.stringify({
                 _tag: "OrchestratorMcpFailure",
                 code: "parent_not_active",
-                message: "The calling provider no longer owns an active thread run.",
+                message: `The calling provider no longer owns an active thread run. ${ENDED_RUN_REPAIR}`, // fork: mcp-refusals
               }),
             },
           ]);

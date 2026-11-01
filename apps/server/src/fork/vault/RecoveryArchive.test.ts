@@ -489,7 +489,6 @@ syncBuiltinESMExports();
           "--environment-id",
           f.input.environmentId,
         ],
-        5000,
       );
       expect(result.code).toBe(1);
       expect(result.stdout + result.stderr).toContain("Vault archive operation refused");
