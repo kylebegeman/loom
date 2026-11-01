@@ -95,6 +95,8 @@ export const sshFixture = (
             createdAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
             updatedAt: IsoDateTime.make("2026-10-18T00:00:00Z"),
             deletedAt: null,
+            pinnedAt: null,
+            archivedAt: null,
           }),
       }),
       BrokerCrypto.layer,

@@ -3436,7 +3436,14 @@ export const layer = Layer.unwrap(
             Effect.raceFirst(
               rpcWebSocketHttpEffect,
               // fork: identity-renewal
-              sessions.awaitSessionChain(heldSession).pipe(
+              // Open until both renewal chains end: Loom's linked renewals and upstream's DPoP-key ones.
+              Effect.all(
+                [
+                  sessions.awaitSessionChain(heldSession),
+                  sessions.awaitInvalidation(session.sessionId, session.proofKeyThumbprint),
+                ],
+                { concurrency: "unbounded", discard: true },
+              ).pipe(
                 Effect.as(HttpServerResponse.empty()),
                 Effect.catchTags({
                   SessionCredentialVerificationError: (error) =>

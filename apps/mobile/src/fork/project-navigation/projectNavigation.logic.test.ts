@@ -127,6 +127,8 @@ describe("project navigation destinations", () => {
       environmentId: entry.environmentId,
       projectId: entry.id,
     })),
+    pinned: false,
+    archived: false,
   };
   it("prefers the representative only when its destination grants task access", () => {
     const connected = new Set([environmentId, remoteEnvironmentId]);

@@ -190,6 +190,11 @@ vi.mock("./BotControls", () => ({
     />
   ),
 }));
+vi.mock("../../lib/uuid", () => ({ uuidv4: () => "request" }));
+vi.mock("./BotCompletionsScreen", () => ({
+  BotCompletionField: () => null,
+  useBotCompletionSelection: () => ({ valid: true, destinationId: undefined }),
+}));
 vi.mock("./BotRunScreen", () => ({
   BotParameterFields: () => null,
   BotRunDestinationFields: () => null,
@@ -377,6 +382,7 @@ it("requires a new preview after editing a batch source and preserves its remote
       sharedInputs: {},
       projectId: "project-a",
       target: { type: "environment", environmentId: "remote" },
+      clientRequestId: "request",
     },
   });
   expect(harness.navigate).toHaveBeenCalledWith("BotsBatches", {

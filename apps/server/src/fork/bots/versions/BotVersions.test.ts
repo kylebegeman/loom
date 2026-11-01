@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { BotRun } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import { makeBotOperationState } from "../BotOperationState.ts";
 import { BotsService, USER_CALLER } from "../BotsService.ts";
 import { projectId, reviewer, withHarness, type Harness } from "../testing/BotsHarness.ts";
 import { make } from "./BotVersions.ts";
@@ -79,6 +80,7 @@ describe("BotVersions replay", () => {
     withHarness((harness) =>
       Effect.gen(function* () {
         const { bots, versions } = yield* makeVersions(harness);
+        yield* (yield* makeBotOperationState).setMode("automatic");
         const bot = yield* bots.save(reviewer(), USER_CALLER);
         const triggered = yield* bots.startRunWith(
           bot,

@@ -71,7 +71,12 @@ function IndexDraftLanding() {
 
   const mostRecentProject =
     primaryReady && !libraryOnly // fork: library-only
-      ? resolveIndexDraftProject(projects, threads, executionEnvironments) // fork: fleet-connections
+      ? // fork: fleet-connections
+        resolveIndexDraftProject(
+          projects.filter((project) => project.archivedAt == null),
+          threads,
+          executionEnvironments,
+        )
       : null;
   const draftProject = startState.libraryHeld ? null : mostRecentProject; // fork: library-only
   const attempt = startState.retryRequest;

@@ -66,7 +66,7 @@ interface PickerProps {
   readonly modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   readonly getModelDisabledReason?: ModelDisabledReason | undefined;
   /** Rendered below the model list. */
-  readonly footer?: ReactNode | undefined;
+  readonly switchboardNote?: ReactNode | undefined;
 }
 
 /** Shown when Switchboard cannot report availability, in place of a spinner or a guess. */
@@ -125,7 +125,7 @@ export function withSwitchboardEntries<P extends PickerProps>(Picker: ComponentT
         {...(hasSwitchboardBlocks(status) ? { getModelDisabledReason: switchboardReason } : {})}
         {...(isSwitchboardAvailabilityUnknown(status)
           ? {
-              footer: (
+              switchboardNote: (
                 <SwitchboardUnknownNote unconfigured={status.availability === "unconfigured"} />
               ),
             }

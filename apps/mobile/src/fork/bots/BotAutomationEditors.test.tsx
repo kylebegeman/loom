@@ -128,6 +128,10 @@ vi.mock("./BotControls", () => ({
 }));
 vi.mock("./BotModelField", () => ({ BotModelField: () => <span>Model</span> }));
 vi.mock("./BotEditorScreen", () => ({ BotParameterEditor: () => <span>Parameter</span> }));
+vi.mock("./BotCompletionsScreen", () => ({
+  BotCompletionField: () => null,
+  useBotCompletionSelection: () => ({ valid: true, destinationId: undefined }),
+}));
 vi.mock("./BotRunScreen", () => ({
   RunChoice: ({
     label,
