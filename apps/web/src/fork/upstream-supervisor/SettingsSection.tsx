@@ -14,7 +14,7 @@ import {
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import * as DateTime from "effect/DateTime";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -148,9 +148,8 @@ function SupervisorSettings({
   return (
     <LoomSettingsPanel>
       <p className="max-w-prose text-sm text-muted-foreground">
-        Let one existing chief login request nightly integrations through loom-upstream.yml on main.
-        Save the selected access paused, then enable it. This does not change general Vault
-        permissions.
+        Let your Grok chief request upstream integrations for one project and repository. Save its
+        access paused, then enable it when you are ready.
       </p>
       {!canWrite || !allowed ? (
         <LoomSettingsNotice>
@@ -176,10 +175,24 @@ function SupervisorSettings({
           {notice}
         </p>
       ) : null}
-      <LoomSettingsActions>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <h4 className="text-sm font-semibold">Saved status</h4>
+          <Badge variant={config?.enabled ? "success" : "secondary"}>
+            {config
+              ? config.enabled
+                ? "Enabled"
+                : "Paused"
+              : status.data
+                ? "Not configured"
+                : status.isPending
+                  ? "Loading"
+                  : "Unavailable"}
+          </Badge>
+        </div>
         <Button
-          variant="outline"
-          size="sm-multiline"
+          variant="ghost"
+          size="sm"
           disabled={pending || status.isPending}
           onClick={() => {
             status.refresh();
@@ -188,24 +201,37 @@ function SupervisorSettings({
         >
           Refresh status and logins
         </Button>
-      </LoomSettingsActions>
+      </div>
       {config ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">{config.enabled ? "Enabled" : "Paused"}</Badge>
-            <span className="text-sm font-medium">{config.connection.repository}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Project:{" "}
-            {projects.find((project) => project.id === config.projectId)?.title ??
-              "Project no longer registered"}
-            . Chief:{" "}
-            {sessionName(sessions.find((session) => session.sessionId === config.clientSessionId))}.
-            Connection version {config.connection.expectedVersion}.
-          </p>
+        <div className="space-y-4">
+          <dl className="grid min-w-0 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">Project</dt>
+              <dd className="mt-1 wrap-anywhere">
+                {projects.find((project) => project.id === config.projectId)?.title ??
+                  "Project no longer registered"}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">Chief login</dt>
+              <dd className="mt-1 wrap-anywhere">
+                {sessionName(
+                  sessions.find((session) => session.sessionId === config.clientSessionId),
+                )}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-xs text-muted-foreground">Repository</dt>
+              <dd className="mt-1 wrap-anywhere">{config.connection.repository}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Vault connection</dt>
+              <dd className="mt-1">Version {config.connection.expectedVersion}</dd>
+            </div>
+          </dl>
           <LoomSettingsActions>
             <Button
-              variant={config.enabled ? "outline" : "default"}
+              variant="outline"
               size="sm-multiline"
               disabled={locked || (!config.enabled && status.data?.unavailable === true)}
               onClick={() =>
@@ -219,12 +245,17 @@ function SupervisorSettings({
             >
               {pending ? "Saving…" : config.enabled ? "Pause supervisor" : "Enable supervisor"}
             </Button>
+            <p className="max-w-prose text-xs text-muted-foreground">
+              {config.enabled
+                ? "The saved chief can request integrations. Pause to stop new requests."
+                : "New integration requests are blocked while paused."}
+            </p>
           </LoomSettingsActions>
         </div>
       ) : status.data ? (
-        <LoomSettingsNotice>
-          No upstream supervisor is configured on this computer.
-        </LoomSettingsNotice>
+        <p className="text-sm text-muted-foreground">
+          Choose the access below to set up this computer.
+        </p>
       ) : null}
       {initialProject && status.data ? (
         <SupervisorEditor
@@ -234,7 +265,7 @@ function SupervisorSettings({
           initialProjectId={initialProject.id}
           config={config}
           sessions={sessions}
-          accessPending={access.isPending}
+          accessPending={access.isPending && access.data === null}
           accessError={access.error}
           disabled={locked}
           onSave={(input) => void save(input)}
@@ -288,175 +319,215 @@ function SupervisorEditor({
   disabled: boolean;
   onSave: (input: Omit<UpstreamSupervisorConfig, "updatedAt">) => void;
 }) {
+  const saveHintId = useId();
   const [projectId, setProjectId] = useState(config?.projectId ?? initialProjectId);
   const [clientSessionId, setClientSessionId] = useState(config?.clientSessionId ?? "");
   const [connection, setConnection] = useState<VaultGitHubTarget | null>(
     config?.connection ?? null,
   );
-  const selectedProject = projects.find((project) => project.id === projectId);
-  const selectedSession = sessions.find((session) => session.sessionId === clientSessionId);
-  return (
-    <div className="space-y-4">
-      <LoomSettingsField label="Project">
-        <Select
-          value={projectId}
-          disabled={disabled}
-          onValueChange={(value) => {
-            const project = projects.find((entry) => entry.id === value);
-            if (project) setProjectId(project.id);
-          }}
-        >
-          <SelectTrigger aria-label="Upstream supervisor project">
-            <SelectValue>{selectedProject?.title ?? "Choose a project"}</SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            {projects.map((project) => (
-              <SelectItem key={project.id} value={project.id}>
-                {project.title} · {project.workspaceRoot}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      </LoomSettingsField>
-      <LoomSettingsField
-        label="Chief login"
-        description="Choose the existing login used by your Grok chief. Signing out or revoking it removes its access."
-      >
-        <Select
-          value={clientSessionId}
-          disabled={disabled || accessPending || accessError !== null}
-          onValueChange={(value) => {
-            if (value !== null) setClientSessionId(value);
-          }}
-        >
-          <SelectTrigger aria-label="Upstream supervisor chief login">
-            <SelectValue>
-              {selectedSession ? sessionLabel(selectedSession) : "Choose an existing chief login"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            {sessions.map((session) => (
-              <SelectItem key={session.sessionId} value={session.sessionId}>
-                {sessionLabel(session)}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      </LoomSettingsField>
-      {accessError ? (
-        <LoomSettingsNotice role="alert">
-          Could not load chief logins. {accessError}
-        </LoomSettingsNotice>
-      ) : accessPending && sessions.length === 0 ? (
-        <p role="status">Loading chief logins…</p>
-      ) : sessions.length === 0 ? (
-        <LoomSettingsNotice>
-          Connect your chief to this computer with permission to operate work, then refresh logins.
-        </LoomSettingsNotice>
-      ) : null}
-      <GitHubPicker
-        environmentId={environmentId}
-        value={connection}
-        disabled={disabled}
-        onChange={setConnection}
-      />
-      <LoomSettingsActions>
-        <Button
-          variant="outline"
-          size="sm-multiline"
-          disabled={
-            disabled ||
-            !selectedProject ||
-            !selectedSession ||
-            !connection ||
-            accessPending ||
-            accessError !== null
-          }
-          onClick={() => {
-            if (selectedProject && selectedSession && connection)
-              onSave({
-                projectId: selectedProject.id,
-                clientSessionId: selectedSession.sessionId,
-                connection,
-                enabled: false,
-              });
-          }}
-        >
-          Save paused configuration
-        </Button>
-      </LoomSettingsActions>
-      <p className="text-xs text-muted-foreground">
-        Saving pauses the supervisor, including when you change its project, chief or GitHub
-        connection. It does not start an integration or create a schedule.
-      </p>
-    </div>
-  );
-}
-
-function GitHubPicker({
-  environmentId,
-  value,
-  disabled,
-  onChange,
-}: {
-  environmentId: EnvironmentId;
-  value: VaultGitHubTarget | null;
-  disabled: boolean;
-  onChange: (value: VaultGitHubTarget) => void;
-}) {
   const [cursor, setCursor] = useState<string | null>(null);
   const page = useEnvironmentQuery(github.list({ environmentId, input: { cursor } }));
   const selected = useEnvironmentQuery(
-    value ? github.info({ environmentId, input: { id: value.id } }) : null,
+    connection ? github.info({ environmentId, input: { id: connection.id } }) : null,
   );
   const choices = page.data?.items ?? [];
-  const selectedInfo = choices.find((info) => info.item.id === value?.id) ?? selected.data;
+  const selectedInfo = selected.data ?? choices.find((info) => info.item.id === connection?.id);
   const options =
     selectedInfo && !choices.some((info) => info.item.id === selectedInfo.item.id)
       ? [selectedInfo, ...choices]
       : choices;
-  const locked = disabled || page.isPending || page.error !== null;
+  const selectedProject = projects.find((project) => project.id === projectId);
+  const selectedSession = sessions.find((session) => session.sessionId === clientSessionId);
+  const currentConnection =
+    connection &&
+    selected.data?.item.id === connection.id &&
+    selected.data.item.state === "active" &&
+    selected.data.item.version === connection.expectedVersion &&
+    selected.data.repositories.includes(connection.repository) &&
+    !selected.isPending &&
+    selected.error === null;
+  const missing = [
+    !selectedProject ? "choose a project" : null,
+    accessPending
+      ? "wait for chief logins to load"
+      : accessError
+        ? "refresh chief logins"
+        : !selectedSession
+          ? "choose a chief login"
+          : null,
+    !connection
+      ? "choose a GitHub connection"
+      : !connection.repository
+        ? "choose a repository"
+        : !currentConnection
+          ? "review the GitHub connection above"
+          : null,
+  ].filter((entry) => entry !== null);
+  const connectionsLocked = disabled || page.isPending || page.error !== null;
   return (
-    <div className="space-y-4">
-      <LoomSettingsField
-        label="Vault GitHub connection"
-        description="Use an existing connection that can run the repository’s upstream workflow. Credentials stay in Vault."
-      >
-        <Select
-          value={value?.id ?? ""}
-          disabled={locked}
-          onValueChange={(id) => {
-            const info = options.find((entry) => entry.item.id === id);
-            const repository = info?.repositories[0];
-            if (info?.item.state === "active" && repository)
-              onChange({ id: info.item.id, expectedVersion: info.item.version, repository });
-          }}
+    <div className="space-y-5 border-t border-border/60 pt-5">
+      <div className="space-y-1">
+        <h4 className="text-sm font-semibold">
+          {config ? "Edit configuration" : "Configure access"}
+        </h4>
+        <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+          Use an existing chief login and Vault connection. Saving keeps the supervisor paused and
+          does not start an integration or create a schedule.
+        </p>
+      </div>
+      <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-2">
+        <LoomSettingsField label="Project">
+          <Select
+            value={projectId}
+            disabled={disabled}
+            onValueChange={(value) => {
+              const project = projects.find((entry) => entry.id === value);
+              if (project) setProjectId(project.id);
+            }}
+          >
+            <SelectTrigger aria-label="Upstream supervisor project">
+              <SelectValue>{selectedProject?.title ?? "Choose a project"}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.title} · {project.workspaceRoot}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+        <LoomSettingsField
+          label="Chief login"
+          description="The existing Grok chief login on this computer. Revoking it removes its access."
         >
-          <SelectTrigger aria-label="Upstream supervisor GitHub connection">
-            <SelectValue>
-              {selectedInfo
-                ? `${selectedInfo.item.label} · ${selectedInfo.account}`
-                : "Choose a GitHub connection"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup>
-            {options.map((info) => (
-              <SelectItem
-                key={info.item.id}
-                value={info.item.id}
-                disabled={info.item.state !== "active"}
-              >
-                {info.item.label} · {info.account} · version {info.item.version}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      </LoomSettingsField>
+          <Select
+            value={clientSessionId}
+            disabled={disabled || accessPending || accessError !== null || sessions.length === 0}
+            onValueChange={(value) => {
+              if (value !== null) setClientSessionId(value);
+            }}
+          >
+            <SelectTrigger aria-label="Upstream supervisor chief login">
+              <SelectValue>
+                {selectedSession ? sessionName(selectedSession) : "Choose a chief login"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {sessions.map((session) => (
+                <SelectItem key={session.sessionId} value={session.sessionId}>
+                  {sessionLabel(session)}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+      </div>
+      {accessError ? (
+        <LoomSettingsNotice role="alert">
+          Could not load chief logins. {accessError} Use Refresh status and logins to try again.
+        </LoomSettingsNotice>
+      ) : accessPending ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading chief logins…
+        </p>
+      ) : sessions.length === 0 ? (
+        <LoomSettingsNotice>
+          Connect your chief to this computer with permission to operate work, then refresh logins.
+        </LoomSettingsNotice>
+      ) : clientSessionId && !selectedSession ? (
+        <LoomSettingsNotice>
+          The saved chief login is no longer available. Choose its current login before saving.
+        </LoomSettingsNotice>
+      ) : null}
+      <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-2">
+        <LoomSettingsField
+          label="Vault GitHub connection"
+          description="An existing connection with access to the repository’s upstream workflow."
+        >
+          <Select
+            value={connection?.id ?? ""}
+            disabled={connectionsLocked || options.length === 0}
+            onValueChange={(id) => {
+              const info = options.find((entry) => entry.item.id === id);
+              if (info?.item.state === "active" && info.repositories.length > 0)
+                setConnection({
+                  id: info.item.id,
+                  expectedVersion: info.item.version,
+                  repository: info.repositories.length === 1 ? info.repositories[0]! : "",
+                });
+            }}
+          >
+            <SelectTrigger aria-label="Upstream supervisor GitHub connection">
+              <SelectValue>
+                {selectedInfo
+                  ? `${selectedInfo.item.label} · ${selectedInfo.account}`
+                  : "Choose a GitHub connection"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {options.map((info) => (
+                <SelectItem
+                  key={info.item.id}
+                  value={info.item.id}
+                  disabled={info.item.state !== "active" || info.repositories.length === 0}
+                >
+                  {info.item.label} · {info.account} · version {info.item.version}
+                  {info.repositories.length === 0 ? " · no repositories" : ""}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+        <LoomSettingsField
+          label="Repository"
+          description={
+            connection
+              ? `Connection version ${connection.expectedVersion}. Runs loom-upstream.yml on main.`
+              : "Choose a GitHub connection to see its repositories."
+          }
+        >
+          <Select
+            value={connection?.repository ?? ""}
+            disabled={
+              disabled ||
+              !selectedInfo ||
+              selected.isPending ||
+              selected.error !== null ||
+              selectedInfo.item.state !== "active"
+            }
+            onValueChange={(repository) => {
+              if (
+                connection &&
+                repository !== null &&
+                selectedInfo?.repositories.includes(repository)
+              )
+                setConnection({ ...connection, repository });
+            }}
+          >
+            <SelectTrigger aria-label="Upstream supervisor repository">
+              <SelectValue>{connection?.repository || "Choose a repository"}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {selectedInfo?.repositories.map((repository) => (
+                <SelectItem key={repository} value={repository}>
+                  {repository}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </LoomSettingsField>
+      </div>
       {page.isPending && !page.data ? <p role="status">Loading GitHub connections…</p> : null}
-      {page.error ? <LoomSettingsNotice role="alert">{page.error}</LoomSettingsNotice> : null}
+      {page.error ? (
+        <LoomSettingsNotice role="alert">
+          Could not load GitHub connections. {page.error}
+        </LoomSettingsNotice>
+      ) : null}
       {selected.error ? (
         <LoomSettingsNotice role="alert">
-          Could not inspect the saved GitHub connection. {selected.error}
+          Could not inspect the selected GitHub connection. {selected.error} Refresh connections to
+          try again.
         </LoomSettingsNotice>
       ) : null}
       {page.data?.items.length === 0 ? (
@@ -467,55 +538,29 @@ function GitHubPicker({
             : "Add one in Settings > Vault > GitHub for agents."}
         </LoomSettingsNotice>
       ) : null}
-      {selectedInfo && value ? (
-        <LoomSettingsField
-          label="Repository"
-          description={`Selected connection version ${value.expectedVersion}. Workflow: loom-upstream.yml on main.`}
-        >
-          <Select
-            value={value.repository}
-            disabled={locked || selectedInfo.item.state !== "active"}
-            onValueChange={(repository) => {
-              if (repository !== null && selectedInfo.repositories.includes(repository))
-                onChange({
-                  id: selectedInfo.item.id,
-                  expectedVersion: selectedInfo.item.version,
-                  repository,
-                });
-            }}
-          >
-            <SelectTrigger aria-label="Upstream supervisor repository">
-              <SelectValue>{value.repository}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {selectedInfo.repositories.map((repository) => (
-                <SelectItem key={repository} value={repository}>
-                  {repository}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </LoomSettingsField>
-      ) : null}
-      {selectedInfo && value && selectedInfo.item.version !== value.expectedVersion ? (
+      {selectedInfo && selectedInfo.item.state !== "active" ? (
         <LoomSettingsNotice>
-          The saved connection version has changed. Review its repository and use the current
-          version before saving.
+          The selected GitHub connection is inactive. Choose an active connection.
+        </LoomSettingsNotice>
+      ) : null}
+      {selectedInfo && connection && selectedInfo.item.version !== connection.expectedVersion ? (
+        <LoomSettingsNotice>
+          This connection changed from version {connection.expectedVersion} to{" "}
+          {selectedInfo.item.version}. Review its repository, then accept the current version before
+          saving.
           <div className="mt-2">
             <Button
               variant="outline"
               size="sm-multiline"
-              disabled={locked || selectedInfo.item.state !== "active"}
+              disabled={disabled || selected.isPending || selectedInfo.item.state !== "active"}
               onClick={() => {
-                const repository = selectedInfo.repositories.includes(value.repository)
-                  ? value.repository
-                  : selectedInfo.repositories[0];
-                if (repository)
-                  onChange({
-                    id: selectedInfo.item.id,
-                    expectedVersion: selectedInfo.item.version,
-                    repository,
-                  });
+                setConnection({
+                  ...connection,
+                  expectedVersion: selectedInfo.item.version,
+                  repository: selectedInfo.repositories.includes(connection.repository)
+                    ? connection.repository
+                    : "",
+                });
               }}
             >
               Use connection version {selectedInfo.item.version}
@@ -523,11 +568,18 @@ function GitHubPicker({
           </div>
         </LoomSettingsNotice>
       ) : null}
+      {selectedInfo &&
+      connection?.repository &&
+      !selectedInfo.repositories.includes(connection.repository) ? (
+        <LoomSettingsNotice>
+          The selected repository is no longer available. Choose another repository.
+        </LoomSettingsNotice>
+      ) : null}
       <LoomSettingsActions>
         <Button
-          variant="outline"
-          size="sm-multiline"
-          disabled={disabled || page.isPending}
+          variant="ghost"
+          size="sm"
+          disabled={disabled || page.isPending || selected.isPending}
           onClick={() => {
             page.refresh();
             selected.refresh();
@@ -538,24 +590,55 @@ function GitHubPicker({
         {cursor ? (
           <Button
             variant="outline"
-            size="sm-multiline"
-            disabled={locked}
+            size="sm"
+            disabled={connectionsLocked}
             onClick={() => setCursor(null)}
           >
-            First connections
+            First page
           </Button>
         ) : null}
         {page.data?.nextCursor ? (
           <Button
             variant="outline"
-            size="sm-multiline"
-            disabled={locked}
+            size="sm"
+            disabled={connectionsLocked}
             onClick={() => setCursor(page.data?.nextCursor ?? null)}
           >
             More connections
           </Button>
         ) : null}
       </LoomSettingsActions>
+      <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-4">
+        <Button
+          size="sm-multiline"
+          aria-describedby={saveHintId}
+          disabled={disabled || missing.length > 0}
+          onClick={() => {
+            if (
+              !disabled &&
+              selectedProject &&
+              selectedSession &&
+              connection &&
+              currentConnection &&
+              !accessPending &&
+              !accessError
+            )
+              onSave({
+                projectId: selectedProject.id,
+                clientSessionId: selectedSession.sessionId,
+                connection,
+                enabled: false,
+              });
+          }}
+        >
+          Save paused configuration
+        </Button>
+        <p id={saveHintId} className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+          {missing.length > 0
+            ? `To save, ${missing.join(", ")}.`
+            : "Ready to save. The supervisor will stay paused."}
+        </p>
+      </div>
     </div>
   );
 }
