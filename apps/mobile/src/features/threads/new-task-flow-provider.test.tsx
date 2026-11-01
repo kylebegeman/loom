@@ -276,6 +276,7 @@ it("owns a status stream only while the draft is active, retaining draft choices
   expect(mocks.createDraft).not.toHaveBeenCalled();
 
   await screen.render(true);
+  await act(async () => screen.current.setProject(screen.projects[0]!)); // fork: project-home
   expect(screen.events).toEqual(["start:/a"]);
   const draftKey = screen.current.draftKey!;
   act(() => screen.current.setPrompt("keep this draft"));
