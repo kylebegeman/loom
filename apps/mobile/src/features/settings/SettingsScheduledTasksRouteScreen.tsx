@@ -756,7 +756,7 @@ function TaskForm({
     if (draft.schedule.mode === "once" && !offersOnce) {
       Dialog.alert(
         "Once is not available here",
-        "This environment runs an older T3 Code. Update it to schedule a one-time task, or pick another schedule.",
+        "This environment runs an older Loom. Update it to schedule a one-time task, or pick another schedule.", // fork: brand
       );
       return;
     }
