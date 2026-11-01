@@ -95,6 +95,8 @@ it.effect.each([
 it.effect.each([
   "saveWorkstream",
   "applyBlueprint",
+  "prepareManagement",
+  "issueManagementDelegation",
   "runOperation",
   "executeOperation",
   "resumeOperation",
@@ -108,7 +110,10 @@ it.effect.each([
       registry.mount(command.permissionAtom(destination));
       registry.mount(command.permissionAtom(other));
       const scope =
-        method === "saveWorkstream" || method === "applyBlueprint"
+        method === "saveWorkstream" ||
+        method === "applyBlueprint" ||
+        method === "prepareManagement" ||
+        method === "issueManagementDelegation"
           ? AuthSettingsWriteScope
           : AuthTerminalOperateScope;
       registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));

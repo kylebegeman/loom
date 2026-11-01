@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryCreateProjectRequest,
+  LibraryUpdateProjectRequest,
   LibraryError,
   LibraryIngestHistoryRequest,
   type LibraryProject,
@@ -713,6 +714,99 @@ describe("independent Library catalog and durable history", () => {
         ).toBe("request-conflict");
       }),
     ),
+  );
+  it.effect(
+    "changes named repository fields atomically without replacing other project context",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const web = {
+            ...resource,
+            id: "web",
+            title: "Web",
+            remoteUrl: "https://github.com/example/web.git",
+            relativePath: "web",
+            defaultBranch: "release/web",
+          };
+          const project = yield* service.createProject({
+            requestId: "create",
+            title: "Example",
+            brief: "Keep the shared context.",
+            color: "teal",
+            profile: { requiredTools: [{ id: "node" }] },
+            resources: [{ ...resource, defaultBranch: "release/api" }, web],
+          });
+          const decode = Schema.decodeUnknownEffect(LibraryUpdateProjectRequest);
+          const edit = {
+            requestId: "branch-defaults",
+            projectId: project.id,
+            expectedRevision: project.revision,
+            resourceUpdates: [
+              { id: resource.id, defaultBranch: "next" },
+              { id: web.id, defaultBranch: "next" },
+            ],
+          };
+          const changed = yield* service.updateProject(yield* decode(edit));
+          expect(changed).toEqual({
+            ...project,
+            revision: 2,
+            updatedAt: changed.updatedAt,
+            resources: project.resources.map((repository) => ({
+              ...repository,
+              defaultBranch: "next",
+            })),
+          });
+          expect(yield* service.updateProject(yield* decode(edit))).toEqual(changed);
+          expect(
+            (yield* service
+              .updateProject(yield* decode({ ...edit, resourceUpdates: [] }))
+              .pipe(Effect.flip)).reason,
+          ).toBe("request-conflict");
+          expect(
+            (yield* service
+              .updateProject(yield* decode({ ...edit, requestId: "stale" }))
+              .pipe(Effect.flip)).reason,
+          ).toBe("revision-conflict");
+          for (const resourceUpdates of [
+            [{ id: "missing", defaultBranch: "next" }],
+            [
+              { id: resource.id, defaultBranch: "main" },
+              { id: resource.id, defaultBranch: "next" },
+            ],
+            [{ id: resource.id, relativePath: web.relativePath }],
+          ]) {
+            expect(
+              (yield* service
+                .updateProject(
+                  yield* decode({
+                    ...edit,
+                    requestId: `invalid-${resourceUpdates.length}-${resourceUpdates[0]!.id}`,
+                    expectedRevision: changed.revision,
+                    resourceUpdates,
+                  }),
+                )
+                .pipe(Effect.flip)).reason,
+            ).toBe("invalid");
+            expect(yield* service.project({ projectId: project.id })).toEqual(changed);
+          }
+          const following = yield* service.updateProject(
+            yield* decode({
+              ...edit,
+              requestId: "follow-default",
+              expectedRevision: changed.revision,
+              resourceUpdates: [{ id: resource.id, defaultBranch: null }],
+            }),
+          );
+          expect(following.resources).toEqual([
+            { ...changed.resources[0], defaultBranch: null },
+            changed.resources[1],
+          ]);
+          expect(
+            (yield* service.registerCopy({ requestId: "old-copy", copy: copyFor(project) }))
+              .projectRevision,
+          ).toBe(1);
+        }),
+      ),
   );
   it.effect(
     "rejects stale concurrent edits and retains pinned composition for old working copies",

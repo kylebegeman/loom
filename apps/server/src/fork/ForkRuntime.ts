@@ -39,6 +39,7 @@ import type { LibraryHistorySource } from "./project-library/LibraryHistorySourc
 import type { LibraryAssetService } from "./project-library/assets/LibraryAssetService.ts";
 import type { LibraryBriefSuggestions } from "./project-library/LibraryBriefSuggestions.ts";
 import type { LibraryPublisher } from "./project-library/LibraryPublisher.ts";
+import type { LibraryManagement } from "./project-library/LibraryManagement.ts";
 import type { LibraryService } from "./project-library/LibraryService.ts";
 import type { LibraryTimeline } from "./project-library/LibraryTimeline.ts";
 import type { LibraryLaunchCandidates } from "./project-library/LibraryLaunchCandidates.ts";
@@ -119,6 +120,7 @@ export type ForkServices =
   | LibraryHistorySource
   | LibraryAssetService
   | LibraryService
+  | LibraryManagement
   | ProjectWorkflows
   | ProjectOperations
   | LibraryPublisher

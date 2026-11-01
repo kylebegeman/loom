@@ -1,3 +1,4 @@
+import { LibraryManagement } from "./LibraryManagement.ts";
 import { ProjectOperations } from "./ProjectOperations.ts";
 import {
   LibraryProject,
@@ -41,6 +42,7 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
   const replication = yield* Replication.LibraryReplication;
   const history = yield* LibraryHistorySource.LibraryHistorySource;
   const library = yield* LibraryService.LibraryService;
+  const management = yield* LibraryManagement;
   const timeline = yield* LibraryTimeline.LibraryTimeline;
   const assets = yield* Assets.LibraryAssetService;
   const workspace = yield* LibraryWorkspace.LibraryWorkspace;
@@ -55,6 +57,11 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
   });
 
   return {
+    [L.managementStatus]: () => auth.effect(L.managementStatus, management.status),
+    [L.issueManagementDelegation]: (input: Parameters<typeof management.issue>[0]) =>
+      auth.effect(L.issueManagementDelegation, management.issue(input, session)),
+    [L.installManagementDelegation]: (input: Parameters<typeof management.install>[0]) =>
+      auth.effect(L.installManagementDelegation, management.install(input)),
     [L.deletedPreferences]: () => auth.effect(L.deletedPreferences, library.deletedPreferences),
     [L.setDeletedPreferences]: (input: Parameters<typeof library.setDeletedPreferences>[0]) =>
       auth.effect(L.setDeletedPreferences, library.setDeletedPreferences(input, session)),

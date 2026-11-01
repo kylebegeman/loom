@@ -2,9 +2,12 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
+import { ProviderInstanceId } from "../providerInstance.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import {
+  AuthSessionId,
   EnvironmentId,
+  RunId,
   ProjectId,
   ThreadId,
   IsoDateTime,
@@ -18,6 +21,7 @@ import { LibraryCopyHealth } from "./project-library-health-schema.ts";
 import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-library-profile.ts";
 
 export const PROJECT_LIBRARY_FEATURE = "project-library";
+export const LIBRARY_MANAGEMENT_FEATURE = "library-project-management";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
 export const LIBRARY_HISTORY_DELTAS_FEATURE = "library-history-deltas";
@@ -369,9 +373,21 @@ export const LibraryUpdateProjectRequest = Schema.Struct({
   requestId: LibraryRequestId,
   projectId: LibraryId,
   expectedRevision: PositiveInt,
-  title: LibraryTitle,
-  brief: Schema.String.check(Schema.isMaxLength(65536)),
-  resources: Schema.Array(LibraryResource),
+  title: Schema.optional(LibraryTitle),
+  brief: Schema.optional(Schema.String.check(Schema.isMaxLength(65536))),
+  resources: Schema.optional(Schema.Array(LibraryResource)),
+  resourceUpdates: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: LibraryId,
+        title: Schema.optional(LibraryResource.fields.title),
+        url: LibraryResource.fields.url,
+        remoteUrl: Schema.optional(LibraryResource.fields.remoteUrl),
+        relativePath: Schema.optional(LibraryResource.fields.relativePath),
+        defaultBranch: Schema.optionalKey(LibraryResource.fields.defaultBranch),
+      }),
+    ).check(Schema.isMaxLength(64)),
+  ),
   /** Omitted keeps the saved color, so older clients never clear it; null returns to automatic. */
   color: Schema.optional(Schema.NullOr(LibraryProjectColor)),
   /** Omitted keeps the saved profile; null removes it. */
@@ -639,7 +655,61 @@ export const LibraryEraseConversation = Schema.Struct({
 });
 export type LibraryEraseConversation = typeof LibraryEraseConversation.Type;
 
+export const LibraryManagementRequest = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),
+  Schema.Struct({ kind: Schema.Literal("update"), input: LibraryUpdateProjectRequest }),
+  Schema.Struct({ kind: Schema.Literal("archive"), input: LibraryArchiveProjectRequest }),
+]);
+export type LibraryManagementRequest = typeof LibraryManagementRequest.Type;
+export const LibraryManagementActor = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("agent"),
+    threadId: ThreadId,
+    runId: RunId,
+    providerInstanceId: ProviderInstanceId,
+  }),
+  Schema.Struct({ kind: Schema.Literal("client"), sessionId: AuthSessionId }),
+]);
+export type LibraryManagementActor = typeof LibraryManagementActor.Type;
+const ManagementToken = TrimmedNonEmptyString.check(Schema.isMaxLength(16384));
+const ManagementFingerprint = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
+export const LibraryManagementDelegation = Schema.Struct({
+  token: ManagementToken,
+  sourceEnvironmentId: EnvironmentId,
+  libraryEnvironmentId: EnvironmentId,
+  authorityId: LibraryId,
+  authorityEpoch: PositiveInt,
+  keyFingerprint: ManagementFingerprint,
+  expiresAt: Schema.Number,
+});
+export type LibraryManagementDelegation = typeof LibraryManagementDelegation.Type;
+export const LibraryManagementEnrollment = Schema.Struct({
+  environmentId: EnvironmentId,
+  keyFingerprint: ManagementFingerprint,
+});
+export type LibraryManagementEnrollment = typeof LibraryManagementEnrollment.Type;
+export const LibraryManagementStatus = Schema.Struct({
+  state: Schema.Literals(["ready", "missing", "unsupported"]),
+  environmentId: EnvironmentId,
+  keyFingerprint: ManagementFingerprint,
+  expiresAt: Schema.NullOr(Schema.Number),
+});
+export type LibraryManagementStatus = typeof LibraryManagementStatus.Type;
+export const LibraryManagementInvocation = Schema.Struct({
+  sourceEnvironmentId: EnvironmentId,
+  authorityId: LibraryId,
+  authorityEpoch: PositiveInt,
+  delegation: ManagementToken,
+  proof: ManagementToken,
+  request: LibraryManagementRequest,
+});
+export type LibraryManagementInvocation = typeof LibraryManagementInvocation.Type;
+
 export const LIBRARY_WS_METHODS = {
+  managementStatus: "loom.library.managementStatus",
+  issueManagementDelegation: "loom.library.issueManagementDelegation",
+  installManagementDelegation: "loom.library.installManagementDelegation",
+
   deletedPreferences: "loom.library.deleted-preferences",
   setDeletedPreferences: "loom.library.set-deleted-preferences",
   eraseConversation: "loom.library.erase-conversation",
@@ -681,6 +751,21 @@ export const LIBRARY_WS_METHODS = {
 } as const;
 const error = Schema.Union([LibraryError, EnvironmentAuthorizationError]);
 export const ProjectLibraryRpcGroup = RpcGroup.make(
+  Rpc.make(LIBRARY_WS_METHODS.managementStatus, {
+    payload: Schema.Struct({}),
+    success: LibraryManagementStatus,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.issueManagementDelegation, {
+    payload: LibraryManagementEnrollment,
+    success: LibraryManagementDelegation,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.installManagementDelegation, {
+    payload: LibraryManagementDelegation,
+    success: Schema.Void,
+    error,
+  }),
   Rpc.make(LIBRARY_WS_METHODS.deletedPreferences, {
     payload: Schema.Struct({}),
     success: LibraryDeletedPreferences,

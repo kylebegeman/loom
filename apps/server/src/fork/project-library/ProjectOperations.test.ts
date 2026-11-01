@@ -6,6 +6,7 @@ import {
   ThreadId,
   ProviderInstanceId,
   AuthSessionId,
+  authScopeResponse,
   ProjectId,
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
@@ -42,7 +43,7 @@ import { OrchestratorDispatchError } from "../../orchestration-v2/Orchestrator.t
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
-import { LibraryService } from "./LibraryService.ts";
+import { LibraryManagement } from "./LibraryManagement.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
 import * as ProjectOperations from "./ProjectOperations.ts";
@@ -77,7 +78,7 @@ const session = (
 ): AuthClientSession => ({
   ...actor,
   method: "browser-session-cookie",
-  scopes,
+  ...authScopeResponse(scopes),
   client: { deviceType: "desktop" },
   issuedAt: DateTime.makeUnsafe(0),
   expiresAt: DateTime.makeUnsafe(9999999999999),
@@ -132,8 +133,9 @@ const fixture = Effect.gen(function* () {
       changed: Queue.offer(changes, undefined).pipe(Effect.asVoid),
       changes: Stream.empty,
     }),
-    Layer.mock(LibraryService)({
-      createProject: () =>
+    Layer.mock(LibraryManagement)({
+      status: Effect.die("Unused management status"),
+      execute: () =>
         Effect.gen(function* () {
           yield* Ref.update(calls, (count) => count + 1);
           yield* Deferred.succeed(entered, undefined);

@@ -13,6 +13,9 @@ import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { archiveFor, resource, source, threadId } from "./Library.testkit.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
+import * as Management from "./LibraryManagement.ts";
+import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
+import { liveThreadsLayer } from "../../mcp/McpToolAccess.testkit.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import { ProjectLibraryToolkit } from "./tools.ts";
 import { projectLibraryHandlers } from "./mcp.ts";
@@ -283,6 +286,62 @@ it.effect("still validates the full history projection before encoding", () =>
       "Failure",
     );
   }),
+);
+
+it.effect("routes project edits through Library management on an execution computer", () =>
+  Effect.gen(function* () {
+    const input = {
+      requestId: "edit",
+      projectId: project.id,
+      expectedRevision: 1,
+      resourceUpdates: [{ id: resource.id, defaultBranch: "next" }],
+    };
+    const updated = {
+      ...project,
+      revision: 2,
+      resources: [{ ...resource, defaultBranch: "next" }],
+    };
+    const runtime = yield* Layer.build(
+      Layer.mergeAll(
+        Layer.mock(Catalog.LibraryService)({
+          updateProject: () => Effect.fail(new Library.LibraryError({ reason: "not-authority" })),
+        }),
+        Layer.mock(Management.LibraryManagement)({
+          status: Effect.die("Unused management status"),
+          executeAgent: (request, caller) => {
+            expect(request).toEqual({ kind: "update", input });
+            expect(caller.threadId).toBe(threadId);
+            return Effect.succeed(updated);
+          },
+        }),
+      ),
+    );
+    const toolkit = yield* ProjectLibraryToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(projectLibraryHandlers).pipe(
+          Layer.provide(Layer.succeed(ForkRuntime, runtime as Context.Context<ForkServices>)),
+        ),
+      ),
+    );
+    const results = yield* toolkit.handle("loom_library_project_update", input).pipe(
+      Effect.flatMap(Stream.runCollect),
+      Effect.provide(liveThreadsLayer),
+      Effect.provideService(McpInvocationContext, {
+        environmentId: source,
+        capabilities: new Set(["orchestration"] as const),
+        issuedAt: 0,
+        requestNamespace: "test",
+        client: undefined,
+        thread: {
+          threadId,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          providerSessionId: "session",
+        },
+      }),
+    );
+    expect(results[0]!.isFailure).toBe(false);
+    expect(results[0]!.result).toEqual(updated);
+  }).pipe(Effect.scoped),
 );
 
 const libraryProject = { ...project, title: "From the Library" };

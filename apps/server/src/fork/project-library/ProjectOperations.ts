@@ -44,7 +44,7 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import { isVaultRunRunning } from "../vault/active-run.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { forkParked } from "../../serverActivation.ts";
-import { LibraryService } from "./LibraryService.ts";
+import { LibraryManagement } from "./LibraryManagement.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
 import * as SetupMarker from "../../workspace/setupMarker.ts";
@@ -165,7 +165,7 @@ const make = Effect.gen(function* () {
     return `${Hex.encode(digest)}:${kind}`;
   });
 
-  const library = yield* LibraryService;
+  const management = yield* LibraryManagement;
   const workflows = yield* ProjectWorkflows;
   const workspace = yield* LibraryWorkspace;
   const workspaceStore = yield* LibraryWorkspaceStore;
@@ -241,7 +241,7 @@ const make = Effect.gen(function* () {
     const required = operationScopes(request.kind);
     if (
       active?.subject !== subject ||
-      !required.every((permission) => active.scopes.includes(permission))
+      !required.every((permission) => (active.permissions ?? active.scopes).includes(permission))
     )
       return yield* denied();
   }, Effect.mapError(io));
@@ -365,7 +365,17 @@ const make = Effect.gen(function* () {
       switch (request.kind) {
         case "create":
           yield* phase("Creating project");
-          result = yield* library.createProject(request.input);
+          result = yield* management.execute(
+            request,
+            row.session_id.startsWith("workload:")
+              ? {
+                  kind: "agent",
+                  ...(yield* Schema.decodeEffect(workloadCodec)(row.session_id.slice(9)).pipe(
+                    Effect.mapError(io),
+                  )),
+                }
+              : { kind: "client", sessionId: AuthSessionId.make(row.session_id) },
+          );
           break;
         case "prepare":
           yield* phase("Preparing files");

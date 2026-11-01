@@ -25,7 +25,7 @@ import { persistQuery } from "../state/queryPersistence.ts";
 import { libraryThreadSaveStatusIsFinal } from "./library-save-state.ts";
 import { Atom } from "effect/reactivity";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import {
@@ -93,6 +93,42 @@ const createProject = Effect.fn("ProjectLibrary.createProject")(function* (
   );
 });
 
+const prepareManagement = Effect.fn("ProjectLibrary.prepareManagement")(function* (input: {
+  readonly authorityEnvironmentId: EnvironmentId;
+}) {
+  const status = yield* requestGuarded(L.managementStatus, {});
+  if (status.state === "unsupported") return status;
+  const info = yield* requestGuarded(L.info, {});
+  if (info.destination?.environmentId !== input.authorityEnvironmentId)
+    return yield* new LibraryError({
+      reason: "blocked",
+      detail: "This computer belongs to a different Library. Project management was not delegated.",
+    });
+  const registry = yield* EnvironmentRegistry;
+  const delegation = yield* registry
+    .run(
+      input.authorityEnvironmentId,
+      requestGuarded(L.issueManagementDelegation, {
+        environmentId: status.environmentId,
+        keyFingerprint: status.keyFingerprint,
+      }),
+    )
+    .pipe(
+      Effect.catchTags({
+        EnvironmentNotRegisteredError: () =>
+          Effect.fail(
+            new LibraryError({
+              reason: "blocked",
+              detail:
+                "The enrolled Library connection is unavailable. Project management was not delegated.",
+            }),
+          ),
+      }),
+    );
+  yield* requestGuarded(L.installManagementDelegation, delegation);
+  return yield* requestGuarded(L.managementStatus, {});
+});
+
 /** Catalog queries target the chosen authority; workspace commands target their actual host. */
 export function createProjectLibraryAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -113,6 +149,15 @@ export function createProjectLibraryAtoms<R, E>(
   );
   return {
     refreshes,
+    prepareManagement: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:prepare-management",
+      tag: L.managementStatus,
+      execute: prepareManagement,
+    }),
+    issueManagementDelegation: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:delegate-management",
+      tag: L.issueManagementDelegation,
+    }),
     deletedPreferences: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:deleted-preferences",
       tag: L.deletedPreferences,

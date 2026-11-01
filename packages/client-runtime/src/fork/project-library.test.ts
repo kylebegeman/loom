@@ -4,6 +4,8 @@ import {
   LibraryError,
   LIBRARY_WS_METHODS as L,
   PROJECT_WORKFLOW_WS_METHODS as W,
+  type LibraryManagementDelegation,
+  type LibraryManagementEnrollment,
   type LibraryCreateProjectRequest,
   type LibraryProject,
   type LibraryThreadArchive,
@@ -402,3 +404,115 @@ describe("Library project creation recovery", () => {
     ),
   );
 });
+
+it.effect.each(["ready", "missing"] as const)(
+  "establishes current management authorization for a %s computer only through its enrolled Library",
+  (initial) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const computer = EnvironmentId.make("execution-computer");
+        let installed = 0;
+        let issued = 0;
+        const delegation: LibraryManagementDelegation = {
+          token: "dedicated-signed-delegation",
+          sourceEnvironmentId: computer,
+          libraryEnvironmentId: environmentId,
+          authorityId: "authority",
+          authorityEpoch: 1,
+          keyFingerprint: "a".repeat(64),
+          expiresAt: 9999999999999,
+        };
+        const sourceClient = {
+          [L.managementStatus]: () =>
+            Effect.succeed({
+              state: installed ? ("ready" as const) : initial,
+              environmentId: computer,
+              keyFingerprint: delegation.keyFingerprint,
+              expiresAt: null,
+            }),
+          [L.info]: () =>
+            Effect.succeed({ destination: { environmentId, url: "https://library.example.test" } }),
+          [L.installManagementDelegation]: (input: LibraryManagementDelegation) =>
+            Effect.sync(() => {
+              expect(input).toEqual(delegation);
+              installed++;
+            }),
+        };
+        const authorityClient = {
+          [L.issueManagementDelegation]: (input: LibraryManagementEnrollment) =>
+            Effect.sync(() => {
+              expect(input.environmentId).toBe(computer);
+              expect(input.keyFingerprint).toBe(delegation.keyFingerprint);
+              issued++;
+              return delegation;
+            }),
+        };
+        const supervisors = new Map<
+          EnvironmentId,
+          EnvironmentSupervisor.EnvironmentSupervisor["Service"]
+        >();
+        for (const [id, client] of [
+          [computer, sourceClient],
+          [environmentId, authorityClient],
+        ] as const) {
+          const session = { client } as unknown as RpcSession.RpcSession;
+          supervisors.set(
+            id,
+            EnvironmentSupervisor.EnvironmentSupervisor.of({
+              target: new PrimaryConnectionTarget({
+                environmentId: id,
+                label: id,
+                httpBaseUrl: "https://example.test",
+                wsBaseUrl: "wss://example.test",
+              }),
+              state: yield* SubscriptionRef.make<SupervisorConnectionState>({
+                ...AVAILABLE_CONNECTION_STATE,
+                desired: true,
+                network: "online",
+                phase: "connected",
+              }),
+              session: yield* SubscriptionRef.make(Option.some(session)),
+              prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(
+                Option.none(),
+              ),
+              connect: Effect.void,
+              disconnect: Effect.void,
+              retryNow: Effect.void,
+            }),
+          );
+        }
+        const run: EnvironmentRegistry.EnvironmentRegistry["Service"]["run"] = (id, effect) =>
+          Effect.provideService(
+            effect,
+            EnvironmentSupervisor.EnvironmentSupervisor,
+            supervisors.get(id)!,
+          );
+        const service = EnvironmentRegistry.EnvironmentRegistry.of({
+          run,
+        } as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+        const atoms = createProjectLibraryAtoms(
+          Atom.runtime(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, service)),
+        );
+        const registry = AtomRegistry.make();
+        yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+        const result = yield* Effect.promise(() =>
+          atoms.prepareManagement.run(registry, {
+            environmentId: computer,
+            input: { authorityEnvironmentId: environmentId },
+          }),
+        );
+        expect(AsyncResult.isSuccess(result)).toBe(true);
+        expect(installed).toBe(1);
+        expect(issued).toBe(1);
+        const wrong = yield* Effect.promise(() =>
+          atoms.prepareManagement.run(registry, {
+            environmentId: computer,
+            input: { authorityEnvironmentId: EnvironmentId.make("another-library") },
+          }),
+        );
+        expect(AsyncResult.isFailure(wrong)).toBe(true);
+        expect(installed).toBe(1);
+        expect(issued).toBe(1);
+      }),
+    ),
+);

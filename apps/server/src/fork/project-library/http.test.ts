@@ -229,6 +229,23 @@ describe("Library host HTTP publishing boundaries", () => {
       ),
   );
 
+  it.effect("requires separate management proof from an enrolled publisher", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        expect((yield* f.request("projects/manage", "{}")).status).toBe(400);
+        for (const subject of ["mcp-client", "operator", "other-client"]) {
+          yield* Ref.update(f.session, (session) => ({
+            ...session,
+            subject,
+            scopes: [AuthOrchestrationOperateScope],
+          }));
+          expect((yield* f.request("projects/manage", "{}")).status).toBe(403);
+        }
+        expect(yield* Ref.get(f.calls)).toBe(0);
+      }),
+    ),
+  );
+
   it.effect("allows a saved-file grant to identify the Library without publishing history", () =>
     run((f) =>
       Effect.gen(function* () {

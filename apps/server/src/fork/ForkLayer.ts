@@ -63,6 +63,7 @@ import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPubl
 import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryStore.ts";
 import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
 import * as LibraryDocumentPublication from "./project-library/LibraryDocumentPublication.ts";
+import * as LibraryManagement from "./project-library/LibraryManagement.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
 import * as LibraryBriefSuggestions from "./project-library/LibraryBriefSuggestions.ts";
 import * as LibraryReplication from "./project-library/LibraryReplication.ts";
@@ -341,6 +342,14 @@ export const layerReachLibrary = ReachProvisioner.layer.pipe(
   Layer.provideMerge(Layer.merge(layerDirectory, layerReachStore)),
 );
 
+const layerLibraryManagement = LibraryManagement.layer.pipe(
+  Layer.provide(layerLibraryService),
+  Layer.provide(layerLibraryPublisher),
+  Layer.provide(layerDirectory),
+  Layer.provide(LibraryConnection.layer),
+  Layer.provide(RuntimeLayer.layerThreadManagementProvided),
+);
+
 const layerMiniOffload = MiniOffload.layer.pipe(
   Layer.provide(
     Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
@@ -494,9 +503,11 @@ const ForkServicesLive = Layer.mergeAll(
   VaultPrivateInput.layer.pipe(Layer.provide(Layer.merge(layerVaultCore, layerVaultAccess))),
   layerSites,
   layerLibraryService,
+  layerLibraryManagement,
   LibraryMaintenance.retentionLayer.pipe(Layer.provide(layerLibraryService)),
   layerProjectWorkflows,
   ProjectOperations.layer.pipe(
+    Layer.provide(layerLibraryManagement),
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(layerProjectWorkflows),
     Layer.provide(layerLibraryService),

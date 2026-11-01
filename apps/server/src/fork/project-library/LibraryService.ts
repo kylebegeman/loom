@@ -892,7 +892,30 @@ const make = Effect.gen(function* () {
     const current = yield* getProject(input.projectId);
     if (current.revision !== input.expectedRevision)
       return yield* new LibraryError({ reason: "revision-conflict" });
-    if (!validLibraryResources(input.resources)) return yield* invalid();
+    if (input.resources !== undefined && input.resourceUpdates !== undefined)
+      return yield* invalid();
+    const updates = new Map(input.resourceUpdates?.map((update) => [update.id, update]));
+    if (
+      updates.size !== (input.resourceUpdates?.length ?? 0) ||
+      [...updates.keys()].some((id) => !current.resources.some((resource) => resource.id === id))
+    )
+      return yield* invalid();
+    const resources =
+      input.resources ??
+      current.resources.map((resource) => {
+        const update = updates.get(resource.id);
+        if (!update) return resource;
+        return {
+          ...resource,
+          title: update.title ?? resource.title,
+          remoteUrl: update.remoteUrl === undefined ? resource.remoteUrl : update.remoteUrl,
+          relativePath: update.relativePath ?? resource.relativePath,
+          defaultBranch:
+            update.defaultBranch === undefined ? resource.defaultBranch : update.defaultBranch,
+          ...(update.url === undefined ? {} : { url: update.url }),
+        };
+      });
+    if (!validLibraryResources(resources)) return yield* invalid();
     // Omitted keeps the saved color and profile so older clients never clear them; null
     // returns the color to automatic and removes the profile.
     const { color: savedColor, profile: savedProfile, ...rest } = current;
@@ -911,9 +934,9 @@ const make = Effect.gen(function* () {
       ...rest,
       ...(color ? { color } : {}),
       ...(profile ? { profile } : {}),
-      title: input.title.trim(),
-      brief: input.brief,
-      resources: input.resources,
+      title: input.title?.trim() ?? current.title,
+      brief: input.brief ?? current.brief,
+      resources,
     };
     // An edit that changes nothing keeps its revision, so conversations stay current.
     if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))

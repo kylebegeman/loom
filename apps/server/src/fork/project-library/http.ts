@@ -6,6 +6,7 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  LibraryManagementInvocation,
   LibraryProjectsRead,
   LibraryEraseConversation,
   LibrarySetDeletedPreferences,
@@ -44,6 +45,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as Timeline from "./LibraryTimeline.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as LibraryService from "./LibraryService.ts";
+import { LibraryManagement } from "./LibraryManagement.ts";
 
 // Large established threads retain complete tool history. Clients browse bounded windows.
 
@@ -56,6 +58,7 @@ const decodeVerify = Schema.decodeUnknownEffect(Schema.Struct({ requestId: Libra
 const decodeImport = Schema.decodeUnknownEffect(Schema.toCodecJson(LibraryImportShadowRequest));
 const decodeComputer = Schema.decodeUnknownEffect(LibraryRegisterComputerRequest);
 const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityRequest);
+const decodeManagement = Schema.decodeUnknownEffect(LibraryManagementInvocation);
 const decodeProjectRead = Schema.decodeUnknownEffect(Schema.Struct({ projectId: LibraryId }));
 const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefProposal);
 const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
@@ -71,6 +74,7 @@ const decodeLaunchCandidates = Schema.decodeUnknownEffect(LibraryLaunchCandidate
 const encodeHistory = Schema.encodeEffect(Schema.toCodecJson(LibraryThreadArchive));
 const handler = (
   operation:
+    | "manage"
     | "projects"
     | "deleted-preferences"
     | "set-deleted-preferences"
@@ -109,7 +113,8 @@ const handler = (
         session.subject === "mcp-client" ||
         ((operation === "import" || operation === "verify") && !operator) ||
         // A forwarded proposal names its conversation's computer by the session that sent it.
-        ((operation === "propose" || operation === "documents") && !publisher)
+        ((operation === "propose" || operation === "documents" || operation === "manage") &&
+          !publisher)
       )
         return HttpServerResponse.text("Access denied", { status: 403 });
       const sourceAllowed = (
@@ -136,16 +141,35 @@ const handler = (
           headers: { "cache-control": "no-store" },
         });
       const documentRequest = operation === "documents" || operation === "decisions";
-      const maxBytes = documentRequest ? DOCUMENTS_MAX_REQUEST_BYTES : LIBRARY_HISTORY_MAX_BYTES;
+      const maxBytes =
+        operation === "manage"
+          ? 1024 * 1024
+          : documentRequest
+            ? DOCUMENTS_MAX_REQUEST_BYTES
+            : LIBRARY_HISTORY_MAX_BYTES;
       const length = request.headers["content-length"];
       if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
         return HttpServerResponse.text("History request too large", { status: 413 });
-      const body = yield* documentRequest
+      const body = yield* documentRequest || operation === "manage"
         ? request.json.pipe(
             Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
             Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
           )
         : readLibraryJson(request);
+      if (operation === "manage") {
+        const input = yield* decodeManagement(body).pipe(
+          Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+        );
+        return HttpServerResponse.jsonUnsafe(
+          yield* Effect.flatMap(LibraryManagement, (management) =>
+            management.accept(
+              input,
+              EnvironmentId.make(session.subject.slice("loom-host:".length)),
+            ),
+          ),
+          { headers: { "cache-control": "no-store" } },
+        );
+      }
       if (operation === "set-deleted-preferences") {
         const input = yield* decodeDeletedPreferences(body).pipe(
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
@@ -322,7 +346,16 @@ const handler = (
         Effect.succeed(
           HttpServerResponse.jsonUnsafe(
             { reason: error.reason, detail: error.detail },
-            { status: error.reason === "invalid" ? 400 : error.reason === "io" ? 503 : 409 },
+            {
+              status:
+                error.reason === "invalid"
+                  ? 400
+                  : error.reason === "io"
+                    ? 503
+                    : operation === "manage" && error.reason === "blocked"
+                      ? 403
+                      : 409,
+            },
           ),
         ),
     }),
@@ -335,6 +368,11 @@ export const LibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/projects/manage",
+        handler("manage").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       HttpRouter.add(
         "POST",
         "/api/loom/library/deleted/preferences",

@@ -1,4 +1,6 @@
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
+import { LibraryManagement } from "./LibraryManagement.ts";
+import { AuthSessionId } from "@t3tools/contracts";
 import { ProjectOperations } from "./ProjectOperations.ts";
 import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as Library from "@t3tools/contracts/fork";
@@ -60,6 +62,23 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
             ? service.executeAgent(id, request, invocation.thread)
             : invocation.client
               ? service.executeClient(id, request, invocation.client.sessionId)
+              : Effect.fail(operationCallerMissing()),
+        ),
+      );
+    });
+    const manage = Effect.fn("ProjectLibrary.manage")(function* (
+      request: Library.LibraryManagementRequest,
+    ) {
+      const invocation = yield* McpInvocationContext;
+      return yield* onHost(
+        Effect.flatMap(LibraryManagement, (service) =>
+          invocation.thread
+            ? service.executeAgent(request, invocation.thread)
+            : invocation.client
+              ? service.execute(request, {
+                  kind: "client",
+                  sessionId: AuthSessionId.make(invocation.client.sessionId),
+                })
               : Effect.fail(operationCallerMissing()),
         ),
       );
@@ -187,10 +206,10 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_project_update: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.updateProject(input))),
+        manage({ kind: "update", input }),
       ),
       loom_library_project_archive: McpToolAccess.writesEnvironment((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.archiveProject(input))),
+        manage({ kind: "archive", input }),
       ),
       loom_library_copy_prepare: McpToolAccess.writesEnvironment((input) =>
         projectOperationId(input.requestId, "prepare").pipe(
