@@ -181,7 +181,7 @@ export const applyRunChanges = (
   return limit === undefined ? sorted : sorted.slice(0, limit);
 };
 
-/** A thread's unfinished bot runs, newest first, and the watch's prune count. */
+/** A thread's bot runs, newest first, and the watch's prune count. */
 export interface ThreadBotRuns {
   readonly runs: ReadonlyArray<BotRun>;
   readonly pruned: number;
@@ -190,7 +190,7 @@ export interface ThreadBotRuns {
 export const NO_THREAD_BOT_RUNS: ThreadBotRuns = { runs: [], pruned: 0 };
 
 /**
- * One thread's unfinished runs over the shared run list and watch. It keeps its last value while
+ * One thread's runs over the shared run list and watch. It keeps its last value while
  * nothing it shows changed, so a composer is not re-rendered by runs started anywhere else.
  */
 export function makeThreadBotRunsAtom(
@@ -199,6 +199,7 @@ export function makeThreadBotRunsAtom(
   >,
   changesAtom: Atom.Atom<AsyncResult.AsyncResult<BotsChanges, unknown>> | null,
   threadId: string,
+  includeFinished = false,
 ) {
   let previous = NO_THREAD_BOT_RUNS;
   return Atom.make((get): ThreadBotRuns => {
@@ -215,7 +216,7 @@ export function makeThreadBotRunsAtom(
     for (const run of changes.runs.values())
       if (run.callerThreadId === threadId) merged.set(run.id, run);
     const runs = [...merged.values()]
-      .filter((run) => !isTerminalBotRunStatus(run.status))
+      .filter((run) => includeFinished || !isTerminalBotRunStatus(run.status))
       .sort(newestFirst);
     if (
       changes.pruned === previous.pruned &&
@@ -674,11 +675,17 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
   const recentRuns = (environmentId: EnvironmentId) =>
     listRuns({ environmentId, input: { limit: BOTS_LIST_RUNS_MAX_LIMIT } });
   const threadRunsFamily = Atom.family((key: string) => {
-    const [environmentId, threadId, watching] = JSON.parse(key) as [EnvironmentId, string, boolean];
+    const [environmentId, threadId, watching, includeFinished = false] = JSON.parse(key) as [
+      EnvironmentId,
+      string,
+      boolean,
+      boolean?,
+    ];
     return makeThreadBotRunsAtom(
       recentRuns(environmentId),
       watching ? changes({ environmentId, input: {} }) : null,
       threadId,
+      includeFinished,
     ).pipe(Atom.withLabel(`loom:bots:thread-runs:${key}`));
   });
   return {
@@ -750,6 +757,14 @@ export function createBotsAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegis
       readonly watching: boolean;
     }) =>
       threadRunsFamily(JSON.stringify([target.environmentId, target.threadId, target.watching])),
+    threadActivity: (target: {
+      readonly environmentId: EnvironmentId;
+      readonly threadId: string;
+      readonly watching: boolean;
+    }) =>
+      threadRunsFamily(
+        JSON.stringify([target.environmentId, target.threadId, target.watching, true]),
+      ),
     save: createEnvironmentRpcCommand(runtime, { label: "loom:bots:save", tag: B.save }),
     archive: createEnvironmentRpcCommand(runtime, { label: "loom:bots:archive", tag: B.archive }),
     delete: createEnvironmentRpcCommand(runtime, { label: "loom:bots:delete", tag: B.delete }),

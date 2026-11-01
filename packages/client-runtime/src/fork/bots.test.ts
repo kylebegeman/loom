@@ -411,38 +411,41 @@ describe("bot pipeline changes", () => {
 });
 
 describe("thread bot runs", () => {
-  it("changes only when a run from its own thread changes", () => {
-    const thread = ThreadId.make("thread-a");
-    const fromThread = (id: string, status: BotRun["status"], callerThreadId = thread) => ({
-      ...run(id, "x", "2026-10-20T10:00:00.000Z", status),
-      callerThreadId,
-    });
-    const listRuns = Atom.make(
-      AsyncResult.success({
-        runs: [fromThread("listed", "running"), fromThread("done", "completed")],
-      }),
-    );
-    const changes = Atom.make(AsyncResult.success(EMPTY_BOTS_CHANGES));
-    const threadRuns = makeThreadBotRunsAtom(listRuns, changes, thread);
-    const registry = AtomRegistry.make();
-    let notified = 0;
-    const unsubscribe = registry.subscribe(threadRuns, () => notified++);
-    const ids = () => registry.get(threadRuns).runs.map((entry) => entry.id);
-    expect(ids()).toEqual(["listed"]);
-    notified = 0;
+  it.each([false, true])(
+    "changes only for its own thread, including finished: %s",
+    (includeFinished) => {
+      const thread = ThreadId.make("thread-a");
+      const fromThread = (id: string, status: BotRun["status"], callerThreadId = thread) => ({
+        ...run(id, "x", "2026-10-20T10:00:00.000Z", status),
+        callerThreadId,
+      });
+      const listRuns = Atom.make(
+        AsyncResult.success({
+          runs: [fromThread("listed", "running"), fromThread("done", "completed")],
+        }),
+      );
+      const changes = Atom.make(AsyncResult.success(EMPTY_BOTS_CHANGES));
+      const threadRuns = makeThreadBotRunsAtom(listRuns, changes, thread, includeFinished);
+      const registry = AtomRegistry.make();
+      let notified = 0;
+      const unsubscribe = registry.subscribe(threadRuns, () => notified++);
+      const ids = () => registry.get(threadRuns).runs.map((entry) => entry.id);
+      expect(ids()).toEqual(includeFinished ? ["listed", "done"] : ["listed"]);
+      notified = 0;
 
-    const other = fromThread("elsewhere", "running", ThreadId.make("thread-b"));
-    let watched = fold({ _tag: "run", run: other });
-    registry.set(changes, AsyncResult.success(watched));
-    expect(notified).toBe(0);
+      const other = fromThread("elsewhere", "running", ThreadId.make("thread-b"));
+      let watched = fold({ _tag: "run", run: other });
+      registry.set(changes, AsyncResult.success(watched));
+      expect(notified).toBe(0);
 
-    watched = foldBotsChange(watched, { _tag: "run", run: fromThread("listed", "completed") });
-    watched = foldBotsChange(watched, { _tag: "run", run: fromThread("new", "queued") });
-    registry.set(changes, AsyncResult.success(watched));
-    expect(notified).toBe(1);
-    expect(ids()).toEqual(["new"]);
-    unsubscribe();
-  });
+      watched = foldBotsChange(watched, { _tag: "run", run: fromThread("listed", "completed") });
+      watched = foldBotsChange(watched, { _tag: "run", run: fromThread("new", "queued") });
+      registry.set(changes, AsyncResult.success(watched));
+      expect(notified).toBe(1);
+      expect(ids()).toEqual(includeFinished ? ["new", "listed", "done"] : ["new"]);
+      unsubscribe();
+    },
+  );
 });
 
 describe("bots inbox", () => {

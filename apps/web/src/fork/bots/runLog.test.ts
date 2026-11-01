@@ -204,6 +204,10 @@ describe("run presentation", () => {
     });
     expect(runOutcome(attention)).toMatchObject({ label: "Needs attention", tone: "warning" });
     expect(runOutcome(makeBotRun("b", { status: "timed_out" })).label).toBe("Timed out");
+    expect(runOutcome(makeBotRun("question", { status: "running" }), "question")).toMatchObject({
+      label: "Has a question",
+      tone: "warning",
+    });
     expect(
       runOutcome(
         makeBotRun("awaiting", {

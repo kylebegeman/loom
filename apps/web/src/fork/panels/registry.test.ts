@@ -9,16 +9,18 @@ import { FORK_PANELS, forkPanelSurface } from "./registry";
 const UPSTREAM_LETTERS = new Set(["A", "B", "D", "F", "L", "M", "P", "T"]);
 
 describe("fork right panels", () => {
-  it.each(["model-preview-3d", "pcb-preview", "apple-build-tooling"])(
-    "requires a thread and the environment feature for %s",
-    (id) => {
-      const panel = FORK_PANELS.find((item) => item.id === id)!;
-      const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"));
-      expect(panel.isAvailable({ threadRef, loomFeatures: [] })).toBe(false);
-      expect(panel.isAvailable({ threadRef: null, loomFeatures: [id] })).toBe(false);
-      expect(panel.isAvailable({ threadRef, loomFeatures: [id] })).toBe(true);
-    },
-  );
+  it.each([
+    ["model-preview-3d", "model-preview-3d"],
+    ["pcb-preview", "pcb-preview"],
+    ["apple-build-tooling", "apple-build-tooling"],
+    ["bot-activity", "bots"],
+  ])("requires a thread and the environment feature for %s", (id, feature) => {
+    const panel = FORK_PANELS.find((item) => item.id === id)!;
+    const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"));
+    expect(panel.isAvailable({ threadRef, loomFeatures: [] })).toBe(false);
+    expect(panel.isAvailable({ threadRef: null, loomFeatures: [feature] })).toBe(false);
+    expect(panel.isAvailable({ threadRef, loomFeatures: [feature] })).toBe(true);
+  });
 
   it("uses unique ids in the <slug> or <slug>:<name> form", () => {
     const ids = FORK_PANELS.map((panel) => panel.id);

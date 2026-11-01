@@ -41,6 +41,12 @@ from thread**, keeping that thread's checkout as the run context.
 Bots live on the server you are connected to and run there. When that server is offline or runs
 an older Loom, the page says so.
 
+On web and desktop, a conversation's **Bot activity** control shows its current jobs and recent
+results. Open the **Bot activity** panel to keep tasks, approvals, questions and replies beside
+the conversation, or find it in the panel picker. **Run bot** starts a job for that conversation;
+**All bots and runs** opens the management page. The activity control remains available after a
+run finishes. **Back** on Projects, Sites and Bots returns to the conversation you left.
+
 ## Controlling jobs
 
 The operation mode applies to the selected computer, across web, desktop, mobile and agents.
