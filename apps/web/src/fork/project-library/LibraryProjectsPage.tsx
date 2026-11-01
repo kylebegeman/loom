@@ -67,14 +67,14 @@ import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
 import {
   LIBRARY_ROW,
-  LIBRARY_SURFACE,
   LibraryErrorNotice,
   LibraryFilterChip,
   LibraryGroupHeading,
   LibrarySearch,
   LibraryStateBadge,
 } from "./LibraryControls";
-import { openLibraryAction } from "./actions";
+import { openCommandPalette } from "~/commandPaletteBus";
+import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { TidyProjectDialog } from "./TidyProjectDialog";
 import { LibraryHistorySearch } from "./LibraryHistorySearch";
@@ -134,11 +134,9 @@ export function LibraryProjectsPage() {
     rootPath?: string | undefined;
     title?: string;
   } | null>(null);
-  const canCreate = useLibraryPermission(projectLibrary.createProject, catalog.authorityId);
   // Every folder import ends by registering the folder with the Library.
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, catalog.authorityId);
   const libraryReady = !!catalog.authorityId && catalog.connected;
-  const createAvailable = libraryReady && canCreate;
   const importAvailable = libraryReady && canRegister;
   // Covers every reason the actions above are off, so a disabled action never goes unexplained.
   const access = useLibraryAccessBlock(catalog.authorityId, [
@@ -233,7 +231,8 @@ export function LibraryProjectsPage() {
       return next;
     });
   // The palette asks how the project starts: a name, a folder or a Git URL.
-  const createProject = () => openLibraryAction("create-project");
+  const createProject = () => openCommandPalette({ open: "add-project" });
+  const startThread = useNewThreadHandler();
   const refresh = () => {
     catalog.query.refresh();
     copies.refresh();
@@ -290,18 +289,13 @@ export function LibraryProjectsPage() {
               Preservation
             </Button>
           ) : null}
-          <Button
-            shape="pill"
-            size="sm"
-            variant="outline"
-            disabled={!importAvailable}
-            onClick={() => setImporting({})}
-          >
-            <FolderPlusIcon />
-            Add existing folder
-          </Button>
-          {/* Without a Library there is nowhere to create; the setup below says so. */}
-          <Button shape="pill" size="sm" onClick={createProject} disabled={!createAvailable}>
+          {importAvailable ? (
+            <Button shape="pill" size="sm" variant="outline" onClick={() => setImporting({})}>
+              <FolderPlusIcon />
+              Add to Library
+            </Button>
+          ) : null}
+          <Button shape="pill" size="sm" onClick={createProject}>
             <PlusIcon />
             New project
           </Button>
@@ -317,12 +311,20 @@ export function LibraryProjectsPage() {
         />
       ) : null}
       {!catalog.authorityId ? (
-        <section className={cn("space-y-4 p-5", LIBRARY_SURFACE)}>
-          <LibrarySetup />
-          <p className="max-w-xl text-xs text-muted-foreground">
-            Your existing threads and folders stay available while you connect the shared Library.
+        <div className="space-y-3">
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Create a project or open work on your computers. Connect your Library when you want to
+            sync projects and conversations across devices.
           </p>
-        </section>
+          <details className="group">
+            <summary className="w-fit cursor-pointer rounded-md text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              Connect your Library
+            </summary>
+            <div className="pt-4">
+              <LibrarySetup heading={false} />
+            </div>
+          </details>
+        </div>
       ) : (
         <>
           {entries.length ? (
@@ -499,7 +501,7 @@ export function LibraryProjectsPage() {
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent className="flex-row justify-center">
-                <Button shape="pill" onClick={createProject} disabled={!createAvailable}>
+                <Button shape="pill" onClick={createProject}>
                   <PlusIcon />
                   Create your first project
                 </Button>
@@ -528,11 +530,11 @@ export function LibraryProjectsPage() {
           />
         </>
       )}
-      {catalog.authorityId && looseFolders.length && !colors.size && !showArchived ? (
+      {looseFolders.length > 0 && !colors.size && !showArchived ? (
         <FoldedSection
-          title="Add your existing work"
+          title="On your computers"
           count={looseFolders.length}
-          hint="Folders you’ve worked in on your computers. Add one to a project without moving or deleting its files."
+          hint="Open a project and start a thread. Your Library connection is optional."
         >
           <ul>
             {looseFolders.map(({ key, title, ref, member }) => {
@@ -568,17 +570,22 @@ export function LibraryProjectsPage() {
                     shape="pill"
                     size="xs"
                     variant="outline"
-                    disabled={!importAvailable}
-                    onClick={() =>
-                      setImporting({
-                        ...(ref ? { hostId: ref.environmentId } : {}),
-                        title,
-                        rootPath: root,
-                      })
-                    }
+                    onClick={() => void startThread(ref)}
                   >
-                    Add to project
+                    New thread
                   </Button>
+                  {importAvailable ? (
+                    <Button
+                      shape="pill"
+                      size="xs"
+                      variant="ghost"
+                      onClick={() =>
+                        setImporting({ hostId: ref.environmentId, title, rootPath: root })
+                      }
+                    >
+                      Add to Library
+                    </Button>
+                  ) : null}
                 </li>
               );
             })}

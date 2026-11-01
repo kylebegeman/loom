@@ -56,13 +56,14 @@ vi.mock("./LibraryPalette", () => ({
   ),
 }));
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
+import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 
 let root: Root;
 let container: HTMLDivElement;
 const onSaved = vi.fn();
 const input = () => container.querySelector("input")!;
 const button = (title: string) =>
-  [...container.querySelectorAll("button")].find((node) => node.textContent === title)!;
+  [...container.querySelectorAll("button")].find((node) => node.textContent?.trim() === title)!;
 async function choose(title: string) {
   expect(button(title).disabled).toBe(false);
   await act(() => button(title).click());
@@ -76,6 +77,7 @@ async function type(value: string) {
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  saveLibraryAttempt("loom:library:editor:library:new", null, localStorage);
   state.create.mockReset();
   state.workflows = true;
   state.access = null;
@@ -104,7 +106,7 @@ afterEach(async () => {
 it("creates from a name immediately with no mandatory setup pages", async () => {
   expect(input().value).toBe("Coast");
   expect(state.create).not.toHaveBeenCalled();
-  await choose("Create “Coast”");
+  await choose("Create project");
   expect(state.create).toHaveBeenCalledExactlyOnceWith({
     environmentId: "library",
     input: expect.objectContaining({ title: "Coast", resources: [], brief: "" }),
@@ -127,7 +129,7 @@ it("preserves drafts on Back, rejects duplicate repositories and keeps color sel
   expect(container.textContent).toContain("already in this project");
   await choose("Back");
   expect(state.create).not.toHaveBeenCalled();
-  await choose("Create “Coast”");
+  await choose("Create project");
   expect(state.create).toHaveBeenCalledWith(
     expect.objectContaining({
       input: expect.objectContaining({
@@ -137,23 +139,153 @@ it("preserves drafts on Back, rejects duplicate repositories and keeps color sel
     }),
   );
 });
-it("retries an uncertain create with the same receipt and locked draft", async () => {
+it("resumes the same creation automatically after reopening without replacing another project's draft", async () => {
   state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
-  await choose("Create “Coast”");
+  await choose("Create project");
   expect(container.textContent).toContain("Response lost");
   expect(input().readOnly).toBe(true);
-  await choose("Retry project creation");
-  expect(state.create.mock.calls[1]).toEqual(state.create.mock.calls[0]);
+  const coastRequest = state.create.mock.calls[0];
+
+  await act(() => root.render(null));
+  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Still offline"))));
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(input().value).toBe("Coast");
+  expect(input().readOnly).toBe(true);
+  expect(state.create.mock.calls[1]).toEqual(coastRequest);
+
+  await act(() => root.render(null));
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="desk"
+        initialResource="https://github.com/kylebegeman/desk.git"
+        continueTo="clone"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(input().value).toBe("desk");
+  expect(input().readOnly).toBe(false);
+  await choose("Create project");
+  expect(state.create.mock.calls[2]?.[0].input).toEqual(
+    expect.objectContaining({
+      title: "desk",
+      resources: [
+        expect.objectContaining({ remoteUrl: "https://github.com/kylebegeman/desk.git" }),
+      ],
+    }),
+  );
+  expect(state.create.mock.calls[2]?.[0].input.requestId).not.toBe(
+    coastRequest?.[0].input.requestId,
+  );
   expect(onSaved).toHaveBeenCalledOnce();
 });
+
+it("resumes a submitted creation when its response arrived while the editor was hidden", async () => {
+  let complete: (result: ReturnType<typeof AsyncResult.success>) => void = () => {};
+  state.create.mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  await choose("Create project");
+  const request = state.create.mock.calls[0];
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        open={false}
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  await act(() => complete(AsyncResult.success({ id: "new-project" })));
+  expect(onSaved).not.toHaveBeenCalled();
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(state.create.mock.calls[1]).toEqual(request);
+  expect(onSaved).toHaveBeenCalledOnce();
+});
+
+it("keeps one resumed request in flight across connection availability changes", async () => {
+  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
+  await choose("Create project");
+  await act(() => root.render(null));
+  let complete: (result: ReturnType<typeof AsyncResult.success>) => void = () => {};
+  state.create.mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  const editor = () => (
+    <ProjectEditorDialog
+      initialTitle="Coast"
+      authorityId={EnvironmentId.make("library")}
+      onSaved={onSaved}
+      onClose={vi.fn()}
+    />
+  );
+  await act(() => root.render(editor()));
+  state.access = { message: "Connecting" };
+  await act(() => root.render(editor()));
+  state.access = null;
+  await act(() => root.render(editor()));
+  expect(state.create).toHaveBeenCalledTimes(2);
+  await act(() => complete(AsyncResult.success({ id: "new-project" })));
+  expect(onSaved).toHaveBeenCalledOnce();
+});
+
+it("does not clear a newer persisted creation when an older response arrives", async () => {
+  let complete: (result: ReturnType<typeof AsyncResult.success>) => void = () => {};
+  state.create.mockReturnValueOnce(
+    new Promise((resolve) => {
+      complete = resolve;
+    }),
+  );
+  await choose("Create project");
+  const newer = {
+    ...state.create.mock.calls[0]?.[0].input,
+    requestId: "newer-project",
+    title: "desk",
+  };
+  await act(() =>
+    saveLibraryAttempt("loom:library:editor:library:new", JSON.stringify(newer), localStorage),
+  );
+  await act(() => complete(AsyncResult.success({ id: "new-project" })));
+  expect(JSON.parse(readLibraryAttempt("loom:library:editor:library:new", localStorage)!)).toEqual(
+    newer,
+  );
+});
+
 it("starts over from an unfinished create with the draft editable and a new receipt", async () => {
   state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
-  await choose("Create “Coast”");
+  await choose("Create project");
   await choose("Start over");
   expect(input().readOnly).toBe(false);
   expect(input().value).toBe("Coast");
   expect(container.textContent).not.toContain("Response lost");
-  await choose("Create “Coast”");
+  await choose("Create project");
   const [first, second] = state.create.mock.calls.map(([call]) => call.input);
   expect(second).toEqual({ ...first, requestId: expect.any(String) });
   expect(second.requestId).not.toBe(first.requestId);
@@ -172,7 +304,7 @@ it("keeps blueprint creation unavailable on older Library servers", async () => 
     ),
   );
   expect(button("Use a project blueprint")).toBeUndefined();
-  await choose("Create “Coast”");
+  await choose("Create project");
   expect(state.create).toHaveBeenCalledOnce();
 });
 
@@ -188,7 +320,7 @@ it("explains blocked Library access instead of offering a create that cannot run
       />,
     ),
   );
-  expect(button("Create “Coast”").disabled).toBe(true);
+  expect(button("Create project").disabled).toBe(true);
   expect(container.textContent).toContain("Sign in again to continue.");
   state.access = null;
   await act(() =>
@@ -201,7 +333,7 @@ it("explains blocked Library access instead of offering a create that cannot run
       />,
     ),
   );
-  await choose("Create “Coast”");
+  await choose("Create project");
   expect(state.create).toHaveBeenCalledOnce();
 });
 

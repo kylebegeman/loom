@@ -72,12 +72,13 @@ function startLibraryLocalProject(load: typeof loadCopies) {
       : null;
     const connected =
       authority?.entry.enabled === true && authority.connection.phase === "connected";
-    if (
-      !authorityId &&
-      !supportsLoomFeature(host?.serverConfig?.environment.capabilities, "project-library")
-    )
-      return false;
-    const environmentId = connected && authorityId ? authorityId : ref.environmentId;
+    const hostHasCatalog = supportsLoomFeature(
+      host?.serverConfig?.environment.capabilities,
+      "project-library",
+    );
+    if (!authorityId && !hostHasCatalog) return false;
+    const environmentId =
+      hostHasCatalog || !connected || !authorityId ? ref.environmentId : authorityId;
     if (
       environmentId === ref.environmentId &&
       (host?.connection.phase !== "connected" || !host.entry.enabled)

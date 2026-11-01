@@ -3,13 +3,13 @@ import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { SettingsSection } from "~/components/settings/settingsLayout";
-import { EnvironmentRow } from "~/components/settings/EnvironmentRow";
+import { EnvironmentMachineIcon } from "~/components/EnvironmentMachineIcon";
+import { Badge } from "~/components/ui/badge";
 import { searchableSetting } from "~/components/settings/settingsSearch";
 import { ConnectAccount } from "./ConnectAccount";
 import { ComputerWorkActions } from "./ComputerWorkActions";
 import { ComputerConnectionDetails } from "./ComputerConnectionDetails";
 import { CompatibilityNotice } from "./CompatibilityNotice";
-import { FleetUpdatesSection } from "./FleetUpdatesSection";
 import {
   LibraryComputers,
   type PairLibraryComputer,
@@ -21,33 +21,24 @@ import { ComputerHealthSummary } from "../connection-health/ComputerHealthSummar
 
 export function ComputerConnectionsHome({
   primaryEnvironment,
-  librarySettings,
   primaryActions,
   computerRows,
   discoveredRows,
-  headerActions,
   isReady,
-  onPairComputer,
 }: {
   readonly primaryEnvironment: EnvironmentPresentation | null;
-  readonly librarySettings: ReactNode;
   readonly primaryActions?: ReactNode;
   readonly computerRows: ReactNode;
   readonly discoveredRows: ReactNode;
-  readonly headerActions: ReactNode;
   readonly isReady: boolean;
-  /**
-   * Opens the pairing form for a Library computer that does not get Loom sign-in here. The form
-   * expects that computer and offers no unchecked Identity sign-in.
-   */
-  readonly onPairComputer: PairLibraryComputer;
 }) {
   return (
     <>
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Your computers"
-        headerAction={headerActions}
+        hideTitle
+        variant="plain"
       >
         {!isReady ? (
           <p role="status" className="px-4 py-3 text-sm text-muted-foreground">
@@ -56,32 +47,64 @@ export function ComputerConnectionsHome({
         ) : null}
         <ConnectAccount />
         {primaryEnvironment ? (
-          <EnvironmentRow
-            kind={resolveEnvironmentMachineKind(primaryEnvironment.serverConfig)}
-            label={primaryEnvironment.label}
-            subtitle={`${window.desktopBridge ? "This computer" : "Direct connection"} · ${connectionStatusTitle(primaryEnvironment.connection)}`}
-            below={<ComputerHealthSummary environment={primaryEnvironment} />}
-            detail={
-              <>
-                <ComputerWorkActions environment={primaryEnvironment} />
-                <ComputerConnectionDetails label={primaryEnvironment.label}>
-                  <ComputerReachSection environment={primaryEnvironment} />
-                </ComputerConnectionDetails>
-              </>
-            }
-          >
-            {primaryActions}
-          </EnvironmentRow>
+          <div className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+            <div className="flex min-w-0 items-start gap-3.5">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-muted/70 text-foreground">
+                <EnvironmentMachineIcon
+                  aria-hidden
+                  kind={resolveEnvironmentMachineKind(primaryEnvironment.serverConfig)}
+                  className="size-6"
+                />
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                  <h3 className="truncate text-lg font-semibold tracking-tight">
+                    {primaryEnvironment.label}
+                  </h3>
+                  <Badge
+                    variant={
+                      primaryEnvironment.connection.phase === "connected" ? "success" : "secondary"
+                    }
+                  >
+                    {connectionStatusTitle(primaryEnvironment.connection)}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {window.desktopBridge ? "This computer" : "Direct connection"}
+                </p>
+              </div>
+              <div className="shrink-0">{primaryActions}</div>
+            </div>
+            <div className="mt-4 border-t border-border/60 pt-1">
+              <ComputerHealthSummary environment={primaryEnvironment} />
+              <ComputerWorkActions environment={primaryEnvironment} />
+              <ComputerConnectionDetails label={primaryEnvironment.label}>
+                <ComputerReachSection environment={primaryEnvironment} />
+              </ComputerConnectionDetails>
+            </div>
+          </div>
         ) : null}
         {computerRows}
         {discoveredRows}
       </SettingsSection>
       <CompatibilityNotice />
-      {librarySettings}
+    </>
+  );
+}
+
+export function ComputerLibrarySettings({
+  children,
+  onPairComputer,
+}: {
+  children: ReactNode;
+  onPairComputer: PairLibraryComputer;
+}) {
+  return (
+    <>
+      {children}
       <LibraryComputers onPair={onPairComputer} />
       <LibraryReach />
       <LibraryPushSection />
-      <FleetUpdatesSection />
     </>
   );
 }

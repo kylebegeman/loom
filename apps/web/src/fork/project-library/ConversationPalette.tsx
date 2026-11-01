@@ -103,6 +103,7 @@ export function conversationAutoStart(
 }
 type Page =
   | "start"
+  | "advanced"
   | "computers"
   | "files"
   | "browse"
@@ -470,6 +471,52 @@ export function ConversationPalette({
         select: () => go("start"),
       },
     ];
+  else if (page === "advanced")
+    items = [
+      ...(s.workspace
+        ? [
+            edit(
+              "workspace",
+              "Workspace",
+              s.workspace === "worktree" ? "New worktree" : "Project folder",
+              <GitBranchIcon className="size-4 text-(--project-teal)" />,
+            ),
+          ]
+        : []),
+      ...(descriptors.length
+        ? [
+            edit(
+              "options",
+              "Model options",
+              descriptors
+                .map((descriptor) => getProviderOptionCurrentLabel(descriptor))
+                .filter(Boolean)
+                .join(", "),
+            ),
+          ]
+        : []),
+      edit("permissions", "Permissions", runtimeModeConfig[s.runtimeMode].label),
+      edit("mode", "Mode", s.interactionMode === "plan" ? "Plan only" : "Do the work"),
+      ...(s.project.resources.filter(isRepositoryResource).length > 1
+        ? [
+            edit(
+              "scope",
+              "Repositories",
+              s.scope.length ? `${s.scope.length} selected` : "Whole project",
+            ),
+          ]
+        : []),
+      edit("title", "Conversation title", s.title || "Optional"),
+      ...(s.continuation
+        ? [
+            edit(
+              "context",
+              "Context to carry forward",
+              s.context || "Choose the context for this new conversation",
+            ),
+          ]
+        : []),
+    ];
   else
     items = [
       {
@@ -555,55 +602,13 @@ export function ConversationPalette({
         s.filesLine ?? (s.rootPath || "Choose project files"),
         <FolderIcon className="size-4 text-(--project-teal)" />,
       ),
-      ...(s.workspace
-        ? [
-            edit(
-              "workspace",
-              "Workspace",
-              s.workspace === "worktree" ? "New worktree" : "Project folder",
-              <GitBranchIcon className="size-4 text-(--project-teal)" />,
-            ),
-          ]
-        : []),
       edit(
         "models",
         "Model",
         [provider?.displayName, modelName].filter(Boolean).join(": "),
         <BotIcon className="size-4 text-(--project-plum)" />,
       ),
-      ...(descriptors.length
-        ? [
-            edit(
-              "options",
-              "Model options",
-              descriptors
-                .map((descriptor) => getProviderOptionCurrentLabel(descriptor))
-                .filter(Boolean)
-                .join(", "),
-            ),
-          ]
-        : []),
-      edit("permissions", "Permissions", runtimeModeConfig[s.runtimeMode].label),
-      edit("mode", "Mode", s.interactionMode === "plan" ? "Plan only" : "Do the work"),
-      ...(s.project.resources.filter(isRepositoryResource).length
-        ? [
-            edit(
-              "scope",
-              "Repositories",
-              s.scope.length ? `${s.scope.length} selected` : "Whole project",
-            ),
-          ]
-        : []),
-      edit("title", "Conversation title", s.title || "Optional"),
-      ...(s.continuation
-        ? [
-            edit(
-              "context",
-              "Context to carry forward",
-              s.context || "Choose the context for this new conversation",
-            ),
-          ]
-        : []),
+      edit("advanced", "More options", "Workspace, model options and conversation settings"),
       ...(!s.canCreate
         ? [{ id: "refresh", title: "Check connection and files again", select: s.refreshFiles }]
         : []),
@@ -618,6 +623,7 @@ export function ConversationPalette({
             ? (descriptors.find((descriptor) => descriptor.id === optionId)?.label ??
               "Model option")
             : {
+                advanced: "Conversation options",
                 computers: "Choose a computer",
                 files: "Choose project files",
                 path: "Files location",

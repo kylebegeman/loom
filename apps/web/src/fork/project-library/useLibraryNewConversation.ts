@@ -1,5 +1,6 @@
 import {
   parseLibraryProjectScope,
+  libraryHoldsLocalRefs,
   supportsLoomFeature,
   libraryRouteParams,
 } from "@t3tools/client-runtime/fork";
@@ -122,12 +123,28 @@ export function useLibraryNewConversation() {
       return true;
     }
     if (!result || !result.value) {
-      const saved = authority.connected
-        ? await lookup({
-            environmentId: authority.authorityId,
-            input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
-          })
-        : null;
+      const shell = sourceShell ?? readThreadShell(thread);
+      const localCopies =
+        connected && shell
+          ? await loadCopies({ environmentId: thread.environmentId, input: {} })
+          : null;
+      if (
+        localCopies?._tag === "Success" &&
+        shell &&
+        !libraryHoldsLocalRefs(
+          [],
+          [{ environmentId: thread.environmentId, projectId: shell.projectId }],
+          localCopies.value,
+        )
+      )
+        return false;
+      const saved =
+        localCopies === null && authority.connected
+          ? await lookup({
+              environmentId: authority.authorityId,
+              input: { sourceEnvironmentId: thread.environmentId, threadId: thread.threadId },
+            })
+          : null;
       if (saved?._tag === "Success" && saved.value) {
         openLibraryAction(
           "new-conversation",
@@ -150,7 +167,6 @@ export function useLibraryNewConversation() {
         openLibraryAction("new-conversation");
         return true;
       }
-      const shell = sourceShell ?? readThreadShell(thread);
       if (!shell) {
         openLibraryAction("new-conversation");
         return true;
@@ -159,10 +175,12 @@ export function useLibraryNewConversation() {
         openLibraryAction("new-conversation");
         return true;
       }
-      const copies = await loadCopies({
-        environmentId: authority.connected ? authority.authorityId : thread.environmentId,
-        input: {},
-      });
+      const copies =
+        localCopies ??
+        (await loadCopies({
+          environmentId: authority.connected ? authority.authorityId : thread.environmentId,
+          input: {},
+        }));
       if (copies._tag === "Failure") {
         openLibraryAction("new-conversation");
         return true;
@@ -172,7 +190,14 @@ export function useLibraryNewConversation() {
         copies.value,
       );
       if (!recovered) {
-        if (options?.inheritSettings) return false;
+        if (
+          !libraryHoldsLocalRefs(
+            [],
+            [{ environmentId: thread.environmentId, projectId: shell.projectId }],
+            copies.value,
+          )
+        )
+          return false;
         openLibraryAction("new-conversation");
         return true;
       }

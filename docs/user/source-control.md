@@ -155,25 +155,22 @@ Merging a stack lands it through GitCafe, and updating a branch restacks the lay
 
 <!-- fork: library-projects -->
 
-Choose **New project** in the command palette (`Cmd/Ctrl+K`) or on the Projects page, or use any
-**Add project** button, then pick how the project starts:
+On web and desktop, **New project** creates a Git repository on the selected computer and
+opens a new thread. **Add project** offers **Existing folder**, **Git URL**, and **New project**.
+These actions work without a Library connection; the computer running the work must be connected.
+The Projects page also lists work on your computers when no Library is selected.
 
-- **Empty project** starts from a name. Add repositories, links or a brief whenever useful.
-- **Existing folder** adds a folder already on a computer and leaves its files in place.
-- **Git repository** clones a repository. Paste its Git URL, such as `github.com/owner/repo` or
-  `git@github.com:owner/repo.git`, confirm the project name, then choose the computer and folder
-  to clone it into. Closing that last step keeps the project without files. Files are prepared
-  when you start a conversation, or from **Add files** on the project page. The mobile app skips
-  the clone step and clones when you start work.
-- **From a blueprint** creates a project from a pasted blueprint, when your Library supports
-  blueprints.
+To clone, choose **Git URL**, paste the repository address, and choose its destination folder.
+Loom opens the new thread while the clone runs. The repository name and files stay attached to
+that thread. Ready source-control account shortcuts also appear in the picker.
+**Add project** on a computer in **Computers** keeps that computer selected.
 
-You can also type into **New project** directly: a Git URL offers **Clone** first, a folder path
-offers **Use folder**, and anything else becomes the project's name. **Add project** on a
-computer in **Computers** starts the folder and clone steps on that computer, and **Add existing
-folder** in the command palette goes straight to choosing a folder. When the host refuses the
-computer's SSH key, the clone uses HTTPS with Git's credentials for that host instead, and the
-project's remote uses the HTTPS URL.
+On mobile, new shared projects use the Library. They can start from a name, an existing folder,
+a Git repository, or a blueprint when the Library supports it. A repository is cloned when you
+start work on a computer.
+
+When the host refuses the computer's SSH key, the clone uses HTTPS with Git's credentials for
+that host instead, and the project's remote uses the HTTPS URL.
 
 In **Computers**, you can return to recent conversation history or start a new conversation
 there. Saved history remains readable when a computer is offline; reconnect it to run work.

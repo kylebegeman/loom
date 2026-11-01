@@ -142,7 +142,11 @@ import {
 import { AddEnvironmentDialog, type LibraryComputerPairing } from "./AddEnvironmentDialog";
 
 // fork: fleet-connections
-import { ComputerConnectionsHome } from "~/fork/connections/ComputerConnectionsHome";
+import {
+  ComputerConnectionsHome,
+  ComputerLibrarySettings,
+} from "~/fork/connections/ComputerConnectionsHome";
+import { FleetUpdatesSection } from "~/fork/connections/FleetUpdatesSection";
 import { ComputersSettingsPage } from "~/fork/connections/ComputersSettingsPage";
 import { RenameComputer } from "~/fork/connections/RenameComputer";
 
@@ -1505,7 +1509,39 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     );
 
   return (
-    <ComputersSettingsPage>
+    <ComputersSettingsPage
+      actions={
+        <div className="flex items-center gap-1">
+          {/* fork: machine-updates -- FleetUpdatesSection owns Update all */}
+          <AddEnvironmentDialog
+            open={addBackendDialogOpen}
+            routeTarget={routeTarget}
+            libraryPairing={libraryPairing} // fork: directory-computers
+            error={savedBackendError}
+            savedEnvironments={savedEnvironments}
+            onOpenChange={handleAddBackendDialogOpenChange}
+            onErrorChange={setSavedBackendError}
+          />
+        </div>
+      }
+      supervisor={
+        <ForkSettingsTopics page="/settings/connections" topics={["upstream-supervisor"]} />
+      }
+      workers={<ForkSettingsTopics page="/settings/connections" topics={["mini-offload"]} />}
+      updates={<FleetUpdatesSection />}
+      library={
+        <ComputerLibrarySettings
+          onPairComputer={(environmentId, httpBaseUrl) => {
+            setRouteTarget(null);
+            setLibraryPairing({ environmentId, httpBaseUrl });
+            setSavedBackendError(null);
+            setAddBackendDialogOpen(true);
+          }}
+        >
+          <LibrarySignInSettings />
+        </ComputerLibrarySettings>
+      }
+    >
       {desktopBridge ? (
         <SettingsSection id="this-app" title="This app">
           <LocalEnvironmentSetting />
@@ -1513,33 +1549,11 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       ) : null}
       {/* fork: fleet-connections */}
       <ComputerConnectionsHome
-        librarySettings={<LibrarySignInSettings />}
-        // fork: directory-computers
-        onPairComputer={(environmentId, httpBaseUrl) => {
-          setRouteTarget(null);
-          setLibraryPairing({ environmentId, httpBaseUrl });
-          setSavedBackendError(null);
-          setAddBackendDialogOpen(true);
-        }}
         primaryEnvironment={primaryEnvironment}
         primaryActions={
           primaryEnvironment ? <RenameComputer environment={primaryEnvironment} /> : null
         }
         isReady={isReady}
-        headerActions={
-          <div className="flex items-center gap-1">
-            {/* fork: machine-updates -- FleetUpdatesSection owns Update all */}
-            <AddEnvironmentDialog
-              open={addBackendDialogOpen}
-              routeTarget={routeTarget}
-              libraryPairing={libraryPairing} // fork: directory-computers
-              error={savedBackendError}
-              savedEnvironments={savedEnvironments}
-              onOpenChange={handleAddBackendDialogOpenChange}
-              onErrorChange={setSavedBackendError}
-            />
-          </div>
-        }
         // fork: fleet-connections
         computerRows={
           <>
@@ -1561,10 +1575,12 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         }
         // fork: fleet-connections
         discoveredRows={
-          <CloudRemoteEnvironmentRows
-            primaryEnvironmentId={primaryEnvironmentId}
-            savedEnvironments={savedEnvironments}
-          />
+          hasCloudPublicConfig() || primaryEnvironment === null ? (
+            <CloudRemoteEnvironmentRows
+              primaryEnvironmentId={primaryEnvironmentId}
+              savedEnvironments={savedEnvironments}
+            />
+          ) : null
         } // fork: fleet-connections
       />
       {hasCloudPublicConfig() ? (
@@ -1589,8 +1605,6 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       ))}
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
       <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
-      {/* fork: ext-settings */}
-      <ForkSettingsTopics page="/settings/connections" />
     </ComputersSettingsPage>
   );
 }

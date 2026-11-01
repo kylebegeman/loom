@@ -9,10 +9,15 @@ import {
   PencilLineIcon,
   PlusIcon,
   RotateCcwIcon,
+  XIcon,
 } from "lucide-react";
 import { ProjectColorDot, ProjectTile } from "./ProjectIdentity";
 import { randomUUID } from "~/lib/utils";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Input } from "~/components/ui/input";
+import { Button } from "~/components/ui/button";
+import { LibraryErrorNotice, LibraryField } from "./LibraryControls";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import {
   LIBRARY_PROJECT_COLORS,
   PROJECT_WORKFLOWS_FEATURE,
@@ -84,16 +89,27 @@ export function ProjectEditorDialog({
     `loom:library:editor:${authorityId}:new`,
     EditorAttempt,
   );
-  const [title, setTitle] = useState(attempt?.title ?? initialTitle);
-  const [brief, setBrief] = useState(attempt?.brief ?? "");
+  // A failed create belongs to its requested repository or name, not every new project.
+  const [resumed, setResumed] = useState(() =>
+    attempt &&
+    initialPage === "name" &&
+    (initialResource
+      ? holdsGitRemote(attempt.resources, initialResource)
+      : !initialTitle || attempt.title === initialTitle)
+      ? attempt.requestId
+      : null,
+  );
+  const saved = attempt?.requestId === resumed ? attempt : null;
+  const [title, setTitle] = useState(saved?.title ?? initialTitle);
+  const [brief, setBrief] = useState(saved?.brief ?? "");
   const [resources, setResources] = useState<readonly LibraryResource[]>(() => {
     const parsed = libraryResourceFromInput(initialResource, []);
-    return attempt?.resources ?? (parsed ? [{ id: randomUUID(), ...parsed }] : []);
+    return saved?.resources ?? (parsed ? [{ id: randomUUID(), ...parsed }] : []);
   });
-  const [profile, setProfile] = useState<LibraryProjectProfileInput | undefined>(attempt?.profile);
+  const [profile, setProfile] = useState<LibraryProjectProfileInput | undefined>(saved?.profile);
   const [blueprintDraft, setBlueprintDraft] = useState("");
   const [resourceDraft, setResourceDraft] = useState("");
-  const [color, setColor] = useState<LibraryProjectColor | undefined>(attempt?.color);
+  const [color, setColor] = useState<LibraryProjectColor | undefined>(saved?.color);
   const catalog = useLibraryProjects();
   const supportsBlueprint = supportsLoomFeature(
     catalog.environment?.serverConfig?.environment.capabilities,
@@ -101,7 +117,9 @@ export function ProjectEditorDialog({
   );
   const existing = catalog.query.data?.find(
     (entry) =>
-      !entry.archived && entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
+      !entry.archived &&
+      entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase() &&
+      (!initialResource || holdsGitRemote(entry.resources, initialResource)),
   );
   const [page, setPage] = useState<"name" | "repository" | "brief" | "color" | "blueprint">(
     initialPage,
@@ -113,9 +131,44 @@ export function ProjectEditorDialog({
   const access = useLibraryAccessBlock(authorityId, [projectLibrary.createProject]);
   // Access is apart from the form: the notice on the name page says why and offers the repair.
   const canSave = allowed && access === null;
-  const locked = busy || attempt !== null;
+  const mounted = useRef(true);
+  const inFlight = useRef<string | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks the lifetime of this editor for its in-flight server request
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const current = useStableCallback(() => mounted.current && open);
+  const working = busy || (open && saved !== null && canSave && error === null);
+  const locked = working || saved !== null;
+  const completeCreation = useStableCallback(
+    async (input: NonNullable<typeof EditorAttempt.Type>) => {
+      if (inFlight.current === input.requestId) return;
+      inFlight.current = input.requestId;
+      const result = await create({ environmentId: authorityId, input });
+      inFlight.current = null;
+      if (!current()) {
+        if (mounted.current) setBusy(false);
+        return;
+      }
+      if (result._tag === "Success") {
+        saveAttempt(null, (latest) => latest?.requestId === input.requestId);
+        onSaved(result.value);
+      } else {
+        const cause = squashAtomCommandFailure(result);
+        if (isLibraryError(cause) && ["invalid", "not-found"].includes(cause.reason))
+          saveAttempt(null, (latest) => latest?.requestId === input.requestId);
+        setError(
+          cause instanceof Error ? cause.message : "Could not create the project. Try again.",
+        );
+      }
+      setBusy(false);
+    },
+  );
   const save = async () => {
-    if (!canSave || busy) return;
+    if (!canSave || working) return;
     if (profile && !supportsBlueprint) {
       setError("Connect an updated Library before creating a project from this blueprint.");
       return;
@@ -127,36 +180,22 @@ export function ProjectEditorDialog({
     }
     setBusy(true);
     setError(null);
-    const createProject = async () => {
-      const input = attempt ?? {
-        requestId: randomUUID(),
-        title: title.trim(),
-        brief,
-        resources,
-        ...(color ? { color } : {}),
-        ...(profile ? { profile } : {}),
-      };
-      saveAttempt(input);
-      const result = await create({ environmentId: authorityId, input });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      saveAttempt(null);
-      onSaved(result.value);
+    const input = saved ?? {
+      requestId: randomUUID(),
+      title: title.trim(),
+      brief,
+      resources,
+      ...(color ? { color } : {}),
+      ...(profile ? { profile } : {}),
     };
-    try {
-      await createProject();
-    } catch (cause) {
-      const handleFailure = async () => {
-        if (isLibraryError(cause) && ["invalid", "not-found"].includes(cause.reason))
-          saveAttempt(null);
-        setError(
-          cause instanceof Error ? cause.message : "Could not create the project. Try again.",
-        );
-      };
-      await handleFailure().finally(() => setBusy(false));
-      return;
-    }
-    setBusy(false);
+    setResumed(input.requestId);
+    saveAttempt(input);
+    await completeCreation(input);
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resumes the saved server request when its editor reopens or its connection becomes available
+  useEffect(() => {
+    if (open && saved && canSave && !busy && error === null) void completeCreation(saved);
+  }, [open, saved, canSave, busy, error, completeCreation]);
 
   // A form that opened on the blueprint leaves from it until a blueprint fills in the name page.
   const back = () => {
@@ -198,7 +237,201 @@ export function ProjectEditorDialog({
     setPage("name");
   };
   const content =
-    page === "blueprint" ? (
+    page === "name" ? (
+      <form
+        className="flex min-h-0 flex-1 flex-col"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !working) {
+            event.preventDefault();
+            event.stopPropagation();
+            (onBack ?? onClose)();
+          }
+        }}
+      >
+        <header className="flex items-start justify-between gap-3 px-5 pt-5 pb-4">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold tracking-tight">New project</h2>
+            <p className="text-sm text-muted-foreground">
+              {continueTo === "conversation"
+                ? "Create your project, then start a thread."
+                : clones
+                  ? "Create your project and clone its repository."
+                  : "Give your project a name to get started."}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost-muted"
+            size="icon-sm"
+            aria-label="Close"
+            disabled={working}
+            onClick={onClose}
+          >
+            <XIcon aria-hidden />
+          </Button>
+        </header>
+        <div className="min-h-0 space-y-5 overflow-y-auto px-5 pb-5">
+          <LibraryField label="Project name">
+            <Input
+              nativeInput
+              autoFocus
+              value={title}
+              readOnly={locked}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Project name"
+            />
+          </LibraryField>
+          {resources.length ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                {resources.length === 1
+                  ? resources[0]?.kind === "link"
+                    ? "Link"
+                    : "Repository"
+                  : "Repositories and links"}
+              </p>
+              {resources.map((resource) => (
+                <div
+                  key={resource.id}
+                  className="flex min-w-0 items-center gap-3 rounded-lg bg-muted/35 p-3"
+                >
+                  {resource.kind === "link" ? (
+                    <LinkIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{resource.title}</p>
+                    <p className="wrap-anywhere text-xs text-muted-foreground">
+                      {resource.kind === "link" ? resource.url : resource.remoteUrl}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost-muted"
+                    size="icon-xs"
+                    aria-label={`Remove ${resource.title}`}
+                    disabled={locked}
+                    onClick={() =>
+                      setResources((current) => current.filter((entry) => entry.id !== resource.id))
+                    }
+                  >
+                    <XIcon aria-hidden />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <details className="group">
+            <summary className="w-fit cursor-pointer rounded-md text-sm text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+              More options
+            </summary>
+            <div className="flex flex-wrap gap-2 pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={locked || resources.length >= 64}
+                onClick={() => setPage("repository")}
+              >
+                <PlusIcon aria-hidden /> Add a repository or link
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={locked}
+                onClick={() => setPage("brief")}
+              >
+                <PencilLineIcon aria-hidden /> Project brief
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={locked}
+                onClick={() => setPage("color")}
+              >
+                <PaletteIcon aria-hidden /> Project color
+              </Button>
+              {supportsBlueprint ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={locked}
+                  onClick={() => {
+                    setError(null);
+                    setPage("blueprint");
+                  }}
+                >
+                  <FileJsonIcon aria-hidden />{" "}
+                  {profile ? "Review imported blueprint" : "Use a project blueprint"}
+                </Button>
+              ) : null}
+            </div>
+          </details>
+          {saved ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Your project details are saved. Creation will resume with the same request.
+            </p>
+          ) : null}
+          <LibraryErrorNotice error={error} onLeave={onClose} />
+          {access ? <LibraryAccessNotice block={access} onLeave={onClose} /> : null}
+          {saved && !working ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                saveAttempt(null);
+                setError(null);
+              }}
+            >
+              <RotateCcwIcon aria-hidden /> Start over
+            </Button>
+          ) : null}
+          {existing ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={locked}
+              onClick={() => onSaved(existing)}
+            >
+              <FolderOpenIcon aria-hidden /> Use existing {existing.title}
+            </Button>
+          ) : null}
+        </div>
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-5 py-4">
+          <span className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ProjectTile
+              project={{ id: "draft", title: title.trim() || "?", color }}
+              neutral={!color}
+              size="sm"
+            />
+            {onBack ? (
+              <Button type="button" variant="ghost" size="sm" disabled={working} onClick={onBack}>
+                Back
+              </Button>
+            ) : null}
+          </span>
+          <Button type="submit" disabled={!canSave || !title.trim() || working}>
+            {busy
+              ? "Creating…"
+              : saved
+                ? "Resume creation"
+                : continueTo === "conversation"
+                  ? "Create and continue"
+                  : "Create project"}
+          </Button>
+        </footer>
+      </form>
+    ) : page === "blueprint" ? (
       <LibraryTextPalette
         title="Import project blueprint"
         value={blueprintDraft}
@@ -220,39 +453,18 @@ export function ProjectEditorDialog({
     ) : (
       <LibraryPaletteView
         key={page}
-        title={
-          page === "repository"
-            ? "Add a repository or link"
-            : page === "color"
-              ? "Project color"
-              : "New project"
-        }
+        title={page === "repository" ? "Add a repository or link" : "Project color"}
         placeholder={
-          page === "repository"
-            ? "Paste a repository URL or link..."
-            : page === "color"
-              ? "Search colors..."
-              : "Name your project..."
+          page === "repository" ? "Paste a repository URL or link..." : "Search colors..."
         }
-        query={page === "repository" ? resourceDraft : page === "color" ? colorSearch : title}
-        onQueryChange={
-          page === "repository" ? setResourceDraft : page === "color" ? setColorSearch : setTitle
-        }
-        onBack={page !== "name" || onBack ? back : undefined}
+        query={page === "repository" ? resourceDraft : colorSearch}
+        onQueryChange={page === "repository" ? setResourceDraft : setColorSearch}
+        onBack={back}
         onClose={onClose}
-        busy={busy}
+        busy={working}
         readOnly={locked}
         filter={page === "color"}
         error={error ?? (page === "repository" ? resourceError : null)}
-        message={
-          attempt
-            ? "The last try did not finish. Retry it, or start over to change the project."
-            : continueTo === "conversation"
-              ? "Create a project, then start a conversation. Repositories and a brief are optional."
-              : clones
-                ? "Create the project, then choose where to clone it. A brief is optional."
-                : "A shared home for your work. Repositories and a brief are optional."
-        }
         items={
           page === "repository"
             ? [
@@ -263,10 +475,8 @@ export function ProjectEditorDialog({
                   icon:
                     parsed?.kind === "link" ? (
                       <LinkIcon className="size-4" />
-                    ) : parsed ? (
-                      <FolderGit2Icon className="size-4" />
                     ) : (
-                      <PlusIcon className="size-4" />
+                      <FolderGit2Icon className="size-4" />
                     ),
                   select: () => {
                     if (parsed && !resourceError) {
@@ -277,158 +487,31 @@ export function ProjectEditorDialog({
                   },
                 },
               ]
-            : page === "color"
-              ? [
-                  {
-                    id: "automatic",
-                    title: "Automatic",
-                    description: "Loom picks one once the project exists",
-                    icon: <PaletteIcon className="size-4" />,
-                    selected: color === undefined,
-                    select: () => {
-                      setColor(undefined);
-                      setPage("name");
-                    },
+            : [
+                {
+                  id: "automatic",
+                  title: "Automatic",
+                  description: "Loom picks one once the project exists",
+                  icon: <PaletteIcon className="size-4" />,
+                  selected: color === undefined,
+                  select: () => {
+                    setColor(undefined);
+                    setPage("name");
                   },
-                  ...LIBRARY_PROJECT_COLORS.map((choice) => ({
-                    id: choice,
-                    title: PROJECT_COLOR_NAMES[choice],
-                    icon: <ProjectColorDot color={choice} className="size-3" />,
-                    selected: color === choice,
-                    select: () => {
-                      setColor(choice);
-                      setPage("name");
-                    },
-                  })),
-                ]
-              : [
-                  {
-                    id: "create-project",
-                    title: busy
-                      ? "Creating..."
-                      : attempt
-                        ? "Retry project creation"
-                        : title.trim()
-                          ? `Create “${title.trim()}”`
-                          : "Enter a project name",
-                    description:
-                      continueTo === "conversation"
-                        ? "Continue to your conversation"
-                        : clones
-                          ? "Then choose where to clone it"
-                          : "Open project",
-                    disabled: !canSave || !title.trim(),
-                    // The draft's mark previews name and color; an automatic color waits for an id.
-                    icon: (
-                      <ProjectTile
-                        project={{ id: "draft", title: title.trim() || "?", color }}
-                        neutral={!color}
-                        size="sm"
-                      />
-                    ),
-                    select: () => void save(),
+                },
+                ...LIBRARY_PROJECT_COLORS.map((choice) => ({
+                  id: choice,
+                  title: PROJECT_COLOR_NAMES[choice],
+                  icon: <ProjectColorDot color={choice} className="size-3" />,
+                  selected: color === choice,
+                  select: () => {
+                    setColor(choice);
+                    setPage("name");
                   },
-                  ...(attempt && !busy
-                    ? [
-                        {
-                          id: "start-over",
-                          title: "Start over",
-                          description: "Keep what you entered and edit it before creating",
-                          icon: <RotateCcwIcon className="size-4" />,
-                          select: () => {
-                            saveAttempt(null);
-                            setError(null);
-                          },
-                        },
-                      ]
-                    : []),
-                  ...(existing
-                    ? [
-                        {
-                          id: "existing",
-                          title: `Use existing ${existing.title}`,
-                          description: "Keep work in the project already in your Library",
-                          disabled: locked,
-                          icon: <FolderOpenIcon className="size-4" />,
-                          select: () => onSaved(existing),
-                        },
-                      ]
-                    : []),
-                  ...(supportsBlueprint
-                    ? [
-                        {
-                          id: "blueprint",
-                          title: profile ? "Review imported blueprint" : "Use a project blueprint",
-                          description: profile
-                            ? `${resources.length} repositories and links. Review shared scripts in Preferences before running them.`
-                            : "Paste portable repository layout and setup",
-                          disabled: locked,
-                          icon: <FileJsonIcon className="size-4" />,
-                          select: () => {
-                            setError(null);
-                            setPage("blueprint");
-                          },
-                        },
-                      ]
-                    : []),
-                  {
-                    id: "repository",
-                    title: "Add a repository or link",
-                    description: resources.length
-                      ? `${resources.length} added`
-                      : "Optional. You can also add these later.",
-                    next: true,
-                    disabled: locked || resources.length >= 64,
-                    icon: <FolderGit2Icon className="size-4" />,
-                    select: () => setPage("repository"),
-                  },
-                  {
-                    id: "brief",
-                    title: "Project brief",
-                    description: brief || "Optional",
-                    next: true,
-                    disabled: locked,
-                    icon: <PencilLineIcon className="size-4" />,
-                    select: () => setPage("brief"),
-                  },
-                  {
-                    id: "color",
-                    title: "Project color",
-                    description: color ? PROJECT_COLOR_NAMES[color] : "Automatic",
-                    next: true,
-                    disabled: locked,
-                    icon: color ? (
-                      <ProjectColorDot color={color} className="size-3" />
-                    ) : (
-                      <PaletteIcon className="size-4" />
-                    ),
-                    select: () => setPage("color"),
-                  },
-                  ...resources.map((resource) => ({
-                    id: resource.id,
-                    title: resource.title,
-                    description: "Remove from this project",
-                    disabled: locked,
-                    icon:
-                      resource.kind === "link" ? (
-                        <LinkIcon className="size-4" />
-                      ) : (
-                        <FolderGit2Icon className="size-4" />
-                      ),
-                    select: () =>
-                      setResources((current) =>
-                        current.filter((entry) => entry.id !== resource.id),
-                      ),
-                  })),
-                ]
+                })),
+              ]
         }
-      >
-        {page === "name" && access ? (
-          <div className="px-4 py-2">
-            <LibraryAccessNotice block={access} onLeave={onClose} />
-          </div>
-        ) : null}
-      </LibraryPaletteView>
+      />
     );
   return embedded ? (
     content

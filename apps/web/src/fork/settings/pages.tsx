@@ -145,16 +145,24 @@ export function ToolsSettingsPage() {
   );
 }
 
-export function ForkSettingsTopics({ page }: { page: ForkSettingsHome }) {
+export function ForkSettingsTopics({
+  page,
+  topics,
+}: {
+  page: ForkSettingsHome;
+  topics?: readonly ForkSettingsTopicId[];
+}) {
   return (
     <>
-      {topicsOn(page).map((topic) =>
-        topic.scope === "computer" || topic.scope === "mixed" ? (
-          <ComputerScopedTopic key={topic.id} topic={topic} />
-        ) : (
-          <ForkSettingsTopic key={topic.id} topic={topic} />
-        ),
-      )}
+      {topicsOn(page)
+        .filter((topic) => !topics || topics.includes(topic.id))
+        .map((topic) =>
+          topic.scope === "computer" || topic.scope === "mixed" ? (
+            <ComputerScopedTopic key={topic.id} topic={topic} />
+          ) : (
+            <ForkSettingsTopic key={topic.id} topic={topic} />
+          ),
+        )}
     </>
   );
 }

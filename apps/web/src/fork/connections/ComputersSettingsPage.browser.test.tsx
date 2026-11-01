@@ -1,22 +1,31 @@
 import { expect, it } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "../../../test/render";
 import { FoldedSettingsSection } from "~/components/settings/FoldedSettingsSection";
 import { ComputersSettingsPage } from "./ComputersSettingsPage";
 
-it("opens a folded section and moves focus to it through the existing search target", async () => {
+it("opens a search-targeted view and preserves its draft when switching views", async () => {
   await using screen = await render(
-    <ComputersSettingsPage>
-      <FoldedSettingsSection id="advanced" title="Advanced" summary="Optional configuration">
-        <p>Advanced controls</p>
-      </FoldedSettingsSection>
+    <ComputersSettingsPage
+      supervisor={
+        <FoldedSettingsSection id="loom-upstream-supervisor" title="Supervisor configuration">
+          <input aria-label="Draft project" defaultValue="" />
+        </FoldedSettingsSection>
+      }
+    >
+      <p>Connected computers</p>
     </ComputersSettingsPage>,
+    { router: "/settings/connections" },
   );
-  await expect.element(screen.getByText("Advanced controls")).not.toBeInTheDocument();
-  await screen.getByRole("button", { name: "Jump to section" }).click();
-  await page.getByRole("menuitem", { name: "Advanced", exact: true }).click();
-  await expect.element(screen.getByText("Advanced controls")).toBeVisible();
+  await expect.element(screen.getByText("Connected computers")).toBeVisible();
+  await screen.router?.navigate({ hash: "loom-upstream-supervisor" });
+  await expect.element(screen.getByRole("textbox", { name: "Draft project" })).toBeVisible();
   await expect
-    .element(page.elementLocator(screen.container.querySelector("#advanced")!))
+    .element(page.elementLocator(screen.container.querySelector("#loom-upstream-supervisor")!))
     .toHaveFocus();
+  await userEvent.fill(screen.getByRole("textbox", { name: "Draft project" }), "Loom");
+  await screen.getByRole("tab", { name: "Computers", exact: true }).click();
+  await expect.element(screen.getByText("Connected computers")).toBeVisible();
+  await screen.getByRole("tab", { name: "Upstream supervisor", exact: true }).click();
+  await expect.element(screen.getByRole("textbox", { name: "Draft project" })).toHaveValue("Loom");
 });

@@ -60,21 +60,20 @@ sets a sign-in limit; otherwise, sign in again when it expires. Existing pairing
 Connect remain available. Changing your Library selection does not move records from the
 previous Library.
 
-**New project** asks how to start. **Empty project** needs only a name, and **Git
-repository** clones a Git URL onto the computer and folder you choose once the project exists.
-Add repositories, reference links or a brief whenever useful. **Existing folder**, also
-**Add existing folder** in the command palette, finds repositories in a folder and suggests an
-existing project when the repository origins and layout match. This leaves your files in place.
-When you browse to a folder, Loom says what adding it will do, such as joining a matching
-project or creating a new one, and Enter does exactly that. If adding a folder does not
-finish, Add existing folder offers to retry it or start over, and you can still browse to a
-different folder instead.
-A folder that already belongs to a current project is added to that project instead of a
+On web and desktop, **New project** creates a repository and opens a new thread on the selected
+computer. **Add project** opens an existing folder or clones a Git URL there. Creating and
+opening this work does not require a Library connection. The Projects page lists these folders
+under **On your computers**, with **New thread** available directly.
+
+Use **Add to Library** to connect an existing folder to a shared project. Loom can suggest an
+existing shared project when the repository origins and layout match, and leaves your files in
+place. Shared projects can also hold repositories, reference links, a brief, and a blueprint.
+On mobile, project creation uses the shared Library and prepares repository files when work starts.
+
+A folder that already belongs to a current shared project is added to that project instead of a
 new one. A folder held by an archived project moves to the new project, and the archived
 project's conversations stay in the archive. Files Loom created for an archived project stay
 with it until you restore that project and remove them.
-The Projects page lists each computer folder still waiting to be added, so you can work
-through existing projects without losing your place.
 
 **New conversation** lists your projects, with the project you are in first. A project that
 can start right away shows the computer, model and permissions it will use, and New worktree

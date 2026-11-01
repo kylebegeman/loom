@@ -43,7 +43,7 @@ import {
   useLibraryProjects,
   useSelectedLibraryProject,
 } from "./state";
-import { onLibraryAction, openLibraryAction, requestLibraryClone } from "./actions";
+import { onLibraryAction } from "./actions";
 import { useLibraryNewConversation } from "./useLibraryNewConversation";
 import { claimCommandPaletteRequests, type CommandPaletteOpenDetail } from "~/commandPaletteBus";
 import { dispatchCommandPalette } from "~/commandPaletteStore";
@@ -114,21 +114,12 @@ export function useLibraryPaletteSession() {
 }
 
 /**
- * The Library takes over adding projects and starting conversations. Any other palette request
- * replaces setup in the same popup.
+ * The Library claims conversation starts with existing shared context. Other palette requests
+ * replace setup in the same popup.
  */
 export function useLibraryPaletteTakeover() {
   const tryLibraryConversation = useLibraryNewConversation();
   const claim = useStableCallback((detail: CommandPaletteOpenDetail) => {
-    if (detail.open === "add-project") {
-      openLibraryAction(
-        "create-project",
-        undefined,
-        detail.environmentId ? { environmentId: detail.environmentId } : undefined,
-      );
-      dispatchCommandPalette({ _tag: "SetOpen", open: false });
-      return true;
-    }
     if (detail.open === "new-thread-in") {
       void tryLibraryConversation().then((started) =>
         dispatchCommandPalette(
@@ -253,8 +244,11 @@ export function LibraryActionHost({
     project: LibraryProject,
     copy?: LibraryWorkingCopy,
     launch?: ConversationQuickStart,
-    start = true,
+    options: { start?: boolean; destination?: "project" | "conversation" } = {},
   ) => {
+    const start = options.start ?? true;
+    const destination =
+      options.destination ?? (action === "new-conversation" ? "conversation" : "project");
     // Returning to the same project keeps its settings and draft, unless a start remounts them.
     // Anything else ends the promise, whose computer would otherwise outrank the one holding a
     // folder added since.
@@ -282,7 +276,7 @@ export function LibraryActionHost({
     setRequestedProject(project.id);
     setChosenProject(project);
     setChosenCopy(copy ?? (chosenCopy?.projectId === project.id ? chosenCopy : null));
-    if (action === "new-conversation") setStep("conversation");
+    if (destination === "conversation") setStep("conversation");
     else {
       onClose();
       void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
@@ -317,7 +311,7 @@ export function LibraryActionHost({
         ? {
             // Without a promise, Enter opens the settings too.
             enterLabel: promise ? "Start" : "Options",
-            options: () => choose(entry, undefined, promise?.launch, false),
+            options: () => choose(entry, undefined, promise?.launch, { start: false }),
           }
         : {}),
     };
@@ -399,8 +393,7 @@ export function LibraryActionHost({
     },
   };
   const gitChoice = gitRepositoryChoice(gitUrl);
-  // A conversation clones its files when it starts; a new project from a Git URL clones on save.
-  const cloneAfterSave = home === "new" && draft.repository !== "";
+  const repositoryStart = home === "new" && draft.repository !== "";
   const projectPicker = (launchMessage?: string) => (
     <LibraryPaletteView
       title="New conversation"
@@ -559,7 +552,7 @@ export function LibraryActionHost({
           onBack={back}
           onClose={onClose}
           filter={false}
-          message="Name the project next, then choose the computer and folder to clone it into."
+          message="The project name comes from this repository. Review it, then start working."
           items={[
             gitChoice
               ? {
@@ -591,15 +584,19 @@ export function LibraryActionHost({
           initialTitle={draft.title}
           initialResource={draft.repository}
           initialPage={draft.page}
-          continueTo={cloneAfterSave ? "clone" : home === "project" ? "conversation" : "project"}
+          continueTo={repositoryStart || home === "project" ? "conversation" : "project"}
           onBack={back}
           onClose={onClose}
           onSaved={(saved) => {
             forget("create");
-            // The clone dialog belongs to the project page, which outlives this popup.
-            if (cloneAfterSave && holdsGitRemote(saved.resources, draft.repository))
-              requestLibraryClone(saved.id, defaults?.environmentId);
-            choose(saved);
+            choose(saved, undefined, undefined, {
+              destination:
+                repositoryStart && holdsGitRemote(saved.resources, draft.repository)
+                  ? "conversation"
+                  : action === "new-conversation"
+                    ? "conversation"
+                    : "project",
+            });
           }}
         />
       ) : null}

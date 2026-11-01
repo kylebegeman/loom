@@ -70,12 +70,24 @@ export function useLibraryAttempt<A, E>(key: string, schema: Schema.Codec<A, E>)
     }
   }, [schema, serialized]);
   const save = useCallback(
-    (value: A | null) =>
+    (value: A | null, onlyIf?: (current: A | null) => boolean) => {
+      const storage = clientStorage();
+      if (onlyIf) {
+        const latest = readLibraryAttempt(key, storage);
+        let current: A | null = null;
+        try {
+          if (latest !== null) current = Schema.decodeSync(Schema.fromJsonString(schema))(latest);
+        } catch {
+          return;
+        }
+        if (!onlyIf(current)) return;
+      }
       saveLibraryAttempt(
         key,
         value === null ? null : Schema.encodeSync(Schema.fromJsonString(schema))(value),
-        clientStorage(),
-      ),
+        storage,
+      );
+    },
     [key, schema],
   );
   return [attempt, save] as const;

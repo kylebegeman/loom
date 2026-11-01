@@ -11,7 +11,6 @@ import {
   useLibraryPaletteSession,
   useLibraryPaletteTakeover,
 } from "~/fork/project-library/LibraryActionHost"; // fork: library-palette
-import { openLibraryAction } from "~/fork/project-library/actions"; // fork: library-palette
 import { LibraryConnectHost } from "~/fork/project-library/LibraryConnectDialog"; // fork: library-palette
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -258,10 +257,8 @@ import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/set
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
-import { Button } from "./ui/button";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { suggestAppAccessForRemote } from "./sourceControlAppAccessToast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
@@ -1042,10 +1039,19 @@ function OpenCommandPaletteDialog(props: {
     environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
       ?.newProjectsRoot ?? null;
 
-  // fork: library-palette -- New project opens the Library, which replaced startNewProject
-  const openSourceControlSettings = () => {
-    setOpen(false);
-    void navigate({ to: "/settings/source-control" });
+  const startNewProject = (
+    environmentId: EnvironmentId,
+    sourcesEnvironmentId: EnvironmentId | null,
+  ): void => {
+    setAddProjectEnvironmentId(environmentId);
+    setAddProjectCloneFlow(null);
+    setNewProjectFlow({ environmentId, sourcesEnvironmentId });
+    setNewProjectPublishes(false);
+    setNewProjectPublishKind(null);
+    pushPaletteView({
+      addonIcon: <FolderGit2Icon className={ADDON_ICON_CLASS} />,
+      groups: [],
+    });
   };
 
   const buildAddProjectSourceGroups = (
@@ -1078,8 +1084,7 @@ function OpenCommandPaletteDialog(props: {
         icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
         keepOpen: true,
         run: async () => {
-          setOpen(false); // fork: library-palette
-          openLibraryAction("create-project"); // fork: library-palette
+          startNewProject(environmentId, environmentId);
         },
       });
     }
@@ -1097,45 +1102,7 @@ function OpenCommandPaletteDialog(props: {
           ? "Clone from a remote URL"
           : `Clone ${label} ${addProjectRemoteSourcePathHint(source)}`;
       const readiness = readinessBySource(source);
-      const disabledHint = readiness.hint;
-
-      const titleTrailingContent = readiness.ready ? undefined : (
-        <span className="ml-auto">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="warning-outline"
-                  size="micro"
-                  onClick={() => {
-                    openSourceControlSettings();
-                  }}
-                >
-                  Setup Required
-                </Button>
-              }
-            />
-            <TooltipPopup align="end" side="left">
-              {disabledHint ?? "Open Settings -> Source control to configure this provider."}
-            </TooltipPopup>
-          </Tooltip>
-        </span>
-      );
-
-      if (!readiness.ready) {
-        sourceItems.push({
-          kind: "action",
-          value: `action:add-project:${environmentId}:${source}:not-ready`,
-          searchTerms: ["clone", "remote", "repository", "repo", "git", label, "setup required"],
-          title,
-          description,
-          disabled: true,
-          icon: remoteProjectSourceIcon(source, ITEM_ICON_CLASS),
-          ...(titleTrailingContent ? { titleTrailingContent } : {}),
-          run: async () => {},
-        });
-        continue;
-      }
+      if (!readiness.ready) continue;
 
       sourceItems.push({
         kind: "action",
@@ -1144,7 +1111,6 @@ function OpenCommandPaletteDialog(props: {
         title,
         description,
         icon: remoteProjectSourceIcon(source, ITEM_ICON_CLASS),
-        ...(titleTrailingContent ? { titleTrailingContent } : {}),
         keepOpen: true,
         run: async () => {
           startAddProjectClone(environmentId, source);
@@ -1237,19 +1203,6 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const openAddProjectFlow = () => {
-    // fork: library-palette - The Library takes over adding projects.
-    if (
-      openLibraryAction(
-        "import-folder",
-        undefined,
-        requestedAddProjectEnvironmentId
-          ? { environmentId: requestedAddProjectEnvironmentId }
-          : undefined,
-      )
-    ) {
-      setOpen(false);
-      return;
-    }
     switch (addProjectEntry.kind) {
       case "connect-environment":
         openConnectionSettings();
@@ -1360,10 +1313,10 @@ function OpenCommandPaletteDialog(props: {
     }
   };
 
-  // fork: library-palette - New projects start in the Library.
   const openNewProjectFlow = () => {
-    setOpen(false);
-    openLibraryAction("create-project"); // fork: library-palette
+    const firstOption = newProjectEnvironmentOptions[0];
+    if (firstOption) startNewProject(firstOption.environmentId, null);
+    else openAddProjectFlow();
   };
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
@@ -1709,13 +1662,10 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  // fork: library-palette - The Library can always start a new project.
   {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
-      // fork: library-palette - New project offers every way in, so cloning terms find it
-      // rather than the folder shortcut.
       searchTerms: [
         "new project",
         "create project",
@@ -1748,20 +1698,17 @@ function OpenCommandPaletteDialog(props: {
   actionItems.push({
     kind: "action",
     value: "action:add-project",
-    // fork: library-palette - This shortcut only adds a folder; New project offers cloning.
     searchTerms: [
       "add project",
       "folder",
       "directory",
       "browse",
-      // fork: library-palette -- clone and remote terms moved to New project
       "repository",
       "repo",
       "git",
-      // fork: library-palette -- source control and url terms moved to New project
       "environment",
     ],
-    title: "Add existing folder", // fork: fleet-connections
+    title: "Add project",
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {

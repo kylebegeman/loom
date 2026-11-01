@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import * as DateTime from "effect/DateTime";
 import { useId, useState } from "react";
+import { WorkflowIcon, RefreshCwIcon } from "lucide-react";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -35,7 +36,6 @@ import {
   LoomSettingsDetails,
   LoomSettingsField,
   LoomSettingsNotice,
-  LoomSettingsPanel,
 } from "../settings/parts";
 import { runVault } from "../vault/state";
 
@@ -146,11 +146,7 @@ function SupervisorSettings({
     setPending(false);
   }
   return (
-    <LoomSettingsPanel>
-      <p className="max-w-prose text-sm text-muted-foreground">
-        Let your Grok chief request upstream integrations for one project and repository. Save its
-        access paused, then enable it when you are ready.
-      </p>
+    <div className="@container/supervisor min-w-0 space-y-6">
       {!canWrite || !allowed ? (
         <LoomSettingsNotice>
           This connection needs Manage access permission to change the supervisor.
@@ -175,35 +171,51 @@ function SupervisorSettings({
           {notice}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h4 className="text-sm font-semibold">Saved status</h4>
-          <Badge variant={config?.enabled ? "success" : "secondary"}>
-            {config
-              ? config.enabled
-                ? "Enabled"
-                : "Paused"
-              : status.data
-                ? "Not configured"
-                : status.isPending
-                  ? "Loading"
-                  : "Unavailable"}
-          </Badge>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 rounded-xl bg-muted/40 px-4 py-4 sm:px-5 @min-[32rem]/supervisor:flex @min-[32rem]/supervisor:items-center @min-[32rem]/supervisor:gap-4">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-background text-foreground">
+          <WorkflowIcon aria-hidden className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h3 className="text-base font-semibold">
+              {config ? "Upstream supervision" : "Connect your Grok chief"}
+            </h3>
+            <Badge variant={config?.enabled ? "success" : "secondary"}>
+              {config
+                ? config.enabled
+                  ? "Enabled"
+                  : "Paused"
+                : status.data
+                  ? "Not configured"
+                  : status.isPending
+                    ? "Loading"
+                    : "Unavailable"}
+            </Badge>
+          </div>
+          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+            {config?.enabled
+              ? "Your chief can request upstream integrations for the saved repository."
+              : "Choose a project and GitHub repository. Save first, then enable when ready."}
+          </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={pending || status.isPending}
-          onClick={() => {
-            status.refresh();
-            access.refresh();
-          }}
-        >
-          Refresh status and logins
-        </Button>
+        <div className="col-span-2 flex justify-end @min-[32rem]/supervisor:shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Refresh status and logins"
+            disabled={pending || status.isPending}
+            onClick={() => {
+              status.refresh();
+              access.refresh();
+            }}
+          >
+            <RefreshCwIcon aria-hidden />
+            Refresh
+          </Button>
+        </div>
       </div>
       {config ? (
-        <div className="space-y-4">
+        <div className="space-y-4 px-1">
           <dl className="grid min-w-0 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
             <div className="min-w-0">
               <dt className="text-xs text-muted-foreground">Project</dt>
@@ -252,10 +264,6 @@ function SupervisorSettings({
             </p>
           </LoomSettingsActions>
         </div>
-      ) : status.data ? (
-        <p className="text-sm text-muted-foreground">
-          Choose the access below to set up this computer.
-        </p>
       ) : null}
       {initialProject && status.data ? (
         <SupervisorEditor
@@ -294,7 +302,7 @@ function SupervisorSettings({
           ))}
         </LoomSettingsDetails>
       ) : null}
-    </LoomSettingsPanel>
+    </div>
   );
 }
 
@@ -365,14 +373,13 @@ function SupervisorEditor({
   ].filter((entry) => entry !== null);
   const connectionsLocked = disabled || page.isPending || page.error !== null;
   return (
-    <div className="space-y-5 border-t border-border/60 pt-5">
+    <div className="space-y-6 rounded-2xl border border-border/70 bg-card/40 p-4 sm:p-6">
       <div className="space-y-1">
-        <h4 className="text-sm font-semibold">
-          {config ? "Edit configuration" : "Configure access"}
+        <h4 className="text-base font-semibold tracking-tight">
+          {config ? "Configuration" : "Set up upstream supervision"}
         </h4>
         <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
-          Use an existing chief login and Vault connection. Saving keeps the supervisor paused and
-          does not start an integration or create a schedule.
+          Saving keeps the supervisor paused. No integration or schedule starts here.
         </p>
       </div>
       <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-2">
@@ -399,7 +406,7 @@ function SupervisorEditor({
         </LoomSettingsField>
         <LoomSettingsField
           label="Chief login"
-          description="The existing Grok chief login on this computer. Revoking it removes its access."
+          description="Use the login your Grok chief already connects with."
         >
           <Select
             value={clientSessionId}
@@ -425,7 +432,7 @@ function SupervisorEditor({
       </div>
       {accessError ? (
         <LoomSettingsNotice role="alert">
-          Could not load chief logins. {accessError} Use Refresh status and logins to try again.
+          Could not load chief logins. {accessError} Use Refresh to try again.
         </LoomSettingsNotice>
       ) : accessPending ? (
         <p role="status" className="text-sm text-muted-foreground">
@@ -443,7 +450,7 @@ function SupervisorEditor({
       <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-2">
         <LoomSettingsField
           label="Vault GitHub connection"
-          description="An existing connection with access to the repository’s upstream workflow."
+          description="Your saved GitHub account with access to this repository."
         >
           <Select
             value={connection?.id ?? ""}
@@ -483,7 +490,7 @@ function SupervisorEditor({
           label="Repository"
           description={
             connection
-              ? `Connection version ${connection.expectedVersion}. Runs loom-upstream.yml on main.`
+              ? `Using connection version ${connection.expectedVersion}.`
               : "Choose a GitHub connection to see its repositories."
           }
         >
@@ -521,7 +528,11 @@ function SupervisorEditor({
       {page.isPending && !page.data ? <p role="status">Loading GitHub connections…</p> : null}
       {page.error ? (
         <LoomSettingsNotice role="alert">
-          Could not load GitHub connections. {page.error}
+          <p>Could not load GitHub connections. Refresh connections to try again.</p>
+          <details className="mt-2 text-xs">
+            <summary className="cursor-pointer">Connection details</summary>
+            <p className="mt-2 wrap-anywhere">{page.error}</p>
+          </details>
         </LoomSettingsNotice>
       ) : null}
       {selected.error ? (
@@ -608,7 +619,7 @@ function SupervisorEditor({
           </Button>
         ) : null}
       </LoomSettingsActions>
-      <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-4">
+      <div className="flex flex-col-reverse gap-3 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
         <Button
           size="sm-multiline"
           aria-describedby={saveHintId}

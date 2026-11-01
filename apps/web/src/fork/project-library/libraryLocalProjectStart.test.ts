@@ -2,14 +2,24 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
 
-const state = vi.hoisted(() => ({ load: vi.fn(), open: vi.fn() }));
+const state = vi.hoisted(() => ({
+  load: vi.fn(),
+  open: vi.fn(),
+  hostFeatures: ["project-library"] as string[],
+}));
 vi.mock("./state", () => ({
   readLibraryAuthorityId: () => "library",
   projectLibrary: { copies: {} },
 }));
 vi.mock("~/rpc/atomRegistry", () => ({
   appAtomRegistry: {
-    get: () => ({ entry: { enabled: true }, connection: { phase: "connected" } }),
+    get: (id: string) => ({
+      entry: { enabled: true },
+      connection: { phase: "connected" },
+      serverConfig: {
+        environment: { capabilities: { loomFeatures: id === "host" ? state.hostFeatures : [] } },
+      },
+    }),
   },
 }));
 vi.mock("~/state/presentation", () => ({
@@ -95,6 +105,7 @@ it("waits for a live folder lookup and opens the bound form once its identity ar
     }),
   );
   const pending = useLibraryLocalProjectStart()(ref("root"));
+  expect(state.load).toHaveBeenCalledWith({ environmentId: host, input: {} });
   expect(state.open).not.toHaveBeenCalled();
   complete({ _tag: "Success", value: [copy] });
   expect(await pending).toBe(true);
@@ -120,4 +131,28 @@ it("only reports a Library folder, opening nothing, for a start nobody asked for
   state.load.mockResolvedValue({ _tag: "Failure" });
   expect(await start(ref("root"), undefined, undefined, false)).toBe(true);
   expect(state.open).not.toHaveBeenCalled();
+});
+
+it("checks a plain local project on its execution host even while a Library is connected", async () => {
+  state.open.mockClear();
+  state.load.mockClear().mockResolvedValue({ _tag: "Success", value: [] });
+  expect(await useLibraryLocalProjectStart()(ref("plain"))).toBe(false);
+  expect(state.load).toHaveBeenCalledExactlyOnceWith({ environmentId: host, input: {} });
+  expect(state.open).not.toHaveBeenCalled();
+});
+
+it("keeps the authority lookup for older hosts that cannot report registered copies", async () => {
+  state.open.mockClear();
+  state.load.mockClear().mockResolvedValue({ _tag: "Success", value: [copy] });
+  state.hostFeatures = [];
+  try {
+    expect(await useLibraryLocalProjectStart()(ref("root"))).toBe(true);
+    expect(state.load).toHaveBeenCalledExactlyOnceWith({ environmentId: "library", input: {} });
+    expect(state.open).toHaveBeenCalledWith("new-conversation", "project", {
+      environmentId: host,
+      workingCopyId: "files",
+    });
+  } finally {
+    state.hostFeatures = ["project-library"];
+  }
 });

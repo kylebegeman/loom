@@ -565,10 +565,10 @@ it("leads with what was typed: a folder path, a Git URL or a name", async () => 
   expect(launch()).toMatchObject({
     initialTitle: "harbor",
     initialResource: "https://github.com/example/harbor",
-    continueTo: "clone",
+    continueTo: "conversation",
   });
 });
-it("clones a Git URL onto the computer the request named once the project is created", async () => {
+it("continues a new Git project into thread setup on the requested computer in the same popup", async () => {
   const laptop = EnvironmentId.make("laptop");
   await act(() => openLibraryAction("create-project", undefined, { environmentId: laptop }));
   await click("Git repository");
@@ -582,11 +582,9 @@ it("clones a Git URL onto the computer the request named once the project is cre
   await click("Git repository");
   await click("Clone harbor");
   await click("Save");
-  expect(state.navigate).toHaveBeenCalledWith({
-    to: "/library/$projectId",
-    params: { projectId: project.id },
-  });
-  expect(takeLibraryClone(project.id)).toEqual({ projectId: project.id, hostId: laptop });
+  expect(state.navigate).not.toHaveBeenCalled();
+  expect(takeLibraryClone(project.id)).toBeNull();
+  expect(launch()).toMatchObject({ project, initialHostId: laptop });
 });
 it("skips cloning when the saved project holds no Git remote", async () => {
   state.projects = [second];

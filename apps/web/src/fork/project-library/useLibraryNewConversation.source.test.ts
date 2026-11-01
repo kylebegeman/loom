@@ -165,6 +165,8 @@ describe("sidebar source conversation", () => {
       ],
     });
     await useLibraryNewConversation()(source, { inheritSettings: true });
+    expect(state.lookup.run).not.toHaveBeenCalled();
+    expect(state.copies.run).toHaveBeenCalledExactlyOnceWith({ environmentId, input: {} });
     expect(state.open).toHaveBeenCalledExactlyOnceWith(
       "new-conversation",
       "source-project",
@@ -204,17 +206,50 @@ describe("sidebar source conversation", () => {
     });
   });
 
-  it("uses the existing local flow for a folder with no Library project", async () => {
-    state.binding.run.mockResolvedValue({ _tag: "Success", value: null });
-    expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(false);
-    expect(state.open).not.toHaveBeenCalled();
-  });
+  it.each([true, false])(
+    "starts a confirmed local project without a central lookup while Library connected=%s",
+    async (connected) => {
+      state.connected = connected;
+      state.binding.run.mockResolvedValue({ _tag: "Success", value: null });
+      state.lookup.run.mockImplementation(() => {
+        throw new Error("A plain local project must not wait on the Library");
+      });
+      expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(false);
+      state.params = { environmentId, threadId: source.threadId };
+      vi.stubGlobal("window", { location: { pathname: `/${environmentId}/${source.threadId}` } });
+      expect(await useLibraryNewConversation()()).toBe(false);
+      expect(state.copies.run).toHaveBeenCalledWith({ environmentId, input: {} });
+      expect(state.lookup.run).not.toHaveBeenCalled();
+      expect(state.open).not.toHaveBeenCalled();
+    },
+  );
 
-  it("opens the blank form without carrying settings into an unknown project", async () => {
-    state.binding.run.mockResolvedValue({ _tag: "Failure" });
-    await useLibraryNewConversation()(source, { inheritSettings: true });
-    expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation");
-  });
+  it.each(["binding", "copies", "ambiguous"])(
+    "keeps an unknown %s ownership result in the Library flow",
+    async (failure) => {
+      state.binding.run.mockResolvedValue(
+        failure === "binding" ? { _tag: "Failure" } : { _tag: "Success", value: null },
+      );
+      state.copies.run.mockResolvedValue(
+        failure === "copies"
+          ? { _tag: "Failure" }
+          : {
+              _tag: "Success",
+              value: ["first", "second"].map((projectId) => ({
+                id: `${projectId}-files`,
+                projectId,
+                environmentId,
+                rootLocalProjectId: "local-project",
+                repositories: [],
+                state: "ready",
+              })),
+            },
+      );
+      expect(await useLibraryNewConversation()(source, { inheritSettings: true })).toBe(true);
+      expect(state.lookup.run).not.toHaveBeenCalled();
+      expect(state.open).toHaveBeenCalledExactlyOnceWith("new-conversation");
+    },
+  );
 });
 
 it("recovers an unbound local thread's project from the host while the Library is offline", async () => {

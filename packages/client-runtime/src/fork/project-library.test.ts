@@ -1,8 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentAuthorizationError, EnvironmentId } from "@t3tools/contracts";
 import {
+  LibraryError,
   LIBRARY_WS_METHODS as L,
   PROJECT_WORKFLOW_WS_METHODS as W,
+  type LibraryCreateProjectRequest,
   type LibraryProject,
   type LibraryThreadArchive,
   type LibraryWorkingCopy,
@@ -10,12 +12,18 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Fiber from "effect/Fiber";
+import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { RpcClientError } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
+import { vi } from "vite-plus/test";
 import {
   AVAILABLE_CONNECTION_STATE,
+  ConnectionBlockedError,
   PrimaryConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
@@ -25,6 +33,18 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type * as RpcSession from "../rpc/session.ts";
 import { v2Projection } from "../state/orchestrationV2TestFixtures.ts";
 import { createProjectLibraryAtoms } from "./project-library.ts";
+
+vi.mock("../state/commandPermissions.ts", async () => {
+  const { Atom } = await import("effect/reactivity");
+  const Effect = await import("effect/Effect");
+  return {
+    createCommandPermissions: () => ({
+      authorize: () => Effect.void,
+      permissionAtom: () => Atom.make(true),
+      requiredScopes: () => [],
+    }),
+  };
+});
 
 const environmentId = EnvironmentId.make("central-library");
 const now = "2026-10-15T12:00:00Z";
@@ -204,5 +224,181 @@ describe("Library cross-client freshness", () => {
           }
         }),
       ),
+  );
+});
+
+const makeCreationHarness = Effect.fn("TestProjectLibrary.creationHarness")(function* (
+  create: (
+    input: LibraryCreateProjectRequest,
+  ) => Effect.Effect<
+    LibraryProject,
+    LibraryError | EnvironmentAuthorizationError | RpcClientError.RpcClientError
+  >,
+) {
+  const session = { client: { [L.createProject]: create } } as unknown as RpcSession.RpcSession;
+  const activeSession = yield* SubscriptionRef.make(Option.some(session));
+  const state = yield* SubscriptionRef.make<SupervisorConnectionState>({
+    ...AVAILABLE_CONNECTION_STATE,
+    desired: true,
+    network: "online",
+    phase: "connected",
+  });
+  const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
+    target: new PrimaryConnectionTarget({
+      environmentId,
+      label: "Library",
+      httpBaseUrl: "https://library.example.test",
+      wsBaseUrl: "wss://library.example.test",
+    }),
+    state,
+    session: activeSession,
+    prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none()),
+    connect: Effect.void,
+    disconnect: Effect.void,
+    retryNow: Effect.void,
+  });
+  const service = EnvironmentRegistry.EnvironmentRegistry.of({
+    run: (_id, effect) =>
+      Effect.provideService(effect, EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+  } as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+  const atoms = createProjectLibraryAtoms(
+    Atom.runtime(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, service)),
+  );
+  const registry = AtomRegistry.make();
+  yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+  return { activeSession, state, atoms, registry };
+});
+
+describe("Library project creation recovery", () => {
+  it.effect(
+    "replays the same create request after its response is lost and the session reconnects",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const received = yield* Deferred.make<void>();
+          const requests: unknown[] = [];
+          const input = { requestId: "create-desk", title: "desk", resources: [] };
+          const h = yield* makeCreationHarness((request) => {
+            requests.push(request);
+            return Deferred.succeed(received, undefined).pipe(
+              Effect.andThen(
+                Effect.fail(
+                  new RpcClientError.RpcClientError({
+                    reason: new Socket.SocketCloseError({ code: 1006 }),
+                  }),
+                ),
+              ),
+            );
+          });
+          const command = yield* Effect.promise(() =>
+            h.atoms.createProject.run(h.registry, { environmentId, input }),
+          ).pipe(Effect.forkChild);
+          yield* Deferred.await(received);
+          yield* SubscriptionRef.set(h.activeSession, Option.none());
+          yield* SubscriptionRef.update(h.state, (state) => ({
+            ...state,
+            phase: "backoff" as const,
+          }));
+          expect(requests).toEqual([input]);
+          const replacement = {
+            client: {
+              [L.createProject]: (request: typeof input) => {
+                requests.push(request);
+                return Effect.succeed(project);
+              },
+            },
+          } as unknown as RpcSession.RpcSession;
+          yield* SubscriptionRef.set(h.activeSession, Option.some(replacement));
+          yield* SubscriptionRef.update(h.state, (state) => ({
+            ...state,
+            phase: "connected" as const,
+          }));
+          const result = yield* Fiber.join(command);
+          expect(AsyncResult.isSuccess(result)).toBe(true);
+          if (AsyncResult.isSuccess(result)) expect(result.value).toEqual(project);
+          expect(requests).toEqual([input, input]);
+          expect(requests[0]).toBe(requests[1]);
+        }),
+      ),
+  );
+
+  it.effect("surfaces a blocked reconnect instead of retrying creation", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const received = yield* Deferred.make<void>();
+        let calls = 0;
+        const h = yield* makeCreationHarness(() => {
+          calls++;
+          return Deferred.succeed(received, undefined).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new RpcClientError.RpcClientError({
+                  reason: new Socket.SocketCloseError({ code: 1006 }),
+                }),
+              ),
+            ),
+          );
+        });
+        const command = yield* Effect.promise(() =>
+          h.atoms.createProject.run(h.registry, {
+            environmentId,
+            input: { requestId: "blocked-create", title: "desk" },
+          }),
+        ).pipe(Effect.forkChild);
+        yield* Deferred.await(received);
+        yield* SubscriptionRef.set(h.activeSession, Option.none());
+        yield* SubscriptionRef.update(h.state, (state) => ({
+          ...state,
+          phase: "blocked" as const,
+          lastFailure: new ConnectionBlockedError({
+            reason: "authentication",
+            detail: "Sign in to the Library again.",
+          }),
+        }));
+        const result = yield* Fiber.join(command);
+        expect(AsyncResult.isFailure(result)).toBe(true);
+        if (AsyncResult.isFailure(result))
+          expect(Cause.squash(result.cause)).toMatchObject({
+            _tag: "LibraryError",
+            reason: "blocked",
+            detail: "Sign in to the Library again.",
+          });
+        expect(calls).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect.each([
+    new LibraryError({ reason: "invalid", detail: "Give the project a name." }),
+    new EnvironmentAuthorizationError({
+      requiredScope: "settings:write",
+      requiredPermission: "settings:write",
+      message: "This connection requires settings:write.",
+    }),
+    new RpcClientError.RpcClientError({
+      reason: new RpcClientError.RpcClientDefect({
+        message: "Invalid response schema",
+        cause: new Error("schema mismatch"),
+      }),
+    }),
+  ])("surfaces non-transport failure without retrying: %s", (error) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let calls = 0;
+        const h = yield* makeCreationHarness(() => {
+          calls++;
+          return Effect.fail(error);
+        });
+        const result = yield* Effect.promise(() =>
+          h.atoms.createProject.run(h.registry, {
+            environmentId,
+            input: { requestId: "invalid-create", title: "desk" },
+          }),
+        );
+        expect(AsyncResult.isFailure(result)).toBe(true);
+        if (AsyncResult.isFailure(result)) expect(Cause.squash(result.cause)).toBe(error);
+        expect(calls).toBe(1);
+      }),
+    ),
   );
 });

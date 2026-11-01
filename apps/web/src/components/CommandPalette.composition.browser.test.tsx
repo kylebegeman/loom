@@ -3,10 +3,20 @@ import "../index.css";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { EnvironmentId } from "@t3tools/contracts";
 import { act, render } from "../../test/render";
 import { CommandPalette } from "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
+
+const localStart = vi.hoisted(() => ({
+  library: vi.fn(() => true),
+  create: vi.fn(async () => true),
+}));
+vi.mock("../fork/project-library/actions", async (original) => ({
+  ...(await original<typeof import("../fork/project-library/actions")>()),
+  openLibraryAction: localStart.library,
+}));
 
 vi.mock("@effect/atom-react", async (original) => ({
   ...(await original<typeof import("@effect/atom-react")>()),
@@ -26,7 +36,7 @@ vi.mock("../hooks/useSettings", async (original) => ({
 vi.mock("../hooks/useScratchProject", () => ({
   useScratchProject: () => ({ scratchEnvironmentId: () => null }),
 }));
-vi.mock("../hooks/useNewProject", () => ({ useNewProject: () => async () => undefined }));
+vi.mock("../hooks/useNewProject", () => ({ useNewProject: () => localStart.create }));
 vi.mock("../hooks/useHandleNewThread", () => ({
   useHandleNewThread: () => ({
     activeDraftThread: null,
@@ -54,6 +64,7 @@ vi.mock("../state/environments", async (original) => ({
         connection: { phase: "connected" },
         entry: { enabled: true, target: { _tag: "PrimaryConnectionTarget" } },
         serverConfig: {
+          newProjectsRoot: "/workspace",
           environment: { platform: { os: "linux" }, capabilities: { projectCloneTracking: true } },
           settings: { addProjectBaseDirectory: "/workspace/" },
         },
@@ -145,3 +156,36 @@ describe.each(["repository", "folder", "destination"] as const)("add-project %s"
     }
   });
 });
+
+it.each(["add-action", "new-action", "new-source"] as const)(
+  "starts %s on the execution computer without opening Library setup",
+  async (entry) => {
+    localStart.library.mockClear();
+    localStart.create.mockClear();
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette(
+        entry === "new-source"
+          ? { open: "add-project", environmentId: EnvironmentId.make("local") }
+          : { query: entry === "add-action" ? ">add project" : ">new project" },
+      ),
+    );
+    await page
+      .getByText(entry === "add-action" ? /^Add (?:project|existing folder)$/ : "New project", {
+        exact: true,
+      })
+      .click();
+    expect(localStart.library).not.toHaveBeenCalled();
+    if (entry === "add-action") {
+      await expect.element(page.getByText("Git URL", { exact: true })).toBeVisible();
+      return;
+    }
+    await page.getByPlaceholder("Project name").fill("desk");
+    await userEvent.keyboard("{Enter}");
+    expect(localStart.create).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "local",
+      name: "desk",
+      publishTo: null,
+    });
+  },
+);
