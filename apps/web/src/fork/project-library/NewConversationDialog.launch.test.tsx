@@ -1393,13 +1393,16 @@ describe("conversation palette ergonomics", () => {
     await choose("Computer");
     await choose("Model");
     await choose("Test model");
+    await choose("More options");
     await choose("Conversation title");
     await act(() =>
       renderer!.root.findByType("input").props.onChange({ target: { value: "Inspect project" } }),
     );
     await choose("Back");
+    await choose("More options");
     await choose("Permissions");
     await choose("Full access");
+    await choose("More options");
     await choose("Conversation title");
     expect(renderer!.root.findByType("input").props.value).toBe("Inspect project");
     await choose("Back");
