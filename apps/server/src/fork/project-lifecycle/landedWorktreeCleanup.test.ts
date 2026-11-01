@@ -784,7 +784,15 @@ describe("landed worktree cleanup", () => {
         yield* keptFor(
           Effect.andThen(
             fs.makeDirectory(`${worktree}/scratch`),
-            fs.writeFileString(`${worktree}/scratch/notes.txt`, "notes"),
+            Effect.forEach(
+              Array.from({ length: 64 }, (_, index) => index),
+              (index) =>
+                fs.writeFileString(
+                  `${worktree}/scratch/note-${index}-${"x".repeat(80)}.txt`,
+                  "notes",
+                ),
+              { discard: true },
+            ),
           ),
           "scratch/",
           "scratch",

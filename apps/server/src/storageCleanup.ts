@@ -214,6 +214,7 @@ export const landedIgnoredFileBlocker = Effect.fn("StorageCleanup.landedIgnoredF
             entry,
           ],
           maxOutputBytes: 4 * 1024,
+          appendTruncationMarker: true,
         });
         if (contents.stdout === "" && !contents.stdoutTruncated) continue;
       }
