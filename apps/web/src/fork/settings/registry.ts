@@ -4,6 +4,7 @@ export type ForkSettingsTopicId =
   | "project-profiles"
   | "project-lifecycle"
   | "mini-offload"
+  | "upstream-supervisor"
   | "apple-build-tooling"
   | "device-qa"
   | "preview-links"
@@ -78,6 +79,14 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     description: "Connect and manage computers that run command jobs.",
     home: "/settings/connections",
     keywords: "remote mini offload jobs workers computers connection",
+  },
+  {
+    id: "upstream-supervisor",
+    scope: "computer",
+    title: "Upstream supervisor",
+    description: "Let a selected chief login manage nightly upstream integrations.",
+    home: "/settings/connections",
+    keywords: "upstream nightly merge mergers grok chief github workflow supervisor enable pause",
   },
   {
     id: "apple-build-tooling",

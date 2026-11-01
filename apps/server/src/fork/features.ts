@@ -36,6 +36,7 @@ import { isLibraryAuthorityEnv } from "./project-library/authority.ts";
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   PROJECT_STORAGE_FEATURE,
   UPDATE_PLAN_FEATURE,
+  "upstream-supervisor",
   AGENT_TOOL_FAMILIES_FEATURE,
   ATTENTION_RETRY_FEATURE,
   VAULT_SECRET_FEATURE,

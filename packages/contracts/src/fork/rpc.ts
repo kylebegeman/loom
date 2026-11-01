@@ -1,3 +1,4 @@
+import { UpstreamSupervisorRpcGroup } from "./upstream-supervisor.ts";
 import { ProjectStorageRpcGroup } from "./project-storage.ts";
 import { UpdatePlanRpcGroup } from "./machine-updates.ts";
 import { AttentionStatusRpcGroup } from "./attention-status.ts";
@@ -88,6 +89,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   ProjectStorageRpcGroup,
   UpdatePlanRpcGroup,
+  UpstreamSupervisorRpcGroup,
   AttentionStatusRpcGroup,
   SkillRegistryRpcGroup,
   ProjectWorkflowsRpcGroup,

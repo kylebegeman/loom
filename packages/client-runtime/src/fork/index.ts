@@ -130,3 +130,5 @@ export * from "./compatibility.ts";
 export * from "./update-plans.ts";
 
 export * from "./cloudflare-access.ts";
+
+export { createUpstreamSupervisorAtoms } from "./upstream-supervisor.ts";

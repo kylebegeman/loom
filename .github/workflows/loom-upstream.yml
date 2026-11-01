@@ -16,6 +16,7 @@
 # through Switchboard on Dorothy, reached over the tailnet. See FORK.md,
 # "Updating from upstream".
 name: Loom upstream
+run-name: ${{ inputs.supervisor_request_id && format('Loom upstream {0} [{1}]', inputs.target, inputs.supervisor_request_id) || 'Loom upstream' }}
 
 on:
   schedule:
@@ -33,6 +34,14 @@ on:
         required: false
         default: false
         type: boolean
+      supervisor_request_id:
+        description: "Optional supervisor request receipt"
+        required: false
+        type: string
+      expected_main_sha:
+        description: "Main commit approved by the supervisor"
+        required: false
+        type: string
 
 concurrency:
   group: loom-upstream
@@ -57,6 +66,13 @@ jobs:
           ref: main
           fetch-depth: 0
           filter: blob:none
+
+      - name: Validate supervisor request
+        env:
+          SUPERVISOR_REQUEST_ID: ${{ inputs.supervisor_request_id }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          TARGET: ${{ inputs.target || 'nightly' }}
+        run: scripts/fork/loom.sh supervisor-check "$SUPERVISOR_REQUEST_ID" "$EXPECTED_MAIN_SHA" "$TARGET"
 
       - name: Decide whether upstream has new work
         id: due
@@ -105,6 +121,20 @@ jobs:
       - name: Set the session deadline
         run: echo "LOOM_REPAIR_DEADLINE=$(($(date +%s) + 220 * 60))" >> "$GITHUB_ENV"
 
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.LOOM_BOT_TOKEN }}
+
+      - name: Validate supervisor request
+        env:
+          SUPERVISOR_REQUEST_ID: ${{ inputs.supervisor_request_id }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          TARGET: ${{ inputs.target || 'nightly' }}
+        run: scripts/fork/loom.sh supervisor-check "$SUPERVISOR_REQUEST_ID" "$EXPECTED_MAIN_SHA" "$TARGET"
+
       # Upstream's workflows release, deploy and run on paid runners; none of
       # them belongs to the fork. Merges can add new ones, so every run turns
       # off any workflow that is not a loom-*.yml.
@@ -118,13 +148,6 @@ jobs:
               echo "Disabling $path"
               gh workflow disable "$id" --repo "$GITHUB_REPOSITORY"
             done
-
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.LOOM_BOT_TOKEN }}
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1

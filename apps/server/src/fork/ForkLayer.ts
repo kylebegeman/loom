@@ -1,3 +1,4 @@
+import * as UpstreamSupervisor from "./upstream-supervisor/UpstreamSupervisor.ts";
 import * as SessionToolPolicy from "./mcp/SessionToolPolicy.ts";
 import { SessionToolContextRoutes } from "./mcp/toolContextHttp.ts";
 import * as AttentionRetry from "./attention/AttentionRetry.ts";
@@ -235,6 +236,7 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
       layerVaultAccess,
       layerVaultConnections,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+      FetchHttpClient.layer,
       GitHubCli.layer,
       GitHubTerminal.layer,
       ProjectStore.layer,
@@ -468,6 +470,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultHealthContext,
   VaultHealthChecks.reactor.pipe(Layer.provideMerge(layerVaultHealthChecks)),
   layerVaultGitHub,
+  UpstreamSupervisor.layer.pipe(Layer.provide(layerVaultGitHub)),
   VaultPromptContext.layer.pipe(
     Layer.provide(Layer.merge(layerVaultProfiles, layerVaultReferences)),
   ),

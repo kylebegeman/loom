@@ -5,6 +5,7 @@
 #   scripts/fork/loom.sh status
 #   scripts/fork/loom.sh upstream-status [--check | --alert-since <epoch>]
 #   scripts/fork/loom.sh upstream-due
+#   scripts/fork/loom.sh supervisor-check <request-id> <expected-main-sha> <target-tag>
 #   scripts/fork/loom.sh upstream-overlap <path or topic>...
 #   scripts/fork/loom.sh check
 #   scripts/fork/loom.sh compat
@@ -1235,6 +1236,20 @@ upstream_due() {
   printf 'due=true\nreason=main lacks %s\n' "$newest"
 }
 
+cmd_supervisor_check() {
+  [ "$#" -eq 3 ] || die "supervisor-check takes a request ID, expected main commit and target tag"
+  local request_id=$1 expected_main=$2 target=$3
+  if [ -z "$request_id" ] && [ -z "$expected_main" ]; then
+    return 0
+  fi
+  [[ "$request_id" =~ ^[0-9a-f]{64}$ ]] || die "invalid supervisor request ID"
+  [[ "$expected_main" =~ ^[0-9a-f]{40}$ ]] || die "invalid supervisor main commit"
+  [[ "$target" =~ ^v[0-9][0-9A-Za-z.+-]*$ ]] && [ "${#target}" -le 200 ] \
+    || die "a supervisor request requires an exact upstream tag"
+  [ "$(git rev-parse HEAD)" = "$expected_main" ] \
+    || die "main changed since this supervisor request; read its status before requesting another integration"
+}
+
 cmd_upstream_due() {
   git fetch -q upstream --tags
   git fetch -q origin
@@ -1658,6 +1673,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     status) cmd_status ;;
     upstream-status) shift; cmd_upstream_status "$@" ;;
     upstream-due) cmd_upstream_due ;;
+    supervisor-check) shift; cmd_supervisor_check "$@" ;;
     upstream-overlap) shift; cmd_upstream_overlap "$@" ;;
     review-integration) shift; cmd_review_integration "$@" ;;
     close-superseded) cmd_close_superseded ;;

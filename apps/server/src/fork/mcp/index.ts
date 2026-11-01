@@ -1,3 +1,4 @@
+import { UpstreamToolkit, upstreamHandlers } from "../upstream-supervisor/mcp.ts";
 import { UpdateToolkit, updateHandlers } from "../machine-updates/mcp.ts";
 import { AttentionToolkit, attentionHandlers } from "../attention/mcp.ts";
 import { ProjectProfilesToolkit, projectProfilesHandlers } from "../project-profiles/mcp.ts";
@@ -39,6 +40,11 @@ import { LibraryPushToolkit, libraryPushHandlers } from "../library-push/mcp.ts"
 import { BotsToolkit, botsHandlers } from "../bots/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: UpstreamToolkit,
+    handlers: upstreamHandlers,
+    register: (register: typeof toolkitRegistration) => register(UpstreamToolkit, upstreamHandlers),
+  },
   {
     toolkit: UpdateToolkit,
     handlers: updateHandlers,

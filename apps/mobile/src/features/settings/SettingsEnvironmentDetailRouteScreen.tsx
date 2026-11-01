@@ -15,13 +15,14 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import {
   OS_MANAGED_RUNTIME_NOTE,
   runtimeManagedByOperatingSystem,
+  supportsLoomFeature,
 } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
 import { sessionPermissionsUnavailableMessage } from "@t3tools/shared/authScopeOptions";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
-import { View } from "react-native";
+import { Linking, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -30,7 +31,12 @@ import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
-import { environmentSession, useEnvironmentScope, readEnvironmentScope } from "../../state/session";
+import {
+  environmentSession,
+  useEnvironmentScope,
+  readEnvironmentScope,
+  usePreparedConnection,
+} from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   useRemoteConnections,
@@ -119,6 +125,13 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const version = config?.environment.serverVersion;
   const checkedRelease = release?.fromVersion === version ? release : null;
   const capabilities = config?.environment.capabilities;
+  const preparedConnection = usePreparedConnection(environmentId);
+  const upstreamOwnerUrl =
+    preparedConnection._tag === "Some"
+      ? new URL("/settings/connections", preparedConnection.value.httpBaseUrl)
+      : null;
+  upstreamOwnerUrl?.searchParams.set("machine", environmentId);
+  if (upstreamOwnerUrl) upstreamOwnerUrl.hash = "loom-upstream-supervisor";
   const osManaged = runtimeManagedByOperatingSystem(capabilities); // fork: runtime-owner
 
   async function run(label: string, action: () => Promise<void>) {
@@ -270,6 +283,25 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             <ComputerReachSection environmentId={environmentId} connected={connected} />
             {/* fork: vault-core */}
             <VaultSettingsSection environmentId={environmentId} connected={connected} />
+            {supportsLoomFeature(capabilities, "upstream-supervisor") ? (
+              <SettingsSection title="Upstream supervisor">
+                <Text className="px-4 pt-4 text-sm text-foreground-muted">
+                  Choose the chief login and GitHub repository in your browser. Sign in there if
+                  requested.
+                </Text>
+                <SettingsActionRow
+                  icon="arrow.up.right"
+                  label="Open upstream supervisor"
+                  disabled={!connected || upstreamOwnerUrl === null}
+                  onPress={() => {
+                    if (upstreamOwnerUrl)
+                      void Linking.openURL(upstreamOwnerUrl.href).catch(() =>
+                        setError("Could not open the upstream supervisor in your browser."),
+                      );
+                  }}
+                />
+              </SettingsSection>
+            ) : null}
             {/* fork: fleet-connections - Show authorized devices for the selected host. */}
             <DevicesWithAccessSection environmentId={environmentId} connected={connected} />
             <EnvironmentRoutesSection

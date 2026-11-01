@@ -1,3 +1,4 @@
+import type { UpstreamSupervisor } from "./upstream-supervisor/UpstreamSupervisor.ts";
 import type { ProjectStorageInventory } from "./project-lifecycle/ProjectStorageInventory.ts";
 import type { UpdatePlans } from "./machine-updates/UpdatePlans.ts";
 import type { UpdateHandoff } from "./machine-updates/UpdateHandoff.ts";
@@ -125,6 +126,7 @@ export type ForkServices =
   | LibraryLaunchCandidates
   | LibraryWorkspace
   | ProjectCheckoutManagement
+  | UpstreamSupervisor
   | ComputerNaming
   | GitHubSetupFlow
   | MiniOffloadService

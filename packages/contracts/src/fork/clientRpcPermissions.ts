@@ -1,3 +1,4 @@
+import { UPSTREAM_WS_METHODS as UPSTREAM } from "./upstream-supervisor.ts";
 import { UPDATE_PLAN_WS_METHODS as UPDATES } from "./machine-updates.ts";
 import { ATTENTION_STATUS_WS_METHODS as ATTENTION } from "./attention-status.ts";
 import { SKILL_REGISTRY_WS_METHODS as SK } from "./skill-registry.ts";
@@ -54,6 +55,8 @@ import {
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [UPSTREAM.configure]: AuthAccessWriteScope,
+  [UPSTREAM.dispatch]: AuthAccessWriteScope,
   [UPDATES.arm]: AuthEnvironmentMaintainScope,
   [UPDATES.cancel]: AuthEnvironmentMaintainScope,
   [ATTENTION.retry]: AuthOrchestrationOperateScope,

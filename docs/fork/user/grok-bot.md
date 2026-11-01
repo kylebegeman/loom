@@ -166,6 +166,33 @@ it deletes its local credentials and cancels pending notifications, while keepin
 delivery evidence and Loom jobs. Neither action retracts a notification already
 accepted by Grok or deletes the Grok routine. Pause that routine separately if needed.
 
+## Supervise upstream nightlies
+
+A Grok chief can supervise Loom's existing upstream integration workflow. In Settings >
+Connections > Upstream supervisor, choose the exact project, repository, existing Vault
+GitHub connection and the chief's current login. Save the configuration
+paused, review it, then enable it from your administrator session. The hosted chief
+cannot activate or rebind its own authorization. This does not grant it general GitHub
+or Vault access.
+
+Ask the chief to read `loom_upstream_status` before requesting an integration. An
+approved request names an exact upstream tag and the current `main` commit. The existing
+workflow still resolves conflicts, runs checks and independent review, and applies its
+merge rules. The existing publisher remains responsible for signed releases. Keep the
+current integration schedule; supervising it does not need a second merge or publishing
+schedule.
+
+Keep the dispatch receipt and its `clientRequestId`. An accepted request is not a merged
+or published result. If the response is lost or the receipt says **Unknown**, inspect
+`loom_upstream_status` and the existing workflow run before doing anything else. Do not
+resend with a fresh key: Loom also refuses another request for the same tag and base
+commit. The chief should report an unresolved outcome for an owner to investigate.
+
+Signing in again does not transfer this authority. Rebind the supervisor to the new login
+in Settings; its existing dispatch receipts remain available. A changed
+GitHub connection version also needs a new configuration review. Pause the supervisor
+in Settings to stop new requests. Already dispatched GitHub work continues and must be stopped separately if that is intended.
+
 ## Prove the manual compatibility workflow
 
 Give one Grok Bot the following task, filling in exact IDs and source refs:

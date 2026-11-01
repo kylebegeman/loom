@@ -1281,6 +1281,43 @@ function commitAt(root: string, date: string, message: string) {
 
 const epoch = (date: string) => String(Date.parse(date) / 1000);
 
+it("pins supervisor dispatch to one validated request and the checked main commit", () => {
+  const f = repositoryFixture();
+  const requestId = "a".repeat(64);
+  const main = f.git("rev-parse", "HEAD");
+  const target = "v1.0.0-nightly.20261014.1";
+  const check = (request: string, expected: string, tag: string) =>
+    runSync(
+      f.root,
+      'cmd_supervisor_check "$LOOM_TEST_REQUEST" "$LOOM_TEST_MAIN" "$LOOM_TEST_TARGET"',
+      { LOOM_TEST_REQUEST: request, LOOM_TEST_MAIN: expected, LOOM_TEST_TARGET: tag },
+    );
+
+  expect(check(requestId, main, target).status).toBe(0);
+  expect(check("", "", "nightly").status).toBe(0);
+  expect(check("", "", "").status).toBe(0);
+  for (const [request, expected, tag] of [
+    [requestId, "", target],
+    ["", main, target],
+    [requestId.toUpperCase(), main, target],
+    [requestId, "A".repeat(40), target],
+    [requestId, main, "nightly"],
+    [requestId, main, "v1.0.0/other"],
+    [requestId, main, "v1.0.0 injected"],
+    [requestId, main, `v1${"a".repeat(199)}`],
+  ] as const) {
+    expect(check(request, expected, tag).status).toBe(1);
+  }
+
+  f.git("commit", "--quiet", "--allow-empty", "-m", "main advanced after planning");
+  const next = f.git("rev-parse", "HEAD");
+  const result = check(requestId, main, target);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("main changed since this supervisor request");
+  expect(f.git("rev-parse", "HEAD")).toBe(next);
+  expect(f.git("status", "--porcelain")).toBe("");
+});
+
 it("reports main stale only once a missing nightly has waited past the grace period", () => {
   const f = repositoryFixture();
   f.git("tag", "v0.1.0-nightly.20261013.1");

@@ -12,6 +12,8 @@ import {
 } from "@t3tools/contracts/fork";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Stream from "effect/Stream";
 import { McpInvocationContext, type McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
@@ -87,6 +89,55 @@ const fixture = Effect.gen(function* () {
         ),
       ),
   });
+  let upstreamMain = "a".repeat(40),
+    upstreamStatus = 204;
+  let upstreamRuns: Array<{
+    id: number;
+    run_attempt: number;
+    status: string;
+    conclusion: string | null;
+    head_sha: string;
+    html_url: string;
+    display_title: string;
+    created_at: string;
+  }> = [];
+  const upstreamKnownRuns = new Map<
+    number,
+    (typeof upstreamRuns)[number] & { workflow_id: number }
+  >();
+  let beforeUpstream = (_url: string) => {};
+  const upstreamRequests: Array<{ method: string; url: string; body: unknown }> = [];
+  const upstreamHttp = HttpClient.make((request) => {
+    beforeUpstream(request.url);
+    const body =
+      request.body._tag === "Uint8Array"
+        ? (JSON.parse(new TextDecoder().decode(request.body.body)) as unknown)
+        : null;
+    upstreamRequests.push({ method: request.method, url: request.url, body });
+    const knownRunId = new URL(request.url).pathname.match(/\/actions\/runs\/([0-9]+)$/)?.[1];
+    const response = request.url.endsWith("/dispatches")
+      ? new Response(null, { status: upstreamStatus })
+      : request.url.endsWith("/actions/workflows/loom-upstream.yml")
+        ? Response.json({ id: 12, path: ".github/workflows/loom-upstream.yml" })
+        : knownRunId !== undefined
+          ? upstreamKnownRuns.has(Number(knownRunId))
+            ? Response.json(upstreamKnownRuns.get(Number(knownRunId)))
+            : new Response(null, { status: 404 })
+          : request.url.endsWith("/git/ref/heads/main")
+            ? Response.json({ object: { sha: upstreamMain } })
+            : request.url.includes("/git/ref/tags/")
+              ? Response.json({
+                  ref: "refs/tags/v1.2.3-nightly.20261031.1",
+                  object: { sha: "b".repeat(40) },
+                })
+              : Response.json({
+                  workflow_runs: upstreamRuns.filter((run) => {
+                    const status = new URL(request.url).searchParams.get("status");
+                    return status === null || run.status === status;
+                  }),
+                });
+    return Effect.succeed(HttpClientResponse.fromWeb(request, response));
+  });
   const health = yield* VaultHealth.VaultHealth.pipe(
     Effect.provide(VaultHealth.layer.pipe(Layer.provide(Layer.succeedContext(f.context)))),
   );
@@ -100,6 +151,7 @@ const fixture = Effect.gen(function* () {
             transport,
             cli,
             terminal,
+            Layer.succeed(HttpClient.HttpClient, upstreamHttp),
           ),
         ),
       ),
@@ -118,6 +170,22 @@ const fixture = Effect.gen(function* () {
     ...f,
     service,
     health,
+    upstreamRequests,
+    setUpstreamMain: (sha: string) => {
+      upstreamMain = sha;
+    },
+    setUpstreamRuns: (runs: typeof upstreamRuns) => {
+      upstreamRuns = runs;
+    },
+    setUpstreamKnownRun: (run: (typeof upstreamRuns)[number] & { workflow_id: number }) => {
+      upstreamKnownRuns.set(run.id, run);
+    },
+    setUpstreamStatus: (status: number) => {
+      upstreamStatus = status;
+    },
+    beforeUpstream: (run: typeof beforeUpstream) => {
+      beforeUpstream = run;
+    },
     setExpiry: (value: string | null) => {
       expiresAt = value;
     },
@@ -909,4 +977,246 @@ it.effect("learns personal-token expiry on save and use without rewriting unchan
     yield* f.service.test(target, Effect.void);
     expect((yield* f.health.snapshot).revision).toBe(snapshot.revision);
   }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "binds upstream workflow access to fixed API paths, current credentials and explicit authority",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const target = { id: f.input.id, expectedVersion: 1, repository: "Owner/Repo" };
+      const run = {
+        id: 7,
+        run_attempt: 1,
+        status: "completed",
+        conclusion: "failure",
+        head_sha: "a".repeat(40),
+        html_url: "https://github.com/owner/repo/actions/runs/7",
+        display_title: "Upstream nightly",
+        created_at: "2026-10-31T00:00:00Z",
+      };
+      f.setUpstreamRuns([run]);
+      const observed = yield* f.service.upstreamWorkflow(target, { action: "status" }, Effect.void);
+      expect(observed.snapshot.runs[0]).toMatchObject({ id: 7, attempt: 1, url: run.html_url });
+      expect(observed.httpStatus).toBeNull();
+      const request = {
+        action: "dispatch" as const,
+        targetTag: "v1.2.3-nightly.20261031.1",
+        expectedMainSha: "a".repeat(40),
+        requestId: "c".repeat(64),
+      };
+      const leases = f.releases();
+      expect((yield* f.service.upstreamWorkflow(target, request, Effect.void)).httpStatus).toBe(
+        204,
+      );
+      expect(f.releases()).toBe(leases + 1);
+      expect(f.upstreamRequests.at(-1)).toEqual({
+        method: "POST",
+        url: "https://api.github.com/repos/owner/repo/actions/workflows/loom-upstream.yml/dispatches",
+        body: {
+          ref: "main",
+          inputs: {
+            target: request.targetTag,
+            supervisor_request_id: request.requestId,
+            expected_main_sha: request.expectedMainSha,
+          },
+        },
+      });
+      expect(
+        f.upstreamRequests.some(
+          (r) =>
+            r.url ===
+            "https://api.github.com/repos/pingdotgg/t3code/git/ref/tags/v1.2.3-nightly.20261031.1",
+        ),
+      ).toBe(true);
+      f.setUpstreamStatus(422);
+      expect((yield* f.service.upstreamWorkflow(target, request, Effect.void)).httpStatus).toBe(
+        422,
+      );
+      f.setUpstreamStatus(503);
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("unavailable");
+      expect(JSON.stringify(observed)).not.toContain("synthetic-operation-token");
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+it.effect(
+  "refuses upstream dispatch on stale, active, invalid or revoked scope before posting",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const target = { id: f.input.id, expectedVersion: 1, repository: "owner/repo" };
+      const request = {
+        action: "dispatch" as const,
+        targetTag: "v1.2.3-nightly.20261031.1",
+        expectedMainSha: "a".repeat(40),
+        requestId: "c".repeat(64),
+      };
+      const denied = Effect.fail(new VaultError({ reason: "denied" }));
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, denied).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(f.upstreamRequests).toEqual([]);
+      for (const [changed, reason] of [
+        [{ ...target, expectedVersion: 2 }, "conflict"],
+        [{ ...target, repository: "other/repo" }, "repository-denied"],
+      ] as const)
+        expect(
+          (yield* f.service.upstreamWorkflow(changed, request, Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe(reason);
+      expect(
+        (yield* f.service
+          .upstreamWorkflow(target, { ...request, targetTag: "../main" }, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-input");
+      f.setUpstreamMain("d".repeat(40));
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      f.setUpstreamMain(request.expectedMainSha);
+      f.setUpstreamRuns([
+        {
+          id: 7,
+          run_attempt: 1,
+          status: "in_progress",
+          conclusion: null,
+          head_sha: request.expectedMainSha,
+          html_url: "https://github.com/owner/repo/actions/runs/7",
+          display_title: "Active integration",
+          created_at: "2026-10-31T00:00:00Z",
+        },
+      ]);
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      f.setUpstreamRuns([]);
+      f.beforeUpstream((url) => {
+        if (url.includes("status=waiting"))
+          f.setUpstreamRuns([
+            {
+              id: 1,
+              run_attempt: 1,
+              status: "waiting",
+              conclusion: null,
+              head_sha: request.expectedMainSha,
+              html_url: "https://github.com/owner/repo/actions/runs/1",
+              display_title: "Older integration waiting for approval",
+              created_at: "2026-10-01T00:00:00Z",
+            },
+          ]);
+      });
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      f.beforeUpstream(() => {});
+      f.setUpstreamRuns([
+        {
+          id: 7,
+          run_attempt: 1,
+          status: "completed",
+          conclusion: "success",
+          head_sha: request.expectedMainSha,
+          html_url: "https://example.test/untrusted-link",
+          display_title: "Wrong repository link",
+          created_at: "2026-10-31T00:00:00Z",
+        },
+      ]);
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, Effect.void).pipe(Effect.flip)).reason,
+      ).toBe("invalid-response");
+      f.setUpstreamRuns([]);
+      let allowed = true;
+      f.beforeUpstream((url) => {
+        if (url.includes("/git/ref/tags/")) allowed = false;
+      });
+      const guard = Effect.suspend(() => (allowed ? Effect.void : denied));
+      expect(
+        (yield* f.service.upstreamWorkflow(target, request, guard).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(f.upstreamRequests.filter((r) => r.method === "POST")).toEqual([]);
+      f.beforeUpstream(() => {});
+      yield* f.service.change(
+        { id: target.id, operationId: yield* f.id, expectedVersion: 1, action: "archive" },
+        "admin",
+        Effect.void,
+      );
+      expect(
+        (yield* f.service
+          .upstreamWorkflow({ ...target, expectedVersion: 2 }, request, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("archived");
+    }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "refreshes known upstream runs outside the recent window and refuses another workflow",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const target = { id: f.input.id, expectedVersion: 1, repository: "owner/repo" };
+      const saved = {
+        id: 42,
+        run_attempt: 1,
+        status: "completed",
+        conclusion: "success",
+        head_sha: "a".repeat(40),
+        html_url: "https://github.com/owner/repo/actions/runs/42",
+        display_title: "Previously active integration",
+        created_at: "2026-10-01T00:00:00Z",
+        workflow_id: 12,
+      };
+      f.setUpstreamRuns(
+        Array.from({ length: 30 }, (_, index) => ({
+          ...saved,
+          id: 100 + index,
+          html_url: `https://github.com/owner/repo/actions/runs/${100 + index}`,
+          created_at: "2026-10-31T00:00:00Z",
+        })),
+      );
+      f.setUpstreamKnownRun(saved);
+      const refreshed = yield* f.service.upstreamWorkflow(
+        target,
+        { action: "status", runIds: [42] },
+        Effect.void,
+      );
+      expect(refreshed.snapshot.runs).toHaveLength(30);
+      expect(refreshed.snapshot.runs[0]).toMatchObject({
+        id: 42,
+        status: "completed",
+        conclusion: "success",
+      });
+      expect(
+        f.upstreamRequests.some(
+          (request) => request.url === "https://api.github.com/repos/owner/repo/actions/runs/42",
+        ),
+      ).toBe(true);
+      expect(
+        (yield* f.service
+          .upstreamWorkflow(target, { action: "status", runIds: [43] }, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("repository-denied");
+      f.setUpstreamKnownRun({ ...saved, workflow_id: 99 });
+      expect(
+        (yield* f.service
+          .upstreamWorkflow(target, { action: "status", runIds: [42] }, Effect.void)
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-response");
+      const requests = f.upstreamRequests.length;
+      for (const runIds of [
+        [0],
+        [1.5],
+        [Number.MAX_SAFE_INTEGER + 1],
+        Array.from({ length: 31 }, (_, index) => index + 1),
+      ])
+        expect(
+          (yield* f.service
+            .upstreamWorkflow(target, { action: "status", runIds }, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-input");
+      expect(f.upstreamRequests).toHaveLength(requests);
+    }).pipe(Effect.scoped, Effect.provide(deps)),
 );

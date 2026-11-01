@@ -1,3 +1,5 @@
+import { UpstreamSupervisorRpcGroup, UPSTREAM_WS_METHODS } from "@t3tools/contracts/fork";
+import { makeUpstreamRpcHandlers } from "./upstream-supervisor/rpc.ts";
 import { ProjectStorageRpcGroup, PROJECT_STORAGE_WS_METHODS } from "@t3tools/contracts/fork";
 import { makeProjectStorageRpcHandlers } from "./project-lifecycle/storageRpc.ts";
 import { UpdatePlanRpcGroup, UPDATE_PLAN_WS_METHODS } from "@t3tools/contracts/fork";
@@ -121,6 +123,7 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(UPSTREAM_WS_METHODS),
   ...Object.values(PROJECT_STORAGE_WS_METHODS),
   ...Object.values(UPDATE_PLAN_WS_METHODS),
   ...Object.values(ATTENTION_STATUS_WS_METHODS),
@@ -160,6 +163,7 @@ const otherForkRpcGroup = ForkRpcGroup.omit(
 export const makeForkRpcLayer = (
   session: AuthenticatedSession,
 ): Layer.Layer<
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof UpstreamSupervisorRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectStorageRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof UpdatePlanRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof AttentionStatusRpcGroup>>
@@ -197,6 +201,9 @@ export const makeForkRpcLayer = (
   StorageCleanup.StorageCleanup
 > =>
   Layer.mergeAll(
+    UpstreamSupervisorRpcGroup.toLayer(
+      withForkRuntime(makeUpstreamRpcHandlers(makeForkRpcAuth(session), session)),
+    ),
     ProjectStorageRpcGroup.toLayer(
       withForkRuntime(makeProjectStorageRpcHandlers(makeForkRpcAuth(session))),
     ),

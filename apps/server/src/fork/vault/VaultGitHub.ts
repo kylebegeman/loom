@@ -24,6 +24,13 @@ import {
   type VaultGitHubResult,
   type VaultGitHubTestResult,
   type VaultItemChange,
+  UPSTREAM_WORKFLOW,
+  UPSTREAM_REF,
+  UpstreamCommitSha,
+  UpstreamTargetTag,
+  UpstreamRequestId,
+  type UpstreamWorkflowSnapshot,
+  type UpstreamWorkflowRun,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -34,6 +41,11 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
+import * as ByteSize from "effect/ByteSize";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import { githubTerminalArgs } from "./GitHubCommand.ts";
@@ -49,6 +61,21 @@ type ConnectionFailure = Failure | VaultConnectionError;
 export class VaultGitHub extends Context.Service<
   VaultGitHub,
   {
+    readonly upstreamWorkflow: (
+      input: VaultGitHubTarget,
+      request:
+        | { readonly action: "status"; readonly runIds?: ReadonlyArray<number> }
+        | {
+            readonly action: "dispatch";
+            readonly targetTag: string;
+            readonly expectedMainSha: string;
+            readonly requestId: string;
+          },
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<
+      { readonly snapshot: UpstreamWorkflowSnapshot; readonly httpStatus: number | null },
+      Failure
+    >;
     readonly admission: (
       input: VaultGitHubRun,
       threadId: ThreadId,
@@ -108,6 +135,40 @@ const isTarget = Schema.is(VaultGitHubTarget),
   isSave = Schema.is(Schema.toType(VaultGitHubSave)),
   isRun = Schema.is(VaultGitHubRun);
 const fail = (reason: VaultError["reason"]) => new VaultError({ reason });
+const UpstreamGitHubRef = Schema.Struct({ object: Schema.Struct({ sha: UpstreamCommitSha }) });
+const UpstreamGitHubTag = Schema.Struct({
+  ref: Schema.String,
+  object: Schema.Struct({ sha: UpstreamCommitSha }),
+});
+const UpstreamGitHubRun = Schema.Struct({
+  id: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  run_attempt: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  status: Schema.String.check(Schema.isMaxLength(80)),
+  conclusion: Schema.NullOr(Schema.String.check(Schema.isMaxLength(80))),
+  head_sha: UpstreamCommitSha,
+  html_url: Schema.String.check(Schema.isMaxLength(2048)),
+  display_title: Schema.String.check(Schema.isMaxLength(300)),
+  created_at: Schema.String.check(Schema.isMaxLength(80)),
+});
+const UpstreamGitHubRuns = Schema.Struct({
+  workflow_runs: Schema.Array(UpstreamGitHubRun).check(Schema.isMaxLength(30)),
+});
+const UpstreamGitHubKnownRun = Schema.Struct({
+  ...UpstreamGitHubRun.fields,
+  workflow_id: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+});
+const UpstreamGitHubWorkflow = Schema.Struct({
+  id: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  path: Schema.String.check(Schema.isMaxLength(300)),
+});
+const decodeUpstreamRef = Schema.decodeUnknownEffect(UpstreamGitHubRef);
+const decodeUpstreamTag = Schema.decodeUnknownEffect(UpstreamGitHubTag);
+const decodeUpstreamRuns = Schema.decodeUnknownEffect(UpstreamGitHubRuns);
+const decodeUpstreamKnownRun = Schema.decodeUnknownEffect(UpstreamGitHubKnownRun);
+const decodeUpstreamWorkflow = Schema.decodeUnknownEffect(UpstreamGitHubWorkflow);
+const isUpstreamTag = Schema.is(UpstreamTargetTag);
+const isUpstreamSha = Schema.is(UpstreamCommitSha);
+const isUpstreamRequestId = Schema.is(UpstreamRequestId);
 const make = Effect.gen(function* () {
   const core = yield* VaultCore.VaultCore,
     access = yield* VaultAccess.VaultAccess,
@@ -119,6 +180,7 @@ const make = Effect.gen(function* () {
   const connections = yield* VaultConnections.VaultConnections;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
+  const http = yield* Effect.serviceOption(HttpClient.HttpClient);
   const observeExpiry = Effect.fn("VaultGitHub.observeExpiry")(function* (
     info: VaultGitHubInfo,
     current: GitHubTransport.GitHubSession,
@@ -231,7 +293,197 @@ const make = Effect.gen(function* () {
     });
     return authorize;
   });
+  // This broker uses the controller's explicit standing authority; generic Vault execution still requires an active full-access run.
+  const upstreamWorkflow: VaultGitHub["Service"]["upstreamWorkflow"] = Effect.fn(
+    "VaultGitHub.upstreamWorkflow",
+  )(
+    function* (input, operation, authorize) {
+      yield* authorize;
+      if (!isTarget(input) || (operation.action !== "status" && operation.action !== "dispatch"))
+        return yield* fail("invalid-input");
+      if (
+        operation.action === "dispatch" &&
+        (!isUpstreamTag(operation.targetTag) ||
+          !isUpstreamSha(operation.expectedMainSha) ||
+          !isUpstreamRequestId(operation.requestId))
+      )
+        return yield* fail("invalid-input");
+      if (
+        operation.action === "status" &&
+        operation.runIds !== undefined &&
+        (!Array.isArray(operation.runIds) ||
+          operation.runIds.length > 30 ||
+          operation.runIds.some((id) => !Number.isSafeInteger(id) || id < 1))
+      )
+        return yield* fail("invalid-input");
+      if (Option.isNone(http)) return yield* new VaultGitHubError({ reason: "unavailable" });
+      const client = http.value;
+      const repository = input.repository.toLowerCase();
+      const record = yield* check(input);
+      yield* authorize;
+      const current = yield* session(record, repository);
+      const request = Effect.fn("VaultGitHub.upstreamRequest")(function* (
+        path: string,
+        body?: {
+          ref: string;
+          inputs: { target: string; supervisor_request_id: string; expected_main_sha: string };
+        },
+      ) {
+        yield* authorize;
+        yield* check(input);
+        let req = (body ? HttpClientRequest.post : HttpClientRequest.get)(
+          `https://api.github.com${path}`,
+        ).pipe(
+          HttpClientRequest.bearerToken(current.token),
+          HttpClientRequest.setHeaders({
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "Loom-Upstream-Supervisor",
+          }),
+        );
+        if (body)
+          req = yield* HttpClientRequest.bodyJson(req, body).pipe(
+            Effect.mapError(() => new VaultGitHubError({ reason: "invalid-response" })),
+          );
+        yield* authorize;
+        const response = yield* client.execute(req).pipe(
+          Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+          Effect.timeout("15 seconds"),
+          Effect.mapError(() => new VaultGitHubError({ reason: "unavailable" })),
+        );
+        if (body) {
+          if (response.status === 204 || (response.status >= 400 && response.status < 500))
+            return { status: response.status, body: null };
+          return yield* new VaultGitHubError({ reason: "unavailable" });
+        }
+        if (response.status === 401) return yield* new VaultGitHubError({ reason: "unauthorized" });
+        if (response.status === 403 || response.status === 404)
+          return yield* new VaultGitHubError({ reason: "repository-denied" });
+        if (response.status !== 200) return yield* new VaultGitHubError({ reason: "unavailable" });
+        const responseBody = yield* response.json.pipe(
+          Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(1)),
+          Effect.timeout("15 seconds"),
+          Effect.mapError(() => new VaultGitHubError({ reason: "invalid-response" })),
+        );
+        return { status: response.status, body: responseBody };
+      });
+      const ref = yield* request(`/repos/${repository}/git/ref/heads/${UPSTREAM_REF}`).pipe(
+        Effect.flatMap((response) => decodeUpstreamRef(response.body)),
+        Effect.mapError((error) =>
+          error._tag === "SchemaError"
+            ? new VaultGitHubError({ reason: "invalid-response" })
+            : error,
+        ),
+      );
+      const runs = yield* request(
+        `/repos/${repository}/actions/workflows/${UPSTREAM_WORKFLOW}/runs?per_page=30`,
+      ).pipe(
+        Effect.flatMap((response) => decodeUpstreamRuns(response.body)),
+        Effect.mapError((error) =>
+          error._tag === "SchemaError"
+            ? new VaultGitHubError({ reason: "invalid-response" })
+            : error,
+        ),
+      );
+      const normalize = Effect.fn("VaultGitHub.normalizeUpstreamRun")(function* (
+        run: typeof UpstreamGitHubRun.Type,
+      ) {
+        if (run.html_url !== `https://github.com/${repository}/actions/runs/${run.id}`)
+          return yield* new VaultGitHubError({ reason: "invalid-response" });
+        return {
+          id: run.id,
+          attempt: run.run_attempt,
+          status: run.status,
+          conclusion: run.conclusion,
+          headSha: run.head_sha,
+          url: run.html_url,
+          title: run.display_title,
+          createdAt: run.created_at,
+        } satisfies UpstreamWorkflowRun;
+      });
+      const normalized = yield* Effect.forEach(runs.workflow_runs, normalize);
+      const known: Array<UpstreamWorkflowRun> = [];
+      if (operation.action === "status" && operation.runIds?.length) {
+        const workflow = yield* request(
+          `/repos/${repository}/actions/workflows/${UPSTREAM_WORKFLOW}`,
+        ).pipe(
+          Effect.flatMap((response) => decodeUpstreamWorkflow(response.body)),
+          Effect.mapError((error) =>
+            error._tag === "SchemaError"
+              ? new VaultGitHubError({ reason: "invalid-response" })
+              : error,
+          ),
+        );
+        if (workflow.path !== `.github/workflows/${UPSTREAM_WORKFLOW}`)
+          return yield* new VaultGitHubError({ reason: "invalid-response" });
+        for (const id of new Set(operation.runIds)) {
+          const run = yield* request(`/repos/${repository}/actions/runs/${id}`).pipe(
+            Effect.flatMap((response) => decodeUpstreamKnownRun(response.body)),
+            Effect.mapError((error) =>
+              error._tag === "SchemaError"
+                ? new VaultGitHubError({ reason: "invalid-response" })
+                : error,
+            ),
+          );
+          if (run.id !== id || run.workflow_id !== workflow.id)
+            return yield* new VaultGitHubError({ reason: "invalid-response" });
+          known.push(yield* normalize(run));
+        }
+      }
+      const knownIds = new Set(known.map((run) => run.id));
+      const snapshot: UpstreamWorkflowSnapshot = {
+        mainSha: ref.object.sha,
+        runs: [...known, ...normalized.filter((run) => !knownIds.has(run.id))].slice(0, 30),
+      };
+      if (operation.action === "status") return { snapshot, httpStatus: null };
+      if (
+        snapshot.mainSha !== operation.expectedMainSha ||
+        snapshot.runs.some((run) => run.status !== "completed")
+      )
+        return yield* fail("conflict");
+      for (const status of ["in_progress", "queued", "requested", "waiting", "pending"]) {
+        const active = yield* request(
+          `/repos/${repository}/actions/workflows/${UPSTREAM_WORKFLOW}/runs?status=${status}&per_page=1`,
+        ).pipe(
+          Effect.flatMap((response) => decodeUpstreamRuns(response.body)),
+          Effect.mapError((error) =>
+            error._tag === "SchemaError"
+              ? new VaultGitHubError({ reason: "invalid-response" })
+              : error,
+          ),
+        );
+        if (active.workflow_runs.length > 0) return yield* fail("conflict");
+      }
+      const target = yield* request(
+        `/repos/pingdotgg/t3code/git/ref/tags/${encodeURIComponent(operation.targetTag)}`,
+      ).pipe(
+        Effect.flatMap((response) => decodeUpstreamTag(response.body)),
+        Effect.mapError((error) =>
+          error._tag === "SchemaError"
+            ? new VaultGitHubError({ reason: "invalid-response" })
+            : error,
+        ),
+      );
+      if (target.ref !== `refs/tags/${operation.targetTag}`) return yield* fail("invalid-input");
+      const response = yield* request(
+        `/repos/${repository}/actions/workflows/${UPSTREAM_WORKFLOW}/dispatches`,
+        {
+          ref: UPSTREAM_REF,
+          inputs: {
+            target: operation.targetTag,
+            supervisor_request_id: operation.requestId,
+            expected_main_sha: operation.expectedMainSha,
+          },
+        },
+      );
+      return { snapshot, httpStatus: response.status };
+    },
+    Effect.scoped,
+    permits.withPermits(1),
+  );
   return VaultGitHub.of({
+    upstreamWorkflow,
     admission: Effect.fn("VaultGitHub.admission")(
       function* (input, threadId) {
         if (!isRun(input)) return yield* fail("invalid-input");

@@ -71,6 +71,7 @@ import { VaultProfileToolkit } from "../../apps/server/src/fork/vault/profile-mc
 import { VaultAccessToolkit } from "../../apps/server/src/fork/vault/access-mcp.ts"; // fork: vault-approvals
 import { ProjectLibraryToolkit } from "../../apps/server/src/fork/project-library/tools.ts"; // fork: library-projects
 import { BotsToolkit } from "../../apps/server/src/fork/bots/mcp.ts"; // fork: bots-triggers
+import { UpstreamToolkit } from "../../apps/server/src/fork/upstream-supervisor/mcp.ts"; // fork: upstream-supervisor
 import {
   CLAUDE_PROVIDER,
   makeClaudeQueryOptions,
@@ -387,6 +388,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   ProjectLifecycleToolkit, // fork: project-lifecycle
   DirectoryToolkit, // fork: directory-computers
   BotsToolkit, // fork: bots-triggers
+  UpstreamToolkit, // fork: upstream-supervisor
   VaultCoreToolkit, // fork: vault-core
   VaultProfileToolkit, // fork: vault-references
   VaultAccessToolkit, // fork: vault-approvals

@@ -32,6 +32,7 @@ import { useEnvironments, type EnvironmentPresentation } from "~/state/environme
 import { AppleBuildToolingSettingsSection } from "../apple-build-tooling/settings";
 import { CodeGraphSettingsSection } from "../code-graph/settings";
 import { DeviceQaSettingsSection } from "../device-qa/settings";
+import { UpstreamSupervisorSettingsSection } from "../upstream-supervisor/SettingsSection";
 import { MiniOffloadSettingsSection } from "../mini-offload/settings";
 import { ModelPreviewSettingsSection } from "../model-preview-3d/SettingsSection";
 import { PanelPickerSettingsSection } from "../panel-picker/settings";
@@ -61,6 +62,7 @@ const TOPIC_COMPONENTS: Readonly<Record<ForkSettingsTopicId, ComponentType>> = {
   "project-profiles": ProfileSettingsSection,
   "project-lifecycle": ProjectLifecycleSettingsSection,
   "mini-offload": MiniOffloadSettingsSection,
+  "upstream-supervisor": UpstreamSupervisorSettingsSection,
   "apple-build-tooling": AppleBuildToolingSettingsSection,
   "device-qa": DeviceQaSettingsSection,
   "preview-links": PreviewLinksSettingsSection,
