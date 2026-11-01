@@ -389,7 +389,7 @@ export function ImportProjectDialog({
                     ? null
                     : repository.remoteUrl,
                 relativePath: repository.relativePath,
-                defaultBranch: repository.branch,
+                defaultBranch: null,
               })),
             },
         project: existing ?? null,

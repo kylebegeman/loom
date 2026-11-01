@@ -20,6 +20,7 @@ import {
   LibraryThreadIndex,
   LibraryCreateProjectRequest,
   LibraryUpdateProjectRequest,
+  isLibraryBranchName,
   LibraryArchiveProjectRequest,
   LibraryRegisterCopyRequest,
   LibraryRecordActivityRequest,
@@ -865,6 +866,17 @@ const make = Effect.gen(function* () {
         const timestamp = yield* now;
         const resources = input.resources ?? [];
         if (!validLibraryResources(resources)) return yield* invalid();
+        if (
+          resources.some(
+            (resource) =>
+              resource.kind !== "link" &&
+              resource.defaultBranch !== null &&
+              !isLibraryBranchName(resource.defaultBranch),
+          )
+        )
+          return yield* invalid(
+            "Use a valid Git branch override, or follow the repository default.",
+          );
         if (input.profile) {
           const unknownTools = libraryProfileAddedUnknownTools(input.profile, undefined);
           if (unknownTools.length)
@@ -916,6 +928,16 @@ const make = Effect.gen(function* () {
         };
       });
     if (!validLibraryResources(resources)) return yield* invalid();
+    if (
+      resources.some((resource) => {
+        if (resource.kind === "link" || resource.defaultBranch === null) return false;
+        const saved = current.resources.find((entry) => entry.id === resource.id);
+        if (saved?.defaultBranch === resource.defaultBranch && saved.kind === resource.kind)
+          return false;
+        return !isLibraryBranchName(resource.defaultBranch);
+      })
+    )
+      return yield* invalid("Use a valid Git branch override, or follow the repository default.");
     // Omitted keeps the saved color and profile so older clients never clear them; null
     // returns the color to automatic and removes the profile.
     const { color: savedColor, profile: savedProfile, ...rest } = current;

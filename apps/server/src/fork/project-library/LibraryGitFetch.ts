@@ -3,7 +3,7 @@ import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupA
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
-import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { normalizeGitRemoteUrl, parseRemoteDefaultBranch } from "@t3tools/shared/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -360,6 +360,30 @@ const make = Effect.gen(function* () {
       onLine,
     });
     if (refreshed !== null && !succeeded(refreshed)) return refreshed;
+    if (input.branch === null) {
+      const advertised = yield* runGit([
+        gitDirectory(mirror),
+        "ls-remote",
+        "--symref",
+        "origin",
+        "HEAD",
+      ]);
+      if (!succeeded(advertised)) return advertised;
+      const branch = parseRemoteDefaultBranch(advertised.stdout);
+      if (branch === null)
+        return {
+          ...advertised,
+          code: ChildProcessSpawner.ExitCode(1),
+          stderr: "The remote does not advertise a default branch.",
+        };
+      const selected = yield* runGit([
+        gitDirectory(mirror),
+        "symbolic-ref",
+        "HEAD",
+        `refs/heads/${branch}`,
+      ]);
+      if (!succeeded(selected)) return selected;
+    }
     const ref = input.branch === null ? "HEAD" : `refs/heads/${input.branch}`;
     const found = yield* runGit([
       gitDirectory(mirror),

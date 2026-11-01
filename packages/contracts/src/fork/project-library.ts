@@ -57,6 +57,21 @@ export const isDefaultThreadTitle = (title: string) => DEFAULT_THREAD_TITLES.has
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
+export function isLibraryBranchName(branch: string): boolean {
+  return (
+    branch.length > 0 &&
+    branch.length <= 200 &&
+    branch !== "HEAD" &&
+    !branch.startsWith("-") &&
+    !branch.endsWith(".") &&
+    !/[\s~^:?*[\\\p{Cc}\p{Cf}]/u.test(branch) &&
+    !branch.includes("..") &&
+    !branch.includes("@{") &&
+    branch
+      .split("/")
+      .every((part) => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"))
+  );
+}
 export const LibraryResource = Schema.Struct({
   id: LibraryId,
   title: LibraryTitle,
@@ -64,6 +79,7 @@ export const LibraryResource = Schema.Struct({
   url: Schema.optional(Schema.NullOr(Schema.String.check(Schema.isMaxLength(2048)))),
   remoteUrl: Schema.NullOr(Schema.String.check(Schema.isMaxLength(2048))),
   relativePath: Schema.String.check(Schema.isMaxLength(512)),
+  /** Null follows the remote default; a branch name overrides it for new work. */
   defaultBranch: Schema.NullOr(Schema.String.check(Schema.isMaxLength(200))),
 });
 export type LibraryResource = typeof LibraryResource.Type;

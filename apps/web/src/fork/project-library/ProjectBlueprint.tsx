@@ -8,11 +8,13 @@ import {
   FileUpIcon,
   FolderGit2Icon,
   KeyRoundIcon,
+  SearchIcon,
   TerminalIcon,
   UploadIcon,
   WrenchIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -21,7 +23,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { projectLibrary, useLibraryPermission } from "./state";
 import { LIBRARY_SURFACE, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 
-const codec = Schema.fromJsonString(LibraryBlueprint);
+const codec = Schema.fromJsonString(LibraryBlueprint, { space: 2 });
 const decodeBlueprint = Schema.decodeOption(codec);
 /** The Library refuses larger blueprints, so the file chooser says so before reading one. */
 const BLUEPRINT_LIMIT = 131072;
@@ -41,12 +43,32 @@ export function ProjectBlueprint({
   const apply = useAtomCommand(projectLibrary.applyBlueprint, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.applyBlueprint, authorityId);
   const fileInput = useRef<HTMLInputElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const findInput = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
   const pendingImport = useRef<{ fingerprint: string; requestId: string } | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const parsed = text === null ? null : decodeBlueprint(text);
   const preview = parsed?._tag === "Some" ? parsed.value : null;
+  const searchable = (text ?? "").toLocaleLowerCase();
+  const needle = search.toLocaleLowerCase();
+  const matchCount = needle ? searchable.split(needle).length - 1 : 0;
+  const findNext = (backwards = false) => {
+    const field = editor.current;
+    if (!field || !needle || !matchCount) return;
+    const index = backwards
+      ? field.selectionStart === 0
+        ? -1
+        : searchable.lastIndexOf(needle, field.selectionStart - 1)
+      : searchable.indexOf(needle, field.selectionEnd);
+    const match =
+      index >= 0 ? index : backwards ? searchable.lastIndexOf(needle) : searchable.indexOf(needle);
+    field.focus();
+    field.setSelectionRange(match, match + search.length);
+    findInput.current?.focus();
+  };
   const download = () => {
     if (!query.data) return;
     const blob = new Blob([Schema.encodeSync(codec)(query.data)], { type: "application/json" });
@@ -139,7 +161,17 @@ export function ProjectBlueprint({
           </p>
         ) : null
       ) : (
-        <div className={cn("flex min-w-0 flex-col gap-4 p-4 sm:p-5", LIBRARY_SURFACE)}>
+        <div
+          className={cn("flex min-w-0 flex-col gap-4 p-4 sm:p-5", LIBRARY_SURFACE)}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+              event.preventDefault();
+              event.stopPropagation();
+              findInput.current?.focus();
+              findInput.current?.select();
+            }
+          }}
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium">Review before applying</p>
             <input
@@ -165,7 +197,43 @@ export function ProjectBlueprint({
               Choose file
             </Button>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-40 flex-1">
+              <Input
+                ref={findInput}
+                aria-label="Find in blueprint"
+                placeholder="Find in blueprint"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    findNext(event.shiftKey);
+                  }
+                  if (event.key === "Escape") editor.current?.focus();
+                }}
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!matchCount}
+              onClick={() => findNext()}
+            >
+              <SearchIcon />
+              Find next
+            </Button>
+            {search ? (
+              <span role="status" className="text-xs text-muted-foreground">
+                {matchCount
+                  ? `${matchCount} ${matchCount === 1 ? "match" : "matches"}`
+                  : "No matches"}
+              </span>
+            ) : null}
+          </div>
           <Textarea
+            ref={editor}
             aria-label="Blueprint JSON"
             size="sm"
             value={text}

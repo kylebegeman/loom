@@ -50,6 +50,12 @@ const makeRemote = Effect.fnUntraced(function* () {
   return {
     root,
     remoteUrl: `file://${bare}`,
+    setDefault: Effect.fnUntraced(function* (branch: string) {
+      yield* git(work, ["branch", branch]);
+      yield* git(work, ["push", "origin", branch]);
+      yield* git(root, [`--git-dir=${bare}`, "symbolic-ref", "HEAD", `refs/heads/${branch}`]);
+    }),
+    removeBranch: (branch: string) => git(work, ["push", "origin", "--delete", branch]),
     push: Effect.fnUntraced(function* (name: string) {
       const head = yield* commit(name);
       yield* git(work, ["push", "origin", "main"]);
@@ -102,19 +108,39 @@ describe("LibraryGitFetch", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
-  it.live("brings later upstream commits into the next copy", () =>
-    Effect.gen(function* () {
-      const path = yield* Path.Path;
-      const remote = yield* makeRemote();
-      yield* cloneInto(remote.remoteUrl, path.join(remote.root, "first"));
-      const head = yield* remote.push("second.txt");
+  it.live(
+    "refreshes commits and follows the remote default while keeping explicit branch pins",
+    () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const remote = yield* makeRemote();
+        yield* cloneInto(remote.remoteUrl, path.join(remote.root, "first"));
+        const head = yield* remote.push("second.txt");
 
-      const second = path.join(remote.root, "second");
-      yield* cloneInto(remote.remoteUrl, second, { branch: null });
+        const second = path.join(remote.root, "second");
+        yield* cloneInto(remote.remoteUrl, second, { branch: null });
 
-      expect(yield* git(second, ["rev-parse", "HEAD"])).toBe(head);
-      expect(yield* git(second, ["branch", "--show-current"])).toBe("main");
-    }).pipe(Effect.provide(testLayer)),
+        expect(yield* git(second, ["rev-parse", "HEAD"])).toBe(head);
+        expect(yield* git(second, ["branch", "--show-current"])).toBe("main");
+        yield* remote.setDefault("next");
+        const third = path.join(remote.root, "third");
+        yield* cloneInto(remote.remoteUrl, third, { branch: null });
+        expect(yield* git(third, ["branch", "--show-current"])).toBe("next");
+        const pinned = path.join(remote.root, "pinned");
+        yield* cloneInto(remote.remoteUrl, pinned, { branch: "main" });
+        expect(yield* git(pinned, ["branch", "--show-current"])).toBe("main");
+        yield* remote.removeBranch("main");
+        const fourth = path.join(remote.root, "fourth");
+        yield* cloneInto(remote.remoteUrl, fourth, { branch: null });
+        expect(yield* git(fourth, ["branch", "--show-current"])).toBe("next");
+        const fetch = yield* LibraryGitFetch.LibraryGitFetch;
+        const missingPin = yield* fetch.cloneRepository({
+          remoteUrl: remote.remoteUrl,
+          path: path.join(remote.root, "missing-pin"),
+          branch: "main",
+        });
+        expect(missingPin.code).not.toBe(0);
+      }).pipe(Effect.provide(testLayer)),
   );
 
   it.live("hardlinks the mirror's packs without alternates or promisor packs", () =>

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   save: vi.fn(),
+  update: vi.fn(),
   apply: vi.fn(),
   refresh: vi.fn(),
   read: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("./state", () => ({
     preservation: () => "preservation",
     blueprint: () => "blueprint",
     applyBlueprint: "apply",
+    updateProject: "update",
     saveWorkstream: "save",
     refreshCopyHealth: "refresh",
     readCopyStatus: "read",
@@ -53,7 +55,7 @@ vi.mock("~/state/query", () => ({
   }),
 }));
 vi.mock("~/state/use-atom-command", () => ({
-  useAtomCommand: (command: "save" | "apply" | "refresh" | "read" | "register") =>
+  useAtomCommand: (command: "save" | "apply" | "refresh" | "read" | "register" | "update") =>
     state[command] ?? vi.fn(),
 }));
 vi.mock("./ProjectOperations", () => ({ ProjectOperationHistory: () => null }));
@@ -111,6 +113,7 @@ vi.mock("~/components/ui/textarea", () => ({
   Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
 }));
 
+import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectBlueprint } from "./ProjectBlueprint";
 import { ProjectWorkstreams } from "./ProjectWorkstreams";
 import { ProjectPreservationCenter } from "./ProjectPreservation";
@@ -243,6 +246,53 @@ it("disables preservation mutations when destination permissions are unavailable
   expect(button("Review file removal").disabled).toBe(true);
 });
 
+it("finds text inside a blueprint with Command-F and reports missing matches", async () => {
+  await act(async () =>
+    root.render(
+      <ProjectBlueprint
+        project={project}
+        authorityId={EnvironmentId.make("library")}
+        onChanged={vi.fn()}
+      />,
+    ),
+  );
+  await act(async () => button("Import or edit blueprint").click());
+  const textarea = container.querySelector<HTMLTextAreaElement>(
+    'textarea[aria-label="Blueprint JSON"]',
+  )!;
+  const shortcut = new KeyboardEvent("keydown", {
+    key: "f",
+    metaKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => textarea.dispatchEvent(shortcut));
+  expect(shortcut.defaultPrevented).toBe(true);
+  const find = container.querySelector<HTMLInputElement>('input[aria-label="Find in blueprint"]')!;
+  expect(find).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      find,
+      "resources",
+    );
+    find.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    find.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(textarea.value.slice(textarea.selectionStart, textarea.selectionEnd)).toBe("resources");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      find,
+      "missing phrase",
+    );
+    find.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("No matches");
+});
+
 it("retries a reviewed blueprint with the same request after a lost response", async () => {
   state.apply
     .mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Lost blueprint response"))))
@@ -301,4 +351,32 @@ it("offers repository resources for workstreams without turning ordinary links i
   expect(state.save.mock.calls[0]![0].input.references).toEqual([
     { kind: "repository", id: "repo", label: "Source repository", state: "open" },
   ]);
+});
+
+it("retries a small project edit with its original revision and receipt after a lost response", async () => {
+  state.update
+    .mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))))
+    .mockResolvedValueOnce(AsyncResult.success(project));
+  const onSaved = vi.fn();
+  function Editor({ revision }: { revision: number }) {
+    const update = useProjectUpdate({
+      project: { ...project, revision },
+      authorityId: EnvironmentId.make("library"),
+      connected: true,
+      onSaved,
+    });
+    return <button onClick={() => void update.save({ brief: "New brief" })}>Save brief</button>;
+  }
+  await act(async () => root.render(<Editor revision={1} />));
+  await act(async () => button("Save brief").click());
+  await act(async () => root.render(<Editor revision={2} />));
+  await act(async () => button("Save brief").click());
+  const first = state.update.mock.calls[0]![0];
+  expect(first.input).toEqual({
+    requestId: expect.any(String),
+    projectId: project.id,
+    expectedRevision: 1,
+    brief: "New brief",
+  });
+  expect(state.update.mock.calls[1]![0]).toEqual(first);
 });

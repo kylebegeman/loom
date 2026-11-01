@@ -470,14 +470,18 @@ function LibraryProjectForm({
                   className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
                 />
                 <TextInput
-                  accessibilityLabel="Default branch, optional"
-                  placeholder="Default branch (optional)"
+                  accessibilityLabel="Branch override, optional"
+                  placeholder="Follow repository default"
                   value={resource.defaultBranch}
                   onChangeText={(value) => patch(resource.id, { defaultBranch: value })}
                   autoCapitalize="none"
                   editable={!pending && !awaitingResult}
                   className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
                 />
+                <Text className="text-xs text-muted-foreground">
+                  Leave empty to follow the repository default. Existing working copies keep their
+                  branches.
+                </Text>
               </>
             ) : null}
             <Button

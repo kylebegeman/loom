@@ -37,7 +37,7 @@ const project: LibraryProject = {
   title: "Platform",
   brief: "",
   revision: 1,
-  resources: [resource],
+  resources: [{ ...resource, defaultBranch: null }],
   archived: false,
   createdAt: "2026-10-15T00:00:00.000Z",
   updatedAt: "2026-10-15T00:00:00.000Z",
@@ -587,6 +587,26 @@ describe("committed document source", () => {
           yield* git(["checkout", "-b", "feature"]);
           yield* git(["add", "."]);
           yield* git(["commit", "-m", "feature only"]);
+          expect(yield* reader.read(input)).toEqual(initial);
+          yield* git(["checkout", "-b", "next", "main"]);
+          yield* fs.writeFileString(
+            `${cwd}/docs/decisions/0001-recovery.md`,
+            "# Next default\nStatus: Accepted\nRead the repository default.",
+          );
+          yield* git(["add", "."]);
+          yield* git(["commit", "-m", "next default"]);
+          const nextCommit = yield* git(["rev-parse", "HEAD"]);
+          yield* git(["checkout", "feature"]);
+          const remote = `${cwd}/upstream.git`;
+          yield* git(["clone", "--bare", cwd, remote]);
+          yield* git([`--git-dir=${remote}`, "symbolic-ref", "HEAD", "refs/heads/next"]);
+          yield* git(["remote", "add", "origin", remote]);
+          const following = yield* reader.read({
+            ...input,
+            resource: { ...resource, remoteUrl: remote, defaultBranch: null },
+          });
+          expect(following.commit).toBe(nextCommit);
+          expect(following.documents[0]?.title).toBe("Next default");
           expect(yield* reader.read(input)).toEqual(initial);
           expect(
             (yield* reader

@@ -1,6 +1,8 @@
+import { parseRemoteDefaultBranch } from "@t3tools/shared/git";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_DECISIONS_FEATURE,
+  isLibraryBranchName,
   LIBRARY_DOCUMENT_BATCH_SIZE,
   LibraryError,
   type LibraryDocument,
@@ -111,37 +113,53 @@ export const layerSource = Layer.effect(
       readonly cwd: string;
     }) {
       const branch = input.resource.defaultBranch;
-      if (
-        !branch ||
-        branch.startsWith("-") ||
-        /[\s~^:?*[\\\p{Cc}]/u.test(branch) ||
-        branch.includes("..") ||
-        branch.includes("@{") ||
-        branch.startsWith("/") ||
-        branch.endsWith("/") ||
-        branch.endsWith(".")
-      )
-        return yield* invalid();
-      const ref = `refs/heads/${branch}`;
-      const local = yield* git(
-        input.cwd,
-        ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
-        128,
-      ).pipe(Effect.option);
-      const commit = (
-        local._tag === "Some"
-          ? local.value
-          : yield* git(
-              input.cwd,
-              [
-                "rev-parse",
-                "--verify",
-                "--end-of-options",
-                `refs/remotes/origin/${branch}^{commit}`,
-              ],
-              128,
-            )
-      ).trim();
+      let commit: string;
+      if (branch === null) {
+        const remote = input.resource.remoteUrl;
+        if (remote === null) return yield* invalid();
+        const advertised = yield* git(
+          input.cwd,
+          ["ls-remote", "--symref", "--", remote, "HEAD"],
+          4096,
+        );
+        const remoteCommit = /^([a-f0-9]{40}(?:[a-f0-9]{24})?)\tHEAD\r?$/mu.exec(advertised)?.[1];
+        if (parseRemoteDefaultBranch(advertised) === null || remoteCommit === undefined)
+          return yield* invalid();
+        const available = yield* git(
+          input.cwd,
+          ["cat-file", "-e", `${remoteCommit}^{commit}`],
+          128,
+        ).pipe(Effect.option);
+        if (available._tag === "None")
+          yield* git(
+            input.cwd,
+            ["fetch", "--no-tags", "--no-write-fetch-head", "--", remote, remoteCommit],
+            4096,
+          );
+        commit = remoteCommit;
+      } else {
+        if (!isLibraryBranchName(branch)) return yield* invalid();
+        const ref = `refs/heads/${branch}`;
+        const local = yield* git(
+          input.cwd,
+          ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
+          128,
+        ).pipe(Effect.option);
+        commit = (
+          local._tag === "Some"
+            ? local.value
+            : yield* git(
+                input.cwd,
+                [
+                  "rev-parse",
+                  "--verify",
+                  "--end-of-options",
+                  `refs/remotes/origin/${branch}^{commit}`,
+                ],
+                128,
+              )
+        ).trim();
+      }
       if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(commit)) return yield* invalid();
       const tree = yield* git(input.cwd, [
         "ls-tree",
@@ -284,7 +302,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
               (resource) =>
                 resource.id === repository.resourceId &&
                 resource.kind !== "link" &&
-                resource.defaultBranch !== null,
+                (resource.defaultBranch !== null || resource.remoteUrl !== null),
             );
             if (!resource) continue;
             const key = encodeJson([project.id, resource.id]);

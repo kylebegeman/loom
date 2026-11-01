@@ -1,4 +1,4 @@
-import type { LibraryResource } from "@t3tools/contracts/fork";
+import { isLibraryBranchName, type LibraryResource } from "@t3tools/contracts/fork";
 
 export const isRepositoryResource = (resource: LibraryResource) => resource.kind !== "link";
 export function resourceLink(resource: LibraryResource) {
@@ -25,6 +25,8 @@ export function validateResources(resources: readonly LibraryResource[]) {
       if (!resourceLink(resource)) return "Reference links need an http or https URL.";
       continue;
     }
+    if (resource.defaultBranch !== null && !isLibraryBranchName(resource.defaultBranch))
+      return "Use a valid Git branch override, or follow the repository default.";
     const path = resource.relativePath.trim().toLowerCase();
     if (
       !path ||

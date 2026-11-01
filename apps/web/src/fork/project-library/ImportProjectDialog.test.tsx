@@ -272,6 +272,22 @@ async function mount(props: Partial<ComponentProps<typeof ImportProjectDialog>> 
 }
 
 it("creates a project for the browsed folder in one step", async () => {
+  state.inspect.mockImplementation(async ({ input }: { input: { rootPath: string } }) =>
+    AsyncResult.success({
+      rootPath: input.rootPath,
+      exists: true,
+      repositories: [
+        {
+          path: `${input.rootPath}/server`,
+          relativePath: "server",
+          remoteUrl: "https://github.com/example/server",
+          branch: "release/temporary",
+          head: "abc",
+        },
+      ],
+      truncated: false,
+    }),
+  );
   const onSaved = vi.fn();
   await mount({ initialHostId: EnvironmentId.make("remote"), onSaved });
   expect(state.browse).toHaveBeenLastCalledWith({
@@ -292,6 +308,9 @@ it("creates a project for the browsed folder in one step", async () => {
   });
   expect(state.create).toHaveBeenCalledOnce();
   expect(state.create.mock.calls[0]![0].input.title).toBe("Developer");
+  expect(state.create.mock.calls[0]![0].input.resources).toMatchObject([
+    { relativePath: "server", defaultBranch: null },
+  ]);
   expect(state.prepare.mock.calls[0]![0].input).toMatchObject({
     rootPath: "/Users/kyle/Developer",
     strategy: "reuse",

@@ -774,6 +774,8 @@ describe("independent Library catalog and durable history", () => {
               { id: resource.id, defaultBranch: "next" },
             ],
             [{ id: resource.id, relativePath: web.relativePath }],
+            [{ id: resource.id, defaultBranch: "bad..branch" }],
+            [{ id: resource.id, defaultBranch: "HEAD" }],
           ]) {
             expect(
               (yield* service

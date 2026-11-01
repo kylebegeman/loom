@@ -185,6 +185,13 @@ function ResourceRow({
           <p className="truncate font-mono text-2xs text-muted-foreground">
             {libraryResourceLocation(resource)}
           </p>
+          {repository ? (
+            <p className="truncate text-xs text-muted-foreground">
+              {resource.defaultBranch
+                ? `Override: ${resource.defaultBranch}`
+                : "Follows repository default"}
+            </p>
+          ) : null}
         </div>
       </div>
       {repository ? (
@@ -400,6 +407,25 @@ function ResourceEditor({
             onChange={(event) => setDraft({ ...draft, relativePath: event.target.value })}
           />
         </LibraryField>
+      ) : null}
+      {repository ? (
+        <div className="space-y-2">
+          <LibraryField label="Branch override (optional)">
+            <Input
+              value={draft.defaultBranch ?? ""}
+              placeholder="Follow repository default"
+              maxLength={200}
+              disabled={busy}
+              onChange={(event) =>
+                setDraft({ ...draft, defaultBranch: event.target.value.trim() || null })
+              }
+            />
+          </LibraryField>
+          <p className="text-xs text-muted-foreground">
+            Leave empty to follow the repository default. Existing working copies keep their
+            branches.
+          </p>
+        </div>
       ) : null}
       <div className="flex gap-2">
         <Button type="submit" shape="pill" size="sm" disabled={busy || !draft.title.trim()}>

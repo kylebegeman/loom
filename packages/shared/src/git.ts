@@ -9,6 +9,10 @@ import type {
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
+export function parseRemoteDefaultBranch(stdout: string): string | null {
+  return /^ref: refs\/heads\/(\S+)\tHEAD\r?$/mu.exec(stdout)?.[1] ?? null;
+}
+
 export const WORKTREE_BRANCH_PREFIX = "t3";
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_UUID_V4_TOKEN =
