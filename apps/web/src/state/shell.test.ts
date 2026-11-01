@@ -9,11 +9,12 @@ import { EMPTY_SHELL_STATE, type EnvironmentShellState } from "@t3tools/client-r
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity"; // fork: client-computer
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createAllEnvironmentProjectSnapshotsReadyAtom,
   createAllReachableShellsLiveAtom, // fork: client-computer
+  expectsPrimaryEnvironment,
 } from "./shell";
 
 const LOCAL = EnvironmentId.make("local");
@@ -207,4 +208,17 @@ describe("reachable shells settling", () => {
     expect(hosted.registry.get(hosted.settled)).toBe(false);
     hosted.registry.dispose();
   });
+});
+
+it("expects a primary environment only on desktops with the local environment enabled", () => {
+  const desktop = (enabled: boolean) => {
+    vi.stubGlobal("window", { desktopBridge: { getLocalEnvironmentEnabled: () => enabled } });
+    try {
+      return expectsPrimaryEnvironment();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  };
+  expect(desktop(true)).toBe(true);
+  expect(desktop(false)).toBe(false);
 });
