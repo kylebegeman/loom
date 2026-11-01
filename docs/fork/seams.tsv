@@ -424,7 +424,9 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	ext-vault-pref
 apps/server/src/orchestration-v2/ProviderTurnControlService.ts	ext-vault-preflight	2
 apps/server/src/scheduledTasks/ScheduledTaskService.ts	vault-scheduled-outcomes	7
 apps/web/src/components/settings/ScheduledTasksSettings.tsx	vault-scheduled-outcomes	2
+apps/web/src/components/settings/ScheduledTasksSettings.tsx	brand	1
 apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	vault-scheduled-outcomes	2
+apps/mobile/src/features/settings/SettingsScheduledTasksRouteScreen.tsx	brand	1
 apps/server/src/cloud/selfUpdate.ts	runtime-owner	6
 apps/server/vite.config.ts	runtime-owner	1
 apps/server/src/environment/ServerEnvironment.ts	runtime-owner	7
