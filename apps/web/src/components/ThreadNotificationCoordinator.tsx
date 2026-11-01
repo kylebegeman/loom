@@ -57,6 +57,7 @@ interface NotificationState extends ThreadNotificationObservation {
 interface WatchedEnvironment {
   unsubscribe: () => void;
   previous: Map<ThreadId, NotificationState>;
+  reconnecting: boolean;
   readonly gate: ReturnType<typeof createThreadNotificationGate<ThreadId>>;
   // fork: respectful-notifications
   seeded: boolean;
@@ -287,7 +288,11 @@ export function startThreadNotifications(
       }
       const prior = previous.get(rawThread.id);
       const subagentRequest = subagentRequests.get(rawThread.id) ?? null;
-      if (prior?.raw === rawThread && prior.subagentRequest === subagentRequest) {
+      if (
+        !entry.reconnecting &&
+        prior?.raw === rawThread &&
+        prior.subagentRequest === subagentRequest
+      ) {
         next.set(rawThread.id, prior);
         continue;
       }
@@ -330,6 +335,7 @@ export function startThreadNotifications(
     // fork: respectful-notifications
     for (const id of previous.keys())
       if (!next.has(id)) clearNotification(threadNotificationTag(environmentId, id));
+    entry.reconnecting = false;
     entry.previous = next;
     entry.gate.retain(new Set(next.keys()));
     for (const [prior, state] of changed) {
@@ -353,6 +359,7 @@ export function startThreadNotifications(
   const watchEnvironment = (environmentId: EnvironmentId): WatchedEnvironment => {
     const entry: WatchedEnvironment = {
       previous: new Map(),
+      reconnecting: false,
       unsubscribe: () => {},
       gate: createThreadNotificationGate<ThreadId>((threadId, kind) => {
         const state = entry.previous.get(threadId);
@@ -378,6 +385,8 @@ export function startThreadNotifications(
         // so the next live snapshot can announce what changed in between.
         if (!entry.seeded && snapshot !== null) observeThreads(environmentId, entry, snapshot);
         entry.resync = entry.seeded; // fork: respectful-notifications
+        entry.gate.cancelPending();
+        entry.reconnecting = true;
       },
       { immediate: true },
     );

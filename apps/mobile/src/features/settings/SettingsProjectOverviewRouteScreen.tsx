@@ -17,7 +17,10 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
+import {
+  deriveProjectGroupLabel,
+  type ProjectGroup,
+} from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 // fork: project-navigation
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -45,6 +48,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
@@ -76,6 +80,7 @@ export function SettingsProjectOverviewRouteScreen({
   };
   const navigation = useNavigation();
   const {
+    availableTargets,
     selectedTargets,
     projectGroups,
     selectedProjectKey,
@@ -148,7 +153,7 @@ export function SettingsProjectOverviewRouteScreen({
             <Text className="px-2 text-base text-foreground-muted">
               Choose a project with the filter above to manage its name, checkouts and removal.
             </Text>
-          ) : members.length === 0 ? (
+          ) : !group || members.length === 0 ? (
             <Text className="px-2 text-base text-foreground-muted">
               {/* fork: everyday-workflows */}
               This project has no folder on the selected connected computers. Change the filter
@@ -159,6 +164,8 @@ export function SettingsProjectOverviewRouteScreen({
               // fork: project-checkout-management
               key={`${selectedProjectKey}:${members.map((member) => `${member.environmentId}:${member.id}:${member.workspaceRoot}`).join(",")}`}
               members={members}
+              group={group}
+              connectedTargets={availableTargets}
               environments={selectedTargets}
               hasOtherMembers={members.length < (group?.members.length ?? 0)}
               isRemoving={isRemoving}
@@ -177,6 +184,9 @@ export function SettingsProjectOverviewRouteScreen({
 
 function ProjectOverviewContent(props: {
   readonly members: readonly EnvironmentProject[];
+  /** Pin and archive belong to the whole project, even when the filter picks one machine. */
+  readonly group: ProjectGroup;
+  readonly connectedTargets: readonly SettingsTarget[];
   readonly environments: readonly SettingsTarget[];
   readonly hasOtherMembers: boolean;
   readonly isRemoving: boolean;
@@ -209,10 +219,8 @@ function ProjectOverviewContent(props: {
   const [draftName, setDraftName] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const threads = useThreadShells();
-  const removableEnvironments = useEnvironmentsWithScope(
-    props.members,
-    AuthOrchestrationOperateScope,
-  );
+  const allMembers = props.group.members.map((member) => member.project);
+  const removableEnvironments = useEnvironmentsWithScope(allMembers, AuthOrchestrationOperateScope);
   const canRemoveGroup = props.members.every((member) =>
     removableEnvironments.has(member.environmentId),
   );
@@ -221,6 +229,52 @@ function ProjectOverviewContent(props: {
     label: "project name update",
     reportFailure: true,
   });
+  const organizeProject = useAtomCommand(projectEnvironment.update, {
+    label: "project update",
+    reportFailure: true,
+  });
+  const [isOrganizing, setIsOrganizing] = useState(false);
+  const memberTargets = allMembers.map((member) =>
+    props.connectedTargets.find((entry) => entry.environmentId === member.environmentId),
+  );
+  const offline = memberTargets.some((target) => target === undefined);
+  // Older servers drop pin and archive, so their projects do not offer them.
+  // Offline members are checked when the write runs, so their reason can show.
+  const canOrganize =
+    allMembers.every(
+      (member, index) =>
+        memberTargets[index] === undefined || removableEnvironments.has(member.environmentId),
+    ) &&
+    memberTargets.every(
+      (target) =>
+        target === undefined ||
+        target.serverConfig.environment.capabilities.projectOrganization === true,
+    );
+  // One machine at a time, stopping at the first failure, as web does.
+  const organize = async (input: { readonly pinned?: boolean; readonly archived?: boolean }) => {
+    setIsOrganizing(true);
+    for (const member of allMembers) {
+      if (!readEnvironmentScope(member.environmentId, AuthOrchestrationOperateScope)) {
+        Dialog.alert("Failed to update project", "This connection can no longer change it.");
+        break;
+      }
+      const result = await organizeProject({
+        environmentId: member.environmentId,
+        input: { projectId: member.id, ...input },
+      });
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          Dialog.alert(
+            `Failed to update "${member.title}"`,
+            error instanceof Error ? error.message : "An error occurred.",
+          );
+        }
+        break;
+      }
+    }
+    setIsOrganizing(false);
+  };
   const nextName = (draftName ?? displayName).trim();
   const canSave = !isSaving && nextName.length > 0 && nextName !== displayName;
 
@@ -379,6 +433,34 @@ function ProjectOverviewContent(props: {
           </View>
         </View>
       </SettingsSection>
+
+      {canOrganize ? (
+        <SettingsSection title="Organize">
+          <SettingsSwitchRow
+            icon="pin"
+            label="Pin"
+            subtitle={
+              offline
+                ? "Connect every machine with this project to change this."
+                : "Pinned projects come first in project pickers."
+            }
+            value={props.group.pinned}
+            disabled={isOrganizing || offline}
+            onValueChange={(pinned) => void organize({ pinned })}
+          />
+          <SettingsActionRow
+            icon="archivebox"
+            label={props.group.archived ? "Unarchive project" : "Archive project"}
+            description={
+              props.group.archived
+                ? "Hidden from project pickers. Threads and files are kept."
+                : "Hides the project from project pickers. Threads and files are kept."
+            }
+            disabled={isOrganizing || offline}
+            onPress={() => void organize({ archived: !props.group.archived })}
+          />
+        </SettingsSection>
+      ) : null}
 
       {/* fork: library */}
       <SettingsSection title="Computer folders">

@@ -15,7 +15,6 @@ import { githubCommand } from "./cli/github.ts"; // fork: github-host-setup
 import { environmentCommand } from "./cli/environment.ts";
 import { appCommand } from "./cli/app.ts";
 import { browserCommand } from "./cli/browser.ts";
-import { connectCommand } from "./cli/connect.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { extendConnectionAttemptTimeout, keepOutboundFetchOnHttp1 } from "./outboundHttp.ts";
@@ -33,6 +32,7 @@ import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { traceCommand } from "./cli/trace.ts";
 import { triageCommand } from "./cli/triage.ts";
+import { connectCommand, statusCommand, upCommand } from "./cli/up.ts";
 
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -66,7 +66,10 @@ const connectUnavailableCommand = Command.make("connect", {
 export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
   // fork: brand
   Command.make("loom", { ...sharedServerCommandFlags }).pipe(
-    Command.withDescription("Run the Loom server."), // fork: brand
+    Command.withDescription(
+      // fork: brand
+      "Run Loom in this terminal and open it in your browser. To use it from your other devices, run `loom up`.",
+    ),
     Command.withHandler(runDefaultServerCommand),
     Command.withSubcommands([
       ...FORK_CLI_COMMANDS, // fork: ext-cli
@@ -89,6 +92,8 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       browserCommand,
       projectCommand,
       threadCommand,
+      upCommand,
+      statusCommand,
       serviceCommand,
       updateCommand,
       uninstallCommand,

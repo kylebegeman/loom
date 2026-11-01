@@ -19,6 +19,9 @@ export const OrchestrationProjectShell = Schema.Struct({
   // fork: file-placement -- Loom made this folder from a name. Older servers omit it.
   namedProject: Schema.optional(Schema.Boolean), // fork: file-placement
   scripts: Schema.Array(ProjectScript),
+  // Pinned projects lead project pickers; archived ones leave them. Optional so older servers decode.
+  pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
