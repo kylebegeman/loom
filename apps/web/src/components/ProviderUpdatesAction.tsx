@@ -33,7 +33,7 @@ export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) 
     if (environmentIds !== undefined && !environmentIds.has(environment.environmentId)) return [];
     const providers = providersByEnvironment.get(environment.environmentId) ?? [];
     if (
-      !environment.entry.enabled || // fork: machine-updates - Switched-off computers are not updated.
+      environment.entry?.enabled === false || // fork: machine-updates - Switched-off computers are skipped.
       environment.connection.phase !== "connected" ||
       !manageableIds.has(environment.environmentId)
     ) {
