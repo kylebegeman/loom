@@ -1635,5 +1635,5 @@ packages/contracts/src/clientRpcPermissions.ts	vault-provider-credentials	5
 apps/server/src/provider/ProviderInstanceRegistry.ts	vault-provider-credentials	6
 apps/server/src/provider/ProviderInstanceRegistry.test.ts	vault-provider-credentials	1
 packages/provider-core/src/server/ProviderHost.ts	vault-provider-credentials	1
-packages/provider-core/src/server/managedProvider.ts	vault-provider-credentials	2
+packages/provider-core/src/server/managedProvider.ts	vault-provider-credentials	3
 packages/provider-core/src/server/managedProvider.test.ts	vault-provider-credentials	1
