@@ -24,12 +24,22 @@ function computer(id: string): EnvironmentPresentation {
   };
 }
 
-it("opens the selected computer, keeps its draft across tabs, and returns to the collection after removal", async () => {
+it("keeps the chosen layout and computer draft across navigation and computer removal", async () => {
+  const layoutKey = "loom:computers:collection-layout:v1";
+  const savedLayout = localStorage.getItem(layoutKey);
+  localStorage.removeItem(layoutKey);
+  using _layout = {
+    [Symbol.dispose]() {
+      if (savedLayout === null) localStorage.removeItem(layoutKey);
+      else localStorage.setItem(layoutKey, savedLayout);
+    },
+  };
   const dorothy = computer("Dorothy");
   const vps = computer("VPS");
-  const content = (environments: readonly EnvironmentPresentation[]) => (
+  const content = (environments: readonly EnvironmentPresentation[], visit = "initial") => (
     <ComputersSettingsPage supervisor={<p>Supervisor</p>}>
       <ComputerConnectionsHome
+        key={visit}
         primaryEnvironment={dorothy}
         environments={environments}
         isReady
@@ -41,6 +51,13 @@ it("opens the selected computer, keeps its draft across tabs, and returns to the
     </ComputersSettingsPage>
   );
   await using screen = await render(content([dorothy, vps]), { router: "/settings/connections" });
+  await expect
+    .element(screen.getByRole("button", { name: "Cards", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+  await screen.getByRole("button", { name: "List", exact: true }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "List", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
   await screen.getByRole("button", { name: "Open VPS", exact: true }).click();
   await expect.element(screen.getByRole("textbox", { name: "Settings for VPS" })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "All computers" })).toHaveFocus();
@@ -52,6 +69,9 @@ it("opens the selected computer, keeps its draft across tabs, and returns to the
     .toHaveValue("Keep this draft");
   await screen.getByRole("button", { name: "All computers" }).click();
   await expect.element(screen.getByRole("button", { name: "Open VPS", exact: true })).toHaveFocus();
+  await expect
+    .element(screen.getByRole("button", { name: "List", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
   await screen.getByRole("button", { name: "Open VPS", exact: true }).click();
   await screen.rerender(content([dorothy]));
   await expect
@@ -62,4 +82,12 @@ it("opens the selected computer, keeps its draft across tabs, and returns to the
     .not.toBeInTheDocument();
   await screen.rerender(content([dorothy, vps]));
   await expect.element(screen.getByRole("button", { name: "Open VPS", exact: true })).toBeVisible();
+  await screen.rerender(content([dorothy, vps], "reopened"));
+  await expect
+    .element(screen.getByRole("button", { name: "List", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
+  await screen.getByRole("button", { name: "Cards", exact: true }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Cards", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
 });

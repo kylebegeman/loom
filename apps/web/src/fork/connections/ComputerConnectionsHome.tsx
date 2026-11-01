@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import * as Schema from "effect/Schema";
 import { ArrowLeftIcon, ArrowUpRightIcon, ChevronRightIcon, NetworkIcon } from "lucide-react";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { libraryProjectColor } from "@t3tools/client-runtime/fork";
@@ -15,8 +16,13 @@ import { Button } from "~/components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { Skeleton } from "~/components/ui/skeleton";
 import { cn } from "~/lib/utils";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { ComputerTile, projectColorStyle } from "../project-library/ProjectIdentity";
-import { LIBRARY_CARD } from "../project-library/LibraryCollection";
+import {
+  LIBRARY_CARD,
+  LibraryLayoutToggle,
+  type LibraryLayout,
+} from "../project-library/LibraryCollection";
 import { LibraryEmpty, LibraryStateDot } from "../project-library/LibraryControls";
 import { ConnectAccount } from "./ConnectAccount";
 import { ComputerWorkActions } from "./ComputerWorkActions";
@@ -27,6 +33,10 @@ import {
 } from "../directory-computers/LibraryComputers";
 import { LibraryPushSection } from "../library-push/LibraryPushSection";
 import { LibraryReach } from "../reach/LibraryReach";
+
+const LAYOUT_KEY = "loom:computers:collection-layout:v1";
+const ComputersLayout = Schema.Literals(["cards", "list"]);
+const ROW_COLUMNS = "@min-[44rem]/computers:grid-cols-[minmax(0,1fr)_9rem_minmax(0,1.4fr)]";
 
 const ROUTING_TARGETS = ["linked-environments", "load-balancing", "pull-request-routing"];
 
@@ -47,6 +57,7 @@ export function ComputerConnectionsHome({
   readonly appSettings?: ReactNode;
   readonly isReady: boolean;
 }) {
+  const [layout, setLayout] = useLocalStorage(LAYOUT_KEY, "cards", ComputersLayout);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [returnFocusId, setReturnFocusId] = useState<string | null>(null);
   const searchTarget = useSettingsSearchTargetId();
@@ -145,18 +156,41 @@ export function ComputerConnectionsHome({
         <>
           {environments.length ? (
             <section className="space-y-3" aria-label="Your computers">
-              <p className="text-xs text-muted-foreground">
-                {environments.length} {environments.length === 1 ? "computer" : "computers"}
-                <span aria-hidden className="mx-2 text-muted-foreground/50">
-                  /
-                </span>
-                {connected} connected
-              </p>
-              <ul className="grid gap-4 @min-[38rem]/computers:grid-cols-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {environments.length} {environments.length === 1 ? "computer" : "computers"}
+                  <span aria-hidden className="mx-2 text-muted-foreground/50">
+                    /
+                  </span>
+                  {connected} connected
+                </p>
+                <LibraryLayoutToggle value={layout} onChange={setLayout} />
+              </div>
+              {layout === "list" ? (
+                <div
+                  aria-hidden
+                  className={cn(
+                    "hidden gap-x-5 px-1 text-xs text-muted-foreground @min-[44rem]/computers:grid",
+                    ROW_COLUMNS,
+                  )}
+                >
+                  <span>Computer</span>
+                  <span>Connection</span>
+                  <span>Work</span>
+                </div>
+              ) : null}
+              <ul
+                className={
+                  layout === "cards"
+                    ? "grid gap-4 @min-[38rem]/computers:grid-cols-2"
+                    : "divide-y divide-border/60 border-y border-border/60"
+                }
+              >
                 {environments.map((environment) => (
-                  <ComputerCard
+                  <ComputerItem
                     key={environment.environmentId}
                     environment={environment}
+                    layout={layout}
                     primary={environment.environmentId === primaryEnvironment?.environmentId}
                     returnFocus={returnFocusId === environment.environmentId}
                     onOpen={() => setSelectedId(environment.environmentId)}
@@ -200,13 +234,15 @@ export function ComputerConnectionsHome({
   );
 }
 
-function ComputerCard({
+function ComputerItem({
   environment,
+  layout,
   primary,
   returnFocus,
   onOpen,
 }: {
   readonly environment: EnvironmentPresentation;
+  readonly layout: LibraryLayout;
   readonly primary: boolean;
   readonly returnFocus: boolean;
   readonly onOpen: () => void;
@@ -214,15 +250,24 @@ function ComputerCard({
   return (
     <li
       style={projectColorStyle(libraryProjectColor({ id: environment.environmentId }))}
-      className={cn(LIBRARY_CARD, "gap-4 p-4")}
+      className={
+        layout === "cards"
+          ? cn(LIBRARY_CARD, "gap-4 p-4")
+          : cn("grid items-start gap-x-5 gap-y-3 px-1 py-4", ROW_COLUMNS)
+      }
     >
       <div className="flex min-w-0 items-start gap-3">
         <ComputerTile
           environmentId={environment.environmentId}
-          className="size-11 [&_svg]:size-6"
+          className={layout === "cards" ? "size-11 [&_svg]:size-6" : "size-9 [&_svg]:size-5"}
         />
         <div className="min-w-0 flex-1 space-y-1">
-          <h3 className="truncate text-base leading-5 font-semibold tracking-tight">
+          <h3
+            className={cn(
+              "truncate leading-5 font-semibold tracking-tight",
+              layout === "cards" ? "text-base" : "text-sm",
+            )}
+          >
             <button
               onClick={onOpen}
               autoFocus={returnFocus}
@@ -246,13 +291,21 @@ function ComputerCard({
           <ArrowUpRightIcon aria-hidden />
         </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground",
+          layout === "list" && "@min-[44rem]/computers:flex-col @min-[44rem]/computers:items-start",
+        )}
+      >
         <ComputerState environment={environment} />
         <span>
           {ENVIRONMENT_MACHINE_KIND_LABELS[resolveEnvironmentMachineKind(environment.serverConfig)]}
         </span>
       </div>
-      <ComputerWorkActions environment={environment} presentation="card" />
+      <ComputerWorkActions
+        environment={environment}
+        presentation={layout === "cards" ? "card" : "row"}
+      />
     </li>
   );
 }

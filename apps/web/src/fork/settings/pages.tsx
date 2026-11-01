@@ -213,7 +213,7 @@ function TopicComputerLine({
   const current = environment ?? environments[0] ?? null;
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-      <span>Applies to</span>
+      <span>{topic.id === "upstream-supervisor" ? "Computer" : "Applies to"}</span>
       <Menu>
         <MenuTrigger
           aria-label={`Computer for ${topic.title}`}
@@ -262,7 +262,7 @@ function TopicComputerLine({
           </MenuRadioGroup>
         </MenuPopup>
       </Menu>
-      <span>only.</span>
+      {topic.id !== "upstream-supervisor" ? <span>only.</span> : null}
     </p>
   );
 }
@@ -277,6 +277,7 @@ function ForkSettingsTopic({
   const targetId = targetIdOf(topic);
   const targetRef = useSettingsSearchTarget<HTMLElement>(targetId);
   const Component = TOPIC_COMPONENTS[topic.id];
+  const pageHeading = topic.id === "upstream-supervisor";
   return (
     <section
       id={targetId}
@@ -285,22 +286,28 @@ function ForkSettingsTopic({
       aria-labelledby={`${targetId}-title`}
       className="min-w-0 space-y-2.5 outline-none"
     >
-      <header data-settings-scroll-target className="space-y-1 px-3 sm:px-4">
-        <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-2">
+      <header data-settings-scroll-target className={pageHeading ? "" : "space-y-1 px-3 sm:px-4"}>
+        <div className={pageHeading ? "" : "flex min-h-7 min-w-0 flex-wrap items-center gap-2"}>
           <h2
             id={`${targetId}-title`}
-            className="flex min-h-7 items-center text-base font-semibold text-foreground"
+            className={
+              pageHeading
+                ? "sr-only"
+                : "flex min-h-7 items-center text-base font-semibold text-foreground"
+            }
           >
             {topic.title}
           </h2>
           {topic.scope === "device" ? <Badge variant="secondary">This device</Badge> : null}
         </div>
-        <p className="max-w-2xl text-xs leading-normal text-balance text-muted-foreground">
-          {topic.description}
-          {topic.scope === "mixed"
-            ? " Preview preferences stay on this device. Tool configuration applies to the selected computer."
-            : null}
-        </p>
+        {!pageHeading ? (
+          <p className="max-w-2xl text-xs leading-normal text-balance text-muted-foreground">
+            {topic.description}
+            {topic.scope === "mixed"
+              ? " Preview preferences stay on this device. Tool configuration applies to the selected computer."
+              : null}
+          </p>
+        ) : null}
         {scopeLine}
       </header>
       <div className="min-w-0 wrap-anywhere">

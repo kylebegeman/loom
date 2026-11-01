@@ -7,7 +7,11 @@ import {
   type EnvironmentId,
   type ProjectId,
 } from "@t3tools/contracts";
-import type { UpstreamSupervisorConfig, VaultGitHubTarget } from "@t3tools/contracts/fork";
+import type {
+  UpstreamSupervisorConfig,
+  UpstreamSupervisorStatus,
+  VaultGitHubTarget,
+} from "@t3tools/contracts/fork";
 import {
   createUpstreamSupervisorAtoms,
   createVaultGitHubAtoms,
@@ -15,9 +19,17 @@ import {
 } from "@t3tools/client-runtime/fork";
 import * as DateTime from "effect/DateTime";
 import { useId, useState } from "react";
-import { WorkflowIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  GitForkIcon,
+  PauseIcon,
+  PencilIcon,
+  PlayIcon,
+  RefreshCwIcon,
+  WorkflowIcon,
+} from "lucide-react";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
-import { Badge } from "~/components/ui/badge";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -31,13 +43,9 @@ import { authEnvironment } from "~/state/auth";
 import { useProjects, useServerConfigs } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope } from "~/state/session";
-import {
-  LoomSettingsActions,
-  LoomSettingsDetails,
-  LoomSettingsField,
-  LoomSettingsNotice,
-} from "../settings/parts";
+import { LoomSettingsActions, LoomSettingsField, LoomSettingsNotice } from "../settings/parts";
 import { runVault } from "../vault/state";
+import { LibraryStateBadge } from "../project-library/LibraryControls";
 
 const supervisor = createUpstreamSupervisorAtoms(connectionAtomRuntime);
 const github = createVaultGitHubAtoms(connectionAtomRuntime);
@@ -89,6 +97,7 @@ export function UpstreamSupervisorSettingsSection() {
     <SupervisorSettings
       key={environment.environmentId}
       environmentId={environment.environmentId}
+      computerLabel={environment.label}
       canWrite={canWrite}
     />
   );
@@ -96,9 +105,11 @@ export function UpstreamSupervisorSettingsSection() {
 
 function SupervisorSettings({
   environmentId,
+  computerLabel,
   canWrite,
 }: {
   environmentId: EnvironmentId;
+  computerLabel: string;
   canWrite: boolean;
 }) {
   const projects = useProjects().filter(
@@ -121,6 +132,7 @@ function SupervisorSettings({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const config = status.data?.config ?? null;
   const locked = pending || !canWrite || !allowed || status.isPending || status.error !== null;
   async function save(input: Omit<UpstreamSupervisorConfig, "updatedAt">) {
@@ -135,6 +147,7 @@ function SupervisorSettings({
           ? "Upstream supervisor enabled for the saved chief login."
           : "Configuration saved. Upstream supervisor is paused.",
       );
+      setEditing(false);
       status.refresh();
     } catch (cause) {
       setError(
@@ -145,8 +158,40 @@ function SupervisorSettings({
     }
     setPending(false);
   }
+  const editorOpen = !config || editing;
+  const currentProject = projects.find((project) => project.id === config?.projectId);
+  const chief = sessions.find((session) => session.sessionId === config?.clientSessionId);
   return (
     <div className="@container/supervisor min-w-0 space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+          <LibraryStateBadge tone={config?.enabled ? "success" : "neutral"}>
+            {config
+              ? config.enabled
+                ? "Enabled"
+                : "Paused"
+              : status.data
+                ? "Not configured"
+                : status.isPending
+                  ? "Loading"
+                  : "Unavailable"}
+          </LibraryStateBadge>
+          <span>{computerLabel}</span>
+        </div>
+        <Button
+          shape="pill"
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Refresh status and logins"
+          disabled={pending || status.isPending}
+          onClick={() => {
+            status.refresh();
+            access.refresh();
+          }}
+        >
+          <RefreshCwIcon aria-hidden />
+        </Button>
+      </header>
       {!canWrite || !allowed ? (
         <LoomSettingsNotice>
           This connection needs Manage access permission to change the supervisor.
@@ -157,12 +202,11 @@ function SupervisorSettings({
           Add a project on this computer before configuring the supervisor.
         </LoomSettingsNotice>
       ) : null}
-      {status.isPending && !status.data ? <p role="status">Loading upstream supervisor…</p> : null}
       {status.error ? <LoomSettingsNotice role="alert">{status.error}</LoomSettingsNotice> : null}
       {status.data?.unavailable ? (
         <LoomSettingsNotice role="alert">
-          The upstream service is unavailable. Saved access and receipts are shown below. You can
-          still pause the supervisor.
+          The upstream service is unavailable. Saved setup and activity are still shown. You can
+          pause new requests.
         </LoomSettingsNotice>
       ) : null}
       {error ? <LoomSettingsNotice role="alert">{error}</LoomSettingsNotice> : null}
@@ -171,138 +215,205 @@ function SupervisorSettings({
           {notice}
         </p>
       ) : null}
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 rounded-xl bg-muted/40 px-4 py-4 sm:px-5 @min-[32rem]/supervisor:flex @min-[32rem]/supervisor:items-center @min-[32rem]/supervisor:gap-4">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-background text-foreground">
-          <WorkflowIcon aria-hidden className="size-5" />
-        </span>
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h3 className="text-base font-semibold">
-              {config ? "Upstream supervision" : "Connect your Grok chief"}
-            </h3>
-            <Badge variant={config?.enabled ? "success" : "secondary"}>
-              {config
-                ? config.enabled
-                  ? "Enabled"
-                  : "Paused"
-                : status.data
-                  ? "Not configured"
-                  : status.isPending
-                    ? "Loading"
-                    : "Unavailable"}
-            </Badge>
-          </div>
-          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
-            {config?.enabled
-              ? "Your chief can request upstream integrations for the saved repository."
-              : "Choose a project and GitHub repository. Save first, then enable when ready."}
-          </p>
+      {status.isPending && !status.data ? (
+        <div
+          role="status"
+          aria-label="Loading upstream supervisor"
+          className="space-y-5 rounded-xl border border-border/60 p-5"
+        >
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
         </div>
-        <div className="col-span-2 flex justify-end @min-[32rem]/supervisor:shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Refresh status and logins"
-            disabled={pending || status.isPending}
-            onClick={() => {
-              status.refresh();
-              access.refresh();
-            }}
-          >
-            <RefreshCwIcon aria-hidden />
-            Refresh
-          </Button>
-        </div>
-      </div>
-      {config ? (
-        <div className="space-y-4 px-1">
-          <dl className="grid min-w-0 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-            <div className="min-w-0">
-              <dt className="text-xs text-muted-foreground">Project</dt>
-              <dd className="mt-1 wrap-anywhere">
-                {projects.find((project) => project.id === config.projectId)?.title ??
-                  "Project no longer registered"}
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="text-xs text-muted-foreground">Chief login</dt>
-              <dd className="mt-1 wrap-anywhere">
-                {sessionName(
-                  sessions.find((session) => session.sessionId === config.clientSessionId),
-                )}
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="text-xs text-muted-foreground">Repository</dt>
-              <dd className="mt-1 wrap-anywhere">{config.connection.repository}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Vault connection</dt>
-              <dd className="mt-1">Version {config.connection.expectedVersion}</dd>
-            </div>
-          </dl>
-          <LoomSettingsActions>
-            <Button
-              variant="outline"
-              size="sm-multiline"
-              disabled={locked || (!config.enabled && status.data?.unavailable === true)}
-              onClick={() =>
-                void save({
-                  projectId: config.projectId,
-                  clientSessionId: config.clientSessionId,
-                  connection: config.connection,
-                  enabled: !config.enabled,
-                })
-              }
+      ) : null}
+      <div className="grid min-w-0 items-start gap-7 @min-[46rem]/supervisor:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6">
+          {config && !editing ? (
+            <section
+              aria-label="Saved supervisor setup"
+              className="space-y-5 rounded-xl border border-border/60 bg-card/40 p-5"
             >
-              {pending ? "Saving…" : config.enabled ? "Pause supervisor" : "Enable supervisor"}
-            </Button>
-            <p className="max-w-prose text-xs text-muted-foreground">
-              {config.enabled
-                ? "The saved chief can request integrations. Pause to stop new requests."
-                : "New integration requests are blocked while paused."}
-            </p>
-          </LoomSettingsActions>
-        </div>
-      ) : null}
-      {initialProject && status.data ? (
-        <SupervisorEditor
-          key={config?.updatedAt ?? "new"}
-          environmentId={environmentId}
-          projects={projects}
-          initialProjectId={initialProject.id}
-          config={config}
-          sessions={sessions}
-          accessPending={access.isPending && access.data === null}
-          accessError={access.error}
-          disabled={locked}
-          onSave={(input) => void save(input)}
-        />
-      ) : null}
-      {status.data && (status.data.runs.length > 0 || status.data.receipts.length > 0) ? (
-        <LoomSettingsDetails title="Recent upstream activity">
-          {status.data.mainSha ? (
-            <p className="text-xs text-muted-foreground">
-              Main: {status.data.mainSha.slice(0, 12)}
-            </p>
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <GitForkIcon aria-hidden className="size-6" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <h2 className="wrap-anywhere text-lg font-semibold tracking-tight">
+                    {config.connection.repository}
+                  </h2>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {config.enabled
+                      ? "Your chief can request integrations for this repository."
+                      : "Setup is saved. Enable when you want your chief to request integrations."}
+                  </p>
+                </div>
+              </div>
+              <dl className="grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 text-sm">
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Project</dt>
+                  <dd className="mt-1 wrap-anywhere">
+                    {currentProject?.title ?? "Project no longer registered"}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Chief login</dt>
+                  <dd className="mt-1 wrap-anywhere">{sessionName(chief)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">GitHub connection</dt>
+                  <dd className="mt-1">Pinned to version {config.connection.expectedVersion}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Workflow</dt>
+                  <dd className="mt-1 wrap-anywhere">
+                    {status.data?.workflow ?? "loom-upstream.yml"}
+                  </dd>
+                </div>
+              </dl>
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
+                <Button
+                  shape="pill"
+                  size="sm"
+                  variant={config.enabled ? "outline" : "default"}
+                  disabled={locked || (!config.enabled && status.data?.unavailable === true)}
+                  onClick={() =>
+                    void save({
+                      projectId: config.projectId,
+                      clientSessionId: config.clientSessionId,
+                      connection: config.connection,
+                      enabled: !config.enabled,
+                    })
+                  }
+                >
+                  {config.enabled ? <PauseIcon aria-hidden /> : <PlayIcon aria-hidden />}
+                  {pending ? "Saving…" : config.enabled ? "Pause supervisor" : "Enable supervisor"}
+                </Button>
+                <Button
+                  shape="pill"
+                  size="sm"
+                  variant="ghost"
+                  disabled={locked}
+                  onClick={() => setEditing(true)}
+                >
+                  <PencilIcon aria-hidden />
+                  Edit setup
+                </Button>
+              </div>
+            </section>
           ) : null}
-          {status.data.runs.map((run) => (
-            <p key={`${run.id}:${run.attempt}`} className="text-sm">
-              <a href={run.url} target="_blank" rel="noreferrer" className="underline">
-                {run.title}
-              </a>{" "}
-              · {run.conclusion ?? run.status}
+          {initialProject && status.data && editorOpen ? (
+            <SupervisorEditor
+              key={config?.updatedAt ?? "new"}
+              environmentId={environmentId}
+              projects={projects}
+              initialProjectId={initialProject.id}
+              config={config}
+              sessions={sessions}
+              accessPending={access.isPending && access.data === null}
+              accessError={access.error}
+              disabled={locked}
+              saving={pending}
+              onSave={(input) => void save(input)}
+              onCancel={config ? () => setEditing(false) : undefined}
+            />
+          ) : null}
+        </div>
+        <aside className="min-w-0 space-y-6">
+          <section className="space-y-2" aria-label="Supervisor behavior">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <WorkflowIcon aria-hidden className="size-4 text-muted-foreground" />
+              {config ? "How it runs" : "Starts paused"}
+            </h2>
+            <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+              Saving links one project, chief login and GitHub repository. Enable and pause are
+              separate controls. Saving setup does not create a schedule.
             </p>
-          ))}
-          {status.data.receipts.map((receipt) => (
-            <p key={receipt.id} className="text-xs text-muted-foreground">
-              {receipt.targetTag} · {receipt.status}
-              {receipt.run ? ` · ${receipt.run.conclusion ?? receipt.run.status}` : ""}
-            </p>
-          ))}
-        </LoomSettingsDetails>
-      ) : null}
+          </section>
+          <SupervisorActivity status={status.data} />
+        </aside>
+      </div>
     </div>
+  );
+}
+
+function SupervisorActivity({ status }: { readonly status: UpstreamSupervisorStatus | null }) {
+  return (
+    <section
+      aria-label="Recent upstream activity"
+      className="space-y-4 border-t border-border/60 pt-5"
+    >
+      <h2 className="flex items-center gap-2 text-sm font-medium">
+        <ActivityIcon aria-hidden className="size-4 text-muted-foreground" />
+        Recent activity
+      </h2>
+      {status?.mainSha ? (
+        <p className="text-xs text-muted-foreground">
+          Main <code className="font-mono text-foreground">{status.mainSha.slice(0, 12)}</code>
+        </p>
+      ) : null}
+      {!status ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Activity loads with the supervisor status.
+        </p>
+      ) : status.runs.length === 0 && status.receipts.length === 0 ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          No recorded integrations. Workflow runs and requests will appear here.
+        </p>
+      ) : (
+        <div className="space-y-5">
+          {status.runs.length > 0 ? (
+            <ul className="space-y-4" aria-label="Workflow runs">
+              {status.runs.map((run) => (
+                <li key={`${run.id}:${run.attempt}`} className="min-w-0 space-y-1.5">
+                  <a
+                    href={run.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block wrap-anywhere text-sm font-medium underline-offset-4 hover:underline"
+                  >
+                    {run.title}
+                  </a>
+                  <LibraryStateBadge
+                    tone={
+                      run.conclusion === "success"
+                        ? "success"
+                        : run.conclusion === "failure"
+                          ? "danger"
+                          : "neutral"
+                    }
+                  >
+                    {run.conclusion ?? run.status}
+                  </LibraryStateBadge>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {status.receipts.length > 0 ? (
+            <ul className="space-y-3" aria-label="Integration requests">
+              {status.receipts.map((receipt) => (
+                <li
+                  key={receipt.id}
+                  className="flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <span className="wrap-anywhere font-medium">{receipt.targetTag}</span>
+                  <LibraryStateBadge
+                    tone={
+                      receipt.status === "refused"
+                        ? "danger"
+                        : receipt.status === "unknown"
+                          ? "warning"
+                          : "neutral"
+                    }
+                  >
+                    {receipt.run?.conclusion ?? receipt.status}
+                  </LibraryStateBadge>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -315,7 +426,9 @@ function SupervisorEditor({
   accessPending,
   accessError,
   disabled,
+  saving,
   onSave,
+  onCancel,
 }: {
   environmentId: EnvironmentId;
   projects: ReturnType<typeof useProjects>;
@@ -325,7 +438,9 @@ function SupervisorEditor({
   accessPending: boolean;
   accessError: string | null;
   disabled: boolean;
+  saving: boolean;
   onSave: (input: Omit<UpstreamSupervisorConfig, "updatedAt">) => void;
+  onCancel?: (() => void) | undefined;
 }) {
   const saveHintId = useId();
   const [projectId, setProjectId] = useState(config?.projectId ?? initialProjectId);
@@ -373,16 +488,16 @@ function SupervisorEditor({
   ].filter((entry) => entry !== null);
   const connectionsLocked = disabled || page.isPending || page.error !== null;
   return (
-    <div className="space-y-6 rounded-2xl border border-border/70 bg-card/40 p-4 sm:p-6">
+    <div className="@container/setup space-y-6 rounded-xl border border-border/60 bg-card/40 p-5">
       <div className="space-y-1">
-        <h4 className="text-base font-semibold tracking-tight">
-          {config ? "Configuration" : "Set up upstream supervision"}
-        </h4>
+        <h2 className="text-lg font-semibold tracking-tight">
+          {config ? "Edit setup" : "Connect your chief"}
+        </h2>
         <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
-          Saving keeps the supervisor paused. No integration or schedule starts here.
+          Choose the project and existing login your Grok chief will use.
         </p>
       </div>
-      <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-x-5 gap-y-5 @min-[28rem]/setup:grid-cols-2">
         <LoomSettingsField label="Project">
           <Select
             value={projectId}
@@ -404,10 +519,7 @@ function SupervisorEditor({
             </SelectPopup>
           </Select>
         </LoomSettingsField>
-        <LoomSettingsField
-          label="Chief login"
-          description="Use the login your Grok chief already connects with."
-        >
+        <LoomSettingsField label="Chief login" description="Your chief’s existing Loom login.">
           <Select
             value={clientSessionId}
             disabled={disabled || accessPending || accessError !== null || sessions.length === 0}
@@ -447,10 +559,10 @@ function SupervisorEditor({
           The saved chief login is no longer available. Choose its current login before saving.
         </LoomSettingsNotice>
       ) : null}
-      <div className="grid min-w-0 gap-x-6 gap-y-5 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-x-5 gap-y-5 @min-[28rem]/setup:grid-cols-2">
         <LoomSettingsField
           label="Vault GitHub connection"
-          description="Your saved GitHub account with access to this repository."
+          description="Saved GitHub account for this repository."
         >
           <Select
             value={connection?.id ?? ""}
@@ -525,7 +637,9 @@ function SupervisorEditor({
           </Select>
         </LoomSettingsField>
       </div>
-      {page.isPending && !page.data ? <p role="status">Loading GitHub connections…</p> : null}
+      {page.isPending && !page.data && !page.error ? (
+        <p role="status">Loading GitHub connections…</p>
+      ) : null}
       {page.error ? (
         <LoomSettingsNotice role="alert">
           <p>Could not load GitHub connections. Refresh connections to try again.</p>
@@ -562,7 +676,8 @@ function SupervisorEditor({
           <div className="mt-2">
             <Button
               variant="outline"
-              size="sm-multiline"
+              shape="pill"
+              size="sm"
               disabled={disabled || selected.isPending || selectedInfo.item.state !== "active"}
               onClick={() => {
                 setConnection({
@@ -589,7 +704,8 @@ function SupervisorEditor({
       <LoomSettingsActions>
         <Button
           variant="ghost"
-          size="sm"
+          shape="pill"
+          size="xs"
           disabled={disabled || page.isPending || selected.isPending}
           onClick={() => {
             page.refresh();
@@ -619,31 +735,39 @@ function SupervisorEditor({
           </Button>
         ) : null}
       </LoomSettingsActions>
-      <div className="flex flex-col-reverse gap-3 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <Button
-          size="sm-multiline"
-          aria-describedby={saveHintId}
-          disabled={disabled || missing.length > 0}
-          onClick={() => {
-            if (
-              !disabled &&
-              selectedProject &&
-              selectedSession &&
-              connection &&
-              currentConnection &&
-              !accessPending &&
-              !accessError
-            )
-              onSave({
-                projectId: selectedProject.id,
-                clientSessionId: selectedSession.sessionId,
-                connection,
-                enabled: false,
-              });
-          }}
-        >
-          Save paused configuration
-        </Button>
+      <div className="space-y-3 border-t border-border/60 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            shape="pill"
+            size="sm"
+            aria-describedby={saveHintId}
+            disabled={disabled || missing.length > 0}
+            onClick={() => {
+              if (
+                !disabled &&
+                selectedProject &&
+                selectedSession &&
+                connection &&
+                currentConnection &&
+                !accessPending &&
+                !accessError
+              )
+                onSave({
+                  projectId: selectedProject.id,
+                  clientSessionId: selectedSession.sessionId,
+                  connection,
+                  enabled: false,
+                });
+            }}
+          >
+            {saving ? "Saving…" : "Save paused configuration"}
+          </Button>
+          {onCancel ? (
+            <Button shape="pill" size="sm" variant="ghost" onClick={onCancel} disabled={saving}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
         <p id={saveHintId} className="max-w-prose text-xs leading-relaxed text-muted-foreground">
           {missing.length > 0
             ? `To save, ${missing.join(", ")}.`

@@ -17,6 +17,7 @@ vi.mock("@t3tools/client-runtime/fork", async () => {
   const allowed = Atom.make(true);
   return {
     supportsLoomFeature: () => true,
+    needsLibrarySignIn: () => false,
     createUpstreamSupervisorAtoms: () => ({
       status: () => "status",
       configure: { permissionAtom: () => allowed },
@@ -137,6 +138,27 @@ it("saves the chosen chief and GitHub target while the loaded access stream stay
       enabled: false,
     },
   });
+  state.queries.set("status", {
+    data: {
+      config: { ...state.save.mock.calls[0]?.[1].input, updatedAt: "2026-01-01T00:00:00Z" },
+      workflow: "loom-upstream.yml",
+      mainSha: null,
+      runs: [],
+      receipts: [],
+    },
+    isPending: false,
+    error: null,
+  });
+  await screen.rerender(<UpstreamSupervisorSettingsSection key="saved" />);
+  await expect
+    .element(screen.getByRole("region", { name: "Saved supervisor setup" }))
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Edit setup" }));
+  await userEvent.click(screen.getByRole("combobox", { name: "Repository" }));
+  await userEvent.click(page.getByRole("option", { name: "acme/other", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel", exact: true }));
+  await expect.element(screen.getByRole("heading", { name: "acme/app" })).toBeVisible();
+  expect(state.save).toHaveBeenCalledOnce();
 });
 
 it("keeps the saved Vault version pinned until the current version is explicitly accepted", async () => {
@@ -162,6 +184,7 @@ it("keeps the saved Vault version pinned until the current version is explicitly
     router: "/settings/connections",
   });
 
+  await userEvent.click(screen.getByRole("button", { name: "Edit setup" }));
   const save = screen.getByRole("button", { name: "Save paused configuration" });
   await expect.element(save).toBeDisabled();
   await userEvent.click(screen.getByRole("combobox", { name: "Repository" }));
@@ -178,6 +201,44 @@ it("keeps the saved Vault version pinned until the current version is explicitly
       projectId: "maintenance-project",
       clientSessionId: "chief-login",
       connection: { id: "a".repeat(32), expectedVersion: 7, repository: "acme/other" },
+      enabled: false,
+    },
+  });
+});
+
+it("can pause saved supervision when the upstream service is unavailable", async () => {
+  setup();
+  const config = {
+    projectId: "maintenance-project",
+    clientSessionId: "chief-login",
+    connection: { id: "a".repeat(32), expectedVersion: 7, repository: "acme/app" },
+    enabled: true,
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+  state.queries.set("status", {
+    data: {
+      config,
+      unavailable: true,
+      workflow: "loom-upstream.yml",
+      mainSha: null,
+      runs: [],
+      receipts: [],
+    },
+    isPending: false,
+    error: null,
+  });
+  await using screen = await render(<UpstreamSupervisorSettingsSection />, {
+    router: "/settings/connections",
+  });
+  const pause = screen.getByRole("button", { name: "Pause supervisor" });
+  await expect.element(pause).toBeEnabled();
+  await userEvent.click(pause);
+  expect(state.save.mock.calls[0]?.[1]).toEqual({
+    environmentId: "remote-computer",
+    input: {
+      projectId: config.projectId,
+      clientSessionId: config.clientSessionId,
+      connection: config.connection,
       enabled: false,
     },
   });

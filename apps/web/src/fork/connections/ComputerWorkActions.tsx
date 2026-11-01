@@ -39,7 +39,7 @@ export function ComputerWorkActions({
   presentation = "details",
 }: {
   readonly environment: EnvironmentPresentation;
-  readonly presentation?: "card" | "details";
+  readonly presentation?: "card" | "row" | "details";
 }) {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -70,7 +70,7 @@ export function ComputerWorkActions({
   );
   const recentConversations = [];
   let remainingThreads = threads;
-  for (let index = 0; index < (presentation === "card" ? 1 : 3); index++) {
+  for (let index = 0; index < (presentation === "details" ? 3 : 1); index++) {
     const recent = recentConversationForComputer(
       remainingThreads,
       projects,
@@ -97,7 +97,15 @@ export function ComputerWorkActions({
   );
 
   return (
-    <div className={presentation === "card" ? "flex flex-1 flex-col gap-4" : "space-y-4"}>
+    <div
+      className={
+        presentation === "card"
+          ? "flex flex-1 flex-col gap-4"
+          : presentation === "row"
+            ? "min-w-0 space-y-2"
+            : "space-y-4"
+      }
+    >
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {connected ? (
           <span>
@@ -110,7 +118,7 @@ export function ComputerWorkActions({
           {machineProjects.length} {machineProjects.length === 1 ? "project" : "projects"}
         </span>
       </div>
-      {presentation === "card" && recentConversations[0] ? (
+      {presentation !== "details" && recentConversations[0] ? (
         <Link
           to="/$environmentId/$threadId"
           params={buildThreadRouteParams(
@@ -122,7 +130,7 @@ export function ComputerWorkActions({
             aria-hidden
             className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
           />
-          <span className="line-clamp-2 min-w-0">
+          <span className={presentation === "row" ? "min-w-0 truncate" : "line-clamp-2 min-w-0"}>
             {recentConversations[0].title || "Untitled thread"}
           </span>
         </Link>

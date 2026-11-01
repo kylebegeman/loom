@@ -53,6 +53,11 @@ export function ComputersSettingsPage({
     if (hash) setActive(viewForTarget(hash));
   }
   const panels = { computers: children, supervisor, library, updates, workers };
+  const title = active === "supervisor" ? "Upstream supervisor" : "Computers";
+  const description =
+    active === "supervisor"
+      ? "Let your Grok chief manage upstream integrations."
+      : "Start work on a computer or pick up where you left off.";
 
   return (
     <Tabs.Root
@@ -71,9 +76,9 @@ export function ComputersSettingsPage({
       <div className="shrink-0 space-y-5 px-5 pt-6 sm:px-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Computers</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
             <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-              Start work on a computer or pick up where you left off.
+              {description}
             </p>
           </div>
           {actions ? (
