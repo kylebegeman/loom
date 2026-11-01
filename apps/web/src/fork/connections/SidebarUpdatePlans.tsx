@@ -15,7 +15,8 @@ function ComputerPlan({
     UPDATE_PLAN_FEATURE,
   );
   const { status } = useUpdatePlan(environment.environmentId, advertised);
-  if (!status?.plan || status.plan.state === "cancelled") return null;
+  if (!status?.plan || status.plan.state === "cancelled" || status.plan.state === "done")
+    return null;
   return (
     <SidebarMenuItem>
       <div className="space-y-1 rounded-lg bg-sidebar-control-surface px-3 py-2 text-xs">
