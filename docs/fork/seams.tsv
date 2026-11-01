@@ -681,7 +681,7 @@ packages/provider-core/src/server/textGenerationPrompts.ts	brand	2
 packages/provider-cursor/src/server/accountUsage.test.ts	brand	1
 packages/provider-cursor/src/server/accountUsage.ts	brand	1
 packages/provider-cursor/src/server/adapter.test.ts	brand	2
-packages/provider-cursor/src/server/status.test.ts	brand	2
+packages/provider-cursor/src/server/status.test.ts	brand	3
 packages/provider-cursor/src/server/status.ts	brand	4
 packages/provider-cursor/src/server/textGeneration.ts	brand	1
 packages/provider-cursor/src/server/usageLimits.ts	brand	1

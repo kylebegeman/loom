@@ -295,7 +295,8 @@ describe("checkCursorProviderStatus", () => {
         status: "error",
         auth: { status: "unknown" },
         message:
-          "Cursor needs a paid plan to run in T3 Code. Upgrade the account that owns CURSOR_API_KEY or use a key from a paid account.",
+          // fork: brand
+          "Cursor needs a paid plan to run in Loom. Upgrade the account that owns CURSOR_API_KEY or use a key from a paid account.",
       },
     },
     {
