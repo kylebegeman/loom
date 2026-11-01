@@ -63,7 +63,7 @@ apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	switchboard	23
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	switchboard	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	4
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
-apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	6
+apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	5
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
 apps/web/src/components/settings/settingsSearch.ts	ext-settings	11
@@ -544,7 +544,7 @@ apps/server/src/cli/browser.ts	brand	13
 apps/server/src/cli/config.test.ts	brand	1
 apps/server/src/cli/config.ts	brand	2
 apps/server/src/cli/doctor.ts	brand	2
-apps/server/src/cli/service.ts	brand	28
+apps/server/src/cli/service.ts	brand	22
 apps/server/src/cli/service.ts	github-host-setup	3
 apps/server/src/cli/theme.ts	brand	1
 apps/server/src/cli/uninstall.ts	brand	1
