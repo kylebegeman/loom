@@ -63,7 +63,7 @@ apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	switchboard	23
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	switchboard	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	4
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
-apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	6
+apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	5
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
 apps/web/src/components/settings/settingsSearch.ts	ext-settings	11
@@ -127,6 +127,7 @@ packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	19
 apps/mobile/app.config.ts	mobile-identity	24
+apps/mobile/app.config.test.ts	mobile-identity	1
 apps/mobile/src/App.tsx	mobile-identity	1
 apps/mobile/src/lib/appLinking.ts	mobile-identity	1
 apps/mobile/src/lib/appLinking.test.ts	mobile-identity	3
@@ -283,7 +284,7 @@ apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	3
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	22
 apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	44
 apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	11
-apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	respectful-notifications	26
+apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	respectful-notifications	28
 apps/web/src/components/settings/SettingsPanels.tsx	respectful-notifications	4
 apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
 apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
@@ -544,7 +545,7 @@ apps/server/src/cli/browser.ts	brand	13
 apps/server/src/cli/config.test.ts	brand	1
 apps/server/src/cli/config.ts	brand	2
 apps/server/src/cli/doctor.ts	brand	2
-apps/server/src/cli/service.ts	brand	28
+apps/server/src/cli/service.ts	brand	22
 apps/server/src/cli/service.ts	github-host-setup	3
 apps/server/src/cli/theme.ts	brand	1
 apps/server/src/cli/uninstall.ts	brand	1
@@ -552,6 +553,7 @@ apps/server/src/cli/update.ts	brand	5
 apps/server/src/cli/update.test.ts	brand	1
 apps/server/src/cli/update.test.ts	fleet-connect	1
 apps/server/src/cli/updateProgress.ts	brand	1
+apps/server/src/cli/up.ts	brand	7
 apps/server/src/cloud/bootService.ts	brand	3
 apps/server/src/cloud/selfUpdate.ts	brand	2
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	brand	4
@@ -679,7 +681,7 @@ packages/provider-core/src/server/textGenerationPrompts.ts	brand	2
 packages/provider-cursor/src/server/accountUsage.test.ts	brand	1
 packages/provider-cursor/src/server/accountUsage.ts	brand	1
 packages/provider-cursor/src/server/adapter.test.ts	brand	2
-packages/provider-cursor/src/server/status.test.ts	brand	2
+packages/provider-cursor/src/server/status.test.ts	brand	3
 packages/provider-cursor/src/server/status.ts	brand	4
 packages/provider-cursor/src/server/textGeneration.ts	brand	1
 packages/provider-cursor/src/server/usageLimits.ts	brand	1
@@ -979,8 +981,8 @@ apps/server/src/git/GitWorkflowService.ts	project-lifecycle	5
 apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
-apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
-apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
+apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	13
+apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	22
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1
@@ -1527,7 +1529,8 @@ apps/web/src/components/Sidebar.tsx	project-lifecycle	9
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	project-lifecycle	13
 apps/mobile/src/features/home/useThreadListActions.ts	project-lifecycle	2
 apps/mobile/src/features/home/useThreadListActions.test.ts	project-lifecycle	6
-apps/server/src/provider/agentContextBudget.json	-	"mcpToolListJsonBytes": 199898
+# A prefix: Loom's Codex context is 10,000-19,999 bytes, upstream's under 10,000. The test holds exact sizes.
+apps/server/src/provider/agentContextBudget.json	-	"codexAdditionalContextBytes": 1
 apps/server/src/auth/McpOAuth.test.ts	grok-bot	1
 evals/package.json	-	"loom-skills"
 evals/README.md	-	Loom skills
@@ -1539,6 +1542,7 @@ apps/web/src/components/sidebar/SidebarThreadRow.tsx	project-lifecycle	3
 evals/mcp-tool-use/run.ts	project-lifecycle	2
 evals/mcp-tool-use/run.ts	directory-computers	2
 evals/mcp-tool-use/run.ts	bots-triggers	2
+evals/mcp-tool-use/run.ts	upstream-supervisor	2
 apps/mobile/src/features/settings/settings-search.ts	ext-settings	2
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	project-lifecycle	1
 apps/server/src/provider/Drivers/ClaudeSkills.test.ts	skill-registry	1

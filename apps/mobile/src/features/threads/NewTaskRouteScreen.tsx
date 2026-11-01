@@ -13,6 +13,7 @@ import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navi
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useNoProjectTarget } from "../../fork/no-project/useNoProjectTarget"; // fork: no-project-first
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection"; // fork: fleet-connections
+import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -40,7 +41,11 @@ import { useWorkspaceState } from "../../state/workspace";
 
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
 import { useNewTaskFlow } from "./new-task-flow-provider";
-import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-project-selection";
+import {
+  filterProjectScopes,
+  getProjectScopeSelectionTarget,
+  resolveNewTaskScratchOption,
+} from "./new-task-project-selection";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 
 type NewTaskRouteParams = {
@@ -187,7 +192,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
-  const listScopes = projectScopes.filter(
+  const listScopes = pickableProjectGroups(projectScopes).filter(
     (scope) =>
       !scope.projects.every((project) =>
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
@@ -216,7 +221,20 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
     reportFailure: false,
   });
   const scratchEnvironment = useNoProjectTarget(selectedEnvironmentId); // fork: no-project-first
-  const canStartScratch = scratchEnvironment !== null && reservedDestinationProject === null;
+  const scratchOption =
+    reservedDestinationProject === null
+      ? resolveNewTaskScratchOption({
+          // fork: no-project-first - A Library with execution turned off never offers No project.
+          environments: connectedEnvironments.filter(
+            (environment) =>
+              serverConfigs.get(environment.environmentId)?.environment.capabilities
+                .supportsExecution !== false, // fork: no-project-first
+          ),
+          serverConfigs,
+          selectedEnvironmentId,
+        })
+      : null;
+  const canStartScratch = scratchOption?.ready === true;
   // fork: no-project-first - Name the computer, as project rows do. The empty state below has its own button.
   const scratchSubtitle = scratchEnvironment
     ? `Starts on ${savedConnectionsById[scratchEnvironment.environmentId]?.environmentLabel ?? scratchEnvironment.environmentLabel}`
@@ -262,8 +280,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   }
 
   async function startScratch(): Promise<void> {
-    if (!scratchEnvironment || scratchStartInFlightRef.current) return;
-    const environmentId = scratchEnvironment.environmentId;
+    if (!canStartScratch || !scratchOption || scratchStartInFlightRef.current) return;
+    const environmentId = scratchEnvironment?.environmentId ?? scratchOption.environmentId; // fork: no-project-first
     scratchStartInFlightRef.current = true;
     const result = await openScratch({ environmentId, input: {} });
     if (result._tag === "Failure") {
@@ -352,7 +370,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             disabled={reservedDestinationProject !== null} // fork: library
           />
           {/* fork: no-project-first - No project leads the choices whenever a computer can run it. */}
-          {canStartScratch && !emptyStateOffersScratch ? (
+          {scratchOption !== null && !emptyStateOffersScratch ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
                 <NavigationRow
@@ -360,6 +378,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   title="No project"
                   subtitle={scratchSubtitle} // fork: no-project-first
                   subtitleNumberOfLines={1} // fork: no-project-first
+                  disabled={!canStartScratch}
                   onPress={() => void startScratch()}
                   leading={
                     <SymbolView
@@ -376,8 +395,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`No project, ${scratchSubtitle}`} // fork: no-project-first
+                  disabled={!canStartScratch}
                   onPress={() => void startScratch()}
-                  className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
+                  className={cn(
+                    "flex-row items-center gap-3 bg-grouped-card px-4 py-3.5",
+                    !canStartScratch && "opacity-45",
+                  )}
                 >
                   <View className="h-7 w-7 items-center justify-center">
                     <SymbolView

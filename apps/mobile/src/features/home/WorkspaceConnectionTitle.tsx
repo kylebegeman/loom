@@ -135,6 +135,7 @@ export function WorkspaceConnectionTitle(props: {
     );
   }
 
+  // fork: fleet-connections -- iOS shows the status below the brand; Android keeps the fade-in title
   const statusButton = (
     <Pressable
       accessibilityHint={
@@ -199,6 +200,7 @@ export function WorkspaceConnectionTitle(props: {
     return (
       <View
         style={[
+          // fork: fleet-connections
           {
             alignItems: "flex-start",
             justifyContent: "center",
@@ -209,6 +211,7 @@ export function WorkspaceConnectionTitle(props: {
           props.grow ? { flex: 1 } : null,
         ]}
       >
+        {/* fork: fleet-connections */}
         <View style={{ alignSelf: "stretch", flexDirection: "row", minWidth: 0 }}>
           {props.brand}
         </View>

@@ -1482,7 +1482,12 @@ function agentScript(root: string, name: string, body: string) {
 
 function conflictFixture(
   agent: string,
-  options: { readonly seam?: boolean; readonly rerere?: boolean; readonly binary?: boolean } = {},
+  options: {
+    readonly seam?: boolean;
+    readonly rerere?: boolean;
+    readonly binary?: boolean;
+    readonly longHistory?: boolean;
+  } = {},
 ) {
   const f = repositoryFixture();
   if (options.rerere) f.git("config", "rerere.enabled", "true");
@@ -1505,6 +1510,15 @@ function conflictFixture(
   f.git("commit", "--quiet", "-am", "upstream changes");
   f.git("tag", NIGHTLY);
   f.git("switch", "--quiet", "main");
+  if (options.longHistory) {
+    // More Loom commits to a.ts than a resolve prompt lists, the oldest far longer than a pipe holds.
+    const message = NodePath.join(f.root, ".git", "LONG_SUBJECT");
+    NodeFS.writeFileSync(message, `loom change ${"x".repeat(512 * 1024)}\n`);
+    for (let i = 0; i < 40; i++) {
+      write("apps/a.ts", `export const a = 3; // loom change ${i}\n`);
+      f.git("commit", "--quiet", "-a", ...(i === 0 ? ["-F", message] : ["-m", `loom change ${i}`]));
+    }
+  }
   write("apps/a.ts", `export const a = 3; ${options.seam ? SEAM : "// loom change"}\n`);
   write("apps/b.ts", "export const b = 3; // loom change\n");
   if (options.binary) write("apps/icon.bin", "\0loom");
@@ -1530,18 +1544,21 @@ function conflictFixture(
 }
 
 it("resolves each conflicted file in its own session and stages what the sessions changed", () => {
-  const f = conflictFixture(`
+  const f = conflictFixture(
+    `
 case "$LOOM_RESOLVE_FILE" in
   apps/a.ts)
     printf 'export const a = 2; // loom change\\n' > apps/a.ts
     printf 'export const moved = 3; // loom change\\n' > apps/moved.ts ;;
   apps/b.ts) printf 'export const b = 2; // loom change\\n' > apps/b.ts ;;
 esac
-printf 'Kept upstream and reapplied the seam.\\n\\n**RESOLVED**\\n'`);
+printf 'Kept upstream and reapplied the seam.\\n\\n**RESOLVED**\\n'`,
+    { longHistory: true },
+  );
 
   const result = f.resolve();
 
-  expect(result.status).toBe(0);
+  expect(result.status, result.stdout).toBe(0);
   expect(f.git("diff", "--name-only", "--diff-filter=U")).toBe("");
   expect(f.git("show", ":apps/a.ts")).toBe("export const a = 2; // loom change");
   expect(f.git("show", ":apps/b.ts")).toBe("export const b = 2; // loom change");

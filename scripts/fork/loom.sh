@@ -1317,9 +1317,9 @@ resolve_prompt() {
   awk -F'\t' -v f="$file" '$1 == f { print "    " $0; n++ } END { if (!n) print "    none" }' "$SEAMS_MANIFEST" 2>/dev/null ||
     echo "    none"
   printf '\nUpstream commits in this merge that change it:\n\n'
-  git log --no-merges --format='    %h %s' HEAD..MERGE_HEAD -- "$file" | head -n 40
+  git log --no-merges -n 40 --format='    %h %s' HEAD..MERGE_HEAD -- "$file"
   printf '\nLoom commits since the last integration that change it:\n\n'
-  git log --no-merges --format='    %h %s' MERGE_HEAD..HEAD -- "$file" | head -n 40
+  git log --no-merges -n 40 --format='    %h %s' MERGE_HEAD..HEAD -- "$file"
 }
 
 # One session for one conflicted file. Its reply ends RESOLVED or UNRESOLVED: <why>. A

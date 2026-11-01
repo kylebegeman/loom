@@ -18,7 +18,7 @@ function ModelPalette({
   onBack,
   onClose,
   getModelDisabledReason,
-  footer,
+  switchboardNote,
 }: {
   readonly instanceEntries: readonly ProviderInstanceEntry[];
   readonly activeInstanceId: ProviderInstanceId;
@@ -30,7 +30,7 @@ function ModelPalette({
   readonly getModelDisabledReason?:
     | ((instanceId: ProviderInstanceId, model: string) => string | null)
     | undefined;
-  readonly footer?: ReactNode | undefined;
+  readonly switchboardNote?: ReactNode | undefined;
 }) {
   const [search, setSearch] = useState("");
   return (
@@ -68,7 +68,7 @@ function ModelPalette({
         }),
       )}
     >
-      {footer}
+      {switchboardNote}
     </LibraryPaletteView>
   );
 }

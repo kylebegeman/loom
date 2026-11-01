@@ -87,6 +87,8 @@ const fixture = Effect.gen(function* () {
           createdAt: project.createdAt,
           updatedAt: project.updatedAt,
           deletedAt: null,
+          pinnedAt: null,
+          archivedAt: null,
         },
       ]),
   });

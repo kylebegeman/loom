@@ -74,15 +74,16 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
 });
 
 export const startCommand = Command.make("start", { ...sharedServerCommandFlags }).pipe(
-  // fork: brand
-  Command.withDescription("Run the Loom server."),
+  Command.withDescription("Same as `loom`."), // fork: brand
+  Command.unlisted,
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
+  Command.withShortDescription("Run Loom in this terminal, with no browser."), // fork: brand
   Command.withDescription(
     // fork: brand
-    "Run the Loom server without opening a browser and print headless pairing details.",
+    "Run Loom in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `loom up`.",
   ),
   Command.withHandler((flags) =>
     runServerCommand(flags, {

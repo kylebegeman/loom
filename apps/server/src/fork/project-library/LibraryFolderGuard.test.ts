@@ -71,6 +71,8 @@ const projectRow = (workspaceRoot: string): ProjectStore.ProjectRow => ({
   createdAt: "2026-10-25T00:00:00.000Z",
   updatedAt: "2026-10-25T00:00:00.000Z",
   deletedAt: null,
+  pinnedAt: null,
+  archivedAt: null,
 });
 
 const guardLayer = (input: { readonly copy: string; readonly projectRoot: string }) =>
