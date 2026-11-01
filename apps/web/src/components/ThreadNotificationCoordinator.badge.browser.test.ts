@@ -435,6 +435,8 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
     state.shells.set("one", shell({ id: "working" }, { id: "asking" }, { id: "offline" }, done));
     app.start();
     using _timers = fakeTimers();
+    // fork: respectful-notifications - a brief disconnect, inside the resync completion window
+    vi.setSystemTime("2026-09-13T07:06:00.000Z");
     state.shells.set("one", shell({ id: "working" }, asking, { id: "offline" }, done));
     state.shells.set("one", {
       ...shell({ id: "working" }, asking, { id: "offline" }, done),
@@ -473,6 +475,8 @@ it.each([false, true])(
     await using app = setup();
     app.start();
     using _timers = fakeTimers();
+    // fork: respectful-notifications - a brief disconnect, inside the resync completion window
+    vi.setSystemTime("2026-09-13T07:06:00.000Z");
     const completed = shell({
       latestTurn: { turnId: "turn", state: "completed", completedAt: "2026-09-13T07:05:00.000Z" },
     });
