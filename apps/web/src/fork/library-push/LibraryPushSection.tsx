@@ -8,7 +8,10 @@ import {
   type LibraryPushDeviceRowId,
 } from "@t3tools/contracts/fork";
 import { useState } from "react";
-import { SettingsSection } from "~/components/settings/settingsLayout";
+import { ChevronRightIcon, RefreshCwIcon, SmartphoneIcon } from "lucide-react";
+import { SettingsSearchTarget } from "~/components/settings/settingsLayout";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { LibrarySection } from "../project-library/LibraryControls";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -44,7 +47,7 @@ type Pending = { readonly id: LibraryPushDeviceRowId; readonly action: "test" | 
 
 function LineText({ line, role }: { line: LibraryPushLine; role?: "status" | "alert" }) {
   return (
-    <p role={role} className={cn("text-xs leading-relaxed", TONE_CLASS[line.tone])}>
+    <p role={role} className={cn("text-xs leading-relaxed wrap-anywhere", TONE_CLASS[line.tone])}>
       {line.text}
     </p>
   );
@@ -76,11 +79,13 @@ export function LibraryPushSection() {
   const authority = useLibraryAuthority();
   if (authority.authorityId === null)
     return (
-      <SettingsSection id="library-push" title="Push notifications">
-        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          Connect your Library above to manage notifications for your phone.
-        </p>
-      </SettingsSection>
+      <SettingsSearchTarget id="library-push">
+        <LibrarySection title="Phone notifications">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Connect your Library above to manage notifications for your phone.
+          </p>
+        </LibrarySection>
+      </SettingsSearchTarget>
     );
   const capabilities = authority.environment?.serverConfig?.environment.capabilities ?? null;
   return (
@@ -171,96 +176,123 @@ function LibraryPushBody({
   if (view.headline === null) return null;
 
   return (
-    <SettingsSection
-      id="library-push"
-      title="Push notifications"
-      headerAction={
-        view.refreshable ? (
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            disabled={view.refreshing}
-            onClick={() => refresh()}
-          >
-            {view.refreshing ? "Refreshing..." : "Refresh"}
-          </Button>
-        ) : undefined
-      }
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2 px-3 py-3 sm:px-4">
-        <div className="min-w-0 space-y-1">
-          <LineText line={view.headline} role={view.status === "failed" ? "alert" : "status"} />
-          {view.hint ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">{view.hint}</p>
-          ) : null}
-          {view.key ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">{view.key}</p>
-          ) : null}
-          {view.builds ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">{view.builds}</p>
-          ) : null}
-          {view.alerts ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">{view.alerts}</p>
-          ) : null}
-          {view.error ? (
-            <p role="alert" className="text-xs leading-relaxed text-destructive-foreground">
-              {view.error}
-            </p>
-          ) : null}
-        </div>
-        {view.retry ? (
-          <Button size="xs" variant="outline" disabled={view.refreshing} onClick={() => refresh()}>
-            Try again
-          </Button>
-        ) : null}
-      </div>
-      {view.empty ? (
-        <div className="px-3 py-3 sm:px-4">
-          <LineText line={view.empty} />
-        </div>
-      ) : null}
-      {view.devices.map((device) => {
-        const busy = pending?.id === device.id ? pending.action : null;
-        const outcome = outcomes.get(device.id);
-        return (
-          <div
-            key={device.id}
-            className="flex items-start justify-between gap-3 px-3 py-2.5 sm:px-4"
-          >
-            <div className="min-w-0 space-y-0.5">
-              <p className="truncate text-sm">{device.label}</p>
-              <p className="text-xs leading-relaxed text-muted-foreground">{device.detail}</p>
-              {device.lastDelivery ? <LineText line={device.lastDelivery} /> : null}
-              {outcome ? (
-                <LineText line={outcome} role={outcome.tone === "danger" ? "alert" : "status"} />
-              ) : null}
-            </div>
-            <div className="flex shrink-0 flex-wrap justify-end gap-2">
-              <CopyDeviceId id={device.id} label={device.label} />
-              {device.test ? (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={pending !== null}
-                  onClick={() => void sendTest(device)}
-                >
-                  {busy === "test" ? "Sending..." : "Send test"}
-                </Button>
-              ) : null}
-              {device.remove ? (
-                <Button
-                  size="xs"
-                  variant="destructive-outline"
-                  disabled={pending !== null}
-                  onClick={() => void remove(device)}
-                >
-                  {busy === "remove" ? "Removing..." : "Remove"}
-                </Button>
-              ) : null}
-            </div>
+    <SettingsSearchTarget id="library-push" className="min-w-0">
+      <LibrarySection
+        title="Phone notifications"
+        count={view.devices.length}
+        action={
+          view.refreshable ? (
+            <Button
+              shape="pill"
+              size="xs"
+              variant="ghost-muted"
+              disabled={view.refreshing}
+              onClick={() => refresh()}
+            >
+              <RefreshCwIcon aria-hidden />
+              {view.refreshing ? "Refreshing..." : "Refresh"}
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <LineText line={view.headline} role={view.status === "failed" ? "alert" : "status"} />
+            {view.hint ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">{view.hint}</p>
+            ) : null}
+            {view.alerts ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">{view.alerts}</p>
+            ) : null}
+            {view.error ? (
+              <p role="alert" className="text-xs leading-relaxed text-destructive-foreground">
+                {view.error}
+              </p>
+            ) : null}
           </div>
-        );
-      })}
-    </SettingsSection>
+          {view.retry ? (
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={view.refreshing}
+              onClick={() => refresh()}
+            >
+              Try again
+            </Button>
+          ) : null}
+        </div>
+        {view.empty ? (
+          <div className="flex items-start gap-3 rounded-xl border border-border/60 p-4">
+            <SmartphoneIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <LineText line={view.empty} />
+          </div>
+        ) : null}
+        <div className="divide-y divide-border/60">
+          {view.devices.map((device) => {
+            const busy = pending?.id === device.id ? pending.action : null;
+            const outcome = outcomes.get(device.id);
+            return (
+              <div
+                key={device.id}
+                className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0"
+              >
+                <div className="min-w-0 flex-1 basis-48 space-y-1">
+                  <p className="text-sm font-medium wrap-anywhere">{device.label}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{device.detail}</p>
+                  {device.lastDelivery ? <LineText line={device.lastDelivery} /> : null}
+                  {outcome ? (
+                    <LineText
+                      line={outcome}
+                      role={outcome.tone === "danger" ? "alert" : "status"}
+                    />
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <CopyDeviceId id={device.id} label={device.label} />
+                  {device.test ? (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={pending !== null}
+                      onClick={() => void sendTest(device)}
+                    >
+                      {busy === "test" ? "Sending..." : "Send test"}
+                    </Button>
+                  ) : null}
+                  {device.remove ? (
+                    <Button
+                      size="xs"
+                      variant="destructive-outline"
+                      disabled={pending !== null}
+                      onClick={() => void remove(device)}
+                    >
+                      {busy === "remove" ? "Removing..." : "Remove"}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {view.key || view.builds ? (
+          <Collapsible>
+            <CollapsibleTrigger render={<Button shape="pill" size="xs" variant="ghost-muted" />}>
+              <ChevronRightIcon aria-hidden className="[[data-panel-open]_&]:rotate-90" />
+              Delivery settings
+            </CollapsibleTrigger>
+            <CollapsiblePanel keepMounted>
+              <div className="space-y-2 pt-3">
+                {view.key ? (
+                  <p className="text-xs leading-relaxed text-muted-foreground">{view.key}</p>
+                ) : null}
+                {view.builds ? (
+                  <p className="text-xs leading-relaxed text-muted-foreground">{view.builds}</p>
+                ) : null}
+              </div>
+            </CollapsiblePanel>
+          </Collapsible>
+        ) : null}
+      </LibrarySection>
+    </SettingsSearchTarget>
   );
 }

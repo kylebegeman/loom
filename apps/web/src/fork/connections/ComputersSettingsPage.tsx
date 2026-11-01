@@ -11,11 +11,36 @@ import { useRef, useState, type ReactNode } from "react";
 import { SettingsPageContainer } from "~/components/settings/settingsLayout";
 
 const VIEWS = [
-  { id: "computers", label: "Computers", icon: HardDriveIcon },
-  { id: "supervisor", label: "Upstream supervisor", icon: WorkflowIcon },
-  { id: "library", label: "Library", icon: LibraryBigIcon },
-  { id: "updates", label: "Updates", icon: RefreshCwIcon },
-  { id: "workers", label: "Command workers", icon: NetworkIcon },
+  {
+    id: "computers",
+    label: "Computers",
+    icon: HardDriveIcon,
+    description: "Start work on a computer or pick up where you left off.",
+  },
+  {
+    id: "supervisor",
+    label: "Upstream supervisor",
+    icon: WorkflowIcon,
+    description: "Let your Grok chief manage upstream integrations.",
+  },
+  {
+    id: "library",
+    label: "Library",
+    icon: LibraryBigIcon,
+    description: "Keep your projects, conversations, and computers together across devices.",
+  },
+  {
+    id: "updates",
+    label: "Updates",
+    icon: RefreshCwIcon,
+    description: "Review Loom and provider updates across your computers.",
+  },
+  {
+    id: "workers",
+    label: "Command workers",
+    icon: NetworkIcon,
+    description: "Run command jobs on computers connected over SSH.",
+  },
 ] as const;
 
 type ComputersView = (typeof VIEWS)[number]["id"];
@@ -53,11 +78,7 @@ export function ComputersSettingsPage({
     if (hash) setActive(viewForTarget(hash));
   }
   const panels = { computers: children, supervisor, library, updates, workers };
-  const title = active === "supervisor" ? "Upstream supervisor" : "Computers";
-  const description =
-    active === "supervisor"
-      ? "Let your Grok chief manage upstream integrations."
-      : "Start work on a computer or pick up where you left off.";
+  const view = VIEWS.find((entry) => entry.id === active)!;
 
   return (
     <Tabs.Root
@@ -76,9 +97,9 @@ export function ComputersSettingsPage({
       <div className="shrink-0 space-y-5 px-5 pt-6 sm:px-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{view.label}</h1>
             <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-              {description}
+              {view.description}
             </p>
           </div>
           {actions ? (

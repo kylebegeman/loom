@@ -5,6 +5,7 @@ import {
   directoryCatalogRows,
   directoryOldMachines,
   supportsLoomFeature,
+  libraryProjectColor,
   type DirectoryCatalogRow,
   type DirectorySavedConnection,
 } from "@t3tools/client-runtime/fork";
@@ -12,8 +13,13 @@ import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/
 import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 import { DIRECTORY_FEATURE } from "@t3tools/contracts/fork";
 import { useState } from "react";
-import { EnvironmentRow } from "~/components/settings/EnvironmentRow";
-import { SettingsSection } from "~/components/settings/settingsLayout";
+import { ChevronRightIcon, HardDriveIcon, RefreshCwIcon } from "lucide-react";
+import { EnvironmentMachineIcon } from "~/components/EnvironmentMachineIcon";
+import { SettingsSearchTarget } from "~/components/settings/settingsLayout";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { Skeleton } from "~/components/ui/skeleton";
+import { LibraryEmpty, LibrarySection, LibraryStateDot } from "../project-library/LibraryControls";
+import { projectColorStyle } from "../project-library/ProjectIdentity";
 import { Button } from "~/components/ui/button";
 import { toastManager } from "~/components/ui/toast";
 import { useNowMinute } from "~/hooks/useNowMinute";
@@ -68,11 +74,11 @@ export function LibraryComputers({ onPair }: { readonly onPair: PairLibraryCompu
   const authority = useLibraryAuthority();
   if (authority.authorityId === null)
     return (
-      <SettingsSection id="library-computers" title="Computers from your Library">
-        <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">
-          Connect your Library above to find its computers and manage remembered connections.
-        </p>
-      </SettingsSection>
+      <SettingsSearchTarget id={LIBRARY_COMPUTERS_TARGET}>
+        <LibraryEmpty icon={HardDriveIcon} title="Find your other computers">
+          Connect your Library above to discover computers and manage remembered connections.
+        </LibraryEmpty>
+      </SettingsSearchTarget>
     );
   const serverConfig = authority.environment?.serverConfig ?? null;
   return (
@@ -229,151 +235,229 @@ function LibraryComputersSection({
     }
   })();
 
-  return (
-    <SettingsSection
-      id={LIBRARY_COMPUTERS_TARGET}
-      title="Computers in your Library"
-      headerAction={
-        view.status === "unsupported" ? null : (
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            disabled={view.refreshing}
-            onClick={() => refresh()}
+  const renderRow = (row: DirectoryCatalogRow) => {
+    const state = rowStates.get(row.environmentId) ?? null;
+    const os = row.report?.platform.os;
+    const platform = os === undefined ? null : (PLATFORM_LABELS[os] ?? os);
+    const health =
+      listing === null
+        ? null
+        : computerDirectoryHealth({
+            listing,
+            environmentId: row.environmentId,
+            label: row.label,
+            now,
+            source: view.listing.source === "live" ? "live" : "cache",
+          });
+    const note =
+      row.action === "pair"
+        ? {
+            text: `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair using an address this device can reach.`,
+            error: false,
+          }
+        : state?.phase === "pairing"
+          ? { text: state.reasonText, error: false }
+          : state?.phase === "failed"
+            ? { text: state.message, error: true }
+            : null;
+    return (
+      <li
+        key={row.environmentId}
+        className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3 py-4"
+      >
+        <div
+          className="flex min-w-0 flex-1 basis-64 items-start gap-3"
+          style={projectColorStyle(libraryProjectColor({ id: row.environmentId }))}
+        >
+          <span
+            aria-hidden
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color)"
           >
-            {view.refreshing ? "Refreshing..." : "Refresh"}
-          </Button>
-        )
-      }
-    >
-      {view.error || status ? (
-        <div className="space-y-1 px-3 py-3 sm:px-4">
-          {view.error ? (
-            <p role="alert" className="text-xs text-destructive">
-              {view.error}
+            <EnvironmentMachineIcon kind={machineKind(os)} className="size-5" />
+          </span>
+          <div className="min-w-0 space-y-1.5">
+            <h3 className="text-sm font-medium wrap-anywhere">{row.label}</h3>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {platform ? <span>{platform}</span> : null}
+              {row.saved ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <LibraryStateDot tone="neutral" />
+                  Saved on this device
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {health?.text ?? "Not reported yet"}
             </p>
-          ) : null}
-          {status ? (
-            <p role="status" className="text-xs text-muted-foreground">
-              {status}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-      {[...recentRows, ...oldRows].map((row, index) => {
-        const state = rowStates.get(row.environmentId) ?? null;
-        const os = row.report?.platform.os;
-        const platform = os === undefined ? null : (PLATFORM_LABELS[os] ?? os);
-        const health =
-          listing === null
-            ? null
-            : computerDirectoryHealth({
-                listing,
-                environmentId: row.environmentId,
-                label: row.label,
-                now,
-                source: view.listing.source === "live" ? "live" : "cache",
-              });
-        const subtitle = [platform, health?.text ?? "Not reported yet", health?.attention]
-          .filter(Boolean)
-          .join(" · ");
-        const note =
-          row.action === "pair"
-            ? {
-                text: `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair using an address this device can reach.`,
-                error: false,
-              }
-            : state?.phase === "pairing"
-              ? { text: state.reasonText, error: false }
-              : state?.phase === "failed"
-                ? { text: state.message, error: true }
-                : null;
-        return (
-          <div key={row.environmentId}>
-            {oldRows.length > 0 && index === recentRows.length ? (
-              <h3 className="px-4 pt-4 text-xs font-medium">Old machines</h3>
+            {health?.attention ? (
+              <p className="text-xs leading-relaxed text-warning-foreground">{health.attention}</p>
             ) : null}
-            <EnvironmentRow
-              key={row.environmentId}
-              kind={machineKind(os)}
-              label={row.label}
-              subtitle={subtitle}
-              below={
-                note ? (
-                  <p
-                    role={note.error ? "alert" : undefined}
-                    className={
-                      note.error
-                        ? "mt-1 text-xs text-destructive"
-                        : "mt-1 text-xs text-muted-foreground"
-                    }
-                  >
-                    {note.text}
-                  </p>
-                ) : null
-              }
-            >
-              <ForgetDirectoryEntry
-                request={{ kind: "environment", environmentId: row.environmentId }}
-                label={row.label}
-              />
-              {row.action === "pair" ? (
-                <Button size="xs" variant="outline" onClick={() => onPair(row.environmentId, "")}>
-                  Pair instead
-                </Button>
-              ) : row.action === null ? null : state?.phase === "signing-in" ? (
-                <>
-                  <span className="text-xs text-muted-foreground">Waiting for sign-in...</span>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => cancelRow(row.environmentId, state.httpBaseUrl)}
-                  >
-                    Cancel
-                  </Button>
-                </>
-              ) : state?.phase === "ready" ? (
-                <Button size="xs" variant="outline" onClick={() => void signInRow(row, state.step)}>
-                  Sign in
-                </Button>
-              ) : (
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={state?.phase === "checking" || state?.phase === "cancelling"}
-                  onClick={() => void connectRow(row)}
-                >
-                  {state?.phase === "checking"
-                    ? "Checking..."
-                    : state?.phase === "cancelling"
-                      ? "Cancelling..."
-                      : "Connect"}
-                </Button>
-              )}
-            </EnvironmentRow>
+            {note ? (
+              <p
+                role={note.error ? "alert" : undefined}
+                className={`max-w-prose text-xs leading-relaxed ${note.error ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {note.text}
+              </p>
+            ) : null}
           </div>
-        );
-      })}
-      {old.machines.length > 0 ? (
-        <>
-          {oldRows.length === 0 ? (
-            <h3 className="px-4 pt-4 text-xs font-medium">Old machines</h3>
-          ) : null}
-          {old.machines.map((machine) => (
-            <EnvironmentRow
-              key={machine.keyFingerprint}
-              kind="linux"
-              label={machine.hostname}
-              subtitle="Reporting computer is no longer in your Library"
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <ForgetDirectoryEntry
+            request={{ kind: "environment", environmentId: row.environmentId }}
+            label={row.label}
+          />
+          {row.action === "pair" ? (
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              onClick={() => onPair(row.environmentId, "")}
             >
-              <ForgetDirectoryEntry
-                request={{ kind: "machine", keyFingerprint: machine.keyFingerprint }}
-                label={machine.hostname}
-              />
-            </EnvironmentRow>
-          ))}
-        </>
-      ) : null}
-    </SettingsSection>
+              Pair instead
+            </Button>
+          ) : row.action === null ? null : state?.phase === "signing-in" ? (
+            <>
+              <span role="status" className="text-xs text-muted-foreground">
+                Waiting for sign-in...
+              </span>
+              <Button
+                shape="pill"
+                size="sm"
+                variant="outline"
+                onClick={() => cancelRow(row.environmentId, state.httpBaseUrl)}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : state?.phase === "ready" ? (
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              onClick={() => void signInRow(row, state.step)}
+            >
+              Sign in
+            </Button>
+          ) : (
+            <Button
+              shape="pill"
+              size="sm"
+              variant="outline"
+              disabled={state?.phase === "checking" || state?.phase === "cancelling"}
+              onClick={() => void connectRow(row)}
+            >
+              {state?.phase === "checking"
+                ? "Checking..."
+                : state?.phase === "cancelling"
+                  ? "Cancelling..."
+                  : "Connect"}
+            </Button>
+          )}
+        </div>
+      </li>
+    );
+  };
+
+  return (
+    <SettingsSearchTarget id={LIBRARY_COMPUTERS_TARGET}>
+      <LibrarySection
+        title="Computers in your Library"
+        count={rows.length}
+        action={
+          view.status === "unsupported" ? null : (
+            <Button
+              shape="pill"
+              size="sm"
+              variant="ghost-muted"
+              disabled={view.refreshing}
+              onClick={() => refresh()}
+            >
+              <RefreshCwIcon aria-hidden />
+              {view.refreshing ? "Refreshing..." : "Refresh"}
+            </Button>
+          )
+        }
+      >
+        <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+          Connect a discovered computer to use it on this device. Saved connections keep their own
+          addresses.
+        </p>
+        {view.error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {view.error}
+          </p>
+        ) : null}
+        {status && view.status !== "empty" ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            {status}
+          </p>
+        ) : null}
+        {view.status === "loading" && rows.length === 0 ? (
+          <div aria-label="Loading Library computers" role="status" className="space-y-4 py-3">
+            {[0, 1].map((key) => (
+              <div key={key} className="flex items-center gap-3">
+                <Skeleton className="size-10" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : recentRows.length > 0 ? (
+          <ul className="divide-y divide-border/60 border-y border-border/60">
+            {recentRows.map(renderRow)}
+          </ul>
+        ) : view.status === "empty" && rows.length === 0 && old.machines.length === 0 ? (
+          <LibraryEmpty icon={HardDriveIcon} title="No other computers yet">
+            Computers connected to your Library will appear here when they report in.
+          </LibraryEmpty>
+        ) : null}
+        {oldRows.length > 0 || old.machines.length > 0 ? (
+          <Collapsible>
+            <CollapsibleTrigger render={<Button shape="pill" size="sm" variant="ghost-muted" />}>
+              <ChevronRightIcon aria-hidden className="[[data-panel-open]_&]:rotate-90" />
+              Older computers ({oldRows.length + old.machines.length})
+            </CollapsibleTrigger>
+            <CollapsiblePanel keepMounted>
+              <div className="space-y-2 pt-3">
+                <p className="text-xs text-muted-foreground">
+                  These computers have stopped reporting. Forget entries you no longer use.
+                </p>
+                <ul className="divide-y divide-border/60 border-y border-border/60">
+                  {oldRows.map(renderRow)}
+                  {old.machines.map((machine) => (
+                    <li
+                      key={machine.keyFingerprint}
+                      className="flex flex-wrap items-start justify-between gap-3 py-4"
+                    >
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span
+                          aria-hidden
+                          className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground"
+                        >
+                          <EnvironmentMachineIcon kind="linux" className="size-5" />
+                        </span>
+                        <div className="min-w-0 space-y-1">
+                          <h3 className="text-sm font-medium wrap-anywhere">{machine.hostname}</h3>
+                          <p className="text-xs text-muted-foreground">
+                            Reporting computer is no longer in your Library
+                          </p>
+                        </div>
+                      </div>
+                      <ForgetDirectoryEntry
+                        request={{ kind: "machine", keyFingerprint: machine.keyFingerprint }}
+                        label={machine.hostname}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </CollapsiblePanel>
+          </Collapsible>
+        ) : null}
+      </LibrarySection>
+    </SettingsSearchTarget>
   );
 }

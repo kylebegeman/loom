@@ -12,12 +12,14 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type { EnvironmentId } from "@t3tools/contracts";
 import { UPDATE_PLAN_FEATURE, type UpdatePlanStatus } from "@t3tools/contracts/fork";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { Clock3Icon } from "lucide-react";
 import { useState } from "react";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { Button } from "~/components/ui/button";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useEnvironments } from "~/state/environments";
 import { resolveVersionMismatch } from "~/versionSkew";
+import { LibraryStateDot } from "../project-library/LibraryControls";
 
 const updatePlans = createUpdatePlanAtoms(connectionAtomRuntime);
 const NO_PLAN = Atom.make(AsyncResult.initial<UpdatePlanStatus>());
@@ -54,17 +56,15 @@ export function MachineUpdatePlanControls({
     if (busy) return;
     setBusy(true);
     setError(null);
-    try {
-      const outcome =
-        kind === "arm"
-          ? await arm({ environmentId, input: { targetVersion } })
-          : await cancel({ environmentId, input: { id: status!.plan!.id } });
-      if (outcome._tag === "Failure") throw squashAtomCommandFailure(outcome);
-    } catch (cause) {
+    const outcome =
+      kind === "arm"
+        ? await arm({ environmentId, input: { targetVersion } })
+        : await cancel({ environmentId, input: { id: status!.plan!.id } });
+    if (outcome._tag === "Failure") {
+      const cause = squashAtomCommandFailure(outcome);
       setError(cause instanceof Error ? cause.message : "Could not change the update plan.");
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const message = updatePlanText(status);
   const unavailable = updatePlanUnavailableReason({
@@ -74,7 +74,7 @@ export function MachineUpdatePlanControls({
     status,
   });
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+    <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs leading-relaxed text-muted-foreground">
       {advertised && !status && result.waiting ? <span>Checking update plan...</span> : null}
       {message ? <span>{connected ? message : `Last reported: ${message}`}</span> : null}
       {unavailable ? <span>{unavailable}</span> : null}
@@ -86,19 +86,35 @@ export function MachineUpdatePlanControls({
       status.plan?.state !== "installing" &&
       currentVersion &&
       resolveVersionMismatch(currentVersion, targetVersion) !== null ? (
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => void act("arm")}>
+        <Button
+          shape="pill"
+          size="xs"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void act("arm")}
+        >
           Update when agents finish
         </Button>
       ) : null}
       {connected && canCancel && updatePlanCanCancel(status) ? (
-        <Button size="xs" variant="outline" disabled={busy} onClick={() => void act("cancel")}>
+        <Button
+          shape="pill"
+          size="xs"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void act("cancel")}
+        >
           Cancel update
         </Button>
       ) : null}
       {advertised && !status && !result.waiting && AsyncResult.isFailure(result) ? (
         <span>Could not read the update plan.</span>
       ) : null}
-      {error ? <span role="alert">{error}</span> : null}
+      {error ? (
+        <span role="alert" className="text-destructive">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -156,24 +172,57 @@ export function UpdateAllWhenIdle({ targetVersion }: { readonly targetVersion: s
     setBusy(false);
   };
   return (
-    <div className="space-y-2 px-3 py-3 sm:px-4">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={busy || !hasEligible}
-        onClick={() => void run()}
-      >
-        {busy ? "Arming updates..." : "Update all when agents finish"}
-      </Button>
-      {outcomes.map((outcome) => (
-        <p
-          key={outcome.environmentId}
-          role={outcome.state === "failed" ? "alert" : "status"}
-          className="text-xs text-muted-foreground"
+    <section
+      aria-label="Schedule runtime updates"
+      className="min-w-0 space-y-4 border-t border-border/60 pt-5"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 max-w-prose space-y-1.5">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
+            <Clock3Icon aria-hidden className="size-4 text-muted-foreground" />
+            After agents finish
+          </h2>
+          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
+            Queue Loom {targetVersion} for connected computers that support scheduled runtime
+            updates. Each computer waits for its running agents before restarting.
+          </p>
+        </div>
+        <Button
+          shape="pill"
+          size="sm"
+          variant="outline"
+          disabled={busy || !hasEligible}
+          onClick={() => void run()}
         >
-          {outcome.label}: {outcome.message}
-        </p>
-      ))}
-    </div>
+          {busy ? "Scheduling…" : "Update all when agents finish"}
+        </Button>
+      </div>
+      {outcomes.length > 0 ? (
+        <ul className="space-y-2" aria-label="Scheduled update results">
+          {outcomes.map((outcome) => (
+            <li
+              key={outcome.environmentId}
+              role={outcome.state === "failed" ? "alert" : "status"}
+              className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
+            >
+              <LibraryStateDot
+                className="mt-1"
+                tone={
+                  outcome.state === "failed"
+                    ? "danger"
+                    : outcome.state === "skipped"
+                      ? "neutral"
+                      : "success"
+                }
+              />
+              <span className="min-w-0 wrap-anywhere">
+                <span className="font-medium text-foreground">{outcome.label}</span>:{" "}
+                {outcome.message}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }

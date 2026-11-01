@@ -9,7 +9,8 @@ import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime"
 import type { EnvironmentId } from "@t3tools/contracts";
 import { REACH_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
 import { useState } from "react";
-import { SettingsSection } from "~/components/settings/settingsLayout";
+import { RefreshCwIcon } from "lucide-react";
+import { LibrarySection, LibraryStateDot } from "../project-library/LibraryControls";
 import {
   AlertDialog,
   AlertDialogDescription,
@@ -49,28 +50,31 @@ function LibraryReachSection({ libraryId }: { readonly libraryId: EnvironmentId 
 
   return (
     <>
-      <SettingsSection
+      <LibrarySection
         title="Reach addresses"
-        headerAction={
+        count={view.computers.length}
+        action={
           <Button
+            shape="pill"
             size="xs"
             variant="ghost-muted"
             disabled={view.refreshing}
             onClick={() => refresh()}
           >
+            <RefreshCwIcon aria-hidden />
             {view.refreshing ? "Refreshing..." : "Refresh"}
           </Button>
         }
       >
         {view.setup.length > 0 ? (
-          <div className="space-y-1 px-3 py-3 sm:px-4">
+          <div className="space-y-1">
             {view.setup.map((line) => (
               <ReachLineText key={line.text} line={line} />
             ))}
           </div>
         ) : null}
         {view.notice || view.error || view.retireDisabledReason ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-3 sm:px-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 space-y-1">
               {view.error ? (
                 <p role="alert" className="text-xs text-destructive-foreground">
@@ -98,38 +102,51 @@ function LibraryReachSection({ libraryId }: { readonly libraryId: EnvironmentId 
             ) : null}
           </div>
         ) : null}
-        {view.computers.map((computer) => (
-          <div
-            key={computer.environmentId}
-            className="flex items-start justify-between gap-3 px-3 py-2.5 sm:px-4"
-          >
-            <div className="min-w-0 space-y-0.5">
-              <p className="truncate text-sm">{computer.title}</p>
-              {computer.hostname && computer.hostname !== computer.title ? (
-                <p className="break-all font-mono text-xs text-muted-foreground">
-                  {computer.hostname}
+        <div className="divide-y divide-border/60">
+          {view.computers.map((computer) => (
+            <div
+              key={computer.environmentId}
+              className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0"
+            >
+              <div className="min-w-0 flex-1 basis-48 space-y-1.5">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <LibraryStateDot
+                    tone={
+                      computer.state.tone === "success"
+                        ? "success"
+                        : computer.state.tone === "danger"
+                          ? "danger"
+                          : computer.state.tone === "warning"
+                            ? "warning"
+                            : "neutral"
+                    }
+                  />
+                  <span className="min-w-0 wrap-anywhere">{computer.title}</span>
                 </p>
+                {computer.hostname && computer.hostname !== computer.title ? (
+                  <p className="text-xs text-muted-foreground wrap-anywhere">{computer.hostname}</p>
+                ) : null}
+                <ReachLineText line={computer.state} />
+                {computer.notes.map((note) => (
+                  <p key={note} className="text-xs leading-relaxed text-warning-foreground">
+                    {note}
+                  </p>
+                ))}
+              </div>
+              {computer.retire ? (
+                <Button
+                  size="xs"
+                  variant="destructive-outline"
+                  aria-label={`Retire ${computer.hostname ?? computer.title}`}
+                  onClick={() => setRetiring(computer)}
+                >
+                  Retire
+                </Button>
               ) : null}
-              <ReachLineText line={computer.state} />
-              {computer.notes.map((note) => (
-                <p key={note} className="text-xs leading-relaxed text-warning-foreground">
-                  {note}
-                </p>
-              ))}
             </div>
-            {computer.retire ? (
-              <Button
-                size="xs"
-                variant="destructive-outline"
-                aria-label={`Retire ${computer.hostname ?? computer.title}`}
-                onClick={() => setRetiring(computer)}
-              >
-                Retire
-              </Button>
-            ) : null}
-          </div>
-        ))}
-      </SettingsSection>
+          ))}
+        </div>
+      </LibrarySection>
       {retiring?.retire ? (
         <RetireReachDialog
           key={retiring.environmentId}

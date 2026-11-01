@@ -1,18 +1,18 @@
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
+import { NetworkIcon } from "lucide-react";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
+import { LibraryEmpty } from "~/fork/project-library/LibraryControls";
 import { useServerConfigs } from "~/state/entities";
 import { MiniWorkers } from "./Workers";
-import { LoomSettingsContent, LoomSettingsNotice } from "~/fork/settings/parts";
+
 export function MiniOffloadSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
   if (!environment)
     return (
-      <LoomSettingsContent>
-        <LoomSettingsNotice>
-          Select a connected environment to manage command workers.
-        </LoomSettingsNotice>
-      </LoomSettingsContent>
+      <LibraryEmpty icon={NetworkIcon} title="Choose a computer">
+        Select a connected computer to manage its command workers.
+      </LibraryEmpty>
     );
   if (
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(
@@ -20,13 +20,9 @@ export function MiniOffloadSettingsSection() {
     )
   )
     return (
-      <LoomSettingsContent>
-        <LoomSettingsNotice>Command jobs are unavailable on this Loom server.</LoomSettingsNotice>
-      </LoomSettingsContent>
+      <LibraryEmpty icon={NetworkIcon} title="Command workers unavailable">
+        This Loom server does not support command jobs.
+      </LibraryEmpty>
     );
-  return (
-    <LoomSettingsContent>
-      <MiniWorkers key={environment.environmentId} environmentId={environment.environmentId} />
-    </LoomSettingsContent>
-  );
+  return <MiniWorkers key={environment.environmentId} environmentId={environment.environmentId} />;
 }

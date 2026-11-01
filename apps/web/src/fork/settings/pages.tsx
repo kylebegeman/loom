@@ -213,7 +213,9 @@ function TopicComputerLine({
   const current = environment ?? environments[0] ?? null;
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-      <span>{topic.id === "upstream-supervisor" ? "Computer" : "Applies to"}</span>
+      <span>
+        {["upstream-supervisor", "mini-offload"].includes(topic.id) ? "Computer" : "Applies to"}
+      </span>
       <Menu>
         <MenuTrigger
           aria-label={`Computer for ${topic.title}`}
@@ -262,7 +264,7 @@ function TopicComputerLine({
           </MenuRadioGroup>
         </MenuPopup>
       </Menu>
-      {topic.id !== "upstream-supervisor" ? <span>only.</span> : null}
+      {!["upstream-supervisor", "mini-offload"].includes(topic.id) ? <span>only.</span> : null}
     </p>
   );
 }
@@ -277,7 +279,7 @@ function ForkSettingsTopic({
   const targetId = targetIdOf(topic);
   const targetRef = useSettingsSearchTarget<HTMLElement>(targetId);
   const Component = TOPIC_COMPONENTS[topic.id];
-  const pageHeading = topic.id === "upstream-supervisor";
+  const pageHeading = topic.id === "upstream-supervisor" || topic.id === "mini-offload";
   return (
     <section
       id={targetId}

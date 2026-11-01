@@ -1,10 +1,12 @@
-import { LibraryDeletedSettings } from "./RecentlyDeleted";
+import { LibraryDeletedSettings, useRecentlyDeletedSupported } from "./RecentlyDeleted";
 import { useAtomValue } from "@effect/atom-react";
 import {
   identityRenewalLimitSeconds,
   librarySignIn,
   librarySignInText,
+  LIBRARY_SIGN_IN_STATE_LABEL,
   loomIdentityAccountLabel,
+  libraryProjectColor,
 } from "@t3tools/client-runtime/fork";
 import {
   isAtomCommandInterrupted,
@@ -16,7 +18,11 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useState } from "react";
-import { SettingsRow, SettingsSection } from "~/components/settings/settingsLayout";
+import { ChevronRightIcon, LibraryBigIcon } from "lucide-react";
+import { SettingsSearchTarget, SettingsSection } from "~/components/settings/settingsLayout";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "~/components/ui/collapsible";
+import { LIBRARY_SURFACE, LibraryStateBadge } from "./LibraryControls";
+import { projectColorStyle } from "./ProjectIdentity";
 import { Button } from "~/components/ui/button";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { requestConfirmDialog } from "~/confirmDialog";
@@ -56,8 +62,14 @@ export function LibrarySignInSettings() {
   const authority = useLibraryAuthority();
   if (authority.authorityId === null || authority.environment === null)
     return (
-      <SettingsSection id={LIBRARY_SIGN_IN_TARGET} title="Library" hideTitle>
-        <div className="space-y-3 px-3 py-4 sm:px-4">
+      <SettingsSearchTarget id={LIBRARY_SIGN_IN_TARGET} className="max-w-2xl">
+        <div className="space-y-4 rounded-xl border border-border/60 p-5 sm:p-6">
+          <span
+            aria-hidden
+            className="flex size-11 items-center justify-center rounded-xl bg-secondary text-muted-foreground"
+          >
+            <LibraryBigIcon className="size-5" />
+          </span>
           {authority.authorityId !== null && authority.isReady ? (
             <p role="status" className="text-sm text-muted-foreground">
               This device is signed out of your Library. Sign in again to use it here.
@@ -65,7 +77,7 @@ export function LibrarySignInSettings() {
           ) : null}
           <LibrarySetup showConnectionsLink={false} />
         </div>
-      </SettingsSection>
+      </SettingsSearchTarget>
     );
   return (
     <LibrarySignInStatus
@@ -78,6 +90,7 @@ export function LibrarySignInSettings() {
 function LibrarySignInStatus({ environment }: { readonly environment: EnvironmentPresentation }) {
   const session = useEnvironmentSessionState(environment.environmentId);
   const primaryId = usePrimaryEnvironmentId();
+  const deletedSupported = useRecentlyDeletedSupported();
   const minute = useNowMinute();
   const [busy, setBusy] = useState(false);
   const remove = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
@@ -138,65 +151,117 @@ function LibrarySignInStatus({ environment }: { readonly environment: Environmen
   const actionLabel = signIn.state === "signed-out" ? "Sign in" : "Sign in again";
   const actionVariant = signIn.canSignIn ? "default" : "outline";
   return (
-    <SettingsSection id={LIBRARY_SIGN_IN_TARGET} title="Library">
-      <SettingsRow
-        title={environment.label}
-        description={
-          <>
-            {address && address !== environment.label ? (
-              <span className="block">{address}</span>
-            ) : null}
-            <span className="block">{accountLine}</span>
-          </>
-        }
-        status={
-          local ? null : (
-            <span
-              role="status"
-              className={signIn.state === "expired" ? "text-destructive" : undefined}
-            >
-              {librarySignInText(signIn, now)}
-            </span>
-          )
-        }
-        control={
-          canSignOut && signIn.state !== "signed-out" ? (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void signOut()}>
-              {busy ? "Signing out..." : "Sign out"}
-            </Button>
-          ) : null
-        }
+    <SettingsSearchTarget id={LIBRARY_SIGN_IN_TARGET} className="space-y-4">
+      <section
+        aria-label="Your Library"
+        style={projectColorStyle(libraryProjectColor({ id: environment.environmentId }))}
+        className={`${LIBRARY_SURFACE} space-y-5 p-5 sm:p-6`}
       >
-        {profile !== undefined ? (
-          <div className="pb-2">
-            <SavedIdentitySignIn
-              entry={environment.entry}
-              renewal
-              actionLabel={actionLabel}
-              actionVariant={actionVariant}
-            />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <span
+              aria-hidden
+              className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color)"
+            >
+              <LibraryBigIcon className="size-6" />
+            </span>
+            <div className="min-w-0 space-y-1">
+              <p className="text-xs text-muted-foreground">Your Library</p>
+              <h2 className="text-xl font-semibold tracking-tight wrap-anywhere">
+                {environment.label}
+              </h2>
+              {address && address !== environment.label ? (
+                <p className="text-xs text-muted-foreground wrap-anywhere">{address}</p>
+              ) : null}
+            </div>
           </div>
-        ) : cookieIdentity !== undefined ? (
-          <div className="pb-2">
-            <LoomSignIn
-              description={false}
-              renewal
-              actionLabel={actionLabel}
-              actionVariant={actionVariant}
-            />
-          </div>
-        ) : null}
-      </SettingsRow>
-      <LibraryDeletedSettings />
-      <details className="px-3 py-3 text-sm sm:px-4">
-        <summary className="cursor-pointer text-muted-foreground">
-          Use a different Library or account
-        </summary>
-        <div className="mt-3">
-          <LibrarySetup showConnectionsLink={false} />
+          <LibraryStateBadge
+            tone={
+              local || signIn.state === "current"
+                ? "success"
+                : signIn.state === "expired"
+                  ? "danger"
+                  : "neutral"
+            }
+          >
+            {local ? "On this computer" : LIBRARY_SIGN_IN_STATE_LABEL[signIn.state]}
+          </LibraryStateBadge>
         </div>
-      </details>
-    </SettingsSection>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-sm text-muted-foreground wrap-anywhere">{accountLine}</p>
+            {!local ? (
+              <p
+                role="status"
+                className={`max-w-prose text-xs leading-relaxed ${signIn.state === "expired" ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {librarySignInText(signIn, now)}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {profile !== undefined ? (
+              <SavedIdentitySignIn
+                entry={environment.entry}
+                renewal
+                actionLabel={actionLabel}
+                actionVariant={actionVariant}
+              />
+            ) : cookieIdentity !== undefined ? (
+              <LoomSignIn
+                description={false}
+                renewal
+                actionLabel={actionLabel}
+                actionVariant={actionVariant}
+              />
+            ) : null}
+            {canSignOut && signIn.state !== "signed-out" ? (
+              <Button
+                shape="pill"
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void signOut()}
+              >
+                {busy ? "Signing out..." : "Sign out"}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+      <div className="flex flex-col gap-1">
+        <Collapsible>
+          <CollapsibleTrigger
+            render={<Button shape="pill" size="sm-multiline" variant="ghost-muted" />}
+          >
+            <ChevronRightIcon aria-hidden className="[[data-panel-open]_&]:rotate-90" />
+            Use a different Library or account
+          </CollapsibleTrigger>
+          <CollapsiblePanel keepMounted>
+            <div className="max-w-xl px-3 pt-4 pb-3">
+              <LibrarySetup showConnectionsLink={false} />
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
+        {deletedSupported ? (
+          <Collapsible>
+            <CollapsibleTrigger
+              render={<Button shape="pill" size="sm-multiline" variant="ghost-muted" />}
+            >
+              <ChevronRightIcon aria-hidden className="[[data-panel-open]_&]:rotate-90" />
+              Deleted conversation history
+            </CollapsibleTrigger>
+            <CollapsiblePanel keepMounted>
+              <div className="max-w-2xl pt-3">
+                <SettingsSection title="Conversation history" hideTitle>
+                  <LibraryDeletedSettings />
+                </SettingsSection>
+              </div>
+            </CollapsiblePanel>
+          </Collapsible>
+        ) : null}
+      </div>
+    </SettingsSearchTarget>
   );
 }
 

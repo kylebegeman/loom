@@ -348,11 +348,13 @@ export function ComputerLibrarySettings({
   onPairComputer: PairLibraryComputer;
 }) {
   return (
-    <>
+    <div className="@container/library-settings min-w-0 space-y-8">
       {children}
       <LibraryComputers onPair={onPairComputer} />
-      <LibraryReach />
-      <LibraryPushSection />
-    </>
+      <div className="grid min-w-0 gap-7 border-t border-border/60 pt-7 @min-[44rem]/library-settings:grid-cols-2 [&>*:only-child]:col-span-full">
+        <LibraryReach />
+        <LibraryPushSection />
+      </div>
+    </div>
   );
 }
