@@ -1622,6 +1622,22 @@ describe("deleted thread worktrees", () => {
 });
 
 describe("orphan worktree reports", () => {
+  const platformFixture = Effect.fn("storageCleanupTest.platformFixture")(function* (
+    platform: "win32" | "linux",
+  ) {
+    const fs = yield* FileSystem.FileSystem;
+    return yield* cleanupFixture().pipe(
+      Effect.provideService(HostProcess.Platform, platform),
+      Effect.provideService(FileSystem.FileSystem, {
+        ...fs,
+        readFileString: (file, encoding) =>
+          file === "/proc/self/mountinfo"
+            ? Effect.succeed("24 1 0:1 / / rw - ext4 /dev/test rw\n")
+            : fs.readFileString(file, encoding),
+      }),
+    );
+  });
+
   // fork: project-lifecycle
   it.live("removes only a clean unreferenced orphan and prunes its empty project folder", () =>
     runCleanupTest(
@@ -1971,9 +1987,7 @@ describe("orphan worktree reports", () => {
     (platform) =>
       runCleanupTest(
         Effect.gen(function* () {
-          const fixture = yield* cleanupFixture().pipe(
-            Effect.provideService(HostProcess.Platform, platform),
-          );
+          const fixture = yield* platformFixture(platform);
           fixture.setThreads([]);
           const parent = `${fixture.config.worktreesDir}/repository`;
           const referenced = `${parent}/Referenced`;
@@ -2003,9 +2017,7 @@ describe("orphan worktree reports", () => {
     ([platform, field]) =>
       runCleanupTest(
         Effect.gen(function* () {
-          const fixture = yield* cleanupFixture().pipe(
-            Effect.provideService(HostProcess.Platform, platform),
-          );
+          const fixture = yield* platformFixture(platform);
           const upper = fixture.worktree.toUpperCase();
           yield* fixture.openTerminal(
             field === "cwd"
@@ -2027,9 +2039,7 @@ describe("orphan worktree reports", () => {
     (platform) =>
       runCleanupTest(
         Effect.gen(function* () {
-          const fixture = yield* cleanupFixture().pipe(
-            Effect.provideService(HostProcess.Platform, platform),
-          );
+          const fixture = yield* platformFixture(platform);
           fixture.setOpenSessionCwd(fixture.worktree.toUpperCase());
           const report = yield* fixture.service.runNow;
           expect(report.entries[0]).toMatchObject(
