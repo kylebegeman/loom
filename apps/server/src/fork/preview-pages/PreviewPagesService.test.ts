@@ -128,6 +128,8 @@ const harness = Effect.fnUntraced(function* (
                 createdAt: "2026-10-19T00:00:00.000Z",
                 updatedAt: "2026-10-19T00:00:00.000Z",
                 deletedAt: null,
+                pinnedAt: null,
+                archivedAt: null,
               }),
           }),
         ),

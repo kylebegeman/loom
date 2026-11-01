@@ -946,6 +946,7 @@ const managedRootFlags = (base: string) => ({
   logWebSocketEvents: Option.none<boolean>(),
   tailscaleServeEnabled: Option.none<boolean>(),
   tailscaleServePort: Option.none<number>(),
+  lan: Option.none<boolean>(),
 });
 
 it.effect("separates managed project/worktree storage from the existing server home", () =>

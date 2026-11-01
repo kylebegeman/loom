@@ -1374,6 +1374,8 @@ describe("durable Library history replication", () => {
                           createdAt: project.createdAt,
                           updatedAt: project.updatedAt,
                           deletedAt: null,
+                          pinnedAt: null,
+                          archivedAt: null,
                         },
                       ]),
                   }),

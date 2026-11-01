@@ -59,6 +59,8 @@ const fixture = Effect.gen(function* () {
     createdAt: "2026-10-13T00:00:00.000Z",
     updatedAt: "2026-10-13T00:00:00.000Z",
     deletedAt: null,
+    pinnedAt: null,
+    archivedAt: null,
   };
   let current = row;
   let sweeps = 0;
