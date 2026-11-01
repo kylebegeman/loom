@@ -552,6 +552,7 @@ apps/server/src/cli/update.ts	brand	5
 apps/server/src/cli/update.test.ts	brand	1
 apps/server/src/cli/update.test.ts	fleet-connect	1
 apps/server/src/cli/updateProgress.ts	brand	1
+apps/server/src/cli/up.ts	brand	7
 apps/server/src/cloud/bootService.ts	brand	3
 apps/server/src/cloud/selfUpdate.ts	brand	2
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	brand	4
