@@ -337,7 +337,13 @@ export const make = Effect.gen(function* () {
           destinationPath: prepared.destinationPath,
           reused: true,
         };
-        if (prepared.reuse.projectId !== null) return reused;
+        if (prepared.reuse.projectId !== null) {
+          yield* hooks.onCloned({
+            projectId: reused.projectId,
+            workspaceRoot: prepared.destinationPath,
+          });
+          return reused;
+        }
         yield* hooks.createProject({
           projectId: input.projectId,
           title: input.title,

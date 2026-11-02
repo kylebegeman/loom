@@ -149,7 +149,17 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+// fork: library-projects
+export const ProjectSharing = Schema.Struct({
+  state: Schema.Literals(["shared", "pending", "unconnected"]),
+  operationId: Schema.NullOr(Schema.String),
+  projectId: Schema.NullOr(Schema.String),
+  message: Schema.NullOr(Schema.String),
+});
+export type ProjectSharing = typeof ProjectSharing.Type;
+
 export const Project = Schema.Struct({
+  sharing: Schema.optionalKey(ProjectSharing), // fork: library-projects
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
@@ -529,6 +539,7 @@ export const ProjectCreateNewInput = Schema.Struct({
 export type ProjectCreateNewInput = typeof ProjectCreateNewInput.Type;
 
 export const ProjectCreateNewResult = Schema.Struct({
+  sharing: Schema.optionalKey(ProjectSharing), // fork: library-projects
   projectId: ProjectId,
   workspaceRoot: TrimmedNonEmptyString,
   /** The project and its files exist either way. */

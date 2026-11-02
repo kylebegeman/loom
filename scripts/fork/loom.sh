@@ -344,14 +344,15 @@ check_web_boot() {
 }
 
 run_fork_tests() {
-  local package=$1 tests=() t
-  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests | awk -v p="$package/" 'index($0, p) == 1')
-  # With no test paths vitest would run every test in the repository.
+  local package=$1 tests=() t list offset status=0
+  list=$(fork_tests) || return 1
+  while IFS= read -r t; do tests+=("$t"); done < <(printf '%s\n' "$list" | awk -v p="$package/" 'index($0, p) == 1')
   [ "${#tests[@]}" -gt 0 ] || die "found no fork tests in $package"
-  # Test paths are substring filters, so exclude agent worktrees nested in the
-  # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
-  # desktop artifact tests assert is absent.
-  env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
+  # A long run retains transformed modules until it hits Node's heap limit.
+  for ((offset=0; offset<${#tests[@]}; offset+=32)); do
+    env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]:offset:32}" || status=1
+  done
+  return "$status"
 }
 
 run_fork_browser_tests() {
@@ -1003,6 +1004,7 @@ cmd_integrate() {
       fi
     fi
   fi
+  if [ "$pr" -eq 1 ] && [ "$dry" -eq 0 ]; then checkpoint_integration; fi
   if [ "$resolve" -eq 1 ]; then
     rm -f "$(resolve_logs)/repair.md"
     checks_with_repair "$tag"
@@ -1068,6 +1070,26 @@ finish_release() {
     install_record "$record"
   else
     echo "Published. Update from Loom's update button, or install it with: scripts/fork/loom.sh install"
+  fi
+}
+
+# Persist completed work before expensive checks; only open_pr can mark it ready.
+checkpoint_integration() {
+  [ "${LOOM_CHECKPOINT:-}" = 1 ] || return 0
+  local branch tag existing body
+  branch=$(git branch --show-current)
+  [[ "$branch" == integrate/* ]] || die "checkpoint requires an integration branch"
+  require_clean
+  tag=${branch#integrate/}
+  existing=$(gh pr list --head "$branch" --state open --json number,isDraft --jq '.[] | "\(.number) \(.isDraft)"')
+  if [[ "$existing" == *" false" ]]; then gh pr ready "${existing% *}" --undo; fi
+  git push -q -u origin "HEAD:$branch"
+  body="<!-- loom-integration-checkpoint -->
+Unfinished integration of upstream $tag. Completed resolutions and repairs are saved here so the next run can continue after a runner interruption. Checks and independent review must pass before this draft can land."
+  if [ -z "$existing" ]; then
+    gh pr create --draft --base main --head "$branch" --title "chore(fork): integrate upstream $tag (in progress)" --body "$body"
+  else
+    gh pr edit "${existing% *}" --title "chore(fork): integrate upstream $tag (in progress)" --body "$body"
   fi
 }
 
@@ -1226,6 +1248,8 @@ upstream_due() {
       if git rev-parse --verify --quiet "origin/$branch" >/dev/null &&
         ! git merge-base --is-ancestor origin/main "origin/$branch"; then
         printf 'due=true\nreason=%s needs current main\n' "$branch"
+      elif [ "$(gh pr view "$branch" --json isDraft,body --jq '.isDraft and (.body | contains("<!-- loom-integration-checkpoint -->"))')" = true ]; then
+        printf 'due=true\nreason=%s has unfinished checkpointed work\n' "$branch"
       else
         printf 'due=false\nreason=%s already ran at %s\n' "$branch" "$newest"
       fi
@@ -1512,6 +1536,7 @@ checks_with_repair() {
         awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i < last && i <= 80; i++) print line[i] }' \
           "$session.log"
       } | git -c core.hooksPath=/dev/null commit -q -F -
+      checkpoint_integration
     done
     printf '%s' "$skipped" >>"$report"
     [ "$ran" -gt 0 ] || die "the fork's checks still fail after repair; see $report"$'\n'"${skipped%$'\n'}"

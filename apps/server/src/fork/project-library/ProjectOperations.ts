@@ -9,6 +9,8 @@ import {
   ProviderInstanceId,
   RunId,
   type AuthEnvironmentScope,
+  type Project,
+  type ProjectSharing,
 } from "@t3tools/contracts";
 import {
   LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
@@ -110,9 +112,22 @@ function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvi
           ? [AuthOrchestrationOperateScope]
           : [AuthTerminalOperateScope];
 }
+type CreationCaller =
+  | { readonly kind: "client"; readonly sessionId: string }
+  | {
+      readonly kind: "agent";
+      readonly threadId: ThreadId;
+      readonly providerInstanceId: ProviderInstanceId;
+    };
+type CreatedProject = Pick<Project, "id" | "workspaceRoot"> & { readonly title?: string };
+
 export class ProjectOperations extends Context.Service<
   ProjectOperations,
   {
+    readonly shareCreated: (
+      project: CreatedProject,
+      caller: CreationCaller,
+    ) => Effect.Effect<ProjectSharing>;
     readonly operationId: (
       requestId: string,
       kind: LibraryOperationInput["kind"],
@@ -958,6 +973,48 @@ const make = Effect.gen(function* () {
       sessionId: `workload:${claims}`,
     });
   });
+  const shareCreated = Effect.fn("ProjectOperations.shareCreated")(function* (
+    project: CreatedProject,
+    caller: CreationCaller,
+  ) {
+    if (!publisher.enabled)
+      return {
+        state: "unconnected" as const,
+        operationId: null,
+        projectId: null,
+        message:
+          "This project is ready on this computer. No Library is connected to save it across computers.",
+      };
+    const id = yield* operationId(`created-project:${project.id}`, "import").pipe(Effect.orDie);
+    const request: LibraryOperationInput = {
+      kind: "import",
+      input: {
+        requestId: id,
+        rootPath: project.workspaceRoot,
+        ...(project.title === undefined ? {} : { title: project.title.slice(0, 160) }),
+      },
+    };
+    return yield* (
+      caller.kind === "client"
+        ? executeClient(id, request, caller.sessionId)
+        : executeAgent(id, request, caller)
+    ).pipe(
+      Effect.map((operation): ProjectSharing => ({
+        state: "shared",
+        operationId: id,
+        projectId: operation.projectId,
+        message: null,
+      })),
+      Effect.catch((error) =>
+        Effect.succeed({
+          state: "pending" as const,
+          operationId: id,
+          projectId: null,
+          message: error.message,
+        }),
+      ),
+    );
+  });
   const resume = Effect.fn("ProjectOperations.resume")(function* (
     id: string,
     actor: OperationActor,
@@ -1012,6 +1069,7 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.ignoreCause),
   );
   return {
+    shareCreated,
     operationId,
     list,
     run,

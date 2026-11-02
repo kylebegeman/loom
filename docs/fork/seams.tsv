@@ -292,7 +292,7 @@ apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	res
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1
 apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	4
-apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
+apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	20
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
 apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	machine-updates	4
@@ -1642,3 +1642,7 @@ apps/server/src/provider/ProviderInstanceRegistry.test.ts	vault-provider-credent
 packages/provider-core/src/server/ProviderHost.ts	vault-provider-credentials	1
 packages/provider-core/src/server/managedProvider.ts	vault-provider-credentials	3
 packages/provider-core/src/server/managedProvider.test.ts	vault-provider-credentials	1
+apps/server/src/ws.ts	library-projects	3
+apps/server/src/project/http.ts	library-projects	4
+apps/server/src/project/ProjectCloneCompletion.ts	library-projects	2
+packages/contracts/src/project.ts	library-projects	3

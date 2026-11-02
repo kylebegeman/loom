@@ -429,6 +429,48 @@ const run = <A, E, R>(use: (state: State) => Effect.Effect<A, E, R>) =>
     Effect.scoped,
   );
 
+const localProject = {
+  id: ProjectId.make("local-folder"),
+  title: "Local folder",
+  workspaceRoot: "/work/project",
+};
+
+it.effect(
+  "shares a created local folder with one durable import and reports a recoverable failure",
+  () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.set(state.publishFailure, true);
+        const pending = yield* state.service.shareCreated(localProject, {
+          kind: "client",
+          sessionId: actor.sessionId,
+        });
+        expect(pending.state).toBe("pending");
+        expect(pending.operationId).toBeTruthy();
+        expect(yield* state.service.list({ includeFolderImports: true })).toHaveLength(1);
+        yield* Ref.set(state.publishFailure, false);
+        const shared = yield* state.service.shareCreated(localProject, {
+          kind: "client",
+          sessionId: actor.sessionId,
+        });
+        expect(shared).toMatchObject({
+          state: "shared",
+          projectId: project.id,
+          operationId: pending.operationId,
+        });
+        expect(yield* Ref.get(state.calls)).toBe(1);
+        expect(yield* state.service.list({ includeFolderImports: true })).toHaveLength(1);
+        yield* Ref.set(state.active, []);
+        const denied = yield* state.service.shareCreated(localProject, {
+          kind: "client",
+          sessionId: actor.sessionId,
+        });
+        expect(denied.state).toBe("pending");
+        expect(yield* Ref.get(state.published)).toBe(1);
+      }),
+    ),
+);
+
 // Each save announces a change, so the operation is read again only after one.
 const settled = (state: State, id: string) =>
   Effect.gen(function* () {

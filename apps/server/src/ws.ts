@@ -1,3 +1,5 @@
+import { ProjectOperations } from "./fork/project-library/ProjectOperations.ts"; // fork: library-projects
+import { withForkRuntime } from "./fork/ForkRuntime.ts"; // fork: library-projects
 // fork: project-lifecycle
 import * as CheckpointRollbackService from "./orchestration-v2/CheckpointRollbackService.ts";
 import { computerNameConfigUpdates } from "./fork/computer-naming/config.ts"; // fork: computer-naming
@@ -1924,10 +1926,28 @@ export const layerWsRpc = (
       );
 
       // fork: project-preparation
-      const cloneHooks = yield* makeProjectCloneHooks(refreshGitStatus);
+      const shareProject = (project: Parameters<ProjectOperations["Service"]["shareCreated"]>[0]) =>
+        withForkRuntime(
+          Effect.flatMap(ProjectOperations, (service) =>
+            service.shareCreated(project, creationCaller),
+          ),
+        ); // fork: library-projects
+      const creationCaller = { kind: "client" as const, sessionId: currentSessionId };
+      const cloneHooks = yield* makeProjectCloneHooks(refreshGitStatus, (project) =>
+        shareProject({ id: project.projectId, workspaceRoot: project.workspaceRoot }).pipe(
+          Effect.asVoid,
+        ),
+      );
 
       const mutateProject = Effect.fn("ws.projects.mutate")(function* (mutation: ProjectMutation) {
-        return yield* mutateProjectWithClone(projectService, projectCloneTracker, mutation);
+        const project = yield* mutateProjectWithClone(
+          projectService,
+          projectCloneTracker,
+          mutation,
+        );
+        return mutation.type === "project.create"
+          ? { ...project, sharing: yield* shareProject(project) }
+          : project;
       });
 
       const handlers = ServerWsRpcGroup.of({
@@ -2766,21 +2786,35 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.projectsCreateNew]: (input) =>
-          managedFolders
-            .createNamedProject(input)
-            .pipe(
-              Effect.mapError(
-                (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
-              ),
+          managedFolders.createNamedProject(input).pipe(
+            Effect.flatMap((project) =>
+              shareProject({
+                id: project.projectId,
+                workspaceRoot: project.workspaceRoot,
+                title: input.name,
+              }).pipe(Effect.map((sharing) => ({ ...project, sharing }))),
             ),
+            Effect.mapError(
+              (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
+            ),
+          ),
         [WS_METHODS.projectsCreateFromThread]: (input) =>
-          scratchThreadPromotion
-            .promote(input)
-            .pipe(
-              Effect.mapError(
-                (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
-              ),
+          scratchThreadPromotion.promote(input).pipe(
+            Effect.tap((project) =>
+              projectService
+                .getShell(project.projectId)
+                .pipe(
+                  Effect.flatMap((found) =>
+                    Option.isSome(found)
+                      ? shareProject(found.value).pipe(Effect.asVoid)
+                      : Effect.void,
+                  ),
+                ),
             ),
+            Effect.mapError(
+              (cause) => new OrchestrationDispatchCommandError({ message: cause.message, cause }),
+            ),
+          ),
         [WS_METHODS.projectCloneCancel]: (input) =>
           projectCloneTracker.cancel(input.projectId).pipe(Effect.map((applied) => ({ applied }))),
         [WS_METHODS.projectCloneRetry]: (input) =>

@@ -1,3 +1,5 @@
+import { ProjectOperations } from "../../../fork/project-library/ProjectOperations.ts"; // fork: library-projects
+import { withForkRuntime } from "../../../fork/ForkRuntime.ts"; // fork: library-projects
 import {
   CommandId,
   MessageId,
@@ -88,6 +90,27 @@ const access = Effect.gen(function* () {
   yield* readCaller();
   return yield* Project.ProjectService;
 });
+const shareCreated = Effect.fn("mcp.projects.shareCreated")(function* (
+  project: Parameters<ProjectOperations["Service"]["shareCreated"]>[0],
+) {
+  const invocation = yield* McpInvocationContext.McpInvocationContext;
+  const caller = invocation.thread
+    ? { kind: "agent" as const, ...invocation.thread }
+    : invocation.client
+      ? { kind: "client" as const, sessionId: invocation.client.sessionId }
+      : null;
+  if (caller === null)
+    return {
+      state: "pending" as const,
+      operationId: null,
+      projectId: null,
+      message: "Project sharing requires the current conversation or signed-in session.",
+    };
+  return yield* withForkRuntime(
+    Effect.flatMap(ProjectOperations, (service) => service.shareCreated(project, caller)),
+  );
+});
+
 export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   t3_thread_launch: McpToolAccess.startsThreads(
     (input) => input,
@@ -354,13 +377,19 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             );
           return {
             ...project,
+            sharing: yield* shareCreated(project),
             ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
           };
         }
         const commandId = yield* newCommandId();
         return yield* projects
           .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
-          .pipe(Effect.mapError(projectFailure));
+          .pipe(
+            Effect.mapError(projectFailure),
+            Effect.flatMap((project) =>
+              shareCreated(project).pipe(Effect.map((sharing) => ({ ...project, sharing }))),
+            ),
+          );
       }),
     // Linked work may bring the repository it works in; an existing
     // registered workspace is still refused.
@@ -415,7 +444,13 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       Effect.gen(function* () {
         // fork: file-placement
         const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
-        const hooks = yield* makeProjectCloneHooks();
+        const invocation = yield* McpInvocationContext.McpInvocationContext;
+        const hooks = yield* makeProjectCloneHooks(undefined, (project) =>
+          shareCreated({ id: project.projectId, workspaceRoot: project.workspaceRoot }).pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.asVoid,
+          ),
+        );
         const commandId = yield* newCommandId();
         const result = yield* tracker
           .start(

@@ -1,3 +1,4 @@
+import { ForkRuntime } from "../../../fork/ForkRuntime.ts"; // fork: library-projects
 import { McpAttachmentInput } from "../attachment/input.ts";
 import {
   NonNegativeInt,
@@ -83,14 +84,14 @@ const ProjectReadTool = Tool.make("t3_project_read", {
 const ProjectCreateTool = Tool.make("t3_project_create", {
   ...shared,
   description:
-    "Register a local workspace folder. For an existing folder that should appear in shared Projects, use loom_library_folder_import instead; it handles matching and registration together. `createWorkspaceRootIfMissing` creates it; a registered folder is rejected. No `workspaceRoot`: makes a git repo from `title` with README, icon, first commit (`commitError` on failure; project still exists). Clone first with `t3_project_clone` if needed.",
+    "Create a project and save it through the connected Library. Existing folders stay in place; createWorkspaceRootIfMissing creates missing folders. No workspaceRoot makes a Git repository from title with README, icon and first commit. The project remains usable if sharing is pending; sharing reports the precise failure and durable operation to retry. For matching an already registered folder, use loom_library_folder_import. Clone repositories with t3_project_clone.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...ProjectCreatePayload.fields,
     workspaceRoot: Schema.optional(ProjectCreatePayload.fields.workspaceRoot),
   }),
   success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
-  dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],
+  dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders, ForkRuntime],
 }).annotate(Tool.Destructive, true);
 const ProjectUpdateTool = Tool.make("t3_project_update", {
   ...shared,
@@ -154,6 +155,7 @@ const ProjectCloneTool = Tool.make("t3_project_clone", {
     ...shared.dependencies,
     // fork: file-placement -- the clone tracker replaces SourceControlRepositoryService.
     ProjectCloneTracker.ProjectCloneTracker,
+    ForkRuntime, // fork: library-projects
     RepositoryIdentityResolver.RepositoryIdentityResolver,
     ProjectEnrichmentService.ProjectEnrichmentService,
   ],

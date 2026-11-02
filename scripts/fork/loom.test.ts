@@ -533,6 +533,26 @@ it("runs every check after formatting, unused-code and lint failures and reports
   ]);
 });
 
+it("bounds test-runner memory by batching all tests and retains failures across batches", () => {
+  const f = lintFixture();
+  const tests = Array.from(
+    { length: 65 },
+    (_, index) => `apps/server/src/fork/test-${index}.test.ts`,
+  );
+  NodeFS.appendFileSync(
+    NodePath.join(f.bin, "pnpm"),
+    '\ncase "$*" in *test-0.test.ts*) exit 1;; esac\n',
+  );
+  const result = runLint(
+    f,
+    `fork_tests() { printf '%s\\n' ${tests.join(" ")}; }; run_fork_tests apps/server`,
+  );
+  expect(result.status).toBe(1);
+  const batches = lintCalls(f).map((args) => args.filter((arg) => arg.endsWith(".test.ts")));
+  expect(batches.map((batch) => batch.length)).toEqual([32, 32, 1]);
+  expect(batches.flat()).toEqual(tests);
+});
+
 it("boots no stale web client when the build fails, and still runs the rest", () => {
   const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
   const result = runLint(f, "run_checks", { build: 1 });
@@ -1430,14 +1450,17 @@ it("has work for a new nightly or main changes an open integration has not check
     `#!/bin/bash
 case "$*" in
   "pr list --state open --json headRefName --jq "*) printf '%s' "$LOOM_TEST_PRS" | jq -r "$8" ;;
+  "pr view "*) printf '%s' "$LOOM_TEST_CHECKPOINT" ;;
 esac
 `,
     { mode: 0o755 },
   );
+  let checkpoint = "";
   const due = (...branches: string[]) =>
     Object.fromEntries(
       runSync(f.root, "upstream_due", {
         PATH: `${bin}:${process.env.PATH ?? ""}`,
+        LOOM_TEST_CHECKPOINT: checkpoint,
         LOOM_TEST_PRS: JSON.stringify(
           [...branches, "feature/other"].map((headRefName) => ({ headRefName })),
         ),
@@ -1453,6 +1476,12 @@ esac
     due: "false",
     reason: `integrate/holds-next already ran at ${NEXT}`,
   });
+  checkpoint = "true";
+  expect(due("integrate/holds-next")).toEqual({
+    due: "true",
+    reason: "integrate/holds-next has unfinished checkpointed work",
+  });
+  checkpoint = "";
   // A needs-Kyle draft whose merge stopped holds nothing, but its name says it ran at the tag.
   expect(due(`integrate/${NEXT}`)).toMatchObject({ due: "false" });
   f.git("checkout", "--quiet", "--detach", NIGHTLY);
@@ -2111,6 +2140,28 @@ it("continues yesterday's open integration pull request instead of starting over
   expect(gh.some((call) => call.startsWith("pr create --base main --head integrate/"))).toBe(true);
   expect(gh.find((call) => call.startsWith("pr close 7 "))).toContain("Superseded by #9");
   expect(gh.some((call) => call.startsWith("pr close 8 "))).toBe(false);
+});
+
+it("checkpoints an unchecked integration before the runner can lose it", () => {
+  const f = repositoryFixture();
+  const branch = `integrate/${NIGHTLY}`;
+  f.git("switch", "--quiet", "-c", branch);
+  f.git("commit", "--quiet", "--allow-empty", "-m", "resolved merge");
+  const remote = NodePath.join(f.root, ".git", "checkpoint-origin.git");
+  f.git("init", "--quiet", "--bare", remote);
+  f.git("remote", "add", "origin", remote);
+  const result = runSync(
+    f.root,
+    `gh() { if [ "$1 $2" != "pr list" ]; then printf '%s\\n' "$*"; fi; }; checkpoint_integration`,
+    { LOOM_CHECKPOINT: "1" },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  expect(f.git("--git-dir", remote, "rev-parse", `refs/heads/${branch}`)).toBe(
+    f.git("rev-parse", "HEAD"),
+  );
+  expect(result.stdout).toContain("pr create --draft");
+  expect(result.stdout).toContain("loom-integration-checkpoint");
+  expect(result.stdout).not.toContain("pr ready");
 });
 
 it("finishes its own draft when it reruns at the same upstream tag", () => {

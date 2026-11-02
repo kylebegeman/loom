@@ -29,6 +29,7 @@ export const makeProjectCloneCompletion = Effect.gen(function* () {
 /** Every clone transport registers and finishes projects the same way. */
 export const makeProjectCloneHooks = Effect.fn("ProjectCloneCompletion.makeHooks")(function* (
   afterCloned: (workspaceRoot: string) => Effect.Effect<void> = () => Effect.void,
+  register: ProjectCloneTracker.ProjectCloneHooks["onCloned"] = () => Effect.void, // fork: library-projects
 ) {
   const projectService = yield* ProjectService.ProjectService;
   const completeProjectClone = yield* makeProjectCloneCompletion;
@@ -55,6 +56,7 @@ export const makeProjectCloneHooks = Effect.fn("ProjectCloneCompletion.makeHooks
     onCloned: (project) =>
       completeProjectClone(project).pipe(
         Effect.andThen(afterCloned(project.workspaceRoot)),
+        Effect.andThen(register(project)), // fork: library-projects
         Effect.ignoreCause({ log: true }),
       ),
   } satisfies ProjectCloneTracker.ProjectCloneHooks;

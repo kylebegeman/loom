@@ -1,6 +1,9 @@
+import { ProjectOperations } from "../fork/project-library/ProjectOperations.ts"; // fork: library-projects
+import { withForkRuntime } from "../fork/ForkRuntime.ts"; // fork: library-projects
 import {
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  EnvironmentAuthenticatedPrincipal, // fork: library-projects
   requiredScopesForProjectMutation,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -60,7 +63,17 @@ export const layer = HttpApiBuilder.group(
           for (const scope of requiredScopesForProjectMutation(args.payload)) {
             yield* requireEnvironmentScope(scope);
           }
-          const operation = mutateProjectWithClone(projects, projectClones, args.payload);
+          const principal = yield* EnvironmentAuthenticatedPrincipal; // fork: library-projects
+          const operation = Effect.gen(function* () {
+            const project = yield* mutateProjectWithClone(projects, projectClones, args.payload);
+            if (args.payload.type !== "project.create") return project;
+            const sharing = yield* withForkRuntime(
+              Effect.flatMap(ProjectOperations, (service) =>
+                service.shareCreated(project, { kind: "client", sessionId: principal.sessionId }),
+              ),
+            );
+            return { ...project, sharing };
+          });
           return yield* startup
             .enqueueCommand(operation)
             .pipe(traceLocalHandlerWork, Effect.catch(failProjectMutation));

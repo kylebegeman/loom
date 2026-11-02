@@ -385,6 +385,7 @@ describe("ProjectCloneTracker", () => {
       const result = yield* tracker.start(input, harness.hooks);
       expect(result).toMatchObject({ projectId: existing, reused: true });
       expect(harness.created).toEqual([]);
+      expect(harness.cloned).toEqual([existing]);
       expect(harness.cloneCalls).toEqual([]);
     }).pipe(Effect.provide(harness.layer));
   });

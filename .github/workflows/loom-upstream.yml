@@ -214,6 +214,7 @@ jobs:
         env:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.SWITCHBOARD_CI_KEY }}
           LOOM_RESOLVE_JOBS: "6"
+          LOOM_CHECKPOINT: "1"
         run: |
           set +e
           export LOOM_RESOLVE_LOGS="$RUNNER_TEMP/resolve"

@@ -1,4 +1,8 @@
-import { OrchestratorMcpFailure, ProjectId } from "@t3tools/contracts";
+import {
+  OrchestratorMcpEnvironmentTarget,
+  OrchestratorMcpFailure,
+  ProjectId,
+} from "@t3tools/contracts";
 import { readCaller, resolveProjectId } from "../../mcp/threadAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ProjectProfile, ProjectProfileUpdate, ProjectProfileError } from "@t3tools/contracts/fork";
@@ -23,7 +27,10 @@ export const ProjectProfilesToolkit = Toolkit.make(
   Tool.make("loom_project_profiles_read", {
     description:
       "Read this project's private preferences and Tools for agents policy. Omit projectId for this conversation's project. No environment secrets are returned.",
-    parameters: Schema.Struct({ projectId: Schema.optionalKey(ProjectId) }),
+    parameters: Schema.Struct({
+      environmentId: OrchestratorMcpEnvironmentTarget,
+      projectId: Schema.optionalKey(ProjectId),
+    }),
     success: ProjectProfile,
     failure: Schema.Union([ProjectProfileError, OrchestratorMcpFailure]),
     dependencies: [McpInvocationContext, ThreadManagementService],
@@ -35,6 +42,7 @@ export const ProjectProfilesToolkit = Toolkit.make(
       "Update authorized private project preferences without opening Settings. Read loom_project_profiles_read first and pass expectedUpdatedAt. Patch only fields requested by the user. agentToolFamilies accepts hardware/reach/sites: auto allows on demand, always also advertises, never disables. Changes apply in this conversation immediately; retry the tool without restarting the session.",
     parameters: Schema.Struct({
       ...ProjectProfileUpdate.fields,
+      environmentId: OrchestratorMcpEnvironmentTarget,
       projectId: Schema.optionalKey(ProjectId),
       expectedUpdatedAt: ProjectProfile.fields.updatedAt,
     }),

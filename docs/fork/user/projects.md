@@ -20,6 +20,9 @@ project from a Git URL continues into choosing the computer and folder to clone 
 You can also ask an authorized agent to add an existing folder to Projects. Loom inspects
 its repositories and registers its files together, reusing a unique matching project.
 If more than one project matches, the agent can choose the intended project by name.
+Projects created from a folder, a Git clone, or a new name are saved through the connected
+Library automatically. If sharing is temporarily unavailable, the project and its settings
+remain usable on that computer, and Projects keeps the failed operation for recovery.
 
 Projects live in your Library. On a device that is not connected to one yet, **New project**
 opens **Connect your Library** first and continues once you choose it, and **New conversation**
