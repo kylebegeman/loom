@@ -1,7 +1,8 @@
 diff --git a/dist/chunks/index.DzobfTyw.js b/dist/chunks/index.DzobfTyw.js
+index 08c3c116fbf8fe4685b45dee57f0f645b1270d81..a506d84e638afd1fd786eef7548ed6b5b01158c7 100644
 --- a/dist/chunks/index.DzobfTyw.js
 +++ b/dist/chunks/index.DzobfTyw.js
-@@ -21433,7 +21433,12 @@
+@@ -21433,7 +21433,12 @@ class Vitest {
  				for (const error of errors) this.logger.error("error during close", error);
  				this._checkUnhandledErrors(errors);
  			});
@@ -15,3 +16,45 @@ diff --git a/dist/chunks/index.DzobfTyw.js b/dist/chunks/index.DzobfTyw.js
  		})();
  		return this.closingPromise;
  	}
+diff --git a/dist/chunks/spy.DQ0ZsPbi.js b/dist/chunks/spy.DQ0ZsPbi.js
+index 5c55be296a966eb58a98d1781da356cb4e1304a4..bd9d8a89f24dfc54816780c71766e9e87131bc81 100644
+--- a/dist/chunks/spy.DQ0ZsPbi.js
++++ b/dist/chunks/spy.DQ0ZsPbi.js
+@@ -1,6 +1,8 @@
+ function isMockFunction(fn) {
+ 	return typeof fn === "function" && "_isMockFunction" in fn && fn._isMockFunction === true;
+ }
++// fork: nightly checks must be able to spy on Set.add without recursing in bookkeeping.
++const setAdd = Function.prototype.call.bind(Set.prototype.add);
+ const MOCK_RESTORE = /* @__PURE__ */ new Set();
+ // Jest keeps the state in a separate WeakMap which is good for memory,
+ // but it makes the state slower to access and return different values
+@@ -14,7 +16,7 @@ const MOCK_CONFIGS = /* @__PURE__ */ new WeakMap();
+ const MOCKS_BY_STATE = /* @__PURE__ */ new WeakMap();
+ function createMockInstance(options = {}) {
+ 	const { originalImplementation, restore, mockImplementation, resetToMockImplementation, resetToMockName } = options;
+-	if (restore) MOCK_RESTORE.add(restore);
++	if (restore) setAdd(MOCK_RESTORE, restore);
+ 	const config = getDefaultConfig(originalImplementation);
+ 	const state = getDefaultState();
+ 	const mock = createMock({
+@@ -36,7 +38,7 @@ function createMockInstance(options = {}) {
+ 	MOCK_CONFIGS.set(mock, config);
+ 	MOCKS_BY_STATE.set(state, mock);
+ 	const ref = new WeakRef(mock);
+-	REGISTERED_MOCKS.add(ref);
++	setAdd(REGISTERED_MOCKS, ref);
+ 	MOCK_FINALIZER.register(mock, ref);
+ 	mock._isMockFunction = true;
+ 	mock.getMockImplementation = () => {
+@@ -268,8 +270,8 @@ function createMock({ state, config, name: mockName, prototypeState, prototypeCo
+ 	const namedObject = { 
+ 	// to keep the name of the function intact
+ [name]: (function(...args) {
+-		DIRTY_MOCK_STATES.add(namedObject[name]);
+-		if (prototypeMock) DIRTY_MOCK_STATES.add(prototypeMock);
++		setAdd(DIRTY_MOCK_STATES, namedObject[name]);
++		if (prototypeMock) setAdd(DIRTY_MOCK_STATES, prototypeMock);
+ 		registerCalls(args, state, prototypeState);
+ 		registerInvocationOrder(invocationCallCounter++, state, prototypeState);
+ 		const result = {

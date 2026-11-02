@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 import * as NodeVM from "node:vm";
 
-import { afterEach, expect, it } from "@effect/vitest";
+import { afterEach, expect, it, vi } from "@effect/vitest";
 
 const roots: string[] = [];
 const script = NodePath.join(import.meta.dirname, "loom.sh");
@@ -2223,4 +2223,12 @@ it("parses every shell script in the Loom workflows", () => {
       expect({ file, stderr: parsed.stderr.trim() }).toEqual({ file, stderr: "" });
     }
   }
+});
+
+it("can spy on task-reservation Set additions without recursing in the mock registry", () => {
+  using add = vi.spyOn(Set.prototype, "add");
+  const tasks = new Set<string>();
+  tasks.add("task:reserved");
+  expect(tasks.has("task:reserved")).toBe(true);
+  expect(add).toHaveBeenCalledWith("task:reserved");
 });

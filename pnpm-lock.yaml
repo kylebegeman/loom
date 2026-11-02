@@ -393,7 +393,7 @@ patchedDependencies:
   react-native-pdf-jsi@5.0.0: 6f52854210f61bef499850ebd498229a111bc34ec5b2a4925e644f2f48f42760
   react-native-reanimated@4.7.1: 95ee26e5fcab5f50bc4b4c47b3f7e6278a0b20850205efb9f6ee7e70a22d2b59
   react-native-webview@14.0.1: 81caa279ec3dc1f81209062133b66e8f824e13f106cca57f1fa732a72c2ab378
-  vitest@5.0.1: b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c
+  vitest@5.0.1: de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e
 
 importers:
 
@@ -16832,7 +16832,7 @@ snapshots:
       '@vitest/mocker': 5.0.5(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0)
       playwright: 1.60.0
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(patch_hash=b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
+      vitest: 5.0.1(patch_hash=de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
     transitivePeerDependencies:
       - '@arethetypeswrong/core'
       - '@types/node'
@@ -16864,7 +16864,7 @@ snapshots:
       '@testing-library/dom': 10.4.2
       '@testing-library/user-event': 14.6.7(@testing-library/dom@10.4.2)
       '@vitest/browser': 5.0.5(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(vitest@5.0.1)(yaml@2.9.0)
-      vitest: 5.0.1(patch_hash=b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
+      vitest: 5.0.1(patch_hash=de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
     transitivePeerDependencies:
       - '@arethetypeswrong/core'
       - '@types/node'
@@ -16901,7 +16901,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(patch_hash=b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
+      vitest: 5.0.1(patch_hash=de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
       ws: 8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - '@arethetypeswrong/core'
@@ -16991,7 +16991,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(patch_hash=b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
+      vitest: 5.0.1(patch_hash=de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
 
   '@vitest/utils@5.0.5':
     dependencies:
@@ -22674,7 +22674,7 @@ snapshots:
       oxlint: 1.89.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@astrojs/compiler-rs@0.5.1)(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@30.1.0(@noble/hashes@1.8.0))(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.0))
       oxlint-tsgolint: 7.0.2004
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0)'
-      vitest: 5.0.1(patch_hash=b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
+      vitest: 5.0.1(patch_hash=de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0))
     optionalDependencies:
       '@vitest/browser-playwright': 5.0.5(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(playwright@1.60.0)(terser@5.48.0)(unrun@0.2.39)(utf-8-validate@6.0.6)(vitest@5.0.1)(yaml@2.9.0)
       '@voidzero-dev/vite-plus-darwin-arm64': 1.4.0
@@ -22747,7 +22747,7 @@ snapshots:
       - vue-tsc
       - yaml
 
-  vitest@5.0.1(patch_hash=b3371fb2742d74da1906903a10661b00dc979645d43470c96da08c37257e8a4c)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0)):
+  vitest@5.0.1(patch_hash=de0074c773599261c35f0e6437658703ccaef7e38273b762650d8d0f7855776e)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/browser-preview@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))(jsdom@30.1.0(@noble/hashes@1.8.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.4.0(@tsc-rs/typescript@0.8.0)(@types/node@24.12.4)(@volar/typescript@2.4.28(@tsc-rs/typescript@0.8.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(unrun@0.2.39)(yaml@2.9.0))
