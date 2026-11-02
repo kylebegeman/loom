@@ -254,7 +254,7 @@ export const makeForkRpcLayer = (
       withForkRuntime(makeSkillRegistryRpcHandlers(makeForkRpcAuth(session))),
     ),
     DevEnvironmentRpcGroup.toLayer(
-      withForkRuntime(makeDevEnvironmentRpcHandlers(makeForkRpcAuth(session))),
+      withForkRuntime(makeDevEnvironmentRpcHandlers(makeForkRpcAuth(session), session.subject)),
     ),
     ProjectProfilesRpcGroup.toLayer(
       withForkRuntime(makeProjectProfilesRpcHandlers(makeForkRpcAuth(session))),

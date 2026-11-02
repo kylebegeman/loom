@@ -16,7 +16,7 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "node --watch --watch-path=src --watch-path=../../packages --watch-path=package.json src/bin.ts",
+    "dev": "node --watch src/bin.ts",
     "dev:built": "vp run dev",
     "access:pilot": "node scripts/access-pilot.ts",
     "build:bundle": "vp pack",

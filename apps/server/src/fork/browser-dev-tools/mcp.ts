@@ -8,7 +8,10 @@ import {
 import {
   DevHttpSend,
   DevApiError,
+  VaultError,
   DevApiDetails,
+  DevApiRead,
+  DevApiSaveRequest,
   DevApiWorkspace,
   DevApiSource,
   DevApiVariable,
@@ -47,6 +50,7 @@ const failure = Schema.Union([
   DevEnvironmentError,
   DevHttpError,
   DevApiError,
+  VaultError,
   OrchestratorMcpFailure,
 ]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
@@ -85,6 +89,21 @@ export const DevEnvironmentToolkit = Toolkit.make(
         Schema.Struct({ key: Schema.String, secret: Schema.Boolean, isSet: Schema.Boolean }),
       ),
     }),
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_dev_api_request", {
+    description:
+      "Inspect one saved API request, including its native source, inherited scripts and latest workspace revision, or save edited native source with the expectedRevision. Save preserves collection hierarchy and unknown fields and never sends HTTP. Keep credentials in selected environments or Vault references rather than request source. Revision conflicts require a fresh read; never overwrite newer edits.",
+    parameters: Schema.Struct({
+      ...target,
+      workspaceId: Schema.String,
+      requestKey: Schema.String,
+      action: Schema.Literals(["read", "save"]),
+      expectedRevision: Schema.optionalKey(Schema.String),
+      sourceJson: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1048576))),
+    }),
+    success: DevApiDetails,
     failure,
     dependencies,
   }),
@@ -250,11 +269,42 @@ export const devEnvironmentHandlers = McpToolAccess.toLayer(
           );
         }),
       ),
-      loom_dev_api_send: McpToolAccess.writesEnvironment((input) =>
+      loom_dev_api_request: McpToolAccess.writesEnvironment((input) =>
         Effect.gen(function* () {
           const threadId = yield* threadIdFor(input.threadId);
           return yield* inRuntime(
-            Effect.flatMap(DevApiService, (api) => api.run({ ...input, threadId })),
+            Effect.gen(function* () {
+              const api = yield* DevApiService;
+              const scope: DevApiRead = {
+                threadId,
+                workspaceId: input.workspaceId,
+                requestKey: input.requestKey,
+              };
+              if (input.action === "read") return yield* api.read(scope);
+              if (input.expectedRevision === undefined || input.sourceJson === undefined)
+                return yield* new DevApiError({ reason: "invalid-format" });
+              const save: DevApiSaveRequest = {
+                ...scope,
+                requestKey: input.requestKey,
+                expectedRevision: input.expectedRevision,
+                sourceJson: input.sourceJson,
+              };
+              return yield* api.saveRequest(save);
+            }),
+          );
+        }),
+      ),
+      loom_dev_api_send: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          const caller = yield* McpInvocationContext;
+          return yield* inRuntime(
+            Effect.flatMap(DevApiService, (api) =>
+              api.run(
+                { ...input, threadId },
+                caller.thread ? { kind: "agent", threadId: caller.thread.threadId } : undefined,
+              ),
+            ),
           );
         }),
       ),

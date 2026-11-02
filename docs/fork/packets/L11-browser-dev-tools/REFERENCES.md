@@ -82,3 +82,9 @@ all four panels were side panels of
   https://github.com/docker-library/redis/blob/master/docker-entrypoint.sh
 - Upstream thread deletion closes the thread's terminals, which stops its dev servers:
   `apps/server/src/orchestration/Layers/ThreadDeletionReactor.ts:53-65`.
+
+The HTTP workspace layout was compared with the live [Hoppscotch REST client](https://hoppscotch.io/)
+and its official [REST request/response](https://docs.hoppscotch.io/documentation/features/rest-api-testing)
+and [environment](https://docs.hoppscotch.io/documentation/features/environments) guides. The persistent
+request bar, focused request tabs and separate response inspection informed Loom's workbench;
+Loom keeps explicit checkout dotenv selection and destination-bound Vault resolution.

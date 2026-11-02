@@ -73,7 +73,7 @@ workflow. Older connected computers without this capability hide the HTTP tab un
 
 ### Saved APIs and environments
 
-Choose **Saved APIs** in HTTP requests, open **Import a workspace**, give it a name, and
+In **HTTP requests**, choose **Collections**, open **Import**, give the workspace a name, and
 select that workspace's native Hoppscotch collection and environment JSON files together.
 Keep separate API projects in separate workspaces. Reimporting the same name and files reuses
 the imported workspace. Your source files stay unchanged. Imports accept collections version
@@ -86,12 +86,12 @@ Missing variables stop the request. Hoppscotch secret values omitted from an exp
 empty until supplied.
 
 Open **Variables**, search for a key, edit its value, and save before sending. Secret values
-are masked. Saving a JSON environment updates Loom's imported copy. **Save to .env file**
+are masked. Saving a JSON environment updates Loom's imported copy. **Save .env**
 updates the selected checkout file while preserving its comments and unrelated definitions.
-New variables can be added. Refresh variables to discard local edits and read current values.
+New variables can be added. Discard variable edits to read current values.
 A concurrent change requires a fresh read before saving or sending.
 
-**Send endpoint** runs its preparation scripts, sends one request, and runs response scripts
+**Send** runs its preparation scripts, sends one request, and runs response scripts
 for captures and checks. Preparation failure prevents dispatch. Supported legacy script APIs
 include `pw.env.get/set/unset`, `pw.response`, `pw.test`, and common `pw.expect` assertions.
 Scripts have time and memory limits, and no ambient filesystem or network access. Scripts
@@ -103,12 +103,32 @@ to 128 KiB. Multipart bodies and other authentication encoders remain unsupporte
 before dispatch. Response previews use the same limits and history as one-off requests.
 
 Captures update the selected JSON environment. For dotenv sources, captures stay in request
-variables tied to that checkout file and its current contents; **Save to .env file** explicitly
+variables tied to that checkout file and its current contents; **Save .env** explicitly
 writes them. Switching sources keeps their values separate. A file changed during a request
 keeps its newer values.
 
-**Remove imported workspace** removes Loom's copy and saved variables after confirmation;
+**Remove workspace** removes Loom's copy and saved variables after confirmation;
 original exports and HTTP history remain. API workspaces live on the execution computer and
 do not yet synchronize through the Library. Native phone users can ask an agent to import,
 inspect or send using `loom_dev_api_workspace`, `loom_dev_api_environment` and
 `loom_dev_api_send`. Importing a pack does not run its requests.
+
+### Editing requests and using Vault
+
+Edit an endpoint's name, URL, method, parameters, headers, body, authentication and scripts in
+the request editor. **Send** tests your current request edits; **Save** keeps them in Loom's
+collection copy. Discard restores the saved request. **Export workspace** downloads native JSON
+files with saved edits and public environment values. Secret variable values and Vault bindings
+are excluded. Imported originals remain unchanged.
+
+In **Variables**, choose **Use Vault** beside a variable, select an existing secret and bind it
+to the exact API origin, such as `https://api.example.com`. Follow the latest version or pin the
+selected version. Save the environment before sending. **Use typed value** removes the binding
+and starts with an empty value. Vault values resolve on the execution computer under existing
+access policy, without putting them in exported files, `.env` files, history or response previews.
+A different API origin, revoked access or an unavailable Vault prevents dispatch. Protected
+credentials keep their existing restrictions.
+
+The response inspector offers formatted or raw text, wrapping, search, headers and script test
+results. Copy or download a text response, load its request into the scratch editor, or add a
+response excerpt to your message. Collections can be collapsed to give the editor more room.

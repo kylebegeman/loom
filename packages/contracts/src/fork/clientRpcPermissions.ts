@@ -62,6 +62,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [DEV.apiEnvironment]: AuthTerminalOperateScope,
   [DEV.apiSaveEnvironment]: AuthTerminalOperateScope,
   [DEV.apiRun]: AuthTerminalOperateScope,
+  [DEV.apiSaveRequest]: AuthTerminalOperateScope,
+  [DEV.apiExport]: AuthTerminalOperateScope,
   [DEV.apiRemove]: AuthTerminalOperateScope,
   [DEV.httpSend]: AuthTerminalOperateScope,
   [DEV.httpHistory]: AuthTerminalOperateScope,

@@ -1,10 +1,16 @@
 import { expect, it } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProcessRunner from "../../processRunner.ts";
+import * as Redacted from "effect/Redacted";
+import { VaultError, type VaultItemSummary } from "@t3tools/contracts/fork";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import * as VaultCore from "../vault/VaultCore.ts";
+import * as VaultAccess from "../vault/VaultAccess.ts";
+import * as Credentials from "./DevApiCredentials.ts";
 import * as Config from "../../config.ts";
 import { DevEnvironmentService } from "./DevEnvironmentService.ts";
 import { DevRequestsService } from "./DevRequestsService.ts";
@@ -58,7 +64,34 @@ const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const root = yield* fs.makeTempDirectoryScoped();
   const calls: string[] = [];
-  const observation = { effect: Effect.void };
+  const observation = { effect: Effect.void, echo: false };
+  const credential = { allowed: true, releases: 0, value: "fixture-private-api-key" };
+  const item: VaultItemSummary = {
+    id: "a".repeat(32),
+    label: "Fixture key",
+    kind: "secret",
+    state: "active",
+    version: 1,
+    createdAt: "2026-11-02T00:00:00Z",
+    updatedAt: "2026-11-02T00:00:00Z",
+  };
+  const credentialDeps = Layer.mergeAll(
+    Layer.succeed(ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("fixture-computer")),
+    }),
+    Layer.mock(VaultCore.VaultCore)({ inspect: () => Effect.succeed(item) }),
+    Layer.mock(VaultAccess.VaultAccess)({
+      require: () =>
+        Effect.suspend(() =>
+          credential.allowed ? Effect.void : Effect.fail(new VaultError({ reason: "denied" })),
+        ),
+      reveal: () =>
+        Effect.sync(() => {
+          credential.releases++;
+          return { item, value: Redacted.make(credential.value) };
+        }),
+    }),
+  );
   const dev = Layer.succeed(DevEnvironmentService, {
     snapshot: () => Effect.succeed({ root, candidates: [], runs: [] }),
     watch: unused,
@@ -80,7 +113,9 @@ const fixture = Effect.gen(function* () {
           durationMs: 1,
           status: 201,
           headers: { "set-cookie": "fixture-cookie" },
-          body: '{"token":"fixture-captured"}',
+          body: observation.echo
+            ? JSON.stringify({ token: credential.value })
+            : '{"token":"fixture-captured"}',
           byteLength: 28,
           truncated: false,
           binary: false,
@@ -88,9 +123,22 @@ const fixture = Effect.gen(function* () {
         };
       }),
   });
-  const deps = Layer.mergeAll(dev, requests, ProcessRunner.layer);
+  const deps = Layer.mergeAll(
+    dev,
+    requests,
+    ProcessRunner.layer,
+    Credentials.layer.pipe(Layer.provide(credentialDeps)),
+  );
   const api = yield* make.pipe(Effect.provide(deps));
-  return { api, root, calls, observation, reload: make.pipe(Effect.provide(deps)) };
+  return {
+    api,
+    root,
+    calls,
+    observation,
+    credential,
+    item,
+    reload: make.pipe(Effect.provide(deps)),
+  };
 });
 const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
@@ -301,5 +349,174 @@ it.live(
           .environment({ ...scope, source: { kind: "dotenv", path: ".env.escape" } })
           .pipe(Effect.flip)).reason,
       ).toBe("invalid-path");
+    }).pipe(provide),
+);
+
+it.live(
+  "saves exact request edits with revision conflicts and exports current portable environments without secrets",
+  () =>
+    Effect.gen(function* () {
+      const { api } = yield* fixture;
+      const workspace = yield* api.import({ ...target, name: "Editable", files: files() });
+      const scope = { ...target, workspaceId: workspace.workspace.id };
+      const key = workspace.requests[0]!.id;
+      const read = yield* api.read({ ...scope, requestKey: key });
+      const source = JSON.parse(read.selected!.sourceJson);
+      const edited = {
+        ...source,
+        name: "Edited login",
+        endpoint: "<<origin>>/v2/login",
+        extension: { keep: true },
+      };
+      const saved = yield* api.saveRequest({
+        ...scope,
+        requestKey: key,
+        expectedRevision: read.revision,
+        sourceJson: JSON.stringify(edited),
+      });
+      expect(saved.requests[0]!.name).toBe("Edited login");
+      expect(saved.selected!.endpoint).toBe("<<origin>>/v2/login");
+      expect(
+        (yield* api
+          .saveRequest({
+            ...scope,
+            requestKey: key,
+            expectedRevision: read.revision,
+            sourceJson: read.selected!.sourceJson,
+          })
+          .pipe(Effect.flip)).reason,
+      ).toBe("revision-conflict");
+      const envScope = {
+        ...scope,
+        source: { kind: "json" as const, id: workspace.environments[0]!.id },
+      };
+      const environment = yield* api.environment(envScope);
+      yield* api.saveEnvironment({
+        ...envScope,
+        expectedRevision: environment.revision,
+        variables: [
+          { key: "origin", value: "https://staging.example.test", secret: false },
+          { key: "token", value: "private-export-fixture", secret: true },
+        ],
+      });
+      const exported = yield* api.export(scope);
+      const collectionExport = JSON.parse(
+        exported.files.find((f) => f.name === "collection.json")!.content,
+      );
+      expect(collectionExport[0].requests[0].extension).toEqual({ keep: true });
+      expect(collectionExport[0].requests[0].name).toBe("Edited login");
+      const envExport = JSON.parse(
+        exported.files.find((f) => f.name === "local.environment.json")!.content,
+      );
+      expect(
+        envExport.variables.find((v: { key: string }) => v.key === "origin").initialValue,
+      ).toBe("https://staging.example.test");
+      expect(JSON.stringify(exported)).not.toContain("private-export-fixture");
+    }).pipe(provide),
+);
+
+it.live(
+  "uses Vault references privately for the exact origin and refuses missing caller authority or revoked access before dispatch",
+  () =>
+    Effect.gen(function* () {
+      const { api, root, calls, observation, credential, item } = yield* fixture;
+      observation.echo = true;
+      const workspace = yield* api.import({
+        ...target,
+        name: "Vault",
+        files: files(
+          undefined,
+          'pw.env.set("copied", pw.response.body.token); pw.test(pw.response.body.token, () => pw.expect(pw.response.status).toBe(201));',
+        ),
+      });
+      const scope = {
+        ...target,
+        workspaceId: workspace.workspace.id,
+        source: { kind: "json" as const, id: workspace.environments[0]!.id },
+      };
+      const initial = yield* api.environment(scope);
+      const bound = yield* api.saveEnvironment({
+        ...scope,
+        expectedRevision: initial.revision,
+        variables: initial.variables.map((v) =>
+          v.key === "token"
+            ? {
+                ...v,
+                value: "must-be-cleared",
+                vault: {
+                  environmentId: EnvironmentId.make("fixture-computer"),
+                  itemId: item.id,
+                  label: item.label,
+                  origin: "http://localhost",
+                  version: null,
+                },
+              }
+            : v,
+        ),
+      });
+      expect(bound.variables.find((v) => v.key === "token")?.value).toBe("");
+      const input = {
+        ...scope,
+        expectedRevision: workspace.revision,
+        environmentRevision: bound.revision,
+        requestKey: workspace.requests[0]!.id,
+        requestId: "private",
+      };
+      expect((yield* api.run({ ...input, requestId: "no-caller" }).pipe(Effect.flip)).reason).toBe(
+        "vault-required",
+      );
+      const caller = { kind: "agent" as const, threadId: target.threadId };
+      const result = yield* api.run(input, caller);
+      expect(calls).toEqual([`Bearer ${credential.value}`]);
+      expect(JSON.stringify(result)).not.toContain(credential.value);
+      expect((yield* api.environment(scope)).variables.some((v) => v.key === "copied")).toBe(false);
+      const fs = yield* FileSystem.FileSystem;
+      const config = yield* Config.ServerConfig;
+      const state = yield* fs.readFileString(
+        `${config.stateDir}/fork/browser-dev-tools/api-workspaces/${workspace.workspace.id}/state.json`,
+      );
+      expect(state).not.toContain(credential.value);
+      const current = yield* api.environment(scope);
+      const changed = yield* api.saveEnvironment({
+        ...scope,
+        expectedRevision: current.revision,
+        variables: current.variables.map((v) =>
+          v.key === "origin" ? { ...v, value: "https://wrong.example.test" } : v,
+        ),
+      });
+      expect(
+        (yield* api
+          .run(
+            { ...input, requestId: "wrong-origin", environmentRevision: changed.revision },
+            caller,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("vault-destination");
+      credential.allowed = false;
+      expect(
+        (yield* api
+          .run({ ...input, requestId: "revoked", environmentRevision: changed.revision }, caller)
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(calls).toHaveLength(1);
+      yield* fs.writeFileString(
+        `${root}/.env`,
+        "# keep\norigin=http://localhost\ntoken=original\n",
+      );
+      const dotenv = { ...scope, source: { kind: "dotenv" as const, path: ".env" } };
+      const local = yield* api.environment(dotenv);
+      yield* api.saveEnvironment({
+        ...dotenv,
+        expectedRevision: local.revision,
+        variables: local.variables.map((v) =>
+          v.key === "token" ? bound.variables.find((x) => x.key === "token")! : v,
+        ),
+      });
+      expect(yield* fs.readFileString(`${root}/.env`)).toBe(
+        "# keep\norigin=http://localhost\ntoken=original\n",
+      );
+      expect(
+        (yield* api.environment(dotenv)).variables.find((v) => v.key === "token")?.vault?.itemId,
+      ).toBe(item.id);
     }).pipe(provide),
 );

@@ -5,8 +5,9 @@ import {
   PreviewAutomationConsoleEntry,
   PreviewAutomationNetworkEntry,
 } from "../previewAutomation.ts";
+import { VaultError } from "./vault-core.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 
 export const DEV_ENVIRONMENT_WS_METHODS = {
   apiList: "loom.browser-dev-tools.apiList",
@@ -15,6 +16,8 @@ export const DEV_ENVIRONMENT_WS_METHODS = {
   apiEnvironment: "loom.browser-dev-tools.apiEnvironment",
   apiSaveEnvironment: "loom.browser-dev-tools.apiSaveEnvironment",
   apiRun: "loom.browser-dev-tools.apiRun",
+  apiSaveRequest: "loom.browser-dev-tools.apiSaveRequest",
+  apiExport: "loom.browser-dev-tools.apiExport",
   apiRemove: "loom.browser-dev-tools.apiRemove",
   httpSend: "loom.browser-dev-tools.httpSend",
   httpHistory: "loom.browser-dev-tools.httpHistory",
@@ -186,10 +189,19 @@ export const DevHttpHistory = Schema.Struct({
   selected: Schema.NullOr(DevHttpExchange),
 });
 export type DevHttpHistory = typeof DevHttpHistory.Type;
+export const DevApiVaultBinding = Schema.Struct({
+  environmentId: EnvironmentId,
+  itemId: Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}$/)),
+  label: Schema.String,
+  origin: Schema.String.check(Schema.isMaxLength(2048)),
+  version: Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0))),
+});
+export type DevApiVaultBinding = typeof DevApiVaultBinding.Type;
 export const DevApiVariable = Schema.Struct({
   key: Schema.String,
   value: Schema.String,
   secret: Schema.Boolean,
+  vault: Schema.optionalKey(DevApiVaultBinding),
 });
 export type DevApiVariable = typeof DevApiVariable.Type;
 export const DevApiSource = Schema.Union([
@@ -267,6 +279,17 @@ export const DevApiSaveEnvironment = Schema.Struct({
   variables: Schema.Array(DevApiVariable),
 });
 export type DevApiSaveEnvironment = typeof DevApiSaveEnvironment.Type;
+export const DevApiSaveRequest = Schema.Struct({
+  ...DevApiWorkspaceTarget.fields,
+  requestKey: Schema.String,
+  expectedRevision: Schema.String,
+  sourceJson: Schema.String.check(Schema.isMaxLength(1048576)),
+});
+export type DevApiSaveRequest = typeof DevApiSaveRequest.Type;
+export const DevApiExport = Schema.Struct({
+  files: Schema.Array(Schema.Struct({ name: Schema.String, content: Schema.String })),
+});
+export type DevApiExport = typeof DevApiExport.Type;
 export const DevApiRun = Schema.Struct({
   ...DevApiEnvironmentTarget.fields,
   requestId: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
@@ -274,6 +297,7 @@ export const DevApiRun = Schema.Struct({
   expectedRevision: Schema.String,
   environmentRevision: Schema.String,
   bodyBase64: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(174764))),
+  requestOverride: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1048576))),
 });
 export type DevApiRun = typeof DevApiRun.Type;
 export const DevApiRunResult = Schema.Struct({
@@ -299,11 +323,17 @@ export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError"
     "invalid-path",
     "file-too-large",
     "request-conflict",
+    "vault-destination",
+    "vault-required",
   ]),
   cause: Schema.optionalKey(Schema.Defect()),
 }) {
   override get message(): string {
     const messages: Record<typeof this.reason, string> = {
+      "vault-destination":
+        "A Vault value is bound to a different API origin. Choose the correct environment or update its binding before sending.",
+      "vault-required":
+        "This request needs a permitted Vault connection on the execution computer.",
       "invalid-format": "Use native Hoppscotch collection or environment JSON files.",
       "unsupported-version":
         "This Hoppscotch schema version is not supported. Your source files are preserved.",
@@ -411,12 +441,19 @@ const error = Schema.Union([DevEnvironmentError, EnvironmentAuthorizationError])
 const httpError = Schema.Union([DevEnvironmentError, DevHttpError, EnvironmentAuthorizationError]);
 const M = DEV_ENVIRONMENT_WS_METHODS;
 const apiError = Schema.Union([
+  VaultError,
   DevApiError,
   DevEnvironmentError,
   DevHttpError,
   EnvironmentAuthorizationError,
 ]);
 export const DevEnvironmentRpcGroup = RpcGroup.make(
+  Rpc.make(M.apiSaveRequest, {
+    payload: DevApiSaveRequest,
+    success: DevApiDetails,
+    error: apiError,
+  }),
+  Rpc.make(M.apiExport, { payload: DevApiWorkspaceTarget, success: DevApiExport, error: apiError }),
   Rpc.make(M.apiList, {
     payload: DevTarget,
     success: Schema.Array(DevApiWorkspace),

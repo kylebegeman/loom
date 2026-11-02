@@ -273,3 +273,24 @@ export function prepareHoppscotchRequest(
   }
   return { method, url: url.toString(), headers, body, timeoutMs: 30000 };
 }
+export function applyRequestEdits(
+  text: string,
+  fileName: string,
+  edits: Readonly<Record<string, string>>,
+): string {
+  const source: unknown = JSON.parse(text);
+  const roots = objects(Array.isArray(source) ? source : [source]);
+  const visit = (node: NativeObject, id: string): NativeObject => ({
+    ...node,
+    requests: objects(node.requests).map((request, index) =>
+      edits[`${id}/r${index}`] === undefined
+        ? request
+        : nativeObject(JSON.parse(edits[`${id}/r${index}`]!)),
+    ),
+    folders: objects(node.folders).map((folder, index) => visit(folder, `${id}/f${index}`)),
+  });
+  const modified = roots.map((root, index) => visit(root, `${fileName}/c${index}`));
+  const result = JSON.stringify(Array.isArray(source) ? modified : modified[0]);
+  importHoppscotch(result, fileName);
+  return result;
+}

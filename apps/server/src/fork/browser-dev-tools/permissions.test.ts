@@ -33,6 +33,8 @@ it.effect(
         D.apiEnvironment,
         D.apiSaveEnvironment,
         D.apiRun,
+        D.apiSaveRequest,
+        D.apiExport,
         D.apiRemove,
         D.httpSend,
         D.httpHistory,

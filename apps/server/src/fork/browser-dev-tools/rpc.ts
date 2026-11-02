@@ -10,6 +10,9 @@ import {
   type DevApiEnvironmentTarget,
   type DevApiSaveEnvironment,
   type DevApiRun,
+  type DevApiSaveRequest,
+  VAULT_CORE_WS_METHODS as V,
+  VaultError,
   type DevApiWorkspaceTarget,
   type DevHttpHistoryTarget,
   type DevTarget,
@@ -25,6 +28,7 @@ import { DevContainersService } from "./DevContainersService.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 export const makeDevEnvironmentRpcHandlers = Effect.fn("DevEnvironment.rpc")(function* (
   auth: ForkRpcAuth,
+  actor: string,
 ) {
   const api = yield* DevApiService;
   const requests = yield* DevRequestsService;
@@ -39,7 +43,20 @@ export const makeDevEnvironmentRpcHandlers = Effect.fn("DevEnvironment.rpc")(fun
       auth.effect(D.apiEnvironment, api.environment(input)),
     [D.apiSaveEnvironment]: (input: DevApiSaveEnvironment) =>
       auth.effect(D.apiSaveEnvironment, api.saveEnvironment(input)),
-    [D.apiRun]: (input: DevApiRun) => auth.effect(D.apiRun, api.run(input)),
+    [D.apiSaveRequest]: (input: DevApiSaveRequest) =>
+      auth.effect(D.apiSaveRequest, api.saveRequest(input)),
+    [D.apiExport]: (input: DevApiWorkspaceTarget) => auth.effect(D.apiExport, api.export(input)),
+    [D.apiRun]: (input: DevApiRun) =>
+      auth.effect(
+        D.apiRun,
+        api.run(input, {
+          kind: "client",
+          actor,
+          authorize: auth
+            .effect(V.reveal, Effect.void)
+            .pipe(Effect.mapError(() => new VaultError({ reason: "denied" }))),
+        }),
+      ),
     [D.apiRemove]: (input: DevApiWorkspaceTarget) => auth.effect(D.apiRemove, api.remove(input)),
     [D.httpSend]: (input: DevHttpSend) => auth.effect(D.httpSend, requests.send(input)),
     [D.httpHistory]: (input: DevHttpHistoryTarget) =>

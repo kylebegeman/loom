@@ -9,7 +9,10 @@ import type {
   DevHttpSummary,
 } from "@t3tools/contracts/fork";
 import { Input } from "~/components/ui/input";
-import { Textarea } from "~/components/ui/textarea";
+import { Clock3Icon, SendIcon, FlaskConicalIcon, Trash2Icon, RefreshCwIcon } from "lucide-react";
+import HttpResponse from "./HttpResponse";
+import { LabSelect, LabTabs, LabCodeEditor, MethodBadge } from "./HttpLabParts";
+import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import {
   AlertDialog,
@@ -37,10 +40,12 @@ export default function HttpRequestLab({
   threadRef,
   serverUrl,
   supportsApi = false,
+  supportsEditing = false,
 }: {
   threadRef: ScopedThreadRef;
   serverUrl?: string | undefined;
   supportsApi?: boolean | undefined;
+  supportsEditing?: boolean | undefined;
 }) {
   const id = useId();
   const [mode, setMode] = useState<"saved" | "scratch">(supportsApi ? "saved" : "scratch");
@@ -101,6 +106,9 @@ export default function HttpRequestLab({
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [requestTab, setRequestTab] = useState<"headers" | "body" | "settings">("headers");
+  const [checks, setChecks] = useState<readonly { name: string; passed: boolean }[]>([]);
   const pending = useRef<{ key: string; requestId: string } | null>(null);
   const send = async () => {
     if (busy || !canUse) return;
@@ -135,6 +143,7 @@ export default function HttpRequestLab({
         input: { threadId: threadRef.threadId, requestId: pending.current.requestId, request },
       });
       setSelected(exchange);
+      setChecks([]);
       pending.current = null;
       void refreshHistory();
     } catch (error) {
@@ -196,301 +205,300 @@ export default function HttpRequestLab({
   const evidence = selected
     ? `${selected.request.method} ${selected.request.url}\n${selected.error ? `Error: ${selected.error}` : `HTTP ${selected.status}`} · ${selected.durationMs} ms\n\nResponse headers:\n${JSON.stringify(selected.headers, null, 2)}\n\n${selected.binary ? `[Binary response, ${selected.byteLength} bytes captured]` : selected.body.slice(0, 16000)}${selected.truncated ? "\n[Response preview truncated]" : ""}${selected.body.length > 16000 ? "\n[Draft excerpt limited to 16000 characters]" : ""}`
     : "";
+  const response = (
+    <HttpResponse
+      exchange={canUse ? selected : null}
+      checks={checks}
+      busy={busy}
+      onLoad={load}
+      onAttach={() =>
+        attachDevEvidence(threadRef, `HTTP exchange:\n\n\`\`\`text\n${evidence}\n\`\`\``)
+      }
+    />
+  );
   return (
-    <div className="space-y-5 p-4">
-      <p className="text-xs text-muted-foreground">
-        Requests run on this checkout's computer. Localhost refers to that computer. Redirect
-        responses are shown without following them.
-      </p>
-      {!canUse ? (
-        <p role="status" className="text-sm">
-          Execution access is required to send requests or read their history.
-        </p>
-      ) : null}
-      {supportsApi ? (
-        <div className="flex gap-1" role="group" aria-label="HTTP request mode">
+    <div
+      className="@container min-w-0"
+      onKeyDown={(event) => {
+        if (
+          mode === "scratch" &&
+          !event.defaultPrevented &&
+          (event.metaKey || event.ctrlKey) &&
+          event.key === "Enter"
+        ) {
+          event.preventDefault();
+          void send();
+        }
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2">
+          <FlaskConicalIcon className="size-4 text-primary" />
+          <h2 className="text-sm font-semibold">HTTP Lab</h2>
+        </div>
+        <div className="flex items-center gap-1">
+          {supportsApi ? (
+            <>
+              <Button
+                size="sm"
+                variant={mode === "saved" ? "secondary" : "ghost"}
+                disabled={busy}
+                onClick={() => setMode("saved")}
+              >
+                Collections
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === "scratch" ? "secondary" : "ghost"}
+                disabled={busy}
+                onClick={() => setMode("scratch")}
+              >
+                Scratch request
+              </Button>
+            </>
+          ) : null}
           <Button
-            type="button"
-            size="sm"
-            variant={mode === "saved" ? "secondary" : "ghost"}
-            disabled={busy}
-            onClick={() => setMode("saved")}
+            size="icon-sm"
+            variant={showHistory ? "secondary" : "ghost"}
+            aria-label="Request history"
+            aria-expanded={showHistory}
+            onClick={() => setShowHistory(!showHistory)}
           >
-            Saved APIs
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "scratch" ? "secondary" : "ghost"}
-            disabled={busy}
-            onClick={() => setMode("scratch")}
-          >
-            One-off request
+            <Clock3Icon />
           </Button>
         </div>
+      </div>
+      {!canUse ? (
+        <p role="status" className="p-4 text-sm">
+          Execution access is required to send requests or read history.
+        </p>
+      ) : null}
+      {showHistory && canUse ? (
+        <section
+          aria-label="HTTP history"
+          className="space-y-3 border-b border-border bg-muted/15 p-4"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-medium">Request history</h3>
+            <div className="flex gap-1">
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Refresh history"
+                onClick={() => {
+                  setHistoryPending(true);
+                  void refreshHistory();
+                }}
+                disabled={busy || !canUse}
+              >
+                <RefreshCwIcon />
+              </Button>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Clear history"
+                disabled={busy || !canUse || !historyEntries?.length}
+                onClick={() => setConfirmClear(true)}
+              >
+                <Trash2Icon />
+              </Button>
+            </div>
+          </div>
+          <p className="text-2xs leading-5 text-muted-foreground">
+            Latest 50 exchanges for this checkout. Credentials are redacted.
+          </p>
+          {historyPending && !historyEntries ? (
+            <p role="status" className="text-xs">
+              Loading history...
+            </p>
+          ) : null}
+          {historyEntries?.length === 0 ? (
+            <p className="py-4 text-center text-xs text-muted-foreground">No requests yet.</p>
+          ) : null}
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {historyEntries?.map((exchange) => (
+              <button
+                key={exchange.id}
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setChecks([]);
+                  void refreshHistory(undefined, exchange.id);
+                }}
+                className={cn(
+                  "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  selected?.id === exchange.id && "bg-accent",
+                )}
+              >
+                <MethodBadge method={exchange.request.method} />
+                <span className="min-w-0 flex-1 truncate font-mono text-2xs">
+                  {exchange.request.url}
+                </span>
+                <span className="tabular-nums text-muted-foreground">
+                  {exchange.status ?? exchange.error}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
       ) : null}
       {supportsApi && mode === "saved" ? (
         <ApiWorkspaces
           threadRef={threadRef}
+          supportsEditing={supportsEditing}
           onBusy={setBusy}
-          onResult={(exchange) => {
-            setSelected(exchange);
+          response={response}
+          onResult={(result) => {
+            setSelected(result.exchange);
+            setChecks(result.checks);
             void refreshHistory();
           }}
         />
-      ) : null}
-      {!supportsApi || mode === "scratch" ? (
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-        >
-          <div role="group" aria-label="HTTP method" className="flex flex-wrap gap-1">
-            {methods.map((value) => (
-              <Button
-                type="button"
-                size="sm"
-                variant={method === value ? "secondary" : "ghost"}
-                aria-pressed={method === value}
-                key={value}
+      ) : (
+        <>
+          <form
+            className="flex flex-wrap items-center gap-2 p-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void send();
+            }}
+          >
+            <div className="w-28">
+              <LabSelect
+                label="HTTP method"
+                compact
+                value={method}
+                options={methods.map((value) => ({ value, label: value }))}
                 disabled={busy}
-                onClick={() => {
-                  setMethod(value);
+                onChange={(value) => {
+                  setMethod(value as DevHttpMethod);
                   if (["GET", "HEAD"].includes(value)) setBody("");
                 }}
-              >
-                {value}
-              </Button>
-            ))}
-          </div>
-          <div className="space-y-1">
-            <label htmlFor={`${id}-url`} className="text-xs font-medium">
-              Request URL
-            </label>
-            <Input
-              id={`${id}-url`}
-              type="url"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="http://localhost:3000/api"
-              disabled={busy}
-              required
-            />
-          </div>
-          {serverUrl ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setUrl(serverUrl)}
-            >
-              Use running server
-            </Button>
-          ) : null}
-          <div className="space-y-1">
-            <label htmlFor={`${id}-headers`} className="text-xs font-medium">
-              Headers
-            </label>
-            <Textarea
-              id={`${id}-headers`}
-              value={headers}
-              onChange={(event) => setHeaders(event.target.value)}
-              placeholder={"Content-Type: application/json"}
-              disabled={busy}
-            />
-          </div>
-          {!["GET", "HEAD"].includes(method) ? (
-            <div className="space-y-1">
-              <label htmlFor={`${id}-body`} className="text-xs font-medium">
-                Request body
-              </label>
-              <label className="block space-y-1 text-xs">
-                <span>Body encoding</span>
-                <select
-                  aria-label="Body encoding"
-                  value={bodyEncoding}
-                  onChange={(event) =>
-                    setBodyEncoding(event.target.value === "base64" ? "base64" : "text")
-                  }
-                  disabled={busy}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2"
-                >
-                  <option value="text">Text or JSON</option>
-                  <option value="base64">Binary as base64</option>
-                </select>
-              </label>
-              <Textarea
-                id={`${id}-body`}
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="Raw text or JSON"
-                disabled={busy}
               />
             </div>
+            <div className="min-w-0 flex-1 basis-44">
+              <Input
+                aria-label="Request URL"
+                type="url"
+                font="mono"
+                value={url}
+                placeholder="http://localhost:3000/api"
+                onChange={(event) => setUrl(event.target.value)}
+                disabled={busy}
+                required
+              />
+            </div>
+            <Button type="submit" size="sm" disabled={busy || !canUse}>
+              <SendIcon />
+              {busy ? "Sending..." : "Send"}
+            </Button>
+          </form>
+          {serverUrl ? (
+            <div className="px-4 pb-2">
+              <Button size="xs" variant="ghost" disabled={busy} onClick={() => setUrl(serverUrl)}>
+                Use running server
+              </Button>
+            </div>
           ) : null}
-          <div className="space-y-1">
-            <label htmlFor={`${id}-timeout`} className="text-xs font-medium">
-              Timeout in seconds
-            </label>
-            <Input
-              id={`${id}-timeout`}
-              type="number"
-              min="0.1"
-              max="60"
-              step="0.1"
-              value={timeout}
-              onChange={(event) => setTimeoutSeconds(event.target.value)}
-              disabled={busy}
-            />
-          </div>
-          <Button type="submit" size="sm" disabled={!canUse || busy}>
-            {busy ? "Working..." : "Send request"}
-          </Button>
-        </form>
-      ) : null}
+          <LabTabs
+            label="Scratch request settings"
+            value={requestTab}
+            onChange={setRequestTab}
+            items={[
+              { value: "headers", label: "Headers" },
+              { value: "body", label: "Body" },
+              { value: "settings", label: "Settings" },
+            ]}
+          >
+            {requestTab === "headers" ? (
+              <LabCodeEditor
+                label="Request headers"
+                value={headers}
+                onChange={setHeaders}
+                disabled={busy}
+                placeholder="Content-Type: application/json"
+              />
+            ) : null}
+            {requestTab === "body" ? (
+              !["GET", "HEAD"].includes(method) ? (
+                <>
+                  <div className="max-w-xs p-3">
+                    <LabSelect
+                      label="Body encoding"
+                      value={bodyEncoding}
+                      options={[
+                        { value: "text", label: "Text or JSON" },
+                        { value: "base64", label: "Binary as base64" },
+                      ]}
+                      disabled={busy}
+                      onChange={(value) => setBodyEncoding(value === "base64" ? "base64" : "text")}
+                    />
+                  </div>
+                  <LabCodeEditor
+                    label="Request body"
+                    value={body}
+                    onChange={setBody}
+                    disabled={busy}
+                    placeholder="Request body"
+                  />
+                </>
+              ) : (
+                <p className="px-4 py-8 text-xs text-muted-foreground">
+                  GET and HEAD requests do not send a body.
+                </p>
+              )
+            ) : null}
+            {requestTab === "settings" ? (
+              <div className="max-w-xs space-y-2 p-4">
+                <label htmlFor={`${id}-timeout`} className="text-xs">
+                  Timeout in seconds
+                </label>
+                <Input
+                  id={`${id}-timeout`}
+                  type="number"
+                  min="0.1"
+                  max="60"
+                  step="0.1"
+                  value={timeout}
+                  onChange={(event) => setTimeoutSeconds(event.target.value)}
+                  disabled={busy}
+                />
+              </div>
+            ) : null}
+          </LabTabs>
+          {response}
+        </>
+      )}
       {error || historyError ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="m-3 rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
           {error ?? historyError}
         </p>
       ) : null}
       {note ? (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="px-4 py-2 text-xs text-muted-foreground">
           {note}
         </p>
       ) : null}
-      {selected && canUse ? (
-        <section
-          aria-label="HTTP response"
-          className="space-y-3 rounded-lg border border-border p-3"
-        >
-          <div className="flex flex-wrap justify-between gap-2">
-            <h3 className="text-sm font-medium">
-              {selected.error
-                ? `Request ${selected.error === "timeout" ? "timed out" : "failed"}`
-                : `HTTP ${selected.status}`}
-            </h3>
-            <span className="text-xs text-muted-foreground">
-              {selected.durationMs} ms · {selected.byteLength} bytes captured
-            </span>
-          </div>
-          <p className="break-all text-xs text-muted-foreground">
-            {selected.request.method} {selected.request.url}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => load(selected)}
-            >
-              Load request
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                attachDevEvidence(threadRef, `HTTP exchange:\n\n\`\`\`text\n${evidence}\n\`\`\``)
-              }
-            >
-              Add response to message
-            </Button>
-          </div>
-          <details>
-            <summary className="cursor-pointer text-xs font-medium">Response headers</summary>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-code p-3 font-mono text-2xs">
-              {JSON.stringify(selected.headers, null, 2)}
-            </pre>
-          </details>
-          {selected.binary ? (
-            <p className="text-sm text-muted-foreground">
-              Binary response. {selected.byteLength} bytes captured.
-            </p>
-          ) : (
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-code p-3 font-mono text-2xs">
-              {selected.body ||
-                (selected.error ? "No response body is available." : "Empty response body.")}
-            </pre>
-          )}
-          {selected.truncated ? (
-            <p className="text-xs text-muted-foreground">Response preview stopped at 256 KiB.</p>
-          ) : null}
-        </section>
-      ) : null}
-      <section aria-label="HTTP history" className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">Request history</h3>
-          <div className="flex gap-1">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setHistoryPending(true);
-                void refreshHistory();
-              }}
-              disabled={busy || !canUse}
-            >
-              Refresh history
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfirmClear(true)}
-              disabled={busy || !canUse || !historyEntries?.length}
-            >
-              Clear history
-            </Button>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          The latest 50 exchanges are saved for this checkout on its computer. Authentication
-          headers and credential query fields are redacted.
-        </p>
-        {canUse && historyPending && !historyEntries ? (
-          <p role="status" className="text-sm">
-            Reading history...
-          </p>
-        ) : null}
-        {historyEntries?.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No saved requests.</p>
-        ) : null}
-        {canUse &&
-          historyEntries?.map((exchange) => (
-            <div key={exchange.id} className="grid grid-cols-[minmax(0,1fr)]">
-              <Button
-                type="button"
-                size="sm"
-                variant={selected?.id === exchange.id ? "secondary" : "ghost"}
-                onClick={() => void refreshHistory(undefined, exchange.id)}
-              >
-                <span className="truncate">
-                  {exchange.request.method} {exchange.status ?? exchange.error}{" "}
-                  {exchange.request.url}
-                </span>
-              </Button>
-            </div>
-          ))}
-      </section>
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 text-3xs text-muted-foreground">
+        <span>Runs on this checkout's computer · Redirects stay visible</span>
+        <span>⌘ / Ctrl + Enter to send</span>
+      </footer>
       <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear this checkout's request history?</AlertDialogTitle>
+            <AlertDialogTitle>Clear request history?</AlertDialogTitle>
             <AlertDialogDescription>
-              Saved exchange payloads from all conversations sharing this checkout will be removed.
-              Requests already sent are not undone.
+              This clears response previews for every conversation sharing this checkout. Request
+              receipts remain to prevent duplicate sends.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <Button variant="outline" onClick={() => setConfirmClear(false)}>
-              Cancel
+              Keep history
             </Button>
-            <Button onClick={() => void clear()}>Clear history</Button>
+            <Button variant="destructive" onClick={() => void clear()}>
+              Clear history
+            </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>

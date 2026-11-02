@@ -28,6 +28,7 @@ import { DevEnvironmentService } from "./DevEnvironmentService.ts";
 import { checkoutKey } from "./servers.ts";
 import {
   HTTP_BODY_LIMIT,
+  redactExchangeSecrets,
   HTTP_HISTORY_LIMIT,
   redactHeaders,
   redactRequest,
@@ -49,7 +50,10 @@ export class DevRequestsService extends Context.Service<
   DevRequestsService,
   {
     readonly send: (input: DevHttpSend) => Effect.Effect<DevHttpExchange, Failure>;
-    readonly sendForWorkflow: (input: DevHttpSend) => Effect.Effect<DevHttpExchange, Failure>;
+    readonly sendForWorkflow: (
+      input: DevHttpSend,
+      sensitiveValues?: readonly string[],
+    ) => Effect.Effect<DevHttpExchange, Failure>;
     readonly history: (input: DevHttpHistoryTarget) => Effect.Effect<DevHttpHistory, Failure>;
     readonly clear: (input: DevTarget) => Effect.Effect<DevHttpHistory, Failure>;
   }
@@ -197,6 +201,7 @@ export const make = Effect.gen(function* () {
   const dispatch = Effect.fn("DevRequests.dispatch")(function* (
     input: DevHttpSend,
     workflow: boolean,
+    sensitiveValues: readonly string[] = [],
   ) {
     const { root } = yield* dev.snapshot(input);
     if (!validRequest(input.request)) return yield* new DevHttpError({ reason: "invalid-request" });
@@ -221,14 +226,17 @@ export const make = Effect.gen(function* () {
       Effect.timeoutOption(`${input.request.timeoutMs} millis`),
       Effect.map(Option.getOrElse(() => failed("timeout"))),
     );
-    const exchange: DevHttpExchange = {
-      ...result,
-      headers: redactHeaders(result.headers),
-      id: input.requestId,
-      request: redactRequest(input.request),
-      startedAt,
-      durationMs: (yield* Clock.currentTimeMillis) - started,
-    };
+    const exchange: DevHttpExchange = redactExchangeSecrets(
+      {
+        ...result,
+        headers: redactHeaders(result.headers),
+        id: input.requestId,
+        request: redactRequest(input.request),
+        startedAt,
+        durationMs: (yield* Clock.currentTimeMillis) - started,
+      },
+      sensitiveValues,
+    );
     yield* Effect.gen(function* () {
       const state = yield* load(root);
       let retained = 0;
@@ -249,11 +257,12 @@ export const make = Effect.gen(function* () {
       gate.withPermit,
       Effect.mapError((cause) => new DevHttpError({ reason: "request-incomplete", cause })),
     );
-    return workflow ? { ...exchange, headers: result.headers } : exchange;
+    return workflow ? { ...exchange, headers: result.headers, body: result.body } : exchange;
   });
   const send = Effect.fn("DevRequests.send")((input: DevHttpSend) => dispatch(input, false));
-  const sendForWorkflow = Effect.fn("DevRequests.sendForWorkflow")((input: DevHttpSend) =>
-    dispatch(input, true),
+  const sendForWorkflow = Effect.fn("DevRequests.sendForWorkflow")(
+    (input: DevHttpSend, sensitiveValues: readonly string[] = []) =>
+      dispatch(input, true, sensitiveValues),
   );
   return DevRequestsService.of({ send, sendForWorkflow, history, clear });
 });

@@ -51,3 +51,54 @@ export const textContent = (type: string) =>
   /^(text\/|application\/(.*\+)?(json|xml)|application\/(javascript|x-www-form-urlencoded)|image\/svg\+xml)/i.test(
     type,
   );
+
+export function redactSensitive(text: string, values: readonly string[]): string {
+  const forms = new Set(
+    values
+      .filter(Boolean)
+      .flatMap((value) => [
+        value,
+        encodeURIComponent(value),
+        JSON.stringify(value).slice(1, -1),
+        Buffer.from(value).toString("base64"),
+      ]),
+  );
+  let result = text;
+  for (const value of [...forms].toSorted((a, b) => b.length - a.length))
+    result = result.replaceAll(value, "[redacted]");
+  return result;
+}
+export function redactExchangeSecrets<
+  T extends {
+    readonly request: DevHttpRequest;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly body: string;
+  },
+>(exchange: T, values: readonly string[]): T {
+  const redact = (text: string) => redactSensitive(text, values);
+  const requestBody =
+    exchange.request.bodyEncoding === "base64"
+      ? Buffer.from(exchange.request.body, "base64").toString("utf8")
+      : exchange.request.body;
+  const body = redact(requestBody);
+  return {
+    ...exchange,
+    request: {
+      ...exchange.request,
+      url: redact(exchange.request.url),
+      headers: Object.fromEntries(
+        Object.entries(exchange.request.headers).map(([key, value]) => [key, redact(value)]),
+      ),
+      body:
+        exchange.request.bodyEncoding === "base64"
+          ? body === requestBody
+            ? exchange.request.body
+            : Buffer.from("[redacted binary request]").toString("base64")
+          : body,
+    },
+    headers: Object.fromEntries(
+      Object.entries(exchange.headers).map(([key, value]) => [key, redact(value)]),
+    ),
+    body: redact(exchange.body),
+  };
+}

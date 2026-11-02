@@ -82,6 +82,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [DEV.apiEnvironment]: AuthTerminalOperateScope,
   [DEV.apiSaveEnvironment]: AuthTerminalOperateScope,
   [DEV.apiRun]: AuthTerminalOperateScope,
+  [DEV.apiSaveRequest]: AuthTerminalOperateScope,
+  [DEV.apiExport]: AuthTerminalOperateScope,
   [DEV.apiRemove]: AuthTerminalOperateScope,
   [DEV.httpSend]: AuthTerminalOperateScope,
   [DEV.httpHistory]: AuthTerminalOperateScope,

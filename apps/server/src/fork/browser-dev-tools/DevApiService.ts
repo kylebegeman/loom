@@ -16,6 +16,9 @@ import {
   type DevApiSaveEnvironment,
   type DevApiEnvironment,
   type DevApiRun,
+  type DevApiSaveRequest,
+  type DevApiExport,
+  VaultError,
   type DevTarget,
   type DevEnvironmentError,
   type DevHttpError,
@@ -26,6 +29,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
+import * as Redacted from "effect/Redacted";
+import * as Option from "effect/Option";
+import * as DevApiCredentials from "./DevApiCredentials.ts";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "../../config.ts";
@@ -33,11 +39,12 @@ import { ProcessRunner } from "../../processRunner.ts";
 import { DevEnvironmentService } from "./DevEnvironmentService.ts";
 import { DevRequestsService } from "./DevRequestsService.ts";
 import { checkoutKey } from "./servers.ts";
-import { redactHeaders } from "./requests.ts";
+import { redactHeaders, redactSensitive, redactExchangeSecrets } from "./requests.ts";
 import { updateDotenv } from "./dotenv.ts";
 import { API_SCRIPT_RUNNER } from "./apiScriptRunner.ts";
 import {
   HoppscotchInputError,
+  applyRequestEdits,
   importHoppscotch,
   prepareHoppscotchRequest,
   type NativeRequest,
@@ -71,6 +78,8 @@ const Receipt = Schema.Struct({
 });
 const State = Schema.Struct({
   version: Schema.Literal(1),
+  requestEdits: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  dotenvBindings: Schema.optionalKey(Schema.Record(Schema.String, Schema.Array(DevApiVariable))),
   environments: Schema.Record(Schema.String, Schema.Array(DevApiVariable)),
   overlays: Schema.Record(Schema.String, Schema.Array(DevApiVariable)),
   receipts: Schema.Array(Receipt),
@@ -91,7 +100,58 @@ const decodeState = Schema.decodeEffect(Schema.fromJsonString(State));
 const decodeScript = Schema.decodeEffect(Schema.fromJsonString(ScriptResult));
 type State = typeof State.Type;
 type Manifest = typeof Manifest.Type;
-type Failure = DevApiError | DevEnvironmentError | DevHttpError;
+type Failure = DevApiError | DevEnvironmentError | DevHttpError | VaultError;
+const decodeUnknownRequest = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+function portableNativeExport(text: string): string {
+  const walk = (value: unknown, key: string = ""): unknown => {
+    if (Array.isArray(value)) return value.map((v) => walk(v, key));
+    if (!value || typeof value !== "object") return value;
+    const object = value as Record<string, unknown>;
+    if (object.secret === true && typeof object.key === "string")
+      return { ...object, initialValue: "", currentValue: "", value: "", vault: undefined };
+    return Object.fromEntries(
+      Object.entries(object).map(([name, value]) => [
+        name,
+        key === "auth" &&
+        ["token", "password", "value"].includes(name) &&
+        typeof value === "string" &&
+        !value.includes("<<")
+          ? ""
+          : walk(value, name),
+      ]),
+    );
+  };
+  return JSON.stringify(walk(JSON.parse(text)), null, 2);
+}
+function portableEnvironmentExport(
+  source: unknown,
+  fileName: string,
+  manifest: Manifest,
+  state: State,
+) {
+  const roots = (Array.isArray(source) ? source : [source]).map((entry, index) => {
+    const object = entry as Record<string, unknown>;
+    const id = `${fileName}/e${index}`;
+    const variables =
+      state.environments[id] ?? manifest.environments.find((e) => e.id === id)?.variables ?? [];
+    const original = Array.isArray(object.variables)
+      ? (object.variables as Record<string, unknown>[])
+      : [];
+    return {
+      ...object,
+      variables: variables.map(({ vault, ...v }) => ({
+        ...original.find((row) => row.key === v.key),
+        key: v.key,
+        secret: v.secret || Boolean(vault),
+        initialValue: v.secret || vault ? "" : v.value,
+        currentValue: "",
+      })),
+    };
+  });
+  return JSON.stringify(Array.isArray(source) ? roots : roots[0]);
+}
 const digest = (value: string) => NodeCrypto.createHash("sha256").update(value).digest("hex");
 const fingerprint = (value: unknown) => digest(stableStringify(value));
 export class DevApiService extends Context.Service<
@@ -109,7 +169,12 @@ export class DevApiService extends Context.Service<
     readonly saveEnvironment: (
       input: DevApiSaveEnvironment,
     ) => Effect.Effect<DevApiEnvironment, Failure>;
-    readonly run: (input: DevApiRun) => Effect.Effect<DevApiRunResult, Failure>;
+    readonly run: (
+      input: DevApiRun,
+      caller?: DevApiCredentials.ApiCredentialCaller,
+    ) => Effect.Effect<DevApiRunResult, Failure>;
+    readonly saveRequest: (input: DevApiSaveRequest) => Effect.Effect<DevApiDetails, Failure>;
+    readonly export: (input: DevApiWorkspaceTarget) => Effect.Effect<DevApiExport, Failure>;
     readonly remove: (input: DevApiWorkspaceTarget) => Effect.Effect<void, Failure>;
   }
 >()("t3/fork/browser-dev-tools/DevApiService") {}
@@ -120,6 +185,7 @@ export const make = Effect.gen(function* () {
   const dev = yield* DevEnvironmentService;
   const requests = yield* DevRequestsService;
   const runner = yield* ProcessRunner;
+  const credentials = yield* Effect.serviceOption(DevApiCredentials.DevApiCredentials);
   const gate = yield* Semaphore.make(1);
   const directory = path.join(config.stateDir, "fork", "browser-dev-tools", "api-workspaces");
   const location = (id: string) => (/^[a-f\d]{24}$/.test(id) ? path.join(directory, id) : null);
@@ -165,7 +231,13 @@ export const make = Effect.gen(function* () {
     requestCount: m.requests.length,
     environmentCount: m.environments.length,
   });
-  const native = Effect.fn("DevApi.native")(function* (m: Manifest, key: string) {
+  const revisionFor = (m: Manifest, state: State) =>
+    fingerprint({ manifest: m, requestEdits: state.requestEdits ?? {} });
+  const native = Effect.fn("DevApi.native")(function* (
+    m: Manifest,
+    key: string,
+    override?: string,
+  ) {
     const entry = m.requests.find((r) => r.id === key);
     const file = m.files.find((f) => f.name === entry?.file);
     if (!entry || !file) return yield* new DevApiError({ reason: "not-found" });
@@ -173,8 +245,14 @@ export const make = Effect.gen(function* () {
       .readFileString(fileFor(m.id, `${file.hash}.json`))
       .pipe(Effect.mapError(storageError));
     if (digest(text) !== file.hash) return yield* new DevApiError({ reason: "revision-conflict" });
+    const state = yield* stateFor(m.id);
+    const edits = { ...state.requestEdits, ...(override === undefined ? {} : { [key]: override }) };
     const parsed = yield* Effect.try({
-      try: () => importHoppscotch(text, file.name),
+      try: () =>
+        importHoppscotch(
+          Object.keys(edits).length ? applyRequestEdits(text, file.name, edits) : text,
+          file.name,
+        ),
       catch: (e) =>
         e instanceof HoppscotchInputError ? new DevApiError({ reason: e.reason }) : storageError(e),
     });
@@ -229,8 +307,22 @@ export const make = Effect.gen(function* () {
         ),
       catch: () => new DevApiError({ reason: "invalid-format" }),
     });
-    const variables = state.overlays[overlayKey] ?? base;
-    return { revision: fingerprint({ text, variables }), variables, overlayKey, file, text };
+    const variables: readonly DevApiVariable[] = state.overlays[overlayKey] ?? base;
+    const bindingKey = `${checkoutKey(root)}:${input.source.path}`;
+    const bindings = state.dotenvBindings?.[bindingKey] ?? [];
+    const merged: DevApiVariable[] = variables.map(({ vault: _vault, ...v }) => {
+      const binding = bindings.find((b) => b.key === v.key);
+      return binding?.vault ? { ...v, value: "", secret: true, vault: binding.vault } : v;
+    });
+    for (const binding of bindings)
+      if (!merged.some((v) => v.key === binding.key)) merged.push(binding);
+    return {
+      revision: fingerprint({ text, variables: merged }),
+      variables: merged,
+      overlayKey,
+      file,
+      text,
+    };
   });
   const discoverDotenv = Effect.fn("DevApi.discoverDotenv")(function* (root: string) {
     const found: string[] = [];
@@ -263,11 +355,21 @@ export const make = Effect.gen(function* () {
     m: Manifest,
     root: string,
   ) {
+    const state = yield* stateFor(m.id);
     const selected = input.requestKey ? yield* native(m, input.requestKey) : null;
     return {
       workspace: summary(m),
-      revision: fingerprint(m),
-      requests: m.requests.map(({ file: _file, ...r }) => r),
+      revision: revisionFor(m, yield* stateFor(m.id)),
+      requests: m.requests.map(({ file: _file, ...r }) => {
+        const edited = state.requestEdits?.[r.id];
+        if (!edited) return r;
+        const value = decodeUnknownRequest(edited);
+        return {
+          ...r,
+          name: typeof value.name === "string" ? value.name : r.name,
+          method: typeof value.method === "string" ? value.method : r.method,
+        };
+      }),
       environments: m.environments.map(({ id, name }) => ({ id, name })),
       dotenvFiles: yield* discoverDotenv(root),
       selected: selected
@@ -416,9 +518,10 @@ export const make = Effect.gen(function* () {
     const env = yield* getEnvironment(input, m, state, root);
     if (env.revision !== input.expectedRevision)
       return yield* new DevApiError({ reason: "revision-conflict" });
-    const variables = input.patch
+    const proposed = input.patch
       ? [...new Map([...env.variables, ...input.variables].map((v) => [v.key, v])).values()]
       : input.variables;
+    const variables = proposed.map((v) => (v.vault ? { ...v, value: "", secret: true } : v));
     if (!validateVariables(variables) || input.source.kind === "none")
       return yield* new DevApiError({ reason: "invalid-format" });
     if (input.source.kind === "json")
@@ -428,7 +531,11 @@ export const make = Effect.gen(function* () {
       });
     else if (env.file && env.text !== null) {
       const contents = yield* Effect.try({
-        try: () => updateDotenv(env.text!, variables),
+        try: () =>
+          updateDotenv(
+            env.text!,
+            variables.filter((v) => !v.vault),
+          ),
         catch: () => new DevApiError({ reason: "invalid-format" }),
       });
       if (Buffer.byteLength(contents) > 262144)
@@ -439,6 +546,18 @@ export const make = Effect.gen(function* () {
       )
         return yield* new DevApiError({ reason: "revision-conflict" });
       if (contents !== env.text) yield* write(env.file, contents);
+      if (input.source.kind === "dotenv") {
+        const bindingKey = `${checkoutKey(root)}:${input.source.path}`;
+        const overlayKey = `${bindingKey}:${digest(contents)}`;
+        yield* save(m.id, {
+          ...state,
+          dotenvBindings: {
+            ...state.dotenvBindings,
+            [bindingKey]: variables.filter((v) => v.vault),
+          },
+          overlays: { ...state.overlays, [overlayKey]: variables.filter((v) => !v.vault) },
+        });
+      }
     }
     return yield* environment(input);
   }, gate.withPermit);
@@ -488,13 +607,17 @@ export const make = Effect.gen(function* () {
   ) => {
     const next = new Map(existing.map((v) => [v.key, v]));
     for (const key of changed) {
+      if (next.get(key)?.vault) continue;
       if (Object.hasOwn(values, key))
         next.set(key, { key, value: values[key]!, secret: next.get(key)?.secret ?? true });
       else next.delete(key);
     }
     return [...next.values()];
   };
-  const run = Effect.fn("DevApi.run")(function* (input: DevApiRun) {
+  const run = Effect.fn("DevApi.run")(function* (
+    input: DevApiRun,
+    caller?: DevApiCredentials.ApiCredentialCaller,
+  ) {
     const { root } = yield* dev.snapshot(input);
     const m = yield* readManifest(input.workspaceId);
     const state = yield* stateFor(m.id);
@@ -505,12 +628,12 @@ export const make = Effect.gen(function* () {
       if (prior.result) return prior.result;
       return yield* new DevApiError({ reason: prior.error ?? "outcome-unknown" });
     }
-    if (fingerprint(m) !== input.expectedRevision)
+    if (revisionFor(m, state) !== input.expectedRevision)
       return yield* new DevApiError({ reason: "revision-conflict" });
     const env = yield* getEnvironment(input, m, state, root);
     if (env.revision !== input.environmentRevision)
       return yield* new DevApiError({ reason: "revision-conflict" });
-    const selected: NativeRequest = yield* native(m, input.requestKey);
+    const selected: NativeRequest = yield* native(m, input.requestKey, input.requestOverride);
     const values = Object.fromEntries(
       [...env.variables, ...selected.variables].map((v) => [v.key, v.value]),
     );
@@ -525,8 +648,33 @@ export const make = Effect.gen(function* () {
     };
     yield* save(m.id, pending);
     const executed = yield* Effect.gen(function* () {
+      const bound = env.variables.filter((v) => v.vault);
+      if (bound.length && (Option.isNone(credentials) || !caller))
+        return yield* new DevApiError({ reason: "vault-required" });
+      const resolved =
+        bound.length && Option.isSome(credentials) && caller
+          ? yield* credentials.value.resolve(bound, caller)
+          : {
+              values: Redacted.make({} as Readonly<Record<string, string>>),
+              authorize: (_url: string) => Effect.void,
+            };
+      const privateValues = Redacted.value(resolved.values);
+      const sensitiveValues = Object.values(privateValues);
+      Object.assign(values, privateValues);
+      const safeChanged = (
+        changed: readonly string[],
+        variables: Readonly<Record<string, string>>,
+      ) =>
+        changed.filter(
+          (key) =>
+            redactSensitive(variables[key] ?? "", sensitiveValues) === (variables[key] ?? ""),
+        );
       const before = yield* scripts(root, selected.preScripts, values, null);
-      const beforeVars = capture(env.variables, before.variables, before.changed);
+      const beforeVars = capture(
+        env.variables,
+        before.variables,
+        safeChanged(before.changed, before.variables),
+      );
       if (!validateVariables(beforeVars))
         return yield* new DevApiError({ reason: "invalid-format" });
       if (input.source.kind !== "none") {
@@ -554,11 +702,15 @@ export const make = Effect.gen(function* () {
             ? new DevApiError({ reason: e.reason })
             : new DevApiError({ reason: "invalid-format" }),
       });
-      const exchange = yield* requests.sendForWorkflow({
-        threadId: input.threadId,
-        requestId: `api:${m.id}:${input.requestId}`,
-        request,
-      });
+      yield* resolved.authorize(request.url);
+      const exchange = yield* requests.sendForWorkflow(
+        {
+          threadId: input.threadId,
+          requestId: `api:${m.id}:${input.requestId}`,
+          request,
+        },
+        sensitiveValues,
+      );
       const responseBody = yield* decodeJson(exchange.body).pipe(
         Effect.orElseSucceed(() => exchange.body),
       );
@@ -578,7 +730,11 @@ export const make = Effect.gen(function* () {
               })),
             );
       const latestEnv = yield* getEnvironment(input, m, yield* stateFor(m.id), root);
-      const vars = capture(env.variables, after.variables, [...before.changed, ...after.changed]);
+      const vars = capture(
+        env.variables,
+        after.variables,
+        safeChanged([...before.changed, ...after.changed], after.variables),
+      );
       const environmentUpdated =
         input.source.kind !== "none" &&
         latestEnv.revision === preparedEnvironment.revision &&
@@ -591,10 +747,13 @@ export const make = Effect.gen(function* () {
           next = { ...next, overlays: { ...next.overlays, [env.overlayKey]: vars } };
       }
       const result: DevApiRunResult = {
-        exchange: { ...exchange, headers: redactHeaders(exchange.headers) },
+        exchange: redactExchangeSecrets(
+          { ...exchange, headers: redactHeaders(exchange.headers) },
+          sensitiveValues,
+        ),
         checks: [
-          ...before.checks,
-          ...after.checks,
+          ...before.checks.map((c) => ({ ...c, name: redactSensitive(c.name, sensitiveValues) })),
+          ...after.checks.map((c) => ({ ...c, name: redactSensitive(c.name, sensitiveValues) })),
           ...(!after.ok ? [{ name: "Response script could not complete", passed: false }] : []),
         ],
         environmentUpdated,
@@ -615,6 +774,47 @@ export const make = Effect.gen(function* () {
     });
     return yield* failed;
   }, gate.withPermit);
+  const saveRequest = Effect.fn("DevApi.saveRequest")(function* (input: DevApiSaveRequest) {
+    const { root } = yield* dev.snapshot(input);
+    const m = yield* readManifest(input.workspaceId);
+    const state = yield* stateFor(m.id);
+    if (revisionFor(m, state) !== input.expectedRevision)
+      return yield* new DevApiError({ reason: "revision-conflict" });
+    yield* native(m, input.requestKey, input.sourceJson);
+    yield* save(m.id, {
+      ...state,
+      requestEdits: { ...state.requestEdits, [input.requestKey]: input.sourceJson },
+    });
+    return yield* details(input, m, root);
+  }, gate.withPermit);
+  const exportWorkspace = Effect.fn("DevApi.export")(function* (input: DevApiWorkspaceTarget) {
+    yield* dev.snapshot(input);
+    const m = yield* readManifest(input.workspaceId);
+    const state = yield* stateFor(m.id);
+    const files: Array<{ name: string; content: string }> = [];
+    for (const file of m.files) {
+      const original = yield* fs
+        .readFileString(fileFor(m.id, `${file.hash}.json`))
+        .pipe(Effect.mapError(storageError));
+      const parsed = yield* Effect.try({
+        try: () => importHoppscotch(original, file.name),
+        catch: () => new DevApiError({ reason: "invalid-format" }),
+      });
+      const content =
+        parsed.kind === "collections"
+          ? yield* Effect.try({
+              try: () => applyRequestEdits(original, file.name, state.requestEdits ?? {}),
+              catch: () => new DevApiError({ reason: "invalid-format" }),
+            })
+          : portableEnvironmentExport(parsed.source, file.name, m, state);
+      const safe = yield* Effect.try({
+        try: () => portableNativeExport(content),
+        catch: () => new DevApiError({ reason: "invalid-format" }),
+      });
+      files.push({ name: file.name, content: safe });
+    }
+    return { files };
+  });
   const remove = Effect.fn("DevApi.remove")(function* (input: DevApiWorkspaceTarget) {
     yield* dev.snapshot(input);
     yield* readManifest(input.workspaceId);
@@ -629,6 +829,8 @@ export const make = Effect.gen(function* () {
     read,
     environment,
     saveEnvironment,
+    saveRequest,
+    export: exportWorkspace,
     run,
     remove,
   });

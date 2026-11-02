@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type {
@@ -7,15 +7,39 @@ import type {
   DevApiRunResult,
   DevApiSource,
   DevApiWorkspace,
-  DevHttpExchange,
 } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "~/components/ui/menu";
+import * as Schema from "effect/Schema";
+import { VaultError } from "@t3tools/contracts/fork";
 import { Input } from "~/components/ui/input";
+import {
+  ChevronRightIcon,
+  FolderIcon,
+  SearchIcon,
+  PlusIcon,
+  DownloadIcon,
+  Trash2Icon,
+  SaveIcon,
+  SendIcon,
+  SlidersHorizontalIcon,
+  Undo2Icon,
+  BracesIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  MoreHorizontalIcon,
+  RefreshCwIcon,
+} from "lucide-react";
+import ApiRequestEditor from "./ApiRequestEditor";
+import ApiEnvironmentEditor from "./ApiEnvironmentEditor";
+import { LabSelect, MethodBadge } from "./HttpLabParts";
+import { draftObject, draftText } from "./apiRequestDraft";
+import { cn } from "~/lib/utils";
 import { randomUUID } from "~/lib/utils";
 import { devEnvironment as dev, runDevCommand } from "./state";
+const isVaultError = Schema.is(VaultError);
 const problem = (e: unknown) =>
   e instanceof Error ? e.message : "The API workspace is unavailable.";
-const selectClass = "w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-xs";
 type Request = DevApiDetails["requests"][number];
 function Folder({
   name,
@@ -32,7 +56,7 @@ function Folder({
   disabled: boolean;
   onSelect: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(level < 1);
   const groups = new Map<string, Request[]>();
   const requests: Request[] = [];
   for (const entry of entries) {
@@ -41,20 +65,20 @@ function Folder({
     else groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
   return (
-    <div className="min-w-0 space-y-1">
-      <Button
+    <div className="min-w-0">
+      <button
         type="button"
-        size="sm"
-        variant="ghost"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
-        <span className="truncate">
-          {open ? "▾" : "▸"} {name} ({entries.length})
-        </span>
-      </Button>
+        <ChevronRightIcon className={cn("size-3 shrink-0", open && "rotate-90")} />
+        <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        <span className="text-3xs tabular-nums text-muted-foreground">{entries.length}</span>
+      </button>
       {open ? (
-        <div className="min-w-0 space-y-1 pl-3">
+        <div className="min-w-0 pl-2">
           {[...groups].map(([key, value]) => (
             <Folder
               key={key}
@@ -67,32 +91,38 @@ function Folder({
             />
           ))}
           {requests.map((entry) => (
-            <div className="grid grid-cols-[minmax(0,1fr)]" key={entry.id}>
-              <Button
-                size="sm"
-                type="button"
-                variant={selected === entry.id ? "secondary" : "ghost"}
-                disabled={disabled}
-                onClick={() => onSelect(entry.id)}
-              >
-                <span className="truncate">
-                  {entry.method} {entry.name}
-                </span>
-              </Button>
-            </div>
+            <button
+              key={entry.id}
+              type="button"
+              disabled={disabled}
+              aria-current={selected === entry.id ? "true" : undefined}
+              onClick={() => onSelect(entry.id)}
+              className={cn(
+                "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50",
+                selected === entry.id && "bg-accent",
+              )}
+            >
+              <MethodBadge method={entry.method} />
+              <span className="truncate">{entry.name}</span>
+            </button>
           ))}
         </div>
       ) : null}
     </div>
   );
 }
+
 export default function ApiWorkspaces({
   threadRef,
   onResult,
   onBusy,
+  response,
+  supportsEditing = false,
 }: {
   threadRef: ScopedThreadRef;
-  onResult: (exchange: DevHttpExchange) => void;
+  onResult: (result: DevApiRunResult) => void;
+  response: ReactNode;
+  supportsEditing?: boolean;
   onBusy: (busy: boolean) => void;
 }) {
   const id = useId();
@@ -106,12 +136,14 @@ export default function ApiWorkspaces({
   const [note, setNote] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [search, setSearch] = useState("");
-  const [variableSearch, setVariableSearch] = useState("");
-  const [newKey, setNewKey] = useState("");
   const [dirty, setDirty] = useState(false);
   const [bodyBase64, setBodyBase64] = useState<string | undefined>();
   const [bodyFileName, setBodyFileName] = useState("");
-  const [result, setResult] = useState<DevApiRunResult | null>(null);
+  const [draft, setDraft] = useState("");
+  const [editorGeneration, setEditorGeneration] = useState(0);
+  const [showEnvironment, setShowEnvironment] = useState(false);
+  const [showCollections, setShowCollections] = useState(true);
+  const [showImport, setShowImport] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const generation = useRef(0);
   const pending = useRef<{ key: string; requestId: string } | null>(null);
@@ -158,7 +190,7 @@ export default function ApiWorkspaces({
     setDirty(false);
     setSource({ kind: "none" });
     setError(null);
-    setResult(null);
+    setDraft("");
     setNote(null);
     pending.current = null;
     if (!workspaceId) return;
@@ -168,7 +200,10 @@ export default function ApiWorkspaces({
         ...target,
         input: { ...target.input, workspaceId },
       });
-      if (revision === generation.current) setDetails(value);
+      if (revision === generation.current) {
+        setDetails(value);
+        setDraft(value.selected?.sourceJson ?? "");
+      }
     } catch (e) {
       if (revision === generation.current) setError(problem(e));
     }
@@ -181,14 +216,17 @@ export default function ApiWorkspaces({
     setBodyFileName("");
     working(true);
     setError(null);
-    setResult(null);
+    setDraft("");
     pending.current = null;
     try {
       const value = await runDevCommand(dev.apiRead, {
         ...target,
         input: { ...target.input, workspaceId: details.workspace.id, requestKey },
       });
-      if (revision === generation.current) setDetails(value);
+      if (revision === generation.current) {
+        setDetails(value);
+        setDraft(value.selected?.sourceJson ?? "");
+      }
     } catch (e) {
       if (revision === generation.current) setError(problem(e));
     }
@@ -243,7 +281,9 @@ export default function ApiWorkspaces({
         setEnvironment(null);
         setDirty(false);
         setSource({ kind: "none" });
-        setResult(null);
+        setDraft("");
+        setShowImport(false);
+        setDraft("");
         setNote("Workspace imported. Choose an endpoint and select its environment explicitly.");
         pending.current = null;
         await refresh();
@@ -287,6 +327,9 @@ export default function ApiWorkspaces({
       expectedRevision: details.revision,
       environmentRevision: environment.revision,
       ...(bodyBase64 === undefined ? {} : { bodyBase64 }),
+      ...(supportsEditing && draft !== details.selected.sourceJson
+        ? { requestOverride: draft }
+        : {}),
     };
     const key = JSON.stringify(input);
     if (pending.current?.key !== key) pending.current = { key, requestId: randomUUID() };
@@ -298,8 +341,7 @@ export default function ApiWorkspaces({
         ...target,
         input: { ...input, requestId: pending.current.requestId },
       });
-      setResult(value);
-      onResult(value.exchange);
+      onResult(value);
       pending.current = null;
       const env = await runDevCommand(dev.apiEnvironment, {
         ...target,
@@ -316,6 +358,7 @@ export default function ApiWorkspaces({
               : "The response is available.",
       );
     } catch (e) {
+      if (isVaultError(e)) pending.current = null;
       setError(problem(e));
     }
     working(false);
@@ -341,19 +384,11 @@ export default function ApiWorkspaces({
     working(false);
   };
   const selected = details?.requests.find((r) => r.id === details.selected?.id);
+  const sourceDraft = draft ? draftObject(JSON.parse(draft)) : {};
+  const requestDirty = Boolean(details?.selected && draft && draft !== details.selected.sourceJson);
   const matches =
     details?.requests.filter((r) =>
       `${r.method} ${r.name} ${r.folders.join(" ")}`.toLowerCase().includes(search.toLowerCase()),
-    ) ?? [];
-  const checkOccurrences = new Map<string, number>();
-  const checkRows = (result?.checks ?? []).map((check) => {
-    const occurrence = (checkOccurrences.get(check.name) ?? 0) + 1;
-    checkOccurrences.set(check.name, occurrence);
-    return { ...check, key: `${check.name}:${occurrence}` };
-  });
-  const variableMatches =
-    environment?.variables.filter((v) =>
-      v.key.toLowerCase().includes(variableSearch.toLowerCase()),
     ) ?? [];
   const sourceValue =
     !environment && source.kind === "none"
@@ -363,380 +398,542 @@ export default function ApiWorkspaces({
         : source.kind === "dotenv"
           ? `d:${source.path}`
           : "";
+  const saveRequest = async () => {
+    if (!details?.selected || !draft) return;
+    working(true);
+    setError(null);
+    try {
+      const value = await runDevCommand(dev.apiSaveRequest, {
+        ...target,
+        input: {
+          ...target.input,
+          workspaceId: details.workspace.id,
+          requestKey: details.selected.id,
+          expectedRevision: details.revision,
+          sourceJson: draft,
+        },
+      });
+      setDetails(value);
+      setDraft(value.selected?.sourceJson ?? "");
+      setNote("Request saved. Your imported original is preserved.");
+      pending.current = null;
+    } catch (e) {
+      setError(problem(e));
+    }
+    working(false);
+  };
+  const exportWorkspace = async () => {
+    if (!details) return;
+    working(true);
+    setError(null);
+    try {
+      const value = await runDevCommand(dev.apiExport, {
+        ...target,
+        input: { ...target.input, workspaceId: details.workspace.id },
+      });
+      for (const file of value.files) {
+        const url = URL.createObjectURL(new Blob([file.content], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      setNote("Exported native JSON files. Secret values and Vault references are excluded.");
+    } catch (e) {
+      setError(problem(e));
+    }
+    working(false);
+  };
+  const upload = async (file: File | undefined) => {
+    const revision = ++generation.current;
+    setBodyBase64(undefined);
+    setBodyFileName("");
+    if (!file) return;
+    if (file.size > 131072) {
+      setError("Choose a binary file up to 128 KiB.");
+      return;
+    }
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (generation.current !== revision) return;
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      setBodyBase64(btoa(binary));
+      setBodyFileName(file.name);
+      setError(null);
+    } catch {
+      if (generation.current === revision) setError("The upload file could not be read.");
+    }
+  };
+  let suggestedOrigin = "";
+  try {
+    const values = Object.fromEntries(
+      environment?.variables.filter((v) => !v.vault).map((v) => [v.key, v.value]) ?? [],
+    );
+    suggestedOrigin = new URL(
+      draftText(sourceDraft.endpoint).replace(
+        /<<([^<>]+)>>/g,
+        (match, key: string) => values[key] ?? match,
+      ),
+    ).origin;
+  } catch {
+    /* The binding editor asks for an origin when templates cannot resolve yet. */
+  }
+  const bodyType = draftObject(sourceDraft.body).contentType;
   if (!canUse)
     return (
-      <p className="text-sm" role="status">
+      <p role="status" className="p-5 text-sm">
         Execution access is required to open API workspaces and environments.
       </p>
     );
   return (
-    <section aria-label="API workspaces" className="min-w-0 space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium">API workspaces</h3>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void refresh()}>
-          Refresh workspaces
+    <section
+      aria-label="API workspaces"
+      className="@container min-w-0"
+      onKeyDown={(event) => {
+        if (!event.defaultPrevented && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          void send();
+        }
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={showCollections ? "Hide collections" : "Show collections"}
+          aria-expanded={showCollections}
+          onClick={() => setShowCollections(!showCollections)}
+        >
+          {showCollections ? <PanelLeftCloseIcon /> : <PanelLeftOpenIcon />}
         </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Import Hoppscotch collections and environments together for each workspace. Original files
-        and scripts stay on this computer.
-      </p>
-      <details>
-        <summary className="cursor-pointer text-xs font-medium">Import a workspace</summary>
-        <div className="space-y-3 pt-3">
-          <label className="block text-xs" htmlFor={`${id}-name`}>
-            Workspace name
-          </label>
-          <Input
-            id={`${id}-name`}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={busy}
-            placeholder="AspectAvy"
-          />
-          <label className="block text-xs" htmlFor={`${id}-files`}>
-            Hoppscotch JSON files
-          </label>
-          <input
-            id={`${id}-files`}
-            className="block w-full min-w-0 text-xs"
-            type="file"
-            accept=".json,application/json"
-            multiple
-            disabled={busy || !name.trim()}
-            onChange={(e) => {
-              void importFiles(e.target.files);
-              e.target.value = "";
+        <div className="min-w-0 flex-1 basis-40">
+          <LabSelect
+            label="API workspace"
+            value={details?.workspace.id ?? ""}
+            disabled={busy || dirty || requestDirty}
+            onChange={(value) => {
+              setSearch("");
+              void chooseWorkspace(value);
             }}
+            options={[
+              { value: "", label: "Choose a workspace" },
+              ...(workspaces ?? []).map((w) => ({
+                value: w.id,
+                label: `${w.name} (${w.requestCount})`,
+              })),
+            ]}
           />
         </div>
-      </details>
-      {!workspaces && !error ? (
-        <p role="status" className="text-xs">
-          Reading workspaces...
-        </p>
-      ) : null}
-      {workspaces?.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No imported API workspaces.</p>
-      ) : null}
-      <label className="block space-y-1 text-xs">
-        <span>Workspace</span>
-        <select
-          aria-label="API workspace"
-          className={selectClass}
-          value={details?.workspace.id ?? ""}
+        <Button
+          size="sm"
+          variant="ghost"
           disabled={busy}
-          onChange={(e) => void chooseWorkspace(e.target.value)}
+          onClick={() => setShowImport(!showImport)}
         >
-          <option value="">Choose a workspace</option>
-          {workspaces?.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name} ({w.requestCount} requests)
-            </option>
-          ))}
-        </select>
-      </label>
-      {details ? (
-        <>
-          <label className="block space-y-1 text-xs">
-            <span>Find an endpoint</span>
+          <PlusIcon />
+          Import
+        </Button>
+        {details ? (
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Workspace actions"
+                  disabled={busy}
+                />
+              }
+            >
+              <MoreHorizontalIcon />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem
+                disabled={dirty || requestDirty}
+                onClick={() => void chooseWorkspace(details.workspace.id)}
+              >
+                <RefreshCwIcon />
+                Reload workspace
+              </MenuItem>
+              {supportsEditing ? (
+                <MenuItem disabled={dirty || requestDirty} onClick={() => void exportWorkspace()}>
+                  <DownloadIcon />
+                  Export workspace
+                </MenuItem>
+              ) : null}
+              <MenuItem onClick={() => setConfirmRemove(true)}>
+                <Trash2Icon />
+                Remove workspace
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        ) : null}
+      </div>
+      {showImport ? (
+        <div className="space-y-3 border-b border-border bg-muted/20 p-4">
+          <h3 className="text-sm font-medium">Import a Hoppscotch workspace</h3>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Choose its collection and environment JSON files together. Each workspace keeps its own
+            folders, scripts and variables.
+          </p>
+          <label className="block space-y-1.5 text-xs">
+            <span>Workspace name</span>
             <Input
-              aria-label="Find an endpoint"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, folder or method"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={busy}
+              placeholder="AspectAvy"
             />
           </label>
-          <div className="max-h-72 min-w-0 overflow-auto rounded-lg border border-border p-2">
-            {search ? (
-              matches.slice(0, 100).map((r) => (
-                <div key={r.id} className="grid grid-cols-[minmax(0,1fr)]">
-                  <Button
-                    size="sm"
-                    variant={selected?.id === r.id ? "secondary" : "ghost"}
-                    disabled={busy}
-                    onClick={() => void chooseRequest(r.id)}
-                  >
-                    <span className="truncate">
-                      {r.method} {r.folders.join(" / ")} / {r.name}
-                    </span>
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <Folder
-                name="Collections"
-                entries={details.requests}
-                level={0}
-                selected={selected?.id}
-                disabled={busy}
-                onSelect={(value) => void chooseRequest(value)}
-              />
-            )}
-            {search && matches.length > 100 ? (
-              <p className="text-xs text-muted-foreground">
-                Showing 100 of {matches.length} endpoints. Refine the search.
-              </p>
-            ) : null}
-            {search && !matches.length ? (
-              <p className="text-xs text-muted-foreground">No matching endpoints.</p>
-            ) : null}
-          </div>
-          <label className="block space-y-1 text-xs">
-            <span>Environment source</span>
-            <select
-              aria-label="Environment source"
-              className={selectClass}
-              value={sourceValue}
-              disabled={busy}
-              onChange={(e) => void chooseSource(e.target.value)}
-            >
-              <option value="choose" disabled>
-                Choose an environment source
-              </option>
-              <option value="">No environment</option>
-              <optgroup label="Imported JSON environments">
-                {details.environments.map((e) => (
-                  <option key={e.id} value={`j:${e.id}`}>
-                    {e.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="This checkout's dotenv files">
-                {details.dotenvFiles.map((file) => (
-                  <option key={file} value={`d:${file}`}>
-                    {file}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
+          <label className="block space-y-2 text-xs">
+            <span>Hoppscotch JSON files</span>
+            <Input
+              type="file"
+              accept=".json,application/json"
+              multiple
+              disabled={busy || !name.trim()}
+              onChange={(e) => {
+                void importFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
           </label>
-          {environment && source.kind !== "none" ? (
-            <details>
-              <summary className="cursor-pointer text-xs font-medium">
-                Variables ({environment.variables.length})
-              </summary>
-              <div className="space-y-3 pt-3">
-                <Input
-                  aria-label="Find a variable"
-                  placeholder="Find a variable"
-                  value={variableSearch}
-                  onChange={(e) => setVariableSearch(e.target.value)}
-                />
-                {variableMatches.slice(0, 50).map((v) => (
-                  <label className="block min-w-0 space-y-1 text-xs" key={v.key}>
-                    <span className="break-all">{v.key}</span>
-                    <Input
-                      aria-label={`Variable ${v.key}`}
-                      type={v.secret ? "password" : "text"}
-                      autoComplete="off"
-                      value={v.value}
-                      disabled={busy}
-                      onChange={(e) => {
-                        setDirty(true);
-                        setEnvironment({
-                          ...environment,
-                          variables: environment.variables.map((item) =>
-                            item.key === v.key ? { ...item, value: e.target.value } : item,
-                          ),
-                        });
-                        setNote("Save variable changes before sending.");
-                      }}
-                    />
-                  </label>
-                ))}
-                {variableMatches.length > 50 ? (
-                  <p className="text-xs text-muted-foreground">
-                    Showing 50 variables. Search to find another key.
-                  </p>
-                ) : null}
-                <div className="flex min-w-0 gap-2">
-                  <div className="min-w-0 flex-1">
-                    <Input
-                      aria-label="New variable name"
-                      placeholder="New variable name"
-                      value={newKey}
-                      onChange={(e) => setNewKey(e.target.value)}
-                      disabled={busy}
-                    />
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={
-                      busy ||
-                      !newKey.trim() ||
-                      environment.variables.some((v) => v.key === newKey.trim())
-                    }
-                    onClick={() => {
-                      setDirty(true);
-                      setEnvironment({
-                        ...environment,
-                        variables: [
-                          ...environment.variables,
-                          { key: newKey.trim(), value: "", secret: true },
-                        ],
-                      });
-                      setVariableSearch(newKey.trim());
-                      setNewKey("");
-                    }}
-                  >
-                    Add variable
-                  </Button>
-                </div>
-                <Button size="sm" disabled={busy} onClick={() => void save()}>
-                  {source.kind === "dotenv" ? "Save to .env file" : "Save environment"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => void chooseSource(sourceValue)}
-                >
-                  Refresh variables
-                </Button>
-              </div>
-            </details>
-          ) : null}
-          {selected && details.selected ? (
-            <section
-              className="space-y-3 rounded-lg border border-border p-3"
-              aria-label="Selected API endpoint"
-            >
-              <h4 className="break-words text-sm font-medium">
-                {selected.method} {selected.name}
-              </h4>
-              <p className="break-words text-xs text-muted-foreground">
-                {selected.folders.join(" / ")}
-              </p>
-              <p className="break-all font-mono text-2xs">{details.selected.endpoint}</p>
-              {details.selected.bodyContentType === "application/octet-stream" ? (
-                <label className="block space-y-1 text-xs">
-                  <span>Binary upload file (up to 128 KiB)</span>
-                  <input
-                    type="file"
-                    aria-label="Binary upload file"
-                    className="block w-full min-w-0 text-xs"
-                    disabled={busy}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      const revision = ++generation.current;
-                      setBodyBase64(undefined);
-                      setBodyFileName("");
-                      setError(null);
-                      if (file.size > 131072) {
-                        setError("Choose an upload file up to 128 KiB.");
-                        return;
-                      }
-                      void file.arrayBuffer().then(
-                        (buffer) => {
-                          if (revision !== generation.current) return;
-                          setBodyBase64(
-                            btoa(
-                              Array.from(new Uint8Array(buffer), (byte) =>
-                                String.fromCharCode(byte),
-                              ).join(""),
-                            ),
-                          );
-                          setBodyFileName(file.name);
-                          pending.current = null;
-                        },
-                        () => {
-                          if (revision === generation.current)
-                            setError("The upload file could not be read.");
-                        },
-                      );
-                    }}
-                  />
-                  {bodyFileName ? <span>{bodyFileName}</span> : null}
-                </label>
-              ) : null}
-              <details>
-                <summary className="cursor-pointer text-xs">Request scripts</summary>
-                <p className="py-2 text-xs text-muted-foreground">
-                  Scripts run on this computer when you send this endpoint. Preparation runs before
-                  dispatch; response scripts capture values and report checks.
-                </p>
-                <h5 className="text-xs font-medium">Before request</h5>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-code p-3 text-2xs">
-                  {details.selected.preScripts.join("\n\n") || "No preparation script."}
-                </pre>
-                <h5 className="pt-2 text-xs font-medium">After response</h5>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-code p-3 text-2xs">
-                  {details.selected.testScripts.join("\n\n") || "No response script."}
-                </pre>
-              </details>
-              <Button
-                size="sm"
-                disabled={
-                  busy ||
-                  !environment ||
-                  dirty ||
-                  (details.selected.bodyContentType === "application/octet-stream" &&
-                    bodyBase64 === undefined)
-                }
-                onClick={() => void send()}
-              >
-                {busy ? "Working..." : "Send endpoint"}
-              </Button>
-            </section>
-          ) : null}
-          {result ? (
-            <div aria-label="Request checks" className="space-y-1">
-              {checkRows.map((check) => (
-                <p
-                  className={
-                    check.passed ? "text-xs text-muted-foreground" : "text-xs text-destructive"
-                  }
-                  key={check.key}
-                >
-                  {check.passed ? "Passed" : "Failed"}: {check.name}
-                </p>
-              ))}
-            </div>
-          ) : null}
-          {confirmRemove ? (
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <p className="text-xs">
-                Remove this imported workspace and its saved variables from this computer? Your
-                original files and request history are preserved.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => setConfirmRemove(false)}
-                >
-                  Cancel
-                </Button>
-                <Button size="sm" disabled={busy} onClick={() => void remove()}>
-                  Remove workspace
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setConfirmRemove(true)}
-            >
-              Remove imported workspace
-            </Button>
-          )}
-        </>
+        </div>
       ) : null}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p
+          role="alert"
+          className="m-3 rounded-lg bg-destructive/10 p-3 text-xs leading-5 text-destructive"
+        >
           {error}
         </p>
       ) : null}
       {note ? (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="px-4 py-2 text-xs leading-5 text-muted-foreground">
           {note}
         </p>
+      ) : null}
+      {details ? (
+        <div
+          className={cn(
+            "grid min-w-0 grid-cols-[minmax(0,1fr)]",
+            showCollections && "@min-[760px]:grid-cols-[224px_minmax(0,1fr)]",
+          )}
+        >
+          {showCollections ? (
+            <aside
+              aria-label="Collections"
+              className="min-w-0 border-b border-border bg-muted/15 @min-[760px]:border-r @min-[760px]:border-b-0"
+            >
+              <div className="flex items-center justify-between px-4 pt-4">
+                <h3 className="text-xs font-medium">Collections</h3>
+                <span className="text-2xs tabular-nums text-muted-foreground">
+                  {details.workspace.requestCount}
+                </span>
+              </div>
+              <div className="p-3">
+                <Input
+                  aria-label="Find an endpoint"
+                  type="search"
+                  placeholder="Find an endpoint..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="max-h-60 min-w-0 overflow-y-auto px-2 pb-3 @min-[760px]:max-h-[800px]">
+                {search ? (
+                  matches.slice(0, 100).map((entry) => (
+                    <button
+                      type="button"
+                      key={entry.id}
+                      disabled={busy || requestDirty}
+                      onClick={() => void chooseRequest(entry.id)}
+                      aria-current={selected?.id === entry.id ? "true" : undefined}
+                      className={cn(
+                        "flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50",
+                        selected?.id === entry.id && "bg-accent",
+                      )}
+                    >
+                      <MethodBadge method={entry.method} />
+                      <span className="min-w-0">
+                        <span className="block truncate">{entry.name}</span>
+                        <span className="block truncate text-3xs text-muted-foreground">
+                          {entry.folders.join(" / ")}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <Folder
+                    name={details.workspace.name}
+                    entries={details.requests}
+                    level={0}
+                    selected={selected?.id}
+                    disabled={busy || requestDirty}
+                    onSelect={(key) => void chooseRequest(key)}
+                  />
+                )}
+                {search && matches.length === 0 ? (
+                  <p className="p-4 text-center text-xs text-muted-foreground">
+                    No endpoints match your search.
+                  </p>
+                ) : null}
+                {matches.length > 100 && search ? (
+                  <p className="p-2 text-2xs text-muted-foreground">
+                    100 of {matches.length} results. Refine your search.
+                  </p>
+                ) : null}
+              </div>
+            </aside>
+          ) : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/10 px-4 py-3">
+              <SlidersHorizontalIcon className="size-3.5 text-muted-foreground" />
+              <div className="min-w-0 flex-1 basis-44">
+                <LabSelect
+                  label="Variable source"
+                  value={sourceValue}
+                  disabled={busy || dirty}
+                  onChange={(value) => void chooseSource(value)}
+                  options={[
+                    { value: "choose", label: "Select environment" },
+                    { value: "", label: "No environment" },
+                    ...details.environments.map((e) => ({
+                      value: `j:${e.id}`,
+                      label: `JSON · ${e.name}`,
+                    })),
+                    ...details.dotenvFiles.map((path) => ({
+                      value: `d:${path}`,
+                      label: `Project · ${path}`,
+                    })),
+                  ]}
+                />
+              </div>
+              <Button
+                size="sm"
+                variant={showEnvironment ? "secondary" : "ghost"}
+                disabled={busy || !environment}
+                onClick={() => setShowEnvironment(!showEnvironment)}
+              >
+                <BracesIcon />
+                Variables{environment ? ` (${environment.variables.length})` : ""}
+                {dirty ? " *" : ""}
+              </Button>
+            </div>
+            {showEnvironment && environment ? (
+              <ApiEnvironmentEditor
+                key={JSON.stringify(source)}
+                threadRef={threadRef}
+                source={source}
+                environment={environment}
+                dirty={dirty}
+                disabled={busy}
+                suggestedOrigin={suggestedOrigin}
+                vaultEnabled={supportsEditing}
+                onChange={(variables) => {
+                  setEnvironment({ ...environment, variables });
+                  setDirty(true);
+                  pending.current = null;
+                }}
+                onSave={() => void save()}
+                onReset={() => void chooseSource(sourceValue)}
+              />
+            ) : null}
+            {details.selected && draft ? (
+              <>
+                <div className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-2xs text-muted-foreground">
+                        {selected?.folders.join(" / ")}
+                      </p>
+                      <div className="mt-1">
+                        <Input
+                          aria-label="Request name"
+                          value={draftText(sourceDraft.name)}
+                          disabled={busy || !supportsEditing}
+                          onChange={(e) =>
+                            setDraft(JSON.stringify({ ...sourceDraft, name: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    {supportsEditing ? (
+                      <div className="flex gap-1">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Discard request edits"
+                          disabled={busy || !requestDirty}
+                          onClick={() => {
+                            setDraft(details.selected!.sourceJson);
+                            setEditorGeneration(editorGeneration + 1);
+                          }}
+                        >
+                          <Undo2Icon />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy || !requestDirty}
+                          onClick={() => void saveRequest()}
+                        >
+                          <SaveIcon />
+                          Save
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <form
+                    className="flex flex-wrap items-center gap-2"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void send();
+                    }}
+                  >
+                    <div className="w-28">
+                      <LabSelect
+                        label="Request method"
+                        compact
+                        value={draftText(sourceDraft.method)}
+                        options={["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map(
+                          (value) => ({ value, label: value }),
+                        )}
+                        disabled={busy || !supportsEditing}
+                        onChange={(value) =>
+                          setDraft(JSON.stringify({ ...sourceDraft, method: value }))
+                        }
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 basis-44">
+                      <Input
+                        aria-label="Request URL"
+                        font="mono"
+                        value={draftText(sourceDraft.endpoint)}
+                        disabled={busy || !supportsEditing}
+                        onChange={(e) =>
+                          setDraft(JSON.stringify({ ...sourceDraft, endpoint: e.target.value }))
+                        }
+                        placeholder="<<baseUrl>>/api"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={
+                        busy ||
+                        !environment ||
+                        dirty ||
+                        (bodyType === "application/octet-stream" && bodyBase64 === undefined)
+                      }
+                    >
+                      <SendIcon />
+                      {busy ? "Working..." : "Send"}
+                    </Button>
+                  </form>
+                  {dirty ? (
+                    <p className="text-xs text-warning-foreground">
+                      Save or discard variable edits before sending.
+                    </p>
+                  ) : !environment ? (
+                    <p className="text-xs text-muted-foreground">
+                      Select an environment above, or explicitly choose No environment.
+                    </p>
+                  ) : requestDirty ? (
+                    <p className="text-xs text-muted-foreground">
+                      Unsaved request. Send tests these edits; Save keeps them in the collection.
+                    </p>
+                  ) : null}
+                </div>
+                {supportsEditing ? (
+                  <ApiRequestEditor
+                    key={`${details.selected.id}:${details.revision}:${editorGeneration}`}
+                    selected={details.selected}
+                    draft={draft}
+                    onChange={setDraft}
+                    disabled={busy}
+                    bodyFileName={bodyFileName}
+                    onUpload={(file) => void upload(file)}
+                  />
+                ) : (
+                  <details className="px-4 pb-4 text-xs">
+                    <summary>Imported request</summary>
+                    <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-all">
+                      {JSON.stringify(sourceDraft, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </>
+            ) : (
+              <div className="flex min-h-64 flex-col items-center justify-center gap-3 p-6 text-center">
+                <div className="rounded-xl bg-muted p-3">
+                  <SearchIcon className="size-6 text-muted-foreground" />
+                </div>
+                <h3 className="text-sm font-medium">Find your next request</h3>
+                <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+                  Browse a collection or search by name, folder or method. Select an environment,
+                  then send.
+                </p>
+              </div>
+            )}
+            {response}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+          <div className="rounded-xl bg-muted p-4">
+            <BracesIcon className="size-7 text-muted-foreground" />
+          </div>
+          <h3 className="text-base font-medium">Your APIs, in your workspace</h3>
+          <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+            Bring your Hoppscotch collections and environments into Loom. Browse endpoints, use
+            project variables and inspect every response.
+          </p>
+          <Button size="sm" onClick={() => setShowImport(true)}>
+            <PlusIcon />
+            Import a workspace
+          </Button>
+          {!workspaces ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              Loading workspaces...
+            </p>
+          ) : workspaces.length ? (
+            <p className="text-xs text-muted-foreground">
+              Choose one of your {workspaces.length} workspaces above.
+            </p>
+          ) : null}
+        </div>
+      )}
+      {confirmRemove ? (
+        <div
+          role="alertdialog"
+          aria-modal="false"
+          aria-labelledby={`${id}-remove`}
+          className="m-3 space-y-3 rounded-lg border border-border bg-muted p-4"
+        >
+          <h3 id={`${id}-remove`} className="text-sm font-medium">
+            Remove {details?.workspace.name}?
+          </h3>
+          <p className="text-xs leading-5 text-muted-foreground">
+            This removes Loom's imported copy and saved variables. Original files and HTTP history
+            remain.
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove()}>
+              Remove workspace
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setConfirmRemove(false)}
+            >
+              Keep workspace
+            </Button>
+          </div>
+        </div>
       ) : null}
     </section>
   );

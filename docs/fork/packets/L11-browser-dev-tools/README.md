@@ -27,6 +27,8 @@ The UI and supported `loom_dev_*` tools call the same services.
   reuse saved request fields, clear checkout history and add response excerpts to a draft.
 - Import separate native API workspaces, browse their folders and endpoints, select JSON or
   checkout dotenv environments explicitly, edit variables and run preserved legacy scripts.
+- Edit saved native requests with revision checks, export current portable JSON, and bind
+  environment variables to exact-origin Vault secrets resolved privately at send time.
 - Web/desktop Development panel, panel picker, command palette and Browser entry point.
   Native phone users can use the supported agent tools and existing preview links.
 

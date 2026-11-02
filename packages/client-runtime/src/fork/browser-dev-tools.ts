@@ -24,6 +24,14 @@ export function createDevEnvironmentAtoms<R, E>(
       label: "loom:dev:apiSaveEnvironment",
       tag: D.apiSaveEnvironment,
     }),
+    apiSaveRequest: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiSaveRequest",
+      tag: D.apiSaveRequest,
+    }),
+    apiExport: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiExport",
+      tag: D.apiExport,
+    }),
     apiRun: createEnvironmentRpcCommand(runtime, { label: "loom:dev:apiRun", tag: D.apiRun }),
     apiRemove: createEnvironmentRpcCommand(runtime, {
       label: "loom:dev:apiRemove",

@@ -1,3 +1,4 @@
+import * as DevApiCredentials from "./browser-dev-tools/DevApiCredentials.ts";
 import * as DevApi from "./browser-dev-tools/DevApiService.ts";
 import * as DevRequests from "./browser-dev-tools/DevRequestsService.ts";
 import * as DevDiagnostics from "./browser-dev-tools/DevDiagnosticsService.ts";
@@ -408,7 +409,14 @@ const layerDevRequests = DevRequests.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
 );
 const layerDevApi = DevApi.layer.pipe(
-  Layer.provide(Layer.mergeAll(layerDevEnvironment, layerDevRequests, ProcessRunner.layer)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerDevEnvironment,
+      layerDevRequests,
+      ProcessRunner.layer,
+      DevApiCredentials.layer.pipe(Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultAccess))),
+    ),
+  ),
 );
 const layerDevContainers = DevContainers.layer.pipe(
   Layer.provide(layerDevEnvironment),

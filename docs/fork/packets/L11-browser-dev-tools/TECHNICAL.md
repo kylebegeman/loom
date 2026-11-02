@@ -82,5 +82,8 @@ replacing that newer context. Process environment variables are never merged int
 Legacy scripts run in a bounded child process with an empty inherited environment, Node's
 permission restrictions and a VM context with string/Wasm code generation disabled. The child
 has no file, subprocess or network grants. These are development execution tools, protected by
-terminal authority. The `browser-dev-tools-api` capability gates clients connected to older
-computers. Current upstream overlap inspection found no competing API-workspace behavior.
+terminal authority. The `browser-dev-tools-api` capability gates imported workspaces; `browser-dev-tools-api-editor`
+gates saved edits and Vault bindings on older computers. Request edits are separate from immutable
+imports. Vault resolution validates the actual caller and item/version before and after release,
+then checks the exact final HTTP origin before dispatch. Known Vault values are filtered from
+persisted exchanges, script check names and capture overlays. Bindings grant no access.

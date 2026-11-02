@@ -125,9 +125,26 @@ it.effect(
       expect((yield* service.history({ ...target, exchangeId: response.id })).selected).toEqual(
         response,
       );
+      const credentialInput = {
+        ...target,
+        requestId: "vault-body",
+        request: {
+          ...request,
+          url: "http://localhost/vault",
+          body: '{"credential":"fixture-vault-value"}',
+        },
+      };
+      const credentialResponse = yield* service.sendForWorkflow(credentialInput, [
+        "fixture-vault-value",
+      ]);
+      expect(credentialResponse.request.body).not.toContain("fixture-vault-value");
+      expect(
+        (yield* service.history({ ...target, exchangeId: credentialResponse.id })).selected?.request
+          .body,
+      ).not.toContain("fixture-vault-value");
       const restored = yield* reload;
       expect(yield* restored.send(input)).toEqual(response);
-      expect(calls).toHaveLength(1);
+      expect(calls).toHaveLength(2);
       expect(
         (yield* restored
           .send({ ...input, request: { ...request, body: "changed" } })
@@ -135,7 +152,7 @@ it.effect(
       ).toBe("request-conflict");
       expect(
         (yield* restored.history({ threadId: ThreadId.make("second") })).exchanges,
-      ).toHaveLength(1);
+      ).toHaveLength(2);
       expect((yield* restored.history({ threadId: ThreadId.make("other") })).exchanges).toEqual([]);
       const fs = yield* FileSystem.FileSystem;
       const saved = yield* fs.readFileString(file);
@@ -153,7 +170,7 @@ it.effect(
       expect(
         (yield* service.send({ ...input, requestId: "unreadable" }).pipe(Effect.flip)).reason,
       ).toBe("history-unavailable");
-      expect(calls).toHaveLength(HTTP_HISTORY_LIMIT + 1);
+      expect(calls).toHaveLength(HTTP_HISTORY_LIMIT + 2);
     }).pipe(provide),
 );
 it.effect(
@@ -179,6 +196,7 @@ it.effect(
         },
       });
       expect(upload.status).toBe(201);
+      expect(upload.request.body).toBe("AAEC/w==");
       const large = yield* send("large");
       expect(large.truncated).toBe(true);
       expect(large.byteLength).toBe(HTTP_BODY_LIMIT);
