@@ -28,7 +28,10 @@ export function validRequest(request: DevHttpRequest): boolean {
       !url.username &&
       !url.password &&
       !(["GET", "HEAD"].includes(request.method) && request.body.length > 0) &&
-      new TextEncoder().encode(request.body).length <= 131072 &&
+      (request.bodyEncoding === "base64"
+        ? /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(request.body) &&
+          Buffer.byteLength(request.body, "base64") <= 131072
+        : new TextEncoder().encode(request.body).length <= 131072) &&
       Object.keys(request.headers).length <= 64 &&
       Object.entries(request.headers).every(
         ([name, value]) =>

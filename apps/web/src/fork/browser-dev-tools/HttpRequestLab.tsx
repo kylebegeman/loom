@@ -1,3 +1,4 @@
+import ApiWorkspaces from "./ApiWorkspaces";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -35,11 +36,14 @@ function parseHeaders(text: string) {
 export default function HttpRequestLab({
   threadRef,
   serverUrl,
+  supportsApi = false,
 }: {
   threadRef: ScopedThreadRef;
   serverUrl?: string | undefined;
+  supportsApi?: boolean | undefined;
 }) {
   const id = useId();
+  const [mode, setMode] = useState<"saved" | "scratch">(supportsApi ? "saved" : "scratch");
   const canUse = useAtomValue(dev.httpSend.permissionAtom(threadRef.environmentId));
   const [selected, setSelected] = useState<DevHttpExchange | null>(null);
   const [historyEntries, setHistoryEntries] = useState<readonly DevHttpSummary[] | null>(null);
@@ -91,6 +95,7 @@ export default function HttpRequestLab({
   const [url, setUrl] = useState(serverUrl ?? "");
   const [headers, setHeaders] = useState("");
   const [body, setBody] = useState("");
+  const [bodyEncoding, setBodyEncoding] = useState<"text" | "base64">("text");
   const [timeout, setTimeoutSeconds] = useState("30");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +122,7 @@ export default function HttpRequestLab({
       url: url.trim(),
       headers: parsedHeaders,
       body,
+      ...(bodyEncoding === "base64" ? { bodyEncoding } : {}),
       timeoutMs,
     };
     const key = JSON.stringify(request);
@@ -141,6 +147,7 @@ export default function HttpRequestLab({
     setBusy(false);
   };
   const load = (exchange: DevHttpExchange) => {
+    setMode("scratch");
     const request = exchange.request;
     setMethod(request.method);
     const restoredUrl = new URL(request.url);
@@ -153,6 +160,7 @@ export default function HttpRequestLab({
     }
     setUrl(restoredUrl.toString());
     setBody(request.body);
+    setBodyEncoding(request.bodyEncoding ?? "text");
     setTimeoutSeconds(String(request.timeoutMs / 1000));
     setHeaders(
       Object.entries(request.headers)
@@ -199,101 +207,150 @@ export default function HttpRequestLab({
           Execution access is required to send requests or read their history.
         </p>
       ) : null}
-      <form
-        className="space-y-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send();
-        }}
-      >
-        <div role="group" aria-label="HTTP method" className="flex flex-wrap gap-1">
-          {methods.map((value) => (
-            <Button
-              type="button"
-              size="sm"
-              variant={method === value ? "secondary" : "ghost"}
-              aria-pressed={method === value}
-              key={value}
-              disabled={busy}
-              onClick={() => {
-                setMethod(value);
-                if (["GET", "HEAD"].includes(value)) setBody("");
-              }}
-            >
-              {value}
-            </Button>
-          ))}
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-url`} className="text-xs font-medium">
-            Request URL
-          </label>
-          <Input
-            id={`${id}-url`}
-            type="url"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="http://localhost:3000/api"
-            disabled={busy}
-            required
-          />
-        </div>
-        {serverUrl ? (
+      {supportsApi ? (
+        <div className="flex gap-1" role="group" aria-label="HTTP request mode">
           <Button
             type="button"
             size="sm"
-            variant="ghost"
+            variant={mode === "saved" ? "secondary" : "ghost"}
             disabled={busy}
-            onClick={() => setUrl(serverUrl)}
+            onClick={() => setMode("saved")}
           >
-            Use running server
+            Saved APIs
           </Button>
-        ) : null}
-        <div className="space-y-1">
-          <label htmlFor={`${id}-headers`} className="text-xs font-medium">
-            Headers
-          </label>
-          <Textarea
-            id={`${id}-headers`}
-            value={headers}
-            onChange={(event) => setHeaders(event.target.value)}
-            placeholder={"Content-Type: application/json"}
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "scratch" ? "secondary" : "ghost"}
             disabled={busy}
-          />
+            onClick={() => setMode("scratch")}
+          >
+            One-off request
+          </Button>
         </div>
-        {!["GET", "HEAD"].includes(method) ? (
+      ) : null}
+      {supportsApi && mode === "saved" ? (
+        <ApiWorkspaces
+          threadRef={threadRef}
+          onBusy={setBusy}
+          onResult={(exchange) => {
+            setSelected(exchange);
+            void refreshHistory();
+          }}
+        />
+      ) : null}
+      {!supportsApi || mode === "scratch" ? (
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send();
+          }}
+        >
+          <div role="group" aria-label="HTTP method" className="flex flex-wrap gap-1">
+            {methods.map((value) => (
+              <Button
+                type="button"
+                size="sm"
+                variant={method === value ? "secondary" : "ghost"}
+                aria-pressed={method === value}
+                key={value}
+                disabled={busy}
+                onClick={() => {
+                  setMethod(value);
+                  if (["GET", "HEAD"].includes(value)) setBody("");
+                }}
+              >
+                {value}
+              </Button>
+            ))}
+          </div>
           <div className="space-y-1">
-            <label htmlFor={`${id}-body`} className="text-xs font-medium">
-              Request body
+            <label htmlFor={`${id}-url`} className="text-xs font-medium">
+              Request URL
+            </label>
+            <Input
+              id={`${id}-url`}
+              type="url"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="http://localhost:3000/api"
+              disabled={busy}
+              required
+            />
+          </div>
+          {serverUrl ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setUrl(serverUrl)}
+            >
+              Use running server
+            </Button>
+          ) : null}
+          <div className="space-y-1">
+            <label htmlFor={`${id}-headers`} className="text-xs font-medium">
+              Headers
             </label>
             <Textarea
-              id={`${id}-body`}
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder="Raw text or JSON"
+              id={`${id}-headers`}
+              value={headers}
+              onChange={(event) => setHeaders(event.target.value)}
+              placeholder={"Content-Type: application/json"}
               disabled={busy}
             />
           </div>
-        ) : null}
-        <div className="space-y-1">
-          <label htmlFor={`${id}-timeout`} className="text-xs font-medium">
-            Timeout in seconds
-          </label>
-          <Input
-            id={`${id}-timeout`}
-            type="number"
-            min="0.1"
-            max="60"
-            step="0.1"
-            value={timeout}
-            onChange={(event) => setTimeoutSeconds(event.target.value)}
-            disabled={busy}
-          />
-        </div>
-        <Button type="submit" size="sm" disabled={!canUse || busy}>
-          {busy ? "Working..." : "Send request"}
-        </Button>
-      </form>
+          {!["GET", "HEAD"].includes(method) ? (
+            <div className="space-y-1">
+              <label htmlFor={`${id}-body`} className="text-xs font-medium">
+                Request body
+              </label>
+              <label className="block space-y-1 text-xs">
+                <span>Body encoding</span>
+                <select
+                  aria-label="Body encoding"
+                  value={bodyEncoding}
+                  onChange={(event) =>
+                    setBodyEncoding(event.target.value === "base64" ? "base64" : "text")
+                  }
+                  disabled={busy}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2"
+                >
+                  <option value="text">Text or JSON</option>
+                  <option value="base64">Binary as base64</option>
+                </select>
+              </label>
+              <Textarea
+                id={`${id}-body`}
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                placeholder="Raw text or JSON"
+                disabled={busy}
+              />
+            </div>
+          ) : null}
+          <div className="space-y-1">
+            <label htmlFor={`${id}-timeout`} className="text-xs font-medium">
+              Timeout in seconds
+            </label>
+            <Input
+              id={`${id}-timeout`}
+              type="number"
+              min="0.1"
+              max="60"
+              step="0.1"
+              value={timeout}
+              onChange={(event) => setTimeoutSeconds(event.target.value)}
+              disabled={busy}
+            />
+          </div>
+          <Button type="submit" size="sm" disabled={!canUse || busy}>
+            {busy ? "Working..." : "Send request"}
+          </Button>
+        </form>
+      ) : null}
       {error || historyError ? (
         <p role="alert" className="text-sm text-destructive">
           {error ?? historyError}

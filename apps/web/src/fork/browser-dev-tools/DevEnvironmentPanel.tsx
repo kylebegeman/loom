@@ -55,6 +55,10 @@ function Development({ threadRef }: { threadRef: ScopedThreadRef }) {
     useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
     "browser-dev-tools-http",
   );
+  const supportsApi = supportsLoomFeature(
+    useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
+    "browser-dev-tools-api",
+  );
   const servers = useEnvironmentQuery(
     dev.servers({
       environmentId: threadRef.environmentId,
@@ -113,6 +117,7 @@ function Development({ threadRef }: { threadRef: ScopedThreadRef }) {
         {activeTab === "requests" ? (
           <HttpRequestLab
             threadRef={threadRef}
+            supportsApi={supportsApi}
             serverUrl={servers.data?.runs.find((run) => run.state === "ready")?.urls[0]}
           />
         ) : null}

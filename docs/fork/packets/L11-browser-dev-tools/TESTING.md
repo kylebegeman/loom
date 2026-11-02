@@ -45,3 +45,18 @@ responses. Check status/timing/body, header and query redaction, draft insertion
 loading and history after restarting the isolated server. Test clear cancellation and confirmed
 clearing, plus a long history URL at phone width. These requests are intentionally real network
 operations against the fixture, not a production API.
+
+API workspace service tests use synthetic native files and real bounded script subprocesses.
+They cover native preservation, inherited authentication, explicit environments, script captures
+and invalidation, durable retries, stale revisions, binary bytes, dotenv comment preservation,
+concurrent file changes and path escapes. `dev-api.ndjson` covers import without execution,
+explicit dotenv routing and a single-variable JSON patch. Model simulation is separate from
+actual client acceptance.
+
+For client acceptance, import a synthetic collection and environment, browse and search its
+folders, edit and save a variable, send to a local fixture, inspect checks and captured values,
+and switch explicitly to a fixture dotenv file. Verify that edits must be saved before sending,
+that file captures need an explicit save, and that remove cancellation preserves the workspace.
+Check large catalogs with lazy endpoint selection and a phone-width layout. Real private packs
+may be imported for compatibility inspection, but never run their production requests as a
+side effect of import verification.

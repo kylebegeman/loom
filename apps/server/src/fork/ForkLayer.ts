@@ -1,3 +1,4 @@
+import * as DevApi from "./browser-dev-tools/DevApiService.ts";
 import * as DevRequests from "./browser-dev-tools/DevRequestsService.ts";
 import * as DevDiagnostics from "./browser-dev-tools/DevDiagnosticsService.ts";
 import * as DevEnvironment from "./browser-dev-tools/DevEnvironmentService.ts";
@@ -402,6 +403,13 @@ const layerProjectProfiles = ProjectProfiles.layer.pipe(
 const layerDevEnvironment = DevEnvironment.layer.pipe(
   Layer.provide(Layer.mergeAll(ProjectStore.layer, ProjectionStore.layer, layerProjectProfiles)),
 );
+const layerDevRequests = DevRequests.layer.pipe(
+  Layer.provide(layerDevEnvironment),
+  Layer.provide(FetchHttpClient.layer),
+);
+const layerDevApi = DevApi.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerDevEnvironment, layerDevRequests, ProcessRunner.layer)),
+);
 const layerDevContainers = DevContainers.layer.pipe(
   Layer.provide(layerDevEnvironment),
   Layer.provide(ProcessRunner.layer),
@@ -428,7 +436,8 @@ export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
-  DevRequests.layer.pipe(Layer.provide(layerDevEnvironment), Layer.provide(FetchHttpClient.layer)),
+  layerDevApi,
+  layerDevRequests,
   DevDiagnostics.layer.pipe(Layer.provide(layerDevEnvironment)),
   layerDevEnvironment,
   layerDevContainers,

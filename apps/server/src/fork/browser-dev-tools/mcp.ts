@@ -1,3 +1,4 @@
+import { DevApiService } from "./DevApiService.ts";
 import { DevRequestsService } from "./DevRequestsService.ts";
 import {
   OrchestratorMcpEnvironmentTarget,
@@ -6,6 +7,13 @@ import {
 } from "@t3tools/contracts";
 import {
   DevHttpSend,
+  DevApiError,
+  DevApiDetails,
+  DevApiWorkspace,
+  DevApiSource,
+  DevApiVariable,
+  DevApiRun,
+  DevApiRunResult,
   DevHttpHistory,
   DevHttpHistoryTarget,
   DevHttpExchange,
@@ -35,9 +43,59 @@ const target = {
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: Schema.optionalKey(ThreadId),
 };
-const failure = Schema.Union([DevEnvironmentError, DevHttpError, OrchestratorMcpFailure]);
+const failure = Schema.Union([
+  DevEnvironmentError,
+  DevHttpError,
+  DevApiError,
+  OrchestratorMcpFailure,
+]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const DevEnvironmentToolkit = Toolkit.make(
+  Tool.make("loom_dev_api_workspace", {
+    description:
+      "List, inspect, import or remove native Hoppscotch API workspaces on the selected execution computer. Import reads JSON files from one explicitly supplied directory, preserving collection hierarchy, authentication, scripts, environment definitions and original bytes. Use a separate named workspace for each API project; do not combine older recovery variants with the current pack. Repeating the same name and files reuses the workspace. Inspect never sends requests. Remove deletes only the imported copy and saved variables, preserving original source files and HTTP history; requires authorization for that removal.",
+    parameters: Schema.Struct({
+      ...target,
+      action: Schema.Literals(["list", "read", "import", "remove"]),
+      workspaceId: Schema.optionalKey(Schema.String),
+      name: Schema.optionalKey(Schema.String),
+      directory: Schema.optionalKey(Schema.String),
+    }),
+    success: Schema.Struct({
+      workspaces: Schema.Array(DevApiWorkspace),
+      workspace: Schema.NullOr(DevApiDetails),
+    }),
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_dev_api_environment", {
+    description:
+      "Read variable names, secret flags, presence and revision for one explicitly selected API environment, or patch only supplied variable entries with action save and expectedRevision. Values are omitted from results. Choose an imported JSON environment or a dotenv path in this conversation's checkout; no ambient process environment or implicit environment merging. Script captures for dotenv stay in request variables until an explicit save writes the selected file. Revision conflicts require a fresh read. Never put secret values in chat; use existing selected sources or the supported private secret flow.",
+    parameters: Schema.Struct({
+      ...target,
+      workspaceId: Schema.String,
+      source: DevApiSource,
+      action: Schema.Literals(["read", "save"]),
+      expectedRevision: Schema.optionalKey(Schema.String),
+      variables: Schema.optionalKey(Schema.Array(DevApiVariable)),
+    }),
+    success: Schema.Struct({
+      revision: Schema.String,
+      variables: Schema.Array(
+        Schema.Struct({ key: Schema.String, secret: Schema.Boolean, isSet: Schema.Boolean }),
+      ),
+    }),
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_dev_api_send", {
+    description:
+      "Send one exact imported API endpoint by requestKey from loom_dev_api_workspace using an explicitly selected JSON or checkout dotenv environment. Read workspace and environment revisions first. Runs preserved preparation scripts before dispatch, and response scripts for token capture and checks. A failed preparation prevents HTTP dispatch. Reuse requestId and identical inputs after a lost response; completed retries reuse the result, unknown outcomes never resend automatically. Requires execution authority and authorization for the selected API operation. Importing or inspecting a workspace does not authorize running all its requests. Unsupported auth/body encoders fail before dispatch and preserve the native source.",
+    parameters: Schema.Struct({ ...DevApiRun.fields, ...target }),
+    success: DevApiRunResult,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_dev_request", {
     description:
       "Send one HTTP request from this conversation's execution computer, including its local development ports. Use a stable requestId and identical inputs after a lost response; retries reuse the recorded response rather than sending twice. HTTP/HTTPS only, no automatic redirects or retries. Body limit 128 KiB, response preview 256 KiB, timeout at most 60 seconds. Returned and saved authentication headers and credential query fields are redacted. Requires execution authority; methods can change the target.",
@@ -129,6 +187,77 @@ export const devEnvironmentHandlers = McpToolAccess.toLayer(
       return (yield* readThread(threadId)).projection.thread.id;
     });
     return {
+      loom_dev_api_workspace: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          return yield* inRuntime(
+            Effect.gen(function* () {
+              const api = yield* DevApiService;
+              if (input.action === "list")
+                return { workspaces: yield* api.list({ threadId }), workspace: null };
+              if (input.action === "import") {
+                if (!input.directory || !input.name)
+                  return yield* new DevApiError({ reason: "invalid-format" });
+                return {
+                  workspaces: [],
+                  workspace: yield* api.importDirectory({
+                    threadId,
+                    directory: input.directory,
+                    name: input.name,
+                  }),
+                };
+              }
+              if (!input.workspaceId) return yield* new DevApiError({ reason: "not-found" });
+              if (input.action === "remove") {
+                yield* api.remove({ threadId, workspaceId: input.workspaceId });
+                return { workspaces: yield* api.list({ threadId }), workspace: null };
+              }
+              return {
+                workspaces: [],
+                workspace: yield* api.read({ threadId, workspaceId: input.workspaceId }),
+              };
+            }),
+          );
+        }),
+      ),
+      loom_dev_api_environment: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          return yield* inRuntime(
+            Effect.gen(function* () {
+              const api = yield* DevApiService;
+              const scope = { threadId, workspaceId: input.workspaceId, source: input.source };
+              if (input.action === "save" && (!input.expectedRevision || !input.variables))
+                return yield* new DevApiError({ reason: "invalid-format" });
+              const value =
+                input.action === "save"
+                  ? yield* api.saveEnvironment({
+                      ...scope,
+                      expectedRevision: input.expectedRevision!,
+                      variables: input.variables!,
+                      patch: true,
+                    })
+                  : yield* api.environment(scope);
+              return {
+                revision: value.revision,
+                variables: value.variables.map((v) => ({
+                  key: v.key,
+                  secret: v.secret,
+                  isSet: v.value !== "",
+                })),
+              };
+            }),
+          );
+        }),
+      ),
+      loom_dev_api_send: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          return yield* inRuntime(
+            Effect.flatMap(DevApiService, (api) => api.run({ ...input, threadId })),
+          );
+        }),
+      ),
       loom_dev_request: McpToolAccess.writesEnvironment((input) =>
         Effect.gen(function* () {
           const threadId = yield* threadIdFor(input.threadId);

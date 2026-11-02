@@ -76,6 +76,13 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [DEV.apiList]: AuthTerminalOperateScope,
+  [DEV.apiImport]: AuthTerminalOperateScope,
+  [DEV.apiRead]: AuthTerminalOperateScope,
+  [DEV.apiEnvironment]: AuthTerminalOperateScope,
+  [DEV.apiSaveEnvironment]: AuthTerminalOperateScope,
+  [DEV.apiRun]: AuthTerminalOperateScope,
+  [DEV.apiRemove]: AuthTerminalOperateScope,
   [DEV.httpSend]: AuthTerminalOperateScope,
   [DEV.httpHistory]: AuthTerminalOperateScope,
   [DEV.httpClear]: AuthTerminalOperateScope,

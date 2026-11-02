@@ -10,6 +10,25 @@ export function createDevEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    apiList: createEnvironmentRpcCommand(runtime, { label: "loom:dev:apiList", tag: D.apiList }),
+    apiImport: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiImport",
+      tag: D.apiImport,
+    }),
+    apiRead: createEnvironmentRpcCommand(runtime, { label: "loom:dev:apiRead", tag: D.apiRead }),
+    apiEnvironment: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiEnvironment",
+      tag: D.apiEnvironment,
+    }),
+    apiSaveEnvironment: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiSaveEnvironment",
+      tag: D.apiSaveEnvironment,
+    }),
+    apiRun: createEnvironmentRpcCommand(runtime, { label: "loom:dev:apiRun", tag: D.apiRun }),
+    apiRemove: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiRemove",
+      tag: D.apiRemove,
+    }),
     httpSend: createEnvironmentRpcCommand(runtime, {
       label: "loom:dev:http-send",
       tag: D.httpSend,

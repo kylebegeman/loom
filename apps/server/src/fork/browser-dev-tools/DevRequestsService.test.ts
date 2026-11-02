@@ -34,6 +34,12 @@ const fixture = Effect.gen(function* () {
     Effect.gen(function* () {
       calls.push(req.url);
       expect(req.headers.traceparent).toBeUndefined();
+      if (req.url.includes("/upload")) {
+        expect(req.body._tag).toBe("Uint8Array");
+        if (req.body._tag === "Uint8Array")
+          expect(Array.from(req.body.body)).toEqual([0, 1, 2, 255]);
+        expect(req.headers["content-type"]).toBe("application/octet-stream");
+      }
       if (req.url.includes("/pending") || req.url.includes("/timeout")) {
         yield* Deferred.succeed(entered, undefined);
         if (req.url.includes("/timeout")) return yield* Effect.never;
@@ -161,6 +167,18 @@ it.effect(
           requestId: path,
           request: { ...request, url: `http://localhost/${path}` },
         });
+      const upload = yield* service.send({
+        ...target,
+        requestId: "upload",
+        request: {
+          ...request,
+          url: "http://localhost/upload",
+          headers: { "content-type": "application/octet-stream" },
+          body: "AAEC/w==",
+          bodyEncoding: "base64",
+        },
+      });
+      expect(upload.status).toBe(201);
       const large = yield* send("large");
       expect(large.truncated).toBe(true);
       expect(large.byteLength).toBe(HTTP_BODY_LIMIT);
@@ -181,7 +199,7 @@ it.effect(
           .pipe(Effect.flip)).reason,
       ).toBe("invalid-request");
       expect(JSON.stringify(yield* service.history(target)).length).toBeLessThan(4096);
-      expect(calls).toHaveLength(5);
+      expect(calls).toHaveLength(6);
     }).pipe(provide),
 );
 it.effect(

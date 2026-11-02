@@ -70,3 +70,45 @@ reported explicitly.
 Sending requests and reading their history require execution access. Agents use
 `loom_dev_request`, `loom_dev_request_history` and `loom_dev_request_clear` for the same
 workflow. Older connected computers without this capability hide the HTTP tab until updated.
+
+### Saved APIs and environments
+
+Choose **Saved APIs** in HTTP requests, open **Import a workspace**, give it a name, and
+select that workspace's native Hoppscotch collection and environment JSON files together.
+Keep separate API projects in separate workspaces. Reimporting the same name and files reuses
+the imported workspace. Your source files stay unchanged. Imports accept collections version
+12, requests version 17 and environments version 2, up to 16 MiB per file and 64 MiB together.
+
+Browse collection folders or search by endpoint name, folder or method. Select an endpoint,
+then explicitly choose an imported JSON environment, a dotenv file from this checkout, or
+**No environment**. Loom uses that source without adding the computer's process environment.
+Missing variables stop the request. Hoppscotch secret values omitted from an export remain
+empty until supplied.
+
+Open **Variables**, search for a key, edit its value, and save before sending. Secret values
+are masked. Saving a JSON environment updates Loom's imported copy. **Save to .env file**
+updates the selected checkout file while preserving its comments and unrelated definitions.
+New variables can be added. Refresh variables to discard local edits and read current values.
+A concurrent change requires a fresh read before saving or sending.
+
+**Send endpoint** runs its preparation scripts, sends one request, and runs response scripts
+for captures and checks. Preparation failure prevents dispatch. Supported legacy script APIs
+include `pw.env.get/set/unset`, `pw.response`, `pw.test`, and common `pw.expect` assertions.
+Scripts have time and memory limits, and no ambient filesystem or network access. Scripts
+requiring other APIs report failure; they are preserved in the imported source.
+
+Basic and Bearer authentication, inherited collection headers/authentication, query parameters,
+JSON/text bodies and URL-encoded forms are supported. Binary upload requests ask for a file up
+to 128 KiB. Multipart bodies and other authentication encoders remain unsupported and fail
+before dispatch. Response previews use the same limits and history as one-off requests.
+
+Captures update the selected JSON environment. For dotenv sources, captures stay in request
+variables tied to that checkout file and its current contents; **Save to .env file** explicitly
+writes them. Switching sources keeps their values separate. A file changed during a request
+keeps its newer values.
+
+**Remove imported workspace** removes Loom's copy and saved variables after confirmation;
+original exports and HTTP history remain. API workspaces live on the execution computer and
+do not yet synchronize through the Library. Native phone users can ask an agent to import,
+inspect or send using `loom_dev_api_workspace`, `loom_dev_api_environment` and
+`loom_dev_api_send`. Importing a pack does not run its requests.

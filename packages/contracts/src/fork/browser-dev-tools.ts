@@ -9,6 +9,13 @@ import { EnvironmentAuthorizationError } from "../auth.ts";
 import { ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 
 export const DEV_ENVIRONMENT_WS_METHODS = {
+  apiList: "loom.browser-dev-tools.apiList",
+  apiImport: "loom.browser-dev-tools.apiImport",
+  apiRead: "loom.browser-dev-tools.apiRead",
+  apiEnvironment: "loom.browser-dev-tools.apiEnvironment",
+  apiSaveEnvironment: "loom.browser-dev-tools.apiSaveEnvironment",
+  apiRun: "loom.browser-dev-tools.apiRun",
+  apiRemove: "loom.browser-dev-tools.apiRemove",
   httpSend: "loom.browser-dev-tools.httpSend",
   httpHistory: "loom.browser-dev-tools.httpHistory",
   httpClear: "loom.browser-dev-tools.httpClear",
@@ -135,7 +142,8 @@ export const DevHttpRequest = Schema.Struct({
   method: DevHttpMethod,
   url: Schema.String.check(Schema.isMaxLength(8192)),
   headers: Schema.Record(Schema.String, Schema.String),
-  body: Schema.String.check(Schema.isMaxLength(131072)),
+  body: Schema.String.check(Schema.isMaxLength(174764)),
+  bodyEncoding: Schema.optionalKey(Schema.Literal("base64")),
   timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 60000 })),
 });
 export type DevHttpRequest = typeof DevHttpRequest.Type;
@@ -178,6 +186,152 @@ export const DevHttpHistory = Schema.Struct({
   selected: Schema.NullOr(DevHttpExchange),
 });
 export type DevHttpHistory = typeof DevHttpHistory.Type;
+export const DevApiVariable = Schema.Struct({
+  key: Schema.String,
+  value: Schema.String,
+  secret: Schema.Boolean,
+});
+export type DevApiVariable = typeof DevApiVariable.Type;
+export const DevApiSource = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("none") }),
+  Schema.Struct({ kind: Schema.Literal("json"), id: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("dotenv"), path: Schema.String }),
+]);
+export type DevApiSource = typeof DevApiSource.Type;
+export const DevApiRequestSummary = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  folders: Schema.Array(Schema.String),
+  method: Schema.String,
+});
+export const DevApiWorkspace = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  requestCount: Schema.Number,
+  environmentCount: Schema.Number,
+});
+export type DevApiWorkspace = typeof DevApiWorkspace.Type;
+export const DevApiWorkspaceTarget = Schema.Struct({
+  ...DevTarget.fields,
+  workspaceId: Schema.String,
+});
+export type DevApiWorkspaceTarget = typeof DevApiWorkspaceTarget.Type;
+export const DevApiRead = Schema.Struct({
+  ...DevApiWorkspaceTarget.fields,
+  requestKey: Schema.optionalKey(Schema.String),
+});
+export type DevApiRead = typeof DevApiRead.Type;
+export const DevApiDetails = Schema.Struct({
+  workspace: DevApiWorkspace,
+  revision: Schema.String,
+  requests: Schema.Array(DevApiRequestSummary),
+  environments: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+  dotenvFiles: Schema.Array(Schema.String),
+  selected: Schema.NullOr(
+    Schema.Struct({
+      id: Schema.String,
+      sourceJson: Schema.String,
+      endpoint: Schema.String,
+      bodyContentType: Schema.NullOr(Schema.String),
+      preScripts: Schema.Array(Schema.String),
+      testScripts: Schema.Array(Schema.String),
+    }),
+  ),
+});
+export type DevApiDetails = typeof DevApiDetails.Type;
+export const DevApiImport = Schema.Struct({
+  ...DevTarget.fields,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  files: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      content: Schema.String.check(Schema.isMaxLength(16777216)),
+    }),
+  ),
+});
+export type DevApiImport = typeof DevApiImport.Type;
+export const DevApiEnvironmentTarget = Schema.Struct({
+  ...DevApiWorkspaceTarget.fields,
+  source: DevApiSource,
+});
+export type DevApiEnvironmentTarget = typeof DevApiEnvironmentTarget.Type;
+export const DevApiEnvironment = Schema.Struct({
+  revision: Schema.String,
+  variables: Schema.Array(DevApiVariable),
+});
+export type DevApiEnvironment = typeof DevApiEnvironment.Type;
+export const DevApiSaveEnvironment = Schema.Struct({
+  ...DevApiEnvironmentTarget.fields,
+  patch: Schema.optionalKey(Schema.Boolean),
+  expectedRevision: Schema.String,
+  variables: Schema.Array(DevApiVariable),
+});
+export type DevApiSaveEnvironment = typeof DevApiSaveEnvironment.Type;
+export const DevApiRun = Schema.Struct({
+  ...DevApiEnvironmentTarget.fields,
+  requestId: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  requestKey: Schema.String,
+  expectedRevision: Schema.String,
+  environmentRevision: Schema.String,
+  bodyBase64: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(174764))),
+});
+export type DevApiRun = typeof DevApiRun.Type;
+export const DevApiRunResult = Schema.Struct({
+  exchange: DevHttpExchange,
+  checks: Schema.Array(Schema.Struct({ name: Schema.String, passed: Schema.Boolean })),
+  environmentUpdated: Schema.Boolean,
+});
+export type DevApiRunResult = typeof DevApiRunResult.Type;
+export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError", {
+  reason: Schema.Literals([
+    "invalid-format",
+    "unsupported-version",
+    "unsupported-auth",
+    "unsupported-body",
+    "unsupported-method",
+    "missing-variable",
+    "variable-cycle",
+    "storage-unavailable",
+    "not-found",
+    "revision-conflict",
+    "script-failed",
+    "outcome-unknown",
+    "invalid-path",
+    "file-too-large",
+    "request-conflict",
+  ]),
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {
+  override get message(): string {
+    const messages: Record<typeof this.reason, string> = {
+      "invalid-format": "Use native Hoppscotch collection or environment JSON files.",
+      "unsupported-version":
+        "This Hoppscotch schema version is not supported. Your source files are preserved.",
+      "unsupported-auth":
+        "This request's authentication type is not supported yet. Its native data is preserved.",
+      "unsupported-body":
+        "This request needs a binary file or an unsupported body encoder. Its native data is preserved.",
+      "unsupported-method": "This request uses an unsupported HTTP method.",
+      "missing-variable":
+        "A required request variable is missing. Select an environment and fill its values before sending.",
+      "variable-cycle": "The selected variables contain a circular reference.",
+      "storage-unavailable": "The API workspace could not be read or saved on this computer.",
+      "not-found":
+        "This API workspace, request or environment is unavailable. Refresh the workspace.",
+      "revision-conflict":
+        "The workspace or selected environment changed. Refresh it before saving or sending.",
+      "script-failed":
+        "A request script failed. Inspect its script and environment before retrying. A failed preparation script prevents dispatch.",
+      "outcome-unknown":
+        "This request may already have run. Its completed result is unavailable; it will not be sent again with the same request ID.",
+      "invalid-path":
+        "Choose a dotenv file inside this checkout. Paths escaping the checkout are refused.",
+      "file-too-large": "The API import or dotenv file exceeds its supported size limit.",
+      "request-conflict": "This request ID was already used with different inputs.",
+    };
+    return messages[this.reason];
+  }
+}
 export class DevHttpError extends Schema.TaggedError<DevHttpError>()("DevHttpError", {
   reason: Schema.Literals([
     "invalid-request",
@@ -256,7 +410,32 @@ export class DevEnvironmentError extends Schema.TaggedError<DevEnvironmentError>
 const error = Schema.Union([DevEnvironmentError, EnvironmentAuthorizationError]);
 const httpError = Schema.Union([DevEnvironmentError, DevHttpError, EnvironmentAuthorizationError]);
 const M = DEV_ENVIRONMENT_WS_METHODS;
+const apiError = Schema.Union([
+  DevApiError,
+  DevEnvironmentError,
+  DevHttpError,
+  EnvironmentAuthorizationError,
+]);
 export const DevEnvironmentRpcGroup = RpcGroup.make(
+  Rpc.make(M.apiList, {
+    payload: DevTarget,
+    success: Schema.Array(DevApiWorkspace),
+    error: apiError,
+  }),
+  Rpc.make(M.apiImport, { payload: DevApiImport, success: DevApiDetails, error: apiError }),
+  Rpc.make(M.apiRead, { payload: DevApiRead, success: DevApiDetails, error: apiError }),
+  Rpc.make(M.apiEnvironment, {
+    payload: DevApiEnvironmentTarget,
+    success: DevApiEnvironment,
+    error: apiError,
+  }),
+  Rpc.make(M.apiSaveEnvironment, {
+    payload: DevApiSaveEnvironment,
+    success: DevApiEnvironment,
+    error: apiError,
+  }),
+  Rpc.make(M.apiRun, { payload: DevApiRun, success: DevApiRunResult, error: apiError }),
+  Rpc.make(M.apiRemove, { payload: DevApiWorkspaceTarget, success: Schema.Void, error: apiError }),
   Rpc.make(M.httpSend, { payload: DevHttpSend, success: DevHttpExchange, error: httpError }),
   Rpc.make(M.httpHistory, {
     payload: DevHttpHistoryTarget,

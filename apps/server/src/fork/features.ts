@@ -52,6 +52,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "project-profiles",
   "browser-dev-tools",
   "browser-dev-tools-http",
+  "browser-dev-tools-api",
   "project-workflows",
   "core",
   "vault-core",

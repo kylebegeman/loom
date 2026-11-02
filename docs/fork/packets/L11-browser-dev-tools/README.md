@@ -1,6 +1,6 @@
 # L11: Development tools
 
-Status: The initial development tools and HTTP request lab are implemented. Service,
+Status: The initial development tools, HTTP request lab and native API workspaces are implemented. Service,
 authorization, tool-use and integrated web-client checks pass. Kyle selected these
 slices on 2026-11-02: checkout dev servers and Browser diagnostics, then Compose and local
 databases. Kyle continued with the HTTP request lab in the same workload.
@@ -25,14 +25,18 @@ The UI and supported `loom_dev_*` tools call the same services.
   data deletion is confirmed in the UI.
 - Send bounded HTTP requests on the execution computer, inspect status/timing/headers/body,
   reuse saved request fields, clear checkout history and add response excerpts to a draft.
+- Import separate native API workspaces, browse their folders and endpoints, select JSON or
+  checkout dotenv environments explicitly, edit variables and run preserved legacy scripts.
 - Web/desktop Development panel, panel picker, command palette and Browser entry point.
   Native phone users can use the supported agent tools and existing preview links.
 
 ## Remaining scope
 
-Full API-client capabilities and database browsing remain independent products. The delivered
-request lab is for individual development requests rather than collections or scripted flows. Additional container administration outside checkout development
-is outside L11.
+Native Hoppscotch workspaces add collection browsing, explicit imported JSON or checkout
+dotenv environments, legacy preparation/response scripts and individual saved endpoint sends.
+Workspace synchronization, collection runners, multipart bodies, expanded auth encoders and
+database browsing remain follow-up work. Additional container administration outside checkout
+development is outside L11.
 
 Obscura page fetch remains retired by Kyle's 2026-10-09 decision. Existing browser/provider
 fetch tools already cover that use.

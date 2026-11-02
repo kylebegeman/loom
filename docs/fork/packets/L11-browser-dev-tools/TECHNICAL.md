@@ -59,3 +59,28 @@ The HTTP client disables ambient credentials, redirects and trace propagation to
 targets. Streaming stops at the preview bound. All HTTP RPCs, including history reads, use
 execution permission and guarded client commands. The separate `browser-dev-tools-http`
 capability avoids advertising the new UI on older computers.
+
+## Imported execution context
+
+Native API files are stored byte-for-byte outside the checkout under the execution computer's
+private state. Catalog reads transfer endpoint metadata; selecting a request loads its source
+and inherited scripts. Content identities make identical imports idempotent. No SQL migration
+or Library mutation is involved.
+
+The workspace receipt covers scripts, HTTP dispatch and capture persistence. It is reserved
+before preparation, and preparation writes its state before dispatch so a failed guard can
+invalidate stale credentials. The HTTP service exposes unredacted response headers only to the
+internal workflow consumer for cookie capture; public results and history remain redacted.
+Unknown outcomes never dispatch again with the same ID.
+
+JSON captures belong to the explicitly selected imported environment. Dotenv captures use a
+separate value overlay keyed by canonical checkout, relative file and original file digest.
+They are not written back by response scripts. Explicit saves check the current revision and
+replace only changed definitions. A concurrent file edit prevents response captures from
+replacing that newer context. Process environment variables are never merged into either source.
+
+Legacy scripts run in a bounded child process with an empty inherited environment, Node's
+permission restrictions and a VM context with string/Wasm code generation disabled. The child
+has no file, subprocess or network grants. These are development execution tools, protected by
+terminal authority. The `browser-dev-tools-api` capability gates clients connected to older
+computers. Current upstream overlap inspection found no competing API-workspace behavior.

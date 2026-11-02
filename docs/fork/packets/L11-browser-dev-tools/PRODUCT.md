@@ -69,5 +69,13 @@ Bodies remain in history. Clearing removes payloads across conversations sharing
 Bounded receipts retain duplicate protection across lost responses and server restarts.
 
 The same execution grant protects sends and response history. Older servers without the HTTP
-capability hide the new tab. Full collections, authentication scripts, database browsing and
-background request replay remain separate work.
+capability hide the new tab. Native API workspaces extend the same panel and execution
+permission with imports, folder browsing and explicit JSON or dotenv sources. Pre-request
+scripts guard dispatch; response scripts capture variables and report checks. Repeated imports
+reuse content identity. Original native bytes remain available for compatibility without
+flattening requests or silently dropping unsupported fields.
+
+Workspace copies and captured values live on the selected execution computer. JSON edits do
+not rewrite source exports. Dotenv captures stay separate until an explicit file save. No
+source is selected or merged implicitly. Collection runners, shared workspace synchronization,
+additional script APIs and database browsing remain follow-up work.

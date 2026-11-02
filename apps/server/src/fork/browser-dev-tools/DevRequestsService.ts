@@ -49,6 +49,7 @@ export class DevRequestsService extends Context.Service<
   DevRequestsService,
   {
     readonly send: (input: DevHttpSend) => Effect.Effect<DevHttpExchange, Failure>;
+    readonly sendForWorkflow: (input: DevHttpSend) => Effect.Effect<DevHttpExchange, Failure>;
     readonly history: (input: DevHttpHistoryTarget) => Effect.Effect<DevHttpHistory, Failure>;
     readonly clear: (input: DevTarget) => Effect.Effect<DevHttpHistory, Failure>;
   }
@@ -154,10 +155,15 @@ export const make = Effect.gen(function* () {
       );
       if (request.body)
         outgoing = outgoing.pipe(
-          HttpClientRequest.bodyText(
-            request.body,
-            outgoing.headers["content-type"] ?? "text/plain",
-          ),
+          request.bodyEncoding === "base64"
+            ? HttpClientRequest.bodyUint8Array(
+                Buffer.from(request.body, "base64"),
+                outgoing.headers["content-type"] ?? "application/octet-stream",
+              )
+            : HttpClientRequest.bodyText(
+                request.body,
+                outgoing.headers["content-type"] ?? "text/plain",
+              ),
         );
       const response = yield* client.execute(outgoing);
       let seen = 0;
@@ -176,7 +182,7 @@ export const make = Effect.gen(function* () {
       const binary = !textContent(response.headers["content-type"] ?? "") && bytes.length > 0;
       return {
         status: response.status,
-        headers: redactHeaders(response.headers),
+        headers: { ...response.headers },
         body: binary ? "" : new TextDecoder().decode(bytes),
         byteLength: bytes.length,
         truncated,
@@ -188,11 +194,17 @@ export const make = Effect.gen(function* () {
     Effect.provideService(HttpClient.TracerPropagationEnabled, false),
     Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
   );
-  const send = Effect.fn("DevRequests.send")(function* (input: DevHttpSend) {
+  const dispatch = Effect.fn("DevRequests.dispatch")(function* (
+    input: DevHttpSend,
+    workflow: boolean,
+  ) {
     const { root } = yield* dev.snapshot(input);
     if (!validRequest(input.request)) return yield* new DevHttpError({ reason: "invalid-request" });
     const prior = yield* reserve(root, input);
-    if (prior) return prior;
+    if (prior) {
+      if (workflow) return yield* new DevHttpError({ reason: "request-incomplete" });
+      return prior;
+    }
     const started = yield* Clock.currentTimeMillis;
     const startedAt = DateTime.formatIso(yield* DateTime.now);
     const failed = (error: "timeout" | "network") => ({
@@ -211,6 +223,7 @@ export const make = Effect.gen(function* () {
     );
     const exchange: DevHttpExchange = {
       ...result,
+      headers: redactHeaders(result.headers),
       id: input.requestId,
       request: redactRequest(input.request),
       startedAt,
@@ -236,8 +249,12 @@ export const make = Effect.gen(function* () {
       gate.withPermit,
       Effect.mapError((cause) => new DevHttpError({ reason: "request-incomplete", cause })),
     );
-    return exchange;
+    return workflow ? { ...exchange, headers: result.headers } : exchange;
   });
-  return DevRequestsService.of({ send, history, clear });
+  const send = Effect.fn("DevRequests.send")((input: DevHttpSend) => dispatch(input, false));
+  const sendForWorkflow = Effect.fn("DevRequests.sendForWorkflow")((input: DevHttpSend) =>
+    dispatch(input, true),
+  );
+  return DevRequestsService.of({ send, sendForWorkflow, history, clear });
 });
 export const layer = Layer.effect(DevRequestsService, make);
