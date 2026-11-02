@@ -44,6 +44,7 @@ import {
   getSystemLocale,
   getWindowFullscreenState,
   openExternal,
+  readMedia,
   openSystemSettings,
   checkSystemPermission,
   pasteAsText,
@@ -149,6 +150,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(cancelLoomSignIn);
   yield* ipc.handle(renewLoomIdentity); // fork: identity-renewal
   yield* ipc.handle(forgetLoomIdentity); // fork: identity-renewal
+  yield* ipc.handle(readMedia);
   yield* ipc.handle(receiveProviderAuthCallback);
   yield* ipc.handle(cancelProviderAuthCallback);
   yield* ipc.handle(openSystemSettings);

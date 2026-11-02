@@ -35,7 +35,7 @@ vi.mock("../state/entities", () => ({
   readProject: () => ({}),
   useAllEnvironmentShellsBootstrapped: () => true,
   useProjects: () => [{}],
-  useThreadShells: () => [],
+  useVisibleThreadShells: () => [],
 }));
 vi.mock("../state/environments", () => ({
   useConnectedEnvironmentIds: () => ["dorothy"],

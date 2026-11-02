@@ -20,7 +20,7 @@ import {
   readProject,
   useAllEnvironmentShellsBootstrapped,
   useProjects,
-  useThreadShells,
+  useVisibleThreadShells,
 } from "../state/entities";
 import { useConnectedEnvironmentIds, useEnvironments } from "../state/environments"; // fork: fleet-connections
 import { resolveIndexDraftProject } from "../lib/indexDraftLanding"; // fork: fleet-connections
@@ -47,7 +47,7 @@ function IndexDraftLanding() {
     primaryConfig?.environment.capabilities.libraryAuthority === true &&
     primaryConfig.environment.capabilities.supportsExecution === false;
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useVisibleThreadShells();
   const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const { environments } = useEnvironments();
   // fork: fleet-connections Only connected computers that can run agents start a draft.

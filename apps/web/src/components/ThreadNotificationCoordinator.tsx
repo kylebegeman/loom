@@ -5,6 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
+import { threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import type { ClientSettings } from "@t3tools/contracts/settings";
@@ -54,6 +55,8 @@ interface NotificationState extends ThreadNotificationObservation {
   readonly status: SidebarThreadStatus;
 }
 
+type ToastId = ReturnType<typeof toastManager.add>;
+
 interface WatchedEnvironment {
   unsubscribe: () => void;
   previous: Map<ThreadId, NotificationState>;
@@ -90,21 +93,58 @@ export function startThreadNotifications(
   registry: AtomRegistry.AtomRegistry,
   router: AnyRouter,
 ): () => void {
-  const pending = new Map<string, { environmentId: EnvironmentId; notification: Notification }>();
+  const pending = new Map<
+    string,
+    { environmentId: EnvironmentId; threadId: ThreadId; notification: Notification }
+  >();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
   // fork: respectful-notifications - the badge counts threads that need the user, not alerts
   const stopAttentionBadge = startAttentionBadge(registry);
 
-  const trackNotification = (environmentId: EnvironmentId, notification: Notification) => {
+  const trackNotification = (
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+    notification: Notification,
+  ) => {
     pending.get(notification.tag)?.notification.close();
-    pending.set(notification.tag, { environmentId, notification });
+    pending.set(notification.tag, { environmentId, threadId, notification });
     // fork: respectful-notifications
     notification.addEventListener("close", () => {
       if (pending.get(notification.tag)?.notification !== notification) return;
       pending.delete(notification.tag); // fork: respectful-notifications
     });
   };
-  trackForkNotification = trackNotification; // fork: scheduled-task-alerts
+  // fork: scheduled-task-alerts - a task alert has no thread, so its tag stands in for one
+  trackForkNotification = (environmentId, notification) =>
+    trackNotification(environmentId, notification.tag as ThreadId, notification);
+  // Toast ids by thread key, so hiding a thread can close its open toasts.
+  const openToasts = new Map<string, Array<ToastId>>();
+  const forgetToast = (key: string, toastId: ToastId) => {
+    const remaining = (openToasts.get(key) ?? []).filter((id) => id !== toastId);
+    if (remaining.length === 0) openToasts.delete(key);
+    else openToasts.set(key, remaining);
+  };
+  // A notification shown before the tag filter turned on must not stay on screen. While hiding,
+  // one whose thread left the live list (archived) cannot be judged, so it closes too.
+  const closeHiddenPending = () => {
+    const hidden = registry.get(environmentThreadShells.hiddenThreadKeysAtom);
+    const live = registry.get(environmentThreadShells.anyEnvironmentHidingAtom)
+      ? new Set(registry.get(environmentThreadShells.threadRefsAtom).map(threadKey))
+      : null;
+    const shouldClose = (key: string) => hidden.has(key) || (live !== null && !live.has(key));
+    for (const [key, toastIds] of openToasts) {
+      if (!shouldClose(key)) continue;
+      for (const toastId of toastIds) toastManager.close(toastId);
+      openToasts.delete(key);
+    }
+    // fork: respectful-notifications
+    for (const [tag, entry] of pending) {
+      if (!shouldClose(threadKey(entry))) continue;
+      entry.notification.close();
+      pending.delete(tag);
+    }
+    // fork: respectful-notifications -- startAttentionBadge keeps the badge count
+  };
   const clearPending = () => {
     for (const { notification } of pending.values()) notification.close();
     pending.clear(); // fork: respectful-notifications
@@ -125,6 +165,12 @@ export function startThreadNotifications(
   ) => {
     // fork: respectful-notifications
     const { thread, status, raw: rawThread, attention, completedAt } = state;
+    if (
+      registry
+        .get(environmentThreadShells.hiddenThreadKeysAtom)
+        .has(threadKey({ environmentId, threadId: thread.id }))
+    )
+      return;
     const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
     const active = (router.state.matches.at(-1)?.params ?? {}) as {
       environmentId?: string;
@@ -167,7 +213,9 @@ export function startThreadNotifications(
       document.hasFocus() &&
       (active.environmentId !== environmentId || active.threadId !== thread.id)
     ) {
-      const toastId = toastManager.add({
+      const toastKey = threadKey({ environmentId, threadId: thread.id });
+      const toastId: ToastId = toastManager.add({
+        onRemove: (): void => forgetToast(toastKey, toastId),
         type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
         title,
         description: thread.title,
@@ -197,6 +245,7 @@ export function startThreadNotifications(
           },
         },
       });
+      openToasts.set(toastKey, [...(openToasts.get(toastKey) ?? []), toastId]);
       return;
     }
     if (
@@ -239,7 +288,7 @@ export function startThreadNotifications(
             // Windows drops clicks after a toast moves into Notification Center.
             requireInteraction: kind === "completion" && isWindowsPlatform(navigator.platform),
           });
-          trackNotification(environmentId, notification);
+          trackNotification(environmentId, thread.id, notification);
           notification.addEventListener("click", () => {
             notification.close();
             // fork: respectful-notifications
@@ -493,11 +542,17 @@ export function startThreadNotifications(
       syncEnvironments();
     },
   );
+  const unsubscribeHidden = [
+    registry.subscribe(environmentThreadShells.hiddenThreadKeysAtom, closeHiddenPending),
+    registry.subscribe(environmentThreadShells.anyEnvironmentHidingAtom, closeHiddenPending),
+    registry.subscribe(environmentThreadShells.threadRefsAtom, closeHiddenPending),
+  ];
   onSettings();
 
   return () => {
     unsubscribeSettings();
     unsubscribeEnvironmentIds();
+    for (const unsubscribe of unsubscribeHidden) unsubscribe();
     for (const entry of watched.values()) entry.unsubscribe();
     watched.clear();
     stopModeListeners();

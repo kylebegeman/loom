@@ -1,8 +1,13 @@
-import { EnvironmentId, type OrchestrationV2ArchivedShellSnapshot } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type OrchestrationV2ArchivedShellSnapshot,
+  type ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option"; // fork: fleet-connections
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { expect, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   createArchivedThreadSnapshotsAtomFamily,
@@ -19,6 +24,10 @@ it("does not expose an archived snapshot failure message", () => {
           Cause.fail(new Error("credential=secret-value")),
         ),
       ),
+    hiddenThreadTagsAtom: () => Atom.make(null),
+    hiddenThreadKeysAtom: Atom.make((): ReadonlySet<string> => new Set()),
+    liveThreadRefsAtom: Atom.make((): ReadonlyArray<ScopedThreadRef> => []),
+    anyEnvironmentHidingAtom: Atom.make(false),
     labelPrefix: "test:archived-thread-snapshots",
   });
   const registry = AtomRegistry.make();
@@ -32,7 +41,80 @@ it("does not expose an archived snapshot failure message", () => {
   registry.dispose();
 });
 
+describe("archived delegated tasks follow their parent on another machine", () => {
+  const parentEnvironmentId = EnvironmentId.make("env-parent");
+  const taskEnvironmentId = EnvironmentId.make("env-task");
+  const parentId = ThreadId.make("thread-parent");
+  const page = (
+    threads: OrchestrationV2ArchivedShellSnapshot["threads"],
+  ): OrchestrationV2ArchivedShellSnapshot => ({
+    schemaVersion: 1,
+    snapshotSequence: 1,
+    projects: [v2Project],
+    threads,
+  });
+  const taskPage = page([
+    {
+      ...v2ThreadShell,
+      id: ThreadId.make("thread-task"),
+      delegatedFrom: { environmentId: parentEnvironmentId, threadId: parentId, title: "p" },
+    },
+  ]);
+  const archivedTaggedParent = page([{ ...v2ThreadShell, id: parentId, tags: ["private"] }]);
+
+  it.each([
+    { name: "archived tagged parent", parentPage: archivedTaggedParent, live: false, tasks: 0 },
+    { name: "live visible parent", parentPage: page([]), live: true, tasks: 1 },
+    { name: "parent page not loaded yet", parentPage: null, live: false, tasks: 0 },
+    { name: "archive scoped to the task's machine", parentPage: undefined, live: false, tasks: 0 },
+    {
+      name: "only a third machine hides tags",
+      parentPage: page([]),
+      live: false,
+      tasks: 0,
+      parentTags: null,
+    },
+  ])("$name", ({ parentPage, live, tasks, parentTags = ["private"] }) => {
+    const snapshotsAtom = createArchivedThreadSnapshotsAtomFamily<Error>({
+      getSnapshotAtom: (environmentId) =>
+        Atom.make(
+          environmentId === taskEnvironmentId
+            ? AsyncResult.success(taskPage)
+            : parentPage === null || parentPage === undefined
+              ? AsyncResult.initial<OrchestrationV2ArchivedShellSnapshot, Error>(true)
+              : AsyncResult.success(parentPage),
+        ),
+      hiddenThreadTagsAtom: (environmentId) =>
+        Atom.make(environmentId === parentEnvironmentId ? parentTags : null),
+      hiddenThreadKeysAtom: Atom.make((): ReadonlySet<string> => new Set()),
+      liveThreadRefsAtom: Atom.make((): ReadonlyArray<ScopedThreadRef> =>
+        live ? [{ environmentId: parentEnvironmentId, threadId: parentId }] : [],
+      ),
+      // The parent's machine hides tags; a scoped archive learns that only from this flag.
+      anyEnvironmentHidingAtom: Atom.make(true),
+      labelPrefix: "test:archived-thread-snapshots",
+    });
+    const registry = AtomRegistry.make();
+    const { snapshots } = registry.get(
+      snapshotsAtom(
+        makeArchivedThreadsEnvironmentKey(
+          parentPage === undefined ? [taskEnvironmentId] : [parentEnvironmentId, taskEnvironmentId],
+        ),
+      ),
+    );
+    const taskSnapshot = snapshots.find((entry) => entry.environmentId === taskEnvironmentId);
+    expect(taskSnapshot?.snapshot.threads.length).toBe(tasks);
+    registry.dispose();
+  });
+});
+
 // fork: fleet-connections
+const noThreadHiding = {
+  hiddenThreadTagsAtom: () => Atom.make(null),
+  hiddenThreadKeysAtom: Atom.make((): ReadonlySet<string> => new Set()),
+  liveThreadRefsAtom: Atom.make((): ReadonlyArray<ScopedThreadRef> => []),
+  anyEnvironmentHidingAtom: Atom.make(false),
+};
 const emptySnapshot: OrchestrationV2ArchivedShellSnapshot = {
   schemaVersion: 1,
   snapshotSequence: 0,
@@ -58,6 +140,7 @@ it("settles an empty online archive without waiting forever for disconnected com
           : AsyncResult.initial<OrchestrationV2ArchivedShellSnapshot>(true),
       ),
     getIsConnectedAtom: (environmentId) => Atom.make(environmentId === online),
+    ...noThreadHiding,
     labelPrefix: "test:archive-offline",
   });
   const registry = AtomRegistry.make();
@@ -80,6 +163,7 @@ it("reports a selected disconnected computer instead of an empty archive", () =>
     getSnapshotAtom: () =>
       Atom.make(AsyncResult.initial<OrchestrationV2ArchivedShellSnapshot>(true)),
     getIsConnectedAtom: () => Atom.make(false),
+    ...noThreadHiding,
     labelPrefix: "test:archive-selected-offline",
   });
   const registry = AtomRegistry.make();
@@ -110,6 +194,7 @@ it("retains available and cached archives through disconnect, reconnect and refr
     getSnapshotAtom: (environmentId) =>
       environmentId === online ? Atom.make(AsyncResult.success(emptySnapshot)) : pending,
     getIsConnectedAtom: (environmentId) => (environmentId === online ? Atom.make(true) : connected),
+    ...noThreadHiding,
     labelPrefix: "test:archive-recovery",
   });
   const registry = AtomRegistry.make();
@@ -159,6 +244,7 @@ it("keeps loading connected computers while reporting disconnected ones", () => 
     getSnapshotAtom: () =>
       Atom.make(AsyncResult.initial<OrchestrationV2ArchivedShellSnapshot>(true)),
     getIsConnectedAtom: (environmentId) => Atom.make(environmentId === online),
+    ...noThreadHiding,
     labelPrefix: "test:archive-partial-loading",
   });
   const registry = AtomRegistry.make();
