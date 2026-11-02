@@ -22,6 +22,8 @@ import {
   LibraryOperation,
   LibraryOperationInput,
   type LibraryProject,
+  type LibraryFolderInspection,
+  type LibraryCreateProjectRequest,
   type LibraryRecoveryGrant,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
@@ -43,6 +45,7 @@ import { OrchestratorDispatchError } from "../../orchestration-v2/Orchestrator.t
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
+import { LibraryPublisher } from "./LibraryPublisher.ts";
 import { LibraryManagement } from "./LibraryManagement.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
@@ -128,15 +131,61 @@ const fixture = Effect.gen(function* () {
     id: `reserved:${requestId}`,
     environmentId,
   });
+  const catalog = yield* Ref.make<readonly LibraryProject[]>([]);
+  const inspected = yield* Ref.make<LibraryFolderInspection>({
+    rootPath: "/work/project",
+    exists: true,
+    repositories: [
+      {
+        path: "/work/project",
+        relativePath: ".",
+        remoteUrl: "https://github.com/acme/app.git",
+        branch: "release/temporary",
+        head: "abc",
+      },
+    ],
+  });
+  const published = yield* Ref.make(0);
+  const publishFailure = yield* Ref.make(false);
+  const registrations = yield* Ref.make<readonly unknown[]>([]);
+  const creationInputs = yield* Ref.make<readonly LibraryCreateProjectRequest[]>([]);
   const external = Layer.mergeAll(
+    Layer.mock(LibraryPublisher)({
+      enabled: true,
+      projects: () => Ref.get(catalog),
+      info: Effect.succeed({ authorityId: "authority", authorityEpoch: 1 } as never),
+      registerCopy: (input) =>
+        Effect.gen(function* () {
+          yield* Ref.update(registrations, (requests) => [...requests, input]);
+          if (yield* Ref.get(publishFailure)) return yield* new LibraryError({ reason: "io" });
+          yield* Ref.update(published, (count) => count + 1);
+          yield* Ref.update(catalog, (projects) =>
+            projects.some((entry) => entry.id === project.id) ? projects : [...projects, project],
+          );
+          yield* Ref.update(inspected, (inspection) => ({
+            ...inspection,
+            registrations: [
+              {
+                workingCopyId: input.copy.id,
+                projectId: project.id,
+                projectTitle: project.title,
+                ownership: input.copy.ownership,
+              },
+            ],
+          }));
+          return input.copy;
+        }),
+    }),
     Layer.mock(ProjectWorkflows)({
       changed: Queue.offer(changes, undefined).pipe(Effect.asVoid),
       changes: Stream.empty,
     }),
     Layer.mock(LibraryManagement)({
       status: Effect.die("Unused management status"),
-      execute: () =>
+      execute: (request) =>
         Effect.gen(function* () {
+          if (request.kind === "create")
+            yield* Ref.update(creationInputs, (inputs) => [...inputs, request.input]);
           yield* Ref.update(calls, (count) => count + 1);
           yield* Deferred.succeed(entered, undefined);
           if (yield* Ref.get(pause)) yield* Deferred.await(release);
@@ -165,6 +214,7 @@ const fixture = Effect.gen(function* () {
         }),
     }),
     Layer.mock(LibraryWorkspace)({
+      inspectFolder: () => Ref.get(inspected),
       setCopyRetention: (input) =>
         Effect.gen(function* () {
           if ((yield* Ref.get(placedBorrowed)) && !input.keepOnComputer)
@@ -316,6 +366,12 @@ const fixture = Effect.gen(function* () {
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   );
   return {
+    catalog,
+    inspected,
+    published,
+    creationInputs,
+    publishFailure,
+    registrations,
     changes,
     whileMakingWorktree,
     boundCopies,
@@ -1104,3 +1160,112 @@ describe("Project operations", () => {
     ),
   );
 });
+
+it.effect(
+  "imports an existing folder once and resumes registration without creating a second project",
+  () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const input = {
+          kind: "import",
+          input: { requestId: "folder-import", rootPath: "/work/project", title: "Project" },
+        } as const;
+        yield* Ref.set(state.prepareFailure, new LibraryError({ reason: "io" }));
+        expect(
+          (yield* Effect.flip(state.service.execute("folder-import", input, actor))).reason,
+        ).toBe("io");
+        expect(yield* Ref.get(state.calls)).toBe(1);
+        expect((yield* Ref.get(state.creationInputs))[0]?.resources?.[0]?.defaultBranch).toBeNull();
+        yield* Ref.set(state.prepareFailure, null);
+        const imported = yield* state.service.execute("folder-import", input, actor);
+        expect(imported.result).toEqual(project);
+        expect(yield* state.service.list({ projectId: project.id })).toEqual([]);
+        expect(
+          (yield* state.service.list({ projectId: project.id, includeFolderImports: true })).map(
+            (operation) => operation.id,
+          ),
+        ).toEqual(["folder-import"]);
+        expect(yield* Ref.get(state.calls)).toBe(1);
+        expect(yield* Ref.get(state.published)).toBe(1);
+        expect(yield* state.service.execute("folder-import", input, actor)).toEqual(imported);
+        expect(yield* Ref.get(state.published)).toBe(1);
+        yield* Ref.set(state.publishFailure, true);
+        const retry = {
+          kind: "import",
+          input: {
+            requestId: "lost-registration",
+            rootPath: "/work/project",
+            projectId: project.id,
+          },
+        } as const;
+        yield* Ref.set(state.catalog, [project]);
+        expect(
+          (yield* Effect.flip(state.service.execute("lost-registration", retry, actor))).reason,
+        ).toBe("io");
+        yield* Ref.set(state.publishFailure, false);
+        yield* state.service.execute("lost-registration", retry, actor);
+        const requests = yield* Ref.get(state.registrations);
+        expect(requests[1]).toEqual(requests[2]);
+      }),
+    ),
+);
+
+it.effect(
+  "reuses exact shared repository matches and refuses ambiguous or unauthorized imports",
+  () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const matching = {
+          ...project,
+          resources: [
+            { ...resource, relativePath: ".", remoteUrl: "https://github.com/acme/app.git" },
+          ],
+        };
+        yield* Ref.set(state.catalog, [matching, { ...matching, id: "another" }]);
+        const input = {
+          kind: "import",
+          input: { requestId: "matching-import", rootPath: "/work/project" },
+        } as const;
+        expect(
+          (yield* Effect.flip(state.service.execute("matching-import", input, actor))).reason,
+        ).toBe("blocked");
+        expect(yield* Ref.get(state.calls)).toBe(0);
+        yield* Ref.set(state.catalog, [matching]);
+        const imported = yield* state.service.execute("matching-import", input, actor);
+        expect(imported.result).toEqual(matching);
+        expect(yield* Ref.get(state.calls)).toBe(0);
+        yield* Ref.set(state.active, [session([AuthTerminalOperateScope])]);
+        expect(
+          (yield* Effect.flip(
+            state.service.execute(
+              "not-authorized",
+              { ...input, input: { ...input.input, requestId: "not-authorized" } },
+              actor,
+            ),
+          )).reason,
+        ).toBe("blocked");
+      }),
+    ),
+);
+
+it.effect(
+  "serializes concurrent imports of one folder before creating shared project records",
+  () =>
+    run((state) =>
+      Effect.gen(function* () {
+        yield* Ref.update(state.inspected, (inspection) => ({ ...inspection, repositories: [] }));
+        const imported = yield* Effect.forEach(
+          ["first", "second"],
+          (id) =>
+            state.service.execute(
+              id,
+              { kind: "import", input: { requestId: id, rootPath: "/work/project" } },
+              actor,
+            ),
+          { concurrency: "unbounded" },
+        );
+        expect(imported.map((operation) => operation.result)).toEqual([project, project]);
+        expect(yield* Ref.get(state.calls)).toBe(1);
+      }),
+    ),
+);

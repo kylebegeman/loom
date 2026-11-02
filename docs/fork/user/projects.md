@@ -17,6 +17,10 @@ To make a project without starting a conversation, open **New project** and choo
 project**, **Existing folder** or **Git repository**, or type a name, folder path or Git URL. A
 project from a Git URL continues into choosing the computer and folder to clone it into.
 
+You can also ask an authorized agent to add an existing folder to Projects. Loom inspects
+its repositories and registers its files together, reusing a unique matching project.
+If more than one project matches, the agent can choose the intended project by name.
+
 Projects live in your Library. On a device that is not connected to one yet, **New project**
 opens **Connect your Library** first and continues once you choose it, and **New conversation**
 lists **Connect your Library** after **No project**. For a Library this device has never

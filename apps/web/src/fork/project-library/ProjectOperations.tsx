@@ -35,6 +35,7 @@ import { LibrarySignInLink } from "./LibrarySignInLink";
 import { ComputerLabel } from "./ProjectIdentity";
 
 const OPERATION_ICONS: Record<LibraryOperation["kind"], LucideIcon> = {
+  import: FolderPlusIcon,
   create: FolderPlusIcon,
   prepare: HardDriveDownloadIcon,
   restore: ArchiveRestoreIcon,

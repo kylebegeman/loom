@@ -16,6 +16,9 @@ import {
   LibraryOperation,
   LibraryOperationInput,
   LibraryWorkingCopy,
+  LibraryProject,
+  LibraryCreateProjectRequest,
+  LibraryRegisterCopyRequest,
   type LibraryRecoveryGrant,
   type LibraryResolvedBinding,
 } from "@t3tools/contracts/fork";
@@ -23,8 +26,10 @@ import {
   buildTemporaryWorktreeBranchName,
   flattenTemporaryWorktreeBranchName,
   WORKTREE_BRANCH_PREFIX,
+  normalizeGitRemoteUrl,
 } from "@t3tools/shared/git";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
@@ -44,6 +49,8 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import { isVaultRunRunning } from "../vault/active-run.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { forkParked } from "../../serverActivation.ts";
+import { LibraryPublisher } from "./LibraryPublisher.ts";
+import { validLibraryResources } from "./policy.ts";
 import { LibraryManagement } from "./LibraryManagement.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
@@ -89,14 +96,19 @@ const requireOneRepository = (resolved: LibraryResolvedBinding) =>
 const worktreeCodec = Schema.fromJsonString(
   Schema.Struct({ path: Schema.String, branch: Schema.String }),
 );
+const creationCodec = Schema.fromJsonString(LibraryCreateProjectRequest);
+const registrationCodec = Schema.fromJsonString(LibraryRegisterCopyRequest);
+const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
 function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvironmentScope[] {
-  return kind === "create"
-    ? [AuthSettingsWriteScope]
-    : kind === "launch"
-      ? [AuthTerminalOperateScope, AuthOrchestrationOperateScope]
-      : kind === "release" || kind === "unregister"
-        ? [AuthOrchestrationOperateScope]
-        : [AuthTerminalOperateScope];
+  return kind === "import"
+    ? [AuthSettingsWriteScope, AuthTerminalOperateScope]
+    : kind === "create"
+      ? [AuthSettingsWriteScope]
+      : kind === "launch"
+        ? [AuthTerminalOperateScope, AuthOrchestrationOperateScope]
+        : kind === "release" || kind === "unregister"
+          ? [AuthOrchestrationOperateScope]
+          : [AuthTerminalOperateScope];
 }
 export class ProjectOperations extends Context.Service<
   ProjectOperations,
@@ -127,6 +139,7 @@ export class ProjectOperations extends Context.Service<
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly list: (input: {
       projectId?: string | undefined;
+      includeFolderImports?: boolean;
     }) => Effect.Effect<readonly LibraryOperation[], LibraryError>;
     readonly run: (
       id: string,
@@ -166,6 +179,7 @@ const make = Effect.gen(function* () {
   });
 
   const management = yield* LibraryManagement;
+  const publisher = yield* LibraryPublisher;
   const workflows = yield* ProjectWorkflows;
   const workspace = yield* LibraryWorkspace;
   const workspaceStore = yield* LibraryWorkspaceStore;
@@ -178,6 +192,7 @@ const make = Effect.gen(function* () {
   const environmentId = yield* identity.getEnvironmentId;
   const scope = yield* Effect.scope;
   const lock = yield* Semaphore.make(1);
+  const folderImports = yield* KeyedLock.make<string>();
   const restoreGrants = new Map<string, LibraryRecoveryGrant>();
   const pending = new Map<string, Deferred.Deferred<LibraryOperation, LibraryError>>();
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
@@ -359,23 +374,220 @@ const make = Effect.gen(function* () {
         updatedAt: yield* now,
       });
     });
+    const managementActor = Effect.fn("ProjectOperations.managementActor")(function* () {
+      return row.session_id.startsWith("workload:")
+        ? {
+            kind: "agent" as const,
+            ...(yield* Schema.decodeEffect(workloadCodec)(row.session_id.slice(9)).pipe(
+              Effect.mapError(io),
+            )),
+          }
+        : { kind: "client" as const, sessionId: AuthSessionId.make(row.session_id) };
+    });
     const action = Effect.gen(function* () {
       yield* phase("Checking access");
       let result: LibraryOperation["result"];
       switch (request.kind) {
+        case "import": {
+          const input = request.input;
+          yield* phase("Checking existing folder and shared projects");
+          const folder = yield* workspace.inspectFolder({ rootPath: input.rootPath });
+          if (!folder.exists)
+            return yield* new LibraryError({
+              reason: "not-found",
+              detail: "The folder no longer exists on this computer.",
+            });
+          result = yield* folderImports.withLock(
+            folder.rootPath,
+            Effect.gen(function* () {
+              const inspection = yield* workspace.inspectFolder({ rootPath: folder.rootPath });
+              if (!inspection.exists) return yield* new LibraryError({ reason: "not-found" });
+              let selected =
+                operation.result === null
+                  ? null
+                  : yield* decodeProject(operation.result).pipe(Effect.mapError(io));
+              if (!selected) {
+                const catalog = yield* publisher.projects({ includeArchived: true });
+                const registrations =
+                  inspection.registrations ??
+                  (inspection.registration ? [inspection.registration] : []);
+                const holders = registrations.filter((registration) =>
+                  catalog.some(
+                    (project) => project.id === registration.projectId && !project.archived,
+                  ),
+                );
+                const matches = input.projectId
+                  ? catalog.filter((project) => project.id === input.projectId && !project.archived)
+                  : holders.length
+                    ? catalog.filter(
+                        (project) =>
+                          !project.archived &&
+                          holders.some((holder) => holder.projectId === project.id),
+                      )
+                    : catalog.filter((project) => {
+                        const repositories = project.resources.filter(
+                          (resource) => resource.kind !== "link",
+                        );
+                        return (
+                          !project.archived &&
+                          repositories.length > 0 &&
+                          repositories.length === inspection.repositories.length &&
+                          repositories.every((resource) => {
+                            const remote = resource.remoteUrl;
+                            return (
+                              remote !== null &&
+                              inspection.repositories.some(
+                                (repository) =>
+                                  repository.relativePath === resource.relativePath &&
+                                  repository.remoteUrl !== null &&
+                                  normalizeGitRemoteUrl(remote) ===
+                                    normalizeGitRemoteUrl(repository.remoteUrl),
+                              )
+                            );
+                          })
+                        );
+                      });
+                if (matches.length > 1)
+                  return yield* new LibraryError({
+                    reason: "blocked",
+                    detail:
+                      "Several shared projects match this folder. Read the project list and retry with the intended projectId.",
+                  });
+                if (input.projectId && !matches.length)
+                  return yield* new LibraryError({
+                    reason: "not-found",
+                    detail: "The selected shared project is missing or archived.",
+                  });
+                selected = matches[0] ?? null;
+                if (holders.some((holder) => holder.projectId !== selected?.id))
+                  return yield* new LibraryError({
+                    reason: "blocked",
+                    detail:
+                      "Another current project holds this folder. Its files were not reassigned.",
+                  });
+                if (
+                  registrations.some(
+                    (registration) =>
+                      registration.ownership !== "borrowed" &&
+                      registration.projectId !== selected?.id,
+                  )
+                )
+                  return yield* new LibraryError({
+                    reason: "blocked",
+                    detail:
+                      "Files created for another project still hold this folder. Review that project's Files before reusing it.",
+                  });
+                if (!selected) {
+                  const receiptId = yield* operationId(id, "create");
+                  const saved = yield* sql<{
+                    request_json: string;
+                    result_json: string;
+                  }>`SELECT request_json,result_json FROM fork_library_workflow_receipts WHERE id=${receiptId}`.pipe(
+                    Effect.mapError(io),
+                  );
+                  if (saved[0] && saved[0].request_json !== row.request_json)
+                    return yield* new LibraryError({ reason: "request-conflict" });
+                  let creation: LibraryCreateProjectRequest;
+                  if (saved[0])
+                    creation = yield* Schema.decodeEffect(creationCodec)(saved[0].result_json).pipe(
+                      Effect.mapError(io),
+                    );
+                  else {
+                    const title =
+                      input.title ??
+                      inspection.rootPath.split(/[\\/]/).findLast(Boolean)?.slice(0, 160) ??
+                      "Project";
+                    creation = {
+                      requestId: receiptId,
+                      title,
+                      resources: inspection.repositories.map((repository, index) => ({
+                        id: `repository-${index}`,
+                        kind: "repository" as const,
+                        title:
+                          repository.relativePath === "."
+                            ? title
+                            : repository.relativePath.slice(0, 160),
+                        relativePath: repository.relativePath,
+                        remoteUrl:
+                          repository.remoteUrl &&
+                          !/^(?:file:|[\\/]|[a-z]:[\\/])/i.test(repository.remoteUrl)
+                            ? repository.remoteUrl
+                            : null,
+                        defaultBranch: null,
+                      })),
+                    };
+                    if (!validLibraryResources(creation.resources ?? []))
+                      return yield* new LibraryError({
+                        reason: "invalid",
+                        detail:
+                          "The folder's repositories cannot form one portable project. Choose a folder with separate repositories and supported repository URLs.",
+                      });
+                    const encoded = yield* Schema.encodeEffect(creationCodec)(creation).pipe(
+                      Effect.mapError(io),
+                    );
+                    yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${receiptId},${row.request_json},${encoded}) ON CONFLICT(id) DO NOTHING`.pipe(
+                      Effect.mapError(io),
+                    );
+                  }
+                  yield* phase("Creating shared project");
+                  selected = yield* management.execute(
+                    { kind: "create", input: creation },
+                    yield* managementActor(),
+                  );
+                }
+                operation = yield* save({
+                  ...operation,
+                  projectId: selected.id,
+                  result: selected,
+                  updatedAt: yield* now,
+                });
+              }
+              yield* phase("Registering existing files");
+              const registrationId = yield* operationId(id, "import");
+              const previous = yield* sql<{
+                request_json: string;
+                result_json: string;
+              }>`SELECT request_json,result_json FROM fork_library_workflow_receipts WHERE id=${registrationId}`.pipe(
+                Effect.mapError(io),
+              );
+              if (previous[0] && previous[0].request_json !== row.request_json)
+                return yield* new LibraryError({ reason: "request-conflict" });
+              let registration: LibraryRegisterCopyRequest;
+              if (previous[0])
+                registration = yield* Schema.decodeEffect(registrationCodec)(
+                  previous[0].result_json,
+                ).pipe(Effect.mapError(io));
+              else {
+                const copy = yield* workspace.prepareCopy({
+                  requestId: yield* operationId(id, "prepare"),
+                  project: selected,
+                  rootPath: input.rootPath,
+                  strategy: "reuse",
+                });
+                const authority = yield* publisher.info;
+                registration = {
+                  requestId: registrationId,
+                  authorityId: authority.authorityId,
+                  authorityEpoch: authority.authorityEpoch,
+                  copy,
+                };
+                const encoded = yield* Schema.encodeEffect(registrationCodec)(registration).pipe(
+                  Effect.mapError(io),
+                );
+                yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${registrationId},${row.request_json},${encoded}) ON CONFLICT(id) DO NOTHING`.pipe(
+                  Effect.mapError(io),
+                );
+              }
+              yield* phase("Saving files in Projects");
+              yield* publisher.registerCopy(registration);
+              return selected;
+            }),
+          );
+          break;
+        }
         case "create":
           yield* phase("Creating project");
-          result = yield* management.execute(
-            request,
-            row.session_id.startsWith("workload:")
-              ? {
-                  kind: "agent",
-                  ...(yield* Schema.decodeEffect(workloadCodec)(row.session_id.slice(9)).pipe(
-                    Effect.mapError(io),
-                  )),
-                }
-              : { kind: "client", sessionId: AuthSessionId.make(row.session_id) },
-          );
+          result = yield* management.execute(request, yield* managementActor());
           break;
         case "prepare":
           yield* phase("Preparing files");
@@ -529,7 +741,9 @@ const make = Effect.gen(function* () {
       return yield* save({
         ...operation,
         projectId:
-          request.kind === "create" && result && "resources" in result
+          (request.kind === "create" || request.kind === "import") &&
+          result &&
+          "resources" in result
             ? result.id
             : operation.projectId,
         state: "succeeded",
@@ -622,8 +836,8 @@ const make = Effect.gen(function* () {
     if (existing && pending.has(id)) return existing.operation;
     const timestamp = yield* now;
     const projectId =
-      request.kind === "create"
-        ? null
+      request.kind === "create" || request.kind === "import"
+        ? (existing?.operation.projectId ?? null)
         : request.kind === "launch" || request.kind === "prepare" || request.kind === "restore"
           ? request.input.project.id
           : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
@@ -636,7 +850,7 @@ const make = Effect.gen(function* () {
       phase: "Waiting to start",
       attempt: (existing?.operation.attempt ?? 0) + 1,
       error: null,
-      result: null,
+      result: request.kind === "import" ? (existing?.operation.result ?? null) : null,
       createdAt: existing?.operation.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
@@ -676,6 +890,7 @@ const make = Effect.gen(function* () {
   });
   const list = Effect.fn("ProjectOperations.list")(function* (input: {
     projectId?: string | undefined;
+    includeFolderImports?: boolean;
   }) {
     const rows = input.projectId
       ? yield* sql<{
@@ -684,9 +899,13 @@ const make = Effect.gen(function* () {
       : yield* sql<{
           payload_json: string;
         }>`SELECT payload_json FROM fork_library_operations ORDER BY created_at DESC LIMIT 100`;
-    return yield* Effect.forEach(rows, (row) =>
+    const operations = yield* Effect.forEach(rows, (row) =>
       Schema.decodeEffect(operationCodec)(row.payload_json),
     );
+    // Older clients cannot decode the new operation kind until they opt into folder imports.
+    return input.includeFolderImports === true
+      ? operations
+      : operations.filter((operation) => operation.kind !== "import");
   }, Effect.mapError(io));
   const cancel = Effect.fn("ProjectOperations.cancel")(function* (
     id: string,

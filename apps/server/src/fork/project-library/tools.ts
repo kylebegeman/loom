@@ -1,4 +1,8 @@
-import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
+import {
+  OrchestratorMcpFailure,
+  OrchestratorMcpEnvironmentTarget,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Library from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -222,6 +226,17 @@ export const ProjectLibraryToolkit = Toolkit.make(
     success: Library.LibraryLaunchCandidates,
     failure,
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_folder_import", {
+    description:
+      "Add an existing folder to Projects on this execution computer. Inspects its repositories, reuses a unique matching shared project or creates one, and registers the files together. Checkout branches never become defaults. Files stay in place. Pass projectId only to choose an intended existing project; ambiguity is reported. Retain requestId and identical input after a lost response; resume interrupted work with loom_library_operation_control. No raw blueprint editing is needed.",
+    parameters: Schema.Struct({
+      ...Library.LibraryImportFolderRequest.fields,
+      environmentId: OrchestratorMcpEnvironmentTarget,
+    }),
+    success: Library.LibraryProject,
+    failure,
+    dependencies,
+  }).annotate(Tool.Destructive, false),
   Tool.make("loom_library_project_create", {
     description: "Create a durable project and shared brief. No computer or folder is selected.",
     parameters: createProjectParameters,

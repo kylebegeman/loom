@@ -509,6 +509,7 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryMaintenance.retentionLayer.pipe(Layer.provide(layerLibraryService)),
   layerProjectWorkflows,
   ProjectOperations.layer.pipe(
+    Layer.provide(layerLibraryPublisher),
     Layer.provide(layerLibraryManagement),
     Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(layerProjectWorkflows),

@@ -12,6 +12,7 @@ import type {
 export type LibraryWorkflowTone = "neutral" | "active" | "success" | "warning" | "danger";
 
 export const LIBRARY_OPERATION_LABELS: Record<LibraryOperation["kind"], string> = {
+  import: "Add existing folder",
   create: "Create project",
   prepare: "Prepare files",
   restore: "Restore files",

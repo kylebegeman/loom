@@ -2,7 +2,13 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { EnvironmentId, IsoDateTime, NonNegativeInt, ThreadId } from "../baseSchemas.ts";
+import {
+  EnvironmentId,
+  IsoDateTime,
+  NonNegativeInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "../baseSchemas.ts";
 import {
   LibraryError,
   LibraryId,
@@ -29,6 +35,7 @@ import {
 import { ModelSelection } from "../modelSelection.ts";
 import { RuntimeMode, ProviderInteractionMode } from "../providerPolicy.ts";
 
+export const PROJECT_FOLDER_IMPORT_FEATURE = "project-folder-import";
 export const PROJECT_WORKFLOWS_FEATURE = "project-workflows";
 export const LibraryBlueprint = Schema.Struct({
   format: Schema.Literal("loom-project"),
@@ -141,7 +148,16 @@ export const LibraryLaunchOperation = Schema.Struct({
    */
   files: Schema.optional(LibraryPrepareCopyRequest),
 });
+export const LibraryImportFolderRequest = Schema.Struct({
+  requestId: LibraryRequestId,
+  rootPath: TrimmedNonEmptyString,
+  title: Schema.optionalKey(LibraryTitle),
+  projectId: Schema.optionalKey(LibraryId),
+});
+export type LibraryImportFolderRequest = typeof LibraryImportFolderRequest.Type;
+
 export const LibraryOperationInput = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("import"), input: LibraryImportFolderRequest }),
   Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),
   Schema.Struct({ kind: Schema.Literal("prepare"), input: LibraryPrepareCopyRequest }),
   Schema.Struct({ kind: Schema.Literal("restore"), input: LibraryRestoreCopyRequest }),
@@ -155,6 +171,7 @@ export type LibraryOperationInput = typeof LibraryOperationInput.Type;
 export const LibraryOperation = Schema.Struct({
   id: LibraryId,
   kind: Schema.Literals([
+    "import",
     "create",
     "prepare",
     "restore",
@@ -222,7 +239,10 @@ export const ProjectWorkflowsRpcGroup = RpcGroup.make(
     error,
   }),
   Rpc.make(W.operations, {
-    payload: { projectId: Schema.optional(LibraryId) },
+    payload: {
+      projectId: Schema.optional(LibraryId),
+      includeFolderImports: Schema.optionalKey(Schema.Boolean),
+    },
     success: Schema.Array(LibraryOperation),
     error,
   }),
