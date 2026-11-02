@@ -212,6 +212,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   forgetLoomIdentity: (input) =>
     ipcRenderer.invoke(IpcChannels.LOOM_IDENTITY_FORGET_CHANNEL, input),
   openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_CHANNEL, url),
+  readMedia: (url: string) => ipcRenderer.invoke(IpcChannels.READ_MEDIA_CHANNEL, url),
   checkSystemPermission: (pane: string) =>
     ipcRenderer.invoke(IpcChannels.CHECK_SYSTEM_PERMISSION_CHANNEL, pane),
   openSystemSettings: (pane: string) =>

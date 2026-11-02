@@ -11,6 +11,8 @@ import { useMemo } from "react";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { environmentPresentations } from "../../state/presentation"; // fork: fleet-connections
+import { serverEnvironment } from "../../state/server";
+import { environmentThreadShells } from "../../state/threads";
 
 function archivedSnapshotAtom(environmentId: EnvironmentId) {
   return orchestrationEnvironment.archivedShellSnapshot({
@@ -29,6 +31,10 @@ const archivedEnvironmentConnectedAtom = Atom.family((environmentId: Environment
 const archivedSnapshotsAtom = createArchivedThreadSnapshotsAtomFamily({
   getSnapshotAtom: archivedSnapshotAtom,
   getIsConnectedAtom: archivedEnvironmentConnectedAtom, // fork: fleet-connections
+  hiddenThreadTagsAtom: serverEnvironment.hiddenThreadTagsAtom,
+  hiddenThreadKeysAtom: environmentThreadShells.hiddenThreadKeysAtom,
+  liveThreadRefsAtom: environmentThreadShells.threadRefsAtom,
+  anyEnvironmentHidingAtom: environmentThreadShells.anyEnvironmentHidingAtom,
   labelPrefix: "mobile:archived-thread-snapshots",
 });
 
