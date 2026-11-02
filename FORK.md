@@ -250,6 +250,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | --------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
 | `apps/web/src/hooks/useThreadActionMenu.ts`                     | `attention-status`    | Retry failed runs and resume held queues from the conversation header.       |
 | `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`  | `project-profiles`    | Pre-approve the read-only project settings tool in read-only sandboxes.      |
+| `evals/mcp-tool-use/devices.test.ts`                            | `project-profiles`    | Expect the project-scoped device access denial agents can resolve from chat. |
 | `apps/web/src/components/Sidebar.tsx`                           | `library-projects`    | Use the Library retention setting in single and bulk delete confirmations.   |
 | `apps/web/src/hooks/useThreadActions.permissions.test.ts`       | `library-projects`    | Await async confirmation while preserving permission rechecks.               |
 | `apps/web/src/hooks/useThreadActions.ts`                        | `library-projects`    | Explain saved Library retention before deleting an archived thread.          |
