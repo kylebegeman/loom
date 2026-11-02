@@ -120,6 +120,12 @@ vi.mock(import("../ui/toast"), async (original) => {
 // These sections have separate data sources and their own tests.
 vi.mock(import("./ProjectFolderLocation"), () => ({ ProjectFolderLocation: () => <></> })); // fork: project-home
 vi.mock(import("../../fork/settings/pages"), () => ({ ForkSettingsTopics: () => <></> })); // fork: ext-settings
+// fork: library-projects
+vi.mock(import("../../fork/project-library/FolderProjectSettings"), () => ({
+  FolderProjectSettings: ({ children }) => (
+    <>{typeof children === "function" ? children(null) : children}</>
+  ),
+}));
 vi.mock(import("./ProjectDefaultsSettings"), async (original) => ({
   ...(await original()),
   ProjectDefaultsSettings: (() => null) as never,
