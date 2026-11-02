@@ -1268,6 +1268,11 @@ it.each(["state-copy", "state-swap", "replacement", "interrupted"])(
   },
 );
 
+// The upstream workflow exports LOOM_CHECKPOINT and LOOM_RESOLVE_LOGS while it runs these tests.
+const hostEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith("LOOM_")),
+);
+
 function runSync(root: string, command: string, extraEnv: Record<string, string> = {}) {
   return NodeChildProcess.spawnSync(
     "bash",
@@ -1275,7 +1280,7 @@ function runSync(root: string, command: string, extraEnv: Record<string, string>
     {
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...hostEnv,
         GIT_CONFIG_GLOBAL: "/dev/null",
         GIT_CONFIG_NOSYSTEM: "1",
         LOOM_TEST_SCRIPT: script,
