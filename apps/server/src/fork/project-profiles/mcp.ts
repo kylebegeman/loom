@@ -39,7 +39,7 @@ export const ProjectProfilesToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_project_profiles_update", {
     description:
-      "Update authorized private project preferences without opening Settings. Read loom_project_profiles_read first and pass expectedUpdatedAt. Patch only fields requested by the user. agentToolFamilies accepts hardware/reach/sites: auto allows on demand, always also advertises, never disables. Changes apply in this conversation immediately; retry the tool without restarting the session.",
+      "Update authorized private project preferences without opening Settings. Read loom_project_profiles_read first and pass expectedUpdatedAt. Patch only requested fields. For hardware/reach/sites, use always to enable and advertise a requested family, never to disable it, and auto for automatic availability. Changes apply immediately in this conversation; enabled tools can be called without restarting the session.",
     parameters: Schema.Struct({
       ...ProjectProfileUpdate.fields,
       environmentId: OrchestratorMcpEnvironmentTarget,

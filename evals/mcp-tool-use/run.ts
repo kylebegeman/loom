@@ -280,6 +280,8 @@ export const McpToolUseCase = Schema.Struct({
      * device tool, a T3 `DeviceError` (`{"_tag": ..., "cause": null}`) fails it inside T3.
      */
     mocks: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    /** A reader uses its named mutation's canned result after that mutation is called. */
+    mockReadbacks: Schema.optional(Schema.Record(Schema.String, Schema.String)),
     /** Regexes on one part of a shell command. A match wins over the shell simulator. */
     shellMocks: Schema.optional(
       Schema.Array(Schema.Struct({ match: Schema.String, output: Schema.String })),
@@ -826,6 +828,7 @@ type Sample = {
   readonly shellUsage: Usage;
   readonly linked: Set<string>;
   readonly codeStore: Record<string, unknown>;
+  readonly mocks: Record<string, unknown>;
   nextTask: number;
   /** T3's device tools, once `withDevices` builds them for a world with devices. */
   devices?: DeviceTools;
@@ -870,6 +873,7 @@ export const makeSample = (testCase: McpToolUseCase, base: Base): Sample => {
     shellUsage: emptyUsage(),
     linked: new Set([...urls, ...shell.flatMap(createdPullRequests)]),
     codeStore: {},
+    mocks: { ...testCase.setup.mocks },
     nextTask: Math.max(0, ...taskNumbers) + 1,
     priorResults: new Map(),
   };
@@ -1427,6 +1431,16 @@ const simulate = Effect.fn("evaluateMcpToolUse.simulate")(function* (
   return output;
 });
 
+export const toolMock = (sample: Sample, name: string) => {
+  const mock = sample.mocks[name];
+  if (mock !== undefined && mock !== "default") {
+    for (const [reader, mutation] of Object.entries(sample.testCase.setup.mockReadbacks ?? {})) {
+      if (mutation === name) sample.mocks[reader] = mock;
+    }
+  }
+  return mock;
+};
+
 /** The result for one tool call. */
 const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* (
   sample: Sample,
@@ -1457,7 +1471,7 @@ const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(function* 
     if (found.length === 0) return toolResult(call.id, "No matching deferred tools found");
     return loadTools(tools, call.id, found);
   }
-  const mock = testCase.setup.mocks?.[name];
+  const mock = toolMock(sample, name);
   // T3 answers device calls from the world. A mock that is a T3 device error fails inside T3.
   const failure = deviceFailure(mock);
   const fromWorld = mock === undefined || mock === "default" || failure !== undefined;

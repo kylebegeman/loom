@@ -17,6 +17,7 @@ import {
   ranCalls,
   McpToolUseCase,
   mockOutput,
+  toolMock,
   normalizeToolInput,
   normalizeToolName,
   type SampleRun,
@@ -29,6 +30,8 @@ import {
 } from "./run.ts";
 import { briefRoute, gradeDevice, shellInvocations } from "./device-grading.ts";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
+
+const decodeCase = Schema.decodeSync(McpToolUseCase);
 
 it("grades Codex shell and subagent calls with the shared rules", () => {
   const calls = [
@@ -379,6 +382,31 @@ it("answers simple mocked commands itself and gives the simulator the sample's h
     history?.text,
     '<call>Bash {"command":"git push"}</call>\n<output>\npushed\n</output>\n\nNew call:\n<call>Bash {"command":"git push && gh pr create --fill"}</call>',
   );
+});
+
+it("keeps readbacks consistent with mocked mutations and isolates each sample", () => {
+  const testCase = decodeCase({
+    ...childCase,
+    setup: {
+      role: "top",
+      mocks: {
+        loom_library_project: { id: "shared-app", revision: 17 },
+        loom_library_project_update: { id: "shared-app", revision: 18 },
+      },
+      mockReadbacks: { loom_library_project: "loom_library_project_update" },
+    },
+  });
+  const base = buildBase(template, { model: "claude-sonnet-5-5", keepUserInstructions: false });
+  const sample = makeSample(testCase, base);
+  const other = makeSample(testCase, base);
+  assert.deepEqual(toolMock(sample, "loom_library_project"), { id: "shared-app", revision: 17 });
+  assert.deepEqual(toolMock(sample, "loom_library_project_update"), {
+    id: "shared-app",
+    revision: 18,
+  });
+  assert.deepEqual(toolMock(sample, "loom_library_project"), { id: "shared-app", revision: 18 });
+  assert.deepEqual(toolMock(sample, "loom_library_project"), { id: "shared-app", revision: 18 });
+  assert.deepEqual(toolMock(other, "loom_library_project"), { id: "shared-app", revision: 17 });
 });
 
 it("links a PR a shell command created, as T3 does, but not one it only read", () => {
