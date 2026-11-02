@@ -1,7 +1,7 @@
 # L11: Development tools
 
 Status: First two slices landed on main. Service, authorization, tool-use and local
-Docker lifecycle checks pass. Final integrated Browser verification is pending. Kyle selected these
+Docker lifecycle and integrated web-client checks pass. Kyle selected these
 slices on 2026-11-02: checkout dev servers and Browser diagnostics, then Compose and local
 databases. The HTTP request lab remains a separate planned follow-up.
 
