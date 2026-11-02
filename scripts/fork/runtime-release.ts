@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off - Installed publisher has only Node built-ins.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
+import * as NodePath from "node:path";
 
 const REPOSITORY = "kylebegeman/loom";
 const PLATFORMS = ["darwin-arm64", "linux-arm64", "linux-x64"] as const;
@@ -54,6 +55,7 @@ export async function ensureRuntimeReleaseAssets(input: {
   readonly workflowRef: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly log?: (message: string) => void;
+  readonly localMac?: { readonly archive: string; readonly sha256: string };
 }) {
   validateRuntimeRelease(input.version, input.sourceSha);
   const release = () =>
@@ -65,10 +67,30 @@ export async function ensureRuntimeReleaseAssets(input: {
         "--repo",
         REPOSITORY,
         "--json",
-        "assets,isDraft",
+        "assets,isDraft,targetCommitish",
       ]),
-    ) as { assets: Array<{ name: string }>; isDraft: boolean };
-  const current = release();
+    ) as {
+      assets: Array<{ name: string; digest?: string }>;
+      isDraft: boolean;
+      targetCommitish: string;
+    };
+  const macName = `t3-${input.version}-darwin-arm64.tar.gz`;
+  if (
+    input.localMac &&
+    (!/^[a-f0-9]{64}$/.test(input.localMac.sha256) ||
+      NodePath.basename(input.localMac.archive) !== macName)
+  )
+    throw new Error("Local Mac runtime requires its exact archive name and SHA256.");
+  const checkedRelease = () => {
+    const current = release();
+    if (current.targetCommitish !== input.sourceSha)
+      throw new Error("Runtime release belongs to a different source commit.");
+    const mac = current.assets.find((asset) => asset.name === macName);
+    if (input.localMac && mac && mac.digest !== `sha256:${input.localMac.sha256}`)
+      throw new Error("Remote Mac runtime does not match the checked local archive.");
+    return current;
+  };
+  let current = checkedRelease();
   if (
     runtimeReleaseComplete(
       input.version,
@@ -78,6 +100,20 @@ export async function ensureRuntimeReleaseAssets(input: {
     return;
   if (!current.isDraft)
     throw new Error("A published release has incomplete runtime archives; refusing to rewrite it.");
+
+  if (input.localMac && !current.assets.some((asset) => asset.name === macName)) {
+    gh(input.env, [
+      "release",
+      "upload",
+      input.version,
+      input.localMac.archive,
+      "--repo",
+      REPOSITORY,
+    ]);
+    current = checkedRelease();
+    if (!current.assets.some((asset) => asset.name === macName))
+      throw new Error("Checked local Mac runtime was not attached to the reserved draft.");
+  }
 
   const runs = () =>
     JSON.parse(
@@ -102,13 +138,16 @@ export async function ensureRuntimeReleaseAssets(input: {
     }>;
   // A publisher restart must keep watching its exact-source build, rather than
   // queueing another hour of identical work behind a still-running attempt.
+  const requestPrefix = input.localMac ? `local-mac-${input.localMac.sha256}-` : "";
   const active = runs().find(
     (run) =>
-      run.displayTitle.startsWith(`Loom runtimes ${input.version} `) &&
+      run.displayTitle.startsWith(`Loom runtimes ${input.version} ${requestPrefix}`) &&
       run.headSha === input.sourceSha &&
       run.status !== "completed",
   );
-  const title = active?.displayTitle ?? `Loom runtimes ${input.version} ${NodeCrypto.randomUUID()}`;
+  const title =
+    active?.displayTitle ??
+    `Loom runtimes ${input.version} ${requestPrefix}${NodeCrypto.randomUUID()}`;
   let runId = active?.databaseId;
   if (active) {
     input.log?.(
@@ -130,6 +169,7 @@ export async function ensureRuntimeReleaseAssets(input: {
       "-f",
       `request_id=${title.slice(`Loom runtimes ${input.version} `.length)}`,
     ];
+    if (input.localMac) args.push("-f", `mac_runtime_sha256=${input.localMac.sha256}`);
     for (const [key, field] of Object.entries(PUBLIC_FIELDS))
       args.push("-f", `${field}=${input.env[key]?.trim() ?? ""}`);
     // Sent only when the publisher retired Connect, so while Connect is on a retry still dispatches
@@ -155,7 +195,7 @@ export async function ensureRuntimeReleaseAssets(input: {
         if (
           !runtimeReleaseComplete(
             input.version,
-            release().assets.map((asset) => asset.name),
+            checkedRelease().assets.map((asset) => asset.name),
           )
         )
           throw new Error(

@@ -990,6 +990,42 @@ export function releaseHistory(
   return { previous: previous.tag, subjects: log ? log.split("\n") : [] };
 }
 
+async function prepareLocalRuntime(
+  release: Release,
+  prepared: Awaited<ReturnType<typeof prepare>>,
+) {
+  const workflow = run(
+    "git",
+    ["show", `${release.commit}:.github/workflows/loom-cli-archives.yml`],
+    { cwd: SOURCE_DIR },
+  );
+  // Older integration tags retain their hosted-Mac workflow until a compatible source is released.
+  if (!workflow.includes("\n      mac_runtime_sha256:\n")) return undefined;
+  if (run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: SOURCE_DIR }))
+    throw new Error("The isolated runtime build checkout has changes.");
+  run("git", ["checkout", "--quiet", "--detach", release.commit], { cwd: SOURCE_DIR });
+  const output = NodePath.join(prepared.record, "runtimes");
+  const node = releaseNode(release.commit);
+  console.log(`Building and checking this Mac's runtime for ${release.version}.`);
+  run(
+    node,
+    [
+      "scripts/fork/runtime-build.ts",
+      "--version",
+      release.version,
+      "--source-sha",
+      release.commit,
+      "--output-dir",
+      output,
+    ],
+    { cwd: SOURCE_DIR, stream: true, connect: prepared, node },
+  );
+  const archive = NodePath.join(output, `t3-${release.version}-darwin-arm64.tar.gz`);
+  const hash = NodeCrypto.createHash("sha256");
+  for await (const chunk of NodeFS.createReadStream(archive)) hash.update(chunk);
+  return { archive, sha256: hash.digest("hex") };
+}
+
 async function publish(release: Release, prepared: Awaited<ReturnType<typeof prepare>>) {
   const state = await releaseState(release);
   if (state === "published") return;
@@ -1049,7 +1085,9 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
     ],
     { stream: true },
   );
+  const localMac = await prepareLocalRuntime(release, prepared);
   await ensureRuntimeReleaseAssets({
+    ...(localMac ? { localMac } : {}),
     version: release.version,
     sourceSha: release.commit,
     // The bare version tag exists only once the release is published.

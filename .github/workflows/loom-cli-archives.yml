@@ -14,6 +14,9 @@ on:
       request_id:
         description: Publisher attempt identity
         required: true
+      mac_runtime_sha256:
+        description: SHA256 of the Mac archive built and smoke-tested by the local publisher; empty builds on a hosted Mac
+        required: false
       clerk_publishable_key:
         description: Public Clerk application identifier
         required: false
@@ -54,20 +57,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-15
-            platform: mac
-            arch: arm64
-            key: darwin-arm64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-            key: linux-arm64
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: x64
-            key: linux-x64
-    runs-on: ${{ matrix.runner }}
+        target: ${{ fromJSON(inputs.mac_runtime_sha256 != '' && '["linux-arm64","linux-x64"]' || '["darwin-arm64","linux-arm64","linux-x64"]') }}
+    runs-on: ${{ fromJSON('{"darwin-arm64":"macos-15","linux-arm64":"ubuntu-24.04-arm","linux-x64":"ubuntu-24.04"}')[matrix.target] }}
+    env:
+      LOOM_RUNTIME_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -85,28 +78,15 @@ jobs:
           run-install: |
             args:
               - --frozen-lockfile
-      - name: Validate immutable source
-        shell: bash
-        run: |
-          node --input-type=module -e 'import { validateRuntimeRelease } from "./scripts/fork/runtime-release.ts"; validateRuntimeRelease(process.env.LOOM_RUNTIME_VERSION, process.env.LOOM_RUNTIME_SOURCE_SHA)'
-          test "$(git rev-parse HEAD)" = "$LOOM_RUNTIME_SOURCE_SHA"
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: stable
-      - name: Build the source runtime
+      - name: Build and smoke-test the exact source runtime
         shell: bash
-        run: |
-          node scripts/update-release-package-versions.ts "$LOOM_RUNTIME_VERSION"
-          vp run --filter t3 build
-          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
-          mkdir -p "$RUNNER_TEMP/loom-resource-monitor/${{ matrix.key }}"
-          cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/loom-resource-monitor/${{ matrix.key }}/"
-          node apps/server/scripts/cli.ts build-exe --verbose
-          node scripts/build-cli-archive.ts --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}" --version "$LOOM_RUNTIME_VERSION" --resource-monitor-dir "$RUNNER_TEMP/loom-resource-monitor" --output-dir release-cli
-          node scripts/smoke-cli-archive.ts --archive "release-cli/t3-$LOOM_RUNTIME_VERSION-${{ matrix.key }}.tar.gz" --expect-version "$LOOM_RUNTIME_VERSION"
+        run: node scripts/fork/runtime-build.ts --version "$LOOM_RUNTIME_VERSION" --source-sha "$LOOM_RUNTIME_SOURCE_SHA"
       - uses: actions/upload-artifact@v7
         with:
-          name: loom-runtime-${{ matrix.key }}
+          name: loom-runtime-${{ matrix.target }}
           path: release-cli/*.tar.gz
           if-no-files-found: error
           retention-days: 3
@@ -127,9 +107,20 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          LOOM_MAC_RUNTIME_SHA256: ${{ inputs.mac_runtime_sha256 }}
         run: |
           set -euo pipefail
           test "$(gh release view "$LOOM_RUNTIME_VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true"
+          test "$(gh release view "$LOOM_RUNTIME_VERSION" --repo "$GITHUB_REPOSITORY" --json targetCommitish --jq .targetCommitish)" = "$LOOM_RUNTIME_SOURCE_SHA"
+          if [ -n "$LOOM_MAC_RUNTIME_SHA256" ]; then
+            [[ "$LOOM_MAC_RUNTIME_SHA256" =~ ^[a-f0-9]{64}$ ]] || exit 1
+            mac_archive="t3-$LOOM_RUNTIME_VERSION-darwin-arm64.tar.gz"
+            gh release download "$LOOM_RUNTIME_VERSION" --repo "$GITHUB_REPOSITORY" --pattern "$mac_archive" --dir release-cli
+            printf '%s  %s\n' "$LOOM_MAC_RUNTIME_SHA256" "release-cli/$mac_archive" | sha256sum --check -
+          fi
           cd release-cli
+          for target in darwin-arm64 linux-arm64 linux-x64; do
+            test -f "t3-$LOOM_RUNTIME_VERSION-$target.tar.gz"
+          done
           sha256sum -- *.tar.gz > SHA256SUMS
           gh release upload "$LOOM_RUNTIME_VERSION" ./*.tar.gz SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

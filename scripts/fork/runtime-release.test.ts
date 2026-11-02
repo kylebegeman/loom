@@ -13,20 +13,25 @@ const version = "0.0.49-nightly.20261013.3046";
 const sourceSha = "a".repeat(40);
 const workflowRef = "loom-v0.0.49-nightly.20261013.3046";
 const spawn = vi.mocked(NodeChildProcess.spawnSync);
+const localMac = { archive: `/build/t3-${version}-darwin-arm64.tar.gz`, sha256: "c".repeat(64) };
 afterEach(() => vi.resetAllMocks());
 
 function githubFixture(input: {
   complete?: boolean;
   published?: boolean;
-  prior?: { headSha?: string; version?: string; conclusion?: string | null };
+  localMac?: boolean;
+  macDigest?: string;
+  targetCommitish?: string;
+  prior?: { headSha?: string; version?: string; conclusion?: string | null; macSha256?: string };
 }) {
   let complete = input.complete === true;
   let lists = 0;
+  let macUploaded = input.localMac === true;
   const commands: string[][] = [];
   const previous = input.prior
     ? {
         databaseId: 42,
-        displayTitle: `Loom runtimes ${input.prior.version ?? version} prior-request`,
+        displayTitle: `Loom runtimes ${input.prior.version ?? version} ${input.prior.macSha256 ? `local-mac-${input.prior.macSha256}-` : ""}prior-request`,
         headSha: input.prior.headSha ?? sourceSha,
         status: input.prior.conclusion ? "completed" : "in_progress",
         conclusion: input.prior.conclusion ?? null,
@@ -40,8 +45,25 @@ function githubFixture(input: {
     if (args[0] === "release" && args[1] === "view") {
       stdout = JSON.stringify({
         isDraft: !input.published,
-        assets: complete ? runtimeReleaseAssets(version).map((name) => ({ name })) : [],
+        targetCommitish: input.targetCommitish ?? sourceSha,
+        assets: complete
+          ? runtimeReleaseAssets(version).map((name) => ({
+              name,
+              digest: name.endsWith("darwin-arm64.tar.gz")
+                ? `sha256:${input.macDigest ?? localMac.sha256}`
+                : "sha256:other",
+            }))
+          : macUploaded
+            ? [
+                {
+                  name: `t3-${version}-darwin-arm64.tar.gz`,
+                  digest: `sha256:${input.macDigest ?? localMac.sha256}`,
+                },
+              ]
+            : [],
       });
+    } else if (args[0] === "release" && args[1] === "upload") {
+      macUploaded = true;
     } else if (args[0] === "workflow" && args[1] === "run") {
       const request = args
         .find((arg) => arg.startsWith("request_id="))!
@@ -106,6 +128,40 @@ describe("runtime release publication gate", () => {
     ).rejects.toThrow("refusing to rewrite");
     expect(commands.some((args) => args[0] === "workflow")).toBe(false);
   });
+  it("uses a locally verified Mac archive without waiting for a hosted Mac", async () => {
+    const commands = githubFixture({});
+    await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {}, localMac });
+    expect(commands.find((args) => args[0] === "workflow")).toContain(
+      `mac_runtime_sha256=${localMac.sha256}`,
+    );
+    expect(commands.find((args) => args[1] === "upload")).toContain(localMac.archive);
+  });
+  it("recovers a lost Mac upload response without uploading it twice", async () => {
+    const commands = githubFixture({ localMac: true });
+    await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {}, localMac });
+    expect(commands.some((args) => args[1] === "upload")).toBe(false);
+    expect(commands.find((args) => args[0] === "workflow")).toContain(
+      `mac_runtime_sha256=${localMac.sha256}`,
+    );
+  });
+  it.each([undefined, "d".repeat(64), localMac.sha256])(
+    "resumes only a running build for the same checked local Mac archive: %s",
+    async (macSha256) => {
+      const commands = githubFixture({ localMac: true, prior: macSha256 ? { macSha256 } : {} });
+      await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {}, localMac });
+      expect(commands.some((args) => args[0] === "workflow")).toBe(macSha256 !== localMac.sha256);
+    },
+  );
+  it.each([{ macDigest: "d".repeat(64) }, { targetCommitish: "b".repeat(40) }])(
+    "refuses to combine local and remote artifacts with different provenance: %j",
+    async (mismatch) => {
+      const commands = githubFixture({ localMac: true, ...mismatch });
+      await expect(
+        ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {}, localMac }),
+      ).rejects.toThrow(/different|match/);
+      expect(commands.some((args) => args[0] === "workflow" || args[1] === "upload")).toBe(false);
+    },
+  );
   it("resumes an exact-source running build after the publisher restarts", async () => {
     const commands = githubFixture({ prior: {} });
     await ensureRuntimeReleaseAssets({ version, sourceSha, workflowRef, env: {} });
