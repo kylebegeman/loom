@@ -157,7 +157,6 @@ export function startThreadNotifications(
     pending.delete(tag); // fork: respectful-notifications
   };
 
-  // Completions fire from a timer, so read settings, focus and route when presenting.
   const present = (
     environmentId: EnvironmentId,
     state: NotificationState,
@@ -436,7 +435,6 @@ export function startThreadNotifications(
         // so the next live snapshot can announce what changed in between.
         if (!entry.seeded && snapshot !== null) observeThreads(environmentId, entry, snapshot);
         entry.resync = entry.seeded; // fork: respectful-notifications
-        entry.gate.cancelPending();
         entry.reconnecting = true;
       },
       { immediate: true },

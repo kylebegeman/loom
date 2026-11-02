@@ -286,7 +286,7 @@ apps/web/src/components/settings/settingsSearch.ts	project-home	7
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	3
 apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	22
 apps/web/src/components/ThreadNotificationCoordinator.tsx	respectful-notifications	44
-apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	11
+apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx	respectful-notifications	10
 apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts	respectful-notifications	28
 apps/web/src/components/settings/SettingsPanels.tsx	respectful-notifications	4
 apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1

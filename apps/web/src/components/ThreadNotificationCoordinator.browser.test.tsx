@@ -1,4 +1,3 @@
-import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import * as DateTime from "effect/DateTime";
 import type { AnyRouter } from "@tanstack/react-router";
 import * as Option from "effect/Option";
@@ -144,8 +143,7 @@ function setup() {
       snapshot: Option.some({ threads: [mockThreadShell()] }),
     });
     stop ??= startThreadNotifications(registry, router);
-    // fork: respectful-notifications - a completion waits out the Working shelf's exit grace.
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+    await vi.advanceTimersByTimeAsync(0);
   };
   return {
     render,
