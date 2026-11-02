@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
+import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -30,6 +31,11 @@ const makeWindow = ({
   const reload = () =>
     webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
   const layer = DesktopWebLinks.layer.pipe(
+    Layer.provide(
+      Layer.succeed(DesktopWindow.DesktopWindow, {
+        activate: Effect.sync(() => void revealed.push(window)),
+      } as unknown as DesktopWindow.DesktopWindow["Service"]),
+    ),
     Layer.provide(
       Layer.succeed(
         ElectronWindow.ElectronWindow,

@@ -57,7 +57,7 @@ describe("Switchboard routing", () => {
     setSwitchboardEnvironment({ LOOM_SWITCHBOARD_URL: "not an endpoint" }, "linux");
     expect(codexAppServerArgs("--enable foo")).toEqual(["app-server", "--enable", "foo"]);
     expect(switchboardClaudeSettings()).toEqual({});
-    expect(codexThreadRuntimeParams({ mcpSession: undefined })).toEqual({
+    expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
       config: { "tools.update_plan.enabled": true, mcp_optional_startup_grace_ms: 10_000 },
     });
     expect(claudeSessionOptions().settings).toEqual({ showThinkingSummaries: true });
@@ -175,12 +175,12 @@ describe("Switchboard routing", () => {
   it("explicitly selects the current Switchboard provider when resuming without a model override", () => {
     setSwitchboardEnvironment({}, "linux", "loom_switchboard_new_process");
     setSwitchboardEnabled(true);
-    expect(codexThreadRuntimeParams({ mcpSession: undefined })).toEqual({
+    expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
       modelProvider: "loom_switchboard_new_process",
       config: { "tools.update_plan.enabled": true, mcp_optional_startup_grace_ms: 10_000 },
     });
     setSwitchboardEnabled(false);
-    expect(codexThreadRuntimeParams({ mcpSession: undefined })).toEqual({
+    expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
       config: { "tools.update_plan.enabled": true, mcp_optional_startup_grace_ms: 10_000 },
     });
   });
@@ -191,15 +191,16 @@ describe("Switchboard routing", () => {
     const args = switchboardCodexArgs();
     setSwitchboardEnabled(false);
     expect(codexAppServerArgs("", args)).toEqual(["app-server", ...MAC_CODEX_ARGS]);
-    expect(codexThreadRuntimeParams({ mcpSession: undefined }, routing).modelProvider).toBe(
-      "loom_switchboard_test",
-    );
+    expect(
+      codexThreadRuntimeParams({ threadId: null, mcpSession: undefined }, routing).modelProvider,
+    ).toBe("loom_switchboard_test");
     const nativeRouting = switchboardCodexThreadOptions();
     const nativeArgs = switchboardCodexArgs();
     setSwitchboardEnabled(true);
     expect(codexAppServerArgs("", nativeArgs)).toEqual(["app-server"]);
     expect(
-      codexThreadRuntimeParams({ mcpSession: undefined }, nativeRouting).modelProvider,
+      codexThreadRuntimeParams({ threadId: null, mcpSession: undefined }, nativeRouting)
+        .modelProvider,
     ).toBeUndefined();
   });
 

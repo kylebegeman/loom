@@ -103,6 +103,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { resolveAttachmentPath, resolveAttachmentPathById } from "../../attachmentStore.ts";
+import * as PortScanner from "../../preview/PortScanner.ts";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
@@ -1127,6 +1128,7 @@ function withCodexManagedFailure(
 }
 
 interface ActiveCodexTurnContext {
+  hookStopReason?: string;
   capacityRetryAttempt?: number;
   capacityRetryPending?: Deferred.Deferred<ActiveCodexTurnContext | undefined>;
   closedCommandItemIds?: ReadonlySet<string>;
@@ -1344,6 +1346,7 @@ const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 // fork: switchboard. Exported for the fork's routing tests.
 export function codexThreadRuntimeParams(
   input: {
+    readonly threadId: ThreadId | null;
     readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
     readonly modelSelection?: { readonly model: string };
     readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
@@ -1362,14 +1365,18 @@ export function codexThreadRuntimeParams(
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
-      // fork: ext-vault-terminal
+      // fork: ext-vault-terminal. Dotted keys, so no whole-table override replaces the thread id.
       ...(mcpSession?.terminalConnectionFile === undefined
         ? {}
-        : {
-            shell_environment_policy: {
-              set: McpProviderSession.vaultTerminalEnvironment(mcpSession),
-            },
-          }),
+        : Object.fromEntries(
+            Object.entries(McpProviderSession.vaultTerminalEnvironment(mcpSession)).map(
+              ([name, value]) => [`shell_environment_policy.set.${name}`, value],
+            ),
+          )),
+      // One app-server serves many threads, so the id goes in per-thread shell config, not its env.
+      ...(input.threadId === null
+        ? {}
+        : { [`shell_environment_policy.set.${PortScanner.AGENT_THREAD_ENV}`]: input.threadId }),
       ...(mcpSession === undefined
         ? {}
         : {
@@ -1855,6 +1862,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         const turnWaiters = yield* Ref.make(new Map<string, Deferred.Deferred<void, never>>());
         const subagentThreads = yield* Ref.make(new Map<string, CodexSubagentThreadContext>());
         const subagentSelections = new Map<string, Omit<ModelSelection, "instanceId">>();
+        // A reroute names one turn; until new settings arrive, the thread's model is unknown.
+        const reroutedTurnModels = new Map<string, string>();
+        const reroutedThreads = new Set<string>();
+        const reportedTurnModel = (nativeThreadId: string, nativeTurnId: string) => {
+          const rerouted = reroutedTurnModels.get(nativeTurnId);
+          reroutedTurnModels.delete(nativeTurnId);
+          if (rerouted !== undefined) return rerouted;
+          return reroutedThreads.has(nativeThreadId)
+            ? undefined
+            : subagentSelections.get(nativeThreadId)?.model;
+        };
         const pendingSubagentTurns = yield* Ref.make(
           new Map<string, ReadonlyArray<PendingCodexSubagentTurnStarted>>(),
         );
@@ -4516,15 +4534,38 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         );
 
         yield* client.handleServerNotification("thread/settings/updated", (payload) =>
-          updateSubagentSelection(
-            payload.threadId,
-            payload.threadSettings.model,
-            payload.threadSettings.effort,
-            payload.threadSettings.serviceTier,
+          Effect.sync(() => reroutedThreads.delete(payload.threadId)).pipe(
+            Effect.andThen(
+              updateSubagentSelection(
+                payload.threadId,
+                payload.threadSettings.model,
+                payload.threadSettings.effort,
+                payload.threadSettings.serviceTier,
+              ),
+            ),
           ),
         );
         yield* client.handleServerNotification("model/rerouted", (payload) =>
-          updateSubagentSelection(payload.threadId, payload.toModel),
+          Effect.sync(() => {
+            reroutedTurnModels.set(payload.turnId, payload.toModel);
+            reroutedThreads.add(payload.threadId);
+          }).pipe(Effect.andThen(updateSubagentSelection(payload.threadId, payload.toModel))),
+        );
+
+        yield* client.handleServerNotification("hook/completed", (payload) =>
+          Effect.gen(function* () {
+            if (payload.turnId == null || payload.run.status !== "stopped") return;
+            const context = (yield* Ref.get(activeTurns)).get(payload.turnId);
+            if (context?.providerThread.nativeThreadRef?.nativeId !== payload.threadId) return;
+            const reason = payload.run.entries
+              .filter((entry) => entry.kind === "stop")
+              .map((entry) => entry.text.trim())
+              .filter(Boolean)
+              .join("\n");
+            if (!reason) return;
+            const source = payload.run.source === undefined ? "" : ` (${payload.run.source})`;
+            context.hookStopReason = `${payload.run.eventName} hook${source}: ${reason}`;
+          }),
         );
 
         yield* client.handleServerNotification("turn/started", (payload) =>
@@ -5794,6 +5835,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               runOrdinal: input.context.input.runOrdinal,
               status: terminalStatus,
               failure: null,
+              ...(terminalStatus === "interrupted" && input.context.hookStopReason !== undefined
+                ? { reason: input.context.hookStopReason }
+                : {}),
               threadDisposition: "reusable",
             };
           },
@@ -6152,6 +6196,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ),
                   input.nativeTurnId,
                   input.status === "completed",
+                  reportedTurnModel(
+                    input.context.providerThread.nativeThreadRef?.nativeId ?? "",
+                    input.nativeTurnId,
+                  ),
                 ),
               };
               if (!holdsForGoal) {
@@ -7009,6 +7057,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   "thread/start",
                   codexThreadRuntimeParams(
                     {
+                      threadId: threadInput.threadId,
                       mcpSession,
                       modelSelection: threadInput.modelSelection,
                       runtimePolicy: threadInput.runtimePolicy,
@@ -7054,11 +7103,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ),
                 ),
               });
+              const appThreadId = threadInput.threadId ?? threadInput.providerThread.appThreadId;
               const params = codexThreadRuntimeParams(
                 {
-                  mcpSession: yield* readMcpSession(
-                    threadInput.threadId ?? threadInput.providerThread.appThreadId,
-                  ),
+                  threadId: appThreadId,
+                  mcpSession: yield* readMcpSession(appThreadId),
                   ...(threadInput.modelSelection === undefined
                     ? {}
                     : { modelSelection: threadInput.modelSelection }),
@@ -7852,6 +7901,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   excludeTurns: true,
                   ...codexThreadRuntimeParams(
                     {
+                      threadId: threadInput.providerThread.appThreadId,
                       mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                       modelSelection: input.modelSelection,
                       runtimePolicy: input.runtimePolicy,
@@ -7908,6 +7958,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     // fork: switchboard
                     ...codexThreadRuntimeParams(
                       {
+                        threadId: threadInput.targetThreadId,
                         mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
                         ...(threadInput.modelSelection === undefined
                           ? {}

@@ -809,8 +809,6 @@ export function useComposerSend(input: ComposerSendInput) {
         interactionMode: followUp.interactionMode,
       });
       if (!followUpSent) {
-        promptRef.current = followUpPromptSnapshot;
-        composerTerminalContextsRef.current = [...followUpTerminalContexts];
         restorePlanFollowUpComposer({
           snapshot: {
             prompt: followUpPromptSnapshot,
@@ -819,6 +817,14 @@ export function useComposerSend(input: ComposerSendInput) {
             previewAnnotations: followUpPreviewAnnotations,
             threadContexts: followUpThreadContexts,
             environmentContexts: followUpEnvironmentContexts,
+          },
+          draftHasUserContent: composerDraftHasUserContent(
+            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+          ),
+          routeIsCurrent: currentRouteThreadKeyRef.current === routeThreadKey,
+          writeComposerRefs: (snapshot) => {
+            promptRef.current = snapshot.prompt;
+            composerTerminalContextsRef.current = [...snapshot.terminalContexts];
           },
           writePrompt: (prompt) => setComposerDraftPrompt(composerDraftTarget, prompt),
           writeTerminalContexts: (contexts) =>

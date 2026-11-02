@@ -1,11 +1,15 @@
-// fork: file-placement -- the clone receipt decodes SourceControlRepositoryInfo at runtime
-import { SourceControlProviderKind, SourceControlRepositoryInfo } from "@t3tools/contracts";
+// fork: file-placement -- the clone receipt decodes these at runtime
+import {
+  SourceControlCloneProtocol,
+  SourceControlProviderKind,
+  SourceControlRepositoryInfo,
+} from "@t3tools/contracts";
 import type {
   ProjectCloneSnapshot,
   ProjectCloneStage,
   ProjectCloneStartInput,
   ProjectCloneStartResult,
-  // fork: file-placement -- ProjectId and SourceControlRepositoryInfo are value imports
+  // fork: file-placement -- ProjectId and the SourceControl schemas are value imports
 } from "@t3tools/contracts";
 import {
   IsoDateTime, // fork: file-placement
@@ -97,6 +101,7 @@ const CloneReceipt = Schema.Struct({
   remoteUrl: Schema.String,
   destinationPath: Schema.String,
   repository: Schema.NullOr(SourceControlRepositoryInfo),
+  protocol: Schema.optional(SourceControlCloneProtocol),
   startedAt: IsoDateTime,
 });
 const decodeCloneReceipt = Schema.decodeUnknownOption(Schema.fromJsonString(CloneReceipt));
@@ -111,6 +116,7 @@ interface TrackedClone {
     readonly cloneUrl: string;
     readonly destinationPath: string;
     readonly repository: SourceControlRepositoryInfo | null;
+    readonly protocol: SourceControlCloneProtocol;
   };
 }
 
@@ -266,7 +272,11 @@ export const make = Effect.gen(function* () {
     const pulses = yield* Queue.sliding<void>(1);
     yield* watchForStall(projectId, pulses).pipe(Effect.forkScoped);
     return yield* repositories.cloneRepository(
-      { remoteUrl: tracked.input.cloneUrl, destinationPath: tracked.input.destinationPath },
+      {
+        remoteUrl: tracked.input.cloneUrl,
+        destinationPath: tracked.input.destinationPath,
+        protocol: tracked.input.protocol,
+      },
       {
         onProgress: (update) =>
           Queue.offer(pulses, undefined).pipe(Effect.andThen(progress(projectId, update))),
@@ -387,6 +397,7 @@ export const make = Effect.gen(function* () {
             cloneUrl: prepared.cloneUrl,
             destinationPath: prepared.destinationPath,
             repository: prepared.repository,
+            protocol: input.protocol ?? "auto",
           },
         });
         return [true, next] as const;
@@ -422,6 +433,7 @@ export const make = Effect.gen(function* () {
             remoteUrl: prepared.remoteUrl,
             destinationPath: prepared.destinationPath,
             repository: prepared.repository,
+            protocol: input.protocol ?? "auto",
             startedAt,
           });
           yield* publish;
@@ -555,11 +567,12 @@ export const make = Effect.gen(function* () {
         yield* fileSystem.remove(file, { force: true }).pipe(Effect.ignore);
         continue;
       }
-      const { projectId, remoteUrl, destinationPath, repository, startedAt } = receipt.value;
+      const { projectId, remoteUrl, destinationPath, repository, protocol, startedAt } =
+        receipt.value;
       restored.set(projectId, {
         fiber: null,
         hooks: null,
-        input: { cloneUrl: remoteUrl, destinationPath, repository },
+        input: { cloneUrl: remoteUrl, destinationPath, repository, protocol: protocol ?? "auto" },
         snapshot: {
           projectId,
           remoteUrl,

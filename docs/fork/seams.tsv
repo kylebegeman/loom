@@ -152,7 +152,7 @@ apps/mobile/src/Stack.tsx	brand	2
 apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx	brand	3
 apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx	brand	2
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	brand	3
-apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx	brand	2
+apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx	brand	3
 apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	brand	3
 apps/mobile/src/features/threads/ThreadComposer.tsx	brand	2
 apps/mobile/src/features/threads/ThreadFeed.tsx	brand	2
@@ -1111,6 +1111,7 @@ apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	file-placement	2
+apps/server/src/orchestration-v2/runtimeLayer.test.ts	library-projects	1
 apps/server/src/mcp/linkOrigin.test.ts	file-placement	3
 apps/server/src/peer/PeerForwarding.test.ts	file-placement	7
 apps/server/src/peer/RemoteDelegation.test.ts	file-placement	2
