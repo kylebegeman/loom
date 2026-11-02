@@ -497,7 +497,7 @@ it.effect("refuses saving an enabled task above the policy ceiling", () =>
           Layer.mock(ThreadManagementService.ThreadManagementService)({}),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
+            // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,
@@ -565,7 +565,7 @@ it.effect("a run interrupted right after it reserves the task does not block the
           Layer.mock(ThreadManagementService.ThreadManagementService)({}),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
+            // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,

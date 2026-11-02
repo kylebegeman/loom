@@ -19,6 +19,7 @@ import {
 import * as ServerConfig from "../../config.ts";
 import * as DesktopAppUpdate from "../../desktopUpdate/DesktopAppUpdate.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as ManagedPolicy from "../../policy/ManagedPolicy.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import {
   OS_MANAGED_RUNTIME_REASON,
@@ -85,7 +86,12 @@ const makeSelfUpdate = Effect.fn("test.make_switched_self_update")(function* (op
     ),
     Effect.provideService(HostProcess.Platform, "linux"),
     Effect.provideService(HostProcess.Architecture, "arm64"),
-    Effect.provide(ServerConfig.layer({ ...config, mode: options.mode ?? "web" })),
+    Effect.provide(
+      Layer.merge(
+        ServerConfig.layer({ ...config, mode: options.mode ?? "web" }),
+        ManagedPolicy.layerTest(),
+      ),
+    ),
     withSwitch(options.selfUpdate),
   );
   return { selfUpdate, calls };
