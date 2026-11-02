@@ -1,3 +1,6 @@
+import * as DevDiagnostics from "./browser-dev-tools/DevDiagnosticsService.ts";
+import * as DevEnvironment from "./browser-dev-tools/DevEnvironmentService.ts";
+import * as DevContainers from "./browser-dev-tools/DevContainersService.ts";
 import * as UpstreamSupervisor from "./upstream-supervisor/UpstreamSupervisor.ts";
 import * as SessionToolPolicy from "./mcp/SessionToolPolicy.ts";
 import { SessionToolContextRoutes } from "./mcp/toolContextHttp.ts";
@@ -395,6 +398,13 @@ const layerProjectProfiles = ProjectProfiles.layer.pipe(
     ),
   ),
 );
+const layerDevEnvironment = DevEnvironment.layer.pipe(
+  Layer.provide(Layer.mergeAll(ProjectStore.layer, ProjectionStore.layer, layerProjectProfiles)),
+);
+const layerDevContainers = DevContainers.layer.pipe(
+  Layer.provide(layerDevEnvironment),
+  Layer.provide(ProcessRunner.layer),
+);
 const layerSites = SitesService.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(layerLibraryService),
@@ -417,6 +427,9 @@ export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  DevDiagnostics.layer.pipe(Layer.provide(layerDevEnvironment)),
+  layerDevEnvironment,
+  layerDevContainers,
   ProjectStorageInventory.layer.pipe(
     Layer.provide(RuntimeLayer.layerStorageCleanup),
     Layer.provide(layerProjectLifecycle),

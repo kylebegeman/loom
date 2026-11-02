@@ -1,106 +1,59 @@
 # L11 product
 
-## Problem
+The development workflow is to start the checkout, see whether it is ready, open it, inspect
+failures and stop the exact run. Loom coordinates the project actions, environment settings,
+terminals, Browser and development dependencies so that Kyle can do this through the UI or
+an agent, including from a phone.
 
-When an agent works on a web app, Kyle juggles terminals for the dev server and the database,
-guesses which port the server took, and cannot see the page's console errors without detaching
-DevTools (which, in the desktop app, also cuts off the agent's own console capture). Old Loom
-had dev server, Docker, database, HTTP lab and diagnostics panels; two were real, two were thin
-or fixture-only. Upstream T3 Code's new preview is better than old Loom's (pick and annotate,
-port discovery, agent automation), so this packet adds the missing pieces around it instead of
-replacing it.
+## Runs and ownership
 
-## What the user can do
+Runs belong to a canonical checkout directory on an execution computer. A second conversation
+in that checkout sees and reuses the same active command. A second worktree gets independent
+runs. The original conversation and terminal remain visible; stopping another conversation's
+run requires an explicit UI confirmation or an authorized agent request.
 
-- Open **Dev environment** from the right panel launcher, the "+" menu, the command palette, a
-  keybinding, or the dev dock's servers chip.
-- **Servers:** see the project's runnable servers, start one (it runs in a thread terminal you
-  can open), see when it is listening and on which URL, open it in the preview, restart it, stop
-  it. Use varlock to load environment variables when the project has an `.env.schema`.
-- **Servers from any thread:** each running server's row says where it runs ("Running in
-  <thread title>, worktree <folder>" or "project root") with a link that opens that thread.
-  Any thread of the project can stop or restart it. Stopping or restarting a server that
-  another thread started asks first: "Stop the dev server running in <thread title>? Its
-  terminal in that thread closes." with "Stop server" and "Cancel".
-- **Compose:** see the project's compose services and their state, bring the stack up or down,
-  restart a service, read its recent logs or follow them in a terminal.
-- **Databases:** start a local Postgres or "Redis (Valkey)" for this project in one click, copy
-  its URL, stop it when done, remove it (optionally deleting its data). The Redis option runs
-  Valkey (`valkey/valkey:8-alpine`, BSD licensed, speaks the Redis protocol, so `redis://` URLs
-  and Redis clients work); the image is a setting.
-- **HTTP lab:** send a request to the dev server or any URL the environment can reach, read the
-  status, timing, headers and body, repeat a request from history, add an exchange to the
-  composer.
-- **Dev dock** (desktop, under the preview page): see how many errors and failed requests the
-  page produced; expand to read the console (with levels and source locations) and the network
-  list (method, status, type, duration); filter; clear; send the errors to the composer as
-  context.
+Start uses existing project actions, the mapped dev command or discovered package scripts.
+The existing project-profile service prepares environment loading. Readiness follows process
+ownership and detected listeners. Commands without listeners remain visibly running; failures
+retain their exit code and bounded output. Stop and restart target the recorded terminal,
+never a process found by name.
 
-The Obscura agent page fetch was retired on 2026-10-09, Kyle approved: agents already have
-upstream's browser tools and their providers' web fetch (README, "Retired parts").
+Runs end when their terminals close or the server shuts down. Start/control retries reuse
+request IDs and reject changed inputs. Their history is bounded and local to the running
+server; it is not a durable job scheduler.
 
-## Entry points
+## Browser evidence
 
-| Entry                                                             | What it does                                                                                                                                                                                       | Way out / state                                     |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Right panel launcher and "+" menu: "Dev environment" (letter `V`) | Opens the panel for the active thread's project.                                                                                                                                                   | Close the tab; servers and containers keep running. |
-| Dev dock servers chip (in the preview)                            | Shows "2 servers running"; click opens the panel.                                                                                                                                                  | n/a                                                 |
-| Dev dock bar                                                      | Click or `loom.browser-dev-tools.toggle-dock` expands or collapses the dock; the height is remembered.                                                                                             | Collapse.                                           |
-| Command palette                                                   | "Dev environment: Open", "Start dev server" (submenu of candidates), "Stop all dev servers" (asks first when any belongs to another thread), "Toggle dev dock", "Send console errors to composer". | The reverse actions are listed next to each.        |
-| Keybinding commands                                               | `loom.browser-dev-tools.open`, `loom.browser-dev-tools.toggle-dock`, unbound by default.                                                                                                           | Same.                                               |
-| Settings, Loom page, "Dev environment" section                    | Database images ("Postgres image", "Redis (Valkey) image"), dev dock on or off, HTTP lab history size, "Clear HTTP history", "Databases of removed projects" (Remove).                             | Toggle back.                                        |
-| Composer                                                          | "Add to composer" in the HTTP lab and "Send errors to composer" in the dock insert text context.                                                                                                   | Remove from the draft.                              |
+Browser diagnostics reads the existing capture for an explicit tab in the conversation.
+It supports console/network views, error filtering, refresh and draft insertion. Reading does
+not navigate, take a screenshot, attach another debugger or take control. Clear view affects
+this view, preserving the underlying capture. URLs omit embedded credentials and queries.
 
-## States
+Opening a run uses existing Browser and preview links. Public sharing configuration is an
+independent capability; this feature does not create domains or alter fleet networking.
 
-- **Loading**: skeleton rows per section.
-- **Empty**: "No dev scripts found. Add one in Project settings, Actions, or in package.json."
-  (servers); "No compose file in this project." (compose); "No local databases yet." with the
-  two create buttons.
-- **Docker missing or not running**: compose and databases show "Docker is not available on
-  this environment" with the probe's error (for example the daemon not running). Servers and the
-  HTTP lab are unaffected.
-- **Starting**: server row shows "Starting" until a port appears or 60 seconds pass (then
-  "Running, no port detected yet").
-- **Running elsewhere**: a server started in another thread of the project shows that thread
-  and worktree with an "Open thread" link; Start is replaced by Stop and Restart (both with the
-  confirmation above). Deleting the owning thread stops its servers, because upstream closes
-  a deleted thread's terminals.
-- **Exited**: "Exited with code 1" and the output tail, with Restart.
-- **Pulling image**: database creation and `compose up` stream their output lines.
-- **Dock**: collapsed bar with counts; "Console capture starts when the page loads" before the
-  first message; "This tab's page is not loaded" when the preview is empty.
-- **Disabled**: server lacks `browser-dev-tools`: panel launcher disabled with its hint, palette
-  entries hidden; the dock still works (desktop-local) but hides server chips.
+## Development dependencies
 
-## Surfaces and connection modes
+Compose operations use a stable checkout-specific project name. External resources, explicit
+container names and global resource names are refused to keep operations within that checkout.
+Stopping a stack preserves its volumes. Health and recent logs remain inspectable.
 
-The panel is the same on web and desktop; the dock is desktop-only because the preview is. All
-server, compose, database and HTTP lab work runs on the environment host, so it follows the
-environment over LAN, Tailscale and T3 Connect. A database's URL points at the environment
-host's loopback (`127.0.0.1:<port>`); for a remote environment the panel says so ("reachable
-from the environment host and its agents, not from this computer"). Mobile shows nothing.
+Postgres and Redis-compatible Valkey bind to loopback ports on the execution computer. Each
+checkout gets named, ownership-labeled containers and data volumes, plus a credential in the
+server secret store. Removing a container preserves its data and credential by default.
+Recreation reuses them; it refuses a preserved volume whose credential is unavailable.
+Explicit delete-data removes only the owned volume. Databases remain in Docker until stopped
+or removed, including across Loom restarts.
 
-## Decisions
+The UI copies connection URLs only on request and explains which computer can use them.
+Agent inspection omits credentials. Docker unavailable states leave ordinary dev servers usable.
 
-- Dev servers run in thread terminals, not hidden processes, so they appear in the terminal
-  drawer, upstream's port discovery links URLs to them, and agents see the same terminals.
-- Only one start per server key per project at a time; starting from another thread shows
-  "Already running in <thread title>" with "Open thread" and "Stop". Reason: one port, one
-  server.
-- Dev servers are stoppable (and restartable) from any thread of the project. Each row shows
-  the owning thread and worktree with a link, and stopping another thread's server asks a
-  light confirmation. Reason (Kyle): the server belongs to the project, and the confirmation
-  keeps one thread from surprising another.
-- The Redis option defaults to `valkey/valkey:8-alpine` (BSD, Redis protocol compatible), the
-  image stays configurable, and the option is labeled "Redis (Valkey)". Reason (Kyle): Redis
-  7.4 and later changed license; Valkey is the open fork and works with Redis clients.
-- Database passwords are generated per database and kept in the server secret store, never in
-  SQLite or the client's storage.
-- The HTTP lab runs requests on the environment host and needs the `terminal:operate` scope,
-  since it can reach anything the host can.
-- The dock reads console and network events through Electron APIs that do not attach a debugger
-  (`console-message`, `session.webRequest`), so it never conflicts with upstream's agent
-  automation, which owns the webview's debugger.
-- Retired on 2026-10-09 (Kyle approved): the Obscura agent page fetch, covered by upstream's
-  browser tools and provider web fetch.
+## Entry points and surfaces
+
+Development is available from the panel picker, command palette and Browser's start view.
+The web and desktop clients share the panel. The native phone app uses conversation tools
+and preview links. Every operation runs on the computer owning the selected conversation's
+checkout, including over remote connections. Unsupported servers hide the feature.
+
+The HTTP request lab remains planned after these slices. Full API clients and database
+browsers remain separate products.

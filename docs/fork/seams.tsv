@@ -1663,3 +1663,6 @@ apps/web/src/components/sidebar/updateEverything.logic.test.ts	brand	2
 packages/contracts/src/managedPolicy.ts	brand	1
 packages/shared/src/managedPolicyFile.ts	brand	2
 packages/shared/src/managedPolicyFile.test.ts	brand	1
+apps/server/src/preview/ServerBrowser.ts	browser-dev-tools	3
+apps/web/src/components/preview/PreviewEmptyState.tsx	browser-dev-tools	3
+evals/mcp-tool-use/run.ts	browser-dev-tools	2

@@ -1,3 +1,4 @@
+import { DevEnvironmentToolkit, devEnvironmentHandlers } from "../browser-dev-tools/mcp.ts";
 import { UpstreamToolkit, upstreamHandlers } from "../upstream-supervisor/mcp.ts";
 import { UpdateToolkit, updateHandlers } from "../machine-updates/mcp.ts";
 import { AttentionToolkit, attentionHandlers } from "../attention/mcp.ts";
@@ -40,6 +41,12 @@ import { LibraryPushToolkit, libraryPushHandlers } from "../library-push/mcp.ts"
 import { BotsToolkit, botsHandlers } from "../bots/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: DevEnvironmentToolkit,
+    handlers: devEnvironmentHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(DevEnvironmentToolkit, devEnvironmentHandlers),
+  },
   {
     toolkit: UpstreamToolkit,
     handlers: upstreamHandlers,

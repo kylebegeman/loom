@@ -234,6 +234,14 @@ Build in waves: L89 to L92, then L93 to L96, then L97 and L98, then L99 and L100
 | 38    | [L99 Pipelines](./L99-bots-pipelines/)                       | Selected; queued | Bots B10.                                                              |
 | 39    | [L100 Library bots that run anywhere](./L100-bots-anywhere/) | Selected; queued | Bots B12; Library and VPS side local only, no deployment without Kyle. |
 
+## Developer productivity selection
+
+Kyle selected L11's first two slices on 2026-11-02: checkout-scoped dev servers and Browser
+diagnostics, then Compose and local Postgres/Valkey. Both are implemented locally with shared
+UI/agent operations; verification and merge remain in progress. This supersedes L11's older
+V2 deferral. The HTTP request lab remains planned. Other productivity proposals keep their
+existing dispositions until selected.
+
 ## Candidates for the queue
 
 Source review: 2026-09-27, Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.

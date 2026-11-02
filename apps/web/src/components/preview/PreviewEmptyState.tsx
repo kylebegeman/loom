@@ -1,3 +1,4 @@
+import { DevEnvironmentShortcut } from "~/fork/browser-dev-tools/DevEnvironmentShortcut"; // fork: browser-dev-tools
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { Globe, History, RadioTower } from "lucide-react";
 
@@ -43,6 +44,7 @@ export function PreviewEmptyState({
           Type a URL above, or run a dev script. Local servers this thread starts will show up here
           automatically.
         </EmptyDescription>
+        <DevEnvironmentShortcut threadRef={threadRef} /> {/* fork: browser-dev-tools */}
       </Empty>
     );
   }
@@ -50,6 +52,7 @@ export function PreviewEmptyState({
   return (
     <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 py-8">
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
+        <DevEnvironmentShortcut threadRef={threadRef} /> {/* fork: browser-dev-tools */}
         {recents.length > 0 ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">

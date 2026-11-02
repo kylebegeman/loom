@@ -225,6 +225,7 @@ export const VarlockCommandInput = Schema.Struct({
   target: Schema.Union([
     Schema.Struct({ intent: CommandIntent }),
     Schema.Struct({ scriptId: TrimmedNonEmptyString }),
+    Schema.Struct({ command: TrimmedNonEmptyString.check(Schema.isMaxLength(2000)) }),
   ]),
 });
 export type VarlockCommandInput = typeof VarlockCommandInput.Type;

@@ -1,3 +1,4 @@
+import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "./browser-dev-tools.ts";
 import { UPSTREAM_WS_METHODS as UPSTREAM } from "./upstream-supervisor.ts";
 import { UPDATE_PLAN_WS_METHODS as UPDATES } from "./machine-updates.ts";
 import { ATTENTION_STATUS_WS_METHODS as ATTENTION } from "./attention-status.ts";
@@ -55,6 +56,11 @@ import {
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [DEV.start]: AuthTerminalOperateScope,
+  [DEV.control]: AuthTerminalOperateScope,
+  [DEV.compose]: AuthTerminalOperateScope,
+  [DEV.database]: AuthTerminalOperateScope,
+  [DEV.databaseUrl]: AuthTerminalOperateScope,
   [UPSTREAM.configure]: AuthAccessWriteScope,
   [UPSTREAM.dispatch]: AuthAccessWriteScope,
   [UPDATES.arm]: AuthEnvironmentMaintainScope,

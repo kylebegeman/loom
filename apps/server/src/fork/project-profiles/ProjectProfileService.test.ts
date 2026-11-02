@@ -136,6 +136,13 @@ describe("environment-local project profile service", () => {
         expect(
           yield* service.varlockCommand({ projectId, threadId, target: { intent: "test" } }),
         ).toEqual({ cwd: "/worktree", commandLine: "varlock run -- sh -c 'current test'" });
+        expect(
+          (yield* service.varlockCommand({
+            projectId,
+            threadId,
+            target: { command: "npm run dev" },
+          })).commandLine,
+        ).toBe("varlock run -- sh -c 'npm run dev'");
         expect((yield* service.envReport({ projectId })).root).toBe("/root");
         expect(
           (yield* Effect.flip(service.envReport({ projectId, threadId: ThreadId.make("other") })))

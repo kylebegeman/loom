@@ -50,6 +50,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   VAULT_APPROVAL_CARDS_FEATURE,
   "skill-registry",
   "project-profiles",
+  "browser-dev-tools",
   "project-workflows",
   "core",
   "vault-core",

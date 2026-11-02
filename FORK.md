@@ -1462,3 +1462,14 @@ and captured-attachment resource lifetimes carry the current effect-rule reasons
 The fleet compatibility floor is shared through `packages/shared/package.json`’s
 `./fork/compatibility` export (no marker). `scripts/fork/loom.sh compat` inventories guards
 against it; servers retain their advertised feature flags for older clients.
+
+### Development environment seams
+
+The Browser exposes its existing bounded captures through a scoped reader; diagnostics do
+not create another debugger attachment. The empty Browser view links to the checkout's
+run controls. See [L11](docs/fork/packets/L11-browser-dev-tools/).
+
+| File                                                    | Packet              | Why                                                  |
+| ------------------------------------------------------- | ------------------- | ---------------------------------------------------- |
+| `apps/server/src/preview/ServerBrowser.ts`              | `browser-dev-tools` | Register read access to the existing tab captures.   |
+| `apps/web/src/components/preview/PreviewEmptyState.tsx` | `browser-dev-tools` | Open development controls beside discovered servers. |

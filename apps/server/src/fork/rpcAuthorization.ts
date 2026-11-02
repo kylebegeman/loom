@@ -1,3 +1,4 @@
+import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "@t3tools/contracts/fork";
 import { UPSTREAM_WS_METHODS as UPSTREAM } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_WS_METHODS as STORAGE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_WS_METHODS as UPDATES } from "@t3tools/contracts/fork";
@@ -75,6 +76,15 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [DEV.start]: AuthTerminalOperateScope,
+  [DEV.control]: AuthTerminalOperateScope,
+  [DEV.compose]: AuthTerminalOperateScope,
+  [DEV.database]: AuthTerminalOperateScope,
+  [DEV.databaseUrl]: AuthTerminalOperateScope,
+  [DEV.diagnostics]: AuthOrchestrationReadScope,
+  [DEV.snapshot]: AuthOrchestrationReadScope,
+  [DEV.watch]: AuthOrchestrationReadScope,
+  [DEV.containers]: AuthOrchestrationReadScope,
   [UPSTREAM.status]: AuthAccessReadScope,
   [UPSTREAM.configure]: AuthAccessWriteScope,
   [UPSTREAM.dispatch]: AuthAccessWriteScope,

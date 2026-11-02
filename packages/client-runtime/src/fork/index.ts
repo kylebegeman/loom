@@ -1,3 +1,4 @@
+export * from "./browser-dev-tools.ts";
 export * from "./attention-retry.ts";
 export * from "./skill-registry.ts";
 export * from "./project-profiles.ts";

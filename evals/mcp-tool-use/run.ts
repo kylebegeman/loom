@@ -60,6 +60,7 @@ import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
 import { OrchestratorToolkit } from "../../apps/server/src/mcp/toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "../../apps/server/src/mcp/toolkits/preview/tools.ts";
 import { PreviewControlsToolkit } from "../../apps/server/src/mcp/toolkits/previewControls/tools.ts";
+import { DevEnvironmentToolkit } from "../../apps/server/src/fork/browser-dev-tools/mcp.ts"; // fork: browser-dev-tools
 import { ProjectProfilesToolkit } from "../../apps/server/src/fork/project-profiles/mcp.ts";
 import { ProjectToolkit } from "../../apps/server/src/mcp/toolkits/project/tools.ts";
 import {
@@ -417,6 +418,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   AttachmentToolkit,
   ProjectToolkit,
   ProjectProfilesToolkit,
+  DevEnvironmentToolkit, // fork: browser-dev-tools
   EnvironmentToolkit,
   PreviewControlsToolkit,
   WorktreeToolkit,

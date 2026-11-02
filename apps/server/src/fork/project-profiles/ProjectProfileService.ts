@@ -34,6 +34,7 @@ function resolveIntent(
   scripts: ReadonlyArray<ProjectScript>,
   input: VarlockCommandInput["target"],
 ): string | null {
+  if ("command" in input) return input.command;
   const target =
     "intent" in input
       ? profile.commands[input.intent]

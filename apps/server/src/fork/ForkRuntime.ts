@@ -1,3 +1,6 @@
+import type { DevDiagnosticsService } from "./browser-dev-tools/DevDiagnosticsService.ts";
+import type { DevEnvironmentService } from "./browser-dev-tools/DevEnvironmentService.ts";
+import type { DevContainersService } from "./browser-dev-tools/DevContainersService.ts";
 import type { UpstreamSupervisor } from "./upstream-supervisor/UpstreamSupervisor.ts";
 import type { ProjectStorageInventory } from "./project-lifecycle/ProjectStorageInventory.ts";
 import type { UpdatePlans } from "./machine-updates/UpdatePlans.ts";
@@ -83,6 +86,9 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | DevDiagnosticsService
+  | DevEnvironmentService
+  | DevContainersService
   | ProjectStorageInventory
   | UpdatePlans
   | UpdateHandoff

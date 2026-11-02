@@ -1,3 +1,5 @@
+import { readBrowserDiagnostics } from "../fork/browser-dev-tools/browserDiagnostics.ts"; // fork: browser-dev-tools
+import { registerBrowserDiagnostics } from "../fork/browser-dev-tools/DevDiagnosticsService.ts"; // fork: browser-dev-tools
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalTimers:off - Playwright callbacks run outside the Effect runtime.
 // Screencasts ignore emulated device scale; real 2x keeps captures sharp.
 // --disable-gpu uses cheaper software compositing while preserving SwiftShader WebGL.
@@ -2940,6 +2942,11 @@ const make = Effect.gen(function* () {
       catch: (cause) => new PreviewClearProfileError({ profileId, cause }),
     });
 
+  // fork: browser-dev-tools
+  yield* registerBrowserDiagnostics((input) => {
+    const tab = tabs.get(tabKey(input.threadId, input.tabId));
+    return tab ? readBrowserDiagnostics(tab) : undefined;
+  });
   return ServerBrowser.of({
     attachViewer,
     clearProfile,

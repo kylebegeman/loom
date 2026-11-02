@@ -1,82 +1,36 @@
-# L11 testing
+# L11 verification
 
-Focused tests only; no repo-wide checks; no sleeps. State machine tests drive fake terminal and
-port discovery events and wait on the `watchServers` stream.
+The first two slices use service tests for checkout ownership, terminal lifecycle, Docker
+resource isolation, data preservation, credential handling and authorization. Browser
+capture redaction is tested against the existing capture contract. Diagnostics do not
+create a second collector.
 
-## Automated tests
-
-Server (`apps/server/src/fork/browser-dev-tools/`):
-
-| Test file                               | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `servers.test.ts`                       | Candidates from project scripts (setup script excluded) and `package.json` (root and workspace packages, limit 30); package manager by lockfile; likely-server ordering; duplicate hiding; varlock wrapping only with `.env.schema` present; stable terminal ids.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `DevEnvironmentService.servers.test.ts` | With fake `TerminalManager` and `PortDiscovery` layers: start writes the command after subscribing; `starting` becomes `running` when a discovered server with the matching terminal appears; after 60 seconds in `starting` with no discovered server (advanced with `TestClock`), `running` with empty `urls`, and a later discovery fills them; `exited` on an exit event with the code; `stopped` after close; `already-running` from a second thread; stop from a second thread of the same project closes the owning thread's terminal, not one in the caller's thread; restart from a second thread starts again in the owning thread with its worktree; stop from a thread of another project fails with `server-not-found`; `watchServers` carries the owning `threadId` and `worktreePath`; `retain` held only while something starts or runs; restart waits for `closed` before writing again. |
-| `httpLab.test.ts`                       | Body cap and truncation flag; binary summary; header redaction in history only; history trimmed to the setting; timeout produces an exchange with `error`. Uses a local test HTTP server started in the test and closed in a finalizer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `compose.test.ts`                       | `ps --format json` parsing in array and line-delimited forms; publisher formatting; argv for up, down, restart, pull, logs; missing compose file error.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `databases.test.ts`                     | `docker run` argv for Postgres and Redis (loopback bind, labels, volume, image from settings; default Redis image `valkey/valkey:8-alpine`; the Redis argv puts only `--requirepass` and `--appendonly` after the image, no server binary); URL building; remove with and without data; state mapping for missing containers. Fake spawner and a test `ServerSecretStore` layer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `store.test.ts`                         | Migrations idempotent; server rows upsert; history order and trim; orphan sweep.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-
-Desktop (`apps/desktop/src/fork/browser-dev-tools/`):
-
-| Test file                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `collector.test.ts`       | Ring buffers cap at 500; entries route by `webContentsId`; `onSendHeaders` then `onCompleted` yields a duration; `onErrorOccurred` yields an error entry; counts; batching sends at most one message per 250 ms window per subscriber (driven with Effect's `TestClock` or an injected scheduler, never real timers); destroyed webview drops its buffers and subscriptions. Electron objects are fakes. |
-| `webRequestGuard.test.ts` | Reads `apps/desktop/src/**/*.ts` outside `fork/` and fails if any contains `webRequest.`, with a message pointing at this packet.                                                                                                                                                                                                                                                                        |
-
-Contracts: `packages/contracts/src/fork/browser-dev-tools.test.ts`: tags prefixed.
-
-Web (`apps/web/src/fork/browser-dev-tools/`):
-
-| Test file                  | Covers                                                                                                                                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sendErrors.test.ts`       | Formatting of console errors and failed requests, limit of 20, empty case.                                                                                                                                     |
-| `autoOpen.test.ts`         | The auto-open decision: once per `startedAt`, `previewUrl` preferred, never on web.                                                                                                                            |
-| `serverRowActions.test.ts` | Own server: Stop and Restart without confirmation; another thread's server: confirmation with that thread's title; stopped server: Start; "Stop all" confirms only when some server belongs to another thread. |
-
-## Commands
+Run the focused checks from the repository root:
 
 ```sh
-vp test run apps/server/src/fork/browser-dev-tools apps/desktop/src/fork/browser-dev-tools packages/contracts/src/fork/browser-dev-tools.test.ts apps/web/src/fork/browser-dev-tools
-vp test run apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts apps/web/src/fork/panels/registry.test.ts apps/web/src/fork/settings/registry.test.ts packages/contracts/src/fork/keybindings.test.ts
-vp lint apps/server/src/fork/browser-dev-tools apps/desktop/src/fork apps/web/src/fork/browser-dev-tools apps/web/src/components/preview/PreviewView.tsx packages/contracts/src/fork packages/client-runtime/src/fork
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web typecheck
-vp run --filter @t3tools/desktop typecheck
+vp test run apps/server/src/fork/browser-dev-tools apps/server/src/fork/project-profiles/ProjectProfileService.test.ts apps/web/src/fork/panels/registry.test.ts
+vp run check:changed
 ```
 
-## Manual check
+`evals/mcp-tool-use/cases/dev-environment.ndjson` covers discovery before starting, read-only
+inspection of another conversation's run and retaining database data. Use the MCP eval
+runner's dry run before a paid sample; see [its guide](../../../../evals/mcp-tool-use/README.md).
+These simulated worlds verify tool selection, not actual process or Docker lifecycle.
 
-With Kyle's permission (dev server, desktop app, Docker):
+For an integrated client pass, use `test-t3-app` against isolated development state and a
+small local project. Check the panel picker, command palette and Browser shortcut. Start
+an app, observe its owned listener, open its page, inspect existing console/network captures
+and add errors to a draft. Restart and stop the recorded run. A failing command must show
+its exit code and bounded output. Conversations sharing a checkout reuse its run; another
+worktree stays independent. Check a narrow layout as well as desktop.
 
-1. Seed the worktree `.t3` and start `vp run dev` in the background; for the dock, run the
-   desktop app in development against it (see `docs/operations/development.md`).
-2. In a thread on a Vite project: the Servers tab lists `dev` first. Start it: the terminal
-   drawer shows it, the row turns Running with `http://localhost:5173`, and with
-   `autoOpenPreview` on a project script the preview opens. Stop it: the terminal closes.
-3. Introduce a `console.error` and a failing `fetch` in the page: the dock's bar shows the
-   counts; expanded lists show them; "Send errors to composer" inserts the block. Open DevTools
-   from the preview's menu: the dock keeps updating.
-4. Compose: in a project with a compose file, `up`, see services running, read logs, `down`.
-5. Databases: create Postgres; copy the URL; connect with `psql`; stop; remove with delete data;
-   `docker ps -a --filter label=dev.loom.database` and `docker volume ls` show nothing left.
-   Create "Redis (Valkey)": the container runs `valkey/valkey:8-alpine`; `redis-cli -u <url>
-ping` (or `valkey-cli`) answers PONG; remove it with delete data.
-   5b. Servers across threads: start the dev server in thread A (a worktree thread). In thread B
-   of the same project the row shows "Running in <A's title>, worktree <folder>" with a link;
-   Stop asks for confirmation and, after "Stop server", A's terminal closes. Start it again
-   from B: it now belongs to B and B's Stop needs no confirmation.
-6. HTTP lab: GET the dev server's `/`, POST JSON to an endpoint; history shows both with
-   redacted auth headers.
-7. Web client (`vp run dev` in a browser): the panel works, servers open in a new tab, there is no
-   dock.
-8. Upstream server: panel entry disabled; the dock still shows console and network in the
-   desktop app.
+With Docker available, start a checkout-scoped Compose fixture, inspect health and logs,
+and stop it without deleting volumes. Create each database, verify it accepts a connection,
+stop/start it, remove its container while retaining data, recreate it, and explicitly delete
+its data. Inspect only the fixture's exact container/volume names when cleaning up. A missing
+Docker runtime must leave dev-server controls usable. Never use live project data as the
+fixture or print credential-bearing connection URLs.
 
-## Merge safety
-
-Record the merge preview result (SEAMS.md) and, after merge, the result of
-`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`. Packet-seam
-file that may conflict: `apps/web/src/components/preview/PreviewView.tsx`; if this packet
-created `ext-desktop`, also its three files.
+Web and desktop share the panel. Native mobile has the same agent tools and existing
+preview links, but no native Development panel in these slices. Do not report a desktop
+shell or native-device result from web verification. The request lab remains future work.

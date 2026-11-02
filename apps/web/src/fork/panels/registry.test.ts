@@ -10,6 +10,7 @@ const UPSTREAM_LETTERS = new Set(["A", "B", "D", "F", "L", "M", "P", "T"]);
 
 describe("fork right panels", () => {
   it.each([
+    ["browser-dev-tools", "browser-dev-tools"],
     ["model-preview-3d", "model-preview-3d"],
     ["pcb-preview", "pcb-preview"],
     ["apple-build-tooling", "apple-build-tooling"],

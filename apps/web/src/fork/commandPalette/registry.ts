@@ -1,3 +1,4 @@
+import { devEnvironmentPaletteSource } from "../browser-dev-tools/palette";
 import { attentionPaletteSource, useAttentionPaletteContext } from "../attention/palette";
 import { LIBRARY_PUSH_FEATURE } from "@t3tools/contracts/fork";
 import { useLibraryAuthorityId } from "../project-library/state";
@@ -87,6 +88,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  devEnvironmentPaletteSource,
   attentionPaletteSource,
   connectionsPaletteSource,
   skillsPaletteSource,

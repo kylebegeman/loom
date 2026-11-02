@@ -88,7 +88,9 @@ The 2026-09-27 review identified these items to revisit:
   plan, reference V1 code removed by V2. Choose new integration points only from released source.
 - **L04:** archived by Kyle on 2026-10-07. Its UI is hidden; the implementation remains
   available for reference.
-- **L06, L07, L11, L13, L14, L15:** preserve the proposals pending review
+- **L11:** Kyle selected dev servers/diagnostics and Compose/local databases on 2026-11-02.
+  They are implemented locally; verification is in progress. The HTTP lab remains planned.
+- **L06, L07, L13, L14, L15:** preserve the proposals pending review
   of changed UI, run, request, checkpoint and provider behavior. Review individual parts
   separately when a packet is picked up.
 - **L18:** implemented on `main`. Focused browser acceptance passed for project scope and
@@ -192,7 +194,7 @@ means the packet registers nothing in server core and needs it only as the prere
 | L08  | [`multi-thread-runs`](./L08-multi-thread-runs/)           | Send one prompt to several models, let agents delegate to other threads, and track runs.                                   | P11, F9 (tiny version)           | core, root, panels, settings, palette, keys, mcp                        | Retired: upstream                                                   |
 | L09  | [`device-qa`](./L09-device-qa/)                           | Run UI flows on simulators and collect screenshots and recordings as thread evidence.                                      | P12                              | core, root, panels, settings, palette, keys, mcp                        | Complete (PR #14)                                                   |
 | L10  | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                              | core, root, panels, settings, palette, keys, mcp                        | Complete (PR #13)                                                   |
-| L11  | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                              | core, root, panels, settings, palette, keys, desktop                    | Deferred: V2                                                        |
+| L11  | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                              | core, root, panels, settings, palette, keys, desktop                    | First two slices implemented locally; verification in progress      |
 | L12  | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                              | core\*, root, panels, settings, palette, keys                           | Done (`feat/loom-panel-picker`)                                     |
 | L13  | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard history)      | core, root, settings, palette, keys, composer                           | Deferred: V2                                                        |
 | L14  | [`chat-conveniences`](./L14-chat-conveniences/)           | Model presets, and questions that do not stop the turn.                                                                    | F8 (the rest)                    | core, root, palette, keys, mcp, composer                                | Deferred: V2                                                        |

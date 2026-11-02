@@ -1,3 +1,5 @@
+import { DevEnvironmentRpcGroup, DEV_ENVIRONMENT_WS_METHODS } from "@t3tools/contracts/fork";
+import { makeDevEnvironmentRpcHandlers } from "./browser-dev-tools/rpc.ts";
 import { UpstreamSupervisorRpcGroup, UPSTREAM_WS_METHODS } from "@t3tools/contracts/fork";
 import { makeUpstreamRpcHandlers } from "./upstream-supervisor/rpc.ts";
 import { ProjectStorageRpcGroup, PROJECT_STORAGE_WS_METHODS } from "@t3tools/contracts/fork";
@@ -123,6 +125,7 @@ import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
+  ...Object.values(DEV_ENVIRONMENT_WS_METHODS),
   ...Object.values(UPSTREAM_WS_METHODS),
   ...Object.values(PROJECT_STORAGE_WS_METHODS),
   ...Object.values(UPDATE_PLAN_WS_METHODS),
@@ -170,6 +173,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectWorkflowsRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof SkillRegistryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectProfilesRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof DevEnvironmentRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationInventoryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultTestAccountRpcGroup>>
@@ -248,6 +252,9 @@ export const makeForkRpcLayer = (
     ),
     SkillRegistryRpcGroup.toLayer(
       withForkRuntime(makeSkillRegistryRpcHandlers(makeForkRpcAuth(session))),
+    ),
+    DevEnvironmentRpcGroup.toLayer(
+      withForkRuntime(makeDevEnvironmentRpcHandlers(makeForkRpcAuth(session))),
     ),
     ProjectProfilesRpcGroup.toLayer(
       withForkRuntime(makeProjectProfilesRpcHandlers(makeForkRpcAuth(session))),

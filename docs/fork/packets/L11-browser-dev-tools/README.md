@@ -1,113 +1,47 @@
-# L11: Browser dev tools
+# L11: Development tools
 
-Status: Ready to build. The Obscura web fetch is retired (see [Retired parts](#retired-parts)). <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: First two slices implemented locally. Service, authorization, tool-use and local
+Docker lifecycle checks pass. Final integrated Browser verification is pending. Kyle selected these
+slices on 2026-11-02: checkout dev servers and Browser diagnostics, then Compose and local
+databases. The HTTP request lab remains a separate planned follow-up.
 
-Makes the browser preview a small dev environment. A **Dev environment** right panel starts,
-stops and restarts the project's dev servers (in thread terminals, so upstream's port discovery
-links each server to its URL and the preview opens it), runs Docker Compose stacks, starts
-throwaway local Postgres and Redis (Valkey) containers with a copyable connection URL, and has a compact
-HTTP request lab. Inside upstream's preview panel, a slim **dev dock** under the page shows the
-page's console messages and network requests, live, with one click to send errors to the
-composer.
+Development builds on existing project actions, terminals, port discovery, Browser captures,
+project environment profiles and preview links. A run belongs to a checkout on a computer;
+conversations sharing that checkout share its runs, while other worktrees stay independent.
+The UI and supported `loom_dev_*` tools call the same services.
 
-Upstream's preview already does element picking and annotation ("pick an element and send it
-to the composer"), dev server port discovery, and agent-only console and network capture. This
-packet builds on those and replaces none of them.
+## Delivered scope
 
-## Retired parts
+- Discover and run project actions, the profile's dev command and common package scripts.
+- Inspect startup, running, listening, exit and stopped states, bounded logs and the exact
+  original terminal. Restart and stop only recorded runs; confirm interference with another
+  conversation on the same checkout. Reuse starts and retry receipts.
+- Open detected addresses through existing Browser and preview-link behavior.
+- Read existing Browser console/network captures, filter errors and add evidence to a message
+  draft. Diagnostics preserve page control and redact URL credentials and query strings.
+- Manage a checkout-isolated Compose stack, health and recent logs, preserving data on down.
+- Create, start, stop and remove loopback-only Postgres and Valkey databases with owned data
+  volumes and credentials in the computer's secret store. Preserve data by default; explicit
+  data deletion is confirmed in the UI.
+- Web/desktop Development panel, panel picker, command palette and Browser entry point.
+  Native phone users can use the supported agent tools and existing preview links.
 
-Kyle approved this retirement on 2026-10-09.
+## Remaining scope
 
-- **Obscura web fetch** (the optional agent tool `loom_browser_dev_tools_fetch` with its
-  robots.txt and private network settings). Covered by what agents already have: upstream's
-  browser tools and their providers' own web fetch. The packet no longer uses `ext-mcp`.
+The HTTP request lab, full API-client capabilities and database browsing are not part of
+these two slices. The lightweight request lab remains planned; full API and database studios
+remain independent products. Additional container administration outside checkout development
+is outside L11.
 
-## Scope
+Obscura page fetch remains retired by Kyle's 2026-10-09 decision. Existing browser/provider
+fetch tools already cover that use.
 
-- In:
-  - Dev servers: candidates from upstream project scripts plus `package.json` scripts (`dev`,
-    `start`, `serve`, `preview`, `storybook`), package manager from the lockfile; start, stop,
-    restart in a thread terminal named `loom-dev-<hash of key>`, from any thread of the
-    project (each row shows the owning thread and worktree with a link; stopping another
-    thread's server asks a light confirmation); state (starting, running, exited with
-    code), linked URLs from upstream's port discovery, an 8 KB output tail, "Show in terminal",
-    "Open in preview" (desktop) or "Open in browser" (web). Honors upstream's
-    `ProjectScript.previewUrl` and `autoOpenPreview`, which upstream stores but never acts on.
-  - Optional `varlock run -- <command>` for a server when the project has `.env.schema` and
-    `varlock` is installed.
-  - Docker Compose: detect compose files, list services with state, health and ports, `up -d`,
-    `down`, `restart <service>`, last 200 log lines, "Follow logs in terminal".
-  - Local databases: one-click Postgres or "Redis (Valkey)" container (default images
-    `postgres:17-alpine` and `valkey/valkey:8-alpine`, both configurable) per project on a free loopback port,
-    labeled for Loom, with the password in the server secret store; start, stop, remove (keep or
-    delete the data volume); copy the connection URL.
-  - HTTP lab: method, URL (defaulting to a running dev server), headers, body; the request runs
-    on the environment host; status, timing, headers and body (pretty JSON); history of 50 per
-    project; "Add to composer".
-  - Dev dock in the preview panel (desktop only, like the preview itself): console and network
-    tabs for the active preview tab, error counts on the collapsed bar, filters, clear, request
-    details, "Send errors to composer".
-  - Loom settings section, palette entries, unbound keybinding commands.
-- Out:
-  - Element pick and annotation (upstream has it: `apps/desktop/src/preview/PickPreload.ts`,
-    `apps/web/src/components/preview/PreviewView.tsx:581-665`).
-  - Full API client features (collections, environments, auth flows, scripting). API Studio is
-    a standalone app (selections.md).
-  - Database browsing and queries. Database Studio is a standalone app.
-  - Recording or proxying preview traffic into the HTTP lab (old Loom's lab was fixture-only).
-  - Browser scenario replay (old Loom's ScenarioRunner saved empty steps; argent's Chromium
-    flows, L09, are the path if wanted later).
-  - An agent page fetch tool (retired, see above).
-  - Mobile UI; the preview itself is desktop-only upstream.
+## Integration
 
-## Surfaces
+Fork code lives under `browser-dev-tools`. Existing Browser owns capture and its debugger;
+L11 registers a bounded read adapter. No second collector or Electron debugger is created.
+The shared fork RPC, service, MCP, panel and palette registries carry the feature.
 
-- Desktop: everything.
-- Web (local `npx t3` or app.t3.codes): the Dev environment panel works fully (servers,
-  compose, databases, HTTP lab); servers open in a new browser tab instead of the preview. The
-  dev dock does not exist on web because upstream's preview panel only shows "Preview is only
-  available in the desktop app" there.
-- Mobile: not supported.
-- Remote: all panel work runs on the environment host over the WebSocket RPC. The dev dock
-  reads the desktop client's own webview, so it works for any environment the desktop app
-  previews.
-- Upstream T3 server: the panel entry is disabled; the dock still shows console and network
-  (it needs only the desktop client) but hides the servers chip.
-
-## Extension points used
-
-- [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core), [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) + [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings).
-  Any may be created by this packet.
-- `ext-desktop` ([EXTENSION-POINTS.md, section 13](../EXTENSION-POINTS.md#13-desktop-ipc-ext-desktop-optional)) for the console and network
-  collector in the Electron main process (phase 4).
-
-## Packet seams
-
-- `apps/web/src/components/preview/PreviewView.tsx`: one import and one JSX element to mount
-  the dev dock under the page (4 added lines, 2 of them markers).
-
-## Optional integrations
-
-None required. If L07 (bottom dock) is present, the dev dock stays inside the preview panel;
-it does not move into L07's dock. L20 (small extras) has a Containers panel that lists every
-container and follows its logs; this packet's Compose tab covers a project's dev stacks. They
-share no code.
-
-## Size estimate
-
-Large: about 3,800 to 4,800 lines including tests. Servers and compose about 1,200, databases
-400, HTTP lab 500, desktop collector and dock 900, panel UI 1,200.
-
-## How an agent starts
-
-Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md, then this
-folder. Phases 1 and 2 do not need `ext-desktop`; phase 4 does. Phase 3 (Obscura) is retired.
-
-## Documents
-
-- [PRODUCT.md](./PRODUCT.md): what and why, for Kyle.
-- [TECHNICAL.md](./TECHNICAL.md): the design.
-- [SEAMS.md](./SEAMS.md): every upstream touch.
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): ordered steps for the implementing agent.
-- [TESTING.md](./TESTING.md): how it is proven.
-- [REFERENCES.md](./REFERENCES.md): prior art and sources.
+See [PRODUCT.md](./PRODUCT.md), [TECHNICAL.md](./TECHNICAL.md),
+[SEAMS.md](./SEAMS.md), [TESTING.md](./TESTING.md) and
+[user help](../../user/browser-dev-tools.md).
