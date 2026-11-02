@@ -1111,6 +1111,7 @@ apps/mobile/src/features/threads/UsageLimitRecoveryCard.tsx	failed-run-retry	4
 apps/server/src/orchestration-v2/Orchestrator.ts	failed-run-retry	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	failed-run-retry	1
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	file-placement	2
+apps/server/src/orchestration-v2/runtimeLayer.test.ts	library-projects	1
 apps/server/src/mcp/linkOrigin.test.ts	file-placement	3
 apps/server/src/peer/PeerForwarding.test.ts	file-placement	7
 apps/server/src/peer/RemoteDelegation.test.ts	file-placement	2
