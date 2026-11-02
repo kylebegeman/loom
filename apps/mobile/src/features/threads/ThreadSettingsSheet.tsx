@@ -531,11 +531,11 @@ function ThreadSettingsSessionProvider(
   const [pendingModel, setPendingModel] = useState<ModelOption | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const displayedPrompt = pendingModel ? (pendingPrompt ?? props.prompt) : props.prompt;
-  const discardPendingModel = useCallback(() => {
+  const discardPendingModel = () => {
     // fork: library - Returning to conversation details drops an unsaved model.
     setPendingModel(null);
     setPendingPrompt(null);
-  }, []);
+  };
 
   const isApplied = (option: ModelOption) =>
     option.selection.instanceId === props.selectedModel?.instanceId &&
