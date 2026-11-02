@@ -2232,7 +2232,7 @@ it.effect("ProviderSessionManagerV2 duplicate detach preserves replacement MCP c
 );
 
 it.effect(
-  "ProviderSessionManagerV2 reuses a thread credential until its tool families change",
+  "ProviderSessionManagerV2 keeps a thread's MCP credential stable across detach and re-attach on a shared session",
   () =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
@@ -2289,11 +2289,17 @@ it.effect(
         );
         assert.equal((yield* registry.resolve(originalToken!))?.thread.threadId, threadId);
 
+        // fork: ext-mcp
         families = new Set(["hardware"]);
+        // fork: ext-mcp
         yield* manager.detach({ providerSessionId, threadId });
+        // fork: ext-mcp
         yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        // fork: ext-mcp
         const replacement = yield* mcpSessions.read(threadId);
+        // fork: ext-mcp
         assert.equal(replacement?.providerSessionId, original?.providerSessionId);
+        // fork: ext-mcp
         assert.isDefined(yield* registry.resolve(originalToken!));
 
         yield* manager.close(providerSessionId);
