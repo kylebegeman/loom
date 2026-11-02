@@ -153,6 +153,9 @@ export const LibraryImportFolderRequest = Schema.Struct({
   rootPath: TrimmedNonEmptyString,
   title: Schema.optionalKey(LibraryTitle),
   projectId: Schema.optionalKey(LibraryId),
+  repositoryUpdate: Schema.optionalKey(
+    Schema.Struct({ resourceId: LibraryId, remoteUrl: TrimmedNonEmptyString }),
+  ),
 });
 export type LibraryImportFolderRequest = typeof LibraryImportFolderRequest.Type;
 

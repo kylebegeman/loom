@@ -1084,12 +1084,16 @@ checkpoint_integration() {
   existing=$(gh pr list --head "$branch" --state open --json number,isDraft --jq '.[] | "\(.number) \(.isDraft)"')
   if [[ "$existing" == *" false" ]]; then gh pr ready "${existing% *}" --undo; fi
   git push -q -u origin "HEAD:$branch"
-  body="<!-- loom-integration-checkpoint -->
-Unfinished integration of upstream $tag. Completed resolutions and repairs are saved here so the next run can continue after a runner interruption. Checks and independent review must pass before this draft can land."
+  body="$(resolve_logs)/checkpoint.md"
+  mkdir -p "$(dirname "$body")"
+  cat >"$body" <<EOF
+<!-- loom-integration-checkpoint -->
+Unfinished integration of upstream $tag. Completed resolutions and repairs are saved here so the next run can continue after a runner interruption. Checks and independent review must pass before this draft can land.
+EOF
   if [ -z "$existing" ]; then
-    gh pr create --draft --base main --head "$branch" --title "chore(fork): integrate upstream $tag (in progress)" --body "$body"
+    gh pr create --draft --base main --head "$branch" --title "chore(fork): integrate upstream $tag (in progress)" --body-file "$body"
   else
-    gh pr edit "${existing% *}" --title "chore(fork): integrate upstream $tag (in progress)" --body "$body"
+    gh pr edit "${existing% *}" --title "chore(fork): integrate upstream $tag (in progress)" --body-file "$body"
   fi
 }
 

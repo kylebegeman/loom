@@ -1646,3 +1646,5 @@ apps/server/src/ws.ts	library-projects	3
 apps/server/src/project/http.ts	library-projects	4
 apps/server/src/project/ProjectCloneCompletion.ts	library-projects	2
 packages/contracts/src/project.ts	library-projects	3
+packages/contracts/src/index.ts	library-projects	1
+packages/contracts/src/sourceControl.ts	library-projects	2

@@ -2826,6 +2826,33 @@ export const layerWsRpc = (
           sourceControlRepositories.publishRepository(input).pipe(
             Effect.tap(() => repositoryIdentityResolver.resolve(input.cwd, { refresh: true })),
             Effect.tap(() => refreshGitStatus(input.cwd)),
+            Effect.flatMap((result) =>
+              projectService.getByWorkspaceRoot(input.cwd).pipe(
+                Effect.flatMap((project) =>
+                  Option.isSome(project)
+                    ? withForkRuntime(
+                        Effect.flatMap(ProjectOperations, (service) =>
+                          service.repositoryPublished(
+                            project.value,
+                            result.remoteUrl,
+                            creationCaller,
+                          ),
+                        ),
+                      ).pipe(Effect.map((sharing) => ({ ...result, sharing })))
+                    : Effect.succeed(result),
+                ),
+                Effect.orElseSucceed(() => ({
+                  ...result,
+                  sharing: {
+                    state: "pending" as const,
+                    operationId: null,
+                    projectId: null,
+                    message:
+                      "The repository was published. Loom could not read its project registration.",
+                  },
+                })),
+              ),
+            ), // fork: library-projects
           ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           workspaceEntries.search(input).pipe(

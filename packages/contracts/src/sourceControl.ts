@@ -1,3 +1,4 @@
+import { ProjectSharing } from "./projectSharing.ts"; // fork: library-projects
 import * as Schema from "effect/Schema";
 import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
@@ -103,6 +104,7 @@ export const SourceControlPublishStatus = Schema.Literals(["pushed", "remote_add
 export type SourceControlPublishStatus = typeof SourceControlPublishStatus.Type;
 
 export const SourceControlPublishRepositoryResult = Schema.Struct({
+  sharing: Schema.optionalKey(ProjectSharing), // fork: library-projects
   repository: SourceControlRepositoryInfo,
   remoteName: TrimmedNonEmptyString,
   remoteUrl: TrimmedNonEmptyString,

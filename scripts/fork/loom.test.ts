@@ -2160,7 +2160,9 @@ it("checkpoints an unchecked integration before the runner can lose it", () => {
     f.git("rev-parse", "HEAD"),
   );
   expect(result.stdout).toContain("pr create --draft");
-  expect(result.stdout).toContain("loom-integration-checkpoint");
+  expect(
+    NodeFS.readFileSync(NodePath.join(f.root, ".git/loom-resolve/checkpoint.md"), "utf8"),
+  ).toContain("loom-integration-checkpoint");
   expect(result.stdout).not.toContain("pr ready");
 });
 

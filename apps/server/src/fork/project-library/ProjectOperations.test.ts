@@ -24,6 +24,7 @@ import {
   type LibraryProject,
   type LibraryFolderInspection,
   type LibraryCreateProjectRequest,
+  type LibraryUpdateProjectRequest,
   type LibraryRecoveryGrant,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
@@ -149,6 +150,7 @@ const fixture = Effect.gen(function* () {
   const publishFailure = yield* Ref.make(false);
   const registrations = yield* Ref.make<readonly unknown[]>([]);
   const creationInputs = yield* Ref.make<readonly LibraryCreateProjectRequest[]>([]);
+  const updateInputs = yield* Ref.make<readonly LibraryUpdateProjectRequest[]>([]);
   const external = Layer.mergeAll(
     Layer.mock(LibraryPublisher)({
       enabled: true,
@@ -192,6 +194,24 @@ const fixture = Effect.gen(function* () {
           if (yield* Ref.get(defect)) return yield* Effect.die(new Error("private backend detail"));
           if (yield* Ref.get(failure))
             return yield* new LibraryError({ reason: "revision-conflict" });
+          if (request.kind === "update") {
+            yield* Ref.update(updateInputs, (inputs) => [...inputs, request.input]);
+            const current =
+              (yield* Ref.get(catalog)).find((entry) => entry.id === request.input.projectId) ??
+              project;
+            const updated = {
+              ...current,
+              revision: current.revision + 1,
+              resources: current.resources.map((resource) => ({
+                ...resource,
+                remoteUrl:
+                  request.input.resourceUpdates?.find((change) => change.id === resource.id)
+                    ?.remoteUrl ?? resource.remoteUrl,
+              })),
+            };
+            yield* Ref.set(catalog, [updated]);
+            return updated;
+          }
           return project;
         }),
     }),
@@ -370,6 +390,7 @@ const fixture = Effect.gen(function* () {
     inspected,
     published,
     creationInputs,
+    updateInputs,
     publishFailure,
     registrations,
     changes,
@@ -467,6 +488,119 @@ it.effect(
         });
         expect(denied.state).toBe("pending");
         expect(yield* Ref.get(state.published)).toBe(1);
+      }),
+    ),
+);
+
+it.effect(
+  "records a newly published repository URL without changing its branch pin or other resources",
+  () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const local = {
+          ...project,
+          brief: "Keep this brief",
+          resources: [
+            { ...resource, relativePath: ".", remoteUrl: null },
+            {
+              id: "docs",
+              title: "Docs",
+              kind: "link" as const,
+              url: "https://example.com",
+              relativePath: "docs",
+              remoteUrl: null,
+              defaultBranch: null,
+            },
+          ],
+        };
+        yield* Ref.set(state.catalog, [local]);
+        const result = yield* state.service.executeClient(
+          "published-origin",
+          {
+            kind: "import",
+            input: {
+              requestId: "published-origin",
+              projectId: project.id,
+              rootPath: "/work/project",
+              repositoryUpdate: {
+                resourceId: resource.id,
+                remoteUrl: "https://github.com/acme/app.git",
+              },
+            },
+          },
+          actor.sessionId,
+        );
+        expect(result.result).toMatchObject({
+          brief: local.brief,
+          resources: [
+            { ...local.resources[0], remoteUrl: "https://github.com/acme/app.git" },
+            local.resources[1],
+          ],
+        });
+        expect(yield* Ref.get(state.updateInputs)).toEqual([
+          {
+            requestId: "published-origin:repository-url:import",
+            projectId: project.id,
+            expectedRevision: 1,
+            resourceUpdates: [{ id: resource.id, remoteUrl: "https://github.com/acme/app.git" }],
+          },
+        ]);
+        yield* state.service.executeClient(
+          "published-origin",
+          {
+            kind: "import",
+            input: {
+              requestId: "published-origin",
+              projectId: project.id,
+              rootPath: "/work/project",
+              repositoryUpdate: {
+                resourceId: resource.id,
+                remoteUrl: "https://github.com/acme/app.git",
+              },
+            },
+          },
+          actor.sessionId,
+        );
+        expect(yield* Ref.get(state.updateInputs)).toHaveLength(1);
+        for (const [id, savedRemote, observedRemote] of [
+          [
+            "saved-remote-changed",
+            "https://github.com/acme/another.git",
+            "https://github.com/acme/app.git",
+          ],
+          ["checkout-remote-changed", null, "https://github.com/acme/another.git"],
+        ] as const) {
+          yield* Ref.set(state.catalog, [
+            { ...local, resources: [{ ...local.resources[0]!, remoteUrl: savedRemote }] },
+          ]);
+          yield* Ref.update(state.inspected, (inspection) => ({
+            ...inspection,
+            repositories: inspection.repositories.map((repository) => ({
+              ...repository,
+              remoteUrl: observedRemote,
+            })),
+          }));
+          const denied = yield* state.service
+            .executeClient(
+              id,
+              {
+                kind: "import",
+                input: {
+                  requestId: id,
+                  projectId: project.id,
+                  rootPath: "/work/project",
+                  repositoryUpdate: {
+                    resourceId: resource.id,
+                    remoteUrl: "https://github.com/acme/app.git",
+                  },
+                },
+              },
+              actor.sessionId,
+            )
+            .pipe(Effect.flip);
+          expect(denied.reason).toBe("blocked");
+        }
+        expect(yield* Ref.get(state.updateInputs)).toHaveLength(1);
       }),
     ),
 );

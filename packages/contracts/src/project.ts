@@ -1,3 +1,4 @@
+import { ProjectSharing } from "./projectSharing.ts"; // fork: library-projects
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
@@ -148,15 +149,6 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
     }),
   ),
 );
-
-// fork: library-projects
-export const ProjectSharing = Schema.Struct({
-  state: Schema.Literals(["shared", "pending", "unconnected"]),
-  operationId: Schema.NullOr(Schema.String),
-  projectId: Schema.NullOr(Schema.String),
-  message: Schema.NullOr(Schema.String),
-});
-export type ProjectSharing = typeof ProjectSharing.Type;
 
 export const Project = Schema.Struct({
   sharing: Schema.optionalKey(ProjectSharing), // fork: library-projects

@@ -469,6 +469,9 @@ function LibraryProjectForm({
                   editable={!pending && !awaitingResult}
                   className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
                 />
+                <Text className="text-xs font-medium text-muted-foreground">
+                  Branch override (optional)
+                </Text>
                 <TextInput
                   accessibilityLabel="Branch override, optional"
                   placeholder="Follow repository default"

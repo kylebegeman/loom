@@ -20,6 +20,7 @@ import {
   LibraryWorkingCopy,
   LibraryProject,
   LibraryCreateProjectRequest,
+  LibraryUpdateProjectRequest,
   LibraryRegisterCopyRequest,
   type LibraryRecoveryGrant,
   type LibraryResolvedBinding,
@@ -99,6 +100,7 @@ const worktreeCodec = Schema.fromJsonString(
   Schema.Struct({ path: Schema.String, branch: Schema.String }),
 );
 const creationCodec = Schema.fromJsonString(LibraryCreateProjectRequest);
+const updateCodec = Schema.fromJsonString(LibraryUpdateProjectRequest);
 const registrationCodec = Schema.fromJsonString(LibraryRegisterCopyRequest);
 const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
 function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvironmentScope[] {
@@ -124,6 +126,11 @@ type CreatedProject = Pick<Project, "id" | "workspaceRoot"> & { readonly title?:
 export class ProjectOperations extends Context.Service<
   ProjectOperations,
   {
+    readonly repositoryPublished: (
+      project: CreatedProject,
+      remoteUrl: string,
+      caller: CreationCaller,
+    ) => Effect.Effect<ProjectSharing>;
     readonly shareCreated: (
       project: CreatedProject,
       caller: CreationCaller,
@@ -549,6 +556,63 @@ const make = Effect.gen(function* () {
                     { kind: "create", input: creation },
                     yield* managementActor(),
                   );
+                }
+                if (input.repositoryUpdate) {
+                  const change = input.repositoryUpdate;
+                  const resource = selected.resources.find(
+                    (entry) => entry.id === change.resourceId && entry.kind !== "link",
+                  );
+                  const repository = inspection.repositories.find(
+                    (entry) => entry.relativePath === resource?.relativePath,
+                  );
+                  if (
+                    !resource ||
+                    !repository?.remoteUrl ||
+                    normalizeGitRemoteUrl(repository.remoteUrl) !==
+                      normalizeGitRemoteUrl(change.remoteUrl) ||
+                    (resource.remoteUrl !== null &&
+                      normalizeGitRemoteUrl(resource.remoteUrl) !==
+                        normalizeGitRemoteUrl(change.remoteUrl))
+                  )
+                    return yield* new LibraryError({
+                      reason: "blocked",
+                      detail:
+                        "The published repository does not match the saved project and current folder. The saved repository URL was preserved.",
+                    });
+                  const updateId = yield* operationId(`${id}:repository-url`, "import");
+                  const receipts = yield* sql<{
+                    request_json: string;
+                    result_json: string;
+                  }>`SELECT request_json,result_json FROM fork_library_workflow_receipts WHERE id=${updateId}`.pipe(
+                    Effect.mapError(io),
+                  );
+                  if (receipts[0] && receipts[0].request_json !== row.request_json)
+                    return yield* new LibraryError({ reason: "request-conflict" });
+                  if (resource.remoteUrl === null || receipts[0]) {
+                    const update = receipts[0]
+                      ? yield* Schema.decodeEffect(updateCodec)(receipts[0].result_json).pipe(
+                          Effect.mapError(io),
+                        )
+                      : {
+                          requestId: updateId,
+                          projectId: selected.id,
+                          expectedRevision: selected.revision,
+                          resourceUpdates: [{ id: resource.id, remoteUrl: change.remoteUrl }],
+                        };
+                    if (!receipts[0]) {
+                      const encoded = yield* Schema.encodeEffect(updateCodec)(update).pipe(
+                        Effect.mapError(io),
+                      );
+                      yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${updateId},${row.request_json},${encoded})`.pipe(
+                        Effect.mapError(io),
+                      );
+                    }
+                    yield* phase("Saving published repository URL");
+                    selected = yield* management.execute(
+                      { kind: "update", input: update },
+                      yield* managementActor(),
+                    );
+                  }
                 }
                 operation = yield* save({
                   ...operation,
@@ -991,7 +1055,7 @@ const make = Effect.gen(function* () {
       input: {
         requestId: id,
         rootPath: project.workspaceRoot,
-        ...(project.title === undefined ? {} : { title: project.title.slice(0, 160) }),
+        ...(project.title === undefined ? {} : { title: project.title.slice(0, 160).trim() }),
       },
     };
     return yield* (
@@ -1009,6 +1073,68 @@ const make = Effect.gen(function* () {
         Effect.succeed({
           state: "pending" as const,
           operationId: id,
+          projectId: null,
+          message: error.message,
+        }),
+      ),
+    );
+  });
+  const repositoryPublished = Effect.fn("ProjectOperations.repositoryPublished")(function* (
+    project: CreatedProject,
+    remoteUrl: string,
+    caller: CreationCaller,
+  ) {
+    const sync = Effect.gen(function* () {
+      let inspection = yield* workspace.inspectFolder({ rootPath: project.workspaceRoot });
+      if (!(inspection.registrations?.length || inspection.registration)) {
+        const sharing = yield* shareCreated(project, caller);
+        if (sharing.state !== "shared") return sharing;
+        inspection = yield* workspace.inspectFolder({ rootPath: project.workspaceRoot });
+      }
+      const matches = [];
+      for (const registration of inspection.registrations ??
+        (inspection.registration ? [inspection.registration] : [])) {
+        const { copy } = yield* workspaceStore.get(registration.workingCopyId);
+        for (const repository of copy.repositories) {
+          if (repository.path === inspection.rootPath)
+            matches.push({ copy, resourceId: repository.resourceId });
+        }
+      }
+      if (matches.length !== 1)
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail:
+            "The repository was published, but Loom could not identify one current project repository for these files. Its saved URLs were preserved.",
+        });
+      const { copy, resourceId } = matches[0]!;
+      const id = yield* operationId(
+        `published-repository:${copy.id}:${resourceId}:${normalizeGitRemoteUrl(remoteUrl)}`,
+        "import",
+      );
+      const request: LibraryOperationInput = {
+        kind: "import",
+        input: {
+          requestId: id,
+          rootPath: copy.rootPath,
+          projectId: copy.projectId,
+          repositoryUpdate: { resourceId, remoteUrl },
+        },
+      };
+      const operation = yield* caller.kind === "client"
+        ? executeClient(id, request, caller.sessionId)
+        : executeAgent(id, request, caller);
+      return {
+        state: "shared" as const,
+        operationId: id,
+        projectId: operation.projectId,
+        message: null,
+      };
+    });
+    return yield* sync.pipe(
+      Effect.catch((error) =>
+        Effect.succeed({
+          state: "pending" as const,
+          operationId: null,
           projectId: null,
           message: error.message,
         }),
@@ -1070,6 +1196,7 @@ const make = Effect.gen(function* () {
   );
   return {
     shareCreated,
+    repositoryPublished,
     operationId,
     list,
     run,
