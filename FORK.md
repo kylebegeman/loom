@@ -280,7 +280,6 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/mobile/src/features/threads/ThreadMarkdownImage.test.tsx` | `cloudflare-access`   | Keep the native Access keychain out of markdown image tests.                 |
 | `apps/server/src/orchestration-v2/ThreadFork.execution.test.ts` | `deleted-history`     | Expect the deleted-source refusal that rejects a side chat first.            |
 | `apps/server/src/process/externalLauncher.test.ts`              | `hermetic-tests`      | Keep the host's installed editors out of the Insiders bundle case.           |
-| `apps/server/src/usage/UsageService.test.ts`                    | `hermetic-tests`      | Pin the clock so removed-directory usage stays inside retention.             |
 
 L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
 (`fork: model-print-check`) so the worker ships beside `bin.mjs`. The single-file executable
@@ -593,11 +592,9 @@ The `test-temp-isolation` seam in `apps/server/src/git/GitManager.test.ts` (9) c
 test's extra worktree inside its own scoped temp directory. Upstream placed them beside the
 scoped repository, so every run left orphaned worktree folders in `$TMPDIR`.
 
-The `hermetic-tests` seams keep upstream tests independent of the host and today's date.
+The `hermetic-tests` seams keep upstream tests independent of the host.
 `externalLauncher.test.ts` (3 marker lines) hides the host's real editor installs from the
-macOS VS Code Insiders case, and `UsageService.test.ts` (2) pins the clock in the
-removed-directory usage case so its saved usage is not pruned. Upstream's `main` pins that
-clock itself after this nightly; drop the `UsageService.test.ts` seam once that lands.
+macOS VS Code Insiders case.
 
 The `agent-work` seams add one Delete all for archived subagent and bot run conversations to
 Settings > Archived. Parent conversations keep their agent receipts and runs keep their results,

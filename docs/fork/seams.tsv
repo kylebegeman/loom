@@ -292,7 +292,7 @@ apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	res
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1
 apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	4
-apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	22
+apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	20
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	20
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	3
 apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx	machine-updates	4
@@ -802,7 +802,6 @@ apps/server/src/git/GitWorkflowService.test.ts	project-lifecycle	3
 apps/server/src/server.ts	project-root-worktree	1
 apps/server/src/git/GitManager.test.ts	test-temp-isolation	6
 apps/server/src/process/externalLauncher.test.ts	hermetic-tests	3
-apps/server/src/usage/UsageService.test.ts	hermetic-tests	2
 apps/web/src/hooks/useThreadActions.ts	agent-work	3
 apps/web/src/components/settings/ArchivedThreadsPanel.tsx	agent-work	4
 apps/mobile/src/features/home/useThreadListActions.ts	agent-work	2
@@ -906,7 +905,7 @@ apps/server/src/orchestration-v2/ProjectionStore.test.ts	attention-status	1
 apps/server/src/orchestration-v2/ProjectionStore.ts	attention-status	6
 apps/web/src/components/CommandPalette.tsx	attention-status	4
 apps/web/src/components/Sidebar.logic.test.ts	attention-status	1
-apps/web/src/components/Sidebar.logic.ts	attention-status	8
+apps/web/src/components/Sidebar.logic.ts	attention-status	7
 apps/web/src/components/Sidebar.tsx	attention-status	8
 apps/web/src/components/threadActionMenu.logic.test.ts	attention-status	1
 apps/web/src/components/threadActionMenu.logic.ts	attention-status	5
@@ -1591,7 +1590,7 @@ apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
 apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
-apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
+apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	2
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/package.json	-	"access:pilot"
 apps/desktop/src/app/DesktopApp.ts	cloudflare-access	1
