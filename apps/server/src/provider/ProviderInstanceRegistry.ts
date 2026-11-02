@@ -9,6 +9,8 @@ import {
   type SecretReference,
   secretReferencesInSettings,
   type ServerProvider,
+  type SettingsSecretSlot,
+  withSettingsSecrets,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -55,7 +57,7 @@ export class ProviderInstanceRegistry extends Context.Service<
 
 interface InstanceSecrets {
   readonly environment: ResolvedProviderInstanceEnvironment;
-  readonly config: Readonly<Record<string, string>>;
+  readonly config: ReadonlyArray<SettingsSecretSlot & { readonly value: string }>;
 }
 
 interface LiveEntry {
@@ -137,18 +139,18 @@ const readInstanceSecrets = Effect.fn("ProviderInstanceRegistry.readInstanceSecr
     if (secret === undefined) unreadable.push(variable.name);
     else environment.push({ ...variable, value: secret, sensitive: true });
   }
-  const config: Record<string, string> = {};
-  for (const { field, reference } of configFields) {
+  const config = configFields.flatMap(({ field, key, reference }) => {
     // fork: vault-provider-credentials -- Only environment slots support application bindings.
     if (isVaultProviderReference(reference)) {
       unreadable.push(field);
       unreadableVault = true;
-      continue;
+      return [];
     }
     const secret = values[index++];
-    if (secret === undefined) unreadable.push(field);
-    else config[field] = secret;
-  }
+    if (secret !== undefined) return [{ field, key, value: secret }];
+    unreadable.push(field);
+    return [];
+  });
   const secrets: InstanceSecrets = { environment, config };
   return { secrets, unreadable, unreadableVault, vaultFailure };
 });
@@ -257,7 +259,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   const { secrets, unreadable, vaultFailure } = enabled
     ? yield* readInstanceSecrets(driver, instanceId, entry)
     : {
-        secrets: { environment: withoutSecretReferences(entry.environment ?? []), config: {} },
+        secrets: { environment: withoutSecretReferences(entry.environment ?? []), config: [] },
         unreadable: [],
         vaultFailure: undefined,
       };
@@ -290,9 +292,9 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
       environment: secrets.environment,
       enabled,
       config:
-        Object.keys(secrets.config).length === 0
+        secrets.config.length === 0
           ? typedConfig
-          : { ...typedConfig, ...secrets.config },
+          : withSettingsSecrets(typedConfig, secrets.config),
     }),
   ).pipe(Effect.provideService(Scope.Scope, childScope), Effect.result);
   if (createResult._tag === "Failure") {
