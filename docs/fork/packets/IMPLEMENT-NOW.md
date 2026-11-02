@@ -237,8 +237,8 @@ Build in waves: L89 to L92, then L93 to L96, then L97 and L98, then L99 and L100
 ## Developer productivity selection
 
 Kyle selected L11's first two slices on 2026-11-02: checkout-scoped dev servers and Browser
-diagnostics, then Compose and local Postgres/Valkey. Both are implemented locally with shared
-UI/agent operations; verification and merge remain in progress. This supersedes L11's older
+diagnostics, then Compose and local Postgres/Valkey. Both are landed with shared UI/agent
+operations and passing focused checks. Final integrated Browser verification is pending. This supersedes L11's older
 V2 deferral. The HTTP request lab remains planned. Other productivity proposals keep their
 existing dispositions until selected.
 
