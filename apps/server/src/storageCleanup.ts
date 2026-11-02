@@ -1323,14 +1323,11 @@ const make = Effect.gen(function* () {
           args: ["remote"],
         });
         const remote =
-          remotes.stdout.trim() === ""
-            ? null
-            : yield* git.resolvePrimaryRemoteName(repositoryCwd);
+          remotes.stdout.trim() === "" ? null : yield* git.resolvePrimaryRemoteName(repositoryCwd);
         let branch: string | null | undefined;
         let defaultRef: string;
         if (remote === null) {
-          if (!worktreeUnchanged)
-            return "no remote is configured for merged-worktree cleanup";
+          if (!worktreeUnchanged) return "no remote is configured for merged-worktree cleanup";
           const projectHead = yield* git.execute({
             operation: "StorageCleanup.resolveProjectBranch",
             cwd: repositoryCwd,
