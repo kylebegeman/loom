@@ -26,6 +26,9 @@ To turn product events off again, remove `T3CODE_TELEMETRY_ENABLED` from the ser
 or set it to `false`, then restart the server. The web app in a browser, including one the `t3`
 CLI opens, does not read this variable.
 
+An administrator can turn product events and relay tracing off for every user on a machine with
+a [managed policy](./managed-policy.md#other-capabilities).
+
 The desktop app reads `T3CODE_TELEMETRY_ENABLED` from your shell profile (for example `~/.zshrc`) on macOS and
 Linux, so export it there and restart the app. On Windows, set it as a user environment variable.
 

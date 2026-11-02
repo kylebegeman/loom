@@ -102,6 +102,8 @@ import * as ServerOwnership from "./serverOwnership.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as ManagedLimits from "./policy/managedLimits.ts";
+import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
@@ -163,6 +165,7 @@ import {
   RELAY_URL_SECRET,
 } from "./cloud/config.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
 import * as CloudHttp from "./cloud/http.ts";
 import * as GuestHttp from "./guest/http.ts";
 import * as CloudLink from "./cloud/CloudLink.ts";
@@ -216,11 +219,13 @@ import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
-// fork: tailnet-ownership
 import {
+  // fork: tailnet-ownership
   claimTailscaleServe,
   releaseTailscaleServe,
   TAILSCALE_SERVE_CLAIMS_FILE,
+  readTailscaleServeRoutesTo,
+  readTailscaleStatus,
 } from "@t3tools/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
@@ -263,6 +268,7 @@ const layerPtyAdapter = NodePtyAdapter.layer;
 
 const layerServerSettings = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(ManagedPolicy.layer),
   Layer.provideMerge(SqlitePersistence.layerConfig),
 );
 
@@ -320,13 +326,42 @@ const layerResourceDiagnostics = Layer.mergeAll(
 const layerRelayClient = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    return RelayClient.layerCloudflared({ baseDir: config.baseDir });
+    const policy = yield* ManagedPolicy.ManagedPolicy;
+    const layerCloudflared = RelayClient.layerCloudflared({ baseDir: config.baseDir });
+    if (ManagedLimits.allowsConnect(policy)) return layerCloudflared;
+    // The connector only carries T3 Connect, so a policy without Connect never installs one.
+    const refused = Effect.fn("RelayClient.installRefusedByPolicy")(function* () {
+      return yield* new RelayClient.RelayClientInstallError({
+        reason: "managed_by_policy",
+        message: ManagedLimits.refuseConnect(policy).message,
+      });
+    });
+    return Layer.effect(
+      RelayClient.RelayClient,
+      Effect.gen(function* () {
+        const relayClient = yield* RelayClient.RelayClient;
+        return RelayClient.RelayClient.of({
+          ...relayClient,
+          install: refused(),
+          installWithProgress: refused,
+        });
+      }),
+    ).pipe(Layer.provide(layerCloudflared));
   }),
-);
+).pipe(Layer.provide(ManagedPolicy.layer));
 
 const layerHttpServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    // Before binding: a host the policy does not allow must never listen, not even briefly.
+    const policy = yield* ManagedPolicy.ManagedPolicy;
+    const bindHost = yield* ManagedLimits.checkServerReachability(policy, {
+      authPolicy: EnvironmentAuthPolicy.resolveServerAuthPolicy(config),
+      host: config.host,
+      tailscaleServeEnabled: config.tailscaleServeEnabled,
+      privateNetworkOnly: config.privateNetworkOnly,
+    });
+    yield* ManagedLimits.closeTailscaleServeTo(policy, { host: bindHost, port: config.port });
     return NodeHttpServer.layer(
       () => {
         const server = rejectRequestsUntilServing(createHttpServer()); // fork: library-sign-in
@@ -340,7 +375,7 @@ const layerHttpServer = Layer.unwrap(
         return server;
       },
       {
-        host: config.host ?? "127.0.0.1",
+        host: bindHost,
         port: config.port,
         gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
         // Context takeover stays enabled (ws default) so the compression
@@ -351,7 +386,7 @@ const layerHttpServer = Layer.unwrap(
       },
     );
   }),
-);
+).pipe(Layer.provide(ManagedPolicy.layer));
 
 const layerPlatformServices = DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
@@ -770,7 +805,8 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(TriageService.layer.pipe(Layer.provide(GitVcsDriver.layer))),
-  Layer.provideMerge(AnalyticsService.layer),
+  // Layers memoize by reference, so this is the same policy the settings layer reads.
+  Layer.provideMerge(AnalyticsService.layer.pipe(Layer.provide(ManagedPolicy.layer))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
   // fork: tailnet-ownership
@@ -890,6 +926,7 @@ const layerMakeServer = Layer.unwrap(
           config,
           port: address.port,
           serviceManaged: launcher.managed,
+          managedPolicy: yield* ManagedPolicy.loadedPolicy(yield* ManagedPolicy.ManagedPolicy),
         });
         yield* ownership
           .publish(state)
@@ -956,14 +993,48 @@ const layerMakeServer = Layer.unwrap(
             // fork: tailnet-ownership
             (target) =>
               target
-                ? releaseTailscaleServe(target).pipe(
-                    Effect.tap((released) =>
-                      Effect.logInfo(
-                        released
-                          ? "Tailscale Serve disabled"
-                          : "Tailscale Serve left alone; the port no longer proxies to this server",
-                        { servePort: target.servePort },
+                ? Effect.all(
+                    [
+                      readTailscaleServeRoutesTo({
+                        host: target.localHost.replace(/^\[|\]$/gu, ""), // fork: tailnet-ownership
+                        port: target.localPort,
+                      }),
+                      readTailscaleStatus,
+                    ],
+                    { concurrency: 2 },
+                  ).pipe(
+                    // Another service may hold the root route by now, or it may sit under a
+                    // former name, where `off` would act on the current one; only ours goes.
+                    Effect.map(([routes, status]) =>
+                      routes.some(
+                        (route) =>
+                          route.servePort === target.servePort &&
+                          route.mount === "/" &&
+                          route.owner === undefined &&
+                          route.ambiguous === undefined &&
+                          route.host?.toLowerCase() === status.magicDnsName?.toLowerCase(),
                       ),
+                    ),
+                    Effect.orElseSucceed(() => false),
+                    Effect.flatMap((ours) =>
+                      ours
+                        ? // fork: tailnet-ownership -- also drops Loom's claim record
+                          releaseTailscaleServe(target).pipe(
+                            Effect.tap((released) =>
+                              Effect.logInfo(
+                                released
+                                  ? "Tailscale Serve disabled"
+                                  : "Tailscale Serve left alone; the port no longer proxies to this server",
+                                { servePort: target.servePort },
+                              ),
+                            ),
+                          )
+                        : Effect.logInfo(
+                            "Tailscale Serve left on; its root route is not known to be ours",
+                            {
+                              servePort: target.servePort, // fork: tailnet-ownership
+                            },
+                          ),
                     ),
                     Effect.catch((cause) =>
                       Effect.logWarning("Failed to disable Tailscale Serve", {
@@ -984,6 +1055,11 @@ const layerMakeServer = Layer.unwrap(
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
         const cloudLink = yield* CloudLink.CloudLink;
+        // CloudLink unlinks on startup when the policy turns Connect off; nothing to restore.
+        if (!ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy)) {
+          yield* Deferred.succeed(cloudLinkParked, undefined).pipe(Effect.orDie);
+          return;
+        }
         const releaseManagedTunnel = cloudLink.releaseManagedTunnelOnShutdown().pipe(
           Effect.timeout("10 seconds"),
           Effect.tap((released) =>
@@ -1201,7 +1277,9 @@ const layerMakeServer = Layer.unwrap(
         ),
       ),
       Layer.provide(layerActivation),
-      Layer.provideMerge(RelayTracing.layerServerRelayBroker),
+      Layer.provideMerge(
+        RelayTracing.layerServerRelayBroker.pipe(Layer.provide(ManagedPolicy.layer)),
+      ),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),
       Layer.provideMerge(FetchHttpClient.layer),

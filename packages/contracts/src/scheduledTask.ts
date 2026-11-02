@@ -272,6 +272,8 @@ export const ScheduledTask = Schema.Struct({
   runCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   webhook: Schema.optional(ScheduledTaskWebhookEndpoint),
   lastDeliveryIssue: Schema.optional(ScheduledTaskDeliveryIssue), // fork: webhook-delivery-issues
+  /** Why the task cannot run regardless of `enabled`, such as a managed policy refusing webhooks. */
+  blockedByPolicy: Schema.optionalKey(Schema.String),
 });
 export type ScheduledTask = typeof ScheduledTask.Type;
 

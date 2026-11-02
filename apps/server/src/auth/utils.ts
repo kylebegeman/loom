@@ -6,6 +6,8 @@ import type {
 import * as HttpServerRequest from "effect/http/HttpServerRequest"; // fork: secure-session-cookies
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no createHmac or timingSafeEqual.
 import * as NodeCrypto from "node:crypto";
+import * as NodeNet from "node:net";
+import { normalizeHostname } from "@t3tools/shared/hostClassification";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option"; // fork: secure-session-cookies
 import * as Result from "effect/Result";
@@ -65,21 +67,22 @@ export const isHttpsRequest = (request: HttpServerRequest.HttpServerRequest): bo
 export const sessionCookieOptions = (secure: boolean) =>
   ({ path: "/", httpOnly: true, sameSite: "lax", secure }) as const;
 
-export function isRemoteReachableHost(host: string | undefined): boolean {
-  if (host === "0.0.0.0" || host === "::" || host === "[::]") {
-    return true;
-  }
-  if (!host || host.length === 0) {
-    return false;
-  }
-  return !(
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    host === "[::1]" ||
-    host.startsWith("127.")
-  );
+/**
+ * The loopback address a server given `host` listens on, or undefined when it may listen beyond
+ * this machine. Unset means 127.0.0.1. Only a loopback literal or `localhost` counts: Node listens
+ * on every interface for an empty host, and any other name resolves through DNS.
+ */
+export function loopbackBindAddress(host: string | undefined): string | undefined {
+  if (host === undefined) return "127.0.0.1";
+  const address = normalizeHostname(host);
+  if (address === "localhost") return "127.0.0.1";
+  return (NodeNet.isIPv4(address) && address.startsWith("127.")) || address === "::1"
+    ? address
+    : undefined;
 }
+
+export const isRemoteReachableHost = (host: string | undefined): boolean =>
+  loopbackBindAddress(host) === undefined;
 
 export function base64UrlEncode(input: string | Uint8Array): string {
   return typeof input === "string"
