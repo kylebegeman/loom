@@ -1113,17 +1113,24 @@ describe("DesktopWindow", () => {
       const createCount = yield* Ref.make(0);
       const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
       const revealed: Electron.BrowserWindow[] = [];
+      const painted = Promise.withResolvers<void>();
       const layer = layerTest({
         window: fakeWindow.window,
         createCount,
         mainWindow,
-        onReveal: (window) => revealed.push(window),
+        onReveal: (window) => {
+          revealed.push(window);
+          painted.resolve();
+        },
       });
 
       yield* Effect.gen(function* () {
         const desktopWindow = yield* DesktopWindow.DesktopWindow;
         const state = yield* DesktopState.DesktopState;
         yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+        fakeWindow.windowListeners.get("ready-to-show")?.();
+        yield* Effect.promise(() => painted.promise);
+        assert.deepEqual(revealed, [fakeWindow.window]);
         const close = fakeWindow.windowListeners.get("close");
         if (!close) {
           return yield* Effect.die("window close listener was not registered");
@@ -1136,7 +1143,7 @@ describe("DesktopWindow", () => {
 
         // The Dock brings back the same window instead of building a new one.
         yield* desktopWindow.activate;
-        assert.deepEqual(revealed, [fakeWindow.window]);
+        assert.deepEqual(revealed, [fakeWindow.window, fakeWindow.window]);
         assert.equal(yield* Ref.get(createCount), 1);
 
         fakeWindow.isFullScreen.mockReturnValue(true);
