@@ -1271,7 +1271,7 @@ AGENTS.md	update-signing	1
 README.md	brand	1
 apps/desktop/package.json	-	"jose": "catalog:"
 apps/desktop/src/backend/DesktopServerExposure.test.ts	tailnet-ownership	12
-apps/desktop/src/backend/DesktopServerExposure.ts	tailnet-ownership	20
+apps/desktop/src/backend/DesktopServerExposure.ts	tailnet-ownership	21
 apps/desktop/src/backend/tailscaleEndpointProvider.test.ts	tailnet-ownership	2
 apps/desktop/src/backend/tailscaleEndpointProvider.ts	tailnet-ownership	7
 apps/desktop/src/ipc/methods/serverExposure.ts	tailnet-ownership	7
