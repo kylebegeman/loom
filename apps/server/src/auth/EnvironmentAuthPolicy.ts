@@ -1,4 +1,8 @@
-import { AuthEnvironmentMaintainScope, type ServerAuthDescriptor } from "@t3tools/contracts";
+import {
+  AuthEnvironmentMaintainScope,
+  type ServerAuthDescriptor,
+  type ServerAuthPolicy,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,22 +18,23 @@ export class EnvironmentAuthPolicy extends Context.Service<
   }
 >()("t3/auth/EnvironmentAuthPolicy") {}
 
+/** The auth policy a server started with `config` runs under. */
+export function resolveServerAuthPolicy(
+  // fork: directory-computers
+  config: Pick<ServerConfig.ServerConfig["Service"], "mode" | "host"> &
+    Partial<Pick<ServerConfig.ServerConfig["Service"], "tailscaleServeEnabled">>,
+): ServerAuthPolicy {
+  // fork: directory-computers
+  // Tailscale Serve proxies the tailnet to a loopback bind, so the host alone hides that ingress.
+  if (isRemoteReachableHost(config.host) || config.tailscaleServeEnabled) return "remote-reachable";
+  return config.mode === "desktop" ? "desktop-managed-local" : "loopback-browser";
+}
+
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
-  // fork: directory-computers
-  // Tailscale Serve proxies the tailnet to a loopback bind, so the host alone hides that ingress.
-  const isRemoteReachable = isRemoteReachableHost(config.host) || config.tailscaleServeEnabled;
-
-  const policy =
-    config.mode === "desktop"
-      ? isRemoteReachable
-        ? "remote-reachable"
-        : "desktop-managed-local"
-      : isRemoteReachable
-        ? "remote-reachable"
-        : "loopback-browser";
+  const policy = resolveServerAuthPolicy(config);
 
   const bootstrapMethods: ServerAuthDescriptor["bootstrapMethods"] =
     policy === "desktop-managed-local"

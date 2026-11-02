@@ -7,6 +7,7 @@ import {
   type EnvironmentId,
   connectReachabilityHelpUrl,
   formatConnectReachable,
+  managedCapabilityDenial,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import {
@@ -55,6 +56,7 @@ import {
   usePrimaryEnvironmentId,
 } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
+import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
 import {
@@ -544,6 +546,8 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     reconcileCloudState,
   } = useCloudLinkController();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
+  // The server unlinks and refuses relay changes under such a policy; unlinking stays possible.
+  const connectDenial = managedCapabilityDenial(usePrimaryManagedPolicy(), "connect");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
 
@@ -666,21 +670,24 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           title={searchableSetting("t3-connect").title}
           // fork: fleet-connections
           description={
-            signedOut
-              ? "Sign in to make this computer available to your other devices through T3 Connect." // fork: fleet-connections
-              : linkRevoked
-                ? "This computer was removed from T3 Connect. Turn it on to link it again." // fork: fleet-connections
-                : managedTunnelActive
-                  ? reachability?.status === "unreachable"
-                    ? "T3 Connect is on, but other devices cannot reach this computer." // fork: fleet-connections
-                    : reachability?.status === "reachable"
-                      ? "This computer is available to your other devices through T3 Connect." // fork: fleet-connections
-                      : "T3 Connect is on. Reachability has not been checked yet."
-                  : managedTunnelOutOfSync
-                    ? "T3 Connect is out of sync. This computer is linked only to publish agent activity, so other devices cannot connect. Turn T3 Connect on to repair it." // fork: fleet-connections
-                    : "Make this computer available to your other devices through T3 Connect." // fork: fleet-connections
+            connectDenial !== undefined && !managedTunnelActive
+              ? connectDenial
+              : signedOut
+                ? "Sign in to make this computer available to your other devices through T3 Connect." // fork: fleet-connections
+                : linkRevoked
+                  ? "This computer was removed from T3 Connect. Turn it on to link it again." // fork: fleet-connections
+                  : managedTunnelActive
+                    ? reachability?.status === "unreachable"
+                      ? "T3 Connect is on, but other devices cannot reach this computer." // fork: fleet-connections
+                      : reachability?.status === "reachable"
+                        ? "This computer is available to your other devices through T3 Connect." // fork: fleet-connections
+                        : "T3 Connect is on. Reachability has not been checked yet."
+                    : managedTunnelOutOfSync
+                      ? "T3 Connect is out of sync. This computer is linked only to publish agent activity, so other devices cannot connect. Turn T3 Connect on to repair it." // fork: fleet-connections
+                      : "Make this computer available to your other devices through T3 Connect." // fork: fleet-connections
           }
           status={operationError ?? primaryCloudLinkState.error ?? reachabilityStatus}
+          managed={managedTunnelActive ? undefined : connectDenial}
           control={
             signedOut ? (
               signInButton
@@ -694,7 +701,9 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
             )
           }
         >
-          {signedOut ? null : <T3ConnectTunnelUsage tunnelLimit={tunnelLimit} />}
+          {signedOut || connectDenial !== undefined ? null : (
+            <T3ConnectTunnelUsage tunnelLimit={tunnelLimit} />
+          )}
         </SettingsRow>
       ) : linkRevoked ? (
         <SettingsRow
@@ -711,6 +720,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
               ? "Sign in to send activity to mobile notifications and Live Activities."
               : "Send activity to mobile notifications and Live Activities without T3 Connect."
           }
+          managed={connectDenial}
           control={
             signedOut ? (
               signInButton
@@ -731,6 +741,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           title={searchableSetting("hold-webhooks-while-offline").title}
           // fork: fleet-connections
           description="Keep webhook requests for up to 24 hours while this computer is offline, then deliver them. Off: T3 Connect only forwards requests and stores nothing."
+          managed={connectDenial}
           control={
             <CloudLinkSwitch
               ariaLabel="Hold webhook requests while this computer is offline" // fork: fleet-connections

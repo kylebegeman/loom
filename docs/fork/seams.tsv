@@ -114,6 +114,8 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	project-lif
 apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	3
 apps/server/src/mcp/toolkits/environment/tools.ts	file-placement	6
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	project-profiles	1
+evals/mcp-tool-use/devices.test.ts	project-profiles	1
 apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	2
 apps/server/src/mcp/toolkits/environment/handlers.ts	file-placement	5
 apps/server/src/mcp/toolkits/environment/handlers.test.ts	mini-native-retention	3
@@ -802,7 +804,6 @@ apps/server/src/git/GitWorkflowService.test.ts	project-lifecycle	3
 apps/server/src/server.ts	project-root-worktree	1
 apps/server/src/git/GitManager.test.ts	test-temp-isolation	6
 apps/server/src/process/externalLauncher.test.ts	hermetic-tests	3
-apps/server/src/usage/UsageService.test.ts	hermetic-tests	2
 apps/web/src/hooks/useThreadActions.ts	agent-work	3
 apps/web/src/components/settings/ArchivedThreadsPanel.tsx	agent-work	4
 apps/mobile/src/features/home/useThreadListActions.ts	agent-work	2
@@ -906,7 +907,7 @@ apps/server/src/orchestration-v2/ProjectionStore.test.ts	attention-status	1
 apps/server/src/orchestration-v2/ProjectionStore.ts	attention-status	6
 apps/web/src/components/CommandPalette.tsx	attention-status	4
 apps/web/src/components/Sidebar.logic.test.ts	attention-status	1
-apps/web/src/components/Sidebar.logic.ts	attention-status	8
+apps/web/src/components/Sidebar.logic.ts	attention-status	7
 apps/web/src/components/Sidebar.tsx	attention-status	8
 apps/web/src/components/threadActionMenu.logic.test.ts	attention-status	1
 apps/web/src/components/threadActionMenu.logic.ts	attention-status	5
@@ -961,6 +962,7 @@ packages/contracts/src/orchestrationV2.ts	project-lifecycle	1
 packages/contracts/src/orchestrationV2.ts	workspace-handoff	1
 packages/contracts/src/rpc.ts	project-lifecycle	5
 patches/vitest@5.0.1.patch	project-lifecycle	1
+patches/vitest@5.0.1.patch	nightly	1
 pnpm-workspace.yaml	project-lifecycle	2
 pnpm-workspace.yaml	library-semantic-search	1
 docs/user/composer.md	project-lifecycle	1
@@ -1271,7 +1273,7 @@ AGENTS.md	update-signing	1
 README.md	brand	1
 apps/desktop/package.json	-	"jose": "catalog:"
 apps/desktop/src/backend/DesktopServerExposure.test.ts	tailnet-ownership	12
-apps/desktop/src/backend/DesktopServerExposure.ts	tailnet-ownership	20
+apps/desktop/src/backend/DesktopServerExposure.ts	tailnet-ownership	21
 apps/desktop/src/backend/tailscaleEndpointProvider.test.ts	tailnet-ownership	2
 apps/desktop/src/backend/tailscaleEndpointProvider.ts	tailnet-ownership	7
 apps/desktop/src/ipc/methods/serverExposure.ts	tailnet-ownership	7
@@ -1370,7 +1372,7 @@ apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	2
 apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts	file-placement	4
-apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	4
+apps/server/src/scheduledTasks/ScheduledTaskService.test.ts	file-placement	6
 apps/server/src/serverActivation.test.ts	server-weight	1
 apps/server/src/sourceControl/ServerSourceControlHost.ts	github-host-setup	3
 apps/server/src/terminal/Manager.ts	project-lifecycle	6
@@ -1489,6 +1491,7 @@ packages/contracts/src/filesystem.ts	path-picker	2
 apps/web/src/routeTree.gen.ts	-	/settings/vault
 apps/web/src/routeTree.gen.ts	-	/settings/tools
 apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	ext-settings	1
+apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	library-projects	1
 apps/web/src/components/settings/DeviceHostEditor.tsx	path-picker	2
 docs/user/project-settings.md	path-picker	5
 apps/mobile/src/features/projects/AddProjectScreen.tsx	path-picker	15
@@ -1572,8 +1575,8 @@ apps/server/src/server.ts	machine-updates	3
 apps/server/src/cloud/selfUpdate.ts	machine-updates	3
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	machine-updates	6
 evals/mcp-tool-use/run.ts	machine-updates	2
-apps/server/src/orchestration-v2/ProviderSessionManager.ts	ext-mcp	5
-apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	ext-mcp	14
+apps/server/src/orchestration-v2/ProviderSessionManager.ts	ext-mcp	4
+apps/server/src/orchestration-v2/ProviderSessionManager.test.ts	ext-mcp	12
 apps/server/src/mcp/McpInvocationContext.ts	ext-mcp	1
 apps/server/src/mcp/McpToolAccess.ts	ext-mcp	3
 apps/server/src/server.ts	ext-mcp	2
@@ -1591,7 +1594,7 @@ apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
 apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
-apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
+apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	2
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/package.json	-	"access:pilot"
 apps/desktop/src/app/DesktopApp.ts	cloudflare-access	1
@@ -1648,3 +1651,14 @@ apps/server/src/project/ProjectCloneCompletion.ts	library-projects	2
 packages/contracts/src/project.ts	library-projects	3
 packages/contracts/src/index.ts	library-projects	1
 packages/contracts/src/sourceControl.ts	library-projects	2
+packages/contracts/src/projectSharing.ts	library-projects	1
+apps/desktop/src/updates/DesktopUpdatePolicy.ts	brand	1
+apps/desktop/src/updates/DesktopUpdates.ts	brand	1
+apps/server/src/cli/policy.ts	brand	2
+apps/server/src/cli/policy.test.ts	brand	3
+apps/server/src/cli/update.test.ts	brand	2
+apps/server/src/cloud/selfUpdate.test.ts	brand	2
+apps/web/src/components/sidebar/updateEverything.logic.test.ts	brand	2
+packages/contracts/src/managedPolicy.ts	brand	1
+packages/shared/src/managedPolicyFile.ts	brand	2
+packages/shared/src/managedPolicyFile.test.ts	brand	1

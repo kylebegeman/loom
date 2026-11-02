@@ -1,5 +1,5 @@
 import { ProjectOperations } from "../../../fork/project-library/ProjectOperations.ts"; // fork: library-projects
-import { withForkRuntime } from "../../../fork/ForkRuntime.ts"; // fork: library-projects
+import { ForkRuntime, withForkRuntime } from "../../../fork/ForkRuntime.ts"; // fork: library-projects
 import {
   CommandId,
   MessageId,
@@ -9,13 +9,14 @@ import {
 } from "@t3tools/contracts";
 // fork: library-projects
 import { LibraryError } from "@t3tools/contracts/fork";
-import * as Schema from "effect/Schema";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream"; // fork: file-placement
+import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
@@ -37,6 +38,7 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
+const isAboveCeilingError = Schema.is(OrchestratorRuntimeModeAboveCeilingError);
 // fork: library-projects
 const isLibraryError = Schema.is(LibraryError);
 
@@ -105,6 +107,14 @@ const shareCreated = Effect.fn("mcp.projects.shareCreated")(function* (
       operationId: null,
       projectId: null,
       message: "Project sharing requires the current conversation or signed-in session.",
+    };
+  // fork: library-projects -- a runtime without Loom services keeps the project local.
+  if ((yield* ForkRuntime) === undefined)
+    return {
+      state: "unconnected" as const,
+      operationId: null,
+      projectId: null,
+      message: "This project is ready on this computer. Library services are unavailable here.",
     };
   return yield* withForkRuntime(
     Effect.flatMap(ProjectOperations, (service) => service.shareCreated(project, caller)),
@@ -301,6 +311,13 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               return new OrchestratorMcpFailure({
                 code: "invalid_request",
                 message: error.message,
+              });
+            }
+            // The administrator's ceiling refuses the mode; say so rather than "unavailable".
+            if (error._tag === "ThreadLaunchError" && isAboveCeilingError(error.cause)) {
+              return new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message: error.cause.message,
               });
             }
             return unavailable(error); // fork: mcp-refusals

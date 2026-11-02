@@ -721,6 +721,9 @@ export const OrchestratorMcpScheduledTask = Schema.Struct({
   }),
   webhookSignature: Schema.optional(Schema.Literals(["none", "set"])),
   lastDeliveryIssue: Schema.optional(ScheduledTaskDeliveryIssue), // fork: webhook-delivery-issues
+  blockedByPolicy: Schema.optional(Schema.String).annotate({
+    description: "Present when an administrator's policy stops this task from running.",
+  }),
 });
 export type OrchestratorMcpScheduledTask = typeof OrchestratorMcpScheduledTask.Type;
 

@@ -8,6 +8,7 @@ import { useNavigation, type StaticScreenProps } from "@react-navigation/native"
 import {
   AuthProvidersManageScope,
   AuthOrchestrationReadScope,
+  managedUpdatesDenial,
   type EnvironmentId,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -133,6 +134,10 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   upstreamOwnerUrl?.searchParams.set("machine", environmentId);
   if (upstreamOwnerUrl) upstreamOwnerUrl.hash = "loom-upstream-supervisor";
   const osManaged = runtimeManagedByOperatingSystem(capabilities); // fork: runtime-owner
+  const managedPolicy = config?.managedPolicy;
+  const supportUrl = managedPolicy?.supportUrl;
+  // The server refuses checks and installs; say so instead of offering them.
+  const updatesDenial = managedUpdatesDenial(managedPolicy);
 
   async function run(label: string, action: () => Promise<void>) {
     if (pendingRef.current) return;
@@ -346,6 +351,14 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 <SettingsSection title="Server">
                   <View className="gap-1 p-4">
                     <Text className="text-base text-foreground">Version {version}</Text>
+                    {managedPolicy ? (
+                      <Text className="text-sm text-foreground-muted">
+                        Managed by {managedPolicy.organization}
+                      </Text>
+                    ) : null}
+                    {updatesDenial ? (
+                      <Text className="text-sm text-foreground-muted">{updatesDenial}</Text>
+                    ) : null}
                     {running ? (
                       <Text className="text-sm text-foreground-muted">
                         {updateState.stage === "resuming"
@@ -357,7 +370,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                         {updateState.message}
                       </Text>
                     ) : null}
-                    {checkedRelease ? (
+                    {checkedRelease && !updatesDenial ? (
                       <Text className="text-sm text-foreground-muted">
                         {checkedRelease.targetVersion
                           ? `Version ${checkedRelease.targetVersion} is available.`
@@ -369,6 +382,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                         {OS_MANAGED_RUNTIME_NOTE}
                       </Text> // fork: runtime-owner
                     ) : checkedRelease?.targetVersion &&
+                      !updatesDenial &&
                       !supportsEnvironmentUpdate(config.environment.capabilities) ? ( // fork: runtime-owner
                       <Text className="text-sm text-foreground-muted">
                         {capabilities?.serverSelfUpdate === "desktop-managed"
@@ -378,22 +392,32 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                       </Text>
                     ) : null}
                   </View>
-                  <SettingsActionRow
-                    icon="arrow.clockwise"
-                    label="Check for updates"
-                    disabled={disabled || osManaged} // fork: runtime-owner
-                    loading={pending === "check"}
-                    onPress={() => {
-                      if (disabled) return;
-                      const fromVersion = config.environment.serverVersion;
-                      void run("check", async () => {
-                        const exit = await checkRelease(async () => fromVersion);
-                        // `run` owns the error message, so a failed lookup rethrows to it.
-                        if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
-                      });
-                    }}
-                  />
+                  {supportUrl ? (
+                    <SettingsActionRow
+                      icon="questionmark.bubble"
+                      label={`Get help from ${managedPolicy.organization}`}
+                      onPress={() => void Linking.openURL(supportUrl).catch(() => undefined)}
+                    />
+                  ) : null}
+                  {updatesDenial ? null : (
+                    <SettingsActionRow
+                      icon="arrow.clockwise"
+                      label="Check for updates"
+                      disabled={disabled || osManaged} // fork: runtime-owner
+                      loading={pending === "check"}
+                      onPress={() => {
+                        if (disabled) return;
+                        const fromVersion = config.environment.serverVersion;
+                        void run("check", async () => {
+                          const exit = await checkRelease(async () => fromVersion);
+                          // `run` owns the error message, so a failed lookup rethrows to it.
+                          if (Exit.isFailure(exit)) throw Cause.squash(exit.cause);
+                        });
+                      }}
+                    />
+                  )}
                   {checkedRelease?.targetVersion &&
+                  !updatesDenial &&
                   supportsEnvironmentUpdate(config.environment.capabilities) ? (
                     <SettingsActionRow
                       icon="arrow.up.circle"

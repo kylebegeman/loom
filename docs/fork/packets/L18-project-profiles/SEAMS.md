@@ -61,8 +61,9 @@ None for packet seams. Extension point rows only if this packet created an exten
 
 ## Agent tool families
 
-The `ext-mcp` seams in ProviderSessionManager prepare and compare per-project tool capabilities;
-its test covers stable reuse and replacement when the choice changes. Server wiring provides the
+The `ext-mcp` seams in ProviderSessionManager prepare per-project tool capabilities and drop
+upstream's preview and device credential comparison, since `SessionToolPolicy.refresh` applies
+current access on each MCP request; its test covers stable reuse when the choice changes. Server wiring provides the
 shared policy before orchestration. McpInvocationContext admits the three family names, and
 McpToolAccess checks them even when an agent calls an unlisted tool directly. The eval runner
 reuses production list filtering with the real family toolkits. See `docs/fork/seams.tsv` for counts.

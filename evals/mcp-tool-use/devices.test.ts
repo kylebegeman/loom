@@ -648,7 +648,8 @@ it.effect("denies every device tool with T3's own error when agent device access
       // Refs before typed screenshot errors print their generic screenshot failure instead, and
       // later refs may add how to turn access on.
       const denied = result.text.startsWith(
-        "Agent device access is turned off for this environment.",
+        // fork: project-profiles
+        "Agent device access is turned off for this project.",
       );
       assert.isTrue(
         denied || (name === "device_screenshot" && result.text === "Device screenshot failed."),
