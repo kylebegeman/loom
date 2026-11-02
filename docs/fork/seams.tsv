@@ -1649,3 +1649,13 @@ packages/contracts/src/project.ts	library-projects	3
 packages/contracts/src/index.ts	library-projects	1
 packages/contracts/src/sourceControl.ts	library-projects	2
 packages/contracts/src/projectSharing.ts	library-projects	1
+apps/desktop/src/updates/DesktopUpdatePolicy.ts	brand	1
+apps/desktop/src/updates/DesktopUpdates.ts	brand	1
+apps/server/src/cli/policy.ts	brand	2
+apps/server/src/cli/policy.test.ts	brand	3
+apps/server/src/cli/update.test.ts	brand	2
+apps/server/src/cloud/selfUpdate.test.ts	brand	2
+apps/web/src/components/sidebar/updateEverything.logic.test.ts	brand	2
+packages/contracts/src/managedPolicy.ts	brand	1
+packages/shared/src/managedPolicyFile.ts	brand	2
+packages/shared/src/managedPolicyFile.test.ts	brand	1
