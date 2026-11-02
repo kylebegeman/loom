@@ -692,9 +692,11 @@ export const make = Effect.gen(function* () {
         });
       }
       // Refuse before saving: the backend would only fail to claim the port on every launch.
-      const inspection = input.enabled
-        ? yield* inspectServe({ port: current.port, servePort })
-        : null;
+      // A policy that keeps clients local never claims it, so there is nothing to inspect.
+      const inspection =
+        input.enabled && remoteAllowed
+          ? yield* inspectServe({ port: current.port, servePort })
+          : null;
       if (inspection !== null && REFUSED_TAILSCALE_SERVE_STATES.has(inspection.state)) {
         return yield* new DesktopTailscaleServeRefusedError({
           port: servePort,
