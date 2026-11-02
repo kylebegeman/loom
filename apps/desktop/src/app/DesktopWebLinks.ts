@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 
 import * as ElectronApp from "../electron/ElectronApp.ts"; // fork: client-computer
 import * as ElectronDialog from "../electron/ElectronDialog.ts"; // fork: client-computer
+import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { WEB_LINK_OPEN_CHANNEL } from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts"; // fork: client-computer
@@ -27,6 +28,7 @@ export class DesktopWebLinks extends Context.Service<
 
 const make = Effect.gen(function* () {
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const desktopWindow = yield* DesktopWindow.DesktopWindow;
   // fork: client-computer: the web app opens a file only through this computer's own
   // environment, which a client computer does not run, so say so once instead of holding it.
   const electronApp = yield* ElectronApp.ElectronApp;
@@ -69,7 +71,7 @@ const make = Effect.gen(function* () {
       return;
     }
     for (const url of pending.splice(0)) listening.send(WEB_LINK_OPEN_CHANNEL, url);
-    yield* electronWindow.reveal(window.value);
+    yield* desktopWindow.activate.pipe(Effect.ignore);
   });
 
   const startListening = Effect.gen(function* () {

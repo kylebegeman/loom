@@ -53,6 +53,7 @@ import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import { isActiveRun } from "./CommandPolicy.ts";
 import {
@@ -170,6 +171,7 @@ export const layer: Layer.Layer<
     const fileSystem = yield* FileSystem.FileSystem;
     const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const eventSink = yield* EventSink.EventSinkV2;
+    const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     // fork: mini-native-retention -- fileSystem moved above for workspace restoration.
@@ -461,13 +463,22 @@ export const layer: Layer.Layer<
               } satisfies OrchestrationV2DomainEvent;
             }),
           );
-          yield* eventSink.writeIfRunCurrent({
+          const written = yield* eventSink.writeIfRunCurrent({
             threadId: projection.thread.id,
             runId,
             activeAttemptId: attempt.id,
             expectedStatus: "starting",
             events,
           });
+          // A steering restart that cannot start still ends a run whose earlier turns counted.
+          if (written.committed) {
+            yield* turnAnalytics.runSettled({
+              runId,
+              status,
+              completedAt: now,
+              childrenRunning: false,
+            });
+          }
         },
       );
       // fork: ext-vault-preflight

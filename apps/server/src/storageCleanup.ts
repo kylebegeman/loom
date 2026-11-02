@@ -1308,48 +1308,79 @@ const make = Effect.gen(function* () {
     const refreshedDefaultRefs = new Map<string, Effect.Effect<void, GitCommandError>>();
     const defaultBranches = new Map<string, string | null>();
     // fork: project-lifecycle -- shared by the opt-in unchanged and merged rules, which refresh the
-    // default branch first. Null when the remote default branch cannot be identified.
+    // default branch first. Without a remote, the unchanged rule compares against the project's
+    // own branch. Returns a keep reason when no comparison branch can be identified.
     const defaultBranchIntegration = Effect.fn("StorageCleanup.defaultBranchIntegration")(
-      function* (repositoryCwd: string, worktreePath: string, headSha: string) {
-        const remote = yield* git.resolvePrimaryRemoteName(repositoryCwd);
-        const defaultBranchKey = `${repositoryCwd}\0${remote}`;
-        let branch = defaultBranches.get(defaultBranchKey);
-        if (branch === undefined) {
-          branch = yield* git.resolveDefaultBranchName(repositoryCwd, remote);
-          // Without a local HEAD ref, only the remote can identify its default;
-          // a conventional name may be a feature branch.
-          if (branch === null) {
-            branch = yield* git
-              .execute({
-                operation: "StorageCleanup.resolveDefaultBranch",
-                cwd: repositoryCwd,
-                args: ["ls-remote", "--symref", "--", remote, "HEAD"],
-                timeoutMs: 20_000,
-              })
-              .pipe(
-                Effect.map(
-                  (result) => /^ref: refs\/heads\/(.+)\tHEAD\r?$/m.exec(result.stdout)?.[1] ?? null,
-                ),
-                Effect.orElseSucceed(() => null),
-              );
+      function* (
+        repositoryCwd: string,
+        worktreePath: string,
+        headSha: string,
+        worktreeUnchanged: boolean,
+      ) {
+        const remotes = yield* git.execute({
+          operation: "StorageCleanup.listRemotes",
+          cwd: repositoryCwd,
+          args: ["remote"],
+        });
+        const remote =
+          remotes.stdout.trim() === ""
+            ? null
+            : yield* git.resolvePrimaryRemoteName(repositoryCwd);
+        let branch: string | null | undefined;
+        let defaultRef: string;
+        if (remote === null) {
+          if (!worktreeUnchanged)
+            return "no remote is configured for merged-worktree cleanup";
+          const projectHead = yield* git.execute({
+            operation: "StorageCleanup.resolveProjectBranch",
+            cwd: repositoryCwd,
+            args: ["symbolic-ref", "--quiet", "HEAD"],
+            allowNonZeroExit: true,
+          });
+          if (projectHead.exitCode !== 0) return "project branch is unavailable";
+          defaultRef = projectHead.stdout.trim();
+          branch = defaultRef.slice("refs/heads/".length);
+        } else {
+          const defaultBranchKey = `${repositoryCwd}\0${remote}`;
+          branch = defaultBranches.get(defaultBranchKey);
+          if (branch === undefined) {
+            branch = yield* git.resolveDefaultBranchName(repositoryCwd, remote);
+            // Without a local HEAD ref, only the remote can identify its default;
+            // a conventional name may be a feature branch.
+            if (branch === null) {
+              branch = yield* git
+                .execute({
+                  operation: "StorageCleanup.resolveDefaultBranch",
+                  cwd: repositoryCwd,
+                  args: ["ls-remote", "--symref", "--", remote, "HEAD"],
+                  timeoutMs: 20_000,
+                })
+                .pipe(
+                  Effect.map(
+                    (result) =>
+                      /^ref: refs\/heads\/(.+)\tHEAD\r?$/m.exec(result.stdout)?.[1] ?? null,
+                  ),
+                  Effect.orElseSucceed(() => null),
+                );
+            }
+            defaultBranches.set(defaultBranchKey, branch);
           }
-          defaultBranches.set(defaultBranchKey, branch);
+          if (branch === null) return "default branch is unavailable";
+          defaultRef = `refs/remotes/${remote}/${branch}`;
+          const refreshKey = `${repositoryCwd}\0${defaultRef}`;
+          let refreshed = refreshedDefaultRefs.get(refreshKey);
+          if (refreshed === undefined) {
+            refreshed = yield* Effect.exit(
+              git.fetchRemoteTrackingBranch({
+                cwd: repositoryCwd,
+                remoteName: remote,
+                remoteBranch: branch,
+              }),
+            );
+            refreshedDefaultRefs.set(refreshKey, refreshed);
+          }
+          yield* refreshed;
         }
-        if (branch === null) return null;
-        const defaultRef = `refs/remotes/${remote}/${branch}`;
-        const refreshKey = `${repositoryCwd}\0${defaultRef}`;
-        let refreshed = refreshedDefaultRefs.get(refreshKey);
-        if (refreshed === undefined) {
-          refreshed = yield* Effect.exit(
-            git.fetchRemoteTrackingBranch({
-              cwd: repositoryCwd,
-              remoteName: remote,
-              remoteBranch: branch,
-            }),
-          );
-          refreshedDefaultRefs.set(refreshKey, refreshed);
-        }
-        yield* refreshed;
         const base = yield* git.resolveCommit({ cwd: worktreePath, revision: defaultRef });
         const ancestor = yield* git.execute({
           operation: "StorageCleanup.integratedBranch",
@@ -1357,7 +1388,7 @@ const make = Effect.gen(function* () {
           args: ["merge-base", "--is-ancestor", headSha, base.commitSha],
           allowNonZeroExit: true,
         });
-        return { branch, integrated: ancestor.exitCode === 0 };
+        return { remote, branch, integrated: ancestor.exitCode === 0 };
       },
     );
     // fork: project-lifecycle -- the landing rule is on by default, so it never contacts the
@@ -1637,12 +1668,17 @@ const make = Effect.gen(function* () {
             path.resolve(project.workspaceRoot),
             worktreePath,
             head.commitSha,
+            settings.worktreeUnchanged,
           );
-          if (integration === null) return keep("default branch is unavailable");
-          const { branch, integrated } = integration; // fork: project-lifecycle
+          if (typeof integration === "string") return keep(integration);
+          const { remote, branch, integrated } = integration; // fork: project-lifecycle
           eligible = integrated && settings.worktreeUnchanged;
-          if (eligible) removalReason = "no commits beyond the default branch";
-          if (!eligible && settings.worktreeOnMerge && thread.branch !== null) {
+          if (eligible)
+            removalReason =
+              remote === null
+                ? "no commits beyond the project branch"
+                : "no commits beyond the default branch";
+          if (!eligible && remote !== null && settings.worktreeOnMerge && thread.branch !== null) {
             const pullRequest = yield* gitManager.branchPullRequest(
               { cwd: worktreePath, branch: thread.branch },
               { refresh: true },
@@ -1655,6 +1691,7 @@ const make = Effect.gen(function* () {
             });
             if (eligible) removalReason = "pull request was merged";
           }
+          if (!eligible && remote === null) return keep("has commits beyond the project branch");
         }
         if (!eligible)
           return keep(

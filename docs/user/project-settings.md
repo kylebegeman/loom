@@ -500,7 +500,9 @@ captures and log retention remain machine-wide.
 
 Worktrees can be removed after a chosen number of inactive days, after a thread settles, after
 merging, or when they have no commits beyond the default branch. Set settled retention to 0 days
-to remove a worktree at the next cleanup after settlement. Only T3-managed worktrees are eligible.
+to remove a worktree at the next cleanup after settlement. In repositories without remotes,
+unchanged-worktree cleanup compares against the branch checked out in the project workspace;
+if that checkout has a detached HEAD, the worktree is kept. Only T3-managed worktrees are eligible.
 Active sessions prevent removal. <!-- fork: project-lifecycle -->
 Other rules keep a worktree that several threads share. **Release settled worktrees once pushed** removes it
 once every thread using it is settled, and **Delete landed worktrees and branches** once each is settled or

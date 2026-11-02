@@ -61,6 +61,7 @@ import {
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@t3tools/client-runtime/state/projects";
+import { resolvePastedPath } from "@t3tools/shared/path";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -307,7 +308,9 @@ function ProjectPathInput(props: {
   readonly filter: FolderFilter; // fork: path-picker
 }) {
   // fork: path-picker - The path is browsed, not typed: typing filters FolderBrowser or moves it.
-  return <FolderBrowseField path={props.value} filter={props.filter} />;
+  const filter = props.filter; // fork: path-picker
+  const onChange = (text: string) => filter.onChange(resolvePastedPath(filter.value, text)); // fork: path-picker
+  return <FolderBrowseField path={props.value} filter={{ ...filter, onChange }} />; // fork: path-picker
 }
 
 // fork: file-placement - Exported, needing only what it reads, for the Library folder picker.
