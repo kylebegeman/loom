@@ -1,4 +1,3 @@
-import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import type { AnyRouter } from "@tanstack/react-router";
 // fork: respectful-notifications
 import {
@@ -15,7 +14,7 @@ import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
-import { fakeTimers, stubGlobal } from "../../test/render";
+import { fakeTimers, stubGlobal } from "../../test/render"; // fork: respectful-notifications
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
@@ -292,24 +291,18 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   },
 );
 
-it("holds a completion through a continuation gap and notifies once it settles", async () => {
+it("presents completion notifications and sound as soon as the shell completes", async () => {
   await using app = setup();
+  state.mode = "notifications-and-sound";
   app.start();
-  using _timers = fakeTimers();
-  const finished = (turnId: string, completedAt: string) => ({
-    latestTurn: { turnId, state: "completed", completedAt },
-  });
-  state.shells.set("one", shell(finished("turn-1", "2026-09-13T07:00:01.000Z")));
   state.shells.set(
     "one",
-    shell({ latestTurn: { turnId: "turn-2", state: "running", completedAt: null } }),
+    shell({
+      latestTurn: { turnId: "turn", state: "completed", completedAt: "2026-09-13T07:00:01.000Z" },
+    }),
   );
-  state.shells.set("one", shell(finished("turn-2", "2026-09-13T07:00:02.000Z")));
-  expect(TestNotification.sent).toEqual([]);
-  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS - 1);
-  expect(TestNotification.sent).toEqual([]);
-  await vi.advanceTimersByTimeAsync(1);
   expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+  expect(state.sound).toHaveBeenCalledWith("completion", expect.any(Function));
 });
 
 // fork: respectful-notifications
@@ -330,16 +323,13 @@ it("badges an approval that arrived while closed, seeding from the cached snapsh
 it("shows thread titles by default and hides them, closing shown previews, when turned off", async () => {
   await using app = setup();
   app.start();
-  using _timers = fakeTimers();
   complete();
-  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   const preview = TestNotification.sent[0]!;
   expect(preview.options).toMatchObject({ body: "Test thread", silent: true });
   state.previews = false;
   app.changeSettings();
   expect(preview.close).toHaveBeenCalled();
   complete("two");
-  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   expect(TestNotification.sent.at(-1)!.options.body).toBe("Open Loom to review this thread.");
 });
 
@@ -370,9 +360,7 @@ it.each(["synchronizing", "cached"])(
   async (status) => {
     await using app = setup();
     app.start();
-    using _timers = fakeTimers();
     complete();
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     const notification = TestNotification.sent[0]!;
     const completed = { turnId: "turn", state: "completed", completedAt: "2026-09-13T08:00:00Z" };
     state.shells.set("one", { ...shell({ latestTurn: completed }), status });
@@ -384,7 +372,6 @@ it.each(["synchronizing", "cached"])(
       params: { environmentId: EnvironmentId.make("one"), threadId: "thread" },
     });
     complete();
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     expect(TestNotification.sent).toHaveLength(1);
   },
 );
@@ -405,10 +392,8 @@ it("delivers through Web Locks once granted and skips alerts answered meanwhile"
     },
   });
   app.start();
-  using _timers = fakeTimers();
   complete();
   state.shells.set("two", shell({ hasPendingApprovals: true }));
-  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
   expect(TestNotification.sent).toHaveLength(0);
   state.shells.set("two", shell());
   for (const grant of grants.splice(0)) grant();
@@ -455,22 +440,21 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
 
     expect(TestNotification.sent.map(({ title }) => title)).toEqual([
       "Approval needed",
+      "Thread completed",
       flag === "hasPendingApprovals" ? "Approval needed" : "Input needed",
     ]);
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     state.shells.set("one", { ...shell(completed, asking, offline, done), status: "cached" });
     state.shells.set("one", shell(completed, asking, offline, done));
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
     expect(TestNotification.sent.map(({ title }) => title)).toEqual([
       "Approval needed",
-      flag === "hasPendingApprovals" ? "Approval needed" : "Input needed",
       "Thread completed",
+      flag === "hasPendingApprovals" ? "Approval needed" : "Input needed",
     ]);
   },
 );
 
 it.each([false, true])(
-  "rechecks a pending completion after reconnect (continued: %s)",
+  "does not replay a notified completion after reconnect (continued: %s)",
   async (continued) => {
     await using app = setup();
     app.start();
@@ -482,12 +466,8 @@ it.each([false, true])(
     });
     state.shells.set("one", completed);
     state.shells.set("one", { ...completed, status: "cached" });
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
-    expect(TestNotification.sent).toEqual([]);
+    expect(TestNotification.sent.map(({ title }) => title)).toEqual(["Thread completed"]);
     state.shells.set("one", continued ? shell() : completed);
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
-    expect(TestNotification.sent.map(({ title }) => title)).toEqual(
-      continued ? [] : ["Thread completed"],
-    );
+    expect(TestNotification.sent.map(({ title }) => title)).toEqual(["Thread completed"]);
   },
 );
