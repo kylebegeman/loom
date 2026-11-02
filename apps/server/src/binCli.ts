@@ -1,5 +1,6 @@
 import { FORK_CLI_COMMANDS, withVaultCompletionOutput } from "./fork/cli/index.ts"; // fork: ext-cli
 import { doctorCommand } from "./cli/doctor.ts";
+import { policyCommand } from "./cli/policy.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -105,6 +106,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       themeCommand,
       traceCommand,
       doctorCommand,
+      policyCommand,
       triageCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,
     ]),

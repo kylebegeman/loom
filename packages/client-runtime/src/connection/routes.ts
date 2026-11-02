@@ -130,14 +130,18 @@ function sameKindPreference(route: ConnectionRoute): number {
 export function insertRoute(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,
+  { aheadOfSameKind = false }: { readonly aheadOfSameKind?: boolean } = {},
 ): ReadonlyArray<ConnectionRoute> {
-  const rank = ROUTE_KIND_RANK[connectionRouteKind(route)];
+  const kind = connectionRouteKind(route);
+  const rank = ROUTE_KIND_RANK[kind];
   // fork: reach
   const preference = sameKindPreference(route);
   const index = routes.findIndex((existing) => {
-    const existingRank = ROUTE_KIND_RANK[connectionRouteKind(existing)];
+    const existingKind = connectionRouteKind(existing);
     return (
-      existingRank > rank || (existingRank === rank && sameKindPreference(existing) > preference)
+      ROUTE_KIND_RANK[existingKind] > rank ||
+      (aheadOfSameKind && existingKind === kind) ||
+      (ROUTE_KIND_RANK[existingKind] === rank && sameKindPreference(existing) > preference)
     );
   });
   return index === -1
@@ -152,7 +156,9 @@ export function upsertRoute(
   const id = connectionRouteId(route.target);
   return routes.some((existing) => connectionRouteId(existing.target) === id)
     ? routes.map((existing) => (connectionRouteId(existing.target) === id ? route : existing))
-    : insertRoute(routes, route);
+    : // A route paired at a new address, such as localhost beside a saved
+      // 127.0.0.1, goes first among its kind so its fresh credential connects.
+      insertRoute(routes, route, { aheadOfSameKind: true });
 }
 
 export function findRouteToSameAddress(
