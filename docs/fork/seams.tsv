@@ -152,7 +152,7 @@ apps/mobile/src/Stack.tsx	brand	2
 apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx	brand	3
 apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx	brand	2
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	brand	3
-apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx	brand	2
+apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx	brand	3
 apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	brand	3
 apps/mobile/src/features/threads/ThreadComposer.tsx	brand	2
 apps/mobile/src/features/threads/ThreadFeed.tsx	brand	2
