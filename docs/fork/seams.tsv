@@ -1389,6 +1389,7 @@ apps/web/src/components/settings/ConnectionsSettings.logic.test.ts	tailnet-owner
 apps/web/src/components/settings/ConnectionsSettings.logic.ts	tailnet-ownership	9
 apps/web/src/components/settings/LocalEnvironmentSetting.tsx	fleet-connections	4
 apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	project-home	3
+apps/web/src/components/settings/ProjectSettingsPanel.browser.test.tsx	library-projects	1
 apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts	project-home	2
 apps/web/src/components/settings/ProjectSettingsPanel.logic.ts	project-home	1
 apps/web/src/components/settings/SessionPermissions.tsx	identity-renewal	1

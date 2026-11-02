@@ -150,6 +150,7 @@ const instanceId = ProviderInstanceId.make("codex");
 const environments = [primaryId, remoteId].map((environmentId) => ({
   environmentId,
   label: environmentId,
+  entry: { enabled: true }, // fork: library-projects
   connection: { phase: "connected" },
   serverConfig: {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
