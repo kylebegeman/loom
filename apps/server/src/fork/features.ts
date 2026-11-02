@@ -51,6 +51,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "skill-registry",
   "project-profiles",
   "browser-dev-tools",
+  "browser-dev-tools-http",
   "project-workflows",
   "core",
   "vault-core",

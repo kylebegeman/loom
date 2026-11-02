@@ -1,7 +1,10 @@
+import { DevRequestsService } from "./DevRequestsService.ts";
 import { DevDiagnosticsService } from "./DevDiagnosticsService.ts";
 import type { DevDiagnosticsTarget } from "@t3tools/contracts/fork";
 import {
   DEV_ENVIRONMENT_WS_METHODS as D,
+  type DevHttpSend,
+  type DevHttpHistoryTarget,
   type DevTarget,
   type DevStart,
   type DevControl,
@@ -16,10 +19,15 @@ import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 export const makeDevEnvironmentRpcHandlers = Effect.fn("DevEnvironment.rpc")(function* (
   auth: ForkRpcAuth,
 ) {
+  const requests = yield* DevRequestsService;
   const diagnostics = yield* DevDiagnosticsService;
   const dev = yield* DevEnvironmentService;
   const containers = yield* DevContainersService;
   return {
+    [D.httpSend]: (input: DevHttpSend) => auth.effect(D.httpSend, requests.send(input)),
+    [D.httpHistory]: (input: DevHttpHistoryTarget) =>
+      auth.effect(D.httpHistory, requests.history(input)),
+    [D.httpClear]: (input: DevTarget) => auth.effect(D.httpClear, requests.clear(input)),
     [D.diagnostics]: (input: DevDiagnosticsTarget) =>
       auth.effect(D.diagnostics, diagnostics.read(input)),
     [D.snapshot]: (input: DevTarget) => auth.effect(D.snapshot, dev.snapshot(input)),

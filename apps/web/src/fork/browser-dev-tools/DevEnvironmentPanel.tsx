@@ -1,3 +1,6 @@
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "~/state/entities";
+import HttpRequestLab from "./HttpRequestLab";
 import { useNavigate } from "@tanstack/react-router";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -48,13 +51,18 @@ export default function DevEnvironmentPanel(props: ForkPanelProps) {
   );
 }
 function Development({ threadRef }: { threadRef: ScopedThreadRef }) {
+  const supportsHttp = supportsLoomFeature(
+    useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
+    "browser-dev-tools-http",
+  );
   const servers = useEnvironmentQuery(
     dev.servers({
       environmentId: threadRef.environmentId,
       input: { threadId: threadRef.threadId },
     }),
   );
-  const [tab, setTab] = useState<"servers" | "services" | "diagnostics">("servers");
+  const [tab, setTab] = useState<"servers" | "services" | "diagnostics" | "requests">("servers");
+  const activeTab = tab === "requests" && !supportsHttp ? "servers" : tab;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="space-y-3 border-b border-border px-4 py-3">
@@ -73,13 +81,14 @@ function Development({ threadRef }: { threadRef: ScopedThreadRef }) {
               ["servers", "Servers"],
               ["services", "Services"],
               ["diagnostics", "Browser diagnostics"],
+              ...(supportsHttp ? [["requests", "HTTP requests"] as const] : []),
             ] as const
           ).map(([value, label]) => (
             <Button
               key={value}
               size="sm"
-              variant={tab === value ? "secondary" : "ghost"}
-              aria-pressed={tab === value}
+              variant={activeTab === value ? "secondary" : "ghost"}
+              aria-pressed={activeTab === value}
               onClick={() => setTab(value)}
             >
               {label}
@@ -98,11 +107,17 @@ function Development({ threadRef }: { threadRef: ScopedThreadRef }) {
             Reading this checkout...
           </p>
         ) : null}
-        {tab === "servers" && servers.data ? (
+        {activeTab === "servers" && servers.data ? (
           <Servers threadRef={threadRef} snapshot={servers.data} />
         ) : null}
-        {tab === "services" ? <Services threadRef={threadRef} /> : null}
-        {tab === "diagnostics" ? <Diagnostics threadRef={threadRef} /> : null}
+        {activeTab === "requests" ? (
+          <HttpRequestLab
+            threadRef={threadRef}
+            serverUrl={servers.data?.runs.find((run) => run.state === "ready")?.urls[0]}
+          />
+        ) : null}
+        {activeTab === "services" ? <Services threadRef={threadRef} /> : null}
+        {activeTab === "diagnostics" ? <Diagnostics threadRef={threadRef} /> : null}
       </div>
     </div>
   );

@@ -25,6 +25,9 @@ export const devEnvironmentPaletteSource: ForkCommandPaletteSource = {
               "valkey",
               "console",
               "network",
+              ...(loomFeatures.includes("browser-dev-tools-http")
+                ? ["http", "api", "request", "response"]
+                : []),
             ],
             run: async () => openDevEnvironment(activeThreadRef),
           },

@@ -1,3 +1,4 @@
+import type { DevRequestsService } from "./browser-dev-tools/DevRequestsService.ts";
 import type { DevDiagnosticsService } from "./browser-dev-tools/DevDiagnosticsService.ts";
 import type { DevEnvironmentService } from "./browser-dev-tools/DevEnvironmentService.ts";
 import type { DevContainersService } from "./browser-dev-tools/DevContainersService.ts";
@@ -86,6 +87,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | DevRequestsService
   | DevDiagnosticsService
   | DevEnvironmentService
   | DevContainersService

@@ -33,4 +33,15 @@ fixture or print credential-bearing connection URLs.
 
 Web and desktop share the panel. Native mobile has the same agent tools and existing
 preview links, but no native Development panel in these slices. Do not report a desktop
-shell or native-device result from web verification. The request lab remains future work.
+shell or native-device result from web verification. HTTP request controls are shared with the same web/desktop panel.
+
+The request-service tests cover bounded text/binary responses, timeouts, redirects, credential
+redaction, persisted retry receipts, checkout isolation, history bounds, failed storage and
+clearing during an in-flight request. The `dev-http.ndjson` eval cases cover sending through
+the supported tool and inspecting a saved exchange without replay or clearing.
+
+For live acceptance, use a local fixture with echo, binary, oversized, redirect and delayed
+responses. Check status/timing/body, header and query redaction, draft insertion, saved field
+loading and history after restarting the isolated server. Test clear cancellation and confirmed
+clearing, plus a long history URL at phone width. These requests are intentionally real network
+operations against the fixture, not a production API.
