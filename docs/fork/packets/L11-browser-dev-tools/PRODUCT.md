@@ -55,5 +55,19 @@ The web and desktop clients share the panel. The native phone app uses conversat
 and preview links. Every operation runs on the computer owning the selected conversation's
 checkout, including over remote connections. Unsupported servers hide the feature.
 
-The HTTP request lab remains planned after these slices. Full API clients and database
-browsers remain separate products.
+## HTTP requests
+
+The request lab sends individual HTTP/HTTPS requests from the selected execution computer.
+Methods, headers, raw bodies and bounded timeouts are explicit. Responses retain status,
+measured duration, headers and a bounded text preview or binary summary. Redirects are shown
+without following them; requests are never automatically retried.
+
+History retains the latest 50 payloads per checkout on that computer. Its list transfers
+summaries; selecting an entry loads one payload. Loading saved fields prepares a new request
+without sending it, omitting authentication headers and common credential query fields.
+Bodies remain in history. Clearing removes payloads across conversations sharing the checkout.
+Bounded receipts retain duplicate protection across lost responses and server restarts.
+
+The same execution grant protects sends and response history. Older servers without the HTTP
+capability hide the new tab. Full collections, authentication scripts, database browsing and
+background request replay remain separate work.

@@ -1,3 +1,4 @@
+import * as DevRequests from "./browser-dev-tools/DevRequestsService.ts";
 import * as DevDiagnostics from "./browser-dev-tools/DevDiagnosticsService.ts";
 import * as DevEnvironment from "./browser-dev-tools/DevEnvironmentService.ts";
 import * as DevContainers from "./browser-dev-tools/DevContainersService.ts";
@@ -427,6 +428,7 @@ export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
+  DevRequests.layer.pipe(Layer.provide(layerDevEnvironment), Layer.provide(FetchHttpClient.layer)),
   DevDiagnostics.layer.pipe(Layer.provide(layerDevEnvironment)),
   layerDevEnvironment,
   layerDevContainers,

@@ -41,3 +41,21 @@ inspection. Preserved data requires its original credential when recreating a co
 RPC and MCP handlers decode and call these services. Client mutations use permission-aware
 commands; the server checks destination scopes. Existing environment forwarding routes tools
 to the execution computer. No Library dependency is introduced for local development.
+
+## Request receipts and payloads
+
+`DevRequestsService` writes a pending receipt before contacting the target. A matching request
+ID returns its saved exchange; conflicting inputs, a missing response or a cleared payload
+cannot trigger another send. The network operation runs outside the history-write lock.
+Clearing while a request is running leaves its later response out of saved history.
+
+History is private, atomically written JSON under the execution computer's state directory,
+keyed by canonical checkout identity. It keeps 50 payloads and bounded receipt metadata.
+Request and response bodies are intentional history content; authentication headers and common
+credential query fields are redacted. Corrupt or unwritable history fails closed before a new
+send. No Library mutation or database migration is needed.
+
+The HTTP client disables ambient credentials, redirects and trace propagation to arbitrary
+targets. Streaming stops at the preview bound. All HTTP RPCs, including history reads, use
+execution permission and guarded client commands. The separate `browser-dev-tools-http`
+capability avoids advertising the new UI on older computers.

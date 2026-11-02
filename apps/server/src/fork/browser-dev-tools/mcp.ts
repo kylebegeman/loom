@@ -1,9 +1,15 @@
+import { DevRequestsService } from "./DevRequestsService.ts";
 import {
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  DevHttpSend,
+  DevHttpHistory,
+  DevHttpHistoryTarget,
+  DevHttpExchange,
+  DevHttpError,
   DevEnvironmentError,
   DevSnapshot,
   DevServerRun,
@@ -29,9 +35,33 @@ const target = {
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: Schema.optionalKey(ThreadId),
 };
-const failure = Schema.Union([DevEnvironmentError, OrchestratorMcpFailure]);
+const failure = Schema.Union([DevEnvironmentError, DevHttpError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
 export const DevEnvironmentToolkit = Toolkit.make(
+  Tool.make("loom_dev_request", {
+    description:
+      "Send one HTTP request from this conversation's execution computer, including its local development ports. Use a stable requestId and identical inputs after a lost response; retries reuse the recorded response rather than sending twice. HTTP/HTTPS only, no automatic redirects or retries. Body limit 128 KiB, response preview 256 KiB, timeout at most 60 seconds. Returned and saved authentication headers and credential query fields are redacted. Requires execution authority; methods can change the target.",
+    parameters: Schema.Struct({ ...DevHttpSend.fields, ...target }),
+    success: DevHttpExchange,
+    failure,
+    dependencies,
+  }),
+  Tool.make("loom_dev_request_history", {
+    description:
+      "Read the latest 50 HTTP exchange summaries saved for this checkout on its execution computer. Pass exchangeId to load one response preview; authentication headers are redacted. Omit threadId for this conversation. Reading history never sends a request. Requires the same execution authority as the request lab.",
+    parameters: Schema.Struct({ ...DevHttpHistoryTarget.fields, ...target }),
+    success: DevHttpHistory,
+    failure,
+    dependencies,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_dev_request_clear", {
+    description:
+      "Clear saved HTTP exchange payloads for this checkout on the selected execution computer. This includes other conversations sharing the same checkout. Use only when authorized to clear that history. Retains bounded request-ID receipts so a lost response is not automatically resent. Does not change the target server or Browser capture.",
+    parameters: Schema.Struct(target),
+    success: DevHttpHistory,
+    failure,
+    dependencies,
+  }),
   Tool.make("loom_dev_servers", {
     description:
       "Read this checkout's run commands, managed dev servers, detected URLs, bounded output and exit codes. Omit threadId for this conversation. Commands run on the selected execution computer. A different worktree has its own runs.",
@@ -99,6 +129,32 @@ export const devEnvironmentHandlers = McpToolAccess.toLayer(
       return (yield* readThread(threadId)).projection.thread.id;
     });
     return {
+      loom_dev_request: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          return yield* inRuntime(
+            Effect.flatMap(DevRequestsService, (requests) => requests.send({ ...input, threadId })),
+          );
+        }),
+      ),
+      loom_dev_request_history: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          return yield* inRuntime(
+            Effect.flatMap(DevRequestsService, (requests) =>
+              requests.history({ ...input, threadId }),
+            ),
+          );
+        }),
+      ),
+      loom_dev_request_clear: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* threadIdFor(input.threadId);
+          return yield* inRuntime(
+            Effect.flatMap(DevRequestsService, (requests) => requests.clear({ threadId })),
+          );
+        }),
+      ),
       loom_dev_servers: McpToolAccess.reads((input) =>
         Effect.gen(function* () {
           const threadId = yield* threadIdFor(input.threadId);

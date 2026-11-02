@@ -56,6 +56,9 @@ import {
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [DEV.httpSend]: AuthTerminalOperateScope,
+  [DEV.httpHistory]: AuthTerminalOperateScope,
+  [DEV.httpClear]: AuthTerminalOperateScope,
   [DEV.start]: AuthTerminalOperateScope,
   [DEV.control]: AuthTerminalOperateScope,
   [DEV.compose]: AuthTerminalOperateScope,

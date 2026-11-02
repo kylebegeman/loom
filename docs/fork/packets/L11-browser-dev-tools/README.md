@@ -1,9 +1,9 @@
 # L11: Development tools
 
-Status: First two slices landed on main. Service, authorization, tool-use and local
-Docker lifecycle and integrated web-client checks pass. Kyle selected these
+Status: The initial development tools and HTTP request lab are implemented. Service,
+authorization, tool-use and integrated web-client checks pass. Kyle selected these
 slices on 2026-11-02: checkout dev servers and Browser diagnostics, then Compose and local
-databases. The HTTP request lab remains a separate planned follow-up.
+databases. Kyle continued with the HTTP request lab in the same workload.
 
 Development builds on existing project actions, terminals, port discovery, Browser captures,
 project environment profiles and preview links. A run belongs to a checkout on a computer;
@@ -23,14 +23,15 @@ The UI and supported `loom_dev_*` tools call the same services.
 - Create, start, stop and remove loopback-only Postgres and Valkey databases with owned data
   volumes and credentials in the computer's secret store. Preserve data by default; explicit
   data deletion is confirmed in the UI.
+- Send bounded HTTP requests on the execution computer, inspect status/timing/headers/body,
+  reuse saved request fields, clear checkout history and add response excerpts to a draft.
 - Web/desktop Development panel, panel picker, command palette and Browser entry point.
   Native phone users can use the supported agent tools and existing preview links.
 
 ## Remaining scope
 
-The HTTP request lab, full API-client capabilities and database browsing are not part of
-these two slices. The lightweight request lab remains planned; full API and database studios
-remain independent products. Additional container administration outside checkout development
+Full API-client capabilities and database browsing remain independent products. The delivered
+request lab is for individual development requests rather than collections or scripted flows. Additional container administration outside checkout development
 is outside L11.
 
 Obscura page fetch remains retired by Kyle's 2026-10-09 decision. Existing browser/provider

@@ -10,6 +10,18 @@ export function createDevEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    httpSend: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:http-send",
+      tag: D.httpSend,
+    }),
+    httpClear: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:http-clear",
+      tag: D.httpClear,
+    }),
+    httpHistory: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:http-history",
+      tag: D.httpHistory,
+    }),
     diagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:dev:diagnostics",
       tag: D.diagnostics,

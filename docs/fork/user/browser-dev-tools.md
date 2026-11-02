@@ -45,3 +45,28 @@ Development databases remain in Docker until you stop or remove them.
 Agents can inspect and manage the same runs and services with the `loom_dev_*` tools,
 including while you use Loom on your phone. Web and desktop have the Development panel;
 the native phone app uses conversation tools and existing preview links.
+
+## HTTP requests
+
+Open **HTTP requests** in Development to send a request from the checkout's execution
+computer. Localhost addresses refer to that computer. Choose a method, URL, headers and
+optional raw body, then send. The result includes status, timing, headers and a body preview.
+Redirects are shown without being followed. Request bodies are limited to 128 KiB and response
+previews to 256 KiB; binary responses show their captured size. Timeouts can be set up to
+60 seconds.
+
+The latest 50 exchanges are saved on that computer for the checkout. Select one to inspect
+its response, then use **Load request** to prepare its fields for another send. Authentication
+headers and common credential query fields are redacted in saved exchanges and omitted when
+loading a request, so restore authentication before sending again when needed. Request and
+response bodies remain part of the saved exchange. Other worktrees have their own history.
+
+**Add response to message** inserts an excerpt into your draft. **Clear history** removes
+saved payloads for all conversations sharing this checkout. Clearing does not undo requests
+already sent. A small set of request-ID receipts remains so a retry after a lost response
+does not automatically send the operation again. Requests whose outcome is unavailable are
+reported explicitly.
+
+Sending requests and reading their history require execution access. Agents use
+`loom_dev_request`, `loom_dev_request_history` and `loom_dev_request_clear` for the same
+workflow. Older connected computers without this capability hide the HTTP tab until updated.
