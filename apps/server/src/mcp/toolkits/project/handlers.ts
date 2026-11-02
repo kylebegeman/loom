@@ -1,5 +1,5 @@
 import { ProjectOperations } from "../../../fork/project-library/ProjectOperations.ts"; // fork: library-projects
-import { withForkRuntime } from "../../../fork/ForkRuntime.ts"; // fork: library-projects
+import { ForkRuntime, withForkRuntime } from "../../../fork/ForkRuntime.ts"; // fork: library-projects
 import {
   CommandId,
   MessageId,
@@ -107,6 +107,14 @@ const shareCreated = Effect.fn("mcp.projects.shareCreated")(function* (
       operationId: null,
       projectId: null,
       message: "Project sharing requires the current conversation or signed-in session.",
+    };
+  // fork: library-projects -- a runtime without Loom services keeps the project local.
+  if ((yield* ForkRuntime) === undefined)
+    return {
+      state: "unconnected" as const,
+      operationId: null,
+      projectId: null,
+      message: "This project is ready on this computer. Library services are unavailable here.",
     };
   return yield* withForkRuntime(
     Effect.flatMap(ProjectOperations, (service) => service.shareCreated(project, caller)),

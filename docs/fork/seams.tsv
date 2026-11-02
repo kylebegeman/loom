@@ -114,6 +114,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	project-lif
 apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	3
 apps/server/src/mcp/toolkits/environment/tools.ts	file-placement	6
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	project-profiles	1
 apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	2
 apps/server/src/mcp/toolkits/environment/handlers.ts	file-placement	5
 apps/server/src/mcp/toolkits/environment/handlers.test.ts	mini-native-retention	3
