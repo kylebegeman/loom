@@ -412,6 +412,7 @@ describe("CodexAdapterV2 process spawning", () => {
 
     assert.deepEqual(
       CodexAdapterV2.codexThreadRuntimeParams({
+        threadId,
         mcpSession,
         modelSelection: { model: "gpt-5.4" },
         runtimePolicy: {
@@ -425,20 +426,18 @@ describe("CodexAdapterV2 process spawning", () => {
         model: "gpt-5.4",
         config: {
           // fork: ext-vault-terminal
-          shell_environment_policy: {
-            set: {
-              LOOM_MCP_CONNECTION_FILE: "/private/tmp/loom-mcp-test/session",
-              LOOM_MCP_ENDPOINT: "",
-              LOOM_MCP_AUTHORIZATION: "",
-              T3_ACP_MCP_ENDPOINT: "",
-              T3_ACP_MCP_AUTHORIZATION: "",
-              T3_MCP_URL: "",
-              T3_MCP_BEARER_TOKEN: "",
-              LOOM_VAULT_OPENBAO_URL: "",
-              LOOM_VAULT_OPENBAO_TOKEN_FILE: "",
-              LOOM_VAULT_OPENBAO_MOUNT: "",
-            },
-          },
+          "shell_environment_policy.set.LOOM_MCP_CONNECTION_FILE":
+            "/private/tmp/loom-mcp-test/session",
+          "shell_environment_policy.set.LOOM_MCP_ENDPOINT": "",
+          "shell_environment_policy.set.LOOM_MCP_AUTHORIZATION": "",
+          "shell_environment_policy.set.T3_ACP_MCP_ENDPOINT": "",
+          "shell_environment_policy.set.T3_ACP_MCP_AUTHORIZATION": "",
+          "shell_environment_policy.set.T3_MCP_URL": "",
+          "shell_environment_policy.set.T3_MCP_BEARER_TOKEN": "",
+          "shell_environment_policy.set.LOOM_VAULT_OPENBAO_URL": "",
+          "shell_environment_policy.set.LOOM_VAULT_OPENBAO_TOKEN_FILE": "",
+          "shell_environment_policy.set.LOOM_VAULT_OPENBAO_MOUNT": "",
+          "shell_environment_policy.set.T3CODE_THREAD_ID": "thread-codex-mcp",
           "tools.update_plan.enabled": true,
           // Codex waits up to 10 s, not 1 s, for MCP servers before the first request.
           mcp_optional_startup_grace_ms: 10_000,
