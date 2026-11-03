@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"; // fork: desktop-app-test
 import { vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({}));
@@ -21,6 +22,12 @@ vi.mock("../ipc/DesktopIpcHandlers.ts", () => ({
 }));
 vi.mock("../updates/DesktopRemoteUpdates.ts", () => ({ listen: Effect.void }));
 vi.mock("./DesktopStartupRecovery.ts", () => ({ listen: Effect.void }));
+vi.mock("../fork/database-compaction/RestartCompaction.ts", () => ({
+  compactBeforeBackendStart: Effect.void,
+})); // fork: desktop-app-test
+vi.mock("../fork/rollback-snapshot/RollbackSnapshot.ts", () => ({
+  recordInstalledBuildAtStartup: Effect.void,
+})); // fork: desktop-app-test
 
 import * as DesktopApp from "./DesktopApp.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
@@ -68,6 +75,9 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as MacPermissions from "../permissions/MacPermissions.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as DesktopCloudflareAccess from "../fork/cloudflare-access/DesktopCloudflareAccess.ts"; // fork: desktop-app-test
+import * as DesktopIdentityRenewal from "../fork/identity-renewal/DesktopIdentityRenewal.ts"; // fork: desktop-app-test
+import * as OpenAtLogin from "../fork/open-at-login/OpenAtLogin.ts"; // fork: desktop-app-test
 
 it.effect(
   "starts the backend and window while Linux registration is stalled and cancels it on shutdown",
@@ -206,6 +216,14 @@ it.effect(
             Layer.mock(ElectronTheme.ElectronTheme, {}),
             Layer.mock(ElectronWindow.ElectronWindow, {}),
             Layer.mock(MacPermissions.MacPermissions, {}),
+            // fork: desktop-app-test
+            Layer.mock(DesktopCloudflareAccess.DesktopCloudflareAccess, {
+              fetch: () => Promise.reject(new Error("unexpected Cloudflare Access fetch")), // fork: desktop-app-test
+              install: Effect.void, // fork: desktop-app-test
+            }), // fork: desktop-app-test
+            Layer.mock(DesktopIdentityRenewal.DesktopIdentityRenewal, {}), // fork: desktop-app-test
+            Layer.mock(OpenAtLogin.OpenAtLogin, { reconcile: Effect.void }), // fork: desktop-app-test
+            Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {}), // fork: desktop-app-test
             Layer.mock(PreviewManager.PreviewManager, {
               isBrowserPartition: () => {
                 throw new Error("unexpected browser partition lookup");
