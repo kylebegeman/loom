@@ -89,7 +89,7 @@ function Development({ threadRef }: { threadRef: ScopedThreadRef }) {
               ["servers", "Servers"],
               ["services", "Services"],
               ["diagnostics", "Browser diagnostics"],
-              ...(supportsHttp ? [["requests", "HTTP requests"] as const] : []),
+              ...(supportsHttp ? [["requests", "Pulse"] as const] : []),
             ] as const
           ).map(([value, label]) => (
             <Button

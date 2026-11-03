@@ -13,7 +13,12 @@ import type {
 import { Button } from "~/components/ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "~/components/ui/menu";
 import * as Schema from "effect/Schema";
-import { VaultError } from "@t3tools/contracts/fork";
+import {
+  VaultError,
+  DevApiDetails as DetailsSchema,
+  DevApiSource as SourceSchema,
+} from "@t3tools/contracts/fork";
+import { toastManager } from "~/components/ui/toast";
 import { Input } from "~/components/ui/input";
 import {
   ChevronRightIcon,
@@ -31,6 +36,7 @@ import {
   PanelLeftOpenIcon,
   MoreHorizontalIcon,
   RefreshCwIcon,
+  XIcon,
 } from "lucide-react";
 import ApiRequestEditor from "./ApiRequestEditor";
 import ApiEnvironmentEditor from "./ApiEnvironmentEditor";
@@ -43,6 +49,23 @@ const isVaultError = Schema.is(VaultError);
 const problem = (e: unknown) =>
   e instanceof Error ? e.message : "The API workspace is unavailable.";
 type Request = DevApiDetails["requests"][number];
+const TabSnapshot = Schema.Struct({
+  details: DetailsSchema,
+  draft: Schema.String,
+  source: SourceSchema,
+  exchangeId: Schema.NullOr(Schema.String),
+});
+type TabSnapshot = typeof TabSnapshot.Type;
+const Session = Schema.Struct({ active: Schema.String, tabs: Schema.Array(TabSnapshot) });
+const decodeSession = Schema.decodeUnknownSync(Schema.fromJsonString(Session));
+function recoverSession(key: string): typeof Session.Type {
+  try {
+    return decodeSession(localStorage.getItem(key) ?? '{"active":"","tabs":[]}');
+  } catch {
+    return { active: "", tabs: [] };
+  }
+}
+
 function Folder({
   name,
   entries,
@@ -118,16 +141,23 @@ export default function ApiWorkspaces({
   threadRef,
   onResult,
   onBusy,
+  onSelectResponse,
   response,
   supportsEditing = false,
 }: {
   threadRef: ScopedThreadRef;
   onResult: (result: DevApiRunResult) => void;
   response: ReactNode;
+  onSelectResponse: (exchangeId: string | null) => void;
   supportsEditing?: boolean;
   onBusy: (busy: boolean) => void;
 }) {
   const id = useId();
+  const storageKey = `loom:pulse:tabs:${threadRef.environmentId}:${threadRef.threadId}`;
+  const [recovered] = useState(() => recoverSession(storageKey));
+  const initialTab = recovered.tabs.find((t) => t.details.selected?.id === recovered.active);
+  const [tabs, setTabs] = useState<readonly TabSnapshot[]>(recovered.tabs);
+  const [exchangeId, setExchangeId] = useState<string | null>(initialTab?.exchangeId ?? null);
   const supportsMultipart = supportsLoomFeature(
     useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
     "browser-dev-tools-api-multipart",
@@ -137,8 +167,8 @@ export default function ApiWorkspaces({
   );
   const canUse = useAtomValue(dev.apiList.permissionAtom(threadRef.environmentId));
   const [workspaces, setWorkspaces] = useState<readonly DevApiWorkspace[] | null>(null);
-  const [details, setDetails] = useState<DevApiDetails | null>(null);
-  const [source, setSource] = useState<DevApiSource>({ kind: "none" });
+  const [details, setDetails] = useState<DevApiDetails | null>(initialTab?.details ?? null);
+  const [source, setSource] = useState<DevApiSource>(initialTab?.source ?? { kind: "none" });
   const [environment, setEnvironment] = useState<DevApiEnvironment | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +178,7 @@ export default function ApiWorkspaces({
   const [dirty, setDirty] = useState(false);
   const [bodyBase64, setBodyBase64] = useState<string | undefined>();
   const [bodyFileName, setBodyFileName] = useState("");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialTab?.draft ?? "");
   const [editorGeneration, setEditorGeneration] = useState(0);
   const [showEnvironment, setShowEnvironment] = useState(false);
   const [showCollections, setShowCollections] = useState(true);
@@ -186,11 +216,90 @@ export default function ApiWorkspaces({
       generation.current++;
     };
   }, [refresh]);
+  const activeSnapshot = details?.selected ? { details, draft, source, exchangeId } : null;
+  const openTabs = activeSnapshot
+    ? [
+        ...tabs.filter(
+          (t) =>
+            t.details.selected?.id !== activeSnapshot.details.selected?.id ||
+            t.details.workspace.id !== activeSnapshot.details.workspace.id,
+        ),
+        activeSnapshot,
+      ]
+    : tabs;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists recoverable request drafts to this client's local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ active: details?.selected?.id ?? "", tabs: openTabs }),
+      );
+    } catch {
+      toastManager.add({
+        id: "pulse-recovery-storage",
+        type: "error",
+        title: "Draft recovery storage is unavailable",
+        description: "Keep this panel open until your requests are saved.",
+      });
+    }
+  }, [storageKey, details, openTabs]);
+  const remember = () => setTabs(openTabs);
+  const activateTab = async (tab: TabSnapshot) => {
+    remember();
+    setDetails(tab.details);
+    setDraft(tab.draft);
+    setSource(tab.source);
+    setExchangeId(tab.exchangeId);
+    onSelectResponse(tab.exchangeId);
+    setMultipartFiles({});
+    setBodyBase64(undefined);
+    setBodyFileName("");
+    setEnvironment(null);
+    setDirty(false);
+    setEditorGeneration((n) => n + 1);
+    pending.current = null;
+    working(true);
+    try {
+      const env = await runDevCommand(dev.apiEnvironment, {
+        ...target,
+        input: { ...target.input, workspaceId: tab.details.workspace.id, source: tab.source },
+      });
+      setEnvironment(env);
+      setError(null);
+    } catch (e) {
+      setError(problem(e));
+    }
+    working(false);
+  };
+  const closeTab = (tab: TabSnapshot) => {
+    const remaining = openTabs.filter((t) => t !== tab);
+    if (
+      tab.draft !== tab.details.selected?.sourceJson &&
+      !window.confirm("Discard this tab's unsaved request edits?")
+    )
+      return;
+    setTabs(remaining);
+    if (
+      tab.details.selected?.id === details?.selected?.id &&
+      tab.details.workspace.id === details?.workspace.id
+    ) {
+      setDetails(null);
+      setDraft("");
+      setEnvironment(null);
+      onSelectResponse(null);
+      if (remaining.length) void activateTabAfterClose(remaining);
+    }
+  };
+  const activateTabAfterClose = async (remaining: readonly TabSnapshot[]) => {
+    await activateTab(remaining[remaining.length - 1]!);
+    setTabs(remaining);
+  };
   const working = (value: boolean) => {
     setBusy(value);
     onBusy(value);
   };
   const chooseWorkspace = async (workspaceId: string) => {
+    remember();
     const revision = ++generation.current;
     setMultipartFiles({});
     setBodyBase64(undefined);
@@ -213,6 +322,8 @@ export default function ApiWorkspaces({
       if (revision === generation.current) {
         setDetails(value);
         setDraft(value.selected?.sourceJson ?? "");
+        setExchangeId(null);
+        onSelectResponse(null);
       }
     } catch (e) {
       if (revision === generation.current) setError(problem(e));
@@ -221,6 +332,15 @@ export default function ApiWorkspaces({
   };
   const chooseRequest = async (requestKey: string) => {
     if (!details) return;
+    const existing = openTabs.find(
+      (t) =>
+        t.details.workspace.id === details.workspace.id && t.details.selected?.id === requestKey,
+    );
+    if (existing) {
+      await activateTab(existing);
+      return;
+    }
+    remember();
     const revision = ++generation.current;
     setMultipartFiles({});
     setBodyBase64(undefined);
@@ -237,6 +357,8 @@ export default function ApiWorkspaces({
       if (revision === generation.current) {
         setDetails(value);
         setDraft(value.selected?.sourceJson ?? "");
+        setExchangeId(null);
+        onSelectResponse(null);
       }
     } catch (e) {
       if (revision === generation.current) setError(problem(e));
@@ -367,6 +489,7 @@ export default function ApiWorkspaces({
         input: { ...input, requestId: pending.current.requestId },
       });
       onResult(value);
+      setExchangeId(value.exchange.id);
       pending.current = null;
       const env = await runDevCommand(dev.apiEnvironment, {
         ...target,
@@ -639,6 +762,49 @@ export default function ApiWorkspaces({
           </label>
         </div>
       ) : null}
+      {openTabs.length ? (
+        <div
+          aria-label="Open requests"
+          className="flex gap-1 overflow-x-auto border-b border-border p-2"
+        >
+          {openTabs.map((tab) => (
+            <div
+              key={`${tab.details.workspace.id}:${tab.details.selected?.id}`}
+              className="flex shrink-0 items-center rounded-md bg-muted/40"
+            >
+              <Button
+                size="sm"
+                variant={tab.details.selected?.id === details?.selected?.id ? "secondary" : "ghost"}
+                disabled={busy || dirty}
+                onClick={() => void activateTab(tab)}
+              >
+                {tab.details.requests.find((r) => r.id === tab.details.selected?.id)?.name ??
+                  "Request"}
+                {tab.draft !== tab.details.selected?.sourceJson ? " *" : ""}
+              </Button>
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`Close ${tab.details.requests.find((r) => r.id === tab.details.selected?.id)?.name ?? "request"}`}
+                disabled={busy || dirty}
+                onClick={() => closeTab(tab)}
+              >
+                <XIcon />
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {initialTab && !environment && !busy ? (
+        <div className="p-3">
+          <Button size="sm" variant="outline" onClick={() => void activateTab(initialTab)}>
+            Resume recovered request
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Drafts were recovered. Upload files must be selected again.
+          </p>
+        </div>
+      ) : null}
       {error ? (
         <p
           role="alert"
@@ -685,7 +851,7 @@ export default function ApiWorkspaces({
                     <button
                       type="button"
                       key={entry.id}
-                      disabled={busy || requestDirty}
+                      disabled={busy || dirty}
                       onClick={() => void chooseRequest(entry.id)}
                       aria-current={selected?.id === entry.id ? "true" : undefined}
                       className={cn(
@@ -708,7 +874,7 @@ export default function ApiWorkspaces({
                     entries={details.requests}
                     level={0}
                     selected={selected?.id}
-                    disabled={busy || requestDirty}
+                    disabled={busy || dirty}
                     onSelect={(key) => void chooseRequest(key)}
                   />
                 )}

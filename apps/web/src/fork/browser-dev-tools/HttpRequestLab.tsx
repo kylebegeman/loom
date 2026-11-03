@@ -234,7 +234,7 @@ export default function HttpRequestLab({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <FlaskConicalIcon className="size-4 text-primary" />
-          <h2 className="text-sm font-semibold">HTTP Lab</h2>
+          <h2 className="text-sm font-semibold">Pulse</h2>
         </div>
         <div className="flex items-center gap-1">
           {supportsApi ? (
@@ -347,6 +347,11 @@ export default function HttpRequestLab({
           threadRef={threadRef}
           supportsEditing={supportsEditing}
           onBusy={setBusy}
+          onSelectResponse={(exchangeId) => {
+            setSelected(null);
+            setChecks([]);
+            if (exchangeId) void refreshHistory(undefined, exchangeId);
+          }}
           response={response}
           onResult={(result) => {
             setSelected(result.exchange);
