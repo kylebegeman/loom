@@ -161,7 +161,7 @@ apps/mobile/package.json	-	--scheme loom-dev
 apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	33
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	32
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
