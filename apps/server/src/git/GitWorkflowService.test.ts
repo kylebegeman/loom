@@ -5,6 +5,7 @@ import type { OrchestrationProjectShell } from "@t3tools/contracts"; // fork: pr
 import { LibraryError } from "@t3tools/contracts/fork"; // fork: checkpoint-capable
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: checkpoint-capable
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path"; // fork: project-root-worktree
@@ -19,7 +20,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: pr
 
 // fork: project-lifecycle
 const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }).pipe(
-  Layer.provide(NodeServices.layer),
+  Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 // fork: checkpoint-capable
@@ -35,11 +36,11 @@ function layer(input: {
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(Layer.mock(GitManager.GitManager)({})),
-    Layer.provide(NodeServices.layer), // fork: project-lifecycle
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), // fork: project-lifecycle
   );
 }
 
-it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowService", (it) => {
   // fork: checkpoint-capable
   it.effect(
     "reports checkpoint capability for a registered nongit parent without enabling Git workflows",
@@ -145,10 +146,10 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3-ref-named-" }).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             ),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -236,10 +237,10 @@ it.layer(NodeServices.layer)("GitWorkflowService", (it) => {
           Layer.provideMerge(VcsProcess.layer),
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-root-worktree-" }).pipe(
-              Layer.provide(NodeServices.layer),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             ),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),

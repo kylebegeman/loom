@@ -361,6 +361,14 @@ export function DraftHeroHeadline({
                   </TooltipTrigger>
                   <TooltipPopup side="top">{item.label}</TooltipPopup>
                 </Tooltip>
+                {entry && canPinProjectGroup(entry.group) ? (
+                  <ProjectPinButton
+                    name={entry.group.displayName}
+                    pinned={entry.group.pinned}
+                    shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
+                    onToggle={() => toggleProjectGroupPin(entry.group)}
+                  />
+                ) : null}
                 {entry && showProjectEnvironments ? (
                   <ProjectEnvironmentBadge
                     group={entry.group}
@@ -384,14 +392,6 @@ export function DraftHeroHeadline({
                     }}
                     primaryEnvironmentId={primaryEnvironmentId}
                     machineByEnvironmentId={environmentMachineById}
-                  />
-                ) : null}
-                {entry && canPinProjectGroup(entry.group) ? (
-                  <ProjectPinButton
-                    name={entry.group.displayName}
-                    pinned={entry.group.pinned}
-                    shortcutLabel={shortcutLabelForCommand(keybindings, "thread.pin")}
-                    onToggle={() => toggleProjectGroupPin(entry.group)}
                   />
                 ) : null}
               </ComboboxItem>

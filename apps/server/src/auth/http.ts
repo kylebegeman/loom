@@ -39,6 +39,7 @@ import * as PocketId from "./PocketId.ts"; // fork: library-sign-in
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
 import { deriveAuthClientMetadata, isHttpsRequest, sessionCookieOptions } from "./utils.ts"; // fork: secure-session-cookies
 import { verifyRequestDpopProof } from "./dpop.ts";
+import { requestUrl } from "../requestUrl.ts";
 
 const CREDENTIAL_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -75,7 +76,7 @@ export const annotateEnvironmentRequest =
   /* Request instrumentation already owns the span; keep this helper in that context. */
   Effect.fnUntraced(function* (endpoint: string) {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    const url = HttpServerRequest.toURL(request);
+    const url = requestUrl(request);
     const traceId = yield* currentEnvironmentTraceId;
 
     yield* Effect.addFinalizer((exit) =>
