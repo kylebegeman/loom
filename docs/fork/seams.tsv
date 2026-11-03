@@ -692,6 +692,7 @@ packages/provider-cursor/src/server/status.ts	brand	4
 packages/provider-cursor/src/server/textGeneration.ts	brand	1
 packages/provider-cursor/src/server/usageLimits.ts	brand	1
 packages/provider-grok/src/server/status.ts	brand	2
+packages/provider-kiro/src/server/status.ts	brand	2
 packages/provider-muse/src/server/adapter.ts	brand	2
 packages/provider-muse/src/server/status.ts	brand	5
 packages/provider-muse/src/server/textGeneration.ts	brand	3
