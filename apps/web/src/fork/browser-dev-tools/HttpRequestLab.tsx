@@ -348,9 +348,10 @@ export default function HttpRequestLab({
           threadRef={threadRef}
           supportsEditing={supportsEditing}
           onBusy={setBusy}
-          onSelectResponse={(exchangeId) => {
+          onSelectResponse={(exchangeId, checks) => {
+            historyRevision.current++;
             setSelected(null);
-            setChecks([]);
+            setChecks(checks ?? []);
             if (exchangeId) void refreshHistory(undefined, exchangeId);
           }}
           response={response}

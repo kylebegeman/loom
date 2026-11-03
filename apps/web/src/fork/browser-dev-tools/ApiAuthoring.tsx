@@ -162,7 +162,11 @@ export default function ApiAuthoring({
               Customized requests keep their local edits. Removed endpoints with local edits are
               retained.
             </p>
-            <Button size="sm" disabled={busy} onClick={() => void run(true)}>
+            <Button
+              size="sm"
+              disabled={busy || disabled || review.input.expectedRevision !== details?.revision}
+              onClick={() => void run(true)}
+            >
               Apply reviewed import
             </Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReview(null)}>

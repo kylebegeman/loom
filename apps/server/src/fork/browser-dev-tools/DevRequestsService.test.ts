@@ -148,7 +148,7 @@ it.effect(
           .body,
       ).not.toContain("fixture-vault-value");
       const emptyBaselines = yield* service.baseline({ ...target, action: "read" });
-      const pinned = yield* service.baseline({
+      const pin = {
         ...target,
         action: "pin",
         id: "good",
@@ -156,7 +156,9 @@ it.effect(
         exchangeId: response.id,
         expectedRevision: emptyBaselines.revision,
         ignoredPaths: ["/headers/date"],
-      });
+      } as const;
+      const pinned = yield* service.baseline(pin);
+      expect(yield* service.baseline(pin)).toEqual(pinned);
       expect(pinned.baselines[0]?.exchange).toEqual(response);
       expect(
         (yield* service

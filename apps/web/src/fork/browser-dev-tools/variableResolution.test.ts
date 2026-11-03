@@ -2,8 +2,13 @@ import { expect, it } from "vite-plus/test";
 import { explainVariables } from "./variableResolution";
 it("explains precedence, nested missing values, cycles, script captures and Vault without revealing secrets", () => {
   const request = {
-    endpoint: "<<url>>/<<id>>/<<cycle>>/<<private>>/<<scripted>>/<<collectionOnly>>",
-    requestVariables: [{ key: "id", value: "request" }],
+    endpoint:
+      "<<url>>/<<id>>/<<cycle>>/<<private>>/<<scripted>>/<<collectionOnly>>/<<requestSecret>>/<<afterResponse>>",
+    requestVariables: [
+      { key: "id", value: "request" },
+      { key: "requestSecret", secret: true, value: "", currentValue: "fixture" },
+    ],
+    testScript: 'pw.env.set("afterResponse", "captured")',
     preRequestScript: 'pw.env.set("scripted", "ok")',
   };
   const rows = explainVariables(
@@ -20,12 +25,14 @@ it("explains precedence, nested missing values, cycles, script captures and Vaul
     ],
     "Staging",
   );
+  expect(rows.find((r) => r.key === "requestSecret")?.status).toBe("Ready");
   expect(rows.find((r) => r.key === "id")).toMatchObject({
     value: "request",
     source: "Request variable",
   });
   expect(rows.find((r) => r.key === "url")?.status).toBe("host: Missing value");
   expect(rows.find((r) => r.key === "cycle")?.status).toContain("Circular reference");
+  expect(rows.find((r) => r.key === "afterResponse")?.status).toBe("Missing value");
   expect(rows.find((r) => r.key === "scripted")?.status).toBe("Set by a script at runtime");
   expect(rows.find((r) => r.key === "private")?.value).toBe("");
   expect(rows.find((r) => r.key === "collectionOnly")).toMatchObject({

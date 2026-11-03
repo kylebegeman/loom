@@ -1,9 +1,53 @@
-import type { LibraryApiBundle } from "@t3tools/contracts/fork";
+import type { DevApiWorkflow, LibraryApiBundle } from "@t3tools/contracts/fork";
 import { importHoppscotch } from "./hoppscotch.ts";
-const credentialKey =
-  /^(?:.*token|.*password|.*secret|.*credential|api[-_]?key|authorization|proxy-authorization|cookie|set-cookie)$/i;
-const template = (value: unknown) => typeof value === "string" && /<<[^<>]+>>/.test(value);
+const credentialKey = /token|password|secret|credential|api[-_]?key|authorization|cookie/i;
+const template = (value: unknown) =>
+  typeof value === "string" && /^(?:(?:Bearer|Basic) )?<<[^<>]+>>$/i.test(value);
+const queryKey = (key: string) => {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+};
 export function portableApiJson(text: string): string {
+  const source: unknown = JSON.parse(text);
+  const secrets = new Set<string>();
+  const collect = (value: unknown, context = "") => {
+    if (Array.isArray(value)) {
+      value.forEach((v) => collect(v, context));
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const object = value as Record<string, unknown>;
+    const privateRow =
+      object.secret === true ||
+      Boolean(object.vault) ||
+      (typeof object.key === "string" && credentialKey.test(object.key));
+    for (const [name, item] of Object.entries(object)) {
+      if (
+        typeof item === "string" &&
+        item &&
+        !template(item) &&
+        ((privateRow && ["value", "initialValue", "currentValue"].includes(name)) ||
+          credentialKey.test(name) ||
+          (context === "auth" && name === "value"))
+      )
+        secrets.add(item);
+      else collect(item, name);
+    }
+  };
+  collect(source);
+  const secretValues = [...secrets].sort((a, b) => b.length - a.length);
+  const redactKnown = (value: string) =>
+    value
+      .split(/(<<[^<>]+>>)/g)
+      .map((part) =>
+        template(part)
+          ? part
+          : secretValues.reduce((text, secret) => text.replaceAll(secret, "[redacted]"), part),
+      )
+      .join("");
   const walk = (value: unknown, context = ""): unknown => {
     if (Array.isArray(value)) return value.map((v) => walk(v, context));
     if (!value || typeof value !== "object") return value;
@@ -20,31 +64,47 @@ export function portableApiJson(text: string): string {
       )
         result[name] = template(item) ? item : "";
       else if (name === "endpoint" && typeof item === "string")
-        result[name] = item
-          .replace(
-            /([?&])([^?&=]+)=([^&]*)/g,
-            (match, separator: string, param: string, content: string) =>
-              credentialKey.test(decodeURIComponent(param)) && !template(content)
-                ? `${separator}${param}=`
-                : match,
-          )
-          .replace(/^(https?:\/\/)[^/@]*@/, "$1");
+        result[name] = redactKnown(
+          item
+            .replace(
+              /([?&])([^?&=]+)=([^&]*)/g,
+              (match, separator: string, param: string, content: string) =>
+                credentialKey.test(queryKey(param)) && !template(content)
+                  ? `${separator}${param}=`
+                  : match,
+            )
+            .replace(/^(https?:\/\/)[^/@]*@/, "$1"),
+        );
       else if (
         name === "body" &&
-        object.contentType === "application/json" &&
+        typeof object.contentType === "string" &&
+        /(?:application\/json|[+]json)(?:;|$)/i.test(object.contentType) &&
         typeof item === "string"
       ) {
         try {
           result[name] = JSON.stringify(walk(JSON.parse(item)));
         } catch {
-          result[name] = item;
+          result[name] = redactKnown(item);
         }
-      } else result[name] = walk(item, name);
+      } else result[name] = typeof item === "string" ? redactKnown(item) : walk(item, name);
     }
     if (key && secret && Object.hasOwn(object, "secret")) result.secret = true;
     return result;
   };
-  return JSON.stringify(walk(JSON.parse(text)), null, 2);
+  return JSON.stringify(walk(source), null, 2);
+}
+export function portableApiWorkflows(workflows: readonly DevApiWorkflow[]) {
+  return workflows.map((workflow) => ({
+    ...workflow,
+    datasets: workflow.datasets.map((row) =>
+      Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [
+          key,
+          credentialKey.test(key) && !template(value) ? "" : value,
+        ]),
+      ),
+    ),
+  }));
 }
 export function apiBundleDifferences(local: LibraryApiBundle, remote: LibraryApiBundle) {
   const requests = (bundle: LibraryApiBundle) =>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { DevHttpBaselines, DevHttpExchange, DevHttpSummary } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
@@ -22,6 +22,7 @@ export default function ResponseComparison({
   const [name, setName] = useState("Known good");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const pending = useRef<{ key: string; id: string } | null>(null);
   const target = {
     environmentId: threadRef.environmentId,
     input: { threadId: threadRef.threadId },
@@ -48,6 +49,8 @@ export default function ResponseComparison({
   const select = async (value: string) => {
     setSelection(value);
     setError("");
+    setBefore(null);
+    if (!value) return;
     if (value.startsWith("b:")) {
       const baseline = baselines?.baselines.find((b) => b.id === value.slice(2));
       setBefore(baseline?.exchange ?? null);
@@ -73,6 +76,17 @@ export default function ResponseComparison({
     if (!baselines) return;
     setBusy(true);
     setError("");
+    const fields = {
+      exchangeId: exchange.id,
+      name: name.trim(),
+      ignoredPaths: ignored
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean),
+      revision: baselines.revision,
+    };
+    const key = JSON.stringify(fields);
+    if (pending.current?.key !== key) pending.current = { key, id: randomUUID() };
     try {
       const value = await runDevCommand(dev.httpBaseline, {
         ...target,
@@ -80,16 +94,14 @@ export default function ResponseComparison({
           ...target.input,
           action: remove ? "remove" : "pin",
           expectedRevision: baselines.revision,
-          id: remove ? selection.slice(2) : randomUUID(),
+          id: remove ? selection.slice(2) : pending.current.id,
           exchangeId: exchange.id,
-          name,
-          ignoredPaths: ignored
-            .split(",")
-            .map((p) => p.trim())
-            .filter(Boolean),
+          name: fields.name,
+          ignoredPaths: fields.ignoredPaths,
         },
       });
       setBaselines(value);
+      pending.current = null;
       if (remove) {
         setBefore(null);
         setSelection("");

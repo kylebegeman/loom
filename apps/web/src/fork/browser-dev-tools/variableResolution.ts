@@ -18,7 +18,7 @@ export function explainVariables(
     definitions.set(key, { key, value, secret: v.secret === true, source: "Request variable" });
   }
   const created = new Set<string>();
-  for (const script of [request.preRequestScript, request.testScript])
+  for (const script of [request.preRequestScript])
     for (const match of draftText(script).matchAll(/pw\.env\.set\(\s*["']([^"']+)["']/g))
       created.add(match[1]!);
   const references = (text: string) => Array.from(text.matchAll(/<<([^<>]+)>>/g), (m) => m[1]!);

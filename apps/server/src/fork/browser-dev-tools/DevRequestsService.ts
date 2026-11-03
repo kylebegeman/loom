@@ -132,6 +132,15 @@ export const make = Effect.gen(function* () {
       NodeCrypto.createHash("sha256").update(stableStringify(rows)).digest("hex");
     const revision = revisionOf(baselines);
     if (input.action === "read") return { revision, baselines };
+    const existing = baselines.find((b) => b.id === input.id);
+    if (
+      input.action === "pin" &&
+      existing &&
+      existing.exchange.id === input.exchangeId &&
+      existing.name === input.name &&
+      stableStringify(existing.ignoredPaths) === stableStringify(input.ignoredPaths ?? [])
+    )
+      return { revision, baselines };
     if (!input.id || input.expectedRevision !== revision)
       return yield* new DevHttpError({ reason: "revision-conflict" });
     let next = baselines.filter((b) => b.id !== input.id);

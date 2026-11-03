@@ -447,6 +447,8 @@ export type DevApiWorkflowState = typeof DevApiWorkflowState.Type;
 export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError", {
   reason: Schema.Literals([
     "invalid-format",
+    "workflow-limit",
+    "workflow-active",
     "unsupported-version",
     "unsupported-auth",
     "unsupported-body",
@@ -474,7 +476,12 @@ export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError"
         "A Vault value is bound to a different API origin. Choose the correct environment or update its binding before sending.",
       "vault-required":
         "This request needs a permitted Vault connection on the execution computer.",
-      "invalid-format": "Use native Hoppscotch collection or environment JSON files.",
+      "invalid-format":
+        "Check the API definition, workflow steps and dataset rows. Imports accept Hoppscotch JSON, cURL and OpenAPI 3.0 or 3.1.",
+      "workflow-active":
+        "Stop this workspace’s active workflows and wait for their current requests to finish before removing it.",
+      "workflow-limit":
+        "Four workflows are already active on this computer. Wait for a run to finish or stop one before starting another.",
       "unsupported-version":
         "This Hoppscotch schema version is not supported. Your source files are preserved.",
       "unsupported-auth":

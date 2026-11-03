@@ -17,7 +17,7 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { stableStringify } from "@t3tools/shared/relaySigning";
 import { ServerConfig } from "../../config.ts";
 import { LibraryService } from "./LibraryService.ts";
-import { portableApiJson } from "../browser-dev-tools/apiPortable.ts";
+import { portableApiJson, portableApiWorkflows } from "../browser-dev-tools/apiPortable.ts";
 import { importHoppscotch } from "../browser-dev-tools/hoppscotch.ts";
 const StoredResult = Schema.Struct({
   ...LibraryApiCatalog.fields,
@@ -50,7 +50,7 @@ const make = Effect.gen(function* () {
     if (!(yield* library.info).isAuthority)
       return yield* new LibraryError({ reason: "not-authority" });
     const project = yield* library.project({ projectId: input.projectId });
-    if (project.archived)
+    if (project.archived && input.action !== "list" && input.action !== "read")
       return yield* new LibraryError({
         reason: "blocked",
         detail: "Reopen this project before changing its API workspaces.",
@@ -116,17 +116,7 @@ const make = Effect.gen(function* () {
           return {
             ...input.bundle!,
             files,
-            workflows: input.bundle!.workflows.map((w) => ({
-              ...w,
-              datasets: w.datasets.map((row) =>
-                Object.fromEntries(
-                  Object.entries(row).map(([key, value]) => [
-                    key,
-                    /token|password|secret|credential|api.?key/i.test(key) ? "" : value,
-                  ]),
-                ),
-              ),
-            })),
+            workflows: portableApiWorkflows(input.bundle!.workflows),
           };
         },
         catch: (cause) => new LibraryError({ reason: "invalid", cause }),
@@ -181,6 +171,20 @@ const make = Effect.gen(function* () {
     yield* fs
       .chmod(file, 0o600)
       .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
+    const retained = new Set(next.receipts.map((r) => r.result.selected).filter(Boolean));
+    const prefix = `${path.basename(file)}.`;
+    for (const name of yield* fs
+      .readDirectory(path.dirname(file))
+      .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })))) {
+      if (
+        name.startsWith(prefix) &&
+        /^[a-f\d]{64}$/.test(name.slice(prefix.length)) &&
+        !retained.has(name.slice(prefix.length))
+      )
+        yield* fs
+          .remove(path.join(path.dirname(file), name))
+          .pipe(Effect.orElseSucceed(() => undefined));
+    }
     return result;
   }, gate.withPermit);
   return LibraryApiWorkspaces.of({ execute });

@@ -156,20 +156,27 @@ export function importOpenApi(text: string) {
     return value;
   };
   const first = (value: unknown) => (Array.isArray(value) ? value[0] : undefined);
-  const server = nativeObject(first(root.servers) ?? { url: "<<baseUrl>>" });
-  let base = typeof server.url === "string" ? server.url.replace(/\/$/, "") : "<<baseUrl>>";
   const variables: { key: string; initialValue: string; secret: boolean }[] = [];
-  for (const [key, value] of Object.entries(
-    server.variables ? nativeObject(server.variables) : {},
-  )) {
-    const v = nativeObject(value);
-    base = base.replaceAll(`{${key}}`, `<<${key}>>`);
-    variables.push({ key, initialValue: String(v.default ?? ""), secret: false });
-  }
-  if (!/^(?:https?:\/\/|<<)/.test(base))
-    base = `<<baseUrl>>${base.startsWith("/") ? "" : "/"}${base}`;
-  if (base.includes("<<baseUrl>>"))
-    variables.push({ key: "baseUrl", initialValue: "", secret: false });
+  const serverUrl = (input: unknown, definitions: typeof variables) => {
+    const server = nativeObject(input ?? { url: "<<baseUrl>>" });
+    let url = typeof server.url === "string" ? server.url.replace(/\/$/, "") : "<<baseUrl>>";
+    for (const [key, value] of Object.entries(
+      server.variables ? nativeObject(server.variables) : {},
+    )) {
+      url = url.replaceAll(`{${key}}`, `<<${key}>>`);
+      definitions.push({
+        key,
+        initialValue: String(nativeObject(value).default ?? ""),
+        secret: false,
+      });
+    }
+    if (!/^(?:https?:\/\/|<<)/.test(url))
+      url = `<<baseUrl>>${url.startsWith("/") ? "" : "/"}${url}`;
+    if (url.includes("<<baseUrl>>"))
+      variables.push({ key: "baseUrl", initialValue: "", secret: false });
+    return url;
+  };
+  const base = serverUrl(first(root.servers), variables);
   const collection = blankCollection(
     typeof nativeObject(root.info ?? {}).title === "string"
       ? String(nativeObject(root.info).title)
@@ -185,31 +192,42 @@ export function importOpenApi(text: string) {
         typeof operation.operationId === "string" ? operation.operationId : `${method}:${path}`;
       if (ids.has(id)) throw invalid();
       ids.add(id);
+      const requestVariables: typeof variables = [];
+      const overrideServer = first(operation.servers) ?? first(pathItem.servers);
+      const operationBase = overrideServer ? serverUrl(overrideServer, requestVariables) : base;
       const request: Record<string, unknown> = {
         ...blankRequest(
           String(operation.summary ?? id),
-          `${base}${path.replace(/\{([^}]+)\}/g, "<<$1>>")}`,
+          `${operationBase}${path.replace(/\{([^}]+)\}/g, "<<$1>>")}`,
         ),
         loomId: id,
         method: method.toUpperCase(),
       };
       const params: NativeObject[] = [],
         headers: NativeObject[] = [];
-      for (const parameter of [
-        ...(Array.isArray(pathItem.parameters) ? pathItem.parameters : []),
-        ...(Array.isArray(operation.parameters) ? operation.parameters : []),
-      ]) {
-        const p = dereference(parameter);
+      const parameters = new Map(
+        [
+          ...(Array.isArray(pathItem.parameters) ? pathItem.parameters : []),
+          ...(Array.isArray(operation.parameters) ? operation.parameters : []),
+        ].map((parameter) => {
+          const p = dereference(parameter);
+          return [`${p.in}:${p.name}`, p] as const;
+        }),
+      );
+      const cookies: string[] = [];
+      for (const p of parameters.values()) {
         if (typeof p.name !== "string") throw invalid();
         const schema = p.schema ? dereference(p.schema) : {};
         const example = p.example ?? schema.example ?? schema.default;
         const value = example === undefined ? `<<${p.name}>>` : String(example);
-        if (p.in === "path")
+        if (p.in === "path" || example === undefined)
           variables.push({
             key: p.name,
             initialValue: example === undefined ? "" : String(example),
             secret: false,
           });
+        if (p.in === "cookie" && (p.required === true || example !== undefined))
+          cookies.push(`${p.name}=${value}`);
         else if (p.in === "query" || p.in === "header")
           (p.in === "query" ? params : headers).push({
             key: p.name,
@@ -217,6 +235,12 @@ export function importOpenApi(text: string) {
             active: p.required === true || example !== undefined,
           });
       }
+      if (cookies.length) headers.push({ key: "Cookie", value: cookies.join("; "), active: true });
+      request.requestVariables = requestVariables.map((v) => ({
+        key: v.key,
+        value: v.initialValue,
+        secret: v.secret,
+      }));
       request.params = params;
       request.headers = headers;
       if (operation.requestBody) {

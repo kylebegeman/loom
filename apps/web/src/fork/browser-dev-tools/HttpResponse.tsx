@@ -1,3 +1,5 @@
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "~/state/entities";
 import ResponseComparison from "./ResponseComparison";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useState } from "react";
@@ -58,6 +60,10 @@ export default function HttpResponse({
   onLoad: (exchange: DevHttpExchange) => void;
   onAttach: () => void;
 }) {
+  const supportsPulse = supportsLoomFeature(
+    useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
+    "pulse-workbench",
+  );
   const [tab, setTab] = useState<Tab>("body");
   const [pretty, setPretty] = useState(true);
   const [wrap, setWrap] = useState(false);
@@ -283,7 +289,9 @@ export default function HttpResponse({
               </div>
             ) : null}
           </LabTabs>
-          <ResponseComparison key={exchange.id} threadRef={threadRef} exchange={exchange} />
+          {supportsPulse ? (
+            <ResponseComparison key={exchange.id} threadRef={threadRef} exchange={exchange} />
+          ) : null}
           {exchange.truncated ? (
             <p role="status" className="p-3 text-xs text-warning-foreground">
               Response preview stopped at 256 KiB.

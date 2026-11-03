@@ -90,6 +90,7 @@ const make = Effect.gen(function* () {
       const bundle = yield* api.bundle({
         threadId: input.threadId,
         workspaceId: input.workspaceId,
+        expectedRevision: input.expectedLocalRevision,
       });
       const catalog = yield* send({
         projectId: project.id,

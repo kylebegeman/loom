@@ -1,3 +1,4 @@
+import * as FileSystem from "effect/FileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -296,7 +297,21 @@ describe("authority-routed project management", () => {
               id: "a".repeat(24),
               name: "API",
               folders: [],
-              workflows: [],
+              workflows: [
+                {
+                  id: "auth",
+                  name: "Auth",
+                  failurePolicy: "stop" as const,
+                  steps: [],
+                  datasets: [
+                    {
+                      Authorization: "private-dataset-authorization",
+                      Cookie: "private-dataset-cookie",
+                      name: "fixture",
+                    },
+                  ],
+                },
+              ],
               files: [
                 { name: "api.json", content: '[{"v":12,"name":"API","folders":[],"requests":[]}]' },
                 {
@@ -315,6 +330,7 @@ describe("authority-routed project management", () => {
           const shared = yield* second.manager.apiWorkspace(sharedInput, f.actor);
           expect(shared.revision).toBe(1);
           expect(JSON.stringify(shared)).not.toContain("synthetic-private-value");
+          expect(JSON.stringify(shared)).not.toContain("private-dataset-");
           expect(
             yield* f.first.manager.apiWorkspace(
               { projectId: f.project.id, action: "read", workspaceId: "a".repeat(24) },
@@ -337,6 +353,20 @@ describe("authority-routed project management", () => {
           );
           expect(sharedNext.revision).toBe(2);
           expect(yield* f.first.manager.apiWorkspace(sharedInput, f.actor)).toEqual(shared);
+          for (let revision = 2; revision < 24; revision++)
+            yield* second.manager.apiWorkspace(
+              {
+                ...sharedInput,
+                requestId: `revision-${revision}`,
+                expectedRevision: revision,
+                bundle: { ...sharedInput.bundle, name: `Revision ${revision}` },
+              },
+              f.actor,
+            );
+          const fs = yield* FileSystem.FileSystem;
+          const config = yield* ServerConfig.ServerConfig;
+          const files = yield* fs.readDirectory(`${config.stateDir}/fork/library-api-workspaces`);
+          expect(files.filter((name) => /\.json\.[a-f\d]{64}$/.test(name))).toHaveLength(20);
           const followed = yield* second.manager.execute(
             {
               kind: "update",
@@ -388,6 +418,26 @@ describe("authority-routed project management", () => {
           expect((yield* f.catalog.project({ projectId: f.project.id })).brief).toBe(
             "Shared setup",
           );
+          yield* f.catalog.archiveProject({
+            projectId: f.project.id,
+            requestId: "archive-with-api",
+            expectedRevision: applied.revision,
+            archived: true,
+          });
+          expect(
+            (yield* second.manager.apiWorkspace(
+              { projectId: f.project.id, action: "read", workspaceId: sharedInput.bundle.id },
+              f.actor,
+            )).selected?.name,
+          ).toBe("Revision 23");
+          expect(
+            (yield* second.manager
+              .apiWorkspace(
+                { ...sharedInput, requestId: "archived-write", expectedRevision: 24 },
+                f.actor,
+              )
+              .pipe(Effect.flip)).reason,
+          ).toBe("blocked");
         }),
       ),
   );

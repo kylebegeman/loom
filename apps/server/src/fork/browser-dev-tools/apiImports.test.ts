@@ -61,3 +61,39 @@ it("imports OpenAPI parameters, examples, auth and stable operation identities a
     importOpenApi("openapi: 3.1.0\npaths:\n  /x:\n    $ref: https://example.com/untrusted"),
   ).toThrow();
 });
+it("honors operation servers and parameter overrides, including cookie parameters", () => {
+  const result = importOpenApi(
+    JSON.stringify({
+      openapi: "3.0.3",
+      info: { title: "Overrides" },
+      servers: [{ url: "https://root.test" }],
+      paths: {
+        "/x": {
+          servers: [{ url: "https://path.test" }],
+          parameters: [{ name: "q", in: "query", required: true, example: "old" }],
+          get: {
+            operationId: "get",
+            servers: [{ url: "https://{region}.test", variables: { region: { default: "west" } } }],
+            parameters: [
+              { name: "q", in: "query", required: true, example: "new" },
+              { name: "session", in: "cookie", required: true },
+            ],
+            responses: {},
+          },
+        },
+      },
+    }),
+  );
+  const parsed = importHoppscotch(result.collection, "openapi.json");
+  if (parsed.kind !== "collections") throw new Error("Expected collection");
+  expect(parsed.requests[0]!.source).toMatchObject({
+    endpoint: "https://<<region>>.test/x",
+    params: [{ key: "q", value: "new", active: true }],
+    headers: [{ key: "Cookie", value: "session=<<session>>", active: true }],
+  });
+  expect(parsed.requests[0]!.variables).toContainEqual({
+    key: "region",
+    value: "west",
+    secret: false,
+  });
+});

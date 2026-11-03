@@ -6,6 +6,7 @@ import type {
   DevApiWorkflow,
   DevApiWorkflowRun,
   DevApiWorkflowSummary,
+  DevApiWorkflowCommand,
 } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -76,14 +77,14 @@ export default function ApiWorkflowPanel({
 }) {
   const [definitions, setDefinitions] = useState<readonly DevApiWorkflow[]>([]);
   const [definition, setDefinition] = useState<DevApiWorkflow | null>(null);
-  const [revision, setRevision] = useState(details.revision);
+  const [definitionRevision, setDefinitionRevision] = useState(details.revision);
   const [runs, setRuns] = useState<readonly DevApiWorkflowSummary[]>([]);
   const [run, setRun] = useState<DevApiWorkflowRun | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [datasetText, setDatasetText] = useState("[]");
-  const pendingRun = useRef<string | null>(null);
+  const pendingRun = useRef<{ key: string; runId: string } | null>(null);
   const target = {
     environmentId: threadRef.environmentId,
     input: { threadId: threadRef.threadId, workspaceId: details.workspace.id },
@@ -97,8 +98,14 @@ export default function ApiWorkflowPanel({
         input: { ...target.input, action: "list" },
       });
       setDefinitions(value.workflows);
+      setDefinitionRevision(value.revision);
       setRuns(value.runs ?? []);
-      setRevision(value.revision);
+      onRevision(value.revision);
+      if (definition) {
+        const selected = value.workflows.find((w) => w.id === definition.id) ?? null;
+        setDefinition(selected);
+        setDatasetText(JSON.stringify(selected?.datasets ?? [], null, 2));
+      }
       setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Workflows are unavailable on this computer.");
@@ -121,16 +128,24 @@ export default function ApiWorkflowPanel({
         input: {
           ...target.input,
           action: remove ? "delete" : "save",
-          expectedRevision: revision,
+          expectedRevision: definitionRevision,
           workflow: { ...definition, datasets: JSON.parse(datasetText) },
           workflowId: definition.id,
         },
       });
       setDefinitions(value.workflows);
+      setDefinitionRevision(value.revision);
       setRuns(value.runs ?? []);
-      setRevision(value.revision);
       onRevision(value.revision);
-      if (remove) setDefinition(null);
+      setDefinition(remove ? null : (value.workflows.find((w) => w.id === definition.id) ?? null));
+      if (!remove)
+        setDatasetText(
+          JSON.stringify(
+            value.workflows.find((w) => w.id === definition.id)?.datasets ?? [],
+            null,
+            2,
+          ),
+        );
       pendingRun.current = null;
     } catch (e) {
       setError(
@@ -140,25 +155,35 @@ export default function ApiWorkflowPanel({
     setBusy(false);
   };
   const execute = async (action: "start" | "read" | "cancel") => {
-    if (!definition || (action !== "start" && !run)) return;
+    if ((action === "start" && !definition) || (action !== "start" && !run)) return;
     setBusy(true);
     setError("");
-    if (action === "start" && !pendingRun.current) pendingRun.current = randomUUID();
+    const fields: DevApiWorkflowCommand = {
+      ...target.input,
+      action,
+      ...(action === "start"
+        ? {
+            workflowId: definition!.id,
+            workflow: definition!,
+            expectedRevision: details.revision,
+            source,
+          }
+        : {}),
+    };
+    const key = JSON.stringify(fields);
+    if (action === "start" && pendingRun.current?.key !== key)
+      pendingRun.current = { key, runId: randomUUID() };
     try {
       const value = await runDevCommand(dev.apiWorkflow, {
         ...target,
         input: {
-          ...target.input,
-          action,
-          workflowId: definition.id,
-          expectedRevision: revision,
-          source,
-          runId: action === "start" ? pendingRun.current! : run!.id,
+          ...fields,
+          runId: action === "start" ? pendingRun.current!.runId : run!.id,
         },
       });
       setRun(value.run);
       setRuns(value.runs ?? []);
-      setRevision(value.revision);
+      onRevision(value.revision);
       if (action === "start") pendingRun.current = null;
     } catch (e) {
       setError(
@@ -179,6 +204,7 @@ export default function ApiWorkflowPanel({
       });
       setRun(value.run);
       setRuns(value.runs ?? []);
+      onRevision(value.revision);
     } catch (e) {
       setError(e instanceof Error ? e.message : "This run is unavailable.");
     }
@@ -238,7 +264,7 @@ export default function ApiWorkflowPanel({
           </Button>
         </div>
         {definition ? (
-          <div className="space-y-3">
+          <fieldset disabled={busy || disabled} className="space-y-3">
             <Input
               aria-label="Workflow name"
               value={definition.name}
@@ -323,10 +349,7 @@ export default function ApiWorkflowPanel({
                   </div>
                   <p className="font-medium">Captures</p>
                   {step.captures.map((capture, c) => (
-                    <div
-                      key={capture.id ?? capture.key}
-                      className="grid gap-2 @min-[600px]:grid-cols-4"
-                    >
+                    <div key={capture.id ?? c} className="grid gap-2 @min-[600px]:grid-cols-4">
                       <Input
                         aria-label={`Capture variable ${c + 1}`}
                         placeholder="Variable name"
@@ -402,10 +425,7 @@ export default function ApiWorkflowPanel({
                   </Button>
                   <p className="font-medium">Assertions</p>
                   {step.assertions.map((assertion, a) => (
-                    <div
-                      key={assertion.id ?? assertion.key}
-                      className="space-y-2 rounded-md bg-muted/30 p-2"
-                    >
+                    <div key={assertion.id ?? a} className="space-y-2 rounded-md bg-muted/30 p-2">
                       <div className="grid gap-2 @min-[600px]:grid-cols-3">
                         <Input
                           aria-label={`Assertion name ${a + 1}`}
@@ -590,7 +610,7 @@ export default function ApiWorkflowPanel({
                 Delete workflow
               </Button>
             </div>
-          </div>
+          </fieldset>
         ) : null}
         {runs.length ? (
           <LabSelect

@@ -87,7 +87,8 @@ export default function ApiLibraryPanel({
       <div className="mt-3 space-y-3">
         <p className="text-muted-foreground">
           Library stores requests, folders, scripts, workflows and environment definitions with your
-          project. Credential values, upload files and execution history stay on this computer.
+          project. Credential fields, upload files and execution history stay on this computer.
+          Review scripts and custom payloads for embedded credentials before sharing.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -135,7 +136,7 @@ export default function ApiLibraryPanel({
                   <Button
                     size="xs"
                     variant="outline"
-                    disabled={busy || disabled}
+                    disabled={busy || disabled || !permitted}
                     onClick={() => void act("read", entry.id)}
                   >
                     Review
@@ -144,7 +145,10 @@ export default function ApiLibraryPanel({
                     size="xs"
                     variant="ghost"
                     disabled={
-                      busy || disabled || Boolean(details && details.library?.sharedId !== entry.id)
+                      busy ||
+                      disabled ||
+                      !permitted ||
+                      Boolean(details && details.library?.sharedId !== entry.id)
                     }
                     onClick={() => void act("pull", entry.id)}
                   >
@@ -179,6 +183,7 @@ export default function ApiLibraryPanel({
                 disabled={
                   busy ||
                   disabled ||
+                  !permitted ||
                   Boolean(details && details.library?.sharedId !== shared.catalog.selected.id)
                 }
                 onClick={() => void act("pull", shared.catalog.selected!.id, Boolean(details))}
@@ -189,7 +194,7 @@ export default function ApiLibraryPanel({
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy || disabled}
+                  disabled={busy || disabled || !permitted}
                   onClick={() => void act("publish", shared.catalog.selected!.id, true)}
                 >
                   Replace shared definitions with this copy
@@ -198,7 +203,7 @@ export default function ApiLibraryPanel({
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={busy || disabled}
+                disabled={busy || disabled || !permitted}
                 onClick={() => {
                   if (
                     window.confirm(

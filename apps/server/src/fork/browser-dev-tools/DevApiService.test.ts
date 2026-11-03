@@ -1,3 +1,5 @@
+import * as Crypto from "effect/Crypto";
+import * as Hex from "effect/encoding/Hex";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -162,6 +164,12 @@ it.live(
       const workspace = yield* api.import({ ...target, name: "Fixture", files: files() });
       expect((yield* api.import({ ...target, name: "Fixture", files: files() })).workspace.id).toBe(
         workspace.workspace.id,
+      );
+      const fs = yield* FileSystem.FileSystem;
+      const config = yield* Config.ServerConfig;
+      yield* fs.makeDirectory(
+        `${config.stateDir}/fork/browser-dev-tools/api-workspaces/${"a".repeat(24)}`,
+        { recursive: true },
       );
       expect(yield* api.list(target)).toHaveLength(1);
       const scope = {
@@ -553,6 +561,28 @@ it.live(
       expect(
         (yield* api.environment(dotenv)).variables.find((v) => v.key === "token")?.vault?.itemId,
       ).toBe(item.id);
+      const noEnvironment = { ...scope, source: { kind: "none" as const } };
+      const none = yield* api.environment(noEnvironment);
+      const privateRequest = yield* api.run({
+        ...input,
+        ...noEnvironment,
+        requestId: "secret-request-variable",
+        environmentRevision: none.revision,
+        uploads: [],
+        requestOverride: JSON.stringify({
+          ...JSON.parse(collection())[0].requests[0],
+          endpoint: "http://localhost/private",
+          preRequestScript: "",
+          testScript: "",
+          auth: { authType: "none" },
+          body: { contentType: null, body: null },
+          requestVariables: [
+            { key: "requestSecret", secret: true, currentValue: credential.value },
+          ],
+          headers: [{ key: "x-fixture", value: "<<requestSecret>>", active: true }],
+        }),
+      });
+      expect(JSON.stringify(privateRequest)).not.toContain(credential.value);
     }).pipe(provide),
 );
 it.live(
@@ -589,7 +619,14 @@ it.live(
       });
       expect(folder.details?.folders).toContainEqual(["Authoring", "Utilities", "Health"]);
       const spec = (paths: Record<string, unknown>) =>
-        JSON.stringify({ openapi: "3.1.0", info: { title: "Fixture" }, paths });
+        JSON.stringify({
+          openapi: "3.1.0",
+          info: { title: "Fixture" },
+          servers: [{ url: "https://example.test" }],
+          components: { securitySchemes: { token: { type: "http", scheme: "bearer" } } },
+          security: [{ token: [] }],
+          paths,
+        });
       const operation = { get: { operationId: "health", summary: "Health", responses: {} } };
       const imported = yield* api.author({
         ...scope,
@@ -598,6 +635,17 @@ it.live(
         expectedRevision: folder.details!.revision,
         content: spec({ "/health": operation }),
       });
+      expect(imported.details!.environments).toContainEqual({
+        id: "api.environment.json/e0",
+        name: "API",
+      });
+      expect(
+        (yield* api.environment({
+          ...target,
+          workspaceId: workspace.workspace.id,
+          source: { kind: "json", id: "api.environment.json/e0" },
+        })).variables,
+      ).toContainEqual({ key: "token", value: "", secret: true });
       const selected = yield* api.read({
         ...target,
         workspaceId: workspace.workspace.id,
@@ -634,6 +682,14 @@ it.live(
       });
       expect(applied.details?.requests.find((r) => r.id === selected.selected!.id)?.name).toBe(
         "Custom health",
+      );
+      const fs = yield* FileSystem.FileSystem;
+      const config = yield* Config.ServerConfig;
+      const sourceFiles = (yield* fs.readDirectory(
+        `${config.stateDir}/fork/browser-dev-tools/api-workspaces/${workspace.workspace.id}`,
+      )).filter((name) => /^[a-f\d]{64}\.json$/.test(name));
+      expect(sourceFiles).toHaveLength(
+        (yield* api.export({ ...target, workspaceId: workspace.workspace.id })).files.length,
       );
       expect(
         (yield* api
@@ -721,6 +777,14 @@ it.live(
         runId: "run-once",
         source: { kind: "none" as const },
       };
+      expect(
+        (yield* api
+          .workflow({
+            ...start,
+            workflow: { ...saved.workflows[0]!, name: "Unreviewed definition" },
+          })
+          .pipe(Effect.flip)).reason,
+      ).toBe("revision-conflict");
       yield* api.workflow(start);
       const done = yield* api.watchWorkflow({ ...scope, runId: "run-once" }).pipe(Stream.runLast);
       expect(Option.getOrThrow(done)).toMatchObject({ state: "passed", completed: 4 });
@@ -732,7 +796,7 @@ it.live(
       expect(calls).toHaveLength(4);
       expect(
         (yield* api.workflow({ ...start, workflowId: "other" }).pipe(Effect.flip)).reason,
-      ).toBe("not-found");
+      ).toBe("request-conflict");
       const entered = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
       observation.effect = Deferred.succeed(entered, undefined).pipe(
@@ -740,6 +804,7 @@ it.live(
       );
       yield* api.workflow({ ...start, runId: "stop-me" });
       yield* Deferred.await(entered);
+      expect((yield* api.remove(scope).pipe(Effect.flip)).reason).toBe("workflow-active");
       expect(
         (yield* api.workflow({ ...scope, action: "cancel", runId: "stop-me" })).run?.state,
       ).toBe("stopping");
@@ -750,6 +815,44 @@ it.live(
         ),
       ).toMatchObject({ state: "cancelled", completed: 1 });
       expect(calls).toHaveLength(5);
+      yield* api.workflow({
+        ...scope,
+        action: "delete",
+        workflowId: "lifecycle",
+        expectedRevision: saved.revision,
+      });
+      expect((yield* api.workflow(start)).run?.state).toBe("passed");
+      expect(calls).toHaveLength(5);
+      const fs = yield* FileSystem.FileSystem;
+      const config = yield* Config.ServerConfig;
+      const directory = `${config.stateDir}/fork/browser-dev-tools/api-workspaces/${scope.workspaceId}`;
+      const completed = result.run!;
+      for (let i = 0; i < 42; i++) {
+        const id = `historical-${i}`;
+        const crypto = yield* Crypto.Crypto;
+        const hash = Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(id)));
+        yield* fs.writeFileString(
+          `${directory}/run-${hash}.json`,
+          JSON.stringify({ ...completed, id }),
+        );
+      }
+      // Existing files from older versions are pruned along with new runs.
+      yield* api.workflow({
+        ...scope,
+        action: "save",
+        expectedRevision: (yield* api.read(scope)).revision,
+        workflow: saved.workflows[0]!,
+      });
+      const latest = yield* api.read(scope);
+      yield* api.workflow({
+        ...start,
+        runId: "bounded-history",
+        expectedRevision: latest.revision,
+      });
+      yield* api.watchWorkflow({ ...scope, runId: "bounded-history" }).pipe(Stream.runLast);
+      expect(
+        (yield* fs.readDirectory(directory)).filter((name) => /^run-.*\.json$/.test(name)).length,
+      ).toBeLessThanOrEqual(40);
     }).pipe(provide),
 );
 it.live(
@@ -797,13 +900,37 @@ it.live(
         expectedRevision: edited.revision,
         requestId: "keep-local",
       });
+      const updatedBundle = {
+        ...bundle,
+        files: bundle.files.map((file) =>
+          file.name === "local.environment.json"
+            ? {
+                ...file,
+                content: JSON.stringify({
+                  v: 2,
+                  name: "Local",
+                  variables: [
+                    { key: "origin", initialValue: "https://updated.example.test", secret: false },
+                    { key: "token", initialValue: "", secret: true },
+                    { key: "region", initialValue: "west", secret: false },
+                  ],
+                }),
+              }
+            : file,
+        ),
+      };
       const loaded = yield* api.installBundle({
         ...target,
-        bundle,
+        bundle: updatedBundle,
         binding,
         requestId: "load-library",
         expectedRevision: edited.revision,
       });
+      const updatedEnvironment = yield* api.environment({ ...scope, source });
+      expect(updatedEnvironment.variables.find((v) => v.key === "region")?.value).toBe("west");
+      expect(updatedEnvironment.variables.find((v) => v.key === "origin")?.value).toBe(
+        "https://updated.example.test",
+      );
       expect(loaded.library?.baseRevision).toBe(loaded.revision);
       expect(
         (yield* api.read({ ...scope, requestKey: selected.selected!.id })).selected?.sourceJson,

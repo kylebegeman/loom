@@ -678,13 +678,14 @@ request's computer when ordinary history is cleared.
 
 Use **Workflows** to save an ordered sequence with captures, assertions and optional
 JSON dataset rows. Each row gets its own captures. Stop finishes the current request
-before halting; previous runs remain inspectable, and interrupted runs never restart
-automatically.
+before halting. The latest 40 runs remain inspectable; older response previews are
+pruned, and interrupted runs never restart automatically. Up to four workflows can run
+on a computer at once.
 
 Use **Project APIs** to share definitions through Library or open them on another
 computer. Library keeps requests, folders, scripts, workflows and environment
-definitions. Credential values, Vault item bindings, uploads and response history
-stay local. Concurrent edits require a review; keeping a local copy preserves your
+definitions. Credential fields, Vault item bindings, uploads and response history
+stay local. Review scripts and custom payloads for embedded credentials before sharing. Concurrent edits require a review; keeping a local copy preserves your
 work before loading Library's version. The Library and execution computer both need
 a Loom version that supports shared API workspaces.
 

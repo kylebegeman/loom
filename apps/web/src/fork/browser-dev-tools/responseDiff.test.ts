@@ -12,6 +12,10 @@ it("compares structured values without confusing missing fields, null, arrays or
     headers: { date: "new" },
     body: '{"id":2,"rows":[1,3],"extra":null}',
   };
+  const nested = (leaf: string) => "[".repeat(12000) + leaf + "]".repeat(12000);
+  expect(() =>
+    compareResponses({ ...base, body: nested("0") }, { ...base, body: nested("1") }, []),
+  ).not.toThrow();
   expect(compareResponses(base, next, ["/headers/date", "/body/id"])).toEqual([
     { path: "/status", before: "200", after: "201" },
     { path: "/body/nullable", before: "null", after: "(missing)" },

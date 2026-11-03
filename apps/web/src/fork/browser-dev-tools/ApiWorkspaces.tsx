@@ -66,6 +66,10 @@ const TabSnapshot = Schema.Struct({
   draft: Schema.String,
   source: SourceSchema,
   exchangeId: Schema.NullOr(Schema.String),
+  sourceSelected: Schema.optionalKey(Schema.Boolean),
+  checks: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ name: Schema.String, passed: Schema.Boolean })),
+  ),
 });
 type TabSnapshot = typeof TabSnapshot.Type;
 const Session = Schema.Struct({ active: Schema.String, tabs: Schema.Array(TabSnapshot) });
@@ -160,7 +164,7 @@ export default function ApiWorkspaces({
   threadRef: ScopedThreadRef;
   onResult: (result: DevApiRunResult) => void;
   response: ReactNode;
-  onSelectResponse: (exchangeId: string | null) => void;
+  onSelectResponse: (exchangeId: string | null, checks?: DevApiRunResult["checks"]) => void;
   supportsEditing?: boolean;
   onBusy: (busy: boolean) => void;
 }) {
@@ -189,10 +193,15 @@ export default function ApiWorkspaces({
   const [workspaces, setWorkspaces] = useState<readonly DevApiWorkspace[] | null>(null);
   const [details, setDetails] = useState<DevApiDetails | null>(initialTab?.details ?? null);
   const [source, setSource] = useState<DevApiSource>(initialTab?.source ?? { kind: "none" });
+  const [sourceSelected, setSourceSelected] = useState(
+    initialTab?.sourceSelected ?? Boolean(initialTab),
+  );
+  const [checks, setChecks] = useState<DevApiRunResult["checks"]>(initialTab?.checks ?? []);
   const [environment, setEnvironment] = useState<DevApiEnvironment | null>(null);
   const [busy, setBusy] = useState(Boolean(initialTab));
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<DevApiDetails | null>(null);
   const [name, setName] = useState("");
   const [search, setSearch] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -236,13 +245,20 @@ export default function ApiWorkspaces({
       generation.current++;
     };
   }, [refresh]);
-  const finishRecovery = useEffectEvent((value: DevApiDetails, env: DevApiEnvironment) => {
-    if (initialTab && value.selected?.sourceJson === initialTab.details.selected?.sourceJson)
+  const finishRecovery = useEffectEvent((value: DevApiDetails, env: DevApiEnvironment | null) => {
+    if (
+      initialTab &&
+      (initialTab.draft === initialTab.details.selected?.sourceJson ||
+        value.selected?.sourceJson === initialTab.details.selected?.sourceJson)
+    ) {
       setDetails(value);
+      if (initialTab.draft === initialTab.details.selected?.sourceJson)
+        setDraft(value.selected?.sourceJson ?? "");
+    } else setConflict(value);
     setEnvironment(env);
     setBusy(false);
     onBusy(false);
-    onSelectResponse(initialTab?.exchangeId ?? null);
+    onSelectResponse(initialTab?.exchangeId ?? null, initialTab?.checks);
   });
   const failRecovery = useEffectEvent((e: unknown) => {
     setError(problem(e));
@@ -253,6 +269,7 @@ export default function ApiWorkspaces({
   useEffect(() => {
     if (!initialTab || !canUse) return;
     const controller = new AbortController();
+    onBusy(true);
     const input = { threadId: threadRef.threadId, workspaceId: initialTab.details.workspace.id };
     void Promise.all([
       runDevCommand(dev.apiRead, {
@@ -262,10 +279,12 @@ export default function ApiWorkspaces({
           ...(initialTab.details.selected ? { requestKey: initialTab.details.selected.id } : {}),
         },
       }),
-      runDevCommand(dev.apiEnvironment, {
-        environmentId: threadRef.environmentId,
-        input: { ...input, source: initialTab.source },
-      }),
+      initialTab.sourceSelected === false
+        ? Promise.resolve(null)
+        : runDevCommand(dev.apiEnvironment, {
+            environmentId: threadRef.environmentId,
+            input: { ...input, source: initialTab.source },
+          }),
     ]).then(
       ([value, env]) => {
         if (!controller.signal.aborted) finishRecovery(value, env);
@@ -275,8 +294,10 @@ export default function ApiWorkspaces({
       },
     );
     return () => controller.abort();
-  }, [initialTab, canUse, threadRef.environmentId, threadRef.threadId]);
-  const activeSnapshot = details?.selected ? { details, draft, source, exchangeId } : null;
+  }, [initialTab, canUse, threadRef.environmentId, threadRef.threadId, onBusy]);
+  const activeSnapshot = details?.selected
+    ? { details, draft, source, sourceSelected, exchangeId, checks }
+    : null;
   const sameTab = (tab: TabSnapshot) =>
     tab.details.workspace.id === activeSnapshot?.details.workspace.id &&
     tab.details.selected?.id === activeSnapshot?.details.selected?.id;
@@ -313,11 +334,15 @@ export default function ApiWorkspaces({
   const remember = () => setTabs(openTabs);
   const activateTab = async (tab: TabSnapshot) => {
     remember();
+    const revision = ++generation.current;
+    setConflict(null);
     setDetails(tab.details);
     setDraft(tab.draft);
     setSource(tab.source);
+    setSourceSelected(tab.sourceSelected ?? true);
+    setChecks(tab.checks ?? []);
     setExchangeId(tab.exchangeId);
-    onSelectResponse(tab.exchangeId);
+    onSelectResponse(tab.exchangeId, tab.checks);
     setMultipartFiles({});
     setBodyBase64(undefined);
     setBodyFileName("");
@@ -328,10 +353,12 @@ export default function ApiWorkspaces({
     working(true);
     try {
       const [env, latest] = await Promise.all([
-        runDevCommand(dev.apiEnvironment, {
-          ...target,
-          input: { ...target.input, workspaceId: tab.details.workspace.id, source: tab.source },
-        }),
+        tab.sourceSelected === false
+          ? Promise.resolve(null)
+          : runDevCommand(dev.apiEnvironment, {
+              ...target,
+              input: { ...target.input, workspaceId: tab.details.workspace.id, source: tab.source },
+            }),
         runDevCommand(dev.apiRead, {
           ...target,
           input: {
@@ -341,7 +368,16 @@ export default function ApiWorkspaces({
           },
         }),
       ]);
-      if (latest.selected?.sourceJson === tab.details.selected?.sourceJson) setDetails(latest);
+      if (revision !== generation.current) return;
+      if (
+        tab.draft === tab.details.selected?.sourceJson ||
+        latest.selected?.sourceJson === tab.details.selected?.sourceJson
+      ) {
+        setDetails(latest);
+        if (tab.draft === tab.details.selected?.sourceJson)
+          setDraft(latest.selected?.sourceJson ?? "");
+        setConflict(null);
+      } else setConflict(latest);
       setEnvironment(env);
       setError(null);
     } catch (e) {
@@ -377,6 +413,7 @@ export default function ApiWorkspaces({
     onBusy(value);
   };
   const chooseWorkspace = async (workspaceId: string) => {
+    setConflict(null);
     remember();
     const revision = ++generation.current;
     setMultipartFiles({});
@@ -385,6 +422,7 @@ export default function ApiWorkspaces({
     setDetails(null);
     setEnvironment(null);
     setDirty(false);
+    setSourceSelected(false);
     setSource({ kind: "none" });
     setError(null);
     setDraft("");
@@ -451,12 +489,14 @@ export default function ApiWorkspaces({
         ? { kind: "dotenv", path: value.slice(2) }
         : { kind: "none" };
     const revision = ++generation.current;
+    setSourceSelected(value !== "choose");
     setSource(next);
     setEnvironment(null);
     setDirty(false);
     setError(null);
     setNote(null);
     pending.current = null;
+    if (value === "choose") return;
     working(true);
     try {
       const env = await runDevCommand(dev.apiEnvironment, {
@@ -491,6 +531,7 @@ export default function ApiWorkspaces({
         setDetails(value);
         setEnvironment(null);
         setDirty(false);
+        setSourceSelected(false);
         setSource({ kind: "none" });
         setDraft("");
         setShowImport(false);
@@ -529,7 +570,8 @@ export default function ApiWorkspaces({
     working(false);
   };
   const send = async () => {
-    if (!details?.selected || !environment || busy || dirty || missingMultipartFiles) return;
+    if (!details?.selected || !environment || busy || conflict || dirty || missingMultipartFiles)
+      return;
     working(true);
     setError(null);
     setNote(null);
@@ -568,6 +610,7 @@ export default function ApiWorkspaces({
       });
       onResult(value);
       setExchangeId(value.exchange.id);
+      setChecks(value.checks);
       pending.current = null;
       const env = await runDevCommand(dev.apiEnvironment, {
         ...target,
@@ -601,8 +644,13 @@ export default function ApiWorkspaces({
       setMultipartFiles({});
       setBodyBase64(undefined);
       setBodyFileName("");
+      setTabs(openTabs.filter((t) => t.details.workspace.id !== details.workspace.id));
       setDetails(null);
       setEnvironment(null);
+      setDraft("");
+      setExchangeId(null);
+      setChecks([]);
+      onSelectResponse(null);
       setConfirmRemove(false);
       await refresh();
     } catch (e) {
@@ -617,14 +665,13 @@ export default function ApiWorkspaces({
     details?.requests.filter((r) =>
       `${r.method} ${r.name} ${r.folders.join(" ")}`.toLowerCase().includes(search.toLowerCase()),
     ) ?? [];
-  const sourceValue =
-    !environment && source.kind === "none"
-      ? "choose"
-      : source.kind === "json"
-        ? `j:${source.id}`
-        : source.kind === "dotenv"
-          ? `d:${source.path}`
-          : "";
+  const sourceValue = !sourceSelected
+    ? "choose"
+    : source.kind === "json"
+      ? `j:${source.id}`
+      : source.kind === "dotenv"
+        ? `d:${source.path}`
+        : "";
   const saveRequest = async () => {
     if (!details?.selected || !draft) return;
     working(true);
@@ -824,6 +871,7 @@ export default function ApiWorkspaces({
             setExchangeId(null);
             onSelectResponse(null);
             if (!details || details.workspace.id !== value.workspace.id) {
+              setSourceSelected(false);
               setSource({ kind: "none" });
               setEnvironment(null);
             }
@@ -843,6 +891,7 @@ export default function ApiWorkspaces({
           onInspect={(result) => {
             onResult(result);
             setExchangeId(result.exchange.id);
+            setChecks(result.checks);
           }}
         />
       ) : null}
@@ -857,6 +906,7 @@ export default function ApiWorkspaces({
             setDetails(value);
             setDraft(value.selected?.sourceJson ?? "");
             setEnvironment(null);
+            setSourceSelected(false);
             setSource({ kind: "none" });
             setEditorGeneration((n) => n + 1);
             setMultipartFiles({});
@@ -910,7 +960,12 @@ export default function ApiWorkspaces({
             >
               <Button
                 size="sm"
-                variant={tab.details.selected?.id === details?.selected?.id ? "secondary" : "ghost"}
+                variant={
+                  tab.details.workspace.id === details?.workspace.id &&
+                  tab.details.selected?.id === details?.selected?.id
+                    ? "secondary"
+                    : "ghost"
+                }
                 disabled={busy || dirty}
                 onClick={() => void activateTab(tab)}
               >
@@ -948,6 +1003,43 @@ export default function ApiWorkspaces({
         >
           {error}
         </p>
+      ) : null}
+      {conflict ? (
+        <div role="alert" className="space-y-2 p-4 text-xs">
+          <p>
+            The saved request changed while this draft was open. Your edits are preserved. Choose
+            the version to continue editing.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setDetails(conflict);
+                setConflict(null);
+                pending.current = null;
+              }}
+            >
+              Keep recovered draft
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setDetails(conflict);
+                setDraft(conflict.selected?.sourceJson ?? "");
+                setConflict(null);
+                setEditorGeneration((n) => n + 1);
+                setMultipartFiles({});
+                pending.current = null;
+              }}
+            >
+              Use saved request
+            </Button>
+          </div>
+        </div>
       ) : null}
       {note ? (
         <p role="status" className="px-4 py-2 text-xs leading-5 text-muted-foreground">
@@ -1128,7 +1220,7 @@ export default function ApiWorkspaces({
                           size="icon-sm"
                           variant="ghost"
                           aria-label="Discard request edits"
-                          disabled={busy || !requestDirty}
+                          disabled={busy || Boolean(conflict) || !requestDirty}
                           onClick={() => {
                             setDraft(details.selected!.sourceJson);
                             setEditorGeneration(editorGeneration + 1);
@@ -1140,7 +1232,7 @@ export default function ApiWorkspaces({
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy || !requestDirty}
+                          disabled={busy || Boolean(conflict) || !requestDirty}
                           onClick={() => void saveRequest()}
                         >
                           <SaveIcon />
@@ -1187,6 +1279,7 @@ export default function ApiWorkspaces({
                       size="sm"
                       disabled={
                         busy ||
+                        Boolean(conflict) ||
                         !environment ||
                         dirty ||
                         (bodyType === "application/octet-stream" && bodyBase64 === undefined) ||
