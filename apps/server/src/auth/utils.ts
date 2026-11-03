@@ -11,6 +11,7 @@ import { normalizeHostname } from "@t3tools/shared/hostClassification";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option"; // fork: secure-session-cookies
 import * as Result from "effect/Result";
+import { requestUrl } from "../requestUrl.ts"; // fork: secure-session-cookies
 
 const SESSION_COOKIE_NAME = "t3_session";
 
@@ -61,7 +62,7 @@ export function resolveLegacySessionCookieName(input: {
  * loopback HTTP must not be, or the browser drops them.
  */
 export const isHttpsRequest = (request: HttpServerRequest.HttpServerRequest): boolean =>
-  Option.exists(HttpServerRequest.toURL(request), (url) => url.protocol === "https:");
+  Option.exists(requestUrl(request), (url) => url.protocol === "https:");
 
 // fork: secure-session-cookies
 export const sessionCookieOptions = (secure: boolean) =>

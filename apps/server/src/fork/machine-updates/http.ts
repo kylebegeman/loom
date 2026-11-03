@@ -9,6 +9,7 @@ import {
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import {
   HttpIncomingMessage,
@@ -49,11 +50,15 @@ const handle = (mode: "activity" | "fence" | "progress") =>
           HttpIncomingMessage.MaxBodySize,
           ByteSize.bytes(MAX_UPDATE_BODY_BYTES),
         ),
-        Effect.option,
+        Effect.result,
       );
-      if (parsed._tag === "None")
-        return HttpServerResponse.text("Invalid update request", { status: 400, headers });
-      const body = parsed.value;
+      if (Result.isFailure(parsed)) {
+        const reason = parsed.failure.reason;
+        return reason._tag === "RequestParseError" && reason.reason === "BodyTooLarge"
+          ? HttpServerResponse.text("Update request too large", { status: 413, headers })
+          : HttpServerResponse.text("Invalid update request", { status: 400, headers });
+      }
+      const body = parsed.success;
       if (new TextEncoder().encode(body).byteLength > MAX_UPDATE_BODY_BYTES) {
         return HttpServerResponse.text("Update request too large", { status: 413, headers });
       }
