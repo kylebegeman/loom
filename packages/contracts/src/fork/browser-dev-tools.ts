@@ -10,6 +10,7 @@ import { EnvironmentAuthorizationError } from "../auth.ts";
 import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 
 export const DEV_ENVIRONMENT_WS_METHODS = {
+  apiAuthor: "loom.browser-dev-tools.apiAuthor",
   apiList: "loom.browser-dev-tools.apiList",
   apiImport: "loom.browser-dev-tools.apiImport",
   apiRead: "loom.browser-dev-tools.apiRead",
@@ -21,6 +22,7 @@ export const DEV_ENVIRONMENT_WS_METHODS = {
   apiRemove: "loom.browser-dev-tools.apiRemove",
   httpSend: "loom.browser-dev-tools.httpSend",
   httpHistory: "loom.browser-dev-tools.httpHistory",
+  httpBaseline: "loom.browser-dev-tools.httpBaseline",
   httpClear: "loom.browser-dev-tools.httpClear",
   diagnostics: "loom.browser-dev-tools.diagnostics",
   snapshot: "loom.browser-dev-tools.snapshot",
@@ -244,6 +246,7 @@ export const DevApiDetails = Schema.Struct({
       id: Schema.String,
       sourceJson: Schema.String,
       endpoint: Schema.String,
+      variables: Schema.optionalKey(Schema.Array(DevApiVariable)),
       bodyContentType: Schema.NullOr(Schema.String),
       preScripts: Schema.Array(Schema.String),
       testScripts: Schema.Array(Schema.String),
@@ -262,6 +265,22 @@ export const DevApiImport = Schema.Struct({
   ),
 });
 export type DevApiImport = typeof DevApiImport.Type;
+export const DevApiAuthor = Schema.Struct({
+  ...DevTarget.fields,
+  action: Schema.Literals(["workspace", "request", "folder", "curl", "openapi-preview", "openapi-apply"]),
+  workspaceId: Schema.optionalKey(Schema.String),
+  expectedRevision: Schema.optionalKey(Schema.String),
+  requestId: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  folders: Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(30)),
+  content: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16777216))),
+});
+export type DevApiAuthor = typeof DevApiAuthor.Type;
+export const DevApiAuthorResult = Schema.Struct({
+  details: Schema.NullOr(DevApiDetails),
+  changes: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, kind: Schema.Literals(["added", "changed", "removed", "customized"]) })),
+});
+export type DevApiAuthorResult = typeof DevApiAuthorResult.Type;
 export const DevApiEnvironmentTarget = Schema.Struct({
   ...DevApiWorkspaceTarget.fields,
   source: DevApiSource,
@@ -376,6 +395,29 @@ export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError"
     return messages[this.reason];
   }
 }
+export const DevHttpBaseline = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  exchange: DevHttpExchange,
+  ignoredPaths: Schema.Array(Schema.String.check(Schema.isMaxLength(300))).check(
+    Schema.isMaxLength(100),
+  ),
+});
+export const DevHttpBaselines = Schema.Struct({
+  revision: Schema.String,
+  baselines: Schema.Array(DevHttpBaseline),
+});
+export type DevHttpBaselines = typeof DevHttpBaselines.Type;
+export const DevHttpBaselineAction = Schema.Struct({
+  ...DevTarget.fields,
+  action: Schema.Literals(["read", "pin", "remove"]),
+  id: Schema.optionalKey(TrimmedNonEmptyString),
+  name: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+  exchangeId: Schema.optionalKey(Schema.String),
+  expectedRevision: Schema.optionalKey(Schema.String),
+  ignoredPaths: Schema.optionalKey(DevHttpBaseline.fields.ignoredPaths),
+});
+export type DevHttpBaselineAction = typeof DevHttpBaselineAction.Type;
 export class DevHttpError extends Schema.TaggedError<DevHttpError>()("DevHttpError", {
   reason: Schema.Literals([
     "invalid-request",
@@ -383,6 +425,7 @@ export class DevHttpError extends Schema.TaggedError<DevHttpError>()("DevHttpErr
     "request-conflict",
     "request-incomplete",
     "history-pruned",
+    "revision-conflict",
   ]),
   cause: Schema.optionalKey(Schema.Defect()),
 }) {
@@ -390,6 +433,7 @@ export class DevHttpError extends Schema.TaggedError<DevHttpError>()("DevHttpErr
     const messages: Record<typeof this.reason, string> = {
       "invalid-request":
         "Use an HTTP or HTTPS URL, valid headers, and a body of at most 128 KiB. GET and HEAD cannot send a body. Put authentication in headers rather than the URL.",
+      "revision-conflict": "Baselines changed. Reload them before saving.",
       "history-unavailable":
         "Request history could not be read or saved on this computer. No new request was sent when its receipt could not be saved.",
       "request-conflict": "This request ID was already used with different inputs.",
@@ -462,6 +506,7 @@ const apiError = Schema.Union([
   EnvironmentAuthorizationError,
 ]);
 export const DevEnvironmentRpcGroup = RpcGroup.make(
+  Rpc.make(M.apiAuthor, { payload: DevApiAuthor, success: DevApiAuthorResult, error: apiError }),
   Rpc.make(M.apiSaveRequest, {
     payload: DevApiSaveRequest,
     success: DevApiDetails,
@@ -487,6 +532,11 @@ export const DevEnvironmentRpcGroup = RpcGroup.make(
   }),
   Rpc.make(M.apiRun, { payload: DevApiRun, success: DevApiRunResult, error: apiError }),
   Rpc.make(M.apiRemove, { payload: DevApiWorkspaceTarget, success: Schema.Void, error: apiError }),
+  Rpc.make(M.httpBaseline, {
+    payload: DevHttpBaselineAction,
+    success: DevHttpBaselines,
+    error: httpError,
+  }),
   Rpc.make(M.httpSend, { payload: DevHttpSend, success: DevHttpExchange, error: httpError }),
   Rpc.make(M.httpHistory, {
     payload: DevHttpHistoryTarget,

@@ -4,7 +4,9 @@ import { DevDiagnosticsService } from "./DevDiagnosticsService.ts";
 import type { DevDiagnosticsTarget } from "@t3tools/contracts/fork";
 import {
   DEV_ENVIRONMENT_WS_METHODS as D,
+  type DevHttpBaselineAction,
   type DevHttpSend,
+  type DevApiAuthor,
   type DevApiImport,
   type DevApiRead,
   type DevApiEnvironmentTarget,
@@ -36,6 +38,7 @@ export const makeDevEnvironmentRpcHandlers = Effect.fn("DevEnvironment.rpc")(fun
   const dev = yield* DevEnvironmentService;
   const containers = yield* DevContainersService;
   return {
+    [D.apiAuthor]: (input: DevApiAuthor) => auth.effect(D.apiAuthor, api.author(input)),
     [D.apiList]: (input: DevTarget) => auth.effect(D.apiList, api.list(input)),
     [D.apiImport]: (input: DevApiImport) => auth.effect(D.apiImport, api.import(input)),
     [D.apiRead]: (input: DevApiRead) => auth.effect(D.apiRead, api.read(input)),
@@ -58,6 +61,8 @@ export const makeDevEnvironmentRpcHandlers = Effect.fn("DevEnvironment.rpc")(fun
         }),
       ),
     [D.apiRemove]: (input: DevApiWorkspaceTarget) => auth.effect(D.apiRemove, api.remove(input)),
+    [D.httpBaseline]: (input: DevHttpBaselineAction) =>
+      auth.effect(D.httpBaseline, requests.baseline(input)),
     [D.httpSend]: (input: DevHttpSend) => auth.effect(D.httpSend, requests.send(input)),
     [D.httpHistory]: (input: DevHttpHistoryTarget) =>
       auth.effect(D.httpHistory, requests.history(input)),

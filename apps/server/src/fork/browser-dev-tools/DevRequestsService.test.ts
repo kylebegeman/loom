@@ -147,7 +147,31 @@ it.effect(
         (yield* service.history({ ...target, exchangeId: credentialResponse.id })).selected?.request
           .body,
       ).not.toContain("fixture-vault-value");
+      const emptyBaselines = yield* service.baseline({ ...target, action: "read" });
+      const pinned = yield* service.baseline({
+        ...target,
+        action: "pin",
+        id: "good",
+        name: "Known good",
+        exchangeId: response.id,
+        expectedRevision: emptyBaselines.revision,
+        ignoredPaths: ["/headers/date"],
+      });
+      expect(pinned.baselines[0]?.exchange).toEqual(response);
+      expect(
+        (yield* service
+          .baseline({
+            ...target,
+            action: "remove",
+            id: "good",
+            expectedRevision: emptyBaselines.revision,
+          })
+          .pipe(Effect.flip)).reason,
+      ).toBe("revision-conflict");
       const restored = yield* reload;
+      expect((yield* restored.baseline({ ...target, action: "read" })).baselines).toEqual(
+        pinned.baselines,
+      );
       expect(yield* restored.send(input)).toEqual(response);
       expect(calls).toHaveLength(2);
       expect(
@@ -168,6 +192,16 @@ it.effect(
       expect((yield* service.history(target)).exchanges).toHaveLength(HTTP_HISTORY_LIMIT);
       expect((yield* service.send(input).pipe(Effect.flip)).reason).toBe("history-pruned");
       expect((yield* service.clear(target)).exchanges).toEqual([]);
+      expect((yield* service.baseline({ ...target, action: "read" })).baselines).toHaveLength(1);
+      const latest = yield* service.baseline({ ...target, action: "read" });
+      expect(
+        (yield* service.baseline({
+          ...target,
+          action: "remove",
+          id: "good",
+          expectedRevision: latest.revision,
+        })).baselines,
+      ).toEqual([]);
       expect(
         (yield* service.send({ ...input, requestId: "next-49" }).pipe(Effect.flip)).reason,
       ).toBe("history-pruned");

@@ -4,6 +4,9 @@ import { stableStringify } from "@t3tools/shared/relaySigning";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import {
   DevHttpError,
+  DevHttpBaseline,
+  type DevHttpBaselineAction,
+  type DevHttpBaselines,
   DevHttpExchange,
   type DevHttpSend,
   type DevHttpHistory,
@@ -41,7 +44,11 @@ const Receipt = Schema.Struct({
   state: Schema.Literals(["pending", "complete", "cleared"]),
   exchange: Schema.NullOr(DevHttpExchange),
 });
-const Store = Schema.Struct({ version: Schema.Literal(1), receipts: Schema.Array(Receipt) });
+const Store = Schema.Struct({
+  version: Schema.Literal(1),
+  receipts: Schema.Array(Receipt),
+  baselines: Schema.optionalKey(Schema.Array(DevHttpBaseline)),
+});
 const decode = Schema.decodeEffect(Schema.fromJsonString(Store));
 const encode = Schema.encodeEffect(Schema.fromJsonString(Store));
 type Store = typeof Store.Type;
@@ -55,6 +62,7 @@ export class DevRequestsService extends Context.Service<
       sensitiveValues?: readonly string[],
     ) => Effect.Effect<DevHttpExchange, Failure>;
     readonly history: (input: DevHttpHistoryTarget) => Effect.Effect<DevHttpHistory, Failure>;
+    readonly baseline: (input: DevHttpBaselineAction) => Effect.Effect<DevHttpBaselines, Failure>;
     readonly clear: (input: DevTarget) => Effect.Effect<DevHttpHistory, Failure>;
   }
 >()("t3/fork/browser-dev-tools/DevRequestsService") {}
@@ -116,6 +124,30 @@ export const make = Effect.gen(function* () {
       selected: exchanges.find((entry) => entry.id === input.exchangeId) ?? null,
     };
   });
+  const baseline = Effect.fn("DevRequests.baseline")(function* (input: DevHttpBaselineAction) {
+    const { root } = yield* dev.snapshot(input);
+    const state = yield* load(root);
+    const baselines = state.baselines ?? [];
+    const revisionOf = (rows: typeof baselines) =>
+      NodeCrypto.createHash("sha256").update(stableStringify(rows)).digest("hex");
+    const revision = revisionOf(baselines);
+    if (input.action === "read") return { revision, baselines };
+    if (!input.id || input.expectedRevision !== revision)
+      return yield* new DevHttpError({ reason: "revision-conflict" });
+    let next = baselines.filter((b) => b.id !== input.id);
+    if (input.action === "pin") {
+      const exchange = state.receipts.find((r) => r.exchange?.id === input.exchangeId)?.exchange;
+      if (!exchange || exchange.error || exchange.truncated || exchange.binary || !input.name)
+        return yield* new DevHttpError({ reason: "invalid-request" });
+      next = [
+        ...next,
+        { id: input.id, name: input.name, exchange, ignoredPaths: input.ignoredPaths ?? [] },
+      ];
+      if (next.length > 30) return yield* new DevHttpError({ reason: "invalid-request" });
+    }
+    yield* save(root, { ...state, baselines: next });
+    return { revision: revisionOf(next), baselines: next };
+  }, gate.withPermit);
   const clear = Effect.fn("DevRequests.clear")(function* (input: DevTarget) {
     const { root } = yield* dev.snapshot(input);
     const state = yield* load(root);
@@ -143,7 +175,7 @@ export const make = Effect.gen(function* () {
       (entry, index) => entry.state === "pending" || index >= state.receipts.length - 1999,
     );
     yield* save(root, {
-      version: 1,
+      ...state,
       receipts: [
         ...retained,
         { id: input.requestId, fingerprint, state: "pending", exchange: null },
@@ -264,6 +296,6 @@ export const make = Effect.gen(function* () {
     (input: DevHttpSend, sensitiveValues: readonly string[] = []) =>
       dispatch(input, true, sensitiveValues),
   );
-  return DevRequestsService.of({ send, sendForWorkflow, history, clear });
+  return DevRequestsService.of({ send, sendForWorkflow, history, baseline, clear });
 });
 export const layer = Layer.effect(DevRequestsService, make);

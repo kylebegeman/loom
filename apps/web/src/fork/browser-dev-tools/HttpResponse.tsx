@@ -1,3 +1,5 @@
+import ResponseComparison from "./ResponseComparison";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useState } from "react";
 import {
   ArrowDownToLineIcon,
@@ -42,12 +44,14 @@ function statusName(status: number | null) {
   );
 }
 export default function HttpResponse({
+  threadRef,
   exchange,
   checks = [],
   busy,
   onLoad,
   onAttach,
 }: {
+  threadRef: ScopedThreadRef;
   exchange: DevHttpExchange | null;
   checks?: readonly { name: string; passed: boolean }[];
   busy: boolean;
@@ -279,6 +283,7 @@ export default function HttpResponse({
               </div>
             ) : null}
           </LabTabs>
+          <ResponseComparison key={exchange.id} threadRef={threadRef} exchange={exchange} />
           {exchange.truncated ? (
             <p role="status" className="p-3 text-xs text-warning-foreground">
               Response preview stopped at 256 KiB.

@@ -27,6 +27,7 @@ it.effect(
         D.compose,
         D.database,
         D.databaseUrl,
+        D.apiAuthor,
         D.apiList,
         D.apiImport,
         D.apiRead,
@@ -38,6 +39,7 @@ it.effect(
         D.apiRemove,
         D.httpSend,
         D.httpHistory,
+        D.httpBaseline,
         D.httpClear,
       ]) {
         expect(FORK_CLIENT_GUARDED_RPC_SCOPES[method]).toBe(AuthTerminalOperateScope);

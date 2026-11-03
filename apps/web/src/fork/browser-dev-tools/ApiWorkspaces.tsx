@@ -38,6 +38,7 @@ import {
   RefreshCwIcon,
   XIcon,
 } from "lucide-react";
+import VariableInspector from "./VariableInspector";
 import ApiRequestEditor from "./ApiRequestEditor";
 import ApiEnvironmentEditor from "./ApiEnvironmentEditor";
 import { LabSelect, MethodBadge } from "./HttpLabParts";
@@ -1059,6 +1060,47 @@ export default function ApiWorkspaces({
                     </p>
                   ) : null}
                 </div>
+                <VariableInspector
+                  request={sourceDraft}
+                  inherited={details.selected.variables ?? []}
+                  environment={environment?.variables ?? []}
+                  source={
+                    source.kind === "json"
+                      ? (details.environments.find((e) => e.id === source.id)?.name ??
+                        "Environment")
+                      : source.kind === "dotenv"
+                        ? source.path
+                        : "No environment"
+                  }
+                  disabled={busy}
+                  onEditEnvironment={(key) => {
+                    if (!environment) {
+                      setError("Select an environment before defining this variable.");
+                      return;
+                    }
+                    if (!environment.variables.some((v) => v.key === key)) {
+                      setEnvironment({
+                        ...environment,
+                        variables: [
+                          ...environment.variables,
+                          { key, value: "", secret: /token|password|secret|key/i.test(key) },
+                        ],
+                      });
+                      setDirty(true);
+                    }
+                    setShowEnvironment(true);
+                  }}
+                  onEditRequest={(key, value) =>
+                    setDraft(
+                      JSON.stringify({
+                        ...sourceDraft,
+                        requestVariables: draftRows(sourceDraft.requestVariables).map((r) =>
+                          r.key === key ? { ...r, value, currentValue: value } : r,
+                        ),
+                      }),
+                    )
+                  }
+                />
                 {supportsEditing ? (
                   <ApiRequestEditor
                     key={`${details.selected.id}:${details.revision}:${editorGeneration}`}

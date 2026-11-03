@@ -207,6 +207,7 @@ export default function HttpRequestLab({
     : "";
   const response = (
     <HttpResponse
+      threadRef={threadRef}
       exchange={canUse ? selected : null}
       checks={checks}
       busy={busy}

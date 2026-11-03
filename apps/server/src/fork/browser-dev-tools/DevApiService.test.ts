@@ -101,6 +101,7 @@ const fixture = Effect.gen(function* () {
   const requests = Layer.succeed(DevRequestsService, {
     send: unused,
     history: unused,
+    baseline: unused,
     clear: unused,
     sendForWorkflow: (input) =>
       Effect.gen(function* () {

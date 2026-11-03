@@ -4,6 +4,8 @@ import * as NodeUtil from "node:util";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { stableStringify } from "@t3tools/shared/relaySigning";
 import {
+  type DevApiAuthor,
+  type DevApiAuthorResult,
   DevApiError,
   DevApiVariable,
   DevApiRunResult,
@@ -41,6 +43,7 @@ import { DevRequestsService } from "./DevRequestsService.ts";
 import { checkoutKey } from "./servers.ts";
 import { redactHeaders, redactSensitive, redactExchangeSecrets } from "./requests.ts";
 import { updateDotenv } from "./dotenv.ts";
+import { blankRequest, blankCollection, importCurl, importOpenApi } from "./apiImports.ts";
 import { API_SCRIPT_RUNNER } from "./apiScriptRunner.ts";
 import {
   HoppscotchInputError,
@@ -157,6 +160,7 @@ const fingerprint = (value: unknown) => digest(stableStringify(value));
 export class DevApiService extends Context.Service<
   DevApiService,
   {
+    readonly author: (input: DevApiAuthor) => Effect.Effect<DevApiAuthorResult, Failure>;
     readonly list: (input: DevTarget) => Effect.Effect<readonly DevApiWorkspace[], Failure>;
     readonly import: (input: DevApiImport) => Effect.Effect<DevApiDetails, Failure>;
     readonly importDirectory: (
@@ -375,6 +379,7 @@ export const make = Effect.gen(function* () {
       selected: selected
         ? {
             id: selected.id,
+            variables: selected.variables,
             sourceJson: yield* encodeJson(selected.source).pipe(Effect.mapError(storageError)),
             endpoint: String(selected.source.endpoint),
             bodyContentType:
@@ -471,6 +476,74 @@ export const make = Effect.gen(function* () {
     );
     return yield* details({ ...input, workspaceId: id }, m, root);
   }, gate.withPermit);
+  const authorExisting = Effect.fn("DevApi.authorExisting")(function* (input: DevApiAuthor) {
+    const { root } = yield* dev.snapshot(input);
+    const m = yield* readManifest(input.workspaceId!);
+    const state = yield* stateFor(m.id);
+    if (revisionFor(m, state) !== input.expectedRevision) return yield* new DevApiError({ reason: "revision-conflict" });
+    const fileName = input.action.startsWith("openapi") ? "openapi.json" : "pulse.json";
+    const existingFile = m.files.find((f) => f.name === fileName);
+    const original = existingFile ? yield* fs.readFileString(fileFor(m.id, `${existingFile.hash}.json`)).pipe(Effect.mapError(storageError)) : JSON.stringify([blankCollection(m.name)]);
+    const generated = yield* Effect.try({
+      try: () => {
+        if (input.action.startsWith("openapi")) return importOpenApi(input.content ?? "").collection;
+        const roots = JSON.parse(original) as Record<string, unknown>[];
+        let folder = roots[0]!;
+        for (const name of input.folders) {
+          const folders = folder.folders as Record<string, unknown>[];
+          let child = folders.find((f) => f.name === name);
+          if (!child) { child = blankCollection(name); folders.push(child); }
+          folder = child;
+        }
+        if (input.action === "folder") {
+          const folders = folder.folders as Record<string, unknown>[];
+          if (!folders.some((f) => f.name === input.name)) folders.push(blankCollection(input.name));
+        } else {
+          const requests = folder.requests as Record<string, unknown>[];
+          const loomId = `manual:${input.requestId}`;
+          if (!requests.some((r) => r.loomId === loomId)) requests.push({ ...(input.action === "curl" ? importCurl(input.content ?? "") : blankRequest(input.name)), name: input.name, loomId });
+        }
+        return JSON.stringify(roots);
+      },
+      catch: (e) => new DevApiError({ reason: e instanceof HoppscotchInputError ? e.reason : "invalid-format" }),
+    });
+    const parsed = yield* Effect.try({ try: () => importHoppscotch(generated, fileName), catch: () => new DevApiError({ reason: "invalid-format" }) });
+    if (parsed.kind !== "collections") return yield* new DevApiError({ reason: "invalid-format" });
+    const previous = importHoppscotch(original, fileName);
+    const oldRequests = previous.kind === "collections" ? previous.requests : [];
+    const changes: DevApiAuthorResult["changes"][number][] = [];
+    for (const r of parsed.requests) {
+      const old = oldRequests.find((p) => p.id === r.id);
+      if (!old) changes.push({ id: r.id, name: r.name, kind: "added" });
+      else if (fingerprint(old.source) !== fingerprint(r.source)) changes.push({ id: r.id, name: r.name, kind: state.requestEdits?.[r.id] ? "customized" : "changed" });
+    }
+    const retained = oldRequests.filter((r) => !parsed.requests.some((p) => p.id === r.id) && state.requestEdits?.[r.id]);
+    for (const old of oldRequests.filter((r) => !parsed.requests.some((p) => p.id === r.id))) changes.push({ id: old.id, name: old.name, kind: state.requestEdits?.[old.id] ? "customized" : "removed" });
+    if (input.action === "openapi-preview") return { details: null, changes };
+    const roots = JSON.parse(generated) as Record<string, unknown>[];
+    (roots[0]!.requests as unknown[]).push(...retained.map((r) => r.source));
+    const content = JSON.stringify(roots);
+    const final = importHoppscotch(content, fileName);
+    if (final.kind !== "collections") return yield* new DevApiError({ reason: "invalid-format" });
+    const hash = digest(content);
+    const next: Manifest = { ...m, files: [...m.files.filter((f) => f.name !== fileName), { name: fileName, hash }], requests: [...m.requests.filter((r) => r.file !== fileName), ...final.requests.map((r) => ({ id: r.id, name: r.name, folders: r.folders, method: String(r.source.method), file: fileName }))] };
+    yield* write(fileFor(m.id, `${hash}.json`), content);
+    yield* write(fileFor(m.id, "manifest.json"), yield* encodeManifest(next).pipe(Effect.mapError(storageError)));
+    const key = final.requests.find((r) => r.source.loomId === `manual:${input.requestId}`)?.id;
+    return { details: yield* details({ ...input, workspaceId: m.id, ...(key ? { requestKey: key } : {}) }, next, root), changes };
+  }, gate.withPermit);
+  const author = Effect.fn("DevApi.author")(function* (input: DevApiAuthor) {
+    if (input.workspaceId) return yield* authorExisting(input);
+    const files = yield* Effect.try({
+      try: () => {
+        if (input.action.startsWith("openapi")) { const result = importOpenApi(input.content ?? ""); return [{ name: "openapi.json", content: result.collection }, { name: "api.environment.json", content: result.environment }]; }
+        const root = blankCollection(input.name);
+        if (input.action === "curl") root.requests.push({ ...importCurl(input.content ?? ""), loomId: `manual:${input.requestId}` });
+        return [{ name: "pulse.json", content: JSON.stringify([root]) }];
+      }, catch: (e) => new DevApiError({ reason: e instanceof HoppscotchInputError ? e.reason : "invalid-format" }),
+    });
+    return { details: yield* importWorkspace({ ...input, files }), changes: [] };
+  });
   const importDirectory = Effect.fn("DevApi.importDirectory")(function* (
     input: DevTarget & { readonly name: string; readonly directory: string },
   ) {
@@ -825,6 +898,7 @@ export const make = Effect.gen(function* () {
   }, gate.withPermit);
   return DevApiService.of({
     list,
+    author,
     import: importWorkspace,
     importDirectory,
     read,
