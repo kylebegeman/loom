@@ -38,6 +38,14 @@ export const LibraryBackupManifest = Schema.Struct({
   copies: Schema.Int,
   threads: Schema.Int,
   threadVersions: Schema.Int,
+  apiWorkspaces: Schema.optionalKey(
+    Schema.Struct({
+      catalogs: Schema.Int,
+      workspaces: Schema.Int,
+      receipts: Schema.Int,
+      bundles: Schema.Int,
+    }),
+  ),
   sourceCursors: Schema.Array(
     Schema.Struct({
       environmentId: Schema.String,
@@ -228,6 +236,17 @@ const make = Effect.gen(function* () {
         threads: number;
         versions: number;
       }>`SELECT (SELECT COUNT(*) FROM fork_library_projects) AS projects,(SELECT COUNT(*) FROM fork_library_working_copies) AS copies,(SELECT COUNT(*) FROM fork_library_threads) AS threads,(SELECT COUNT(*) FROM fork_library_thread_versions) AS versions`)[0]!;
+      const apiWorkspaces = (yield* sql<{
+        catalogs: number;
+        workspaces: number;
+        receipts: number;
+        bundles: number;
+      }>`
+        SELECT (SELECT COUNT(*) FROM fork_library_api_catalogs) AS catalogs,
+          (SELECT coalesce(SUM(json_array_length(payload_json,'$.entries')),0) FROM fork_library_api_catalogs) AS workspaces,
+          (SELECT coalesce(SUM(json_array_length(payload_json,'$.receipts')),0) FROM fork_library_api_catalogs) AS receipts,
+          (SELECT COUNT(*) FROM fork_library_api_bundles) AS bundles
+      `)[0]!;
       const cursors = yield* sql<{
         environment_id: string;
         journal_id: string;
@@ -242,6 +261,7 @@ const make = Effect.gen(function* () {
         copies: counts.copies,
         threads: counts.threads,
         threadVersions: counts.versions,
+        apiWorkspaces,
         sourceCursors: cursors.map((row) => ({
           environmentId: row.environment_id,
           journalId: row.journal_id,

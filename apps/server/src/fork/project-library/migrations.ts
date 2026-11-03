@@ -172,5 +172,14 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE IF NOT EXISTS fork_library_erased_assets (source_environment_id TEXT NOT NULL, source_attachment_id TEXT NOT NULL, digest TEXT NOT NULL, pending INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(source_environment_id,source_attachment_id))`;
       }),
     ],
+    [
+      16,
+      "PulseWorkspaceCatalog",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_library_api_catalogs (project_id TEXT PRIMARY KEY NOT NULL REFERENCES fork_library_projects(id) ON DELETE CASCADE, payload_json TEXT NOT NULL CHECK(json_valid(payload_json)))`;
+        yield* sql`CREATE TABLE fork_library_api_bundles (project_id TEXT NOT NULL REFERENCES fork_library_projects(id) ON DELETE CASCADE, digest TEXT NOT NULL, payload_json TEXT NOT NULL CHECK(json_valid(payload_json)), PRIMARY KEY(project_id,digest))`;
+      }),
+    ],
   ],
 };

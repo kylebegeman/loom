@@ -13,6 +13,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Library from "./LibraryService.ts";
+import * as Apis from "./LibraryApiWorkspaces.ts";
 import * as Maintenance from "./LibraryMaintenance.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
@@ -80,6 +81,23 @@ const fixture = Effect.gen(function* () {
     fromSequence: 0,
     entries: [{ sequence: 1, thread }],
   });
+  const api = yield* Apis.LibraryApiWorkspaces.pipe(
+    Effect.provide(Apis.layer),
+    Effect.provideService(Library.LibraryService, library),
+  );
+  yield* api.execute({
+    projectId: project.id,
+    action: "save",
+    requestId: "pulse",
+    expectedRevision: 0,
+    bundle: {
+      id: "a".repeat(24),
+      name: "API",
+      folders: [],
+      workflows: [],
+      files: [{ name: "api.json", content: '[{"v":12,"name":"API","folders":[],"requests":[]}]' }],
+    },
+  });
   return { library, maintenance, info, copyRequest, asset };
 });
 const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
@@ -112,6 +130,7 @@ describe("Library backup manifests and authority fencing", () => {
           copies: 1,
           threads: 1,
           threadVersions: 1,
+          apiWorkspaces: { catalogs: 1, workspaces: 1, receipts: 1, bundles: 1 },
           assetBytesVerified: true,
           recoveryBytesVerified: true,
           sourceCursors: [{ environmentId: source, journalId: "journal", lastSequence: 1 }],

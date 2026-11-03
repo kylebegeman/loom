@@ -1,4 +1,3 @@
-import * as FileSystem from "effect/FileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -23,6 +22,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClientResponse } from "effect/http";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
@@ -363,10 +363,10 @@ describe("authority-routed project management", () => {
               },
               f.actor,
             );
-          const fs = yield* FileSystem.FileSystem;
-          const config = yield* ServerConfig.ServerConfig;
-          const files = yield* fs.readDirectory(`${config.stateDir}/fork/library-api-workspaces`);
-          expect(files.filter((name) => /\.json\.[a-f\d]{64}$/.test(name))).toHaveLength(20);
+          const sql = yield* SqlClient.SqlClient;
+          expect(
+            yield* sql`SELECT digest FROM fork_library_api_bundles WHERE project_id=${f.project.id}`,
+          ).toHaveLength(20);
           const followed = yield* second.manager.execute(
             {
               kind: "update",
