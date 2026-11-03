@@ -1136,6 +1136,7 @@ apps/web/src/components/settings/ArchivedThreadsPanel.tsx	attention-status	14
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	attention-status	9
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	library-projects	10
 apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
+apps/desktop/src/app/DesktopApp.test.ts	restart-compaction	3
 apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
@@ -1198,6 +1199,7 @@ apps/mobile/src/features/settings/SettingsServerControlsRouteScreen.test.tsx	vau
 apps/desktop/src/app/DesktopApp.ts	rollback-snapshot	2
 apps/desktop/src/updates/DesktopUpdates.ts	rollback-snapshot	3
 apps/desktop/src/app/DesktopApp.ts	open-at-login	2
+apps/desktop/src/app/DesktopApp.test.ts	open-at-login	2
 apps/desktop/src/ipc/DesktopIpcHandlers.ts	open-at-login	2
 apps/desktop/src/ipc/channels.ts	open-at-login	3
 apps/desktop/src/main.ts	open-at-login	2
@@ -1600,6 +1602,8 @@ apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	2
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/package.json	-	"access:pilot"
 apps/desktop/src/app/DesktopApp.ts	cloudflare-access	1
+apps/desktop/src/app/DesktopApp.test.ts	cloudflare-access	2
+apps/desktop/src/app/DesktopApp.test.ts	identity-renewal	2
 apps/desktop/src/fork/identity-renewal/DesktopIdentityRenewal.ts	cloudflare-access	1
 apps/desktop/src/ipc/methods/loomIdentity.ts	cloudflare-access	1
 apps/desktop/src/main.ts	cloudflare-access	1

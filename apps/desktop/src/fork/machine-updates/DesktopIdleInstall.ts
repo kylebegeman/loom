@@ -1,6 +1,6 @@
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
@@ -19,7 +19,7 @@ export const makeDesktopIdleInstall = Effect.fn("DesktopIdleInstall.make")(funct
   ) => Effect.Effect<DesktopUpdateState>;
   readonly install: (version: string) => Effect.Effect<Result>;
 }) {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const remote = yield* Ref.make(false);
   const permit = yield* Semaphore.make(1);
   const owned = makeOwnedBackendUpdates({
@@ -39,7 +39,7 @@ export const makeDesktopIdleInstall = Effect.fn("DesktopIdleInstall.make")(funct
     armed: Effect.Effect<boolean>,
   ) {
     let result: Result | null = null;
-    const owner = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+    const owner = yield* random.uuidV4();
     yield* permit.withPermits(1)(
       waitForIdleInstall({
         armed,

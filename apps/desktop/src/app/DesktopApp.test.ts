@@ -11,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import { ChildProcessSpawner } from "effect/process"; // fork: restart-compaction
 import { vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({}));
@@ -21,6 +22,10 @@ vi.mock("../ipc/DesktopIpcHandlers.ts", () => ({
 }));
 vi.mock("../updates/DesktopRemoteUpdates.ts", () => ({ listen: Effect.void }));
 vi.mock("./DesktopStartupRecovery.ts", () => ({ listen: Effect.void }));
+// fork: restart-compaction
+vi.mock("../fork/database-compaction/RestartCompaction.ts", () => ({
+  compactBeforeBackendStart: Effect.void,
+}));
 
 import * as DesktopApp from "./DesktopApp.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
@@ -68,6 +73,9 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as MacPermissions from "../permissions/MacPermissions.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as DesktopCloudflareAccess from "../fork/cloudflare-access/DesktopCloudflareAccess.ts"; // fork: cloudflare-access
+import * as DesktopIdentityRenewal from "../fork/identity-renewal/DesktopIdentityRenewal.ts"; // fork: identity-renewal
+import * as OpenAtLogin from "../fork/open-at-login/OpenAtLogin.ts"; // fork: open-at-login
 
 it.effect(
   "starts the backend and window while Linux registration is stalled and cancels it on shutdown",
@@ -206,6 +214,14 @@ it.effect(
             Layer.mock(ElectronTheme.ElectronTheme, {}),
             Layer.mock(ElectronWindow.ElectronWindow, {}),
             Layer.mock(MacPermissions.MacPermissions, {}),
+            // fork: cloudflare-access
+            Layer.mock(DesktopCloudflareAccess.DesktopCloudflareAccess, {
+              fetch: () => Promise.reject(new Error("unexpected Cloudflare Access fetch")),
+              install: Effect.void,
+            }),
+            Layer.mock(DesktopIdentityRenewal.DesktopIdentityRenewal, {}), // fork: identity-renewal
+            Layer.mock(OpenAtLogin.OpenAtLogin, { reconcile: Effect.void }), // fork: open-at-login
+            Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {}), // fork: restart-compaction
             Layer.mock(PreviewManager.PreviewManager, {
               isBrowserPartition: () => {
                 throw new Error("unexpected browser partition lookup");

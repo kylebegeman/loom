@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -76,7 +77,7 @@ const layerFor = (baseDir: string, encryption: { current: Encryption }) =>
       ),
     ),
     Layer.provideMerge(layerSafeStorage(encryption)),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 const withStore = <A, E>(

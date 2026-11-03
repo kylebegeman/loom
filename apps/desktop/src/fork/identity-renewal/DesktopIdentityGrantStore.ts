@@ -1,6 +1,6 @@
 import { IdentityGrant, identityGrantKey } from "@t3tools/shared/fork/identity-grant";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
@@ -66,7 +66,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const grantsPath = path.join(environment.stateDir, GRANTS_FILE_NAME);
   // Every operation reads, changes and rewrites the whole file, so they run one at a time.
   const lock = yield* Semaphore.make(1);
@@ -142,9 +142,7 @@ export const make = Effect.gen(function* () {
       version: 1,
       encrypted: Base64.encode(encrypted),
     }).pipe(Effect.mapError(() => failure("encode")));
-    const suffix = (yield* crypto
-      .randomUUIDv4()
-      .pipe(Effect.mapError((cause) => failure("write", cause)))).replace(/-/g, "");
+    const suffix = (yield* random.uuidV4()).replace(/-/g, "");
     const tempPath = `${grantsPath}.${process.pid}.${suffix}.tmp`;
     yield* fileSystem
       .makeDirectory(path.dirname(grantsPath), { recursive: true })
