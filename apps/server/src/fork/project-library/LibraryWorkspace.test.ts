@@ -2842,7 +2842,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect((yield* fs.readDirectory(archiveDirectory)).toSorted()).toEqual(
         previousArchives.toSorted(),
       );
-      expect(yield* fs.readFile(ignoredPath)).toEqual(bytes);
+      expect(new Uint8Array(yield* fs.readFile(ignoredPath))).toEqual(bytes);
       expect(yield* fs.exists(path.join(rootPath, ".git"))).toBe(true);
       const receipt = yield* store.get(copy.id);
       expect(receipt.copy.state).toBe("ready");
