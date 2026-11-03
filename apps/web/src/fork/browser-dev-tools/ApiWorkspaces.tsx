@@ -986,7 +986,7 @@ export default function ApiWorkspaces({
           ))}
         </div>
       ) : null}
-      {initialTab && !environment && !busy ? (
+      {initialTab && sourceSelected && !environment && !busy ? (
         <div className="p-3">
           <Button size="sm" variant="outline" onClick={() => void activateTab(initialTab)}>
             Resume recovered request
