@@ -11,7 +11,7 @@ export const devEnvironmentPaletteSource: ForkCommandPaletteSource = {
             value: "action:loom:browser-dev-tools:open",
             title: "Open development tools",
             icon: <SquareTerminalIcon className="size-4" />,
-            description: "Run commands, logs, Browser diagnostics, Compose and databases",
+            description: "Run commands, inspect services and test APIs with Pulse",
             searchTerms: [
               "dev",
               "server",
@@ -26,7 +26,7 @@ export const devEnvironmentPaletteSource: ForkCommandPaletteSource = {
               "console",
               "network",
               ...(loomFeatures.includes("browser-dev-tools-http")
-                ? ["http", "api", "request", "response"]
+                ? ["pulse", "http", "api", "request", "response"]
                 : []),
             ],
             run: async () => openDevEnvironment(activeThreadRef),

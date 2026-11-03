@@ -604,7 +604,10 @@ export default function ApiWorkflowPanel({
               { value: "", label: "Choose a previous run" },
               ...runs.map((r) => ({
                 value: r.id,
-                label: `${r.name} · ${r.state} · ${r.completed} requests · ${r.startedAt}`,
+                label:
+                  r.id === run?.id
+                    ? `${r.name} · ${r.startedAt}`
+                    : `${r.name} · ${r.state} · ${r.completed} requests · ${r.startedAt}`,
               })),
             ]}
           />
