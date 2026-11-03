@@ -579,5 +579,5 @@ it.effect("forks from the selected checkpoint without rewinding the source", () 
         sourcePoint: { type: "checkpoint", checkpointId: "selected-checkpoint" },
       }),
     ]);
-  }).pipe(Effect.provide(layerTestCrypto)),
+  }).pipe(Effect.provide(layerTestRandom)),
 );
