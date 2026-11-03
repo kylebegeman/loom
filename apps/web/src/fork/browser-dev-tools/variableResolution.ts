@@ -54,7 +54,7 @@ export function explainVariables(
       status: inspect(key),
       secret: v?.secret || Boolean(v?.vault),
       value: v?.secret || v?.vault ? "" : (v?.value ?? ""),
-      request: v?.source === "Request variable",
+      request: v?.source === "Request variable" || v?.source === "Collection variable",
     };
   });
 }

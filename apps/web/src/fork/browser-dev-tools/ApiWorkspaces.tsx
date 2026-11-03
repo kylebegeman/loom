@@ -1232,6 +1232,23 @@ export default function ApiWorkspaces({
                   }
                   disabled={busy}
                   onEditEnvironment={(key) => {
+                    if (source.kind === "none") {
+                      setDraft(
+                        JSON.stringify({
+                          ...sourceDraft,
+                          requestVariables: [
+                            ...draftRows(sourceDraft.requestVariables),
+                            {
+                              key,
+                              value: "",
+                              currentValue: "",
+                              secret: /token|password|secret|key/i.test(key),
+                            },
+                          ],
+                        }),
+                      );
+                      return;
+                    }
                     if (!environment) {
                       setError("Select an environment before defining this variable.");
                       return;
@@ -1248,16 +1265,27 @@ export default function ApiWorkspaces({
                     }
                     setShowEnvironment(true);
                   }}
-                  onEditRequest={(key, value) =>
+                  onEditRequest={(key, value) => {
+                    const rows = draftRows(sourceDraft.requestVariables);
                     setDraft(
                       JSON.stringify({
                         ...sourceDraft,
-                        requestVariables: draftRows(sourceDraft.requestVariables).map((r) =>
-                          r.key === key ? { ...r, value, currentValue: value } : r,
-                        ),
+                        requestVariables: rows.some((r) => r.key === key)
+                          ? rows.map((r) =>
+                              r.key === key ? { ...r, value, currentValue: value } : r,
+                            )
+                          : [
+                              ...rows,
+                              {
+                                key,
+                                value,
+                                currentValue: value,
+                                secret: /token|password|secret|key/i.test(key),
+                              },
+                            ],
                       }),
-                    )
-                  }
+                    );
+                  }}
                 />
                 {typeof sourceDraft.loomImportWarning === "string" ? (
                   <p role="status" className="px-4 py-2 text-xs text-warning-foreground">

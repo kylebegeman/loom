@@ -74,7 +74,9 @@ export default function VariableInspector({
               disabled={disabled}
               onClick={() => onEditEnvironment(row.key)}
             >
-              Edit environment variable
+              {source === "No environment"
+                ? "Define request variable"
+                : "Edit environment variable"}
             </Button>
           )}
         </div>
