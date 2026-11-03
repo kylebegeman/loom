@@ -1,9 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -35,7 +36,7 @@ const run = <A, E, R>(
     const store = yield* Recovery.LibraryRecoveryStore.pipe(
       Effect.provide(Recovery.layer.pipe(Layer.provide(FetchHttpClient.layer))),
     );
-    const sha256 = Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", bytes));
+    const sha256 = Hex.encode(yield* (yield* Digest.Digest).digest(Digest.sha256, bytes));
     return yield* use(store, sha256);
   }).pipe(
     Effect.provide(
@@ -43,7 +44,7 @@ const run = <A, E, R>(
         layerMemory,
         ServerConfig.layerTest(process.cwd(), { prefix: "library-recovery-test-" }),
         Layer.succeed(HostProcess.Environment, {}),
-      ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
   );
 const input = (sha256: string) => ({

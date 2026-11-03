@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -60,7 +61,10 @@ const setup = (pinHost = true) =>
     return { ...f, key, execution: state };
   });
 const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.scoped, Effect.provide(Layer.merge(memoryVault, NodeServices.layer)));
+  effect.pipe(
+    Effect.scoped,
+    Effect.provide(Layer.merge(memoryVault, Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
 
 it.effect(
   "revalidates real owner policy after proof issuance and allows cleanup after disable",

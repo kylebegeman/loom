@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -45,7 +46,7 @@ const fixture = Effect.gen(function* () {
   });
   const dependencies = Layer.mergeAll(
     backend,
-    NodeServices.layer,
+    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("lifecycle-ledger-proof")),
     }),

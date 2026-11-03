@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { UpdatePlan } from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
@@ -118,7 +119,7 @@ it.effect("waits for agents and checks again after preparation before handing of
       assert.equal((yield* service.cancel(first.plan!.id).pipe(Effect.flip)).reason, "installing");
     }).pipe(Effect.provide(f.layer));
     assert.equal(yield* Ref.get(f.releases), 1);
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("cancels a waiting plan and a plan whose download is still preparing", () =>
@@ -142,7 +143,7 @@ it.effect("cancels a waiting plan and a plan whose download is still preparing",
       assert.equal((yield* service.status).plan?.state, "cancelled");
       assert.equal(yield* Ref.get(f.releases), 0);
     }).pipe(Effect.provide(f.layer));
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("loads an armed plan after restart and recognizes a completed version", () =>
@@ -160,5 +161,5 @@ it.effect("loads an armed plan after restart and recognizes a completed version"
       yield* completed.state("done");
       assert.equal((yield* service.status).plan?.state, "done");
     }).pipe(Effect.provide(completed.layer));
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

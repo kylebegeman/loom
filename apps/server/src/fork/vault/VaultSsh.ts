@@ -34,7 +34,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -124,7 +124,7 @@ const make = Effect.gen(function* () {
     keys = yield* SshCrypto.SshCrypto,
     workloads = yield* VaultWorkloads.VaultWorkloads,
     transport = yield* SshTransport.SshTransport,
-    crypto = yield* Crypto.Crypto;
+    crypto = yield* Digest.Digest;
   const pins = yield* PinnedHostKeys.PinnedHostKeys;
   const active = yield* Ref.make(0);
   type Activation = {
@@ -290,7 +290,7 @@ const make = Effect.gen(function* () {
       yield* guard;
       if (!isGit(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
       const digest = yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(vaultGitCommandMessage(input.command)))
+        .digest(Digest.sha256, new TextEncoder().encode(vaultGitCommandMessage(input.command)))
         .pipe(
           Effect.map(Hex.encode),
           Effect.mapError(() => new VaultSshError({ reason: "failed" })),
@@ -487,7 +487,7 @@ const make = Effect.gen(function* () {
       )
         return yield* new VaultSshError({ reason: "invalid-operation" });
       const digest = yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(vaultSshCommandMessage(input.command)))
+        .digest(Digest.sha256, new TextEncoder().encode(vaultSshCommandMessage(input.command)))
         .pipe(
           Effect.map(Hex.encode),
           Effect.mapError(() => new VaultSshError({ reason: "failed" })),

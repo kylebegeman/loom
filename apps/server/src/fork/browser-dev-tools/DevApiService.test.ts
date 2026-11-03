@@ -1,4 +1,4 @@
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -8,6 +8,7 @@ import * as Stream from "effect/Stream";
 import * as Deferred from "effect/Deferred";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as Redacted from "effect/Redacted";
@@ -152,7 +153,7 @@ const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     Effect.scoped,
     Effect.provide(
       Config.layerTest(process.cwd(), { prefix: "api-workspace-" }).pipe(
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
   );
@@ -829,8 +830,8 @@ it.live(
       const completed = result.run!;
       for (let i = 0; i < 42; i++) {
         const id = `historical-${i}`;
-        const crypto = yield* Crypto.Crypto;
-        const hash = Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(id)));
+        const crypto = yield* Digest.Digest;
+        const hash = Hex.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(id)));
         yield* fs.writeFileString(
           `${directory}/run-${hash}.json`,
           JSON.stringify({ ...completed, id }),

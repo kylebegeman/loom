@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EventId,
@@ -266,5 +267,5 @@ export const receiptsLayer = reactorLayer.pipe(
     ),
   ),
   Layer.provideMerge(SqlitePersistence.layerMemory),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it, vi } from "@effect/vitest";
 import * as NodeZlib from "node:zlib";
@@ -349,7 +350,9 @@ const pendingLimit = (bytes: number) =>
       ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_MAX_PENDING_BYTES: String(bytes) } }),
     ),
   );
-const memoryDatabase = layerMemory.pipe(Layer.provideMerge(NodeServices.layer));
+const memoryDatabase = layerMemory.pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 // A file database, so reads marked readOnly really use the reader worker.
 const fileDatabase = Layer.unwrap(
   Effect.gen(function* () {
@@ -358,7 +361,7 @@ const fileDatabase = Layer.unwrap(
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "library-replication-" });
     return layerFromPath(path.join(directory, "statev2.sqlite"));
   }),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 const runOn =
   <DatabaseError>(database: Layer.Layer<Layer.Success<typeof memoryDatabase>, DatabaseError>) =>
   <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
@@ -2372,7 +2375,9 @@ describe("durable Library history replication", () => {
       expect(status).toMatchObject({ enabled: false, pendingEntries: 0 });
       expect(yield* encodeReplicationStatus(status)).not.toHaveProperty("maxPendingBytes");
     }).pipe(
-      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.provide(
+        layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      ),
       Effect.provideService(HistorySource.LibraryHistorySource, {
         snapshotThread: () => Effect.fail(new LibraryError({ reason: "not-found" })),
       }),

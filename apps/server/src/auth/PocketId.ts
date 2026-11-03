@@ -17,7 +17,8 @@ import {
   type LoomIdentitySessionResult,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -62,11 +63,11 @@ const JWKS_REFRESH_COOLDOWN_MS = 30 * 1000;
 const OIDC_SCOPES = ["openid", "profile", "email", "groups"] as const;
 const SIGNING_ALGORITHMS = ["RS256", "ES256", "EdDSA"];
 /** OIDC Core 3.1.3.6: `at_hash` uses the hash of the ID token's signing algorithm. */
-const AT_HASH_DIGESTS: ReadonlyMap<string, Crypto.DigestAlgorithm> = new Map([
-  ["RS256", "SHA-256"],
-  ["ES256", "SHA-256"],
-  ["PS256", "SHA-256"],
-  ["EdDSA", "SHA-512"],
+const AT_HASH_DIGESTS: ReadonlyMap<string, Digest.Algorithm> = new Map([
+  ["RS256", Digest.sha256],
+  ["ES256", Digest.sha256],
+  ["PS256", Digest.sha256],
+  ["EdDSA", Digest.sha512],
 ]);
 /** The `amr` value Pocket ID sets only for a passkey sign-in (`webauthn/service.go`). */
 const PASSKEY_AUTH_METHOD = "phr";
@@ -232,7 +233,8 @@ export class PocketId extends Context.Service<
 
 const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest,
+    secureRandom = yield* SecureRandom.SecureRandom;
   const http = yield* HttpClient.HttpClient;
   const sessions = yield* SessionStore.SessionStore;
   const hostIdentity = yield* ServerEnvironment.ServerEnvironmentIdentity;
@@ -271,8 +273,8 @@ const make = Effect.gen(function* () {
     optional("LOOM_IDENTITY_ALLOW_ADMIN") === "true"
       ? AuthStandardClientScopes
       : PocketIdStandardScopes;
-  const stateSecret = yield* crypto.randomBytes(32).pipe(Effect.orDie);
-  const cookieName = `loom_identity_state_${Base64Url.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)).pipe(Effect.orDie)).slice(0, 16)}`;
+  const stateSecret = yield* secureRandom.randomBytes(32).pipe(Effect.orDie);
+  const cookieName = `loom_identity_state_${Base64Url.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)).pipe(Effect.orDie)).slice(0, 16)}`;
   const pending = yield* Ref.make<ReadonlyMap<string, PendingLogin>>(new Map());
   const handoffs = yield* Ref.make<
     ReadonlyMap<
@@ -642,7 +644,7 @@ const make = Effect.gen(function* () {
       return yield* new PocketIdError({ reason: "state" });
     const now = yield* DateTime.now;
     const random = () =>
-      crypto.randomBytes(32).pipe(
+      secureRandom.randomBytes(32).pipe(
         Effect.map(Base64Url.encode),
         Effect.mapError((cause) => new PocketIdError({ reason: "state", cause })),
       );
@@ -650,7 +652,7 @@ const make = Effect.gen(function* () {
     const verifier = yield* random();
     const nonce = yield* random();
     const challenge = Base64Url.encode(
-      yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)).pipe(Effect.orDie),
+      yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)).pipe(Effect.orDie),
     );
     const accepted = yield* Ref.modify(pending, (current) => {
       const next = new Map(
@@ -784,7 +786,7 @@ const make = Effect.gen(function* () {
           method: "browser-session-cookie",
         });
         if (!entry.browser) return { ...session, returnTo: entry.returnTo };
-        const code = Base64Url.encode(yield* crypto.randomBytes(32).pipe(Effect.orDie));
+        const code = Base64Url.encode(yield* secureRandom.randomBytes(32).pipe(Effect.orDie));
         const accepted = yield* Ref.modify(handoffs, (current) => {
           const next = new Map(
             [...current].filter(([, value]) => value.expiresAt > now.epochMilliseconds),
@@ -893,7 +895,7 @@ const make = Effect.gen(function* () {
             return yield* new PocketIdError({ reason: "state" });
           const challenge = Base64Url.encode(
             yield* crypto
-              .digest("SHA-256", new TextEncoder().encode(input.verifier))
+              .digest(Digest.sha256, new TextEncoder().encode(input.verifier))
               .pipe(Effect.orDie),
           );
           if (!timingSafeEqualBase64Url(challenge, entry.browser.challenge))

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
@@ -58,7 +59,12 @@ const run = <A, E, R>(
     yield* runForkMigrationSet(ProjectLibraryMigrations);
     const service = yield* LibraryService.LibraryService.pipe(Effect.provide(serviceLayer));
     return yield* use(service);
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+    Effect.scoped,
+  );
 
 const conversation: LibraryBriefProposalSource = {
   kind: "conversation",

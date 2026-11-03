@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -40,8 +40,8 @@ const pendingImportsDirectory = (path: Path.Path, stateDir: string) =>
   path.join(stateDir, "project-library", "host", "pending-imports");
 const pendingImportFile = Effect.fnUntraced(function* (stateDir: string, requestId: string) {
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
-  const key = Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(requestId)));
+  const crypto = yield* Digest.Digest;
+  const key = Hex.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(requestId)));
   return path.join(pendingImportsDirectory(path, stateDir), `${key}.json`);
 });
 
@@ -153,7 +153,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const inventory = sql
     .withTransaction(
       Effect.gen(function* () {
@@ -273,7 +273,7 @@ const make = Effect.gen(function* () {
           return yield* new LibraryError({ reason: "invalid" });
         const id = Hex.encode(
           yield* crypto.digest(
-            "SHA-256",
+            Digest.sha256,
             new TextEncoder().encode(`${plan.sourceEnvironmentId}\0${row.threadId}`),
           ),
         );

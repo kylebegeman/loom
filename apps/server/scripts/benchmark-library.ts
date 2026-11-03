@@ -1,4 +1,5 @@
 // @effect-diagnostics preferSchemaOverJson:off -- fixtures intentionally exercise opaque archive JSON stored by LibraryStore.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -15,7 +16,7 @@ export async function createLibraryBenchmarkFixture(historyItems: number) {
   const runtime = ManagedRuntime.make(
     LibraryStore.layer.pipe(
       Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   );
   try {

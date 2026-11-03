@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import {
@@ -15,7 +16,7 @@ import * as Context from "effect/Context";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as DateTime from "effect/DateTime";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -68,7 +69,7 @@ const fixture = Effect.gen(function* () {
     ownership: "managed" as const,
     state: "released" as const,
   };
-  const sha256 = Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", bytes));
+  const sha256 = Hex.encode(yield* (yield* Digest.Digest).digest(Digest.sha256, bytes));
   const receipt = yield* recovery.put({
     sourceEnvironmentId: source,
     copyId: copy.id,
@@ -113,7 +114,7 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
         Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(authority) }),
         Layer.succeed(HostProcess.Environment, { LOOM_LIBRARY_AUTHORITY: "true" }),
         ConfigProvider.layer(ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } })),
-      ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
     Effect.scoped,
   );
@@ -125,7 +126,9 @@ describe("destination-authorized recovery", () => {
       run((f) =>
         Effect.gen(function* () {
           const laterBytes = new TextEncoder().encode("newer snapshot B contains different files");
-          const sha256 = Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", laterBytes));
+          const sha256 = Hex.encode(
+            yield* (yield* Digest.Digest).digest(Digest.sha256, laterBytes),
+          );
           const archived = yield* f.recovery.get(source, f.copy.id, f.read.sha256);
           const later = yield* f.recovery.put({
             sourceEnvironmentId: source,
@@ -456,7 +459,7 @@ describe("destination-authorized recovery", () => {
               }),
             ),
           ),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         );
         const hostB = yield* f.sessions.issue({
           subject: `loom-host:${destination}`,

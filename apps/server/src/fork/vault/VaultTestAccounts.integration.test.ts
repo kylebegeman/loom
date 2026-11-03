@@ -1,8 +1,9 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -32,7 +33,7 @@ const environmentId = EnvironmentId.make("test-accounts-integration-proof");
 const store = Store.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      NodeServices.layer,
+      Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
       FetchHttpClient.layer,
       Layer.succeed(HostProcess.Environment, {
         LOOM_VAULT_OPENBAO_URL: origin,
@@ -61,7 +62,7 @@ const dependencies = Layer.mergeAll(
   Layer.mock(ProjectStoreV2)({
     get: () => Effect.succeedSome({ id: projectId } as never),
   }),
-  NodeServices.layer,
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
   store,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
 );
@@ -86,9 +87,9 @@ it.live.skipIf(!configured || restarted)(
       const service = yield* Accounts.VaultTestAccounts,
         vault = yield* Core.VaultCore,
         backend = yield* Store.OpenBaoStore;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* Digest.Digest;
       const namespace = Hex.encode(
-        yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)),
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)),
       );
       const policyPath = `environments/${namespace}/access-policy`;
       const policy = {
@@ -329,9 +330,9 @@ it.live.skipIf(!configured || !restarted)(
       const service = yield* Workloads.VaultTestAccountWorkloads,
         manager = yield* Accounts.VaultTestAccounts,
         store = yield* Store.OpenBaoStore,
-        crypto = yield* Crypto.Crypto;
+        crypto = yield* Digest.Digest;
       const namespace = Hex.encode(
-        yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)),
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)),
       );
       const before = yield* manager.snapshot("human");
       expect(before.accounts.find((a) => a.id === "e".repeat(32))!.lease!.owner).toContain(

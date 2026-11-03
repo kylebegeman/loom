@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -151,9 +152,9 @@ const serveProductionMcp = HttpRouter.serve(McpHttpServer.layer, {
 const layerHttpTest = Layer.mergeAll(
   NodeHttpServer.layerTest,
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-catalog-mcp-" }).pipe(
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   ),
-  NodeServices.layer,
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
 );
 
 const providerInstanceId = ProviderInstanceId.make("codex");

@@ -8,6 +8,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ProjectionStoreV2 } from "../../orchestration-v2/ProjectionStore.ts";
@@ -243,6 +244,6 @@ describe("managed checkout dev servers", () => {
         expect((yield* service.start({ ...start, key: "changed" }).pipe(Effect.flip)).reason).toBe(
           "request-conflict",
         );
-      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
@@ -15,7 +16,7 @@ import { BATCH_LABEL_MAX, cutLabel, makeBatchSources, splitLines } from "./batch
 const layerGit = Layer.mergeAll(GitVcsDriver.layerVcs, GitVcsDriver.layer).pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-bot-batch-sources-" })),
   Layer.provideMerge(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const projectId = ProjectId.make("project-a");

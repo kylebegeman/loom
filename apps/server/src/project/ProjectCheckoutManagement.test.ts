@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -138,7 +139,7 @@ const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     return yield* effect.pipe(
       Effect.provide(ServerConfig.layerTest(parent, `${parent}/environment`)),
     );
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped);
 /** Runs as the default install, whose T3 home sits at `<home>/.t3` and owns legacy sidecars. */
 const runAsInstall = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
@@ -148,7 +149,7 @@ const runAsInstall = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       Effect.provide(ServerConfig.layerTest(home, `${home}/.t3`)),
       Effect.provideService(HostProcess.HomeDirectory, home),
     );
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), Effect.scoped);
 
 const libraryReceipt = (rootPath: string): LibraryWorkspaceStore.WorkspaceReceipt => ({
   requestId: "library-copy",

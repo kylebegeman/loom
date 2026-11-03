@@ -8,7 +8,7 @@ import {
   LibraryRecoveryGrant,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
@@ -73,7 +73,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const env = yield* HostProcess.Environment;
   const http = yield* HttpClient.HttpClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const localStore = yield* Effect.serviceOption(LibraryRecoveryStore.LibraryRecoveryStore);
   const sessions = yield* Effect.serviceOption(SessionStore.SessionStore);
   const destinationIdentity = yield* Effect.serviceOption(ServerEnvironmentIdentity);
@@ -299,7 +299,7 @@ const make = Effect.gen(function* () {
         )
           return yield* new LibraryError({ reason: "archive-unverified" });
         const descriptorDigest = yield* recoveryDescriptorDigest(grant).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(Digest.Digest, crypto),
         );
         yield* Effect.scoped(
           Effect.gen(function* () {
@@ -318,7 +318,7 @@ const make = Effect.gen(function* () {
               if (
                 verified.subject !==
                 (yield* recoveryGrantSubject(grant).pipe(
-                  Effect.provideService(Crypto.Crypto, crypto),
+                  Effect.provideService(Digest.Digest, crypto),
                 ))
               )
                 return yield* recoveryGrantRefused();

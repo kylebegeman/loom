@@ -1,4 +1,5 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -56,7 +57,7 @@ const batchRequests = (env: Readonly<Record<string, unknown>>) =>
     return paths;
   });
 
-it.layer(NodeServices.layer)("Loom product analytics", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Loom product analytics", (it) => {
   it.effect("send nothing to T3 unless T3CODE_TELEMETRY_ENABLED is true", () =>
     Effect.gen(function* () {
       assert.deepEqual(yield* batchRequests({}), []);

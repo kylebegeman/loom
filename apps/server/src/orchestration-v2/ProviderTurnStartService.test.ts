@@ -2388,7 +2388,7 @@ effectIt.effect(
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "scratch-provider-" }),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
       Effect.scoped,
@@ -2563,7 +2563,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), { prefix: "project-provider-" }),
             ),
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
         Effect.scoped,

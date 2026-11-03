@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import { VaultError } from "@t3tools/contracts/fork";
@@ -12,7 +13,7 @@ export const brokerFixture = () => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const state = { failWrites: false, conflictOnce: false };
   const dependencies = Layer.mergeAll(
-    NodeServices.layer,
+    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     BrokerCrypto.layer,
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("broker-test")),

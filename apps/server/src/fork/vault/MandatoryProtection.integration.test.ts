@@ -1,10 +1,11 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -33,7 +34,9 @@ const projectId = ProjectId.make("journal-integration-project");
 const itemId = "a".repeat(32),
   requestId = "1".repeat(32);
 const storeLayer = OpenBaoStore.layer.pipe(
-  Layer.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
+  Layer.provide(
+    Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), FetchHttpClient.layer),
+  ),
   Layer.provide(
     Layer.succeed(HostProcess.Environment, {
       LOOM_VAULT_OPENBAO_URL: origin,
@@ -43,7 +46,7 @@ const storeLayer = OpenBaoStore.layer.pipe(
   ),
 );
 const dependencies = Layer.mergeAll(
-  NodeServices.layer,
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
   storeLayer,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   Layer.mock(ProjectStoreV2)({ get: () => Effect.succeedNone }),
@@ -77,9 +80,9 @@ it.live.skipIf(!configured || restarted)(
       const access = yield* VaultAccess.VaultAccess;
       const core = yield* VaultCore.VaultCore;
       const store = yield* OpenBaoStore.OpenBaoStore;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* Digest.Digest;
       const namespace = Hex.encode(
-        yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)),
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)),
       );
       const path = `environments/${namespace}/access-policy`;
       const now = yield* Clock.currentTimeMillis;

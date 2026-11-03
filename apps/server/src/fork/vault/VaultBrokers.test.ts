@@ -7,7 +7,7 @@ import {
   vaultBrokerChallengeMessage,
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
@@ -36,11 +36,11 @@ const challengeFor = Effect.fnUntraced(function* (
   key: Effect.Success<typeof keys.create>,
   machineId: string,
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const input = {
     environmentId: "broker-test",
     machineId,
-    requestId: (yield* crypto.randomUUIDv4()).replaceAll("-", ""),
+    requestId: (yield* crypto.uuidV4()).replaceAll("-", ""),
     at: yield* Clock.currentTimeMillis,
   };
   return yield* service.challenge({

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
@@ -7,7 +8,7 @@ import {
   type VaultApprovalRetryInput,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -192,12 +193,12 @@ const fixture = (kind: Kind, options: { app?: boolean; repositoryAllowed?: boole
   });
 const withAdmission = <A, E>(
   kind: Kind,
-  use: (f: Effect.Success<ReturnType<typeof fixture>>) => Effect.Effect<A, E, Crypto.Crypto>,
+  use: (f: Effect.Success<ReturnType<typeof fixture>>) => Effect.Effect<A, E, Digest.Digest>,
   options = {},
 ) =>
   Effect.flatMap(fixture(kind, options), use).pipe(
     Effect.scoped,
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 it.effect.each(["ssh", "git-ssh", "github-api"] as const)(

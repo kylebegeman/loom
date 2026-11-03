@@ -1,4 +1,5 @@
 import { describe, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -15,7 +16,7 @@ const testLayer = LibraryGitFetch.layer.pipe(
   Layer.provideMerge(Accounting.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "library-git-fetch-test-" })),
   Layer.provideMerge(ProcessRunner.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const git = Effect.fnUntraced(function* (cwd: string, args: ReadonlyArray<string>) {

@@ -10,7 +10,7 @@ import {
 import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -58,7 +58,7 @@ export const make = Effect.gen(function* () {
   const profiles = yield* ProjectProfileService;
   const terminals = yield* TerminalManager;
   const ports = yield* PortDiscovery;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const platform = yield* HostProcess.Platform;
   const gate = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make(0);
@@ -201,7 +201,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError((cause) => new DevEnvironmentError({ reason: "terminal-failed", cause })),
       );
     const id = yield* crypto
-      .randomUUIDv4()
+      .uuidV4()
       .pipe(
         Effect.mapError((cause) => new DevEnvironmentError({ reason: "terminal-failed", cause })),
       );

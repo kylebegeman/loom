@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Independent wire fixtures verify the actual host-bound signature with public keys.
 import * as NodeCrypto from "node:crypto";
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
@@ -23,7 +24,10 @@ import { McpInvocationContext, type McpInvocationScope } from "../../mcp/McpInvo
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 
 const decodeAgentSession = Schema.decodeUnknownSync(VaultSshAgentSession);
-const dependencies = Layer.merge(NodeServices.layer, memoryVault);
+const dependencies = Layer.merge(
+  Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer),
+  memoryVault,
+);
 const countedVault = () => {
   const calls: Array<string> = [];
   const hooks: { beforeRead?: (target: string) => void } = {};
@@ -60,7 +64,11 @@ const countedVault = () => {
       });
     }),
   ).pipe(Layer.provide(memoryVault));
-  return { calls, hooks, layer: Layer.merge(NodeServices.layer, counted) };
+  return {
+    calls,
+    hooks,
+    layer: Layer.merge(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer), counted),
+  };
 };
 const fixtureWith = (authority: "grant" | "owner") =>
   Effect.gen(function* () {

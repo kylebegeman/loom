@@ -16,7 +16,8 @@ import {
 import * as Hex from "effect/encoding/Hex";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -54,7 +55,8 @@ const make = Effect.gen(function* () {
   const identities = yield* BrokerIdentity.BrokerIdentity,
     keys = yield* BrokerCrypto.BrokerCrypto;
   const http = yield* BrokerHttpClient.BrokerHttpClient,
-    crypto = yield* Crypto.Crypto;
+    crypto = yield* Digest.Digest,
+    secureRandom = yield* SecureRandom.SecureRandom;
   const proof = Effect.fnUntraced(function* (
     machineDirectory: string,
     workloadDirectory: string,
@@ -81,8 +83,8 @@ const make = Effect.gen(function* () {
     const input = {
       environmentId: session.environmentId,
       sessionId: session.id,
-      requestId: (yield* crypto
-        .randomUUIDv4()
+      requestId: (yield* secureRandom
+        .uuidV4()
         .pipe(Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })))).replaceAll(
         "-",
         "",
@@ -130,7 +132,7 @@ const make = Effect.gen(function* () {
           Effect.mapError(() => new VaultSshError({ reason: "invalid-operation" })),
         );
         const digest = yield* crypto
-          .digest("SHA-256", new TextEncoder().encode(vaultSshCommandMessage(command)))
+          .digest(Digest.sha256, new TextEncoder().encode(vaultSshCommandMessage(command)))
           .pipe(
             Effect.map(Hex.encode),
             Effect.mapError(() => new VaultSshError({ reason: "failed" })),

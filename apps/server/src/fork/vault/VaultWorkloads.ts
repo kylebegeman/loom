@@ -15,7 +15,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -83,7 +83,7 @@ const make = Effect.gen(function* () {
   const brokers = yield* VaultBrokers.VaultBrokers,
     access = yield* VaultAccess.VaultAccess;
   const keys = yield* BrokerCrypto.BrokerCrypto,
-    crypto = yield* Crypto.Crypto;
+    crypto = yield* SecureRandom.SecureRandom;
   const identity = yield* ServerEnvironmentIdentity,
     threads = yield* ThreadManagementService;
   const environmentId = yield* identity.getEnvironmentId;
@@ -92,7 +92,7 @@ const make = Effect.gen(function* () {
   const challenges = yield* Ref.make<
     ReadonlyMap<string, { challenge: VaultWorkloadChallenge; consumed: boolean }>
   >(new Map());
-  const id = crypto.randomUUIDv4().pipe(
+  const id = crypto.uuidV4().pipe(
     Effect.map((value) => value.replaceAll("-", "")),
     Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
   );

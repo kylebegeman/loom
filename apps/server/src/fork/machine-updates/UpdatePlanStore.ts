@@ -1,6 +1,6 @@
 import { UpdatePlan, UpdatePlanError } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -22,7 +22,7 @@ export class UpdatePlanStore extends Context.Service<
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const config = yield* ServerConfig.ServerConfig;
   const directory = path.join(config.stateDir, "fork", "machine-updates");
   const target = path.join(directory, "plan.json");
@@ -36,7 +36,7 @@ const make = Effect.gen(function* () {
     function* (plan: UpdatePlan) {
       const contents = yield* Schema.encodeEffect(json)(plan);
       yield* fs.makeDirectory(directory, { recursive: true });
-      const temporary = path.join(directory, `${yield* crypto.randomUUIDv4()}.pending`);
+      const temporary = path.join(directory, `${yield* crypto.uuidV4()}.pending`);
       yield* Effect.gen(function* () {
         yield* fs.writeFileString(temporary, contents, { mode: 0o600, flag: "wx" });
         yield* Effect.scoped(fs.open(temporary).pipe(Effect.flatMap((file) => file.sync)));

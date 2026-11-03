@@ -1,4 +1,5 @@
 import * as Stream from "effect/Stream";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
@@ -9,7 +10,7 @@ import {
   type LibraryRecordActivityRequest,
   type MiniReceipt,
 } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -184,13 +185,15 @@ const fixture = Effect.gen(function* () {
 const run = <A, E>(
   use: (
     state: Effect.Success<typeof fixture>,
-  ) => Effect.Effect<A, E, SqlClient.SqlClient | Crypto.Crypto>,
+  ) => Effect.Effect<A, E, SqlClient.SqlClient | Digest.Digest>,
 ) =>
   Effect.gen(function* () {
     return yield* use(yield* fixture);
   }).pipe(
     Effect.provideService(ServerActivation, Effect.never),
-    Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
     Effect.scoped,
   );
 
@@ -405,7 +408,9 @@ describe("activity source", () => {
       ]);
       expect(JSON.stringify(found)).not.toMatch(/Secret prompt|token=secret|Error with details/);
     }).pipe(
-      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.provide(
+        layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      ),
       Effect.scoped,
     ),
   );

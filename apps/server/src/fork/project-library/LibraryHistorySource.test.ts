@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, EventId, type OrchestrationV2DomainEvent } from "@t3tools/contracts";
@@ -49,7 +50,9 @@ const run = <A, E, R>(
     restart: Effect.Effect<
       HistorySource.LibraryHistorySource["Service"],
       never,
-      import("effect/Crypto").Crypto | ProjectionStore.ProjectionStoreV2 | SqlClient.SqlClient
+      | import("effect/crypto/Digest").Digest
+      | ProjectionStore.ProjectionStoreV2
+      | SqlClient.SqlClient
     >;
     binding: Ref.Ref<LibraryResolvedBinding | null>;
   }) => Effect.Effect<A, E, R>,
@@ -100,7 +103,7 @@ const run = <A, E, R>(
         Layer.mergeAll(ProjectionStore.layer, EventStore.layer).pipe(
           Layer.provideMerge(SqlitePersistence.layerMemory),
         ),
-        NodeServices.layer,
+        Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
       ),
     ),
     Effect.scoped,
@@ -264,7 +267,7 @@ describe("execution host Library snapshots", () => {
         Effect.provide(
           ProjectionStore.layer.pipe(
             Layer.provideMerge(SqlitePersistence.layerMemory),
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
         Effect.scoped,
@@ -319,7 +322,7 @@ describe("execution host Library snapshots", () => {
       Effect.provide(
         ProjectionStore.layer.pipe(
           Layer.provideMerge(SqlitePersistence.layerMemory),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
       Effect.scoped,
@@ -388,7 +391,7 @@ describe("execution host Library snapshots", () => {
       Effect.provide(
         ProjectionStore.layer.pipe(
           Layer.provideMerge(SqlitePersistence.layerMemory),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
       Effect.scoped,

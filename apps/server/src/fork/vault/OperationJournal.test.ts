@@ -1,9 +1,11 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import { VaultApprovalRecoveryStatus, VaultApprovalRetryReport } from "@t3tools/contracts/fork";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -13,8 +15,12 @@ import { journalFixture as fixture } from "./OperationJournal.testkit.ts";
 const isRecoveryStatus = Schema.is(VaultApprovalRecoveryStatus);
 const isRetryReport = Schema.is(VaultApprovalRetryReport);
 const withJournal = <A, E>(
-  use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Crypto.Crypto>,
-) => Effect.flatMap(fixture, use).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Digest.Digest>,
+) =>
+  Effect.flatMap(fixture, use).pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
 
 it.effect(
   "writes a bounded digest-only independent journal without changing the format-3 policy",

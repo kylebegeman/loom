@@ -7,6 +7,7 @@ import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as BrokerHttpClient from "./BrokerHttpClient.ts";
 import * as WorkloadRunner from "./WorkloadRunner.ts";
 import { VaultWorkloadHttpRoutes } from "./workload-http.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { VaultError } from "@t3tools/contracts/fork";
@@ -47,7 +48,7 @@ const backend = Layer.sync(OpenBaoStore.OpenBaoStore, () => {
       ),
   });
 });
-const dependencies = Layer.merge(NodeServices.layer, backend);
+const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), backend);
 const transport = Layer.succeed(SshTransport.SshTransport, {
   execute: (input) => input.authorize.pipe(Effect.as({ exitCode: 0, stdout: "ok" })),
 });

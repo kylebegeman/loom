@@ -5,7 +5,7 @@ import {
   LibraryRecoveryManifest,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -116,7 +116,7 @@ const make = Effect.gen(function* () {
   const store = yield* LibraryStore.LibraryStore;
   const assets = yield* Assets.LibraryAssetService;
   const recovery = yield* Recovery.LibraryRecoveryStore;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const mapError = (cause: unknown) =>
     isLibraryError(cause) ? cause : new LibraryError({ reason: "io" });
   const authority = Effect.gen(function* () {
@@ -133,7 +133,7 @@ const make = Effect.gen(function* () {
         const saved = yield* assets.find(asset.sourceEnvironmentId, asset.attachmentId);
         if (saved.digest !== asset.digest || saved.bytes !== asset.bytes) return false;
         const bytes = yield* assets.read(saved);
-        const digest = Hex.encode(yield* crypto.digest("SHA-256", bytes));
+        const digest = Hex.encode(yield* crypto.digest(Digest.sha256, bytes));
         return bytes.length === asset.bytes && digest === asset.digest;
       }).pipe(Effect.orElseSucceed(() => false));
       if (!valid) missing++;

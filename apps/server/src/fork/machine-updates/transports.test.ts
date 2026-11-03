@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import {
@@ -72,7 +73,7 @@ it.effect(
               }),
             ),
           ),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         );
         const web = HttpRouter.toWebHandler(app, { disableLogger: true });
         yield* Effect.addFinalizer(() => Effect.promise(() => web.dispose()));
@@ -184,7 +185,7 @@ it.effect(
         );
         assert.equal((yield* plans.status).plan?.state, "cancelled");
       }).pipe(Effect.provide(f.plans));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect.each([
@@ -275,5 +276,5 @@ it.effect.each([
           assert.equal(yield* Ref.get(f.writes), 0);
         }
       }).pipe(Effect.provide(f.plans));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

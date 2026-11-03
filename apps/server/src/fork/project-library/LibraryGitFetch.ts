@@ -6,7 +6,7 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { normalizeGitRemoteUrl, parseRemoteDefaultBranch } from "@t3tools/shared/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -147,7 +147,7 @@ const make = Effect.gen(function* () {
   const accountStorageRemoval = yield* makeStorageRemovalRecorder;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
   const hostEnvironment = yield* HostProcess.Environment;
@@ -235,7 +235,7 @@ const make = Effect.gen(function* () {
 
   const mirrorKey = Effect.fn("LibraryGitFetch.mirrorKey")(function* (remoteUrl: string) {
     const bytes = new TextEncoder().encode(normalizeGitRemoteUrl(remoteUrl));
-    return Hex.encode(yield* crypto.digest("SHA-256", bytes).pipe(Effect.orDie));
+    return Hex.encode(yield* crypto.digest(Digest.sha256, bytes).pipe(Effect.orDie));
   });
 
   const recordUse = Effect.fn("LibraryGitFetch.recordUse")(

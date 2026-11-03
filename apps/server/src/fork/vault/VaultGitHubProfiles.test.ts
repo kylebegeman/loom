@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Stream from "effect/Stream";
@@ -26,7 +27,7 @@ import * as VaultPromptContext from "./VaultPromptContext.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as SshTransport from "./SshTransport.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
-const deps = Layer.merge(NodeServices.layer, memoryVault);
+const deps = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 const fixture = Effect.gen(function* () {
   let beforeSession: Effect.Effect<void> = Effect.void,
     calls = 0,

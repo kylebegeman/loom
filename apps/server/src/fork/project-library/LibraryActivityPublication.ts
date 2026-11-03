@@ -9,7 +9,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -204,7 +204,7 @@ const make = Effect.gen(function* () {
   const publisher = yield* Publisher.LibraryPublisher;
   if (!publisher.enabled) return LibraryActivityPublication.of({ report: Effect.void });
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const workspaces = yield* WorkspaceStore.LibraryWorkspaceStore;
   const source = yield* LibraryActivitySource;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
@@ -261,7 +261,7 @@ const make = Effect.gen(function* () {
     for (const row of pending) {
       const activity = yield* decodeActivity(row.payload_json);
       const digest = Hex.encode(
-        yield* crypto.digest("SHA-256", new TextEncoder().encode(row.activity_id)),
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(row.activity_id)),
       ).slice(0, 32);
       const result = yield* publisher
         .recordActivity({

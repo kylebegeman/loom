@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { journalFixture } from "./OperationJournal.testkit.ts";
 
 // Executable design model only. No production dispatcher, adapter or gate uses these transitions.
@@ -298,7 +300,7 @@ it.effect(
       expect((yield* f.journal.previewRetry(f.input, f.threadId)).retryState).toBe(
         "requires-outcome-review",
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -320,7 +322,7 @@ it.effect(
       });
       expect(explanation.decision.allowed).toBe(true);
       expect((yield* f.journal.status(f.input.id, f.threadId)).canExecute).toBe(false);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it("models uncertain completion and restored storage without refunding the consumed opportunity", () => {

@@ -21,7 +21,8 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -51,8 +52,9 @@ export const sshFixture = (
   ),
 ) =>
   Effect.gen(function* () {
-    const random = yield* Crypto.Crypto;
-    const id = random.randomUUIDv4().pipe(Effect.map((value) => value.replaceAll("-", "")));
+    const random = yield* Digest.Digest,
+      secureRandom = yield* SecureRandom.SecureRandom;
+    const id = secureRandom.uuidV4().pipe(Effect.map((value) => value.replaceAll("-", "")));
     const environmentId = EnvironmentId.make("ssh-fixture-" + (yield* id)),
       threadId = ThreadId.make("ssh-fixture-thread");
     const state = {
@@ -221,7 +223,7 @@ export const sshFixture = (
     ) {
       const payloadDigest = yield* random
         .digest(
-          "SHA-256",
+          Digest.sha256,
           new TextEncoder().encode(
             "kind" in command ? vaultGitCommandMessage(command) : vaultSshCommandMessage(command),
           ),

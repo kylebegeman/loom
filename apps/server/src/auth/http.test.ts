@@ -170,7 +170,7 @@ const cookieAttributes = (cookie: string) =>
 // fork: secure-session-cookies
 it.effect("marks browser session cookies Secure only behind an HTTPS proxy", () =>
   Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const unusedSecretStore = ServerSecretStore.ServerSecretStore.of({
       get: () => Effect.succeedNone,
       set: () => Effect.void,
@@ -178,7 +178,7 @@ it.effect("marks browser session cookies Secure only behind an HTTPS proxy", () 
       getOrCreateRandom: () => Effect.die("Not used by these routes."),
       remove: () => Effect.void,
     });
-    const requestContext = Context.make(Crypto.Crypto, crypto).pipe(
+    const requestContext = Context.make(SecureRandom.SecureRandom, random).pipe(
       Context.add(ServerSecretStore.ServerSecretStore, unusedSecretStore),
     );
     return yield* Effect.acquireUseRelease(
@@ -235,5 +235,5 @@ it.effect("marks browser session cookies Secure only behind an HTTPS proxy", () 
         }),
       (environment) => Effect.promise(() => environment.dispose()),
     );
-  }).pipe(Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

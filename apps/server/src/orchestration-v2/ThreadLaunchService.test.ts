@@ -3130,7 +3130,7 @@ it.effect(
       const service = yield* OrchestratorMcp.OrchestratorMcpService.pipe(
         Effect.provide(
           OrchestratorMcp.layer.pipe(
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             Layer.provide(
               Layer.mergeAll(
                 Layer.mock(GitVcsDriver.GitVcsDriver)({}),

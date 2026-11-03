@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
+import { EnvironmentId } from "@t3tools/contracts";
 import {
   VaultConnectionError,
   VaultError,
@@ -12,7 +13,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { McpSchema, McpServer, Toolkit } from "effect/ai";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
-import { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
+import { layerInProcessMcpServer, toolkitRegistration } from "../../mcp/McpHttpServer.ts";
+import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { VaultSshToolkit } from "./ssh-mcp.ts";
 import { VaultGitHubToolkit } from "./github-mcp.ts";
@@ -35,6 +37,16 @@ const client = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
+// The in-process server needs a caller; these tools only read, so its access is unused.
+const invocation = McpInvocationContext.of({
+  environmentId: EnvironmentId.make("vault-test"),
+  capabilities: new Set(),
+  issuedAt: 0,
+  requestNamespace: "test",
+  thread: undefined,
+  client: { sessionId: "test", label: "Test", access: "full-access" },
+});
+
 it.effect.each([
   new VaultConnectionError({ state: "ambiguous", choices: [], repair: "select-connection" }),
   new VaultWorkloadError({ reason: "not-configured" }),
@@ -49,7 +61,10 @@ it.effect.each([
         name: "loom_vault_ssh_agent_open",
         arguments: { connection: { resource: "personal-vps" } },
       })
-      .pipe(Effect.provideService(McpSchema.McpServerClient, client));
+      .pipe(
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.provideService(McpInvocationContext, invocation),
+      );
     expect(result.isError).toBe(true);
     // Agents read the text, so it carries the cause and repair, not only the tags.
     expect(result.content).toContainEqual(
@@ -69,7 +84,7 @@ it.effect.each([
           ),
         }),
       ).pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
         Layer.provide(Layer.mock(ThreadManagementService)({})),
       ),
@@ -90,7 +105,10 @@ it.effect("distinguishes upstream GitHub refusal through production MCP serializ
           command: { tool: "gh", argv: ["repo", "view"] },
         },
       })
-      .pipe(Effect.provideService(McpSchema.McpServerClient, client));
+      .pipe(
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.provideService(McpInvocationContext, invocation),
+      );
     expect(result.isError).toBe(true);
     const decoded = decodeVaultTerminalError(result);
     expect(Option.isSome(decoded)).toBe(true);
@@ -109,7 +127,7 @@ it.effect("distinguishes upstream GitHub refusal through production MCP serializ
           ),
         }),
       ).pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
         Layer.provide(Layer.mock(ThreadManagementService)({})),
       ),

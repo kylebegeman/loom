@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -76,7 +77,7 @@ const dependencies = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(config),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const layer = Workspace.layer.pipe(
   Layer.provide(Layer.mergeAll(LibraryGitFetch.layer, WorktreeSetupTracker.layer)),
