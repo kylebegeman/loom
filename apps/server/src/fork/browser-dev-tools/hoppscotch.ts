@@ -148,7 +148,10 @@ export function importHoppscotch(
       throw new HoppscotchInputError("invalid-format");
     const folders = [...parents, node.name];
     const selectedAuth = node.auth === undefined ? inherited.auth : nativeObject(node.auth);
-    const auth = selectedAuth.authType === "inherit" ? inherited.auth : selectedAuth;
+    const auth =
+      selectedAuth.authType === "inherit" && selectedAuth.authActive !== false
+        ? inherited.auth
+        : selectedAuth;
     const headers = [...inherited.headers, ...objects(node.headers)];
     const vars = [...inherited.variables, ...variables(node.variables)];
     const pre = [...inherited.pre, ...scripts(node.preRequestScript)];
@@ -171,7 +174,7 @@ export function importHoppscotch(
         name: r.name,
         folders,
         source: r,
-        auth: ownAuth.authType === "inherit" ? auth : ownAuth,
+        auth: ownAuth.authType === "inherit" && ownAuth.authActive !== false ? auth : ownAuth,
         headers: [...headers, ...objects(r.headers)],
         variables: [...vars, ...variables(r.requestVariables)],
         preScripts: [...pre, ...scripts(r.preRequestScript)],
@@ -338,7 +341,12 @@ export function prepareHoppscotchRequest(
       throw new HoppscotchInputError("unsupported-auth");
   }
   let body = "";
-  if (request.source.body !== undefined && request.source.body !== null) {
+  if (
+    method !== "GET" &&
+    method !== "HEAD" &&
+    request.source.body !== undefined &&
+    request.source.body !== null
+  ) {
     const b = nativeObject(request.source.body);
     const contentType = b.contentType;
     if (contentType !== undefined && contentType !== null) {

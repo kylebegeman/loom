@@ -1,5 +1,5 @@
 import type { DevApiVariable } from "@t3tools/contracts/fork";
-import { draftRows, draftText } from "./apiRequestDraft";
+import { draftObject, draftRows, draftText } from "./apiRequestDraft";
 export function explainVariables(
   request: Record<string, unknown>,
   inherited: readonly DevApiVariable[],
@@ -22,7 +22,37 @@ export function explainVariables(
     for (const match of draftText(script).matchAll(/pw\.env\.set\(\s*["']([^"']+)["']/g))
       created.add(match[1]!);
   const references = (text: string) => Array.from(text.matchAll(/<<([^<>]+)>>/g), (m) => m[1]!);
-  const keys = new Set(references(JSON.stringify(request)));
+  const pairs = (value: unknown) =>
+    draftRows(value)
+      .filter((row) => row.active !== false && draftText(row.key))
+      .flatMap((row) => [row.key, row.isFile ? "" : row.value]);
+  const auth = draftObject(request.auth);
+  const body = draftObject(request.body);
+  const authValues =
+    auth.authActive === false
+      ? []
+      : auth.authType === "bearer"
+        ? [auth.token]
+        : auth.authType === "basic"
+          ? [auth.username, auth.password]
+          : auth.authType === "api-key"
+            ? [auth.key, auth.value]
+            : [];
+  const bodyValues =
+    ["GET", "HEAD"].includes(draftText(request.method) || "GET") || !body.contentType
+      ? []
+      : Array.isArray(body.body)
+        ? pairs(body.body)
+        : [body.body];
+  const keys = new Set(
+    [
+      request.endpoint,
+      ...pairs(request.params),
+      ...pairs(request.headers),
+      ...authValues,
+      ...bodyValues,
+    ].flatMap((value) => references(draftText(value))),
+  );
   const pending = [...keys];
   for (let i = 0; i < pending.length && i < 1000; i++) {
     for (const key of references(definitions.get(pending[i]!)?.value ?? "")) {

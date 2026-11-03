@@ -154,11 +154,6 @@ const make = Effect.gen(function* () {
       if (!(yield* library.info).isAuthority)
         return yield* new LibraryError({ reason: "not-authority" });
       const project = yield* library.project({ projectId: input.projectId });
-      if (project.archived && input.action !== "list" && input.action !== "read")
-        return yield* new LibraryError({
-          reason: "blocked",
-          detail: "Reopen this project before changing its API workspaces.",
-        });
       yield* migrateProject(input.projectId);
       const row = (yield* sql<{
         payload_json: string;
@@ -191,6 +186,11 @@ const make = Effect.gen(function* () {
           : null;
         return { ...receipt.result, selected };
       }
+      if (project.archived)
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: "Reopen this project before changing its API workspaces.",
+        });
       if (currentRevision !== input.expectedRevision)
         return yield* new LibraryError({ reason: "revision-conflict" });
       let entries = state.entries.filter((e) => e.bundle.id !== id);

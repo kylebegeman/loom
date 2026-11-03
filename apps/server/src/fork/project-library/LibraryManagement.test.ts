@@ -430,6 +430,17 @@ describe("authority-routed project management", () => {
               f.actor,
             )).selected?.name,
           ).toBe("Revision 23");
+          const recovered = yield* second.manager.apiWorkspace(
+            {
+              ...sharedInput,
+              requestId: "revision-23",
+              expectedRevision: 23,
+              bundle: { ...sharedInput.bundle, name: "Revision 23" },
+            },
+            f.actor,
+          );
+          expect(recovered.revision).toBe(24);
+          expect(recovered.selected?.name).toBe("Revision 23");
           expect(
             (yield* second.manager
               .apiWorkspace(

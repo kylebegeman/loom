@@ -11,9 +11,13 @@ it("parses copied cURL as data and refuses shell programs, file reads and unsupp
     endpoint: "https://example.com/api",
     body: { contentType: "application/json", body: '{"name":"$(never executed)"}' },
   });
+  expect(importCurl("curl https://example.com --data-urlencode '=hello world'").body.body).toBe(
+    "hello%20world",
+  );
   for (const source of [
     "curl https://example.com; touch /tmp/pwn",
     "curl https://example.com -d @/etc/passwd",
+    "curl https://example.com --data-urlencode name@/etc/passwd",
     "curl https://example.com --config /tmp/config",
     "curl https://example.com | sh",
   ])

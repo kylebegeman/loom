@@ -127,8 +127,24 @@ export function apiBundleDifferences(local: LibraryApiBundle, remote: LibraryApi
     const fields = [...new Set([...Object.keys(a.source), ...Object.keys(b.source)])].filter(
       (name) => JSON.stringify(a.source[name]) !== JSON.stringify(b.source[name]),
     );
+    for (const [field, effective, label] of [
+      ["auth", "auth", "inherited authentication"],
+      ["headers", "headers", "inherited headers"],
+      ["requestVariables", "variables", "inherited variables"],
+      ["preRequestScript", "preScripts", "inherited preparation scripts"],
+      ["testScript", "testScripts", "inherited response scripts"],
+    ] as const)
+      if (
+        JSON.stringify(a.source[field]) === JSON.stringify(b.source[field]) &&
+        JSON.stringify(a[effective]) !== JSON.stringify(b[effective])
+      )
+        fields.push(label);
+    if (JSON.stringify(a.folders) !== JSON.stringify(b.folders)) fields.push("folder path");
     if (fields.length) changes.push(`${a.name}: ${fields.join(", ")}`);
   }
+  if (local.name !== remote.name) changes.push("Workspace names differ");
+  if (JSON.stringify(local.folders) !== JSON.stringify(remote.folders))
+    changes.push("Folder definitions differ");
   if (JSON.stringify(local.workflows) !== JSON.stringify(remote.workflows))
     changes.push("Workflow definitions differ");
   if (

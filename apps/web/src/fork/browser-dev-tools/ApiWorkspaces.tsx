@@ -583,7 +583,7 @@ export default function ApiWorkspaces({
         source,
         expectedRevision: details.revision,
         environmentRevision: environment.revision,
-        ...(draftObject(sourceDraft.body).contentType === "multipart/form-data"
+        ...(bodyType === "multipart/form-data"
           ? {
               uploads: await readMultipartFiles(
                 Object.fromEntries(
@@ -755,7 +755,9 @@ export default function ApiWorkspaces({
   } catch {
     /* The binding editor asks for an origin when templates cannot resolve yet. */
   }
-  const bodyType = draftObject(sourceDraft.body).contentType;
+  const bodyType = ["GET", "HEAD"].includes(draftText(sourceDraft.method))
+    ? null
+    : draftObject(sourceDraft.body).contentType;
   const missingMultipartFiles =
     bodyType === "multipart/form-data" &&
     (!supportsMultipart ||

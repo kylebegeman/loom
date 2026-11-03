@@ -49,6 +49,18 @@ it("preserves native hierarchy, scripts and unknown fields while resolving inher
   });
   expect(resolved.url).toBe("http://localhost:3000/account?q=a+%26+b");
   expect(resolved.headers).toEqual({ authorization: "Bearer captured", "x-workspace": "fixture" });
+  for (const level of ["folder", "request"]) {
+    const disabled = structuredClone(native);
+    const folder = disabled.folders[0]!;
+    if (level === "request") folder.requests[0]!.auth.authActive = false;
+    else Object.assign(folder, { auth: { authType: "inherit", authActive: false } });
+    const parsed = importHoppscotch(JSON.stringify([disabled]), "disabled.json");
+    if (parsed.kind !== "collections") throw new Error("Expected collections");
+    expect(
+      prepareHoppscotchRequest(parsed.requests[0]!, { origin: "https://example.test", query: "ok" })
+        .headers.authorization,
+    ).toBeUndefined();
+  }
   expect(() =>
     prepareHoppscotchRequest(request, { origin: "http://localhost:3000", token: "captured" }),
   ).toThrow(/variable/i);
@@ -121,6 +133,16 @@ it("encodes form bodies and basic auth and refuses unsupported bodies before dis
     password: "pass",
     message: "a & b",
   });
+  for (const method of ["GET", "HEAD"]) {
+    const hiddenBody = { ...request, source: { ...request.source, method } };
+    expect(
+      prepareHoppscotchRequest(hiddenBody, {
+        origin: "http://localhost",
+        username: "user",
+        password: "pass",
+      }).body,
+    ).toBe("");
+  }
   expect(resolved.body).toBe("message=a+%26+b");
   expect(resolved.headers.authorization).toBe("Basic dXNlcjpwYXNz");
   const upload = prepareHoppscotchRequest(

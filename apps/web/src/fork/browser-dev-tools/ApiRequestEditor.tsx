@@ -182,6 +182,12 @@ export default function ApiRequestEditor({
       ) : null}
       {tab === "body" ? (
         <>
+          {["GET", "HEAD"].includes(draftText(source.method)) ? (
+            <p className="px-3 pt-3 text-xs text-muted-foreground">
+              GET and HEAD requests do not send a body. These fields are kept if you change the
+              method.
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3">
             <div className="w-48">
               <LabSelect

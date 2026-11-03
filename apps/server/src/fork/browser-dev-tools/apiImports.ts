@@ -95,14 +95,20 @@ export function importCurl(text: string) {
       headers.push({ key, value: item, active: true });
     } else if (["-d", "--data", "--data-raw", "--data-binary", "--data-urlencode"].includes(arg)) {
       const value = take();
-      if (value.startsWith("@") && arg !== "--data-raw") throw invalid();
+      if (
+        (value.startsWith("@") && arg !== "--data-raw") ||
+        (arg === "--data-urlencode" && !value.includes("=") && value.includes("@"))
+      )
+        throw invalid();
       body.push(
         arg === "--data-urlencode"
           ? (() => {
               const split = value.indexOf("=");
               return split < 0
                 ? encodeURIComponent(value)
-                : `${value.slice(0, split)}=${encodeURIComponent(value.slice(split + 1))}`;
+                : split === 0
+                  ? encodeURIComponent(value.slice(1))
+                  : `${value.slice(0, split)}=${encodeURIComponent(value.slice(split + 1))}`;
             })()
           : value,
       );

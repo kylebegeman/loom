@@ -205,6 +205,14 @@ it.effect(
         })).baselines,
       ).toEqual([]);
       expect(
+        (yield* service.baseline({
+          ...target,
+          action: "remove",
+          id: "good",
+          expectedRevision: latest.revision,
+        })).baselines,
+      ).toEqual([]);
+      expect(
         (yield* service.send({ ...input, requestId: "next-49" }).pipe(Effect.flip)).reason,
       ).toBe("history-pruned");
       yield* fs.writeFileString(file, "invalid-json");

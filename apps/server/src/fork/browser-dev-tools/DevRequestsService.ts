@@ -141,6 +141,7 @@ export const make = Effect.gen(function* () {
       stableStringify(existing.ignoredPaths) === stableStringify(input.ignoredPaths ?? [])
     )
       return { revision, baselines };
+    if (input.action === "remove" && input.id && !existing) return { revision, baselines };
     if (!input.id || input.expectedRevision !== revision)
       return yield* new DevHttpError({ reason: "revision-conflict" });
     let next = baselines.filter((b) => b.id !== input.id);

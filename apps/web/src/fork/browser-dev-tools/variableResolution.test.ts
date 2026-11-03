@@ -11,6 +11,24 @@ it("explains precedence, nested missing values, cycles, script captures and Vaul
     testScript: 'pw.env.set("afterResponse", "captured")',
     preRequestScript: 'pw.env.set("scripted", "ok")',
   };
+  expect(
+    explainVariables(
+      {
+        method: "GET",
+        endpoint: "https://example.test/<<live>>",
+        name: "<<label>>",
+        params: [{ key: "query", value: "<<inactiveParam>>", active: false }],
+        headers: [{ key: "x-disabled", value: "<<inactiveHeader>>", active: false }],
+        auth: { authType: "bearer", authActive: false, token: "<<inactiveToken>>" },
+        body: { contentType: "application/json", body: '{"unused":"<<unusedBody>>"}' },
+        requestVariables: [{ key: "unreferenced", value: "<<unusedDefinition>>" }],
+        testScript: 'pw.test("<<testLabel>>",()=>{})',
+      },
+      [],
+      [],
+      "None",
+    ).map((row) => row.key),
+  ).toEqual(["live"]);
   const rows = explainVariables(
     request,
     [

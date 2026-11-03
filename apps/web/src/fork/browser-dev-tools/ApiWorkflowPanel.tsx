@@ -129,7 +129,7 @@ export default function ApiWorkflowPanel({
           ...target.input,
           action: remove ? "delete" : "save",
           expectedRevision: definitionRevision,
-          workflow: { ...definition, datasets: JSON.parse(datasetText) },
+          ...(!remove ? { workflow: { ...definition, datasets: JSON.parse(datasetText) } } : {}),
           workflowId: definition.id,
         },
       });
