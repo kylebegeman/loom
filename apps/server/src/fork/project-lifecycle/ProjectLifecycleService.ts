@@ -1234,7 +1234,11 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         shims,
         ...(basePath ?? host.PATH ?? "")
           .split(NodePath.delimiter)
-          .filter((entry) => entry !== shims),
+          .filter(
+            (entry) =>
+              NodePath.basename(entry) !== "shims" ||
+              NodePath.basename(NodePath.dirname(entry)) !== ".loom",
+          ),
       ].join(NodePath.delimiter),
       ...(lane.portBase === null
         ? {}

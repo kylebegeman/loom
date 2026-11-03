@@ -617,6 +617,9 @@ describe("ProjectLifecycleService", () => {
       );
       const tools = `${t.home}/bin`;
       NodeFS.mkdirSync(tools);
+      const previousShims = `${t.home}/previous-lanes/.loom/shims`;
+      NodeFS.mkdirSync(previousShims, { recursive: true });
+      NodeFS.writeFileSync(`${previousShims}/xcodebuild`, "#!/bin/sh\nexit 23\n", { mode: 0o755 });
       NodeFS.writeFileSync(`${tools}/xcodebuild`, '#!/bin/sh\nprintf "%s\\n" "$@"\n', {
         mode: 0o755,
       });
@@ -624,7 +627,7 @@ describe("ProjectLifecycleService", () => {
         NodeFS.writeFileSync(`${worker.laneDir}/space/build/output`, "worker build");
         const environment = yield* t.service.shellEnvironment(
           worker.checkoutPath,
-          `${tools}:/usr/bin:/bin`,
+          `${previousShims}:${tools}:/usr/bin:/bin`,
         );
         expect(environment).toMatchObject({
           TMPDIR: `${worker.laneDir}/space/tmp/`,
