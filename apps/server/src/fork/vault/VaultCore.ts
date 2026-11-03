@@ -12,7 +12,7 @@ import {
   vaultReferenceText,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -102,10 +102,10 @@ const summary = (item: StoredItem, version: number): VaultItemSummary => ({
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
   const identity = yield* ServerEnvironmentIdentity;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const environmentId = yield* identity.getEnvironmentId;
   const digest = (value: string) =>
-    crypto.digest("SHA-256", new TextEncoder().encode(value)).pipe(
+    crypto.digest(Digest.sha256, new TextEncoder().encode(value)).pipe(
       Effect.map(Hex.encode),
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
     );

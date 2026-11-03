@@ -1,4 +1,5 @@
 import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
@@ -26,7 +27,11 @@ const test = <A, E, R>(
     return yield* Effect.flatMap(VaultWorkloads.VaultWorkloads, (service) => use(f, service)).pipe(
       Effect.provide(f.layer),
     );
-  }).pipe(Effect.provide(Layer.merge(BrokerCrypto.layer, NodeServices.layer)));
+  }).pipe(
+    Effect.provide(
+      Layer.merge(BrokerCrypto.layer, Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
+  );
 let ordinal = 0;
 const request = Effect.fnUntraced(function* (
   f: Effect.Success<typeof workloadFixture>,

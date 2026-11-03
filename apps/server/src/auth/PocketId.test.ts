@@ -1,4 +1,5 @@
 import { it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAccessWriteScope,
@@ -20,7 +21,7 @@ import { expect } from "vite-plus/test";
 import * as PocketId from "./PocketId.ts";
 import { identitySessionPrefix } from "./identityPolicy.ts";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerConfig from "../config.ts";
@@ -124,7 +125,7 @@ const fixture = Effect.gen(function* () {
   const layer = PocketId.layer.pipe(
     Layer.provideMerge(sessions),
     Layer.provideMerge(dependencies),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   return {
     layer,
@@ -396,7 +397,7 @@ it.effect("identity sessions remain locally revocable and expire with their acce
     const layer = PocketId.layer.pipe(
       Layer.provideMerge(sessions),
       Layer.provideMerge(test.dependencies),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     yield* Effect.gen(function* () {
       const identity = yield* PocketId.PocketId;
@@ -481,13 +482,15 @@ it.effect(
     Effect.gen(function* () {
       const test = yield* fixture;
       test.env.LOOM_IDENTITY_BROWSER_ORIGINS = browserRequest.origin;
-      const crypto = yield* Crypto.Crypto.pipe(Effect.provide(NodeServices.layer));
+      const crypto = yield* Digest.Digest.pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      );
       const verifier = "v".repeat(43);
       const browser = {
         ...browserRequest,
         expectedIdentity: { issuer: ISSUER, subject: "owner-id" },
         challenge: Base64Url.encode(
-          yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)),
+          yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)),
         ),
       };
       yield* Effect.gen(function* () {
@@ -585,12 +588,14 @@ it.effect("expires an unredeemed browser handoff without issuing a bearer sessio
   Effect.gen(function* () {
     const test = yield* fixture;
     test.env.LOOM_IDENTITY_BROWSER_ORIGINS = browserRequest.origin;
-    const crypto = yield* Crypto.Crypto.pipe(Effect.provide(NodeServices.layer));
+    const crypto = yield* Digest.Digest.pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    );
     const verifier = "v".repeat(43);
     const browser = {
       ...browserRequest,
       challenge: Base64Url.encode(
-        yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier)),
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)),
       ),
     };
     yield* Effect.gen(function* () {
@@ -631,10 +636,10 @@ it.effect("expires an unredeemed browser handoff without issuing a bearer sessio
 
 const atHash = (accessToken: string) =>
   Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
-    const hash = yield* crypto.digest("SHA-256", new TextEncoder().encode(accessToken));
+    const crypto = yield* Digest.Digest;
+    const hash = yield* crypto.digest(Digest.sha256, new TextEncoder().encode(accessToken));
     return Base64Url.encode(hash.slice(0, hash.length / 2));
-  }).pipe(Effect.provide(NodeServices.layer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect(
   "requires a native ID token bound to the access token when the host caps sign-in age",
@@ -944,7 +949,7 @@ it.effect(
       const layer = PocketId.layer.pipe(
         Layer.provideMerge(sessions),
         Layer.provideMerge(test.dependencies),
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       );
       const native = {
         type: "native" as const,
@@ -991,7 +996,7 @@ it.effect("refuses to renew a session the host revoked, along with its earlier r
         ),
       ),
       Layer.provideMerge(test.dependencies),
-      Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     );
     const native = {
       type: "native" as const,

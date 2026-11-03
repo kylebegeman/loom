@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, AuthSessionId } from "@t3tools/contracts";
 import { type LibraryRecoveryGrant, type LibraryRecoveryReceipt } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
@@ -61,7 +62,7 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
     }),
     { mode: mode === "insecure" ? 0o644 : 0o600 },
   );
-  const sha256 = Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", bytes));
+  const sha256 = Hex.encode(yield* (yield* Digest.Digest).digest(Digest.sha256, bytes));
   const receipt: LibraryRecoveryReceipt = {
     sourceEnvironmentId: source,
     copyId: manifest.copyId,
@@ -185,7 +186,7 @@ const run = <A, E, R>(
 ) =>
   Effect.gen(function* () {
     return yield* use(yield* fixture(mode));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 describe("recovery archive publishing", () => {
   it.effect.each(["portable-valid", "portable-redirect", "portable-enrolled"])(
@@ -452,6 +453,6 @@ describe("recovery archive publishing", () => {
       const restored = `${test.archivePath}.restored`;
       yield* publisher.retrieve({ ...test.receipt, archivePath: restored });
       expect([...(yield* test.fs.readFile(restored))]).toEqual([...bytes]);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

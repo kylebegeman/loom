@@ -1,7 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
-import * as Crypto from "effect/Crypto";
+import * as Layer from "effect/Layer";
+import * as Digest from "effect/crypto/Digest";
 import * as Ref from "effect/Ref";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -20,7 +22,7 @@ const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "b2-object-test-" })),
     Effect.provideService(HostProcess.Environment, environment),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 const fixture = Effect.fnUntraced(function* (
   putStatus: number,
@@ -28,7 +30,7 @@ const fixture = Effect.fnUntraced(function* (
   storedBytes: Uint8Array,
 ) {
   const requests = yield* Ref.make<string[]>([]);
-  const digest = yield* Objects.assetDigest(yield* Crypto.Crypto, bytes);
+  const digest = yield* Objects.assetDigest(yield* Digest.Digest, bytes);
   const http = HttpClient.make((request) =>
     Effect.gen(function* () {
       yield* Ref.update(requests, (values) => [...values, request.method]);
@@ -98,7 +100,7 @@ describe("private B2 durable object transport", () => {
   it.effect("permanently removes every exact-key version and delete marker across pages", () =>
     run(
       Effect.gen(function* () {
-        const digest = yield* Objects.assetDigest(yield* Crypto.Crypto, bytes);
+        const digest = yield* Objects.assetDigest(yield* Digest.Digest, bytes);
         const key = `objects/${digest.slice(0, 2)}/${digest}`;
         const requests = yield* Ref.make<string[]>([]);
         const http = HttpClient.make((request) =>
@@ -144,7 +146,7 @@ describe("private B2 durable object transport", () => {
   it.effect("keeps failed or malformed B2 deletions retryable instead of reporting success", () =>
     run(
       Effect.gen(function* () {
-        const digest = yield* Objects.assetDigest(yield* Crypto.Crypto, bytes);
+        const digest = yield* Objects.assetDigest(yield* Digest.Digest, bytes);
         for (const body of [
           "not XML",
           "<ListVersionsResult><IsTruncated>true</IsTruncated></ListVersionsResult>",

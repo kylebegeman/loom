@@ -233,6 +233,10 @@ it.effect("refreshes only readiness values off the read path and invalidates loc
     assert.equal(decode(yield* store.get(name)), "true");
   }).pipe(
     Effect.scoped,
-    Effect.provide(layerServerConfig().pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      layerServerConfig().pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
   ),
 );

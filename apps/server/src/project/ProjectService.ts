@@ -15,7 +15,7 @@ import {
   type ProjectSnapshot,
   type ThreadId,
 } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { stableStringify } from "@t3tools/shared/relaySigning";
@@ -206,7 +206,7 @@ export class ProjectService extends Context.Service<
 >()("t3/project/ProjectService") {}
 
 export const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto.pipe(Effect.provide(NodeCrypto.layer));
+  const crypto = yield* Digest.Digest.pipe(Effect.provide(NodeCrypto.layer));
   const projects = yield* ProjectStore.ProjectStoreV2;
   const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
@@ -746,7 +746,7 @@ export const make = Effect.gen(function* () {
 
   const settingsRevision = Effect.fn("ProjectService.settingsRevision")(
     (overrides: ProjectSettingsOverrides) =>
-      crypto.digest("SHA-256", new TextEncoder().encode(stableStringify(overrides))).pipe(
+      crypto.digest(Digest.sha256, new TextEncoder().encode(stableStringify(overrides))).pipe(
         Effect.map(Hex.encode),
         Effect.mapError((cause) => new ProjectOperationError({ operation: "read-project", cause })),
       ),

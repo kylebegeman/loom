@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
@@ -114,7 +115,7 @@ const initRepository = (directory: string, origin: string) =>
     Effect.provide(
       layerGit.pipe(
         Layer.provide(ServerConfig.layerTest(directory, { prefix: "t3-placement-config-" })),
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
   );
@@ -131,7 +132,7 @@ describe("ProjectPlacement", () => {
           assert.deepEqual(yield* placement.managedProjectRoots, [projects]);
           assert.equal((yield* placement.folders).projects, projects);
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("a set folder is used and earlier folders, including the default, stay managed", () =>
@@ -154,7 +155,7 @@ describe("ProjectPlacement", () => {
             ].toSorted(),
           );
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("a relative setting falls back to the default folder", () =>
@@ -165,7 +166,7 @@ describe("ProjectPlacement", () => {
           const path = yield* Path.Path;
           assert.equal(yield* placement.projectsRoot, path.join(baseDir, "projects"));
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("claims add -2 on collision and two concurrent claims get different folders", () =>
@@ -183,7 +184,7 @@ describe("ProjectPlacement", () => {
           );
           assert.deepEqual(racing.toSorted(), [path.join(root, "race"), path.join(root, "race-2")]);
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("finds checkouts of the same origin in https and ssh forms only", () =>
@@ -208,7 +209,7 @@ describe("ProjectPlacement", () => {
             [],
           );
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("finds a registered project outside the Projects folder", () =>
@@ -225,7 +226,7 @@ describe("ProjectPlacement", () => {
             );
           }),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("refuses Loom's data, worktree and lanes folders and other projects", () =>
@@ -279,7 +280,7 @@ describe("ProjectPlacement", () => {
             );
           }),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("previews the folder a claim would take without creating it", () =>
@@ -296,7 +297,7 @@ describe("ProjectPlacement", () => {
           assert.equal(yield* placement.previewFolder("My App"), path.join(root, "my-app-2"));
           assert.isFalse(yield* fileSystem.exists(path.join(root, "my-app-2")));
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("does not offer a released folder or a restore stage as a checkout", () =>
@@ -320,7 +321,7 @@ describe("ProjectPlacement", () => {
             { path: path.join(root, "loom"), projectId: null },
           ]);
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("refuses Loom's data folder named in another letter case", () =>
@@ -339,7 +340,7 @@ describe("ProjectPlacement", () => {
             .pipe(Effect.flip);
           assert.equal(refused._tag, "ProjectPlacementRefusedError");
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("claims skip a name a receipt or a registered project still holds", () =>
@@ -366,7 +367,7 @@ describe("ProjectPlacement", () => {
           assert.equal(yield* placement.claimFolder("App"), path.join(root, "app-2"));
           assert.equal(yield* placement.claimFolder("Registered"), path.join(root, "registered-2"));
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("refuses to claim a folder when the Projects setting points into Loom's data", () =>
@@ -379,7 +380,7 @@ describe("ProjectPlacement", () => {
           assert.equal(refused._tag, "ProjectPlacementFolderError");
           assert.isFalse(yield* fileSystem.exists(`${baseDir}/userdata/projects/app`));
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("claims skip a name a Library copy still records, even with its folder gone", () =>
@@ -404,7 +405,7 @@ describe("ProjectPlacement", () => {
           assert.equal(yield* placement.claimFolder("Site"), path.join(root, "site-2"));
           assert.equal(yield* placement.claimFolder("Old"), path.join(root, "old"));
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("claims reuse the name of a folder whose copy was unregistered and removed", () =>
@@ -425,7 +426,7 @@ describe("ProjectPlacement", () => {
           assert.equal(yield* placement.previewFolder("App"), path.join(root, "app"));
           assert.equal(yield* placement.claimFolder("App"), path.join(root, "app"));
         }),
-    ).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    ).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.effect("refuses a Projects folder setting it would refuse as a claim root", () =>
@@ -457,6 +458,6 @@ describe("ProjectPlacement", () => {
             yield* placement.assertProjectsFolderAllowed("~/Developer/active");
           }),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

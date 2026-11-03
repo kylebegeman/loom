@@ -1916,7 +1916,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           assert.equal(harness.terminalEvents()[0]?.status, status);
         }).pipe(
           Effect.provide(
-            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
           ),
         ),
       ),
@@ -1993,7 +1998,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           assert.equal(resumed.nativeThreadRef?.nativeId, nativeThreadId);
         }).pipe(
           Effect.provide(
-            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
           ),
         ),
       ),

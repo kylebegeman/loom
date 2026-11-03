@@ -18,7 +18,7 @@ import {
   type SkillUpdateInput,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -95,7 +95,7 @@ const make = Effect.gen(function* () {
   const sourceFiles = yield* makeSkillSources;
   const controls = yield* makeProviderControls;
   const store = yield* SkillStore;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const files = catalog.files;
   const { fs, path } = files;
   const mutex = yield* Semaphore.make(1);
@@ -123,7 +123,7 @@ const make = Effect.gen(function* () {
         );
   const guarded = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
     operation.pipe(Effect.mapError(io));
-  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
+  const uuid = crypto.uuidV4().pipe(Effect.orDie);
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const inventory = Effect.fn("SkillRegistry.inventory")(function* (input: InventoryInput) {
     const currentTime = DateTime.toEpochMillis(yield* DateTime.now);

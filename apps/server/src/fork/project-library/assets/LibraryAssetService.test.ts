@@ -1,4 +1,5 @@
 import { it, expect } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -34,7 +35,7 @@ const withAssets = <A, E, R>(
         layerMemory,
         ServerConfig.layerTest(process.cwd(), { prefix: "library-assets-test-" }),
         Layer.succeed(HostProcess.Environment, { LOOM_ASSETS_BACKEND: "local" }),
-      ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
   );
 it.effect("preserves bytes and makes retrying an upload idempotent", () =>

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { libraryJsonBody } from "../src/fork/project-library/transfer.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
@@ -17,7 +18,7 @@ import {
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -97,7 +98,7 @@ const decodeChunkReceipt = Schema.decodeEffect(
 const readChunkDirectory = Effect.fnUntraced(function* (directory: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const text = yield* fs.readFileString(path.join(directory, "manifest.json"));
   const manifest = yield* decodeChunkManifest(text);
   if (
@@ -116,7 +117,7 @@ const readChunkDirectory = Effect.fnUntraced(function* (directory: string) {
     const bytes = yield* fs.readFile(path.join(directory, chunk.file));
     if (
       bytes.byteLength !== chunk.byteLength ||
-      Hex.encode(yield* crypto.digest("SHA-256", bytes)) !== chunk.sha256
+      Hex.encode(yield* crypto.digest(Digest.sha256, bytes)) !== chunk.sha256
     )
       return yield* new LibraryError({ reason: "archive-unverified" });
     const shadow = yield* decodeShadow(new TextDecoder().decode(bytes));
@@ -130,7 +131,7 @@ const readChunkDirectory = Effect.fnUntraced(function* (directory: string) {
   }
   return {
     manifest,
-    digest: Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(text))),
+    digest: Hex.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(text))),
   };
 });
 export const exportMigration = Effect.fnUntraced(function* (input: {
@@ -146,7 +147,7 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const plan = yield* decodePlan(yield* fs.readFileString(input.plan));
   if (
     (yield* fs.readFileString(path.join(input.stateDir, "environment-id"))).trim() !==
@@ -237,7 +238,7 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
           yield* writePrivate(path.join(input.output, file), text);
           chunks.push({
             file,
-            sha256: Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+            sha256: Hex.encode(yield* crypto.digest(Digest.sha256, bytes)),
             byteLength: bytes.byteLength,
             threads: shadow.threads.length,
             threadIds: shadow.threads.map((t) => t.summary.threadId),
@@ -322,7 +323,7 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
   catchUp: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const http = yield* HttpClient.HttpClient;
   const base = yield* Effect.try({
     try: () => new URL(input.libraryUrl),
@@ -351,7 +352,7 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
   });
   const archiveText = yield* fs.readFileString(input.archive);
   const archiveDigest = Hex.encode(
-    yield* crypto.digest("SHA-256", new TextEncoder().encode(archiveText)),
+    yield* crypto.digest(Digest.sha256, new TextEncoder().encode(archiveText)),
   );
   const shadow = yield* decodeShadow(archiveText);
   const info = yield* (yield* execute(
@@ -375,7 +376,7 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
       if (Number(stat.size) !== attachment.sizeBytes || Number(stat.size) > LIBRARY_ASSET_MAX_BYTES)
         return yield* new LibraryError({ reason: "invalid" });
       const bytes = yield* fs.readFile(file);
-      const digest = Hex.encode(yield* crypto.digest("SHA-256", bytes));
+      const digest = Hex.encode(yield* crypto.digest(Digest.sha256, bytes));
       const response = yield* execute(
         HttpClientRequest.put(
           new URL(
@@ -512,13 +513,13 @@ const prepareActivation = Effect.fnUntraced(function* (input: {
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const http = yield* HttpClient.HttpClient;
   const text = yield* fs.readFileString(input.archive);
   const shadow = yield* decodeShadow(text);
   const plan = yield* decodePlan(yield* fs.readFileString(input.plan));
   const receipt = yield* decodeActivationReceipt(yield* fs.readFileString(input.receipt));
-  const digest = Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(text)));
+  const digest = Hex.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(text)));
   if (
     receipt.requestId !== shadow.requestId ||
     receipt.archiveDigest !== digest ||
@@ -818,6 +819,6 @@ export const loomLibraryMigrationCommand = Command.make("library-migrate").pipe(
 // Bundled executables can expose import.meta.main for imported scripts as well as bin.ts.
 if (import.meta.main && process.argv[1]?.replaceAll("\\", "/").endsWith("/loom-library-migrate.ts"))
   Command.run(loomLibraryMigrationCommand, { version: "0.0.0" }).pipe(
-    Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, FetchHttpClient.layer)),
     NodeRuntime.runMain,
   );

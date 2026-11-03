@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpServer } from "effect/ai";
 import { FORK_MCP_TOOLKITS } from "./index.ts";
-import { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
+import { layerInProcessMcpServer, toolkitRegistration } from "../../mcp/McpHttpServer.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { StorageCleanup } from "../../storageCleanup.ts";
 
@@ -26,7 +26,7 @@ const registeredTools = Effect.gen(function* () {
         Layer.succeed(StorageCleanup, unused<StorageCleanup["Service"]>()),
       ),
     ),
-    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(layerInProcessMcpServer),
   );
   const context = yield* Layer.build(layer);
   const server = yield* McpServer.McpServer.pipe(Effect.provideContext(context));

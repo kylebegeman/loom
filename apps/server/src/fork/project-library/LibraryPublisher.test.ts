@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
@@ -9,7 +10,7 @@ import {
   type PreviewPage,
   type PreviewPagesError,
 } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -64,14 +65,14 @@ const run = <A, E, R>(
       Layer.mergeAll(
         ServerConfig.layerTest(process.cwd(), { prefix: "library-publisher-test-" }),
         layerMemory,
-      ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
     Effect.scoped,
   );
 const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   yield* runForkMigrationSet(ProjectLibraryMigrations);
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
   const requests = yield* Ref.make<string[]>([]);
@@ -201,7 +202,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
           bytes: bytes.length,
           digest: (yield* Ref.get(corruptReply))
             ? "0".repeat(64)
-            : Hex.encode(yield* crypto.digest("SHA-256", bytes).pipe(Effect.orDie)),
+            : Hex.encode(yield* crypto.digest(Digest.sha256, bytes).pipe(Effect.orDie)),
           createdAt: project.createdAt,
         };
       return HttpClientResponse.fromWeb(

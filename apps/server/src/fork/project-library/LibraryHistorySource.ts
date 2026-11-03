@@ -1,7 +1,7 @@
 import { ThreadId } from "@t3tools/contracts";
 import { LibraryError, type LibraryThreadArchive } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -28,7 +28,7 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const workspaces = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
   const identity = yield* ServerEnvironmentIdentity;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const sql = yield* SqlClient.SqlClient;
   const snapshotThread = Effect.fnUntraced(
     function* (input: { readonly threadId: ThreadId }) {
@@ -65,7 +65,7 @@ const make = Effect.gen(function* () {
         return yield* withheldError();
       const id = Hex.encode(
         yield* crypto.digest(
-          "SHA-256",
+          Digest.sha256,
           new TextEncoder().encode(`${environmentId}\0${input.threadId}`),
         ),
       );

@@ -1,5 +1,6 @@
 import * as BrokerHttpClient from "./BrokerHttpClient.ts";
 import { brokerFixture } from "./VaultBrokers.testkit.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import { expect, it } from "@effect/vitest";
@@ -57,7 +58,7 @@ it.effect(
       expect((yield* identity.read(state).pipe(Effect.flip)).reason).toBe("local-state");
       const serialized = JSON.stringify(first);
       expect(serialized).not.toContain(Redacted.value(first.privateKey));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.live(
@@ -160,7 +161,7 @@ it.live(
       );
       yield* daemon.run(state);
       expect((yield* daemon.inspect(state)).report?.state).toBe("disabled");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -182,5 +183,5 @@ it.effect(
       expect((yield* identity.read("", false)).fingerprint).toBe(created.fingerprint);
       yield* fs.makeDirectory(path.join(home, ".git"));
       expect((yield* identity.read("", false).pipe(Effect.flip)).reason).toBe("local-state");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

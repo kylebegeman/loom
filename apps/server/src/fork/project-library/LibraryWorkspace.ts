@@ -37,7 +37,8 @@ import * as Stream from "effect/Stream";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
@@ -303,7 +304,8 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const config = yield* ServerConfig.ServerConfig;
   const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const runner = yield* ProcessRunner.ProcessRunner;
@@ -372,7 +374,7 @@ const make = Effect.gen(function* () {
   });
   const digest = (text: string | Uint8Array) =>
     crypto
-      .digest("SHA-256", typeof text === "string" ? new TextEncoder().encode(text) : text)
+      .digest(Digest.sha256, typeof text === "string" ? new TextEncoder().encode(text) : text)
       .pipe(Effect.map(Hex.encode), Effect.orDie);
   const fileDigest = Effect.fnUntraced(function* (filePath: string) {
     const hash = NodeCrypto.createHash("sha256");
@@ -2307,7 +2309,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const archivePath = path.join(
           archiveDirectory,
-          `recovery-${yield* crypto.randomUUIDv4()}.tar.gz`,
+          `recovery-${yield* random.uuidV4()}.tar.gz`,
         );
         yield* Effect.acquireRelease(
           fs
@@ -2856,7 +2858,7 @@ const make = Effect.gen(function* () {
       }
       const disabledHooks = path.join(
         gitDirectory,
-        `loom-disabled-hooks-${yield* crypto.randomUUIDv4()}`,
+        `loom-disabled-hooks-${yield* random.uuidV4()}`,
       );
       yield* fs.makeDirectory(disabledHooks);
       yield* run([

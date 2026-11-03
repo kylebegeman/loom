@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -27,7 +28,9 @@ if (configured && new URL(origin!).hostname !== "127.0.0.1")
   throw new Error("Maintenance proof requires disposable loopback OpenBao");
 const environmentId = EnvironmentId.make("journal-integration-proof");
 const storeLayer = OpenBaoStore.layer.pipe(
-  Layer.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
+  Layer.provide(
+    Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), FetchHttpClient.layer),
+  ),
   Layer.provide(
     Layer.succeed(HostProcess.Environment, {
       LOOM_VAULT_OPENBAO_URL: origin,
@@ -38,6 +41,7 @@ const storeLayer = OpenBaoStore.layer.pipe(
 );
 const dependencies = Layer.mergeAll(
   NodeServices.layer,
+  NodeCrypto.layer,
   storeLayer,
   Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
   Layer.mock(ThreadManagementService)({ getThreadShell: () => Effect.succeed(null) }),

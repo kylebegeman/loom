@@ -1,5 +1,6 @@
 import * as NodeZlib from "node:zlib";
 import { AuthSettingsWriteScope, MessageId } from "@t3tools/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
@@ -12,7 +13,7 @@ import {
   LibraryThreadArchive,
   type LibraryThreadIndex,
 } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -70,7 +71,12 @@ const run = <A, E, R>(
     yield* runForkMigrationSet(ProjectLibraryMigrations);
     const service = yield* LibraryService.LibraryService.pipe(Effect.provide(serviceLayer));
     return yield* use(service);
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+    Effect.scoped,
+  );
 const create = (service: LibraryService.LibraryService["Service"], requestId = "create") =>
   service.createProject({ requestId, title: "AspectAvy", resources: [resource] });
 const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchive));
@@ -87,8 +93,8 @@ const canonical = (value: unknown): unknown =>
             .map(([key, item]) => [key, canonical(item)]),
         );
 const sha256Hex = (text: string) =>
-  Crypto.Crypto.pipe(
-    Effect.flatMap((crypto) => crypto.digest("SHA-256", new TextEncoder().encode(text))),
+  Digest.Digest.pipe(
+    Effect.flatMap((crypto) => crypto.digest(Digest.sha256, new TextEncoder().encode(text))),
     Effect.map(Hex.encode),
   );
 // Restates the service's record digest, so a change that moves both sides still fails the goldens.
@@ -211,7 +217,9 @@ describe("independent Library catalog and durable history", () => {
         reason: "not-authority",
       });
     }).pipe(
-      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.provide(
+        layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      ),
       Effect.scoped,
     ),
   );
@@ -242,7 +250,9 @@ describe("independent Library catalog and durable history", () => {
         reason: "not-authority",
       });
     }).pipe(
-      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.provide(
+        layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      ),
       Effect.scoped,
     ),
   );
@@ -967,7 +977,7 @@ describe("independent Library catalog and durable history", () => {
     run((service) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        const crypto = yield* Crypto.Crypto;
+        const crypto = yield* Digest.Digest;
         const project = yield* create(service);
         const copy = copyFor(project);
         const other = {
@@ -1111,8 +1121,8 @@ describe("independent Library catalog and durable history", () => {
         yield* store.putImportProof("import", JSON.stringify(proof));
         const archived = proof.threads[0];
         const marker = Hex.encode(
-          yield* (yield* Crypto.Crypto).digest(
-            "SHA-256",
+          yield* (yield* Digest.Digest).digest(
+            Digest.sha256,
             new TextEncoder().encode(
               JSON.stringify(
                 canonical({
@@ -1407,8 +1417,8 @@ describe("independent Library catalog and durable history", () => {
           // Re-encoding would fill in the field, and the proof would stop matching once a later
           // contract fills in another.
           const stored = Hex.encode(
-            yield* (yield* Crypto.Crypto).digest(
-              "SHA-256",
+            yield* (yield* Digest.Digest).digest(
+              Digest.sha256,
               new TextEncoder().encode(
                 JSON.stringify(
                   canonical({

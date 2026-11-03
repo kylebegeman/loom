@@ -31,7 +31,7 @@ import * as SetupMarker from "./setupMarker.ts";
 const layer = GitVcsDriver.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-restore-worktree-" })),
   Layer.provide(VcsProcess.layer),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const fixture = Effect.gen(function* () {

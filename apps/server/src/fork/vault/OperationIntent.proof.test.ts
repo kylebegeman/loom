@@ -1,7 +1,9 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import type { VaultGrant } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { journalFixture } from "./OperationJournal.testkit.ts";
@@ -116,7 +118,7 @@ it.effect.each(["policy", "grant", "approval"] as const)(
           .reason,
       ).toBe("invalid-response");
       expect(f.records.get(path)).toEqual(tampered);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -140,7 +142,7 @@ it.effect(
           .reason,
       ).toBe("invalid-response");
       expect(f.records.get(path)).toEqual(unsupported);
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 // Abstract eligibility evidence is supplied by a trusted future boundary, never by a caller flag.

@@ -1,8 +1,10 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, SecretRef } from "@t3tools/contracts";
 import { VaultError, type VaultItemSave } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
@@ -56,7 +58,7 @@ function withCore<A, E>(
       }),
     );
     return yield* use(core, f);
-  }).pipe(Effect.provide(NodeServices.layer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 }
 it.effect(
   "creates and lists safe metadata without returning secret fields or mutation fingerprints",
@@ -346,7 +348,7 @@ it.effect("namespaces the same item ID by the server environment identity", () =
         Effect.provideService(ServerEnvironmentIdentity, {
           getEnvironmentId: Effect.succeed(EnvironmentId.make("other-environment")),
         }),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       );
       expect((yield* other.list({ cursor: null, includeArchived: false })).items).toEqual([]);
       yield* other.save({ ...input, value: Redacted.make("separate-value") }, "owner");

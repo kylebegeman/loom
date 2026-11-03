@@ -1,8 +1,9 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { MessageId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,7 +13,7 @@ import * as SshTransport from "./SshTransport.ts";
 import * as VaultHealthContext from "./VaultHealthContext.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 
-const dependencies = Layer.merge(NodeServices.layer, memoryVault);
+const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 const transport = Layer.succeed(SshTransport.SshTransport, {
   execute: () => Effect.die("History inspection must not execute SSH."),
 });
@@ -22,9 +23,9 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* launchFixture(transport);
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* Digest.Digest;
       const hash = (value: string) =>
-        crypto.digest("SHA-256", new TextEncoder().encode(value)).pipe(Effect.map(Hex.encode));
+        crypto.digest(Digest.sha256, new TextEncoder().encode(value)).pipe(Effect.map(Hex.encode));
       const projectId = f.state.thread.projectId;
       const profile = {
         id: yield* f.id,

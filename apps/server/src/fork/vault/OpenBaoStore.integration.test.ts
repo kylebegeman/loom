@@ -5,6 +5,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultCore from "./VaultCore.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -21,7 +22,9 @@ const restoring = process.env.LOOM_VAULT_TEST_OPENBAO_RESTORE === "1";
 const key = "integration/persistent-record";
 const secret = "synthetic-backup-recovery-canary";
 const layer = OpenBaoStore.layer.pipe(
-  Layer.provide(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)),
+  Layer.provide(
+    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NodeCrypto.layer, FetchHttpClient.layer),
+  ),
   Layer.provide(
     Layer.succeed(HostProcess.Environment, {
       LOOM_VAULT_OPENBAO_URL: process.env.LOOM_VAULT_TEST_OPENBAO_URL,
@@ -68,6 +71,7 @@ const policyItem = "7".repeat(32),
   policyGrant = "8".repeat(32);
 const policyDependencies = Layer.mergeAll(
   NodeServices.layer,
+  NodeCrypto.layer,
   layer,
   Layer.succeed(ServerEnvironmentIdentity, {
     getEnvironmentId: Effect.succeed(policyEnvironment),

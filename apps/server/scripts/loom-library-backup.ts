@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -691,6 +692,6 @@ export const loomLibraryBackupCommand = Command.make("library-backup").pipe(
 // Bundled executables can expose import.meta.main for imported scripts as well as bin.ts.
 if (import.meta.main && process.argv[1]?.replaceAll("\\", "/").endsWith("/loom-library-backup.ts"))
   Command.run(loomLibraryBackupCommand, { version: "0.0.0" }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     NodeRuntime.runMain,
   );

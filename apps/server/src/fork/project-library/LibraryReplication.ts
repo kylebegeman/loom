@@ -16,7 +16,7 @@ import * as NodeZlib from "node:zlib";
 import * as NodeUtil from "node:util";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -173,7 +173,7 @@ const make = Effect.gen(function* () {
   );
   if (maxPendingBytes <= 0) return yield* new LibraryError({ reason: "invalid" });
   const source = yield* HistorySource.LibraryHistorySource;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const workspaces = yield* WorkspaceStore.LibraryWorkspaceStore;
   const workspace = yield* Effect.serviceOption(Workspace.LibraryWorkspace);
   const identity = yield* ServerEnvironmentIdentity;
@@ -762,7 +762,7 @@ const make = Effect.gen(function* () {
   ) {
     const copy = WorkspaceStore.placedCopy(receipt.copy, receipt.project);
     const fingerprint = Hex.encode(
-      yield* crypto.digest("SHA-256", new TextEncoder().encode(yield* encodeCopy(copy))),
+      yield* crypto.digest(Digest.sha256, new TextEncoder().encode(yield* encodeCopy(copy))),
     );
     const requestId = `${current.journal_id}:copy:${fingerprint}`;
     const published = `${current.authority_id}:${current.authority_epoch}:${requestId}`;

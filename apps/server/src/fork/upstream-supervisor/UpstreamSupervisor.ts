@@ -12,7 +12,8 @@ import {
   type UpstreamWorkflowSnapshot,
   VaultError,
 } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -108,7 +109,8 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const github = yield* VaultGitHub.VaultGitHub;
   const sessions = yield* SessionStore.SessionStore;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const lock = yield* Semaphore.make(1);
   const statePath = path.join(config.stateDir, "fork", "upstream-supervisor", "state.json");
   const read = Effect.fn("UpstreamSupervisor.read")(
@@ -129,7 +131,7 @@ const make = Effect.gen(function* () {
       const contents = yield* Schema.encodeEffect(stateJson)(state);
       const directory = path.dirname(statePath);
       yield* fs.makeDirectory(directory, { recursive: true });
-      const temporary = path.join(directory, `${yield* crypto.randomUUIDv4()}.pending`);
+      const temporary = path.join(directory, `${yield* random.uuidV4()}.pending`);
       yield* Effect.gen(function* () {
         yield* fs.writeFileString(temporary, `${contents}\n`, { mode: 0o600, flag: "wx" });
         yield* Effect.scoped(fs.open(temporary).pipe(Effect.flatMap((file) => file.sync)));
@@ -409,7 +411,7 @@ const make = Effect.gen(function* () {
     if (observed.runs.some((run) => run.status !== "completed")) return yield* failure("active");
     const hash = yield* crypto
       .digest(
-        "SHA-256",
+        Digest.sha256,
         new TextEncoder().encode(
           [input.projectId, current.connection.repository, input.clientRequestId]
             .map((part) => `${part.length}:${part}`)
@@ -553,7 +555,7 @@ const make = Effect.gen(function* () {
       return yield* failure("conflict");
     const hash = yield* crypto
       .digest(
-        "SHA-256",
+        Digest.sha256,
         new TextEncoder().encode(
           ["retry-failed", input.projectId, current.connection.repository, input.clientRequestId]
             .map((part) => `${part.length}:${part}`)

@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, LibraryWorkingCopy, type LibraryCopyHealth } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -117,8 +117,8 @@ export const latestCopyHealth = (
  * The part of a health report's request id that names its copy. Each report has its own request
  * id, so the Library keeps only the newest receipt per marker instead of one per report.
  */
-export const copyHealthRequestMarker = (crypto: Crypto.Crypto, copyId: string) =>
-  crypto.digest("SHA-256", new TextEncoder().encode(copyId)).pipe(
+export const copyHealthRequestMarker = (crypto: Digest.Digest["Service"], copyId: string) =>
+  crypto.digest(Digest.sha256, new TextEncoder().encode(copyId)).pipe(
     Effect.map((bytes) => `:health:${Hex.encode(bytes).slice(0, 16)}:`),
     Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
   );
@@ -149,7 +149,7 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
     LibraryError
   >;
 }) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const lock = yield* Semaphore.make(1);
   const published = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
   // Heads from each copy's last acknowledged report. Lost on restart, so the first report after
@@ -168,7 +168,7 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
     );
     const digest = Hex.encode(
       yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(body))
+        .digest(Digest.sha256, new TextEncoder().encode(body))
         .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
     );
     yield* input.publisher.registerCopy({

@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -43,7 +43,7 @@ const decodeUnknownEffectInvitation = Schema.decodeUnknownEffect(VaultBrokerInvi
 const make = Effect.gen(function* () {
   const identity = yield* BrokerIdentity.BrokerIdentity,
     keys = yield* BrokerCrypto.BrokerCrypto,
-    crypto = yield* Crypto.Crypto,
+    crypto = yield* SecureRandom.SecureRandom,
     client = yield* BrokerHttpClient.BrokerHttpClient;
   const request = <A, I>(
     origin: string,
@@ -107,7 +107,7 @@ const make = Effect.gen(function* () {
         environmentId: connection.environmentId,
         machineId: connection.machineId,
         requestId: (yield* crypto
-          .randomUUIDv4()
+          .uuidV4()
           .pipe(Effect.mapError(() => new VaultBrokerError({ reason: "unavailable" })))).replaceAll(
           "-",
           "",

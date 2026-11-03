@@ -28,7 +28,7 @@ import {
 import { signRelayJwt, verifyRelayJwt } from "@t3tools/shared/relayJwt";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -149,7 +149,7 @@ const make = Effect.gen(function* () {
   const sessions = yield* SessionStore;
   const directory = yield* DirectoryService;
   const threads = yield* ThreadManagementService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const environment = yield* HostProcess.Environment;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const sessionPrefix = identitySessionPrefix(environment);
@@ -165,7 +165,7 @@ const make = Effect.gen(function* () {
   const digest = Effect.fn("LibraryManagement.digest")(function* (text: string) {
     return Hex.encode(
       yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(text))
+        .digest(Digest.sha256, new TextEncoder().encode(text))
         .pipe(Effect.mapError(unavailable)),
     );
   });

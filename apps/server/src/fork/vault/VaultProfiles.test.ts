@@ -1,6 +1,7 @@
 import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as DateTime from "effect/DateTime";
 import { vaultProfileRequirements } from "@t3tools/contracts/fork";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProjectId, RunId, MessageId } from "@t3tools/contracts";
@@ -10,7 +11,7 @@ import {
   type VaultProfileDefinition,
   type VaultProfileMutation,
 } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Redacted from "effect/Redacted";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
@@ -19,7 +20,7 @@ import * as Layer from "effect/Layer";
 import * as SshTransport from "./SshTransport.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
-const dependencies = Layer.merge(NodeServices.layer, memoryVault);
+const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 const transport = Layer.succeed(SshTransport.SshTransport, {
   execute: (input) => input.authorize.pipe(Effect.as({ exitCode: 0, stdout: "profile ok" })),
 });
@@ -333,9 +334,9 @@ it.effect(
       yield* f.apply({ type: "save", profile: f.definition });
       const resolution = yield* f.profiles.resolve(f.threadId, f.definition.id);
       const store = yield* OpenBaoStore.OpenBaoStore;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* Digest.Digest;
       const hash = (value: string) =>
-        crypto.digest("SHA-256", new TextEncoder().encode(value)).pipe(Effect.map(Hex.encode));
+        crypto.digest(Digest.sha256, new TextEncoder().encode(value)).pipe(Effect.map(Hex.encode));
       const prefix = `environments/${yield* hash(f.environmentId)}/profiles`;
       const journalPath = `${prefix}/_operations/approval-journal-v1`;
       yield* store.write(journalPath, Redacted.make({ schemaVersion: 1, entries: [] }), 0);

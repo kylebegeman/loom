@@ -8,7 +8,7 @@ import {
 import { AgentReceipt, AgentReceiptError, type AgentReceiptSummary } from "@t3tools/contracts/fork";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -160,7 +160,7 @@ const summarize = (receipt: AgentReceipt): AgentReceiptSummary => ({
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const configuredDirs = yield* ClaudeConfigDirs;
@@ -174,7 +174,7 @@ const make = Effect.gen(function* () {
     );
 
   const sha256 = (text: string) =>
-    crypto.digest("SHA-256", new TextEncoder().encode(text)).pipe(Effect.map(Hex.encode));
+    crypto.digest(Digest.sha256, new TextEncoder().encode(text)).pipe(Effect.map(Hex.encode));
 
   let discoveredDirs: ReadonlyArray<string> | undefined = configuredDirs;
   const claudeDirs = Effect.gen(function* () {

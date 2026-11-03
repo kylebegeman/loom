@@ -64,7 +64,7 @@ import {
   resolveLibraryConnection,
 } from "./LibraryConnection.ts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as PubSub from "effect/PubSub";
@@ -343,7 +343,7 @@ const make = Effect.gen(function* () {
   if (connection.kind === "none") return unavailable(false);
 
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   // Deleting a conversation removes its attachment files, and that can happen before its last
   // snapshot is uploaded. Null means the file is gone and nothing can bring it back.
   const sourceFile = Effect.fnUntraced(function* (attachmentId: string) {
@@ -762,7 +762,7 @@ const make = Effect.gen(function* () {
     if (bytes.length !== attachment.sizeBytes) return false;
     yield* recordAsset(
       attachment.id,
-      Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+      Hex.encode(yield* crypto.digest(Digest.sha256, bytes)),
       bytes.length,
     );
     return true;
@@ -808,7 +808,7 @@ const make = Effect.gen(function* () {
         if (source.size !== attachment.sizeBytes || source.size > LIBRARY_ASSET_MAX_BYTES)
           return yield* new LibraryError({ reason: "invalid" });
         const bytes = yield* fs.readFile(source.path);
-        const digest = Hex.encode(yield* crypto.digest("SHA-256", bytes));
+        const digest = Hex.encode(yield* crypto.digest(Digest.sha256, bytes));
         const saved = yield* uploadAsset(
           archive.summary.environmentId,
           attachment.id,

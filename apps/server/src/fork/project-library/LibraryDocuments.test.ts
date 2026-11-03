@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -101,7 +102,9 @@ const run = <A, E, R>(
     return yield* use(yield* fixture);
   }).pipe(
     Effect.provideService(LibraryEmbedder, embedder),
-    Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
     Effect.scoped,
   );
 
@@ -148,7 +151,9 @@ describe("Library documents", () => {
         yield* sql`SELECT count(*) AS count FROM fork_library_documents_fts WHERE fork_library_documents_fts MATCH 'upgrade'`,
       ).toEqual([{ count: 2 }]);
     }).pipe(
-      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.provide(
+        layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+      ),
       Effect.scoped,
     ),
   );

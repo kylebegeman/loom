@@ -11,7 +11,7 @@ import {
   type LibraryDocumentsPublishResult,
 } from "@t3tools/contracts/fork";
 import { safeDocumentPath } from "@t3tools/shared/fork/library-decisions";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -69,11 +69,11 @@ const invalid = () => new LibraryError({ reason: "invalid" });
 export const documentDigest = Effect.fn("LibraryDocuments.documentDigest")(function* (
   document: Omit<LibraryDocument, "digest">,
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   return Hex.encode(
     yield* crypto
       .digest(
-        "SHA-256",
+        Digest.sha256,
         new TextEncoder().encode(
           encodeJson([
             document.projectId,
@@ -95,7 +95,7 @@ export const documentDigest = Effect.fn("LibraryDocuments.documentDigest")(funct
 
 export const makeLibraryDocuments = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const embedder = yield* LibraryEmbedder;
   // Both ranking paths check current manifest and copy membership. Removing authorization hides
   // saved documents immediately, even before another publisher can refresh the index.
@@ -143,7 +143,7 @@ export const makeLibraryDocuments = Effect.gen(function* () {
         document.resourceId !== input.resourceId ||
         new TextEncoder().encode(document.text).length > LIBRARY_DOCUMENT_MAX_BYTES ||
         document.digest !==
-          (yield* documentDigest(document).pipe(Effect.provideService(Crypto.Crypto, crypto)))
+          (yield* documentDigest(document).pipe(Effect.provideService(Digest.Digest, crypto)))
       )
         return yield* invalid();
     }

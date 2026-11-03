@@ -1,6 +1,6 @@
 import { AuthLibraryRecoveryReadScope, EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, LibraryRecoveryGrant } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -54,8 +54,8 @@ export const recoveryDescriptorDigest = Effect.fn("LibraryRecoveryGrant.digest")
     Effect.mapError(() => new LibraryError({ reason: "invalid" })),
   );
   return Hex.encode(
-    yield* (yield* Crypto.Crypto)
-      .digest("SHA-256", new TextEncoder().encode(encodeJson(canonical(decodeJson(encoded)))))
+    yield* (yield* Digest.Digest)
+      .digest(Digest.sha256, new TextEncoder().encode(encodeJson(canonical(decodeJson(encoded)))))
       .pipe(Effect.mapError(() => new LibraryError({ reason: "io" }))),
   );
 });

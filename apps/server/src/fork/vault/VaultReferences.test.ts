@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { VaultError, vaultReferenceText } from "@t3tools/contracts/fork";
@@ -11,7 +12,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 import * as SshTransport from "./SshTransport.ts";
-const dependencies = Layer.merge(NodeServices.layer, memoryVault);
+const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 const search = { query: "", kind: null, includeArchived: false, cursor: null };
 it.effect(
   "keeps stable references through renames and archive, without disclosing forbidden records",

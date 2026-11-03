@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId, RunId, ThreadId } from "@t3tools/contracts";
@@ -19,7 +20,7 @@ import * as VaultLaunch from "./VaultLaunch.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import { VaultSshToolkit, vaultSshHandlers } from "./ssh-mcp.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
-const dependencies = Layer.merge(NodeServices.layer, memoryVault);
+const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 const command = { expectedVersion: 1, argv: ["/usr/bin/true"], timeoutMs: 8000 };
 const transport = Layer.succeed(SshTransport.SshTransport, {
   execute: (input) => input.authorize.pipe(Effect.as({ exitCode: 0, stdout: "ok" })),

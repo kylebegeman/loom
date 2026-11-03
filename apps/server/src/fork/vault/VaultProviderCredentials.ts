@@ -6,7 +6,8 @@ import {
 import { VaultError, vaultProviderBinding, type VaultAuditEvent } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -55,10 +56,11 @@ const make = Effect.gen(function* () {
   const core = yield* VaultCore.VaultCore;
   const store = yield* OpenBaoStore.OpenBaoStore;
   const identity = yield* ServerEnvironmentIdentity;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
+  const random = yield* SecureRandom.SecureRandom;
   const environmentId = yield* identity.getEnvironmentId;
   const namespace = Hex.encode(
-    yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)).pipe(
+    yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)).pipe(
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
       Effect.orDie,
     ),
@@ -116,8 +118,8 @@ const make = Effect.gen(function* () {
       if (value.item.kind !== "secret" || value.item.state !== "active")
         return yield* new VaultError({ reason: "denied" });
       const event: VaultAuditEvent = {
-        id: (yield* crypto
-          .randomUUIDv4()
+        id: (yield* random
+          .uuidV4()
           .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" })))).replaceAll(
           "-",
           "",

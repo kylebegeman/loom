@@ -1,4 +1,5 @@
 import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId } from "@t3tools/contracts";
@@ -62,7 +63,7 @@ const withFixture = <A, E, R>(use: (f: Effect.Success<typeof setup>) => Effect.E
   setup.pipe(
     Effect.flatMap(use),
     Effect.scoped,
-    Effect.provide(Layer.merge(NodeServices.layer, memoryVault)),
+    Effect.provide(Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault)),
   );
 it.effect(
   "discovers default profile requirements and enrolled presence without creating a run pin or contacting SSH",

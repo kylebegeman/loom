@@ -1,5 +1,6 @@
 import * as StorageAccounting from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as HttpClient from "effect/http/HttpClient";
@@ -25,7 +26,8 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -319,11 +321,14 @@ const hostDependencies = Layer.mergeAll(
   ),
   VcsProcess.layer,
   VcsDriverRegistry.layer.pipe(Layer.provide(VcsProcess.layer)),
-).pipe(Layer.provideMerge(config), Layer.provideMerge(NodeServices.layer));
+).pipe(
+  Layer.provideMerge(config),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+);
 const layerTest = Layer.mergeAll(LibraryWorkspace.layer, CheckpointStore.layer).pipe(
   Layer.provideMerge(Layer.mergeAll(gitFetchLayer, WorktreeSetupTracker.layer)),
   Layer.provideMerge(hostDependencies),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 const makeProject = (resources: LibraryProject["resources"]): LibraryProject => ({
@@ -1827,8 +1832,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       };
       const copy = yield* service.reserveCopy(request);
       const id = Hex.encode(
-        yield* (yield* Crypto.Crypto).digest(
-          "SHA-256",
+        yield* (yield* Digest.Digest).digest(
+          Digest.sha256,
           new TextEncoder().encode(`${environmentId}\0${request.requestId}`),
         ),
       );
@@ -2033,7 +2038,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const parent = yield* makeTemp;
       const path = yield* Path.Path;
       const fs = yield* FileSystem.FileSystem;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* Digest.Digest;
       const runner = yield* ProcessRunner.ProcessRunner;
       const service = yield* LibraryWorkspace.LibraryWorkspace;
       const receipts = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
@@ -2052,7 +2057,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       });
       expect(archive.code).toBe(0);
       const archiveDigest = Hex.encode(
-        yield* crypto.digest("SHA-256", yield* fs.readFile(archivePath)),
+        yield* crypto.digest(Digest.sha256, yield* fs.readFile(archivePath)),
       );
       yield* (yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher).publish({
         archivePath,
@@ -2789,7 +2794,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         rootPath,
         strategy: "clone",
       });
-      const bytes = yield* (yield* Crypto.Crypto).randomBytes(64 * 1024);
+      // SecureRandom returns a plain Uint8Array; readFile returns a Buffer.
+      const bytes = Buffer.from(yield* (yield* SecureRandom.SecureRandom).randomBytes(64 * 1024));
       const ignoredPath = path.join(rootPath, "local-only.bin");
       yield* fs.writeFileString(path.join(rootPath, ".gitignore"), "local-only.bin\n");
       yield* fs.writeFile(ignoredPath, bytes);

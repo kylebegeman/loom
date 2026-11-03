@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProjectId, type OrchestrationProjectShell } from "@t3tools/contracts";
 import {
@@ -76,6 +77,7 @@ const fixture = Effect.sync(() => {
   });
   const deps = Layer.mergeAll(
     NodeServices.layer,
+    NodeCrypto.layer,
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("migration-inventory")),
     }),

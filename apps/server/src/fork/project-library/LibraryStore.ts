@@ -1,7 +1,8 @@
 import type { LibraryThreadIndex } from "@t3tools/contracts/fork";
 import * as NodeZlib from "node:zlib";
 import * as NodeUtil from "node:util";
-import * as Crypto from "effect/Crypto";
+import * as Arr from "effect/Array";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -216,9 +217,9 @@ function shortenDisplayText(value: unknown): unknown {
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const hash = (payload: string) =>
-    crypto.digest("SHA-256", new TextEncoder().encode(payload)).pipe(Effect.map(Hex.encode));
+    crypto.digest(Digest.sha256, new TextEncoder().encode(payload)).pipe(Effect.map(Hex.encode));
   const run = <A, E, R>(operation: string, effect: Effect.Effect<A, E, R>) =>
     effect.pipe(Effect.mapError((cause) => new LibraryStoreError({ operation, cause })));
   const first = <T>(rows: readonly T[]) => rows[0] ?? null;
@@ -302,7 +303,7 @@ const make = Effect.gen(function* () {
       if (encodedBytes > HISTORY_PAGE_BYTES)
         return yield* new LibraryStoreError({ operation: "history-item-too-large", cause: null });
       if (
-        batch.length > 0 &&
+        Arr.isArrayNonEmpty(batch) &&
         (batch.length === HISTORY_INSERT_BATCH_ROWS ||
           batchBytes + encodedBytes > HISTORY_PAGE_BYTES)
       ) {
@@ -315,7 +316,7 @@ const make = Effect.gen(function* () {
       batch.push({ library_id: id, position, payload_json: encoded });
       batchBytes += encodedBytes;
     }
-    if (batch.length > 0)
+    if (Arr.isArrayNonEmpty(batch))
       yield* sql`INSERT INTO fork_library_history_items ${sql.insert(batch)}
           ON CONFLICT(library_id,position) DO UPDATE SET payload_json=excluded.payload_json
           WHERE fork_library_history_items.payload_json IS NOT excluded.payload_json`;

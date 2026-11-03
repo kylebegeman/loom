@@ -1,9 +1,11 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { RunId, ThreadId } from "@t3tools/contracts";
 import { VaultError } from "@t3tools/contracts/fork";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -63,7 +65,7 @@ const fixture = Effect.gen(function* () {
   return { ...f, path, legacy, raw, replace, proposal, review };
 });
 const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  effect.pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect(
   "previews migration without writing and retains the legacy runtime behavior until installed",

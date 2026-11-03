@@ -1,17 +1,23 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
-import type * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Fiber from "effect/Fiber";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import { journalFixture } from "./OperationJournal.testkit.ts";
 
 const withAcquisition = <A, E>(
-  use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Crypto.Crypto>,
-) => Effect.flatMap(fixture, use).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, Digest.Digest>,
+) =>
+  Effect.flatMap(fixture, use).pipe(
+    Effect.scoped,
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
 const fixture = Effect.gen(function* () {
   const f = yield* journalFixture;
   yield* f.journal.prepare(f.input, f.threadId);

@@ -1,6 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation.
 import * as NodeCrypto from "node:crypto";
 
+import * as EffectNodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -250,7 +251,7 @@ const run = <A, E>(
       Layer.mergeAll(
         ServerConfig.layerTest(process.cwd(), { prefix: "directory-service-test-" }),
         layerMemory,
-      ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, EffectNodeCrypto.layer))),
     ),
     Effect.scoped,
   );

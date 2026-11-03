@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -83,10 +83,10 @@ const view = (ledger: Ledger, actor: string, now: number): VaultTestAccountSnaps
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
   const core = yield* VaultCore.VaultCore;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const hash = (text: string) =>
-    crypto.digest("SHA-256", new TextEncoder().encode(text)).pipe(
+    crypto.digest(Digest.sha256, new TextEncoder().encode(text)).pipe(
       Effect.map(Hex.encode),
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
     );

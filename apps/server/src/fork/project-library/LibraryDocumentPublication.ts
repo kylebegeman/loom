@@ -16,7 +16,7 @@ import {
   parseDecisionDocument,
   splitCatalogue,
 } from "@t3tools/shared/fork/library-decisions";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -61,7 +61,7 @@ export const layerSource = Layer.effect(
   LibraryDocumentSource,
   Effect.gen(function* () {
     const runner = yield* ProcessRunner.ProcessRunner;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* Digest.Digest;
     const git = Effect.fn("LibraryDocumentSource.git")(function* (
       cwd: string,
       args: ReadonlyArray<string>,
@@ -234,7 +234,7 @@ export const layerSource = Layer.effect(
           documents.push({
             ...document,
             digest: yield* documentDigest(document).pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.provideService(Digest.Digest, crypto),
             ),
           });
         }

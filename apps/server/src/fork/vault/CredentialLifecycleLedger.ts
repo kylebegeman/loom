@@ -1,7 +1,7 @@
 import { VaultError, VaultItemId } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as CryptoDigest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -188,11 +188,11 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const store = yield* OpenBaoStore.OpenBaoStore;
     const identity = yield* ServerEnvironmentIdentity;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* CryptoDigest.Digest;
     const environmentId = yield* identity.getEnvironmentId;
     const namespace = Hex.encode(
       yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(environmentId))
+        .digest(CryptoDigest.sha256, new TextEncoder().encode(environmentId))
         .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" }))),
     );
     const path = `environments/${namespace}/profiles/_operations/credential-lifecycle-v1`;

@@ -32,7 +32,8 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -92,7 +93,8 @@ const make = Effect.gen(function* () {
     projects = yield* ProjectStoreV2;
   const environment = yield* HostProcess.Environment,
     path = yield* Path.Path,
-    crypto = yield* Crypto.Crypto;
+    crypto = yield* Digest.Digest,
+    random = yield* SecureRandom.SecureRandom;
   const connections = yield* VaultConnections.VaultConnections;
   // VaultSsh guards before accepting a command and before every agent frame. Full revalidation
   // takes seconds against a live Vault, so it runs once per operation; frames re-check the item
@@ -143,7 +145,7 @@ const make = Effect.gen(function* () {
         );
         if (session.environmentId !== connection.environmentId) return yield* denied();
         const payloadDigest = yield* crypto
-          .digest("SHA-256", new TextEncoder().encode(message))
+          .digest(Digest.sha256, new TextEncoder().encode(message))
           .pipe(
             Effect.map(Hex.encode),
             Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
@@ -151,8 +153,8 @@ const make = Effect.gen(function* () {
         const request = {
           environmentId: session.environmentId,
           sessionId: session.id,
-          requestId: (yield* crypto
-            .randomUUIDv4()
+          requestId: (yield* random
+            .uuidV4()
             .pipe(
               Effect.mapError(() => new VaultWorkloadError({ reason: "unavailable" })),
             )).replaceAll("-", ""),

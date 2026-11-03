@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -9,7 +10,7 @@ import {
   type LibraryProject,
 } from "@t3tools/contracts/fork";
 import { parseDecisionDocument } from "@t3tools/shared/fork/library-decisions";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -113,7 +114,12 @@ const fixture = Effect.gen(function* () {
 const run = <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     return yield* use(yield* fixture);
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+    Effect.scoped,
+  );
 
 describe("document publication", () => {
   it.effect("skips unchanged records across restarts and publishes removals", () =>
@@ -283,7 +289,7 @@ describe("document publication", () => {
               { ...copy.repositories[0]!, resourceId: second.id },
             ],
           };
-          const crypto = yield* Crypto.Crypto;
+          const crypto = yield* Digest.Digest;
           let broken = true;
           const publisher = yield* Publication.makeDocumentPublication({
             ...options,
@@ -302,7 +308,7 @@ describe("document publication", () => {
                     commit: "a".repeat(40),
                     documents: [{ ...value, digest: yield* documentDigest(value) }],
                   };
-                }).pipe(Effect.provideService(Crypto.Crypto, crypto)),
+                }).pipe(Effect.provideService(Digest.Digest, crypto)),
             },
           });
           expect((yield* publisher.report.pipe(Effect.result))._tag).toBe("Failure");
@@ -476,7 +482,11 @@ const withGitSource = <A, E, R>(
     );
     return yield* use({ source, cwd, git });
   }).pipe(
-    Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      ProcessRunner.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
     Effect.scoped,
   );
 

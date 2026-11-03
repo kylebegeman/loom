@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -61,7 +62,12 @@ const run = <A, E, R>(
       Effect.provideService(LibraryService.LibraryService, library),
     );
     return yield* use(workflows, library);
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+    Effect.scoped,
+  );
 
 describe("Project workflows", () => {
   it.effect(
@@ -597,7 +603,11 @@ describe("Project workflows", () => {
         expect(yield* sql`SELECT id FROM fork_library_workstreams`).toEqual([]);
         expect(yield* sql`SELECT library_id FROM fork_library_erased_threads`).toEqual([]);
       }).pipe(
-        Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+        Effect.provide(
+          layerMemory.pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ),
         Effect.scoped,
       ),
   );

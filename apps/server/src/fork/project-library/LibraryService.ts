@@ -59,7 +59,7 @@ import {
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -294,7 +294,7 @@ const make = Effect.gen(function* () {
   const localCatalog = yield* Effect.serviceOption(LibraryLocalCatalog.LibraryLocalCatalog);
   const fs = yield* FileSystem.FileSystem;
   const identity = yield* ServerEnvironmentIdentity;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const assets = yield* Assets.LibraryAssetService;
   const sessions = yield* Effect.serviceOption(SessionStore.SessionStore);
   const recovery = yield* Effect.serviceOption(Recovery.LibraryRecoveryStore);
@@ -316,7 +316,7 @@ const make = Effect.gen(function* () {
   const digestValue = Effect.fnUntraced(function* (value: unknown) {
     return Hex.encode(
       yield* crypto
-        .digest("SHA-256", new TextEncoder().encode(encodeUnknownJson(canonicalJson(value))))
+        .digest(Digest.sha256, new TextEncoder().encode(encodeUnknownJson(canonicalJson(value))))
         .pipe(Effect.mapError(io)),
     );
   });
@@ -811,7 +811,7 @@ const make = Effect.gen(function* () {
     const issued = yield* sessions.value
       .issue({
         subject: yield* recoveryGrantSubject(descriptor).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(Digest.Digest, crypto),
         ),
         method: "bearer-access-token",
         scopes: [AuthLibraryRecoveryReadScope],

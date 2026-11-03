@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { AuthSettingsWriteScope, ChatAttachmentId, ThreadId } from "@t3tools/contracts";
@@ -177,7 +178,7 @@ it.effect(
               Layer.succeed(HostProcess.Environment, {}),
               layerMemory,
               ServerConfig.layerTest(process.cwd(), { prefix: "library-erasure-test-" }),
-            ).pipe(Layer.provideMerge(NodeServices.layer)),
+            ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
           ),
         ),
       ),

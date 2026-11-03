@@ -9,7 +9,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as CryptoDigest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -141,12 +141,14 @@ const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
   const access = yield* VaultAccess.VaultAccess;
   const identity = yield* ServerEnvironmentIdentity;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* CryptoDigest.Digest;
   const environmentId = yield* identity.getEnvironmentId;
-  const namespace = yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)).pipe(
-    Effect.map(Hex.encode),
-    Effect.mapError(() => new VaultError({ reason: "unavailable" })),
-  );
+  const namespace = yield* crypto
+    .digest(CryptoDigest.sha256, new TextEncoder().encode(environmentId))
+    .pipe(
+      Effect.map(Hex.encode),
+      Effect.mapError(() => new VaultError({ reason: "unavailable" })),
+    );
   // This reserved non-project branch is covered by the existing profiles/* capability.
   const path = `environments/${namespace}/profiles/_operations/approval-journal-v1`;
   const load = Effect.fnUntraced(function* () {
