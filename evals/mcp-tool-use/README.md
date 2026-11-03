@@ -123,6 +123,20 @@ pnpm mcp-tool-use --cases mcp-tool-use/cases/threads-vs-tasks.ndjson --samples 3
 
 These cases measure routing decisions with simulated tools, not delivered child work. The original PR's paid baseline found Sonnet starting a background native Agent for `tt-background-agent`; the routing fix is stacked separately in #27139. Historical model results and the unresolved top-level reviewer re-check wording are recorded in #27138.
 
+## Parallel worktree cases
+
+`cases/parallel-worktrees.ndjson` reproduces independent screen editors serialized
+behind one shared-checkout lock and integration locks accidentally placed in per-lane
+`TMPDIR`. It checks a proposed Claude Workflow's parallel worktree isolation, separate
+build output and integration suite, plus the supported shared lane-lock variable.
+The cases use authored Acme data. They grade the proposed orchestration and lock
+choice; real worktree creation, overlapping builds, merges and cleanup are covered by
+the server's managed Claude worktree integration test.
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/parallel-worktrees.ndjson --samples 3 --out runs/parallel-worktrees
+```
+
 ## Where T3's text lives
 
 - `packages/provider-core/src/server/runtimeInstructions.ts`

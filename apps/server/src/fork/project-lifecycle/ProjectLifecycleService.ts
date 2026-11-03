@@ -8,7 +8,7 @@ import {
   MessageId,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
-  type ThreadId,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   ProjectLifecycleError,
@@ -323,6 +323,35 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
 
   const lanes = new Map<string, LaneRow>();
   for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
+  const retainedPath = `${config.stateDir}/fork/project-lifecycle/retained-checkouts.json`;
+  const retainedSchema = Schema.fromJsonString(
+    Schema.Array(Schema.Struct({ threadId: ThreadId, checkoutPath: Schema.String })),
+  );
+  const retainedCheckouts = new Map<string, Set<ThreadId>>();
+  const retainedText = yield* node("read retained checkout owners", async () => {
+    try {
+      return await NodeFSP.readFile(retainedPath, "utf8");
+    } catch (cause) {
+      if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return "[]";
+      throw cause;
+    }
+  }).pipe(Effect.orDie);
+  for (const owner of yield* Schema.decodeEffect(retainedSchema)(retainedText).pipe(Effect.orDie)) {
+    const owners = retainedCheckouts.get(owner.checkoutPath) ?? new Set<ThreadId>();
+    owners.add(owner.threadId);
+    retainedCheckouts.set(owner.checkoutPath, owners);
+  }
+  const retainedOwners = () =>
+    [...retainedCheckouts].flatMap(([checkoutPath, owners]) =>
+      [...owners].map((threadId) => ({ threadId, checkoutPath })),
+    );
+  const saveRetainedOwners = Effect.fn("ProjectLifecycle.saveRetainedOwners")(function* (
+    owners = retainedOwners(),
+  ) {
+    const text = yield* Schema.encodeEffect(retainedSchema)(owners).pipe(Effect.orDie);
+    yield* writeAtomically(retainedPath, text);
+  });
+
   const claims = makePortClaims(portClaimsDir(options.homeDir), config.stateDir);
   const ownBases = (except?: string) =>
     [...lanes.values()].flatMap((lane) =>
@@ -472,8 +501,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     view.threads.filter(
       (thread) =>
         thread.id !== released &&
-        holdsLane(thread) &&
-        checkoutOf(thread, view.projects) === lane.checkoutPath,
+        ((holdsLane(thread) && checkoutOf(thread, view.projects) === lane.checkoutPath) ||
+          retainedCheckouts.get(lane.checkoutPath)?.has(thread.id) === true),
     );
 
   /** Whether a thread outside this lane is still working; its devices are left alone. */
@@ -1098,6 +1127,49 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     );
   });
 
+  const releaseCheckout = Effect.fn("ProjectLifecycle.releaseCheckout")(function* (
+    threadId: ThreadId,
+    checkoutPath: string,
+  ) {
+    const checkout = NodePath.resolve(checkoutPath);
+    yield* mutate.withPermits(1)(
+      Effect.gen(function* () {
+        const owners = retainedCheckouts.get(checkout);
+        if (owners === undefined || !owners.has(threadId)) return;
+        const next = retainedOwners().filter(
+          (owner) => owner.checkoutPath !== checkout || owner.threadId !== threadId,
+        );
+        yield* saveRetainedOwners(next);
+        owners.delete(threadId);
+        if (owners.size === 0) retainedCheckouts.delete(checkout);
+      }),
+    );
+  });
+
+  const retainCheckout = Effect.fn("ProjectLifecycle.retainCheckout")(function* (
+    threadId: ThreadId,
+    checkoutPath: string,
+  ) {
+    const checkout = NodePath.resolve(checkoutPath);
+    const added = yield* mutate.withPermits(1)(
+      Effect.gen(function* () {
+        const owners = retainedCheckouts.get(checkout) ?? new Set<ThreadId>();
+        if (owners.has(threadId)) return false;
+        yield* saveRetainedOwners([...retainedOwners(), { threadId, checkoutPath: checkout }]);
+        owners.add(threadId);
+        retainedCheckouts.set(checkout, owners);
+        return true;
+      }),
+    );
+    return yield* ensureForThread(threadId, checkout).pipe(
+      Effect.onError(() =>
+        added
+          ? releaseCheckout(threadId, checkout).pipe(Effect.ignore({ log: true }))
+          : Effect.void,
+      ),
+    );
+  });
+
   const buildEnvironmentOf = (lane: LaneRow, settings: ProjectLifecycleSettings) => {
     const shims = shimsDir(rootOf(settings));
     const { spacePath } = lanePaths(lane);
@@ -1329,6 +1401,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     lanes.delete(lane.id);
     live.delete(lane.id);
     missingSince.delete(lane.id);
+    if (retainedCheckouts.delete(lane.checkoutPath)) yield* saveRetainedOwners();
     const { portBase } = lane;
     if (portBase !== null)
       yield* node("release lane ports", () => claims.release(portBase, lane.id)).pipe(
@@ -2015,6 +2088,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     updateSettings,
     changes: SubscriptionRef.changes(status),
     ensureForThread,
+    retainCheckout,
+    releaseCheckout,
     buildEnvironment,
     currentBuildEnvironment,
     free,

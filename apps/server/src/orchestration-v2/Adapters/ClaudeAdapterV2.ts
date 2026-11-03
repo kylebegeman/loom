@@ -1,6 +1,9 @@
 // fork: server-weight
 import { ProviderProcesses, type ProviderProcessRegistration } from "@t3tools/shared/AgentScope";
 import * as DocumentText from "../../provider/DocumentText.ts";
+import * as ClaudeWorktreeService from "../../provider/ClaudeWorktreeService.ts";
+import { ForkRuntime, withForkRuntime } from "../../fork/ForkRuntime.ts";
+import { claudeWorktreeHooks } from "../../provider/claudeWorktreeHooks.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
 import {
@@ -1495,6 +1498,7 @@ export function makeClaudeQueryOptions(input: {
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
+  readonly worktreeHooks?: ClaudeQueryOptions["hooks"];
   /** The thread's T3 MCP session holds the `device` capability. */
   readonly deviceToolsAvailable?: boolean;
   readonly tools?: ClaudeAgentSdkQueryTools;
@@ -1626,8 +1630,16 @@ export function makeClaudeQueryOptions(input: {
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
-    ...(deviceInstructions
-      ? { hooks: { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] } }
+    ...(deviceInstructions || input.worktreeHooks !== undefined
+      ? {
+          hooks: {
+            ...input.worktreeHooks,
+            SubagentStart: [
+              ...(input.worktreeHooks?.SubagentStart ?? []),
+              ...(deviceInstructions ? [{ hooks: [subagentDeviceInstructions] }] : []),
+            ],
+          },
+        }
       : {}),
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
@@ -10409,6 +10421,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
+          const managedWorktrees = yield* (yield* ForkRuntime) === undefined
+            ? Effect.serviceOption(ClaudeWorktreeService.ClaudeWorktreeService)
+            : withForkRuntime(Effect.serviceOption(ClaudeWorktreeService.ClaudeWorktreeService));
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
@@ -10439,6 +10454,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { mcpServers: mcpOverrides.mcpServers }),
             deviceToolsAvailable: mcpSession?.capabilities?.has("device") === true,
+            ...(Option.isSome(managedWorktrees)
+              ? {
+                  worktreeHooks: yield* claudeWorktreeHooks(managedWorktrees.value, {
+                    threadId: turnInput.threadId,
+                    sessionId: nativeThreadId,
+                    projectId: turnInput.appThread.projectId,
+                  }),
+                }
+              : {}),
             permissionMode: queryPolicy.permissionMode,
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined
               ? {}

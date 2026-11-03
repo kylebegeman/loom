@@ -151,17 +151,17 @@ const make = Effect.gen(function* () {
       );
 
     const projection = yield* loadThread(scope);
-    const libraryHandoff = yield* libraryWorktrees(scope.thread.threadId); // fork: library-projects
+    const libraryHandoff = yield* libraryWorktrees(scope.thread.threadId, input.repositoryPath); // fork: library-projects
     const sourceWorktreePath = projection.thread.worktreePath; // fork: library-projects
     // fork: library-projects
-    if (sourceWorktreePath !== null && sourceWorktreePath !== libraryHandoff?.cwd) {
+    if (sourceWorktreePath !== null && sourceWorktreePath !== libraryHandoff?.boundCwd) {
       return yield* alreadyInWorktree(sourceWorktreePath);
     }
     // fork: library-projects
     if (libraryHandoff && !libraryHandoff.canCreate)
       return yield* failure(
         "invalid_request",
-        "Choose a single repository before moving this Library conversation into a worktree.",
+        `Choose repositoryPath from this project: ${libraryHandoff.repositoryPaths.join(", ")}.`,
       );
     if (projection.thread.archivedAt !== null) {
       return yield* failure(
@@ -171,7 +171,7 @@ const make = Effect.gen(function* () {
     }
 
     const project = yield* loadProject(scope, projection.thread.projectId);
-    const projectCwd = libraryHandoff?.cwd ?? project.workspaceRoot; // fork: library-projects
+    const projectCwd = libraryHandoff?.cwd ?? input.repositoryPath ?? project.workspaceRoot; // fork: library-projects
 
     const localStatus = yield* gitWorkflow
       .localStatus({ cwd: projectCwd })
@@ -447,10 +447,11 @@ const make = Effect.gen(function* () {
       // fork: library-projects
       const libraryHandoff = yield* libraryWorktrees(scope.thread.threadId);
       const worktreePath =
-        projection.thread.worktreePath === libraryHandoff?.cwd
+        projection.thread.worktreePath === libraryHandoff?.boundCwd
           ? null
           : projection.thread.worktreePath;
       const result: WorktreeMcpStatusResult = {
+        repositoryPaths: libraryHandoff?.repositoryPaths ?? [project.workspaceRoot],
         attached: worktreePath !== null, // fork: library-projects
         worktreePath, // fork: library-projects
         branch: projection.thread.branch,

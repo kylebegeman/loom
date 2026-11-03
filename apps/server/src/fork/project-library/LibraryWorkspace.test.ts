@@ -72,6 +72,7 @@ import * as ProjectPlacement from "../../project/ProjectPlacement.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { checkpointRefForThreadTurn } from "./checkpointRefs.ts";
+import { libraryWorktreeHandoff } from "./libraryWorktreeHandoff.ts";
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
 
 const recoveryArchiveLimit = vi.hoisted(() => ({ bytes: undefined as number | undefined }));
@@ -1885,6 +1886,34 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       yield* Effect.exit(move(Effect.interrupt));
       expect(yield* boundCwd).toBe(movedCwd);
       yield* service.prepareThreadFiles({ threadId });
+
+      const rootThread = ThreadId.make("reserved-project-conversation");
+      threads.set(rootThread, { projectId: root.localProjectId, worktreePath: root.cwd });
+      yield* service.bindThread({ threadId: rootThread, binding: binding([]), project });
+      const server = path.join(request.rootPath, "server");
+      const sharedBranch = yield* git(server, ["branch", "--show-current"]);
+      const componentWorktree = path.join(parent, "worktrees", "server");
+      yield* git(server, ["worktree", "add", "-b", "isolated-server", componentWorktree]);
+      expect(
+        yield* service.moveThread({
+          threadId: rootThread,
+          worktreePath: componentWorktree,
+          move: Effect.succeed(true),
+        }),
+      ).toBe(true);
+      expect(yield* receipts.getBinding(rootThread)).toMatchObject({
+        cwd: componentWorktree,
+        worktreeOf: root.cwd,
+        localProjectId: root.localProjectId,
+        binding: binding([]),
+      });
+      threads.set(rootThread, {
+        projectId: root.localProjectId,
+        worktreePath: componentWorktree,
+      });
+      yield* service.prepareThreadFiles({ threadId: rootThread });
+      expect(yield* git(server, ["branch", "--show-current"])).toBe(sharedBranch);
+      expect(yield* fs.exists(path.join(request.rootPath, ".git"))).toBe(false);
     }),
   );
   it.effect("downloads a reserved copy once however many conversations wait on it", () =>
@@ -2119,7 +2148,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     Effect.gen(function* () {
       const rootPath = yield* makeTemp;
       yield* initRepo(rootPath);
-      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const threads = new Map<ThreadId, FakeThread>();
+      const service = yield* workspaceWithThreads(threads);
       const receipts = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
       const originalProject = projectFor(true);
       const copy = yield* service.prepareCopy({
@@ -2162,9 +2192,30 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       });
       const newThread = ThreadId.make("new-context-thread");
       yield* receipts.bind(newThread, updated, updatedProject);
+      threads.set(newThread, { projectId: updated.localProjectId, worktreePath: updated.cwd });
+      expect(yield* service.bindThread({ threadId: newThread, binding: updated.binding })).toEqual(
+        updated,
+      );
       expect((yield* receipts.getBoundProject(oldThread))?.brief).toBe(originalProject.brief);
       expect((yield* receipts.getBoundProject(newThread))?.brief).toBe("Updated project direction");
       expect(updated.binding.workingCopyId).toBe(copy.id);
+      expect((yield* receipts.get(copy.id)).copy.projectRevision).toBe(1);
+      const handoff = yield* libraryWorktreeHandoff;
+      expect(yield* handoff(newThread)).toMatchObject({ cwd: rootPath, canCreate: true });
+      const path = yield* Path.Path;
+      const worktree = path.join(yield* makeTemp, "updated-context");
+      yield* git(rootPath, ["worktree", "add", "-b", "updated-context", worktree]);
+      expect(
+        yield* service.moveThread({
+          threadId: newThread,
+          worktreePath: worktree,
+          move: Effect.succeed(true),
+        }),
+      ).toBe(true);
+      expect((yield* receipts.getBinding(newThread))?.cwd).toBe(worktree);
+      expect((yield* receipts.getBinding(oldThread))?.cwd).toBe(rootPath);
+      expect((yield* receipts.getBoundProject(oldThread))?.brief).toBe(originalProject.brief);
+      expect((yield* receipts.getBoundProject(newThread))?.brief).toBe("Updated project direction");
       expect((yield* receipts.get(copy.id)).copy.projectRevision).toBe(1);
       expect((yield* Effect.result(receipts.bind(oldThread, updated, updatedProject)))._tag).toBe(
         "Failure",

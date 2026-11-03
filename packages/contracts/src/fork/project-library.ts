@@ -621,7 +621,7 @@ export const LibraryResolvedBinding = Schema.Struct({
   legacyWorktreeRoot: Schema.optional(Schema.String),
   /**
    * The copy folder a conversation's own worktree was made from. `cwd` is then that worktree,
-   * a linked worktree of this folder's repository, and `repositoryPaths` still names the folder.
+   * a linked worktree of an in-scope component, and `repositoryPaths` still names the source repositories.
    */
   worktreeOf: Schema.optional(Schema.String),
   project: Schema.optional(LibraryProject),

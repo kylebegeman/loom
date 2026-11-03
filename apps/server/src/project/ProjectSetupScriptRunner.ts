@@ -66,6 +66,7 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectId?: string;
   readonly projectCwd?: string;
   readonly worktreePath: string;
+  readonly terminalId?: string;
   /** Internal restoration/settlement callers hold the checkout lease through completion. */
   readonly workspaceLeaseHeld?: boolean; // fork: project-lifecycle
   readonly trigger?: "setup" | "settle";
@@ -458,9 +459,10 @@ export const make = Effect.gen(function* () {
 
     // Earlier settle shells may still run foreground programs; do not type resumed settles into them.
     const terminalId =
-      trigger === "settle"
+      input.terminalId ??
+      (trigger === "settle"
         ? `settle-${script.id}-${(yield* crypto.randomUUIDv4().pipe(Effect.orDie)).slice(0, 8)}`
-        : `setup-${script.id}`;
+        : `setup-${script.id}`);
     const cwd = input.worktreePath;
     const env = {
       ...projectScriptRuntimeEnv({

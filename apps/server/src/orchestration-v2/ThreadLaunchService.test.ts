@@ -2980,7 +2980,7 @@ const launchLibraryStore = Layer.mock(LibraryWorkspaceStore)({
 
 // fork: library-projects
 it.effect(
-  "refuses both worktree strategies for a Library copy before creating a conversation",
+  "refuses unsupported or unavailable Library worktree preparation before creating a conversation",
   () => {
     const harness = makeHarness({ libraryWorkspaceStore: launchLibraryStore });
     return Effect.gen(function* () {
@@ -3000,7 +3000,9 @@ it.effect(
         if (error._tag === "ThreadLaunchError")
           assert.equal(
             (error.cause as Error).message,
-            LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL,
+            workspace.type === "existing_worktree"
+              ? LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL
+              : "Library launch services are unavailable on this computer. Restart Loom, then retry.",
           );
         assert.isNull(yield* threads.getThreadShell(input.threadId));
       }
@@ -3013,8 +3015,14 @@ it.effect(
 it.effect(
   "uses the Library launch receipt and binding before starting or replaying a message",
   () => {
+    const bindings = new Map<ThreadId, LibraryResolvedBinding>();
     const harness = makeHarness({
-      libraryWorkspaceStore: launchLibraryStore,
+      libraryWorkspaceStore: Layer.mock(LibraryWorkspaceStore)({
+        receipts: Effect.succeed([launchLibraryReceipt]),
+        get: () => Effect.succeed(launchLibraryReceipt),
+        getBinding: (threadId) => Effect.succeed(bindings.get(threadId) ?? null),
+        getBoundProject: () => Effect.succeed(launchLibraryProject),
+      }),
       providers: [
         {
           instanceId: modelSelection.instanceId,
@@ -3035,7 +3043,6 @@ it.effect(
     });
     return Effect.gen(function* () {
       const threads = yield* ThreadManagement.ThreadManagementService;
-      const bindings = new Map<ThreadId, LibraryResolvedBinding>();
       const expectedBinding = {
         projectId: launchLibraryProject.id,
         projectRevision: 2,
@@ -3046,7 +3053,7 @@ it.effect(
       const resolved = {
         localProjectId: projectId,
         cwd: project.workspaceRoot,
-        repositoryPaths: [],
+        repositoryPaths: [project.workspaceRoot],
         binding: expectedBinding,
       };
       const executeLibrary = Effect.fn("test.LibraryLaunch.execute")(function* (
@@ -3091,6 +3098,16 @@ it.effect(
       });
       const services = Layer.mergeAll(
         Layer.mock(LibraryWorkspace.LibraryWorkspace)({
+          moveThread: (input) =>
+            Effect.gen(function* () {
+              const previous = bindings.get(input.threadId)!;
+              bindings.set(input.threadId, {
+                ...previous,
+                cwd: input.worktreePath,
+                worktreeOf: previous.cwd,
+              });
+              return yield* input.move;
+            }),
           resolveBinding: (input) => {
             assert.deepEqual(input.binding, expectedBinding);
             return Effect.succeed(resolved);
@@ -3127,6 +3144,58 @@ it.effect(
       assert.deepEqual(bindings.get(first.threadId)?.binding, expectedBinding);
       assert.equal(second.projection.messages.length, 1);
       assert.equal(second.projection.runs.length, 1);
+      const isolated = yield* (yield* ThreadLaunch.ThreadLaunchService)
+        .launch({
+          ...input,
+          commandId: CommandId.make("library:isolated"),
+          threadId: ThreadId.make("library:isolated"),
+          libraryCaller: { sessionId: "launch-session" },
+          workspaceStrategy: {
+            type: "worktree",
+            baseRef: "unpushed-parent-head",
+            repositoryPath: project.workspaceRoot,
+          },
+          waitForPreparation: true,
+        })
+        .pipe(Effect.provideService(ForkRuntime, runtime as Context.Context<ForkServices>));
+      assert.equal(
+        (yield* threads.getThreadProjection(isolated.threadId)).thread.worktreePath,
+        "/repo-worktrees/feature",
+      );
+      assert.equal(bindings.get(isolated.threadId)?.cwd, "/repo-worktrees/feature");
+      assert.equal(bindings.get(first.threadId)?.cwd, project.workspaceRoot);
+      assert.deepInclude(harness.createWorktree.mock.calls[0]?.[0], {
+        cwd: project.workspaceRoot,
+        refName: "unpushed-parent-head",
+      });
+
+      const setupEntered = yield* Deferred.make<void>();
+      harness.runSetup.mockImplementationOnce(() =>
+        Deferred.succeed(setupEntered, undefined).pipe(Effect.andThen(Effect.never)),
+      );
+      const cancelled = yield* (yield* ThreadLaunch.ThreadLaunchService)
+        .launch({
+          ...input,
+          commandId: CommandId.make("library:cancel"),
+          threadId: ThreadId.make("library:cancel"),
+          libraryCaller: { sessionId: "launch-session" },
+          workspaceStrategy: {
+            type: "worktree",
+            baseRef: "unpushed-parent-head",
+            repositoryPath: project.workspaceRoot,
+          },
+        })
+        .pipe(Effect.provideService(ForkRuntime, runtime as Context.Context<ForkServices>));
+      yield* Deferred.await(setupEntered);
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      assert.isTrue(yield* tracker.cancel(cancelled.threadId));
+      assert.equal(bindings.get(cancelled.threadId)?.cwd, "/repo-worktrees/feature");
+      assert.equal(
+        (yield* threads.getThreadProjection(cancelled.threadId)).thread.worktreePath,
+        "/repo-worktrees/feature",
+      );
+      assert.equal(harness.removeWorktree.mock.calls.length, 0);
+
       const service = yield* OrchestratorMcp.OrchestratorMcpService.pipe(
         Effect.provide(
           OrchestratorMcp.layer.pipe(
@@ -3168,7 +3237,7 @@ it.effect(
       assert.equal(sibling.messages.length, 1);
       assert.equal(sibling.messages[0]?.text, "Sibling task");
       assert.equal(sibling.runs.length, 1);
-      assert.equal(harness.createWorktree.mock.calls.length, 0);
+      assert.equal(harness.createWorktree.mock.calls.length, 2);
     }).pipe(Effect.provide(harness.layer));
   },
 );

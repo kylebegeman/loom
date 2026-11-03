@@ -76,6 +76,7 @@ export type ThreadLaunchWorkspaceStrategy =
     }
   | {
       readonly type: "worktree";
+      readonly repositoryPath?: string | undefined;
       readonly baseRef: string;
       readonly branch?: string | undefined;
       readonly startFromOrigin?: boolean | undefined;
@@ -101,6 +102,7 @@ type LibraryLaunchBinding = {
   readonly project: LibraryProject;
   readonly binding: LibraryThreadBinding;
   readonly cwd: string;
+  readonly repositoryPath?: string;
 };
 
 export interface ThreadLaunchInput {
@@ -314,7 +316,11 @@ const make = Effect.gen(function* () {
       if (input.projectId.startsWith("library-copy:")) return yield* missing();
       return null;
     }
-    if (input.workspaceStrategy.type !== "root")
+    if (
+      input.workspaceStrategy.type === "existing_worktree" &&
+      (inherited?.worktreeOf === undefined ||
+        input.workspaceStrategy.worktreePath !== inherited.cwd)
+    )
       return yield* new LibraryError({
         reason: "blocked",
         detail: LibraryFolderGuard.LIBRARY_FOLDER_CHANGE_REFUSAL,
@@ -359,6 +365,24 @@ const make = Effect.gen(function* () {
         detail:
           "The Library copy no longer matches this project's folder. Reopen the copy from the Library project, then retry.",
       });
+    if (input.workspaceStrategy.type === "worktree") {
+      const repositoryPath =
+        input.workspaceStrategy.repositoryPath ??
+        (inherited?.worktreeOf === undefined
+          ? resolved.repositoryPaths.length === 1
+            ? resolved.repositoryPaths[0]
+            : undefined
+          : inherited.cwd);
+      if (
+        repositoryPath === undefined ||
+        (!resolved.repositoryPaths.includes(repositoryPath) && repositoryPath !== inherited?.cwd)
+      )
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: `Choose repositoryPath from this project: ${resolved.repositoryPaths.join(", ")}.`,
+        });
+      return { project, binding, cwd: resolved.cwd, repositoryPath };
+    }
     return { project, binding, cwd: resolved.cwd };
   });
   // fork: library-projects -- deferred delegated runs cannot start before their binding is durable.
@@ -406,7 +430,7 @@ const make = Effect.gen(function* () {
     const unresolved = yield* Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* projects.getById(input.projectId));
       if (project === undefined) return undefined;
-      const cwd = project.workspaceRoot;
+      const cwd = strategy.repositoryPath ?? project.workspaceRoot;
       // `git worktree add` reads `-` as the previous checkout.
       if (yield* git.hasCommit({ cwd, refName: baseRef === "-" ? "@{-1}" : baseRef }))
         return undefined;
@@ -423,7 +447,7 @@ const make = Effect.gen(function* () {
       return yield* new ThreadLaunchBaseRefError({
         projectId: unresolved.id,
         projectTitle: unresolved.title,
-        workspaceRoot: unresolved.workspaceRoot,
+        workspaceRoot: strategy.repositoryPath ?? unresolved.workspaceRoot,
         baseRef,
       });
   });
@@ -444,11 +468,16 @@ const make = Effect.gen(function* () {
       ),
     );
 
+    const projectCwd =
+      input.workspaceStrategy.type === "worktree"
+        ? (input.workspaceStrategy.repositoryPath ?? project.workspaceRoot)
+        : project.workspaceRoot;
     const reused = input.reusedWorktree;
     const createdWorktree = input.workspaceStrategy.type === "worktree"; // fork: project-lifecycle
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
+    let libraryWorkspaceRecorded = false;
     let runReleased = false;
     // Stop background renames before forgetting worktrees; completed renames record them again.
     let branchRename: Fiber.Fiber<unknown> | null = null;
@@ -529,7 +558,13 @@ const make = Effect.gen(function* () {
         // fork: library-projects -- the thread exists by now, also on a retry. Recording the
         // worktree on a Library-bound thread is refused only after the worktree and branch
         // exist, and that rejection never says why.
-        if (Option.isSome(libraryFolders))
+        if (
+          Option.isSome(libraryFolders) &&
+          (Option.isNone(libraryStore) ||
+            (yield* libraryStore.value
+              .getBinding(threadId)
+              .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)))) === null)
+        )
           yield* libraryFolders.value
             .assertMayLeaveFolder(threadId)
             .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))); // fork: library-projects
@@ -550,7 +585,7 @@ const make = Effect.gen(function* () {
           input.workspaceStrategy.startFromOrigin === true
             ? yield* git
                 .resolveWorktreeBaseRemote({
-                  cwd: project.workspaceRoot,
+                  cwd: projectCwd,
                   refName: input.workspaceStrategy.baseRef,
                 })
                 .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)))
@@ -560,7 +595,7 @@ const make = Effect.gen(function* () {
         if (remote !== null) {
           const remoteBase = yield* git
             .fetchWorktreeBaseCommit({
-              cwd: project.workspaceRoot,
+              cwd: projectCwd,
               refName: input.workspaceStrategy.baseRef,
               remote,
             })
@@ -576,7 +611,7 @@ const make = Effect.gen(function* () {
           isTemporaryWorktreeBranch(branch) &&
           (yield* git
             .hasCommit({
-              cwd: project.workspaceRoot,
+              cwd: projectCwd,
               refName: `refs/heads/${WORKTREE_BRANCH_PREFIX}`,
             })
             .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId))))
@@ -587,7 +622,7 @@ const make = Effect.gen(function* () {
         const worktree = yield* git
           .createWorktree(
             {
-              cwd: project.workspaceRoot,
+              cwd: projectCwd,
               refName: startRef,
               newRefName: branch!,
               baseRefName,
@@ -614,15 +649,42 @@ const make = Effect.gen(function* () {
 
       // Do not rewrite reused worktrees; that could undo the original branch rename.
       if (reused === undefined) {
-        yield* threads
-          .dispatch({
-            type: "thread.metadata.update",
-            commandId: CommandId.make(`${input.commandId}:workspace`),
-            threadId,
-            branch,
-            worktreePath,
-          })
-          .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+        const update = threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`${input.commandId}:workspace`),
+          threadId,
+          branch,
+          worktreePath,
+        });
+        const bound = Option.isSome(libraryStore)
+          ? yield* libraryStore.value
+              .getBinding(threadId)
+              .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)))
+          : null;
+        if (bound !== null && worktreePath !== null && bound.cwd !== worktreePath) {
+          yield* withForkRuntime(
+            Effect.flatMap(LibraryWorkspace.LibraryWorkspace, (workspace) =>
+              workspace.moveThread({
+                threadId,
+                worktreePath,
+                move: update.pipe(
+                  Effect.as(true),
+                  Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+                ),
+              }),
+            ),
+          ).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                libraryWorkspaceRecorded = true;
+              }),
+            ),
+            Effect.uninterruptible,
+            Effect.mapError(mapError(input, "update-thread", threadId)),
+          );
+        } else {
+          yield* update.pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+        }
       }
       workspaceRecorded = true;
 
@@ -720,7 +782,7 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
       }
       yield* setupTracker.stageStatus(threadId, "setup-script", "running");
-      const setupCwd = worktreePath ?? project.workspaceRoot;
+      const setupCwd = worktreePath ?? projectCwd;
       const rootSetupPending =
         setupCwd === project.workspaceRoot &&
         (yield* SetupMarker.exists(project.workspaceRoot).pipe(
@@ -733,7 +795,7 @@ const make = Effect.gen(function* () {
         .runForThread({
           threadId,
           projectId: input.projectId,
-          projectCwd: project.workspaceRoot,
+          projectCwd,
           worktreePath: setupCwd, // fork: project-lifecycle
           observeCompletion: {
             onOutputLine: (line: string) => setupTracker.appendTail(threadId, "setup-script", line),
@@ -846,34 +908,33 @@ const make = Effect.gen(function* () {
           if (
             createdWorktree && // fork: project-lifecycle
             createdWorktreePath &&
+            !libraryWorkspaceRecorded &&
             ((cancelled && !runReleased) || !workspaceRecorded)
           ) {
             if (branchRename !== null) yield* Fiber.interrupt(branchRename);
             const removedPath = createdWorktreePath;
             // Forget worktrees only after removal succeeds; failed removals must not reuse partially written checkouts.
-            yield* git
-              .removeWorktree({ cwd: project.workspaceRoot, path: removedPath, force: true })
-              .pipe(
-                Effect.andThen(
-                  threads
-                    .dispatch({
-                      type: "thread.metadata.update",
-                      commandId: CommandId.make(`${input.commandId}:cancel-workspace`),
-                      threadId,
-                      worktreePath: null,
-                      branch: null,
-                    })
-                    .pipe(Effect.ignore),
-                ),
-                Effect.catchCause((removeCause) =>
-                  Effect.logWarning("Failed to remove an abandoned thread worktree", {
-                    commandId: input.commandId,
+            yield* git.removeWorktree({ cwd: projectCwd, path: removedPath, force: true }).pipe(
+              Effect.andThen(
+                threads
+                  .dispatch({
+                    type: "thread.metadata.update",
+                    commandId: CommandId.make(`${input.commandId}:cancel-workspace`),
                     threadId,
-                    path: removedPath,
-                    cause: removeCause,
-                  }),
-                ),
-              );
+                    worktreePath: null,
+                    branch: null,
+                  })
+                  .pipe(Effect.ignore),
+              ),
+              Effect.catchCause((removeCause) =>
+                Effect.logWarning("Failed to remove an abandoned thread worktree", {
+                  commandId: input.commandId,
+                  threadId,
+                  path: removedPath,
+                  cause: removeCause,
+                }),
+              ),
+            );
           }
         }),
       ),
@@ -1095,31 +1156,33 @@ const make = Effect.gen(function* () {
 
         const workspaceStrategy: ThreadLaunchWorkspaceStrategy =
           // fork: library-projects
-          libraryLaunch !== null
-            ? {
-                type: "existing_worktree",
-                worktreePath: libraryLaunch.cwd,
-                ...(input.workspaceStrategy.branch === undefined
-                  ? {}
-                  : { branch: input.workspaceStrategy.branch }),
-              }
-            : input.workspaceStrategy.type === "root" && Option.isNone(launchReceipt)
-              ? Option.match(
-                  yield* managedFolders
-                    .folderForThread({
-                      projectId: input.projectId,
-                      threadId: candidateThreadId,
-                      text: input.initialMessage?.text ?? input.title,
-                    })
-                    .pipe(
-                      Effect.mapError(mapError(input, "provision-worktree", candidateThreadId)),
-                    ),
-                  {
-                    onNone: () => input.workspaceStrategy,
-                    onSome: (worktreePath) => ({ type: "existing_worktree", worktreePath }),
-                  },
-                )
-              : input.workspaceStrategy;
+          libraryLaunch !== null && input.workspaceStrategy.type === "worktree"
+            ? { ...input.workspaceStrategy, repositoryPath: libraryLaunch.repositoryPath }
+            : libraryLaunch !== null
+              ? {
+                  type: "existing_worktree",
+                  worktreePath: libraryLaunch.cwd,
+                  ...(input.workspaceStrategy.branch === undefined
+                    ? {}
+                    : { branch: input.workspaceStrategy.branch }),
+                }
+              : input.workspaceStrategy.type === "root" && Option.isNone(launchReceipt)
+                ? Option.match(
+                    yield* managedFolders
+                      .folderForThread({
+                        projectId: input.projectId,
+                        threadId: candidateThreadId,
+                        text: input.initialMessage?.text ?? input.title,
+                      })
+                      .pipe(
+                        Effect.mapError(mapError(input, "provision-worktree", candidateThreadId)),
+                      ),
+                    {
+                      onNone: () => input.workspaceStrategy,
+                      onSome: (worktreePath) => ({ type: "existing_worktree", worktreePath }),
+                    },
+                  )
+                : input.workspaceStrategy;
         const initialBranch = workspaceStrategy.branch ?? null;
         const initialWorktreePath =
           workspaceStrategy.type === "existing_worktree" ? workspaceStrategy.worktreePath : null;

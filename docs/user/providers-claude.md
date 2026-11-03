@@ -94,6 +94,54 @@ can still be started by you. Invoke those one per message: Claude directly runs
 only the last named skill and may try to start earlier ones through its Skill
 tool, which refuses skills reserved for manual invocation.
 
+## Parallel code workflows
+
+Ask Claude to use a Workflow when independent parts of a change can run together.
+Give each code-editing agent `isolation: "worktree"`. Loom creates a separate branch
+and checkout from the parent's current HEAD, including committed changes that have
+not been pushed. Native `Agent` calls can use the same isolation with
+`run_in_background: false`. Other providers can use `delegate_task` with
+`isolation: "worktree"`.
+
+For example, a requested Claude Workflow can fan out screen packages and then give
+one integration agent the results:
+
+```js
+const screens = ["Account", "Inbox", "Library"];
+const edits = await Promise.all(
+  screens.map((screen) =>
+    agent(
+      `Redesign the ${screen} package. Work only in your checkout. Use its own
+       DerivedData and build caches, build and test the package, commit your
+       changes, and return the branch name and verification results.`,
+      { isolation: "worktree", label: screen },
+    ),
+  ),
+);
+await agent(
+  `Integrate these branches in the parent checkout: ${JSON.stringify(edits)}.
+   Merge each branch, resolve conflicts, rebuild, and run the full test suite.`,
+  { label: "Integration" },
+);
+```
+
+Each checkout needs its own DerivedData, Swift `.build`, `node_modules` and mutable
+build caches. Inside a lane, use `"$LOOM_LANE_BUILD/DerivedData"` for Xcode, or choose
+a checkout-local directory when lanes are disabled. Keep Swift's scratch path and
+Node's dependency directory local to the checkout too. A single lock around all
+editors makes independent work sequential; reserve that for work that truly shares
+files. `TMPDIR` is per lane, so a lock there cannot coordinate different lanes.
+Use `mkdir "$LOOM_SHARED_LOCK_DIR/integration.lock"` for a lock shared by lanes on
+one computer, and remove it when integration finishes.
+
+Claude keeps completed agents' branches available for integration. Loom removes
+clean, merged Claude worktrees and their branches when the parent stops; dirty or
+unmerged work stays available. In a multi-repository project, choose a component's
+`repositoryPath` from `t3_worktree_status.repositoryPaths` for a worktree handoff or
+isolated delegate. The parent folder does not need to be a Git repository. Native Claude worktree
+isolation starts from its current repository, so use a component delegate or handoff
+first when the conversation starts in a non-Git parent folder.
+
 ## Task lists
 
 To show Claude task lists in the web and desktop apps, add

@@ -1943,9 +1943,7 @@ const make = Effect.gen(function* () {
     });
     if (input.worktreePath === undefined) return resolved;
     const receipt = yield* store.get(resolved.binding.workingCopyId);
-    if (
-      resolved.repositoryPaths.length === 0 || !(yield* fs.exists(input.worktreePath))
-    )
+    if (resolved.repositoryPaths.length === 0 || !(yield* fs.exists(input.worktreePath)))
       return yield* new LibraryError({ reason: "invalid" });
     const worktree = yield* fs.realPath(input.worktreePath);
     if (

@@ -205,7 +205,7 @@ describe("ProjectSetupScriptRunner", () => {
 });
 
 // fork: project-lifecycle
-it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)(
+it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure"] as const)(
   "prepares the setup directory's lane before opening its shell (%s)",
   (mode) =>
     Effect.gen(function* () {
@@ -281,6 +281,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
       const run = runner
         .runForThread({
           threadId: "thread-setup-order",
+          ...(mode === "isolated" ? { terminalId: "claude-setup-isolated" } : {}),
           worktreePath: "/repo",
           workspaceLeaseHeld: true,
           trigger: mode === "settle" ? "settle" : "setup",
@@ -311,7 +312,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
           ),
         );
       const running = yield* run.pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
-      if (mode === "setup" || mode === "failure") {
+      if (mode === "setup" || mode === "isolated" || mode === "failure") {
         yield* Effect.raceFirst(
           Deferred.await(entered),
           Fiber.join(running).pipe(Effect.andThen(Effect.die("Setup ran before lane preparation"))),
@@ -337,14 +338,19 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
         if (mode !== "no-script") yield* Deferred.await(written);
         assert.deepEqual(
           events,
-          mode === "setup"
+          mode === "setup" || mode === "isolated"
             ? ["lane-start", "lane-ready", "open", "setup"]
             : mode === "no-script"
               ? []
               : ["open", "setup"],
         );
       }
-      if (mode !== "setup" && mode !== "failure")
+      if (mode === "isolated" && result._tag === "Success")
+        assert.equal(
+          result.success.status === "started" ? result.success.terminalId : null,
+          "claude-setup-isolated",
+        );
+      if (mode !== "setup" && mode !== "isolated" && mode !== "failure")
         assert.equal(ensureForThread.mock.calls.length, 0);
     }),
 );

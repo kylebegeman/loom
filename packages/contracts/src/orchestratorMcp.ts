@@ -170,6 +170,10 @@ export type OrchestratorMcpTerminalDelegatedTaskStatus =
   typeof OrchestratorMcpTerminalDelegatedTaskStatus.Type;
 
 export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
+  repositoryPath: Schema.optional(TrimmedNonEmptyString).annotate({
+    description:
+      "With isolation worktree, choose the component repository from t3_worktree_status.repositoryPaths. Omit for the parent checkout.",
+  }),
   task: OrchestratorMcpPrompt,
   target: Schema.optional(OrchestratorMcpTarget),
   title: Schema.optional(OrchestratorMcpTitle),

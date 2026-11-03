@@ -12,6 +12,7 @@ import {
   OrchestratorMcpTarget,
   type OrchestrationV2ThreadShell,
   type ScheduledTask,
+  type Project,
   ScheduledTaskId,
   ProjectId,
   ProviderDriverKind,
@@ -1838,11 +1839,12 @@ describe("OrchestratorMcpService provider resolution", () => {
 
   // fork: library-projects
   it.effect(
-    "binds shared Library children before preparation and refuses isolated children before dispatch",
+    "binds shared and isolated Library children before preparation and carries the component source",
     () =>
       Effect.gen(function* () {
         const stages: string[] = [];
         let delegated = false;
+        let parentPath: string | null = null;
         const task = {
           id: taskId,
           threadId: parentThreadId,
@@ -1872,7 +1874,14 @@ describe("OrchestratorMcpService provider resolution", () => {
             getThreadRecords: (threadId) =>
               Effect.succeed(
                 threadId === parentThreadId
-                  ? parentProjection(delegated ? [task] : [])
+                  ? {
+                      ...parentProjection(delegated ? [task] : []),
+                      thread: {
+                        ...parentProjection([]).thread,
+                        worktreePath: parentPath,
+                        branch: "feature/parent",
+                      },
+                    }
                   : childProjection,
               ),
             dispatch: (command) =>
@@ -1923,7 +1932,14 @@ describe("OrchestratorMcpService provider resolution", () => {
             ]),
           }),
           adapterRegistryLayer([codexInstanceId, antigravityInstanceId]),
-          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () =>
+              Effect.succeedSome({
+                id: projectId,
+                title: "Multi repo",
+                workspaceRoot: "/copy",
+              } as Project),
+          }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(RemoteDelegation.RemoteDelegation)({}),
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
@@ -1935,12 +1951,13 @@ describe("OrchestratorMcpService provider resolution", () => {
             .delegateTask(scope, {
               task: "Isolated",
               isolation: "worktree",
+              repositoryPath: "/outside",
               mode: "async",
               clientRequestId: "library-isolated",
               target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
             })
             .pipe(Effect.flip);
-          assert.equal(refused.message, "Library copies use their own folder.");
+          assert.equal(refused.message, "Choose a repository in this project.");
           assert.deepEqual(yield* Ref.get(dispatched), []);
           const result = yield* service.delegateTask(scope, {
             task: "Summarize the diff.",
@@ -1960,23 +1977,66 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.equal(request.type, "delegated_task.request");
           assert.equal(request.modelSelection.instanceId, antigravityInstanceId);
           assert.equal(request.modelSelection.model, "ant-model");
+          yield* service.delegateTask(scope, {
+            task: "Edit the API in isolation.",
+            isolation: "worktree",
+            repositoryPath: "/copy/api",
+            mode: "async",
+            clientRequestId: "library-component",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+          });
+          assert.deepInclude((yield* Ref.get(dispatched))[1], {
+            workspaceStrategy: {
+              type: "worktree",
+              baseRef: "parent-component-head",
+              startFromOrigin: false,
+              repositoryPath: "/copy/api",
+            },
+          });
+          parentPath = "/worktrees/parent";
+          yield* service.delegateTask(scope, {
+            task: "Help in the parent checkout.",
+            mode: "async",
+            clientRequestId: "library-shared-parent",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+          });
+          assert.deepInclude((yield* Ref.get(dispatched))[2], {
+            workspaceStrategy: {
+              type: "existing_worktree",
+              worktreePath: parentPath,
+              branch: "feature/parent",
+            },
+          });
         }).pipe(
           Effect.provide(
             OrchestratorMcpService.layer.pipe(
-              Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+              Layer.provide(
+                Layer.mock(GitVcsDriver.GitVcsDriver)({
+                  resolveCommit: (input) => {
+                    assert.equal(input.cwd, "/copy/api");
+                    return Effect.succeed({ commitSha: "parent-component-head" });
+                  },
+                }),
+              ),
               Layer.provide(
                 Layer.mock(ThreadLaunchService.ThreadLaunchService)({
                   resolveLibraryBinding: (input) => {
                     assert.equal(input.callerThreadId, parentThreadId);
-                    if (input.workspaceStrategy.type !== "root")
+                    if (
+                      input.workspaceStrategy.type === "worktree" &&
+                      input.workspaceStrategy.repositoryPath !== "/copy/api"
+                    )
                       return Effect.fail(
                         new LibraryError({
                           reason: "blocked",
-                          detail: "Library copies use their own folder.",
+                          detail: "Choose a repository in this project.",
                         }),
                       );
                     return Effect.succeed({
                       cwd: "/copy",
+                      ...(input.workspaceStrategy.type === "worktree"
+                        ? { repositoryPath: "/copy/api" }
+                        : {}),
                       project: {
                         id: "shared",
                         title: "Shared",

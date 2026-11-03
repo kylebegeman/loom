@@ -600,6 +600,48 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("retains parallel worker lanes for their parent across watchdog ticks and restart", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const parentId = ThreadId.make("parent");
+      t.threads.push(thread(parentId, { activeRunId: RunId.make("orchestrating") }));
+      const primary = yield* t.service.ensureForThread(parentId);
+      const checkouts = ["screen-a", "screen-b", "screen-c"].map((name) =>
+        NodePath.join(t.home, "worktrees", name),
+      );
+      for (const checkout of checkouts) NodeFS.mkdirSync(checkout, { recursive: true });
+      const workers = yield* Effect.forEach(
+        checkouts,
+        (checkout) => t.service.retainCheckout(parentId, checkout),
+        { concurrency: 3 },
+      );
+      for (const worker of workers)
+        NodeFS.writeFileSync(`${worker.laneDir}/space/build/output`, "worker build");
+      expect((yield* t.service.tick()).lanes.map((lane) => lane.checkoutPath).sort()).toEqual(
+        [t.checkout, ...checkouts].sort(),
+      );
+      expect(t.threads[0]?.worktreePath).toBeNull();
+
+      const restarted = yield* t.create;
+      yield* restarted.reconcile();
+      const resumed = yield* restarted.tick();
+      for (const worker of workers) {
+        expect(laneOf(resumed, worker.checkoutPath)?.threadIds).toEqual([parentId]);
+        expect(NodeFS.readFileSync(`${worker.laneDir}/space/build/output`, "utf8")).toBe(
+          "worker build",
+        );
+      }
+      t.threads[0] = thread(parentId, { settledOverride: "settled" });
+      expect((yield* restarted.tick()).lanes).toHaveLength(3);
+      for (const checkout of checkouts) yield* restarted.releaseCheckout(parentId, checkout);
+      expect((yield* restarted.tick()).lanes).toEqual([]);
+      expect(NodeFS.existsSync(primary.laneDir)).toBe(false);
+      for (const worker of workers) expect(NodeFS.existsSync(worker.laneDir)).toBe(false);
+      for (const checkout of [t.checkout, ...checkouts])
+        expect(NodeFS.existsSync(checkout)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("preserves shared checkout process leases until the last holder settles", () =>
     Effect.gen(function* () {
       const t = yield* setup;

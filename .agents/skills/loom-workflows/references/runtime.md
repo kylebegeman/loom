@@ -19,7 +19,21 @@ emphasis does not. PR creation, external messages, publishing, deployment, produ
 changes and new production dependencies require applicable authorization. Preserve any
 browser/device permission restrictions that the current instruction has not overridden.
 
-Keep work isolated, preserve other owners' edits, verify relevant behavior, commit owned
-changes and resolve branch/worktree lifecycle according to repository rules. Evidence
-and working checkpoints stay outside the repository. Never print credentials; use Vault
-or request_secret for actual secret needs.
+Run independent code-editing units in parallel, one Loom-managed checkout each. Use
+`delegate_task` with `isolation: "worktree"`, or Claude's native `Agent` with
+`isolation: "worktree"` and `run_in_background: false`. An explicitly requested Claude
+Workflow can use `agent(prompt, { isolation: "worktree" })` in `Promise.all`; Loom's
+worktree hooks create those checkouts from the parent's current HEAD. For a component
+repository, pass its `repositoryPath` from `t3_worktree_status.repositoryPaths` to the
+worktree handoff or delegate. The project's parent folder need not be a Git repository.
+
+Keep DerivedData, `.build`, `node_modules` and mutable build caches specific to each
+checkout. One integration owner merges the branches, resolves conflicts, rebuilds and
+runs the full suite. Use a lock across editors only for work that truly shares files.
+`TMPDIR` is per lane; put cross-lane locks in `LOOM_SHARED_LOCK_DIR`. After integration,
+Loom removes clean, merged Claude worktrees and branches when the parent stops. Keep
+unmerged work available and resolve delegated branch/worktree lifecycle through Loom.
+
+Preserve other owners' edits, verify relevant behavior and commit owned changes.
+Evidence and working checkpoints stay outside the repository. Never print credentials;
+use Vault or request_secret for actual secret needs.

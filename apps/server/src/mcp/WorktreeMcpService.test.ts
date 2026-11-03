@@ -352,6 +352,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
           ? [
               Layer.mock(LibraryWorkspace.LibraryWorkspace)({
                 threadBinding: () => Effect.succeed(binding),
+                threadProject: () => Effect.succeed(null),
                 resolveBinding: () =>
                   Effect.succeed({
                     binding,
@@ -476,7 +477,29 @@ describe("t3_worktree_handoff", () => {
   );
 
   // fork: library-projects
-  it.effect("refuses a multi-repository Library folder before creating a worktree", () =>
+  it.effect("selects an isolated component without moving its shared checkout", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        libraryBound: true,
+        libraryMultiRepo: true,
+        thread: { worktreePath: workspaceRoot },
+      });
+      expect(yield* runStatus(harness)).toMatchObject({
+        attached: false,
+        repositoryPaths: ["/repo/project/api", "/repo/project/web"],
+      });
+      const result = yield* runHandoff(harness, {
+        branch: "feature/api",
+        repositoryPath: "/repo/project/api",
+      });
+      expect(harness.createWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: "/repo/project/api" }),
+      );
+      expect(harness.libraryCwd()).toBe(result.worktreePath);
+    }),
+  );
+
+  it.effect("requires a component choice for a multi-repository Library folder", () =>
     Effect.gen(function* () {
       const harness = makeHarness({ libraryBound: true, libraryMultiRepo: true });
       expectTypedFailure(yield* Effect.exit(runHandoff(harness, { branch: "feature/multi" })), {
