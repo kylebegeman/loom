@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -424,9 +425,10 @@ it.layer(
   // fork: project-lifecycle -- checkout receipts live under the test server state
   Layer.mergeAll(
     NodeServices.layer,
-    ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer)),
+    NodeCrypto.layer,
+    ProcessRunner.layer.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ServerConfig.layerTest(process.cwd(), { prefix: "t3code-terminal-state-" }).pipe(
-      Layer.provide(NodeServices.layer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     ),
   ),
   { excludeTestServices: true },

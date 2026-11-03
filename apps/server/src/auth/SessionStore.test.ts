@@ -1,5 +1,6 @@
 import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: library-sign-in
 import { identitySessionPrefix } from "./identityPolicy.ts"; // fork: library-sign-in
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -87,7 +88,7 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
   );
 });
 
-it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.layer", (it) => {
   // fork: identity-renewal
   it.effect("carries a socket over to its renewal and closes it once the renewal is revoked", () =>
     Effect.gen(function* () {
