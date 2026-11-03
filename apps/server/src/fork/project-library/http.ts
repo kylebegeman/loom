@@ -153,7 +153,7 @@ const handler = (
       const documentRequest = operation === "documents" || operation === "decisions";
       const maxBytes =
         operation === "manage"
-          ? 1024 * 1024
+          ? 8 * 1024 * 1024
           : documentRequest
             ? DOCUMENTS_MAX_REQUEST_BYTES
             : LIBRARY_HISTORY_MAX_BYTES;

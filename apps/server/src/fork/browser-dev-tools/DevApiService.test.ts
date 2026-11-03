@@ -1,6 +1,9 @@
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import * as Deferred from "effect/Deferred";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -550,5 +553,299 @@ it.live(
       expect(
         (yield* api.environment(dotenv)).variables.find((v) => v.key === "token")?.vault?.itemId,
       ).toBe(item.id);
+    }).pipe(provide),
+);
+it.live(
+  "authors requests and reconciles OpenAPI updates without dropping customized endpoints",
+  () =>
+    Effect.gen(function* () {
+      const { api } = yield* fixture;
+      const created = yield* api.author({
+        ...target,
+        action: "workspace",
+        requestId: "workspace",
+        name: "Authoring",
+        folders: [],
+      });
+      const workspace = created.details!;
+      const scope = {
+        ...target,
+        workspaceId: workspace.workspace.id,
+        name: "Health",
+        folders: ["Utilities"],
+      };
+      const request = yield* api.author({
+        ...scope,
+        action: "request",
+        requestId: "health",
+        expectedRevision: workspace.revision,
+      });
+      expect(request.details?.selected?.id).toContain("operation:manual%3Ahealth");
+      const folder = yield* api.author({
+        ...scope,
+        action: "folder",
+        requestId: "folder",
+        expectedRevision: request.details!.revision,
+      });
+      expect(folder.details?.folders).toContainEqual(["Authoring", "Utilities", "Health"]);
+      const spec = (paths: Record<string, unknown>) =>
+        JSON.stringify({ openapi: "3.1.0", info: { title: "Fixture" }, paths });
+      const operation = { get: { operationId: "health", summary: "Health", responses: {} } };
+      const imported = yield* api.author({
+        ...scope,
+        action: "openapi-apply",
+        requestId: "spec",
+        expectedRevision: folder.details!.revision,
+        content: spec({ "/health": operation }),
+      });
+      const selected = yield* api.read({
+        ...target,
+        workspaceId: workspace.workspace.id,
+        requestKey: "openapi.json/operation:health",
+      });
+      const customized = yield* api.saveRequest({
+        ...target,
+        workspaceId: workspace.workspace.id,
+        requestKey: selected.selected!.id,
+        expectedRevision: selected.revision,
+        sourceJson: JSON.stringify({
+          ...JSON.parse(selected.selected!.sourceJson),
+          name: "Custom health",
+        }),
+      });
+      const preview = yield* api.author({
+        ...scope,
+        action: "openapi-preview",
+        requestId: "preview",
+        expectedRevision: customized.revision,
+        content: spec({ "/ready": { get: { operationId: "ready", responses: {} } } }),
+      });
+      expect(preview.changes).toContainEqual({
+        id: "openapi.json/operation:health",
+        name: "Health",
+        kind: "customized",
+      });
+      const applied = yield* api.author({
+        ...scope,
+        action: "openapi-apply",
+        requestId: "apply",
+        expectedRevision: customized.revision,
+        content: spec({ "/ready": { get: { operationId: "ready", responses: {} } } }),
+      });
+      expect(applied.details?.requests.find((r) => r.id === selected.selected!.id)?.name).toBe(
+        "Custom health",
+      );
+      expect(
+        (yield* api
+          .author({
+            ...scope,
+            action: "request",
+            requestId: "stale",
+            expectedRevision: imported.details!.revision,
+          })
+          .pipe(Effect.flip)).reason,
+      ).toBe("revision-conflict");
+    }).pipe(provide),
+);
+it.live(
+  "runs workflow datasets with isolated captures, assertions, safe retries and graceful cancellation",
+  () =>
+    Effect.gen(function* () {
+      const { api, calls, observation } = yield* fixture;
+      const workspace = yield* api.import({
+        ...target,
+        name: "Workflow fixture",
+        files: files("", ""),
+      });
+      const selected = yield* api.read({
+        ...target,
+        workspaceId: workspace.workspace.id,
+        requestKey: workspace.requests[0]!.id,
+      });
+      const request = {
+        ...JSON.parse(selected.selected!.sourceJson),
+        endpoint: "http://localhost/<<id>>",
+        body: { contentType: null, body: null },
+        auth: { authType: "none" },
+      };
+      const edited = yield* api.saveRequest({
+        ...target,
+        workspaceId: workspace.workspace.id,
+        requestKey: selected.selected!.id,
+        expectedRevision: selected.revision,
+        sourceJson: JSON.stringify(request),
+      });
+      const scope = { ...target, workspaceId: workspace.workspace.id };
+      const saved = yield* api.workflow({
+        ...scope,
+        action: "save",
+        expectedRevision: edited.revision,
+        workflow: {
+          id: "lifecycle",
+          name: "Lifecycle",
+          failurePolicy: "stop",
+          datasets: [{ id: "seed-a" }, { id: "seed-b" }],
+          steps: [
+            {
+              id: "create",
+              name: "Create",
+              requestKey: selected.selected!.id,
+              captures: [{ key: "id", source: "body", path: "/token" }],
+              assertions: [
+                { key: "created", source: "status", path: "", operator: "equals", expected: "201" },
+              ],
+            },
+            {
+              id: "read",
+              name: "Read",
+              requestKey: selected.selected!.id,
+              captures: [],
+              assertions: [
+                {
+                  key: "has token",
+                  source: "body",
+                  path: "/token",
+                  operator: "exists",
+                  expected: "",
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const start = {
+        ...scope,
+        action: "start" as const,
+        workflowId: "lifecycle",
+        expectedRevision: saved.revision,
+        runId: "run-once",
+        source: { kind: "none" as const },
+      };
+      yield* api.workflow(start);
+      const done = yield* api.watchWorkflow({ ...scope, runId: "run-once" }).pipe(Stream.runLast);
+      expect(Option.getOrThrow(done)).toMatchObject({ state: "passed", completed: 4 });
+      expect(calls).toHaveLength(4);
+      expect(observation.request?.url).toBe("http://localhost/fixture-captured");
+      const result = yield* api.workflow({ ...scope, action: "read", runId: "run-once" });
+      expect(JSON.stringify(result.run)).not.toContain("fixture-captured");
+      yield* api.workflow(start);
+      expect(calls).toHaveLength(4);
+      expect(
+        (yield* api.workflow({ ...start, workflowId: "other" }).pipe(Effect.flip)).reason,
+      ).toBe("not-found");
+      const entered = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      observation.effect = Deferred.succeed(entered, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+      );
+      yield* api.workflow({ ...start, runId: "stop-me" });
+      yield* Deferred.await(entered);
+      expect(
+        (yield* api.workflow({ ...scope, action: "cancel", runId: "stop-me" })).run?.state,
+      ).toBe("stopping");
+      yield* Deferred.succeed(release, undefined);
+      expect(
+        Option.getOrThrow(
+          yield* api.watchWorkflow({ ...scope, runId: "stop-me" }).pipe(Stream.runLast),
+        ),
+      ).toMatchObject({ state: "cancelled", completed: 1 });
+      expect(calls).toHaveLength(5);
+    }).pipe(provide),
+);
+it.live(
+  "loads shared definitions on a second computer and preserves credentials and local edits through replacement",
+  () =>
+    Effect.gen(function* () {
+      const { api, reload } = yield* fixture;
+      const workspace = yield* api.import({ ...target, name: "Portable", files: files("", "") });
+      const scope = { ...target, workspaceId: workspace.workspace.id };
+      const source = { kind: "json" as const, id: workspace.environments[0]!.id };
+      const environment = yield* api.environment({ ...scope, source });
+      yield* api.saveEnvironment({
+        ...scope,
+        source,
+        expectedRevision: environment.revision,
+        variables: environment.variables.map((v) =>
+          v.key === "token" ? { ...v, value: "local-credential-value" } : v,
+        ),
+      });
+      const bundle = yield* api.bundle(scope);
+      expect(JSON.stringify(bundle)).not.toContain("local-credential-value");
+      const binding = {
+        projectId: "project",
+        sharedId: bundle.id,
+        sharedRevision: 1,
+        baseRevision: "",
+      };
+      const shared = yield* api.markShared({
+        ...scope,
+        expectedRevision: workspace.revision,
+        binding,
+      });
+      const selected = yield* api.read({ ...scope, requestKey: workspace.requests[0]!.id });
+      const edited = yield* api.saveRequest({
+        ...scope,
+        requestKey: selected.selected!.id,
+        expectedRevision: selected.revision,
+        sourceJson: JSON.stringify({
+          ...JSON.parse(selected.selected!.sourceJson),
+          name: "Local customization",
+        }),
+      });
+      const kept = yield* api.forkWorkspace({
+        ...scope,
+        expectedRevision: edited.revision,
+        requestId: "keep-local",
+      });
+      const loaded = yield* api.installBundle({
+        ...target,
+        bundle,
+        binding,
+        requestId: "load-library",
+        expectedRevision: edited.revision,
+      });
+      expect(loaded.library?.baseRevision).toBe(loaded.revision);
+      expect(
+        (yield* api.read({ ...scope, requestKey: selected.selected!.id })).selected?.sourceJson,
+      ).not.toContain("Local customization");
+      expect(
+        (yield* api.read({
+          ...scope,
+          workspaceId: kept.workspace.id,
+          requestKey: selected.selected!.id,
+        })).selected?.sourceJson,
+      ).toContain("Local customization");
+      expect(
+        (yield* api.environment({ ...scope, source })).variables.find((v) => v.key === "token")
+          ?.value,
+      ).toBe("local-credential-value");
+      expect(
+        (yield* api
+          .installBundle({
+            ...target,
+            bundle,
+            binding,
+            requestId: "stale-load",
+            expectedRevision: shared.revision,
+          })
+          .pipe(Effect.flip)).reason,
+      ).toBe("revision-conflict");
+      const fs = yield* FileSystem.FileSystem;
+      const otherState = yield* fs.makeTempDirectoryScoped();
+      const config = yield* Config.ServerConfig;
+      const second = yield* reload.pipe(
+        Effect.provideService(Config.ServerConfig, { ...config, stateDir: otherState }),
+      );
+      const fresh = yield* second.installBundle({
+        ...target,
+        bundle,
+        binding,
+        requestId: "second-computer",
+      });
+      expect(fresh.requests.map((r) => r.id)).toEqual(workspace.requests.map((r) => r.id));
+      expect(
+        (yield* second.environment({ ...scope, source })).variables.find((v) => v.key === "token")
+          ?.value,
+      ).toBe("");
     }).pipe(provide),
 );

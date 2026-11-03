@@ -1,6 +1,14 @@
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { useServerConfigs } from "~/state/entities";
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type {
@@ -38,6 +46,9 @@ import {
   RefreshCwIcon,
   XIcon,
 } from "lucide-react";
+import ApiLibraryPanel from "./ApiLibraryPanel";
+import ApiWorkflowPanel from "./ApiWorkflowPanel";
+import ApiAuthoring from "./ApiAuthoring";
 import VariableInspector from "./VariableInspector";
 import ApiRequestEditor from "./ApiRequestEditor";
 import ApiEnvironmentEditor from "./ApiEnvironmentEditor";
@@ -82,7 +93,7 @@ function Folder({
   disabled: boolean;
   onSelect: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(level < 1);
+  const [open, setOpen] = useState(level <= 1);
   const groups = new Map<string, Request[]>();
   const requests: Request[] = [];
   for (const entry of entries) {
@@ -156,9 +167,17 @@ export default function ApiWorkspaces({
   const id = useId();
   const storageKey = `loom:pulse:tabs:${threadRef.environmentId}:${threadRef.threadId}`;
   const [recovered] = useState(() => recoverSession(storageKey));
-  const initialTab = recovered.tabs.find((t) => t.details.selected?.id === recovered.active);
+  const initialTab = recovered.tabs.find(
+    (t) =>
+      `${t.details.workspace.id}:${t.details.selected?.id}` === recovered.active ||
+      t.details.selected?.id === recovered.active,
+  );
   const [tabs, setTabs] = useState<readonly TabSnapshot[]>(recovered.tabs);
   const [exchangeId, setExchangeId] = useState<string | null>(initialTab?.exchangeId ?? null);
+  const supportsPulse = supportsLoomFeature(
+    useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
+    "pulse-workbench",
+  );
   const supportsMultipart = supportsLoomFeature(
     useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
     "browser-dev-tools-api-multipart",
@@ -171,7 +190,7 @@ export default function ApiWorkspaces({
   const [details, setDetails] = useState<DevApiDetails | null>(initialTab?.details ?? null);
   const [source, setSource] = useState<DevApiSource>(initialTab?.source ?? { kind: "none" });
   const [environment, setEnvironment] = useState<DevApiEnvironment | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(Boolean(initialTab));
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -217,23 +236,70 @@ export default function ApiWorkspaces({
       generation.current++;
     };
   }, [refresh]);
+  const finishRecovery = useEffectEvent((value: DevApiDetails, env: DevApiEnvironment) => {
+    if (initialTab && value.selected?.sourceJson === initialTab.details.selected?.sourceJson)
+      setDetails(value);
+    setEnvironment(env);
+    setBusy(false);
+    onBusy(false);
+    onSelectResponse(initialTab?.exchangeId ?? null);
+  });
+  const failRecovery = useEffectEvent((e: unknown) => {
+    setError(problem(e));
+    setBusy(false);
+    onBusy(false);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores server metadata and the selected environment for a locally recovered request
+  useEffect(() => {
+    if (!initialTab || !canUse) return;
+    const controller = new AbortController();
+    const input = { threadId: threadRef.threadId, workspaceId: initialTab.details.workspace.id };
+    void Promise.all([
+      runDevCommand(dev.apiRead, {
+        environmentId: threadRef.environmentId,
+        input: {
+          ...input,
+          ...(initialTab.details.selected ? { requestKey: initialTab.details.selected.id } : {}),
+        },
+      }),
+      runDevCommand(dev.apiEnvironment, {
+        environmentId: threadRef.environmentId,
+        input: { ...input, source: initialTab.source },
+      }),
+    ]).then(
+      ([value, env]) => {
+        if (!controller.signal.aborted) finishRecovery(value, env);
+      },
+      (e: unknown) => {
+        if (!controller.signal.aborted) failRecovery(e);
+      },
+    );
+    return () => controller.abort();
+  }, [initialTab, canUse, threadRef.environmentId, threadRef.threadId]);
   const activeSnapshot = details?.selected ? { details, draft, source, exchangeId } : null;
+  const sameTab = (tab: TabSnapshot) =>
+    tab.details.workspace.id === activeSnapshot?.details.workspace.id &&
+    tab.details.selected?.id === activeSnapshot?.details.selected?.id;
   const openTabs = activeSnapshot
-    ? [
-        ...tabs.filter(
-          (t) =>
-            t.details.selected?.id !== activeSnapshot.details.selected?.id ||
-            t.details.workspace.id !== activeSnapshot.details.workspace.id,
-        ),
-        activeSnapshot,
-      ]
+    ? tabs.some(sameTab)
+      ? tabs.map((tab) => (sameTab(tab) ? activeSnapshot : tab))
+      : [...tabs, activeSnapshot]
     : tabs;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists recoverable request drafts to this client's local storage
   useEffect(() => {
     try {
       localStorage.setItem(
         storageKey,
-        JSON.stringify({ active: details?.selected?.id ?? "", tabs: openTabs }),
+        JSON.stringify({
+          active: details?.selected ? `${details.workspace.id}:${details.selected.id}` : "",
+          tabs: openTabs.map((tab) => ({
+            ...tab,
+            details: {
+              ...tab.details,
+              requests: tab.details.requests.filter((r) => r.id === tab.details.selected?.id),
+            },
+          })),
+        }),
       );
     } catch {
       toastManager.add({
@@ -261,10 +327,21 @@ export default function ApiWorkspaces({
     pending.current = null;
     working(true);
     try {
-      const env = await runDevCommand(dev.apiEnvironment, {
-        ...target,
-        input: { ...target.input, workspaceId: tab.details.workspace.id, source: tab.source },
-      });
+      const [env, latest] = await Promise.all([
+        runDevCommand(dev.apiEnvironment, {
+          ...target,
+          input: { ...target.input, workspaceId: tab.details.workspace.id, source: tab.source },
+        }),
+        runDevCommand(dev.apiRead, {
+          ...target,
+          input: {
+            ...target.input,
+            workspaceId: tab.details.workspace.id,
+            ...(tab.details.selected ? { requestKey: tab.details.selected.id } : {}),
+          },
+        }),
+      ]);
+      if (latest.selected?.sourceJson === tab.details.selected?.sourceJson) setDetails(latest);
       setEnvironment(env);
       setError(null);
     } catch (e) {
@@ -732,6 +809,64 @@ export default function ApiWorkspaces({
           </Menu>
         ) : null}
       </div>
+      {supportsPulse ? (
+        <ApiAuthoring
+          threadRef={threadRef}
+          details={details}
+          disabled={busy || dirty}
+          onUpdated={(value) => {
+            remember();
+            setDetails(value);
+            setDraft(value.selected?.sourceJson ?? "");
+            setEditorGeneration((n) => n + 1);
+            setMultipartFiles({});
+            setBodyBase64(undefined);
+            setExchangeId(null);
+            onSelectResponse(null);
+            if (!details || details.workspace.id !== value.workspace.id) {
+              setSource({ kind: "none" });
+              setEnvironment(null);
+            }
+            void refresh();
+          }}
+        />
+      ) : null}
+      {supportsPulse && details ? (
+        <ApiWorkflowPanel
+          key={details.workspace.id}
+          threadRef={threadRef}
+          details={details}
+          source={source}
+          disabled={busy || dirty || requestDirty}
+          canRun={Boolean(environment)}
+          onRevision={(revision) => setDetails({ ...details, revision })}
+          onInspect={(result) => {
+            onResult(result);
+            setExchangeId(result.exchange.id);
+          }}
+        />
+      ) : null}
+      {supportsPulse ? (
+        <ApiLibraryPanel
+          key={details?.workspace.id ?? "project"}
+          threadRef={threadRef}
+          details={details}
+          disabled={busy || dirty || requestDirty}
+          onUpdated={(value) => {
+            remember();
+            setDetails(value);
+            setDraft(value.selected?.sourceJson ?? "");
+            setEnvironment(null);
+            setSource({ kind: "none" });
+            setEditorGeneration((n) => n + 1);
+            setMultipartFiles({});
+            setBodyBase64(undefined);
+            setExchangeId(null);
+            onSelectResponse(null);
+            void refresh();
+          }}
+        />
+      ) : null}
       {showImport ? (
         <div className="space-y-3 border-b border-border bg-muted/20 p-4">
           <h3 className="text-sm font-medium">Import a Hoppscotch workspace</h3>
@@ -873,12 +1008,35 @@ export default function ApiWorkspaces({
                   <Folder
                     name={details.workspace.name}
                     entries={details.requests}
-                    level={0}
+                    level={
+                      details.requests.length &&
+                      details.requests.every((r) => r.folders[0] === details.workspace.name)
+                        ? 1
+                        : 0
+                    }
                     selected={selected?.id}
                     disabled={busy || dirty}
                     onSelect={(key) => void chooseRequest(key)}
                   />
                 )}
+                {!search
+                  ? details.folders
+                      ?.filter(
+                        (folder) =>
+                          !details.requests.some(
+                            (r) => JSON.stringify(r.folders) === JSON.stringify(folder),
+                          ),
+                      )
+                      .map((folder) => (
+                        <p
+                          key={folder.join("/")}
+                          className="flex gap-2 px-4 py-2 text-xs text-muted-foreground"
+                        >
+                          <FolderIcon className="size-3.5" />
+                          {folder.join(" / ")} (empty)
+                        </p>
+                      ))
+                  : null}
                 {search && matches.length === 0 ? (
                   <p className="p-4 text-center text-xs text-muted-foreground">
                     No endpoints match your search.
@@ -1101,6 +1259,11 @@ export default function ApiWorkspaces({
                     )
                   }
                 />
+                {typeof sourceDraft.loomImportWarning === "string" ? (
+                  <p role="status" className="px-4 py-2 text-xs text-warning-foreground">
+                    {sourceDraft.loomImportWarning}
+                  </p>
+                ) : null}
                 {supportsEditing ? (
                   <ApiRequestEditor
                     key={`${details.selected.id}:${details.revision}:${editorGeneration}`}
@@ -1160,8 +1323,8 @@ export default function ApiWorkspaces({
           </div>
           <h3 className="text-base font-medium">Your APIs, in your workspace</h3>
           <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-            Bring your Hoppscotch collections and environments into Loom. Browse endpoints, use
-            project variables and inspect every response.
+            Create a workspace, paste cURL, import OpenAPI, or bring Hoppscotch collections into
+            Loom. Browse endpoints, use project variables and inspect every response.
           </p>
           <Button size="sm" onClick={() => setShowImport(true)}>
             <PlusIcon />

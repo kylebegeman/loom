@@ -8,6 +8,9 @@ import {
 import {
   LIBRARY_MANAGEMENT_FEATURE,
   LibraryError,
+  LibraryApiCatalog,
+  type LibraryApiRequest,
+  LIBRARY_API_FEATURE,
   LibraryManagementActor,
   LibraryManagementDelegation,
   LibraryManagementInvocation,
@@ -45,6 +48,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { DirectoryService } from "../directory/DirectoryService.ts";
 import { isVaultRunRunning } from "../vault/active-run.ts";
 import { LibraryConnectionService } from "./LibraryConnection.ts";
+import * as LibraryApis from "./LibraryApiWorkspaces.ts";
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryPublisher } from "./LibraryPublisher.ts";
 import { LibraryService } from "./LibraryService.ts";
@@ -125,6 +129,14 @@ export class LibraryManagement extends Context.Service<
       request: LibraryProjectManagementRequest,
       caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
     ) => Effect.Effect<LibraryProject, LibraryError>;
+    readonly apiWorkspace: (
+      input: LibraryApiRequest,
+      actor: LibraryManagementActor,
+    ) => Effect.Effect<LibraryApiCatalog, LibraryError>;
+    readonly apiWorkspaceAgent: (
+      input: LibraryApiRequest,
+      caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+    ) => Effect.Effect<LibraryApiCatalog, LibraryError>;
     readonly saveWorkstream: (
       input: LibrarySaveWorkstream,
       actor: LibraryManagementActor,
@@ -136,12 +148,13 @@ export class LibraryManagement extends Context.Service<
     readonly accept: (
       input: LibraryManagementInvocation,
       source: EnvironmentId,
-    ) => Effect.Effect<LibraryProject | LibraryWorkstream, LibraryError>;
+    ) => Effect.Effect<LibraryProject | LibraryWorkstream | LibraryApiCatalog, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryManagement") {}
 
 const make = Effect.gen(function* () {
   const library = yield* LibraryService;
+  const apis = yield* Effect.serviceOption(LibraryApis.LibraryApiWorkspaces);
   const workflows = yield* ProjectWorkflows;
   const publisher = yield* LibraryPublisher;
   const connection = yield* LibraryConnectionService;
@@ -217,6 +230,13 @@ const make = Effect.gen(function* () {
         return yield* library.archiveProject(request.input);
       case "apply-blueprint":
         return yield* workflows.applyBlueprint(request.input);
+      case "api-workspace":
+        if (Option.isNone(apis))
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail: "This Library version does not support shared API workspaces.",
+          });
+        return yield* apis.value.execute(request.input);
       case "save-workstream":
         return yield* workflows.saveWorkstream(request.input);
     }
@@ -401,6 +421,10 @@ const make = Effect.gen(function* () {
     }
     const info = yield* publisher.info;
     if (!info.features?.includes(LIBRARY_MANAGEMENT_FEATURE)) return yield* deny(UNSUPPORTED);
+    if (request.kind === "api-workspace" && !info.features?.includes(LIBRARY_API_FEATURE))
+      return yield* deny(
+        "Update Loom on the Library to share API workspaces. The existing connection can stay enrolled.",
+      );
     const delegation = yield* readDelegation;
     if (delegation === null || delegation.expiresAt <= (yield* Clock.currentTimeMillis))
       return yield* deny(DELEGATION_MISSING);
@@ -501,6 +525,16 @@ const make = Effect.gen(function* () {
   ) {
     return yield* saveWorkstream(input, yield* agentActor(caller));
   });
+  const apiWorkspace = Effect.fn("LibraryManagement.apiWorkspace")(
+    (input: LibraryApiRequest, actor: LibraryManagementActor) =>
+      send({ kind: "api-workspace", input }, actor, Schema.decodeUnknownEffect(LibraryApiCatalog)),
+  );
+  const apiWorkspaceAgent = Effect.fn("LibraryManagement.apiWorkspaceAgent")(function* (
+    input: LibraryApiRequest,
+    caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+  ) {
+    return yield* apiWorkspace(input, yield* agentActor(caller));
+  });
   const status = Effect.gen(function* () {
     const destination = yield* connection.current;
     const base = { environmentId, keyFingerprint: yield* fingerprint, expiresAt: null };
@@ -529,6 +563,8 @@ const make = Effect.gen(function* () {
     install,
     execute,
     executeAgent,
+    apiWorkspace,
+    apiWorkspaceAgent,
     saveWorkstream,
     saveWorkstreamAgent,
     accept,

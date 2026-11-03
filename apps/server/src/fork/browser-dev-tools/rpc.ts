@@ -1,3 +1,5 @@
+import { DevApiLibrary } from "./DevApiLibrary.ts";
+import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import { DevApiService } from "./DevApiService.ts";
 import { DevRequestsService } from "./DevRequestsService.ts";
 import { DevDiagnosticsService } from "./DevDiagnosticsService.ts";
@@ -6,6 +8,9 @@ import {
   DEV_ENVIRONMENT_WS_METHODS as D,
   type DevHttpBaselineAction,
   type DevHttpSend,
+  type DevApiShare,
+  type DevApiWorkflowWatch,
+  type DevApiWorkflowCommand,
   type DevApiAuthor,
   type DevApiImport,
   type DevApiRead,
@@ -30,15 +35,35 @@ import { DevContainersService } from "./DevContainersService.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 export const makeDevEnvironmentRpcHandlers = Effect.fn("DevEnvironment.rpc")(function* (
   auth: ForkRpcAuth,
-  actor: string,
+  session: AuthenticatedSession,
 ) {
   const api = yield* DevApiService;
+  const library = yield* DevApiLibrary;
+  const actor = session.subject;
   const requests = yield* DevRequestsService;
   const diagnostics = yield* DevDiagnosticsService;
   const dev = yield* DevEnvironmentService;
   const containers = yield* DevContainersService;
   return {
+    [D.apiWorkflowWatch]: (input: DevApiWorkflowWatch) =>
+      auth.stream(D.apiWorkflowWatch, api.watchWorkflow(input)),
+    [D.apiWorkflow]: (input: DevApiWorkflowCommand) =>
+      auth.effect(
+        D.apiWorkflow,
+        api.workflow(input, {
+          kind: "client",
+          actor,
+          authorize: auth
+            .effect(V.reveal, Effect.void)
+            .pipe(Effect.mapError(() => new VaultError({ reason: "denied" }))),
+        }),
+      ),
     [D.apiAuthor]: (input: DevApiAuthor) => auth.effect(D.apiAuthor, api.author(input)),
+    [D.apiLibrary]: (input: DevApiShare) =>
+      auth.effect(
+        D.apiLibrary,
+        library.execute(input, { kind: "client", sessionId: session.sessionId }),
+      ),
     [D.apiList]: (input: DevTarget) => auth.effect(D.apiList, api.list(input)),
     [D.apiImport]: (input: DevApiImport) => auth.effect(D.apiImport, api.import(input)),
     [D.apiRead]: (input: DevApiRead) => auth.effect(D.apiRead, api.read(input)),

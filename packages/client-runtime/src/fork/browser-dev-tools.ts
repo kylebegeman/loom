@@ -10,7 +10,22 @@ export function createDevEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
-    apiAuthor: createEnvironmentRpcCommand(runtime, { label: "loom:dev:apiAuthor", tag: D.apiAuthor }),
+    apiLibrary: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiLibrary",
+      tag: D.apiLibrary,
+    }),
+    apiWorkflowWatch: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:dev:apiWorkflowWatch",
+      tag: D.apiWorkflowWatch,
+    }),
+    apiWorkflow: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiWorkflow",
+      tag: D.apiWorkflow,
+    }),
+    apiAuthor: createEnvironmentRpcCommand(runtime, {
+      label: "loom:dev:apiAuthor",
+      tag: D.apiAuthor,
+    }),
     apiList: createEnvironmentRpcCommand(runtime, { label: "loom:dev:apiList", tag: D.apiList }),
     apiImport: createEnvironmentRpcCommand(runtime, {
       label: "loom:dev:apiImport",

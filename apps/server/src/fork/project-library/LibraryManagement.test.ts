@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_MANAGEMENT_FEATURE,
+  LIBRARY_API_FEATURE,
   LibraryError,
   type LibraryManagementInvocation,
 } from "@t3tools/contracts/fork";
@@ -36,6 +37,8 @@ import { vaultRun } from "../vault/VaultActiveRun.testkit.ts";
 import { resource, source, threadId } from "./Library.testkit.ts";
 import { LibraryAssetService } from "./assets/LibraryAssetService.ts";
 import { LibraryConnectionService } from "./LibraryConnection.ts";
+import * as LibraryApis from "./LibraryApiWorkspaces.ts";
+import * as ServerConfig from "../../config.ts";
 import * as Management from "./LibraryManagement.ts";
 import { LibraryPublisher } from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
@@ -102,7 +105,12 @@ const fixture = Effect.gen(function* () {
     Effect.provide(Workflows.layer),
     Effect.provideService(Catalog.LibraryService, catalog),
   );
+  const apis = yield* LibraryApis.LibraryApiWorkspaces.pipe(
+    Effect.provide(LibraryApis.layer),
+    Effect.provideService(Catalog.LibraryService, catalog),
+  );
   const dependencies = Layer.mergeAll(
+    Layer.succeed(LibraryApis.LibraryApiWorkspaces, apis),
     Layer.succeed(Workflows.ProjectWorkflows, workflows),
     Layer.succeed(Catalog.LibraryService, catalog),
     Layer.mock(LibraryPublisher)({
@@ -112,7 +120,7 @@ const fixture = Effect.gen(function* () {
           Ref.get(supported).pipe(
             Effect.map((value) => ({
               ...info,
-              features: value ? [LIBRARY_MANAGEMENT_FEATURE] : [],
+              features: value ? [LIBRARY_MANAGEMENT_FEATURE, LIBRARY_API_FEATURE] : [],
             })),
           ),
         ),
@@ -251,7 +259,18 @@ const fixture = Effect.gen(function* () {
 const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     return yield* use(yield* fixture);
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), { prefix: "library-api-management-" }).pipe(
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ),
+      ),
+    ),
+    Effect.scoped,
+  );
 
 describe("authority-routed project management", () => {
   it.effect(
@@ -268,6 +287,56 @@ describe("authority-routed project management", () => {
           expect(result.revision).toBe(2);
           expect(result.resources[0]?.defaultBranch).toBe("next");
           const second = yield* f.computer(EnvironmentId.make("second-computer"));
+          const sharedInput = {
+            projectId: f.project.id,
+            action: "save" as const,
+            requestId: "share-api",
+            expectedRevision: 0,
+            bundle: {
+              id: "a".repeat(24),
+              name: "API",
+              folders: [],
+              workflows: [],
+              files: [
+                { name: "api.json", content: '[{"v":12,"name":"API","folders":[],"requests":[]}]' },
+                {
+                  name: "local.json",
+                  content:
+                    '{"v":2,"name":"Local","variables":[{"key":"token","secret":true,"currentValue":"synthetic-private-value"}]}',
+                },
+              ],
+            },
+          };
+          yield* Ref.set(f.lostReply, true);
+          expect(
+            (yield* f.first.manager.apiWorkspace(sharedInput, f.actor).pipe(Effect.flip)).reason,
+          ).toBe("io");
+          yield* Ref.set(f.lostReply, false);
+          const shared = yield* second.manager.apiWorkspace(sharedInput, f.actor);
+          expect(shared.revision).toBe(1);
+          expect(JSON.stringify(shared)).not.toContain("synthetic-private-value");
+          expect(
+            yield* f.first.manager.apiWorkspace(
+              { projectId: f.project.id, action: "read", workspaceId: "a".repeat(24) },
+              f.actor,
+            ),
+          ).toEqual(shared);
+          expect(
+            (yield* second.manager
+              .apiWorkspace({ ...sharedInput, requestId: "stale-api" }, f.actor)
+              .pipe(Effect.flip)).reason,
+          ).toBe("revision-conflict");
+          const sharedNext = yield* second.manager.apiWorkspace(
+            {
+              ...sharedInput,
+              requestId: "share-api-next",
+              expectedRevision: 1,
+              bundle: { ...sharedInput.bundle, name: "Updated" },
+            },
+            f.actor,
+          );
+          expect(sharedNext.revision).toBe(2);
+          expect(yield* f.first.manager.apiWorkspace(sharedInput, f.actor)).toEqual(shared);
           const followed = yield* second.manager.execute(
             {
               kind: "update",

@@ -1,4 +1,8 @@
-import { DevEnvironmentRpcGroup, DEV_ENVIRONMENT_WS_METHODS } from "@t3tools/contracts/fork";
+import {
+  DevApiLibraryRpcGroup,
+  DevEnvironmentRpcGroup,
+  DEV_ENVIRONMENT_WS_METHODS,
+} from "@t3tools/contracts/fork";
 import { makeDevEnvironmentRpcHandlers } from "./browser-dev-tools/rpc.ts";
 import { UpstreamSupervisorRpcGroup, UPSTREAM_WS_METHODS } from "@t3tools/contracts/fork";
 import { makeUpstreamRpcHandlers } from "./upstream-supervisor/rpc.ts";
@@ -174,6 +178,7 @@ export const makeForkRpcLayer = (
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof SkillRegistryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof ProjectProfilesRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof DevEnvironmentRpcGroup>>
+  | Rpc.ToHandler<RpcGroup.Rpcs<typeof DevApiLibraryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationInventoryRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultMigrationRpcGroup>>
   | Rpc.ToHandler<RpcGroup.Rpcs<typeof VaultTestAccountRpcGroup>>
@@ -253,8 +258,8 @@ export const makeForkRpcLayer = (
     SkillRegistryRpcGroup.toLayer(
       withForkRuntime(makeSkillRegistryRpcHandlers(makeForkRpcAuth(session))),
     ),
-    DevEnvironmentRpcGroup.toLayer(
-      withForkRuntime(makeDevEnvironmentRpcHandlers(makeForkRpcAuth(session), session.subject)),
+    DevEnvironmentRpcGroup.merge(DevApiLibraryRpcGroup).toLayer(
+      withForkRuntime(makeDevEnvironmentRpcHandlers(makeForkRpcAuth(session), session)),
     ),
     ProjectProfilesRpcGroup.toLayer(
       withForkRuntime(makeProjectProfilesRpcHandlers(makeForkRpcAuth(session))),

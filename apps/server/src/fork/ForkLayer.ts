@@ -1,4 +1,5 @@
 import * as DevApiCredentials from "./browser-dev-tools/DevApiCredentials.ts";
+import * as DevApiLibrary from "./browser-dev-tools/DevApiLibrary.ts";
 import * as DevApi from "./browser-dev-tools/DevApiService.ts";
 import * as DevRequests from "./browser-dev-tools/DevRequestsService.ts";
 import * as DevDiagnostics from "./browser-dev-tools/DevDiagnosticsService.ts";
@@ -69,6 +70,7 @@ import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPubl
 import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryStore.ts";
 import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
 import * as LibraryDocumentPublication from "./project-library/LibraryDocumentPublication.ts";
+import * as LibraryApis from "./project-library/LibraryApiWorkspaces.ts";
 import * as LibraryManagement from "./project-library/LibraryManagement.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
 import * as LibraryBriefSuggestions from "./project-library/LibraryBriefSuggestions.ts";
@@ -350,6 +352,7 @@ export const layerReachLibrary = ReachProvisioner.layer.pipe(
 );
 
 const layerLibraryManagement = LibraryManagement.layer.pipe(
+  Layer.provide(LibraryApis.layer.pipe(Layer.provide(layerLibraryService))),
   Layer.provide(layerProjectWorkflows),
   Layer.provide(layerLibraryService),
   Layer.provide(layerLibraryPublisher),
@@ -445,6 +448,13 @@ export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   layerDevApi,
+  DevApiLibrary.layer.pipe(
+    Layer.provide(layerDevApi),
+    Layer.provide(layerLibraryManagement),
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(layerDevEnvironment),
+    Layer.provide(RuntimeLayer.layerThreadManagementProvided),
+  ),
   layerDevRequests,
   DevDiagnostics.layer.pipe(Layer.provide(layerDevEnvironment)),
   layerDevEnvironment,

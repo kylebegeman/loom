@@ -3,6 +3,7 @@ import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
   AuthSessionId,
+  AuthSettingsWriteScope,
 } from "@t3tools/contracts";
 import {
   DEV_ENVIRONMENT_WS_METHODS as D,
@@ -20,6 +21,10 @@ it.effect(
         method: "bearer-access-token",
         scopes: [AuthOrchestrationReadScope],
       });
+      expect(FORK_CLIENT_GUARDED_RPC_SCOPES[D.apiLibrary]).toBe(AuthSettingsWriteScope);
+      expect((yield* read.effect(D.apiLibrary, Effect.void).pipe(Effect.flip)).requiredScope).toBe(
+        AuthSettingsWriteScope,
+      );
       let executions = 0;
       for (const method of [
         D.start,
@@ -27,6 +32,8 @@ it.effect(
         D.compose,
         D.database,
         D.databaseUrl,
+        D.apiWorkflowWatch,
+        D.apiWorkflow,
         D.apiAuthor,
         D.apiList,
         D.apiImport,

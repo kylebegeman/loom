@@ -10,6 +10,9 @@ import { EnvironmentAuthorizationError } from "../auth.ts";
 import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
 
 export const DEV_ENVIRONMENT_WS_METHODS = {
+  apiLibrary: "loom.browser-dev-tools.apiLibrary",
+  apiWorkflowWatch: "loom.browser-dev-tools.apiWorkflowWatch",
+  apiWorkflow: "loom.browser-dev-tools.apiWorkflow",
   apiAuthor: "loom.browser-dev-tools.apiAuthor",
   apiList: "loom.browser-dev-tools.apiList",
   apiImport: "loom.browser-dev-tools.apiImport",
@@ -235,10 +238,19 @@ export const DevApiRead = Schema.Struct({
   requestKey: Schema.optionalKey(Schema.String),
 });
 export type DevApiRead = typeof DevApiRead.Type;
+export const DevApiLibraryBinding = Schema.Struct({
+  projectId: Schema.String,
+  sharedId: Schema.String,
+  sharedRevision: Schema.Int,
+  baseRevision: Schema.String,
+});
+export type DevApiLibraryBinding = typeof DevApiLibraryBinding.Type;
 export const DevApiDetails = Schema.Struct({
   workspace: DevApiWorkspace,
+  library: Schema.optionalKey(DevApiLibraryBinding),
   revision: Schema.String,
   requests: Schema.Array(DevApiRequestSummary),
+  folders: Schema.optionalKey(Schema.Array(Schema.Array(Schema.String))),
   environments: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
   dotenvFiles: Schema.Array(Schema.String),
   selected: Schema.NullOr(
@@ -267,18 +279,33 @@ export const DevApiImport = Schema.Struct({
 export type DevApiImport = typeof DevApiImport.Type;
 export const DevApiAuthor = Schema.Struct({
   ...DevTarget.fields,
-  action: Schema.Literals(["workspace", "request", "folder", "curl", "openapi-preview", "openapi-apply"]),
+  action: Schema.Literals([
+    "workspace",
+    "request",
+    "folder",
+    "curl",
+    "openapi-preview",
+    "openapi-apply",
+  ]),
   workspaceId: Schema.optionalKey(Schema.String),
   expectedRevision: Schema.optionalKey(Schema.String),
   requestId: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
-  folders: Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(30)),
+  folders: Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(200))).check(
+    Schema.isMaxLength(30),
+  ),
   content: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16777216))),
 });
 export type DevApiAuthor = typeof DevApiAuthor.Type;
 export const DevApiAuthorResult = Schema.Struct({
   details: Schema.NullOr(DevApiDetails),
-  changes: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String, kind: Schema.Literals(["added", "changed", "removed", "customized"]) })),
+  changes: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      kind: Schema.Literals(["added", "changed", "removed", "customized"]),
+    }),
+  ),
 });
 export type DevApiAuthorResult = typeof DevApiAuthorResult.Type;
 export const DevApiEnvironmentTarget = Schema.Struct({
@@ -333,6 +360,90 @@ export const DevApiRunResult = Schema.Struct({
   environmentUpdated: Schema.Boolean,
 });
 export type DevApiRunResult = typeof DevApiRunResult.Type;
+export const DevApiCapture = Schema.Struct({
+  id: Schema.optionalKey(Schema.String),
+  key: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  source: Schema.Literals(["body", "header", "status"]),
+  path: Schema.String.check(Schema.isMaxLength(300)),
+});
+export const DevApiAssertion = Schema.Struct({
+  ...DevApiCapture.fields,
+  operator: Schema.Literals(["equals", "contains", "exists"]),
+  expected: Schema.String.check(Schema.isMaxLength(8192)),
+});
+export const DevApiWorkflowStep = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  requestKey: Schema.String,
+  captures: Schema.Array(DevApiCapture).check(Schema.isMaxLength(50)),
+  assertions: Schema.Array(DevApiAssertion).check(Schema.isMaxLength(50)),
+});
+export const DevApiWorkflow = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  failurePolicy: Schema.Literals(["stop", "continue"]),
+  steps: Schema.Array(DevApiWorkflowStep).check(Schema.isMaxLength(50)),
+  datasets: Schema.Array(
+    Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(8192))),
+  ).check(Schema.isMaxLength(20)),
+});
+export type DevApiWorkflow = typeof DevApiWorkflow.Type;
+export const DevApiWorkflowRun = Schema.Struct({
+  name: Schema.optionalKey(Schema.String),
+  startedAt: Schema.optionalKey(Schema.String),
+  id: Schema.String,
+  workflowId: Schema.String,
+  fingerprint: Schema.String,
+  state: Schema.Literals(["running", "stopping", "passed", "failed", "cancelled", "interrupted"]),
+  results: Schema.Array(
+    Schema.Struct({
+      stepId: Schema.String,
+      name: Schema.String,
+      dataset: Schema.Int,
+      result: Schema.NullOr(DevApiRunResult),
+      error: Schema.NullOr(Schema.String),
+    }),
+  ),
+});
+export type DevApiWorkflowRun = typeof DevApiWorkflowRun.Type;
+export const DevApiWorkflowWatch = Schema.Struct({
+  ...DevApiWorkspaceTarget.fields,
+  runId: Schema.String,
+});
+export type DevApiWorkflowWatch = typeof DevApiWorkflowWatch.Type;
+export const DevApiWorkflowProgress = Schema.Struct({
+  id: Schema.String,
+  state: DevApiWorkflowRun.fields.state,
+  completed: Schema.Int,
+  latest: Schema.NullOr(Schema.String),
+});
+export type DevApiWorkflowProgress = typeof DevApiWorkflowProgress.Type;
+export const DevApiWorkflowCommand = Schema.Struct({
+  ...DevApiWorkspaceTarget.fields,
+  action: Schema.Literals(["list", "save", "delete", "start", "read", "cancel"]),
+  expectedRevision: Schema.optionalKey(Schema.String),
+  workflow: Schema.optionalKey(DevApiWorkflow),
+  workflowId: Schema.optionalKey(Schema.String),
+  runId: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+  source: Schema.optionalKey(DevApiSource),
+});
+export type DevApiWorkflowCommand = typeof DevApiWorkflowCommand.Type;
+export const DevApiWorkflowSummary = Schema.Struct({
+  id: Schema.String,
+  workflowId: Schema.String,
+  name: Schema.String,
+  startedAt: Schema.String,
+  state: DevApiWorkflowRun.fields.state,
+  completed: Schema.Int,
+});
+export type DevApiWorkflowSummary = typeof DevApiWorkflowSummary.Type;
+export const DevApiWorkflowState = Schema.Struct({
+  revision: Schema.String,
+  workflows: Schema.Array(DevApiWorkflow),
+  runs: Schema.optionalKey(Schema.Array(DevApiWorkflowSummary)),
+  run: Schema.NullOr(DevApiWorkflowRun),
+});
+export type DevApiWorkflowState = typeof DevApiWorkflowState.Type;
 export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError", {
   reason: Schema.Literals([
     "invalid-format",
@@ -506,6 +617,17 @@ const apiError = Schema.Union([
   EnvironmentAuthorizationError,
 ]);
 export const DevEnvironmentRpcGroup = RpcGroup.make(
+  Rpc.make(M.apiWorkflowWatch, {
+    payload: DevApiWorkflowWatch,
+    success: DevApiWorkflowProgress,
+    error: apiError,
+    stream: true,
+  }),
+  Rpc.make(M.apiWorkflow, {
+    payload: DevApiWorkflowCommand,
+    success: DevApiWorkflowState,
+    error: apiError,
+  }),
   Rpc.make(M.apiAuthor, { payload: DevApiAuthor, success: DevApiAuthorResult, error: apiError }),
   Rpc.make(M.apiSaveRequest, {
     payload: DevApiSaveRequest,

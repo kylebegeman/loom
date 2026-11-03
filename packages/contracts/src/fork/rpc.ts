@@ -1,3 +1,4 @@
+import { DevApiLibraryRpcGroup } from "./api-library.ts";
 import { DevEnvironmentRpcGroup, DEV_ENVIRONMENT_WS_METHODS } from "./browser-dev-tools.ts";
 import { UpstreamSupervisorRpcGroup } from "./upstream-supervisor.ts";
 import { ProjectStorageRpcGroup } from "./project-storage.ts";
@@ -89,6 +90,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   DevEnvironmentRpcGroup,
+  DevApiLibraryRpcGroup,
   ProjectStorageRpcGroup,
   UpdatePlanRpcGroup,
   UpstreamSupervisorRpcGroup,
@@ -154,6 +156,7 @@ export const LoomWsRpcGroup = WsRpcGroup.merge(ForkRpcGroup);
  * method missing here would be typed as unary.
  */
 export type ForkSubscriptionRpcTag =
+  | typeof DEV_ENVIRONMENT_WS_METHODS.apiWorkflowWatch
   | typeof DEV_ENVIRONMENT_WS_METHODS.watch
   | typeof SKILL_REGISTRY_WS_METHODS.watchFetch
   | typeof LIBRARY_WS_METHODS.subscribeRefreshes

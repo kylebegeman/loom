@@ -660,6 +660,34 @@ Keep a reset command as an ordinary project action for restoring known test data
 Choose the isolated development instance explicitly; resetting fixtures should never
 reset an instance that holds real application data.
 
+## Pulse API workbench
+
+Open **Development** from a conversation, then choose **Pulse**. Create a workspace
+and request, paste cURL, or import OpenAPI 3.0/3.1 JSON or YAML. Existing Hoppscotch
+collections and environments can also be imported. Specification updates show changed
+operations before applying them and preserve customized requests.
+
+Request tabs recover unfinished edits after reopening. Choose an imported environment,
+a checkout `.env` file, or **No environment** before sending. Select a variable reference
+to see its source or fix a missing value. Upload files must be selected again after
+switching requests or reopening the workbench.
+
+Compare responses or pin a complete response as a baseline. Ignore changing fields
+with paths such as `/body/updatedAt` or `/headers/date`. Baselines remain on the
+request's computer when ordinary history is cleared.
+
+Use **Workflows** to save an ordered sequence with captures, assertions and optional
+JSON dataset rows. Each row gets its own captures. Stop finishes the current request
+before halting; previous runs remain inspectable, and interrupted runs never restart
+automatically.
+
+Use **Project APIs** to share definitions through Library or open them on another
+computer. Library keeps requests, folders, scripts, workflows and environment
+definitions. Credential values, Vault item bindings, uploads and response history
+stay local. Concurrent edits require a review; keeping a local copy preserves your
+work before loading Library's version. The Library and execution computer both need
+a Loom version that supports shared API workspaces.
+
 <!-- fork: sites -->
 
 ## Sites and the personal API

@@ -164,7 +164,10 @@ export function importHoppscotch(
         throw new HoppscotchInputError("invalid-format");
       const ownAuth = r.auth === undefined ? { authType: "inherit" } : nativeObject(r.auth);
       requests.push({
-        id: typeof r.loomId === "string" ? `${fileName}/operation:${encodeURIComponent(r.loomId)}` : `${id}/r${index}`,
+        id:
+          typeof r.loomId === "string"
+            ? `${fileName}/operation:${encodeURIComponent(r.loomId)}`
+            : `${id}/r${index}`,
         name: r.name,
         folders,
         source: r,
@@ -187,7 +190,8 @@ export function importHoppscotch(
       post: [],
     }),
   );
-  if (new Set(requests.map((r) => r.id)).size !== requests.length) throw new HoppscotchInputError("invalid-format");
+  if (new Set(requests.map((r) => r.id)).size !== requests.length)
+    throw new HoppscotchInputError("invalid-format");
   return { kind: "collections", source, requests };
 }
 export function resolveVariables(
@@ -392,7 +396,10 @@ export function applyRequestEdits(
   const visit = (node: NativeObject, id: string): NativeObject => ({
     ...node,
     requests: objects(node.requests).map((request, index) => {
-      const key = typeof request.loomId === "string" ? `${fileName}/operation:${encodeURIComponent(request.loomId)}` : `${id}/r${index}`;
+      const key =
+        typeof request.loomId === "string"
+          ? `${fileName}/operation:${encodeURIComponent(request.loomId)}`
+          : `${id}/r${index}`;
       return edits[key] === undefined ? request : nativeObject(JSON.parse(edits[key]!));
     }),
     folders: objects(node.folders).map((folder, index) => visit(folder, `${id}/f${index}`)),
