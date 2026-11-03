@@ -34,6 +34,11 @@ const fixture = Effect.gen(function* () {
     Effect.gen(function* () {
       calls.push(req.url);
       expect(req.headers.traceparent).toBeUndefined();
+      if (req.url.includes("/multipart")) {
+        expect(req.body._tag).toBe("Uint8Array");
+        if (req.body._tag === "Uint8Array")
+          expect(Buffer.from(req.body.body).toString()).toContain("fixture-upload-bytes");
+      }
       if (req.url.includes("/upload")) {
         expect(req.body._tag).toBe("Uint8Array");
         if (req.body._tag === "Uint8Array")
@@ -197,6 +202,27 @@ it.effect(
       });
       expect(upload.status).toBe(201);
       expect(upload.request.body).toBe("AAEC/w==");
+      const multipart = yield* service.send({
+        ...target,
+        requestId: "multipart",
+        request: {
+          ...request,
+          url: "http://localhost/multipart",
+          headers: { "content-type": "multipart/form-data; boundary=fixture" },
+          body: Buffer.from(
+            '--fixture\r\nContent-Disposition: form-data; name="file"; filename="note.txt"\r\n\r\nfixture-upload-bytes\r\n--fixture--\r\n',
+          ).toString("base64"),
+          bodyEncoding: "base64",
+        },
+      });
+      expect(Buffer.from(multipart.request.body, "base64").toString()).toBe(
+        "[multipart upload omitted]",
+      );
+      const history = yield* service.history({ ...target, exchangeId: multipart.id });
+      expect(JSON.stringify(history)).not.toContain(
+        Buffer.from("fixture-upload-bytes").toString("base64"),
+      );
+      expect(history.selected?.request.body).toBe(multipart.request.body);
       const large = yield* send("large");
       expect(large.truncated).toBe(true);
       expect(large.byteLength).toBe(HTTP_BODY_LIMIT);
@@ -217,7 +243,7 @@ it.effect(
           .pipe(Effect.flip)).reason,
       ).toBe("invalid-request");
       expect(JSON.stringify(yield* service.history(target)).length).toBeLessThan(4096);
-      expect(calls).toHaveLength(6);
+      expect(calls).toHaveLength(7);
     }).pipe(provide),
 );
 it.effect(

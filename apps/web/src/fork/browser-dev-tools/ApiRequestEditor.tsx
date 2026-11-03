@@ -1,3 +1,4 @@
+import MultipartFields from "./MultipartFields";
 import { useState } from "react";
 import { PlusIcon, Trash2Icon, WandSparklesIcon, ShieldCheckIcon, FileUpIcon } from "lucide-react";
 import type { DevApiDetails } from "@t3tools/contracts/fork";
@@ -103,6 +104,11 @@ export default function ApiRequestEditor({
   disabled,
   bodyFileName,
   onUpload,
+  supportsMultipart,
+  multipartFiles,
+  onMultipartFiles,
+  onResetMultipartFiles,
+  onRemoveMultipartField,
 }: {
   selected: NonNullable<DevApiDetails["selected"]>;
   draft: string;
@@ -110,6 +116,11 @@ export default function ApiRequestEditor({
   disabled: boolean;
   bodyFileName: string;
   onUpload: (file: File | undefined) => void;
+  supportsMultipart: boolean;
+  multipartFiles: Readonly<Record<number, readonly File[]>>;
+  onMultipartFiles: (index: number, files: readonly File[]) => void;
+  onResetMultipartFiles: () => void;
+  onRemoveMultipartField: (index: number) => void;
 }) {
   const [tab, setTab] = useState<Tab>("params");
   const [script, setScript] = useState<"preRequestScript" | "testScript">("preRequestScript");
@@ -177,15 +188,21 @@ export default function ApiRequestEditor({
                 label="Body content type"
                 value={draftText(body.contentType) || "none"}
                 disabled={disabled}
-                onChange={(value) =>
+                onChange={(value) => {
+                  if (value === (draftText(body.contentType) || "none")) return;
+                  onResetMultipartFiles();
                   update({
                     body: {
                       ...body,
                       contentType: value === "none" ? null : value,
-                      body: draftText(body.body),
+                      body: ["application/x-www-form-urlencoded", "multipart/form-data"].includes(
+                        value,
+                      )
+                        ? []
+                        : draftText(body.body),
                     },
-                  })
-                }
+                  });
+                }}
                 options={[
                   { value: "none", label: "No body" },
                   { value: "application/json", label: "JSON" },
@@ -193,6 +210,9 @@ export default function ApiRequestEditor({
                   { value: "application/xml", label: "XML" },
                   { value: "application/x-www-form-urlencoded", label: "Form URL encoded" },
                   { value: "application/octet-stream", label: "Binary file" },
+                  ...(supportsMultipart
+                    ? [{ value: "multipart/form-data", label: "Multipart form" }]
+                    : []),
                   ...(body.contentType &&
                   ![
                     "application/json",
@@ -200,6 +220,7 @@ export default function ApiRequestEditor({
                     "application/xml",
                     "application/x-www-form-urlencoded",
                     "application/octet-stream",
+                    ...(supportsMultipart ? ["multipart/form-data"] : []),
                   ].includes(draftText(body.contentType))
                     ? [{ value: draftText(body.contentType), label: draftText(body.contentType) }]
                     : []),
@@ -240,6 +261,21 @@ export default function ApiRequestEditor({
                 Up to 128 KiB. File contents are used for this request.
               </p>
             </div>
+          ) : body.contentType === "multipart/form-data" ? (
+            supportsMultipart ? (
+              <MultipartFields
+                rows={draftRows(body.body)}
+                files={multipartFiles}
+                disabled={disabled}
+                onChange={(rows) => update({ body: { ...body, body: rows } })}
+                onFilesChange={onMultipartFiles}
+                onRemoveField={onRemoveMultipartField}
+              />
+            ) : (
+              <p role="status" className="px-4 pb-5 text-xs text-muted-foreground">
+                Update this request's computer to send multipart forms.
+              </p>
+            )
           ) : body.contentType === "application/x-www-form-urlencoded" ? (
             <Pairs
               label="Form fields"

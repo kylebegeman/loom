@@ -138,10 +138,92 @@ it("encodes form bodies and basic auth and refuses unsupported bodies before dis
     }),
   ).toThrow(/body/i);
   expect(() =>
-    prepareHoppscotchRequest(make({ contentType: "multipart/form-data", body: [] }), {
+    prepareHoppscotchRequest(make({ contentType: "multipart/form-data", body: "invalid" }), {
       origin: "http://localhost",
       username: "user",
       password: "pass",
     }),
   ).toThrow(/body/i);
+});
+
+it("encodes native multipart text and repeated files with explicit uploads and an authoritative boundary", async () => {
+  const pack = importHoppscotch(
+    JSON.stringify([
+      {
+        ...native,
+        folders: [],
+        requests: [
+          {
+            ...native.folders[0]!.requests[0]!,
+            method: "POST",
+            endpoint: "http://localhost/upload",
+            auth: { authType: "none" },
+            params: [],
+            headers: [
+              { key: "Content-Type", value: "multipart/form-data; boundary=stale", active: true },
+            ],
+            body: {
+              contentType: "multipart/form-data",
+              body: [
+                { key: "title", value: "<<label>>", active: true, isFile: false },
+                {
+                  key: "title",
+                  value: "second",
+                  active: true,
+                  isFile: false,
+                  contentType: "text/plain",
+                },
+                { key: "documents", value: [null], active: true, isFile: true },
+                { key: "ignored", value: "<<missing>>", active: false, isFile: false },
+              ],
+            },
+          },
+        ],
+      },
+    ]),
+    "multipart.json",
+  );
+  if (pack.kind !== "collections") throw Error("wrong fixture");
+  const uploads = [
+    {
+      fieldIndex: 2,
+      fileName: 'report".txt',
+      contentType: "text/plain",
+      base64: Buffer.from("fixture file").toString("base64"),
+    },
+    { fieldIndex: 2, fileName: "bytes.bin", contentType: "", base64: "AAEC/w==" },
+  ];
+  const prepared = prepareHoppscotchRequest(
+    pack.requests[0]!,
+    { label: "hello café" },
+    undefined,
+    uploads,
+  );
+  expect(prepared.bodyEncoding).toBe("base64");
+  expect(prepared.headers["content-type"]).toMatch(/^multipart\/form-data; boundary=----loom-/);
+  const form = await new Response(new Uint8Array(Buffer.from(prepared.body, "base64")), {
+    headers: prepared.headers,
+  }).formData();
+  expect(form.getAll("title")).toEqual(["hello café", "second"]);
+  expect(form.has("ignored")).toBe(false);
+  const documents = form.getAll("documents") as File[];
+  expect(documents).toHaveLength(2);
+  expect(documents[0]!.name).toBe('report".txt');
+  expect(await documents[0]!.text()).toBe("fixture file");
+  expect(new Uint8Array(await documents[1]!.arrayBuffer())).toEqual(new Uint8Array([0, 1, 2, 255]));
+  for (const invalid of [
+    [],
+    [{ ...uploads[0]!, base64: "invalid" }],
+    [{ ...uploads[0]!, fieldIndex: 0 }],
+    [{ ...uploads[0]!, fileName: "bad\r\nheader" }],
+    [{ ...uploads[0]!, contentType: "text/plain\r\nInjected: yes" }],
+  ])
+    expect(() =>
+      prepareHoppscotchRequest(pack.requests[0]!, { label: "ok" }, undefined, invalid),
+    ).toThrow(/file|upload/i);
+  expect(() =>
+    prepareHoppscotchRequest(pack.requests[0]!, { label: "ok" }, undefined, [
+      { ...uploads[0]!, base64: Buffer.alloc(131072).toString("base64") },
+    ]),
+  ).toThrow(/128 KiB/);
 });

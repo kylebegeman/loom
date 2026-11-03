@@ -290,6 +290,13 @@ export const DevApiExport = Schema.Struct({
   files: Schema.Array(Schema.Struct({ name: Schema.String, content: Schema.String })),
 });
 export type DevApiExport = typeof DevApiExport.Type;
+export const DevApiUpload = Schema.Struct({
+  fieldIndex: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 999 })),
+  fileName: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  contentType: Schema.String.check(Schema.isMaxLength(200)),
+  base64: Schema.String.check(Schema.isMaxLength(174764)),
+});
+export type DevApiUpload = typeof DevApiUpload.Type;
 export const DevApiRun = Schema.Struct({
   ...DevApiEnvironmentTarget.fields,
   requestId: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
@@ -297,6 +304,7 @@ export const DevApiRun = Schema.Struct({
   expectedRevision: Schema.String,
   environmentRevision: Schema.String,
   bodyBase64: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(174764))),
+  uploads: Schema.optionalKey(Schema.Array(DevApiUpload).check(Schema.isMaxLength(32))),
   requestOverride: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1048576))),
 });
 export type DevApiRun = typeof DevApiRun.Type;
@@ -312,6 +320,8 @@ export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError"
     "unsupported-version",
     "unsupported-auth",
     "unsupported-body",
+    "invalid-upload",
+    "upload-too-large",
     "unsupported-method",
     "missing-variable",
     "variable-cycle",
@@ -339,6 +349,10 @@ export class DevApiError extends Schema.TaggedError<DevApiError>()("DevApiError"
         "This Hoppscotch schema version is not supported. Your source files are preserved.",
       "unsupported-auth":
         "This request's authentication type is not supported yet. Its native data is preserved.",
+      "invalid-upload":
+        "Choose files for each active multipart file field. File names, content types and encoded data must be valid.",
+      "upload-too-large":
+        "The complete encoded request, including multipart boundaries, must fit within 128 KiB. Choose smaller files or remove fields.",
       "unsupported-body":
         "This request needs a binary file or an unsupported body encoder. Its native data is preserved.",
       "unsupported-method": "This request uses an unsupported HTTP method.",

@@ -18,7 +18,23 @@ export function redactRequest(request: DevHttpRequest): DevHttpRequest {
   url.password = "";
   for (const name of new Set(url.searchParams.keys()))
     if (sensitiveQuery.test(name)) url.searchParams.set(name, "[redacted]");
-  return { ...request, url: url.toString(), headers: redactHeaders(request.headers) };
+  const multipart = Object.entries(request.headers).some(
+    ([key, value]) =>
+      key.toLowerCase() === "content-type" && /^multipart\/form-data(?:;|$)/i.test(value),
+  );
+  return {
+    ...request,
+    url: url.toString(),
+    headers: redactHeaders(request.headers),
+    ...(multipart
+      ? {
+          body:
+            request.bodyEncoding === "base64"
+              ? Buffer.from("[multipart upload omitted]").toString("base64")
+              : "[multipart upload omitted]",
+        }
+      : {}),
+  };
 }
 export function validRequest(request: DevHttpRequest): boolean {
   try {

@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as Redacted from "effect/Redacted";
-import { VaultError, type VaultItemSummary } from "@t3tools/contracts/fork";
+import { VaultError, type DevHttpRequest, type VaultItemSummary } from "@t3tools/contracts/fork";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as VaultCore from "../vault/VaultCore.ts";
 import * as VaultAccess from "../vault/VaultAccess.ts";
@@ -64,7 +64,7 @@ const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const root = yield* fs.makeTempDirectoryScoped();
   const calls: string[] = [];
-  const observation = { effect: Effect.void, echo: false };
+  const observation = { effect: Effect.void, echo: false, request: null as DevHttpRequest | null };
   const credential = { allowed: true, releases: 0, value: "fixture-private-api-key" };
   const item: VaultItemSummary = {
     id: "a".repeat(32),
@@ -106,6 +106,7 @@ const fixture = Effect.gen(function* () {
       Effect.gen(function* () {
         yield* observation.effect;
         calls.push(input.request.headers.authorization ?? "");
+        observation.request = input.request;
         return {
           id: input.requestId,
           request: input.request,
@@ -461,6 +462,24 @@ it.live(
         environmentRevision: bound.revision,
         requestKey: workspace.requests[0]!.id,
         requestId: "private",
+        requestOverride: JSON.stringify({
+          ...JSON.parse(collection())[0].requests[0],
+          body: {
+            contentType: "multipart/form-data",
+            body: [
+              { key: "credential", value: "<<token>>", active: true, isFile: false },
+              { key: "attachment", value: [], active: true, isFile: true },
+            ],
+          },
+        }),
+        uploads: [
+          {
+            fieldIndex: 1,
+            fileName: "note.txt",
+            contentType: "text/plain",
+            base64: Buffer.from("fixture file").toString("base64"),
+          },
+        ],
       };
       expect((yield* api.run({ ...input, requestId: "no-caller" }).pipe(Effect.flip)).reason).toBe(
         "vault-required",
@@ -468,6 +487,18 @@ it.live(
       const caller = { kind: "agent" as const, threadId: target.threadId };
       const result = yield* api.run(input, caller);
       expect(calls).toEqual([`Bearer ${credential.value}`]);
+      expect(observation.request?.bodyEncoding).toBe("base64");
+      expect(Buffer.from(observation.request!.body, "base64").toString()).toContain(
+        credential.value,
+      );
+      expect(Buffer.from(observation.request!.body, "base64").toString()).toContain("fixture file");
+      expect(yield* api.run(input, caller)).toEqual(result);
+      expect(calls).toHaveLength(1);
+      expect(
+        (yield* api
+          .run({ ...input, uploads: [{ ...input.uploads[0]!, base64: "ZGlmZmVyZW50" }] }, caller)
+          .pipe(Effect.flip)).reason,
+      ).toBe("request-conflict");
       expect(JSON.stringify(result)).not.toContain(credential.value);
       expect((yield* api.environment(scope)).variables.some((v) => v.key === "copied")).toBe(false);
       const fs = yield* FileSystem.FileSystem;

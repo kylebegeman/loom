@@ -696,6 +696,7 @@ export const make = Effect.gen(function* () {
             { ...selected, variables: [] },
             before.variables,
             input.bodyBase64,
+            input.uploads,
           ),
         catch: (e) =>
           e instanceof HoppscotchInputError

@@ -1,4 +1,6 @@
-import type { DevHttpRequest } from "@t3tools/contracts/fork";
+// @effect-diagnostics nodeBuiltinImport:off -- A deterministic multipart boundary keeps encoded uploads stable across request receipts.
+import * as NodeCrypto from "node:crypto";
+import type { DevApiUpload, DevHttpRequest } from "@t3tools/contracts/fork";
 export type NativeObject = Readonly<Record<string, unknown>>;
 export interface ApiVariable {
   readonly key: string;
@@ -23,6 +25,8 @@ type InputReason =
   | "variable-cycle"
   | "unsupported-auth"
   | "unsupported-body"
+  | "invalid-upload"
+  | "upload-too-large"
   | "unsupported-method";
 export class HoppscotchInputError extends Error {
   readonly reason: InputReason;
@@ -35,6 +39,9 @@ export class HoppscotchInputError extends Error {
         "A request variable is missing. Select an environment and fill its required values before sending.",
       "variable-cycle": "Environment variables contain a circular reference.",
       "unsupported-auth": "This request uses an authentication type that is not supported yet.",
+      "invalid-upload": "Choose valid files for each active multipart file field.",
+      "upload-too-large":
+        "The complete multipart request must fit within 128 KiB, including boundaries.",
       "unsupported-body":
         "This request body needs a file or an unsupported body encoder. Its native data has been preserved.",
       "unsupported-method": "This request uses an unsupported HTTP method.",
@@ -195,11 +202,100 @@ export function resolveVariables(
     });
   return resolve(template, new Set());
 }
+function multipartBody(
+  fields: readonly NativeObject[],
+  uploads: readonly DevApiUpload[],
+  resolve: (value: unknown) => string,
+) {
+  if (fields.length > 1000 || uploads.length > 32) throw new HoppscotchInputError("invalid-upload");
+  const quote = (value: string) =>
+    value.replaceAll("\r", "%0D").replaceAll("\n", "%0A").replaceAll('"', "%22");
+  const contentType = (value: unknown) => {
+    if (value === undefined || value === "") return "";
+    if (
+      typeof value !== "string" ||
+      value.length > 200 ||
+      !/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+(?:;[ -~]*)?$/.test(value)
+    )
+      throw new HoppscotchInputError("invalid-upload");
+    return value;
+  };
+  for (const file of uploads) {
+    const field = fields[file.fieldIndex];
+    if (
+      !field ||
+      field.active === false ||
+      !nativeText(field.key) ||
+      field.isFile !== true ||
+      !file.fileName ||
+      file.fileName.length > 255 ||
+      /[\r\n\0/\\]/.test(file.fileName) ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.base64)
+    )
+      throw new HoppscotchInputError("invalid-upload");
+    contentType(file.contentType);
+    if (Buffer.byteLength(file.base64, "base64") > 131072)
+      throw new HoppscotchInputError("upload-too-large");
+  }
+  const parts: Buffer[] = [];
+  const append = (key: string, bytes: Buffer, type: string, fileName?: string) => {
+    parts.push(
+      Buffer.concat([
+        Buffer.from(
+          `Content-Disposition: form-data; name="${quote(key)}"${fileName === undefined ? "" : `; filename="${quote(fileName)}"`}\r\n${type ? `Content-Type: ${type}\r\n` : ""}\r\n`,
+        ),
+        bytes,
+        Buffer.from("\r\n"),
+      ]),
+    );
+  };
+  for (const [index, field] of fields.entries()) {
+    if (field.active === false || !nativeText(field.key)) continue;
+    const key = resolve(field.key);
+    const type = contentType(field.contentType);
+    if (field.isFile === true) {
+      const files = uploads.filter((file) => file.fieldIndex === index);
+      if (!files.length) throw new HoppscotchInputError("invalid-upload");
+      for (const file of files)
+        append(
+          key,
+          Buffer.from(file.base64, "base64"),
+          type || file.contentType || "application/octet-stream",
+          file.fileName,
+        );
+    } else {
+      if (typeof field.value !== "string") throw new HoppscotchInputError("invalid-format");
+      append(key, Buffer.from(resolve(field.value)), type);
+    }
+  }
+  const hash = NodeCrypto.createHash("sha256");
+  for (const part of parts) hash.update(part);
+  let boundary = `----loom-${hash.digest("hex")}`;
+  while (parts.some((part) => part.includes(boundary))) boundary += "-";
+  const body = Buffer.concat([
+    ...parts.flatMap((part) => [Buffer.from(`--${boundary}\r\n`), part]),
+    Buffer.from(`--${boundary}--\r\n`),
+  ]);
+  if (body.length > 131072) throw new HoppscotchInputError("upload-too-large");
+  return {
+    body: body.toString("base64"),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
 export function prepareHoppscotchRequest(
   request: NativeRequest,
   values: Readonly<Record<string, string>>,
   bodyBase64?: string,
+  uploads: readonly DevApiUpload[] = [],
 ): DevHttpRequest {
+  if (
+    uploads.length &&
+    (request.source.body === null ||
+      typeof request.source.body !== "object" ||
+      !("contentType" in request.source.body) ||
+      request.source.body.contentType !== "multipart/form-data")
+  )
+    throw new HoppscotchInputError("invalid-upload");
   const variables = {
     ...values,
     ...Object.fromEntries(request.variables.map((v) => [v.key, v.value])),
@@ -241,7 +337,19 @@ export function prepareHoppscotchRequest(
     const b = nativeObject(request.source.body);
     const contentType = b.contentType;
     if (contentType !== undefined && contentType !== null) {
-      if (contentType === "multipart/form-data") throw new HoppscotchInputError("unsupported-body");
+      if (contentType === "multipart/form-data") {
+        if (!Array.isArray(b.body)) throw new HoppscotchInputError("unsupported-body");
+        const multipart = multipartBody(objects(b.body), uploads, resolve);
+        headers["content-type"] = multipart.contentType;
+        return {
+          method,
+          url: url.toString(),
+          headers,
+          body: multipart.body,
+          bodyEncoding: "base64",
+          timeoutMs: 30000,
+        };
+      }
       if (contentType === "application/octet-stream") {
         if (
           bodyBase64 === undefined ||

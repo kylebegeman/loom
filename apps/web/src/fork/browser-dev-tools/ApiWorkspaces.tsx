@@ -1,3 +1,5 @@
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "~/state/entities";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -33,7 +35,7 @@ import {
 import ApiRequestEditor from "./ApiRequestEditor";
 import ApiEnvironmentEditor from "./ApiEnvironmentEditor";
 import { LabSelect, MethodBadge } from "./HttpLabParts";
-import { draftObject, draftText } from "./apiRequestDraft";
+import { draftObject, draftText, draftRows, readMultipartFiles } from "./apiRequestDraft";
 import { cn } from "~/lib/utils";
 import { randomUUID } from "~/lib/utils";
 import { devEnvironment as dev, runDevCommand } from "./state";
@@ -126,6 +128,13 @@ export default function ApiWorkspaces({
   onBusy: (busy: boolean) => void;
 }) {
   const id = useId();
+  const supportsMultipart = supportsLoomFeature(
+    useServerConfigs().get(threadRef.environmentId)?.environment.capabilities,
+    "browser-dev-tools-api-multipart",
+  );
+  const [multipartFiles, setMultipartFiles] = useState<Readonly<Record<number, readonly File[]>>>(
+    {},
+  );
   const canUse = useAtomValue(dev.apiList.permissionAtom(threadRef.environmentId));
   const [workspaces, setWorkspaces] = useState<readonly DevApiWorkspace[] | null>(null);
   const [details, setDetails] = useState<DevApiDetails | null>(null);
@@ -183,6 +192,7 @@ export default function ApiWorkspaces({
   };
   const chooseWorkspace = async (workspaceId: string) => {
     const revision = ++generation.current;
+    setMultipartFiles({});
     setBodyBase64(undefined);
     setBodyFileName("");
     setDetails(null);
@@ -212,6 +222,7 @@ export default function ApiWorkspaces({
   const chooseRequest = async (requestKey: string) => {
     if (!details) return;
     const revision = ++generation.current;
+    setMultipartFiles({});
     setBodyBase64(undefined);
     setBodyFileName("");
     working(true);
@@ -318,25 +329,39 @@ export default function ApiWorkspaces({
     working(false);
   };
   const send = async () => {
-    if (!details?.selected || !environment || busy || dirty) return;
-    const input = {
-      ...target.input,
-      workspaceId: details.workspace.id,
-      requestKey: details.selected.id,
-      source,
-      expectedRevision: details.revision,
-      environmentRevision: environment.revision,
-      ...(bodyBase64 === undefined ? {} : { bodyBase64 }),
-      ...(supportsEditing && draft !== details.selected.sourceJson
-        ? { requestOverride: draft }
-        : {}),
-    };
-    const key = JSON.stringify(input);
-    if (pending.current?.key !== key) pending.current = { key, requestId: randomUUID() };
+    if (!details?.selected || !environment || busy || dirty || missingMultipartFiles) return;
     working(true);
     setError(null);
     setNote(null);
     try {
+      const input = {
+        ...target.input,
+        workspaceId: details.workspace.id,
+        requestKey: details.selected.id,
+        source,
+        expectedRevision: details.revision,
+        environmentRevision: environment.revision,
+        ...(draftObject(sourceDraft.body).contentType === "multipart/form-data"
+          ? {
+              uploads: await readMultipartFiles(
+                Object.fromEntries(
+                  Object.entries(multipartFiles).filter(([index]) => {
+                    const field = draftRows(draftObject(sourceDraft.body).body)[Number(index)];
+                    return (
+                      field?.active !== false && field?.isFile === true && draftText(field.key)
+                    );
+                  }),
+                ),
+              ),
+            }
+          : {}),
+        ...(bodyBase64 === undefined ? {} : { bodyBase64 }),
+        ...(supportsEditing && draft !== details.selected.sourceJson
+          ? { requestOverride: draft }
+          : {}),
+      };
+      const key = JSON.stringify(input);
+      if (pending.current?.key !== key) pending.current = { key, requestId: randomUUID() };
       const value = await runDevCommand(dev.apiRun, {
         ...target,
         input: { ...input, requestId: pending.current.requestId },
@@ -372,6 +397,7 @@ export default function ApiWorkspaces({
         ...target,
         input: { ...target.input, workspaceId: details.workspace.id },
       });
+      setMultipartFiles({});
       setBodyBase64(undefined);
       setBodyFileName("");
       setDetails(null);
@@ -447,6 +473,7 @@ export default function ApiWorkspaces({
   };
   const upload = async (file: File | undefined) => {
     const revision = ++generation.current;
+    setMultipartFiles({});
     setBodyBase64(undefined);
     setBodyFileName("");
     if (!file) return;
@@ -481,6 +508,16 @@ export default function ApiWorkspaces({
     /* The binding editor asks for an origin when templates cannot resolve yet. */
   }
   const bodyType = draftObject(sourceDraft.body).contentType;
+  const missingMultipartFiles =
+    bodyType === "multipart/form-data" &&
+    (!supportsMultipart ||
+      draftRows(draftObject(sourceDraft.body).body).some(
+        (field, index) =>
+          field.active !== false &&
+          draftText(field.key) &&
+          field.isFile === true &&
+          !multipartFiles[index]?.length,
+      ));
   if (!canUse)
     return (
       <p role="status" className="p-5 text-sm">
@@ -770,6 +807,7 @@ export default function ApiWorkspaces({
                           onClick={() => {
                             setDraft(details.selected!.sourceJson);
                             setEditorGeneration(editorGeneration + 1);
+                            setMultipartFiles({});
                           }}
                         >
                           <Undo2Icon />
@@ -826,13 +864,21 @@ export default function ApiWorkspaces({
                         busy ||
                         !environment ||
                         dirty ||
-                        (bodyType === "application/octet-stream" && bodyBase64 === undefined)
+                        (bodyType === "application/octet-stream" && bodyBase64 === undefined) ||
+                        missingMultipartFiles
                       }
                     >
                       <SendIcon />
                       {busy ? "Working..." : "Send"}
                     </Button>
                   </form>
+                  {missingMultipartFiles && environment && !dirty ? (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      {supportsMultipart
+                        ? "Choose files for every active file field in Body before sending."
+                        : "Update this request's computer to send multipart forms."}
+                    </p>
+                  ) : null}
                   {dirty ? (
                     <p className="text-xs text-warning-foreground">
                       Save or discard variable edits before sending.
@@ -856,6 +902,24 @@ export default function ApiWorkspaces({
                     disabled={busy}
                     bodyFileName={bodyFileName}
                     onUpload={(file) => void upload(file)}
+                    supportsMultipart={supportsMultipart}
+                    multipartFiles={multipartFiles}
+                    onMultipartFiles={(index, files) =>
+                      setMultipartFiles((current) => ({ ...current, [index]: files }))
+                    }
+                    onResetMultipartFiles={() => setMultipartFiles({})}
+                    onRemoveMultipartField={(index) =>
+                      setMultipartFiles((current) =>
+                        Object.fromEntries(
+                          Object.entries(current)
+                            .filter(([key]) => Number(key) !== index)
+                            .map(([key, files]) => [
+                              Number(key) > index ? Number(key) - 1 : Number(key),
+                              files,
+                            ]),
+                        ),
+                      )
+                    }
                   />
                 ) : (
                   <details className="px-4 pb-4 text-xs">

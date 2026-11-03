@@ -99,8 +99,13 @@ requiring other APIs report failure; they are preserved in the imported source.
 
 Basic and Bearer authentication, inherited collection headers/authentication, query parameters,
 JSON/text bodies and URL-encoded forms are supported. Binary upload requests ask for a file up
-to 128 KiB. Multipart bodies and other authentication encoders remain unsupported and fail
-before dispatch. Response previews use the same limits and history as one-off requests.
+to 128 KiB. Multipart forms support text fields, repeated field names, and one or more files per file
+field. In **Body**, choose **Multipart form**, add fields and select their Text or File type.
+Text values use the selected environment and Vault bindings. Choose files explicitly each time
+you reopen a request; imported exports contain field definitions, not file bytes. The total
+encoded body, including field headers and boundaries, must fit within 128 KiB, with at most
+32 files. Loom sets the multipart boundary automatically. Upload bodies are omitted from
+saved HTTP history. Other unsupported authentication encoders fail before dispatch. Response previews use the same limits and history as one-off requests.
 
 Captures update the selected JSON environment. For dotenv sources, captures stay in request
 variables tied to that checkout file and its current contents; **Save .env** explicitly

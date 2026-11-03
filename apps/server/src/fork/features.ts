@@ -54,6 +54,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "browser-dev-tools-http",
   "browser-dev-tools-api",
   "browser-dev-tools-api-editor",
+  "browser-dev-tools-api-multipart",
   "project-workflows",
   "core",
   "vault-core",
