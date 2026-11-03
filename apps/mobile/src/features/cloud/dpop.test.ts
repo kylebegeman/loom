@@ -6,6 +6,7 @@ import * as ExpoCrypto from "expo-crypto"; // fork: secure-native-random
 import { vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom"; // fork: secure-native-random
 import * as Effect from "effect/Effect";
 import { verifyDpopProof } from "@t3tools/shared/dpop";
 
@@ -73,8 +74,8 @@ describe("mobile DPoP", () => {
         throw new Error("Native secure randomness unavailable");
       });
       try {
-        const crypto = yield* Crypto.Crypto;
-        const result = yield* Effect.exit(crypto.randomBytes(16));
+        const secureRandom = yield* SecureRandom.SecureRandom;
+        const result = yield* Effect.exit(secureRandom.randomBytes(16));
         expect(result._tag).toBe("Failure");
       } finally {
         random.mockRestore();
