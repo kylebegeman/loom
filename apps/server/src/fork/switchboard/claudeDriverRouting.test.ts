@@ -1,4 +1,5 @@
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
@@ -30,7 +31,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
 const layerTest = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-claude-driver-routing-",
 }).pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(IdAllocator.layer),
   Layer.provideMerge(McpProviderSessions.layer),
   Layer.provideMerge(ResetCreditCoordinator.layerTest),

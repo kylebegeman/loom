@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Integration fixture inspects disposable public files and socket cleanup with Node filesystem APIs.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -31,8 +32,8 @@ const backend = OpenBaoStore.layer.pipe(
   ),
 );
 const dependencies = Layer.merge(
-  NodeServices.layer,
-  backend.pipe(Layer.provide(NodeServices.layer)),
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
+  backend.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 const command = {
   expectedVersion: 1,
@@ -184,10 +185,10 @@ it.live.skipIf(!configured)(
       Effect.scoped,
       Effect.provide(
         Layer.merge(
-          NodeServices.layer,
+          Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
           SshTransport.layer.pipe(
             Layer.provideMerge(SshCrypto.layer),
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       ),
@@ -229,10 +230,10 @@ it.live.skipIf(!configured)(
       Effect.scoped,
       Effect.provide(
         Layer.merge(
-          NodeServices.layer,
+          Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
           SshTransport.layer.pipe(
             Layer.provideMerge(SshCrypto.layer),
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
       ),

@@ -5,7 +5,8 @@ import {
   type LibraryProfileSettings,
   type LibraryProjectProfile,
 } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
@@ -65,10 +66,11 @@ export const profileDifferences = (
 /** Fills, compares and applies a profile's settings on a copy's local projects. */
 export const makeProfileSettings = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest,
+    secureRandom = yield* SecureRandom.SecureRandom;
   const digest = (text: string) =>
     crypto
-      .digest("SHA-256", new TextEncoder().encode(text))
+      .digest(Digest.sha256, new TextEncoder().encode(text))
       .pipe(Effect.map(Hex.encode), Effect.orDie);
 
   const update = (commandId: string, projectId: ProjectId, values: Partial<LocalSettings>) =>
@@ -139,7 +141,7 @@ export const makeProfileSettings = Effect.gen(function* () {
           project.differences.map((difference) => [difference.field, difference.profile]),
         ) as Partial<LocalSettings>;
         // A fresh id each time: the same differences can come back and be applied again.
-        const id = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+        const id = yield* secureRandom.uuidV4().pipe(Effect.orDie);
         yield* update(`library-profile-apply:${id}`, project.localProjectId, values);
       }
       return yield* read(input);

@@ -1,4 +1,5 @@
 import { it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthLibraryPublishScope, AuthSessionId, EnvironmentId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -69,7 +70,7 @@ const layer = Credential.layer.pipe(
       getEnvironmentId: Effect.succeed(EnvironmentId.make("library-authority")),
     }),
   ),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 it.layer(layer)("LibraryPublishingCredential", (it) => {

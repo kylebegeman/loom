@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Semaphore from "effect/Semaphore";
 import * as ObjectStore from "./LibraryObjectStore.ts";
@@ -50,7 +50,7 @@ interface Row {
 }
 const isLibraryError = Schema.is(LibraryError);
 const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const sql = yield* SqlClient.SqlClient;
   const objects = yield* ObjectStore.LibraryObjectStore;
   const uploads = yield* Semaphore.make(1);

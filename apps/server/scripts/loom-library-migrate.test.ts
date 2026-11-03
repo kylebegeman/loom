@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId, EventId, ThreadId } from "@t3tools/contracts";
@@ -8,7 +9,7 @@ import {
   type LibraryProject,
 } from "@t3tools/contracts/fork";
 import * as ConfigProvider from "effect/ConfigProvider";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -50,7 +51,7 @@ const encodePlan = Schema.encodeEffect(Schema.fromJsonString(LibraryMigrationPla
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const base = yield* fs.makeTempDirectoryScoped({
     prefix: "loom-library-migration-command-test-",
   });
@@ -156,7 +157,7 @@ const fixture = Effect.gen(function* () {
           sourceEnvironmentId: source,
           attachmentId: attachment.id,
           digest: responses.assetDigestValid
-            ? Hex.encode(yield* crypto.digest("SHA-256", bytes))
+            ? Hex.encode(yield* crypto.digest(Digest.sha256, bytes))
             : "0".repeat(64),
           bytes: bytes.length,
           filename: attachment.name,
@@ -209,7 +210,7 @@ const fixture = Effect.gen(function* () {
   const chunkText = yield* encodeShadow(single);
   yield* fs.writeFileString(path.join(chunked, "chunk-00000.json"), chunkText, { mode: 0o600 });
   const chunkDigest = Hex.encode(
-    yield* crypto.digest("SHA-256", new TextEncoder().encode(chunkText)),
+    yield* crypto.digest(Digest.sha256, new TextEncoder().encode(chunkText)),
   );
   yield* fs.writeFileString(
     path.join(chunked, "manifest.json"),
@@ -277,7 +278,7 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
         ConfigProvider.layer(
           ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_TOKEN: "migration-test-token" } }),
         ),
-        NodeServices.layer,
+        Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
       ),
     ),
     Effect.scoped,
@@ -309,7 +310,7 @@ describe("verified Library migration commands", () => {
           };
           const text = yield* encodeShadow(second);
           const bytes = new TextEncoder().encode(text);
-          const crypto = yield* Crypto.Crypto;
+          const crypto = yield* Digest.Digest;
           yield* f.fs.writeFileString(f.path.join(f.chunked, "chunk-00001.json"), text);
           yield* f.fs.writeFileString(
             manifestFile,
@@ -320,7 +321,7 @@ describe("verified Library migration commands", () => {
                 ...manifest.chunks,
                 {
                   file: "chunk-00001.json",
-                  sha256: Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+                  sha256: Hex.encode(yield* crypto.digest(Digest.sha256, bytes)),
                   byteLength: bytes.length,
                   threads: 1,
                   threadIds: [secondId],

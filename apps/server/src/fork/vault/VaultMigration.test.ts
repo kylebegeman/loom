@@ -2,6 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 import * as SshCrypto from "./SshCrypto.ts";
 import { expect, it } from "@effect/vitest";
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import { VaultError, type VaultMigrationPrepare } from "@t3tools/contracts/fork";
@@ -45,7 +46,7 @@ const fixture = Effect.sync(() => {
   const shared = Layer.mergeAll(
     backend,
     SshCrypto.layer,
-    NodeServices.layer,
+    Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer),
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("migration-test")),
     }),

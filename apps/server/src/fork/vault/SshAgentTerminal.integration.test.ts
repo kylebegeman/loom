@@ -8,6 +8,7 @@ import * as NodeProcess from "node:process";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -40,8 +41,8 @@ const backend = OpenBaoStore.layer.pipe(
   ),
 );
 const dependencies = Layer.merge(
-  NodeServices.layer,
-  backend.pipe(Layer.provide(NodeServices.layer)),
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
+  backend.pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 const decodeOpen = Schema.decodeUnknownEffect(VaultSshAgentOpen),
   decodeFrame = Schema.decodeUnknownEffect(VaultSshAgentFrame),

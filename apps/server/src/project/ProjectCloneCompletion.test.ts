@@ -1,5 +1,6 @@
 // fork: project-preparation - Clone completion keeps current metadata in connected clients.
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -57,7 +58,7 @@ it.effect(
         Layer.provideMerge(SqlitePersistence.layerMemory),
         Layer.provideMerge(ServerSettings.layerTest()),
         Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "clone-enrichment-test-" })),
-        Layer.provide(NodeServices.layer),
+        Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       );
       yield* Effect.gen(function* () {
         const service = yield* ProjectService.ProjectService;

@@ -7,6 +7,7 @@ import {
   type SourceControlCloneProtocol,
   SourceControlRepositoryError,
 } from "@t3tools/contracts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"; // fork: file-placement
 import * as NodeServices from "@effect/platform-node/NodeServices"; // fork: file-placement
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -43,7 +44,7 @@ const trackerLayer = (
     ),
     Layer.provide(GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer))), // fork: file-placement
     Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)), // fork: file-placement
   );
 
 function makeHarness(options?: {
@@ -500,7 +501,7 @@ describe("ProjectCloneTracker", () => {
         GitVcsDriver.layer.pipe(
           Layer.provide(VcsProcess.layer),
           Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-clone-git-" })),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),

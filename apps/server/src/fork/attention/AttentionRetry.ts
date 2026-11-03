@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { isRetryableFailureClass } from "@t3tools/shared/fork/run-continuation";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
@@ -29,7 +29,7 @@ export class AttentionRetry extends Context.Service<
 
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   return AttentionRetry.of({
     retry: Effect.fn("AttentionRetry.retry")(function* (input, actor) {
       const shell = yield* threads
@@ -58,7 +58,7 @@ const make = Effect.gen(function* () {
         pendingSubagentAttentionRequests(family.threads).has(input.threadId)
       )
         return yield* new AttentionRetryError({ reason: "pending-request" });
-      const id = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
+      const id = yield* crypto.uuidV4().pipe(Effect.orDie);
       const result = yield* threads
         .dispatch({
           type: "message.dispatch",

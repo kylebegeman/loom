@@ -6,6 +6,7 @@ import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { restoreWorktree } from "./workspace/restoreWorktree.ts";
 import * as SetupMarker from "./workspace/setupMarker.ts";
 import { restoreScratchCheckout } from "./workspace/ScratchCheckout.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
@@ -795,7 +796,7 @@ const pausedMeasurementFixture = (storageCleanup?: StorageCleanupSettings) =>
   });
 const cleanupTestLayer = GitVcsDriver.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "storage-cleanup-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const runCleanupTest = <A, E>(
   effect: Effect.Effect<

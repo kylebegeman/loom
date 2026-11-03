@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
@@ -101,7 +102,12 @@ const run = <A, E>(use: (harness: Harness) => Effect.Effect<A, E, SqlClient.SqlC
           .page({ projectId: project.id, kinds: conversationKinds })
           .pipe(Effect.map((page) => page.entries.map((entry) => entry.kind))),
     });
-  }).pipe(Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))), Effect.scoped);
+  }).pipe(
+    Effect.provide(
+      layerMemory.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+    Effect.scoped,
+  );
 
 /** A later snapshot of the same conversation: newer journal sequence and update time. */
 const revise = (

@@ -1,4 +1,5 @@
 // fork: mini-native-retention
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { GitCommandError, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -18,7 +19,7 @@ import {
 
 const layer = GitVcsDriver.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "scratch-archive-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

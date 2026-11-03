@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -151,9 +152,9 @@ const serveProductionMcp = HttpRouter.serve(McpHttpServer.layer, {
 const layerHttpTest = Layer.mergeAll(
   NodeHttpServer.layerTest,
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-catalog-mcp-" }).pipe(
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   ),
-  NodeServices.layer,
+  Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
 );
 
 const providerInstanceId = ProviderInstanceId.make("codex");
@@ -205,8 +206,9 @@ it.effect("lists each session only the tools its credential can call", () =>
  * output schema. Raise a budget only on purpose, after cutting what new text repeats.
  */
 const AGENT_VISIBLE_BUDGET_BYTES = 420_000;
-// The 340-tool response measures 1,054,829 bytes, leaving about 4% for small additions.
-const FULL_CATALOG_BUDGET_BYTES = 1_100_000;
+// The 375-tool response measures 1,109,208 bytes; 33,451 are the safe-integer bounds Effect 4.1
+// adds to every `Schema.Int`, so the headroom for new text matches the earlier 1,100,000 budget.
+const FULL_CATALOG_BUDGET_BYTES = 1_135_000;
 const TOOL_BUDGET_BYTES = 32 * 1024;
 
 it.effect("keeps the full tool catalog within its byte budgets", () =>

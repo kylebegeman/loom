@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { assert, expect, it } from "@effect/vitest";
@@ -592,7 +594,7 @@ it.effect("builds device cases from product-backed worlds and synthetic prior tu
     assert.equal(native.kind, "bad");
     assert.equal(native.setup.harness, "claude");
     assert.isNotEmpty(cases.find((c) => c.id === "SEED-01")!.setup.priorTurns!);
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.each([
@@ -1306,7 +1308,7 @@ it.effect("accepts a successful exact-host recovery after a real device_open err
         stopReason: "end_turn",
       }).every((c) => c.pass),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it("keeps subshell-only launcher aliases out of the parent shell", () => {
@@ -2964,7 +2966,7 @@ it.effect("fleet case worlds survive decoding and reach the product-backed runne
       assert.include(error, id === "OWN-01" ? "DEVICE_IN_USE" : "SESSION_NOT_FOUND");
       if (id === "OWN-01") assert.equal(tools.owners[0]!.session, "t3-a062c547ef0b6bf8ee839b67");
     }
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.each([
@@ -3138,7 +3140,7 @@ it.effect("R12 OWN-01 protects occupied panel sessions from selected and wildcar
       }),
       [],
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -3173,7 +3175,7 @@ it.effect(
           calls: [...calls, calls.at(-1)!, ...good.calls.slice(1)],
         }),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 const capRun6 = [

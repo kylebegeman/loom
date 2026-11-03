@@ -1,6 +1,7 @@
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import * as Stream from "effect/Stream";
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ThreadId,
@@ -444,7 +445,7 @@ const run = <A, E, R>(use: (state: State) => Effect.Effect<A, E, R>) =>
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "t3-project-operations-" }),
         ),
-        Layer.provideMerge(NodeServices.layer),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
     Effect.scoped,

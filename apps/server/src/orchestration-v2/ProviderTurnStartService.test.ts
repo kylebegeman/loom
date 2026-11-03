@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 // fork: project-lifecycle
 import { LibraryError, type LibraryProject, ProjectLifecycleError } from "@t3tools/contracts/fork";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
@@ -5,7 +6,6 @@ import * as LibraryWorkspace from "../fork/project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 // fork: mini-native-retention
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"; // fork: project-lifecycle
 import * as TerminalManager from "../terminal/Manager.ts"; // fork: project-lifecycle
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
@@ -1745,7 +1745,7 @@ effectIt.effect(
         },
       ]);
       expect(JSON.stringify(harness.events)).not.toContain("private git diagnostic");
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 effectIt.effect("recovers an abandoned failed turn before continuing its native conversation", () =>
@@ -2000,7 +2000,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
           runtimePolicy: expect.objectContaining({ cwd: worktreePath }),
         }),
       );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 effectIt.effect("reads current startup state after waiting for the workspace lease", () =>
@@ -2388,7 +2388,7 @@ effectIt.effect(
           Layer.provideMerge(
             ServerConfig.layerTest(process.cwd(), { prefix: "scratch-provider-" }),
           ),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
       Effect.scoped,
@@ -2563,7 +2563,7 @@ for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as 
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), { prefix: "project-provider-" }),
             ),
-            Layer.provideMerge(NodeServices.layer),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
         Effect.scoped,

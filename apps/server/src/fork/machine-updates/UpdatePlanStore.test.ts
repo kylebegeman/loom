@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { UpdatePlan } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -40,5 +41,5 @@ it.live("atomically reloads an armed plan and refuses corrupt or oversized state
       yield* fs.writeFileString(path.join(directory, "plan.json"), "x".repeat(4097));
       assert.equal((yield* reloaded.read.pipe(Effect.flip)).reason, "read");
     }),
-  ).pipe(Effect.provide(NodeServices.layer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

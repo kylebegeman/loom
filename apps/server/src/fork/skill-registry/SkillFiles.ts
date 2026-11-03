@@ -1,5 +1,5 @@
 import { SkillRegistryError } from "@t3tools/contracts/fork";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
@@ -24,10 +24,10 @@ export const makeSkillFiles = Effect.gen(function* () {
   const runtime = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const hash = (value: string | Uint8Array) =>
     crypto
-      .digest("SHA-256", typeof value === "string" ? new TextEncoder().encode(value) : value)
+      .digest(Digest.sha256, typeof value === "string" ? new TextEncoder().encode(value) : value)
       .pipe(Effect.map(Hex.encode), Effect.orDie);
   const within = (root: string, file: string) => {
     const relative = path.relative(root, file);

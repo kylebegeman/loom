@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -16,7 +17,7 @@ import * as GitHubTerminal from "./GitHubTerminal.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 import { vaultRun } from "./VaultActiveRun.testkit.ts";
 
-const dependencies = Layer.merge(NodeServices.layer, memoryVault);
+const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 const fixture = Effect.gen(function* () {
   const executed: string[] = [];
   let beforeExecute: Effect.Effect<void> = Effect.void;
@@ -335,7 +336,9 @@ it.effect("refuses unreadable retained run selections instead of rediscovering c
     expect(result.state).toBe("policy-denied");
     expect(result.selected).toBeNull();
     expect(result.choices).toEqual([]);
-  }).pipe(Effect.provide(Layer.merge(NodeServices.layer, backend)));
+  }).pipe(
+    Effect.provide(Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), backend)),
+  );
 });
 
 it.effect(
@@ -667,7 +670,9 @@ it.effect.each([
     expect(result.state).toBe(state);
     expect(result.selected).toBeNull();
     expect(result.choices).toEqual([]);
-  }).pipe(Effect.provide(Layer.merge(NodeServices.layer, backend)));
+  }).pipe(
+    Effect.provide(Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), backend)),
+  );
 });
 
 it.effect("refuses a changed key in the final execution guard and releases its workload", () =>

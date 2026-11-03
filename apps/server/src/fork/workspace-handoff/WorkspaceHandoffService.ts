@@ -23,7 +23,7 @@ import { restoreManagedProjectCheckout } from "../../workspace/ManagedProjectChe
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -84,11 +84,11 @@ const make = Effect.gen(function* () {
   const lanes = yield* ProjectLifecycle.ProjectLifecycleService;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const locks = yield* KeyedLock.make<string>();
   const digest = (value: string) =>
     crypto
-      .digest("SHA-256", new TextEncoder().encode(value))
+      .digest(Digest.sha256, new TextEncoder().encode(value))
       .pipe(
         Effect.map((bytes) =>
           Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""),

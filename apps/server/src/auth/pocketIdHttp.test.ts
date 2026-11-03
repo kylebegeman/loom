@@ -1,4 +1,5 @@
 import { it } from "@effect/vitest";
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthSessionId,
@@ -12,7 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as HttpApi from "effect/http-api/HttpApi";
@@ -143,7 +144,7 @@ const sessions = Layer.mock(SessionStore.SessionStore)({
   legacyCookieName: undefined,
 });
 const platform = HttpPlatform.layer.pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer)),
   Layer.provideMerge(Etag.layerWeak),
 );
 const layerBrowser = PocketIdHttp.layer.pipe(
@@ -166,13 +167,13 @@ const layerTokens = HttpApiBuilder.layer(TestApi).pipe(
   Layer.provide(platform),
 );
 
-it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTTP", (it) => {
   it.effect(
     "serves public metadata and sets secure browser cookies with the destination bound to login state",
     () =>
       Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
-        const context = Context.make(Crypto.Crypto, crypto);
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto);
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
@@ -234,8 +235,8 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
     "exchanges explicit external JWT token types without falling back to bootstrap authentication",
     () =>
       Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
-        const context = Context.make(Crypto.Crypto, crypto).pipe(
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto).pipe(
           Context.add(
             ServerSecretStore.ServerSecretStore,
             ServerSecretStore.ServerSecretStore.of({
@@ -280,13 +281,13 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
     "serves CORS preflight and a credential-free browser exchange through the server CORS layer",
     () =>
       Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
-        const context = Context.make(Crypto.Crypto, crypto);
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto);
         const routes = Layer.merge(layerBrowser, ServerHttp.layerBrowserApiCors).pipe(
           Layer.provide(
             ServerConfig.layerTest(process.cwd(), { prefix: "loom-identity-cors-test-" }),
           ),
-          Layer.provide(NodeServices.layer),
+          Layer.provide(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer)),
         );
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(routes, { disableLogger: true })),
@@ -341,8 +342,8 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
     "renews native sessions with the current session and tells renewal apart from retryable failures",
     () =>
       Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
-        const context = Context.make(Crypto.Crypto, crypto);
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto);
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
@@ -385,8 +386,8 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
     "tells a renewing device and a browser that only a passkey sign-in works, never as retryable",
     () =>
       Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
-        const context = Context.make(Crypto.Crypto, crypto);
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto);
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
@@ -477,8 +478,8 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
     "revokes a same-origin cookie session and expires its cookies while rejecting cross-origin logout",
     () =>
       Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
-        const context = Context.make(Crypto.Crypto, crypto);
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto);
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>

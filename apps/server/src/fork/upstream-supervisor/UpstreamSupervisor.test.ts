@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -157,7 +158,7 @@ const fixture = Effect.gen(function* () {
   };
 });
 
-it.layer(NodeServices.layer)("upstream supervisor", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("upstream supervisor", (it) => {
   it.effect(
     "requires owner authorization to configure and rejects expired, revoked or foreign chiefs",
     () =>

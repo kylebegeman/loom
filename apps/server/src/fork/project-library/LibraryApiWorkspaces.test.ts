@@ -1,7 +1,8 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ConfigProvider from "effect/ConfigProvider";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
@@ -29,9 +30,9 @@ const bundle: LibraryApiBundle = {
   files: [{ name: "api.json", content: '[{"v":12,"name":"API","folders":[],"requests":[]}]' }],
 };
 const hash = Effect.fn("fixture.hash")(function* (value: unknown) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   return Hex.encode(
-    yield* crypto.digest("SHA-256", new TextEncoder().encode(stableStringify(value))),
+    yield* crypto.digest(Digest.sha256, new TextEncoder().encode(stableStringify(value))),
   );
 });
 const catalogLayer = Catalog.layer.pipe(
@@ -116,7 +117,7 @@ const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       Layer.mergeAll(
         Persistence.layerMemory,
         Config.layerTest(process.cwd(), { prefix: "pulse-storage-" }),
-      ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
     ),
   );
 

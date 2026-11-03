@@ -1,7 +1,7 @@
 import { UpdatePlanError, type UpdatePlan, type UpdatePlanStatus } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -31,7 +31,7 @@ const make = Effect.gen(function* () {
   const store = yield* UpdatePlanStore.UpdatePlanStore;
   const runtime = yield* UpdateRuntime.UpdateRuntime;
   const handoff = yield* UpdateHandoff.UpdateHandoff;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const loaded = yield* store.read.pipe(
     Effect.match({
       onFailure: (error) => ({ plan: null, error }),
@@ -188,7 +188,7 @@ const make = Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           yield* save({
             version: 1,
-            id: yield* crypto.randomUUIDv4().pipe(Effect.orDie),
+            id: yield* crypto.uuidV4().pipe(Effect.orDie),
             targetVersion,
             state: "armed",
             createdAt: now,

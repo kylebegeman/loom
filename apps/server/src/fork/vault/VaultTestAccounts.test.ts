@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -76,7 +77,9 @@ const withAccounts = <A, E>(
 ) => {
   const f = fixture();
   return Effect.flatMap(setup(f), use).pipe(
-    Effect.provide(f.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+    Effect.provide(
+      f.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
   );
 };
 const setup = (f: ReturnType<typeof fixture>) =>
@@ -511,5 +514,9 @@ it.effect("caches an absent ledger until a local write attempt", () => {
     );
     expect((yield* service.snapshot("client:one")).collections).toHaveLength(1);
     expect(f.faults.reads).toBe(2);
-  }).pipe(Effect.provide(f.layer.pipe(Layer.provideMerge(NodeServices.layer))));
+  }).pipe(
+    Effect.provide(
+      f.layer.pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    ),
+  );
 });

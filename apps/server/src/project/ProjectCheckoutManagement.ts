@@ -1,5 +1,5 @@
 // fork: project-checkout-management
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Schema from "effect/Schema";
 import type { RepositoryIdentity, ProjectId } from "@t3tools/contracts";
@@ -80,10 +80,10 @@ const make = Effect.gen(function* () {
   const cleanup = yield* StorageCleanup.StorageCleanup;
   const runner = yield* ProcessRunner.ProcessRunner;
   const uid = yield* HostProcess.UserId;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const token = Effect.fnUntraced(function* (fingerprint: unknown) {
     const encoded = yield* encodeFingerprint(fingerprint);
-    return Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(encoded)));
+    return Hex.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(encoded)));
   });
   const inside = (root: string, target: string) => {
     const relative = path.relative(root, target);

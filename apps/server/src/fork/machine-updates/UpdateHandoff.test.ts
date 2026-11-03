@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { type OrchestrationV2ThreadShell } from "@t3tools/contracts";
 import { type UpdatePlan } from "@t3tools/contracts/fork";
@@ -6,6 +7,7 @@ import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 import { UpdateFence } from "./UpdateFence.ts";
@@ -84,7 +86,7 @@ it.effect("counts current restart-impact work and refuses a lease until those th
       yield* handoff.release(lease.leaseId!);
       yield* fence.write(Effect.void);
     }).pipe(Effect.provide(f.handoff));
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -122,7 +124,7 @@ it.effect(
         yield* handoff.release(final.leaseId!);
         yield* (yield* UpdateFence).write(Effect.void);
       }).pipe(Effect.provide(f.handoff));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect(
@@ -153,5 +155,5 @@ it.effect(
           "changed",
         );
       }).pipe(Effect.provide(f.handoff));
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

@@ -1,6 +1,7 @@
 import * as VaultConnections from "./VaultConnections.ts";
 import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -213,7 +214,7 @@ const fixture = Effect.gen(function* () {
     releases: () => releases,
   };
 });
-const deps = Layer.merge(NodeServices.layer, memoryVault);
+const deps = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
 it.effect(
   "stores only encrypted connection material, returns safe metadata, protects replacements and disconnect/restore",
   () =>

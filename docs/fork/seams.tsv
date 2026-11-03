@@ -161,7 +161,7 @@ apps/mobile/package.json	-	--scheme loom-dev
 apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	33
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	32
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
@@ -560,6 +560,7 @@ apps/server/src/cli/update.test.ts	brand	1
 apps/server/src/cli/update.test.ts	fleet-connect	1
 apps/server/src/cli/updateProgress.ts	brand	1
 apps/server/src/cli/up.ts	brand	7
+apps/server/src/cloud/ConnectReachability.ts	brand	1
 apps/server/src/cloud/bootService.ts	brand	3
 apps/server/src/cloud/selfUpdate.ts	brand	2
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	brand	4
@@ -676,6 +677,7 @@ packages/provider-acp/src/server/AcpSessionRuntime.ts	brand	1
 packages/provider-acp/src/server/adapter.ts	brand	2
 packages/provider-acp/src/server/mcpOverAcpBridge.ts	brand	2
 packages/provider-core/src/server/failure.ts	brand	1
+packages/provider-kiro/src/server/status.ts	brand	2
 packages/provider-core/src/server/maintenanceResolver.test.ts	brand	1
 packages/provider-core/src/server/maintenanceResolver.ts	brand	1
 packages/provider-core/src/server/orchestrationInstructions.test.ts	brand	3
@@ -1599,6 +1601,11 @@ apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	2
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/package.json	-	"access:pilot"
 apps/desktop/src/app/DesktopApp.ts	cloudflare-access	1
+apps/desktop/src/app/DesktopApp.test.ts	restart-compaction	3
+apps/desktop/src/app/DesktopApp.test.ts	rollback-snapshot	1
+apps/desktop/src/app/DesktopApp.test.ts	cloudflare-access	5
+apps/desktop/src/app/DesktopApp.test.ts	identity-renewal	2
+apps/desktop/src/app/DesktopApp.test.ts	open-at-login	2
 apps/desktop/src/fork/identity-renewal/DesktopIdentityRenewal.ts	cloudflare-access	1
 apps/desktop/src/ipc/methods/loomIdentity.ts	cloudflare-access	1
 apps/desktop/src/main.ts	cloudflare-access	1
@@ -1628,7 +1635,7 @@ apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx	usage-navigation	5
 apps/mobile/src/features/settings/SettingsRouteScreen.tsx	usage-navigation	1
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	brand	1
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	brand	1
-apps/web/src/components/GitHubStarPrompt.tsx	brand	1
+apps/web/src/components/GitHubStarPrompt.tsx	brand	2
 apps/web/src/components/settings/ProjectSettingsPanel.logic.test.ts	brand	2
 packages/client-runtime/src/state/projectRemoval.ts	brand	2
 apps/web/src/components/ThreadTerminalDrawer.browser.test.tsx	preview-links	1

@@ -1,7 +1,7 @@
 import { type ThreadId, SecretRequestError } from "@t3tools/contracts";
 import { VaultError, VaultPrivateSave, type VaultItemSummary } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -42,7 +42,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const identity = yield* ServerEnvironmentIdentity;
   const { mount } = yield* readOpenBaoSettings();
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   return VaultPrivateInput.of({
     store: Effect.fn("VaultPrivateInput.store")(function* (input, threadId, authorize) {
       const check = authorize.pipe(
@@ -76,7 +76,7 @@ const make = Effect.gen(function* () {
       }).pipe(Effect.mapError(() => new VaultError({ reason: "invalid-input" })));
       const operationId = Hex.encode(
         yield* crypto
-          .digest("SHA-256", new TextEncoder().encode(encoded))
+          .digest(Digest.sha256, new TextEncoder().encode(encoded))
           .pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" }))),
       );
       return yield* secrets.transfer(

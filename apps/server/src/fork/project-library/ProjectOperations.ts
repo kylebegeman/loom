@@ -34,7 +34,7 @@ import {
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
@@ -186,7 +186,7 @@ export class ProjectOperations extends Context.Service<
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   /** Existing IDs stay stable; maximum-length client request IDs still leave room for the operation kind. */
   const operationId = Effect.fn("ProjectOperations.operationId")(function* (
     requestId: string,
@@ -195,7 +195,7 @@ const make = Effect.gen(function* () {
     const candidate = `${requestId}:${kind}`;
     if (candidate.length <= 200) return candidate;
     const digest = yield* crypto
-      .digest("SHA-256", new TextEncoder().encode(requestId))
+      .digest(Digest.sha256, new TextEncoder().encode(requestId))
       .pipe(Effect.mapError(io));
     return `${Hex.encode(digest)}:${kind}`;
   });

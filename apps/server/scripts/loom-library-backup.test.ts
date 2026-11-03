@@ -1,9 +1,10 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -106,7 +107,7 @@ const fixture = Effect.gen(function* () {
       },
     });
     const bytes = new TextEncoder().encode("recoverable repository and checkpoint bundle");
-    const sha256 = Hex.encode(yield* (yield* Crypto.Crypto).digest("SHA-256", bytes));
+    const sha256 = Hex.encode(yield* (yield* Digest.Digest).digest(Digest.sha256, bytes));
     yield* recovery.put({
       sourceEnvironmentId: source,
       copyId: "copy",
@@ -132,7 +133,7 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
   Effect.gen(function* () {
     return yield* use(yield* fixture);
   }).pipe(
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.provideService(HostProcess.Environment, {}),
     Effect.scoped,
   );

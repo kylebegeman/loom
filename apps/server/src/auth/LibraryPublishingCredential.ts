@@ -1,6 +1,6 @@
 import { AuthLibraryPublishScope, AuthSessionId, EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 // fork: project-library
 import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
@@ -68,7 +68,7 @@ export class LibraryPublishingCredential extends Context.Service<
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const config = yield* ServerConfig.ServerConfig;
   const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const sessions = yield* SessionStore.SessionStore;
@@ -95,7 +95,7 @@ const make = Effect.gen(function* () {
   const renew = Effect.fn("LibraryPublishingCredential.renew")(function* (token: string) {
     const now = yield* DateTime.now;
     const key = Hex.encode(
-      yield* crypto.digest("SHA-256", new TextEncoder().encode(token)).pipe(Effect.orDie),
+      yield* crypto.digest(Digest.sha256, new TextEncoder().encode(token)).pipe(Effect.orDie),
     );
     const receiptPath = path.join(config.secretsDir, `library-renewal-${key}.json`);
     const cached = yield* fs
@@ -183,7 +183,7 @@ const make = Effect.gen(function* () {
         return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
       const sourceKey = Hex.encode(
         yield* crypto
-          .digest("SHA-256", new TextEncoder().encode(input.sourceEnvironmentId))
+          .digest(Digest.sha256, new TextEncoder().encode(input.sourceEnvironmentId))
           .pipe(Effect.orDie),
       ).slice(0, 32);
       const credentialFile = path.join(config.secretsDir, `library-publisher-${sourceKey}.json`);

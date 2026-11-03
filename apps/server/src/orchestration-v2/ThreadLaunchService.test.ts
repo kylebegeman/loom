@@ -1452,7 +1452,7 @@ it.effect.each(["stable", "upstream/release"])(
       Effect.provide(
         GitVcsDriver.layer.pipe(
           Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "launch-remote-git-" })),
-          Layer.provideMerge(NodeServices.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
     ),
@@ -3130,7 +3130,7 @@ it.effect(
       const service = yield* OrchestratorMcp.OrchestratorMcpService.pipe(
         Effect.provide(
           OrchestratorMcp.layer.pipe(
-            Layer.provide(NodeServices.layer),
+            Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
             Layer.provide(
               Layer.mergeAll(
                 Layer.mock(GitVcsDriver.GitVcsDriver)({}),

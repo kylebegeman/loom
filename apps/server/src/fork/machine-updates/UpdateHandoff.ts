@@ -7,7 +7,7 @@ import {
 import { threadRestartImpact } from "@t3tools/shared/fork/restart-impact";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -40,7 +40,7 @@ const make = Effect.gen(function* () {
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const store = yield* UpdatePlanStore.UpdatePlanStore;
   const fence = yield* UpdateFence.UpdateFence;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const lease = yield* Ref.make<Lease | null>(null);
   const reported = yield* Ref.make<{ readonly id: string; readonly count: number | null } | null>(
     null,
@@ -103,7 +103,7 @@ const make = Effect.gen(function* () {
               yield* release;
               return { leaseId: null, waitingAgents, expiresAt: null };
             }
-            const id = yield* crypto.randomUUIDv4().pipe(
+            const id = yield* crypto.uuidV4().pipe(
               Effect.onError(() => release),
               Effect.orDie,
             );

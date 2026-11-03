@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ProviderInstanceId, ProjectId } from "@t3tools/contracts";
@@ -143,5 +144,10 @@ it.effect(
           Effect.flip,
         ))._tag,
       ).toBe("OrchestratorMcpFailure");
-    }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeServices.layer, memoryVault))),
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault),
+      ),
+    ),
 );

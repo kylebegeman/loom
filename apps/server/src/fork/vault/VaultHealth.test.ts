@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -68,7 +69,7 @@ const fixture = Effect.sync(() => {
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("health-test")),
     }),
-    NodeServices.layer,
+    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
   );
   const layer = VaultHealth.layer.pipe(Layer.provide(dependencies));
   const checks = VaultHealthChecks.layer.pipe(
@@ -137,7 +138,7 @@ const test = <A, E, R>(
         yield* VaultHealthChecks.VaultHealthChecks,
       );
     }).pipe(Effect.provide(f.layer));
-  }).pipe(Effect.provide(NodeServices.layer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 let seq = 0;
 const operationId = () => (++seq).toString(16).padStart(32, "0");
 const change = (

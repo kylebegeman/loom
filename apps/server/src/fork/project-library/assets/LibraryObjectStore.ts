@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as ByteSize from "effect/ByteSize";
 import { HttpIncomingMessage, HttpClient, HttpClientRequest } from "effect/http";
@@ -15,9 +15,9 @@ import * as ServerConfig from "../../../config.ts";
 import { signB2ObjectUrl, type B2SigningConfig } from "./b2Signing.ts";
 
 export const LIBRARY_ASSET_MAX_BYTES = 128 * 1024 * 1024;
-export const assetDigest = (crypto: Crypto.Crypto, bytes: Uint8Array) =>
+export const assetDigest = (crypto: Digest.Digest["Service"], bytes: Uint8Array) =>
   crypto
-    .digest("SHA-256", bytes)
+    .digest(Digest.sha256, bytes)
     .pipe(
       Effect.map((digest) =>
         Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""),
@@ -89,7 +89,7 @@ function objectVersions(xml: string, expectedKey: string) {
 }
 
 const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* Digest.Digest;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;

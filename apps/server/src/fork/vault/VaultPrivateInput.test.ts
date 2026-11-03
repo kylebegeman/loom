@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -57,7 +58,7 @@ function withService<A, E>(
     projects: [] as ProjectId[],
   };
   const dependencies = Layer.mergeAll(
-    NodeServices.layer,
+    Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     Layer.mock(VaultAccess)({ require: () => Effect.void }),
     Layer.succeed(HostProcess.Environment, {}),
     Layer.succeed(ServerEnvironmentIdentity, {

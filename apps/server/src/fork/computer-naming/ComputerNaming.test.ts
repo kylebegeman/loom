@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -29,7 +30,7 @@ const environmentLayer = (baseDir: string) =>
     Layer.provide(namedHost),
   );
 
-it.layer(NodeServices.layer)("canonical computer names", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("canonical computer names", (it) => {
   it.effect("uses the OS name by default, persists a rename and restores the default", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
