@@ -600,6 +600,78 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("retains parallel worker lanes for their parent across watchdog ticks and restart", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const parentId = ThreadId.make("parent");
+      t.threads.push(thread(parentId, { activeRunId: RunId.make("orchestrating") }));
+      const primary = yield* t.service.ensureForThread(parentId);
+      const checkouts = ["screen-a", "screen-b", "screen-c"].map((name) =>
+        NodePath.join(t.home, "worktrees", name),
+      );
+      for (const checkout of checkouts) NodeFS.mkdirSync(checkout, { recursive: true });
+      const workers = yield* Effect.forEach(
+        checkouts,
+        (checkout) => t.service.retainCheckout(parentId, checkout),
+        { concurrency: 3 },
+      );
+      const tools = `${t.home}/bin`;
+      NodeFS.mkdirSync(tools);
+      const previousShims = `${t.home}/previous-lanes/.loom/shims`;
+      NodeFS.mkdirSync(previousShims, { recursive: true });
+      NodeFS.writeFileSync(`${previousShims}/xcodebuild`, "#!/bin/sh\nexit 23\n", { mode: 0o755 });
+      NodeFS.writeFileSync(`${tools}/xcodebuild`, '#!/bin/sh\nprintf "%s\\n" "$@"\n', {
+        mode: 0o755,
+      });
+      for (const worker of workers) {
+        NodeFS.writeFileSync(`${worker.laneDir}/space/build/output`, "worker build");
+        const environment = yield* t.service.shellEnvironment(
+          worker.checkoutPath,
+          `${previousShims}:${tools}:/usr/bin:/bin`,
+        );
+        expect(environment).toMatchObject({
+          TMPDIR: `${worker.laneDir}/space/tmp/`,
+          LOOM_LANE_BUILD: `${worker.laneDir}/space/build`,
+          LOOM_SHARED_LOCK_DIR: `${t.home}/Developer/lanes/.loom/locks`,
+          PATH: `${t.home}/Developer/lanes/.loom/shims:${tools}:/usr/bin:/bin`,
+        });
+        expect(
+          NodeChildProcess.execFileSync(
+            "/bin/bash",
+            ["--noprofile", "--norc", "-c", "xcodebuild -showBuildSettings"],
+            {
+              cwd: worker.checkoutPath,
+              env: environment,
+              encoding: "utf8",
+            },
+          ),
+        ).toContain(`${worker.laneDir}/space/build/DerivedData`);
+      }
+      expect((yield* t.service.tick()).lanes.map((lane) => lane.checkoutPath).sort()).toEqual(
+        [t.checkout, ...checkouts].sort(),
+      );
+      expect(t.threads[0]?.worktreePath).toBeNull();
+
+      const restarted = yield* t.create;
+      yield* restarted.reconcile();
+      const resumed = yield* restarted.tick();
+      for (const worker of workers) {
+        expect(laneOf(resumed, worker.checkoutPath)?.threadIds).toEqual([parentId]);
+        expect(NodeFS.readFileSync(`${worker.laneDir}/space/build/output`, "utf8")).toBe(
+          "worker build",
+        );
+      }
+      t.threads[0] = thread(parentId, { settledOverride: "settled" });
+      expect((yield* restarted.tick()).lanes).toHaveLength(3);
+      for (const checkout of checkouts) yield* restarted.releaseCheckout(parentId, checkout);
+      expect((yield* restarted.tick()).lanes).toEqual([]);
+      expect(NodeFS.existsSync(primary.laneDir)).toBe(false);
+      for (const worker of workers) expect(NodeFS.existsSync(worker.laneDir)).toBe(false);
+      for (const checkout of [t.checkout, ...checkouts])
+        expect(NodeFS.existsSync(checkout)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("preserves shared checkout process leases until the last holder settles", () =>
     Effect.gen(function* () {
       const t = yield* setup;

@@ -205,11 +205,18 @@ describe("ProjectSetupScriptRunner", () => {
 });
 
 // fork: project-lifecycle
-it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)(
+it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure"] as const)(
   "prepares the setup directory's lane before opening its shell (%s)",
   (mode) =>
     Effect.gen(function* () {
       const events: string[] = [];
+      const laneEnv = {
+        TMPDIR: "/lanes/worker/tmp/",
+        LOOM_LANE_BUILD: "/lanes/worker/build",
+        LOOM_SHARED_LOCK_DIR: "/lanes/.loom/locks",
+        PATH: "/lanes/.loom/shims:/usr/bin:/bin",
+      };
+      let openedEnv: Readonly<Record<string, string>> | undefined;
       const entered = yield* Deferred.make<void>();
       const ready = yield* Deferred.make<void>();
       const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
@@ -245,6 +252,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
               open: (input) =>
                 Effect.sync(() => {
                   events.push("open");
+                  openedEnv = input.env;
                 }).pipe(
                   // The shell's line editor starts reading, so the runner types the command.
                   Effect.andThen(
@@ -262,7 +270,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
                   ),
                   Effect.as({} as never),
                 ),
-              getShell: () => Effect.succeed("/bin/zsh"), // fork: project-lifecycle
+              getShell: () => Effect.succeed(mode === "isolated" ? "/bin/bash" : "/bin/zsh"),
               subscribe: (listener) =>
                 Effect.sync(() => {
                   listeners.add(listener);
@@ -281,6 +289,7 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
       const run = runner
         .runForThread({
           threadId: "thread-setup-order",
+          ...(mode === "isolated" ? { terminalId: "claude-setup-isolated" } : {}),
           worktreePath: "/repo",
           workspaceLeaseHeld: true,
           trigger: mode === "settle" ? "settle" : "setup",
@@ -307,11 +316,12 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
             Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
               getSettings: Effect.succeed({ enabled: mode !== "disabled" } as never),
               ensureForThread,
+              shellEnvironment: () => Effect.succeed(laneEnv),
             }),
           ),
         );
       const running = yield* run.pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
-      if (mode === "setup" || mode === "failure") {
+      if (mode === "setup" || mode === "isolated" || mode === "failure") {
         yield* Effect.raceFirst(
           Deferred.await(entered),
           Fiber.join(running).pipe(Effect.andThen(Effect.die("Setup ran before lane preparation"))),
@@ -335,16 +345,22 @@ it.effect.each(["setup", "disabled", "no-script", "settle", "failure"] as const)
         assert.equal(result._tag, "Success");
         // The runner returns the open terminal before it types the command.
         if (mode !== "no-script") yield* Deferred.await(written);
+        if (mode === "isolated") expect(openedEnv).toMatchObject(laneEnv);
         assert.deepEqual(
           events,
-          mode === "setup"
+          mode === "setup" || mode === "isolated"
             ? ["lane-start", "lane-ready", "open", "setup"]
             : mode === "no-script"
               ? []
               : ["open", "setup"],
         );
       }
-      if (mode !== "setup" && mode !== "failure")
+      if (mode === "isolated" && result._tag === "Success")
+        assert.equal(
+          result.success.status === "started" ? result.success.terminalId : null,
+          "claude-setup-isolated",
+        );
+      if (mode !== "setup" && mode !== "isolated" && mode !== "failure")
         assert.equal(ensureForThread.mock.calls.length, 0);
     }),
 );

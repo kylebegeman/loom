@@ -1,3 +1,4 @@
+import * as ClaudeWorktreeService from "./provider/ClaudeWorktreeService.ts";
 import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
@@ -722,6 +723,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   // show webhook addresses on the relay like scheduled tasks.
   Layer.provideMerge(
     ForkLayer.pipe(
+      Layer.provide(
+        ClaudeWorktreeService.layer.pipe(
+          Layer.provide(layerProjectLifecycle),
+          Layer.provide(RuntimeLayer.layerProjectSetupScriptRunner),
+          Layer.provide(layerGitWorkflow),
+          Layer.provide(GitVcsDriver.layer),
+        ),
+      ),
       Layer.provide(layerDatabaseStorage), // fork: project-lifecycle
       Layer.provide(layerSelfUpdate), // fork: machine-updates
       Layer.provide(Layer.merge(layerPullRequestService, layerScheduledTaskWebhookOrigin)),

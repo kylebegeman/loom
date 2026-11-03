@@ -98,6 +98,13 @@ and packages to the lane's `build` folder, and `lane-run`, `lane-slot` and the l
 variables are available. **Remove** takes the block out
 again. Other shells and processes started outside zsh keep their usual locations.
 
+`TMPDIR` is per lane, so a lock there cannot coordinate work in other lanes. Use
+`LOOM_SHARED_LOCK_DIR` for cross-lane locks. Loom creates this shared folder at
+`<lanes folder>/.loom/locks`, outside each lane's disposable space. Name locks for the
+resource they protect, release them when done, and keep independent editors and builds
+in separate checkouts with their own build output. A shared lock is only needed for work
+that really shares files or another exclusive resource.
+
 ## Managing storage
 
 Open **Settings, Worktrees, Lanes**, or choose **Storage and lanes** in the command palette.

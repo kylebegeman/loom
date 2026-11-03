@@ -2474,17 +2474,51 @@ const make = Effect.gen(function* () {
           callerThreadId: scope.thread.threadId,
           workspaceStrategy:
             input.isolation === "worktree"
-              ? { type: "worktree", baseRef: "HEAD" }
+              ? {
+                  type: "worktree",
+                  baseRef: "HEAD",
+                  ...(input.repositoryPath === undefined
+                    ? {}
+                    : { repositoryPath: input.repositoryPath }),
+                }
               : { type: "root" },
         })
         .pipe(Effect.mapError((error) => failure("invalid_request", error.message)));
+      if (input.repositoryPath !== undefined && input.isolation !== "worktree")
+        return yield* failure("invalid_request", "repositoryPath requires isolation worktree.");
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined =
-        libraryBinding === null ? undefined : { type: "root" };
+        libraryBinding === null
+          ? undefined
+          : parent.thread.worktreePath !== null && parent.thread.worktreePath !== libraryBinding.cwd
+            ? {
+                type: "existing_worktree",
+                worktreePath: parent.thread.worktreePath,
+                ...(parent.thread.branch === null ? {} : { branch: parent.thread.branch }),
+              }
+            : { type: "root" };
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
+        let repositoryPath =
+          libraryBinding?.repositoryPath ??
+          input.repositoryPath ??
+          parent.thread.worktreePath ??
+          project.workspaceRoot;
+        const parentCheckout = parent.thread.worktreePath;
+        if (
+          parentCheckout !== null &&
+          repositoryPath !== parentCheckout &&
+          (yield* gitDriver
+            .listWorktreePaths(repositoryPath)
+            .pipe(
+              Effect.mapError(() =>
+                failure("invalid_request", "Unable to read the selected repository's worktrees."),
+              ),
+            )).includes(parentCheckout)
+        )
+          repositoryPath = parentCheckout;
         const base = yield* gitDriver
           .resolveCommit({
-            cwd: parent.thread.worktreePath ?? project.workspaceRoot,
+            cwd: repositoryPath,
             revision: "HEAD",
           })
           .pipe(
@@ -2492,22 +2526,12 @@ const make = Effect.gen(function* () {
               failure("invalid_request", "Unable to resolve the parent checkout commit."),
             ),
           );
-        // Launch preparation creates the worktree from the project root, so a
-        // parent checkout in another repository (such as a Git folder inside
-        // Scratch) would hand it a commit it cannot find.
-        if (parent.thread.worktreePath !== null) {
-          yield* gitDriver
-            .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
-            .pipe(
-              Effect.mapError(() =>
-                failure(
-                  "invalid_request",
-                  `Isolation "worktree" creates the child checkout in project "${project.title}" (${project.workspaceRoot}), which does not contain the parent checkout's commit. Use isolation "shared" to work in the parent's checkout.`,
-                ),
-              ),
-            );
-        }
-        workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
+        workspaceStrategy = {
+          type: "worktree",
+          baseRef: base.commitSha,
+          startFromOrigin: false,
+          ...(repositoryPath === project.workspaceRoot ? {} : { repositoryPath }),
+        };
       }
       // ThreadManagementService.dispatch is the chokepoint for this command
       // type's own enablement check, using the same command id and its

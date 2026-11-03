@@ -67,13 +67,13 @@ const sh = (cwd: string, script: string, env: Record<string, string> = {}) =>
     encoding: "utf8",
   }).trim();
 
-const zsh = (cwd: string, lanesRoot: string, script: string) =>
+const zsh = (cwd: string, lanesRoot: string, script: string, env: Record<string, string> = {}) =>
   NodeChildProcess.execFileSync(
     "/bin/zsh",
     ["-f", "-c", `source ${NodePath.join(lanesRoot, ".loom", "lanes.zsh")}; ${script}`],
     {
       cwd,
-      env: { PATH: "/usr/bin:/bin", TMPDIR: "/original/" },
+      env: { PATH: "/usr/bin:/bin", TMPDIR: "/original/", ...env },
       encoding: "utf8",
     },
   ).trim();
@@ -123,9 +123,57 @@ describe.skipIf(!hasZsh)("zsh hook", () => {
     const left = zsh(
       lanes.checkout,
       lanes.lanesRoot,
-      'cd /; _loom_lane_apply; print -r -- "$TMPDIR|${LOOM_LANE_SPACE-none}|${path[1]}"',
+      'cd /; _loom_lane_apply; print -r -- "$TMPDIR|${LOOM_LANE_SPACE-none}|${LOOM_SHARED_LOCK_DIR-none}|${path[1]}"',
     );
-    expect(left).toBe("/original/|none|/usr/bin");
+    expect(left).toBe("/original/|none|none|/usr/bin");
+    expect(
+      zsh(
+        lanes.checkout,
+        lanes.lanesRoot,
+        'cd /; _loom_lane_apply; print -r -- "$LOOM_SHARED_LOCK_DIR"',
+        { LOOM_SHARED_LOCK_DIR: "/original-locks" },
+      ),
+    ).toBe("/original-locks");
+  });
+
+  it("shares locks across lanes while keeping temporary and build output separate", () => {
+    const lanes = makeLanes();
+    const checkout = NodePath.join(lanes.root, "parallel");
+    const space = NodePath.join(lanes.lanesRoot, "repo", "parallel", "space");
+    const locks = NodePath.join(lanes.lanesRoot, ".loom", "locks");
+    NodeFS.mkdirSync(checkout, { recursive: true });
+    NodeFS.mkdirSync(NodePath.join(space, "tmp"), { recursive: true });
+    NodeFS.mkdirSync(NodePath.join(space, "build"), { recursive: true });
+    NodeFS.mkdirSync(locks, { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(lanes.lanesRoot, ".loom", "lanes.tsv"),
+      renderIndex([
+        {
+          checkoutPaths: [lanes.checkout],
+          spacePath: lanes.space,
+          laneId: "lane-1",
+          portBase: 41020,
+        },
+        { checkoutPaths: [checkout], spacePath: space, laneId: "lane-2", portBase: 41040 },
+      ]),
+    );
+    const environment = 'print -r -- "$TMPDIR|$LOOM_LANE_BUILD|$LOOM_SHARED_LOCK_DIR"';
+    expect(zsh(lanes.checkout, lanes.lanesRoot, environment)).toBe(
+      `${lanes.space}/tmp/|${lanes.space}/build|${locks}`,
+    );
+    expect(zsh(checkout, lanes.lanesRoot, environment)).toBe(
+      `${space}/tmp/|${space}/build|${locks}`,
+    );
+    zsh(lanes.checkout, lanes.lanesRoot, 'mkdir "$LOOM_SHARED_LOCK_DIR/integration.lock"');
+    expect(
+      zsh(
+        checkout,
+        lanes.lanesRoot,
+        'if mkdir "$LOOM_SHARED_LOCK_DIR/integration.lock" 2>/dev/null; then print acquired; else print locked; fi',
+      ),
+    ).toBe("locked");
+    zsh(lanes.checkout, lanes.lanesRoot, 'rmdir "$LOOM_SHARED_LOCK_DIR/integration.lock"');
+    zsh(checkout, lanes.lanesRoot, 'mkdir "$LOOM_SHARED_LOCK_DIR/integration.lock"');
   });
 
   it("exports the lane id, its ports and its lease file", () => {

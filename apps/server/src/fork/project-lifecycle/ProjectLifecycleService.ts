@@ -8,7 +8,7 @@ import {
   MessageId,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
-  type ThreadId,
+  ThreadId,
 } from "@t3tools/contracts";
 import {
   ProjectLifecycleError,
@@ -97,6 +97,7 @@ import {
   shellDir,
   shimsDir,
   slotsDir,
+  sharedLocksDir,
 } from "./shell.ts";
 import {
   SPACE_FOLDERS,
@@ -257,6 +258,8 @@ Cap: ${formatGb(lane.capBytes)} (${lane.backend === "image" ? "capped disk image
 ${ports === null ? "" : `Ports: ${ports.first} to ${ports.last}\n`}
 Shells inside the checkout get \`TMPDIR=${space}/tmp/\`, \`LOOM_LANE_BUILD\` / \`LOOM_LANE_DATA\`,
 \`LOOM_LANE_ID\` and \`LOOM_LANE_PORT\` (the first of the lane's ports).
+\`TMPDIR\` is per lane. Put cross-lane locks in \`LOOM_SHARED_LOCK_DIR=${sharedLocksDir(lanesRoot)}\`,
+which is shared by all lanes and stays outside their disposable space.
 
 - \`space/tmp\`: scratch. Loom removes unused entries older than 24 hours, including while the lane is active.
 - \`space/build\`: DerivedData, package checkouts and other build output.
@@ -320,6 +323,35 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
 
   const lanes = new Map<string, LaneRow>();
   for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
+  const retainedPath = `${config.stateDir}/fork/project-lifecycle/retained-checkouts.json`;
+  const retainedSchema = Schema.fromJsonString(
+    Schema.Array(Schema.Struct({ threadId: ThreadId, checkoutPath: Schema.String })),
+  );
+  const retainedCheckouts = new Map<string, Set<ThreadId>>();
+  const retainedText = yield* node("read retained checkout owners", async () => {
+    try {
+      return await NodeFSP.readFile(retainedPath, "utf8");
+    } catch (cause) {
+      if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return "[]";
+      throw cause;
+    }
+  }).pipe(Effect.orDie);
+  for (const owner of yield* Schema.decodeEffect(retainedSchema)(retainedText).pipe(Effect.orDie)) {
+    const owners = retainedCheckouts.get(owner.checkoutPath) ?? new Set<ThreadId>();
+    owners.add(owner.threadId);
+    retainedCheckouts.set(owner.checkoutPath, owners);
+  }
+  const retainedOwners = () =>
+    [...retainedCheckouts].flatMap(([checkoutPath, owners]) =>
+      [...owners].map((threadId) => ({ threadId, checkoutPath })),
+    );
+  const saveRetainedOwners = Effect.fn("ProjectLifecycle.saveRetainedOwners")(function* (
+    owners = retainedOwners(),
+  ) {
+    const text = yield* Schema.encodeEffect(retainedSchema)(owners).pipe(Effect.orDie);
+    yield* writeAtomically(retainedPath, text);
+  });
+
   const claims = makePortClaims(portClaimsDir(options.homeDir), config.stateDir);
   const ownBases = (except?: string) =>
     [...lanes.values()].flatMap((lane) =>
@@ -469,8 +501,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     view.threads.filter(
       (thread) =>
         thread.id !== released &&
-        holdsLane(thread) &&
-        checkoutOf(thread, view.projects) === lane.checkoutPath,
+        ((holdsLane(thread) && checkoutOf(thread, view.projects) === lane.checkoutPath) ||
+          retainedCheckouts.get(lane.checkoutPath)?.has(thread.id) === true),
     );
 
   /** Whether a thread outside this lane is still working; its devices are left alone. */
@@ -504,6 +536,9 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
             portBase: lane.portBase ?? 0,
           })),
         ),
+      );
+      yield* node("create shared lock folder", () =>
+        NodeFSP.mkdir(sharedLocksDir(root), { recursive: true }),
       );
       yield* writeAtomically(`${shellDir(root)}/lanes.tsv`, renderIndex(index));
       yield* writeAtomically(`${shellDir(root)}/lanes.zsh`, renderHook(root));
@@ -1092,6 +1127,49 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     );
   });
 
+  const releaseCheckout = Effect.fn("ProjectLifecycle.releaseCheckout")(function* (
+    threadId: ThreadId,
+    checkoutPath: string,
+  ) {
+    const checkout = NodePath.resolve(checkoutPath);
+    yield* mutate.withPermits(1)(
+      Effect.gen(function* () {
+        const owners = retainedCheckouts.get(checkout);
+        if (owners === undefined || !owners.has(threadId)) return;
+        const next = retainedOwners().filter(
+          (owner) => owner.checkoutPath !== checkout || owner.threadId !== threadId,
+        );
+        yield* saveRetainedOwners(next);
+        owners.delete(threadId);
+        if (owners.size === 0) retainedCheckouts.delete(checkout);
+      }),
+    );
+  });
+
+  const retainCheckout = Effect.fn("ProjectLifecycle.retainCheckout")(function* (
+    threadId: ThreadId,
+    checkoutPath: string,
+  ) {
+    const checkout = NodePath.resolve(checkoutPath);
+    const added = yield* mutate.withPermits(1)(
+      Effect.gen(function* () {
+        const owners = retainedCheckouts.get(checkout) ?? new Set<ThreadId>();
+        if (owners.has(threadId)) return false;
+        yield* saveRetainedOwners([...retainedOwners(), { threadId, checkoutPath: checkout }]);
+        owners.add(threadId);
+        retainedCheckouts.set(checkout, owners);
+        return true;
+      }),
+    );
+    return yield* ensureForThread(threadId, checkout).pipe(
+      Effect.onError(() =>
+        added
+          ? releaseCheckout(threadId, checkout).pipe(Effect.ignore({ log: true }))
+          : Effect.void,
+      ),
+    );
+  });
+
   const buildEnvironmentOf = (lane: LaneRow, settings: ProjectLifecycleSettings) => {
     const shims = shimsDir(rootOf(settings));
     const { spacePath } = lanePaths(lane);
@@ -1120,6 +1198,55 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   ) {
     const lane = laneForCheckout(checkout);
     return lane === undefined ? null : buildEnvironmentOf(lane, yield* getSettings);
+  });
+
+  const shellEnvironment = Effect.fn("ProjectLifecycle.shellEnvironment")(function* (
+    checkout: string,
+    basePath?: string,
+  ): Effect.fn.Return<Record<string, string>, ProjectLifecycleError> {
+    const settings = yield* getSettings;
+    if (!settings.enabled) return {};
+    const root = rootOf(settings);
+    const locks = sharedLocksDir(root);
+    yield* node("prepare shared locks", () => NodeFSP.mkdir(locks, { recursive: true }));
+    const lane = laneForCheckout(NodePath.resolve(checkout));
+    if (lane === undefined) return { LOOM_SHARED_LOCK_DIR: locks };
+    const host = yield* HostProcess.Environment;
+    const shims = shimsDir(root);
+    const { spacePath, tmpPath, buildPath } = buildEnvironmentOf(lane, settings);
+    return {
+      LOOM_SHARED_LOCK_DIR: locks,
+      LOOM_LANE_CHECKOUT: lane.checkoutPath,
+      LOOM_LANE_SPACE: spacePath,
+      LOOM_LANE_TMP: tmpPath,
+      LOOM_LANE_BUILD: buildPath,
+      LOOM_LANE_DATA: `${spacePath}/data`,
+      LOOM_LANE_ID: lane.id,
+      LOOM_LANE_LEASES: ledgerPath(lane.laneDir),
+      LOOM_LANE_SAVED_TMPDIR: host.LOOM_LANE_SAVED_TMPDIR ?? host.TMPDIR ?? "",
+      LOOM_LANE_SAVED_LOCK_DIR: host.LOOM_LANE_SAVED_LOCK_DIR ?? host.LOOM_SHARED_LOCK_DIR ?? "",
+      LOOM_LANE_HAD_LOCK_DIR:
+        host.LOOM_LANE_HAD_LOCK_DIR ?? (host.LOOM_SHARED_LOCK_DIR === undefined ? "0" : "1"),
+      TMPDIR: `${tmpPath}/`,
+      TMP: tmpPath,
+      TEMP: tmpPath,
+      PATH: [
+        shims,
+        ...(basePath ?? host.PATH ?? "")
+          .split(NodePath.delimiter)
+          .filter(
+            (entry) =>
+              NodePath.basename(entry) !== "shims" ||
+              NodePath.basename(NodePath.dirname(entry)) !== ".loom",
+          ),
+      ].join(NodePath.delimiter),
+      ...(lane.portBase === null
+        ? {}
+        : {
+            LOOM_LANE_PORT: String(lane.portBase),
+            LOOM_LANE_PORTS: `${lane.portBase}-${lane.portBase + PORT_BLOCK - 1}`,
+          }),
+    };
   });
 
   const isBusy = (cause: ProjectLifecycleError) => cause.reason === "busy";
@@ -1323,6 +1450,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     lanes.delete(lane.id);
     live.delete(lane.id);
     missingSince.delete(lane.id);
+    if (retainedCheckouts.delete(lane.checkoutPath)) yield* saveRetainedOwners();
     const { portBase } = lane;
     if (portBase !== null)
       yield* node("release lane ports", () => claims.release(portBase, lane.id)).pipe(
@@ -2009,8 +2137,11 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     updateSettings,
     changes: SubscriptionRef.changes(status),
     ensureForThread,
+    retainCheckout,
+    releaseCheckout,
     buildEnvironment,
     currentBuildEnvironment,
+    shellEnvironment,
     free,
     grow: growLane,
     mount,

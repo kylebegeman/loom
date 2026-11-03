@@ -4,6 +4,10 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /** Uses the managed worktree folder; handoff detaches the provider, ending this turn and resuming there next run. */
 export const WorktreeMcpHandoffInput = Schema.Struct({
+  repositoryPath: Schema.optional(TrimmedNonEmptyString).annotate({
+    description:
+      "Component repository to isolate. Choose from t3_worktree_status.repositoryPaths when the project has multiple repositories.",
+  }),
   branch: TrimmedNonEmptyString,
   baseRef: Schema.optional(
     TrimmedNonEmptyString.annotate({
@@ -75,6 +79,7 @@ export const WorktreeMcpHandoffResult = Schema.Struct({
 export type WorktreeMcpHandoffResult = typeof WorktreeMcpHandoffResult.Type;
 
 export const WorktreeMcpStatusResult = Schema.Struct({
+  repositoryPaths: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   attached: Schema.Boolean,
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   branch: Schema.NullOr(TrimmedNonEmptyString),

@@ -15,14 +15,30 @@ const asFailure = Effect.mapError(
 
 export const libraryWorktreeHandoff = Effect.gen(function* () {
   const workspace = yield* Effect.serviceOption(LibraryWorkspace);
-  return Effect.fn("LibraryWorkspace.worktreeHandoff")(function* (threadId: ThreadId) {
+  return Effect.fn("LibraryWorkspace.worktreeHandoff")(function* (
+    threadId: ThreadId,
+    repositoryPath?: string,
+  ) {
     if (Option.isNone(workspace)) return null;
     const binding = yield* workspace.value.threadBinding({ threadId });
     if (binding === null) return null;
-    const source = yield* workspace.value.resolveBinding({ binding });
+    const project = yield* workspace.value.threadProject({ threadId });
+    const source = yield* workspace.value.resolveBinding({
+      binding,
+      ...(project === null ? {} : { project }),
+    });
+    if (repositoryPath !== undefined && !source.repositoryPaths.includes(repositoryPath))
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: `Choose repositoryPath from this project: ${source.repositoryPaths.join(", ")}.`,
+      });
     return {
-      cwd: source.cwd,
-      canCreate: source.repositoryPaths.length === 1 && source.repositoryPaths[0] === source.cwd,
+      cwd:
+        repositoryPath ??
+        (source.repositoryPaths.length === 1 ? source.repositoryPaths[0]! : source.cwd),
+      boundCwd: source.cwd,
+      repositoryPaths: source.repositoryPaths,
+      canCreate: repositoryPath !== undefined || source.repositoryPaths.length === 1,
       bind: (worktreePath: string, move: Effect.Effect<boolean, WorktreeMcpFailure>) =>
         workspace.value
           .moveThread({
