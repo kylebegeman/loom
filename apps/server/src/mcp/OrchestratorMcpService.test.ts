@@ -2007,14 +2007,55 @@ describe("OrchestratorMcpService provider resolution", () => {
               branch: "feature/parent",
             },
           });
+          yield* service.delegateTask(scope, {
+            task: "Edit API using parent commits.",
+            isolation: "worktree",
+            repositoryPath: "/copy/api",
+            mode: "async",
+            clientRequestId: "library-parent-commit",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+          });
+          assert.deepInclude((yield* Ref.get(dispatched))[3], {
+            workspaceStrategy: {
+              type: "worktree",
+              baseRef: "unpushed-parent-head",
+              startFromOrigin: false,
+              repositoryPath: parentPath,
+            },
+          });
+          yield* service.delegateTask(scope, {
+            task: "Edit the other component.",
+            isolation: "worktree",
+            repositoryPath: "/copy/web",
+            mode: "async",
+            clientRequestId: "library-other-component",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+          });
+          assert.deepInclude((yield* Ref.get(dispatched))[4], {
+            workspaceStrategy: {
+              type: "worktree",
+              baseRef: "parent-component-head",
+              startFromOrigin: false,
+              repositoryPath: "/copy/web",
+            },
+          });
         }).pipe(
           Effect.provide(
             OrchestratorMcpService.layer.pipe(
               Layer.provide(
                 Layer.mock(GitVcsDriver.GitVcsDriver)({
+                  listWorktreePaths: (cwd) =>
+                    Effect.succeed(
+                      cwd === "/copy/api" ? ["/copy/api", "/worktrees/parent"] : [cwd],
+                    ),
                   resolveCommit: (input) => {
-                    assert.equal(input.cwd, "/copy/api");
-                    return Effect.succeed({ commitSha: "parent-component-head" });
+                    assert.include(["/copy/api", "/copy/web", "/worktrees/parent"], input.cwd);
+                    return Effect.succeed({
+                      commitSha:
+                        input.cwd === "/worktrees/parent"
+                          ? "unpushed-parent-head"
+                          : "parent-component-head",
+                    });
                   },
                 }),
               ),
@@ -2024,7 +2065,9 @@ describe("OrchestratorMcpService provider resolution", () => {
                     assert.equal(input.callerThreadId, parentThreadId);
                     if (
                       input.workspaceStrategy.type === "worktree" &&
-                      input.workspaceStrategy.repositoryPath !== "/copy/api"
+                      !["/copy/api", "/copy/web"].includes(
+                        input.workspaceStrategy.repositoryPath ?? "",
+                      )
                     )
                       return Effect.fail(
                         new LibraryError({
@@ -2035,7 +2078,7 @@ describe("OrchestratorMcpService provider resolution", () => {
                     return Effect.succeed({
                       cwd: "/copy",
                       ...(input.workspaceStrategy.type === "worktree"
-                        ? { repositoryPath: "/copy/api" }
+                        ? { repositoryPath: input.workspaceStrategy.repositoryPath! }
                         : {}),
                       project: {
                         id: "shared",

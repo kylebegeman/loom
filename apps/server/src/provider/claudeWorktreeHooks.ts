@@ -46,16 +46,12 @@ export const claudeWorktreeHooks = Effect.fn("claudeWorktreeHooks")(function* (
   };
   // Some Claude versions announce SubagentStart before selecting the isolated cwd.
   const observe: HookCallback = async (input, _toolUseId, options) => {
-    if (
-      input.hook_event_name !== "PreToolUse" ||
-      input.agent_id === undefined ||
-      describedAgents.has(input.agent_id)
-    )
-      return {};
+    if (input.hook_event_name !== "PreToolUse" || input.agent_id === undefined) return {};
     await runPromise(
       service.agentState({ ...owner, cwd: input.cwd, agentId: input.agent_id, completed: false }),
       options,
     );
+    if (describedAgents.has(input.agent_id)) return {};
     const context = await runPromise(service.describe({ ...owner, cwd: input.cwd }), options);
     if (context !== null) describedAgents.add(input.agent_id);
     return context === null
@@ -73,7 +69,7 @@ export const claudeWorktreeHooks = Effect.fn("claudeWorktreeHooks")(function* (
   const sweep: HookCallback = async (input, _toolUseId, options) => {
     if (input.agent_id !== undefined) return {};
     await runPromise(
-      service.sweep(owner).pipe(
+      service.sweep({ ...owner, cwd: input.cwd }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Loom could not finish Claude worktree cleanup", {
             threadId: owner.threadId,

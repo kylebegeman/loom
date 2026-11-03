@@ -439,10 +439,11 @@ export const make = Effect.gen(function* () {
     }
 
     // fork: project-lifecycle
+    let laneEnvironment: Record<string, string> = {};
     if (trigger === "setup") {
       // Resolve at execution: settlement also uses this runner and must not depend on lanes.
       const lifecycle = yield* Effect.serviceOption(ProjectLifecycle.ProjectLifecycleService);
-      if (Option.isSome(lifecycle) && (yield* lifecycle.value.getSettings).enabled)
+      if (Option.isSome(lifecycle) && (yield* lifecycle.value.getSettings).enabled) {
         yield* lifecycle.value
           .ensureForThread(ThreadId.make(input.threadId), input.worktreePath)
           .pipe(
@@ -455,6 +456,18 @@ export const make = Effect.gen(function* () {
                 }),
             ),
           );
+
+        laneEnvironment = yield* lifecycle.value.shellEnvironment(input.worktreePath).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProjectSetupScriptOperationError({
+                ...errorContext,
+                operation: "prepareLane",
+                cause,
+              }),
+          ),
+        );
+      }
     }
 
     // Earlier settle shells may still run foreground programs; do not type resumed settles into them.
@@ -465,6 +478,7 @@ export const make = Effect.gen(function* () {
         : `setup-${script.id}`);
     const cwd = input.worktreePath;
     const env = {
+      ...laneEnvironment,
       ...projectScriptRuntimeEnv({
         project: { cwd: project.workspaceRoot },
         worktreePath: input.worktreePath,

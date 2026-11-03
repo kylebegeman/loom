@@ -1,3 +1,4 @@
+import * as DateTime from "effect/DateTime";
 import * as StorageAccounting from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -3216,6 +3217,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             [
               ["worktree-with-messages", elsewhere, null, 1],
               ["folder-after-run", resolved.cwd, RunId.make("earlier-run"), 1],
+              ["folder-preparing-run", resolved.cwd, RunId.make("preparing-run"), 1],
               ["folder-before-run", resolved.cwd, null, 1],
               ["empty-elsewhere", elsewhere, null, 0],
             ] as const
@@ -3237,6 +3239,22 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
               } as never),
             getThreadShell: (threadId) =>
               Effect.succeed({ latestRunId: threads.get(threadId)!.latestRunId } as never),
+            getThreadRecords: (threadId) =>
+              Effect.succeed({
+                runs:
+                  threads.get(threadId)!.latestRunId === null
+                    ? []
+                    : [
+                        {
+                          id: threads.get(threadId)!.latestRunId,
+                          status: threadId === "folder-preparing-run" ? "preparing" : "completed",
+                          startedAt:
+                            threadId === "folder-preparing-run"
+                              ? null
+                              : DateTime.makeUnsafe("2026-11-03T00:00:00Z"),
+                        },
+                      ],
+              } as never),
             getMessageCount: (threadId) => Effect.succeed(threads.get(threadId)!.messages),
           }),
         );
@@ -3254,6 +3272,9 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         expect(yield* bind("folder-before-run")).toEqual(resolved);
         expect(yield* store.getBinding(ThreadId.make("folder-before-run"))).toEqual(resolved);
         expect(yield* store.savedBinding(ThreadId.make("folder-before-run"))).toBeNull();
+        expect(yield* bind("folder-preparing-run")).toEqual(resolved);
+        expect(yield* store.getBinding(ThreadId.make("folder-preparing-run"))).toEqual(resolved);
+        expect(yield* store.savedBinding(ThreadId.make("folder-preparing-run"))).toBeNull();
         expect((yield* bind("empty-elsewhere").pipe(Effect.flip)).reason).toBe("invalid");
       }),
   );

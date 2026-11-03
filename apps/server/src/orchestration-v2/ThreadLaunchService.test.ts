@@ -3169,6 +3169,28 @@ it.effect(
         refName: "unpushed-parent-head",
       });
 
+      const sharedExisting = yield* (yield* ThreadLaunch.ThreadLaunchService)
+        .launch({
+          ...input,
+          commandId: CommandId.make("library:existing-parent"),
+          threadId: ThreadId.make("library:existing-parent"),
+          libraryCaller: {
+            threadId: isolated.threadId,
+            providerInstanceId: modelSelection.instanceId,
+          },
+          workspaceStrategy: {
+            type: "existing_worktree",
+            worktreePath: "/repo-worktrees/feature",
+            branch: "parent-branch",
+          },
+          waitForPreparation: true,
+        })
+        .pipe(Effect.provideService(ForkRuntime, runtime as Context.Context<ForkServices>));
+      assert.equal(
+        (yield* threads.getThreadProjection(sharedExisting.threadId)).thread.worktreePath,
+        "/repo-worktrees/feature",
+      );
+      assert.equal(bindings.get(sharedExisting.threadId)?.cwd, "/repo-worktrees/feature");
       const setupEntered = yield* Deferred.make<void>();
       harness.runSetup.mockImplementationOnce(() =>
         Deferred.succeed(setupEntered, undefined).pipe(Effect.andThen(Effect.never)),

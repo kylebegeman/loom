@@ -210,6 +210,13 @@ it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure
   (mode) =>
     Effect.gen(function* () {
       const events: string[] = [];
+      const laneEnv = {
+        TMPDIR: "/lanes/worker/tmp/",
+        LOOM_LANE_BUILD: "/lanes/worker/build",
+        LOOM_SHARED_LOCK_DIR: "/lanes/.loom/locks",
+        PATH: "/lanes/.loom/shims:/usr/bin:/bin",
+      };
+      let openedEnv: Readonly<Record<string, string>> | undefined;
       const entered = yield* Deferred.make<void>();
       const ready = yield* Deferred.make<void>();
       const listeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
@@ -245,6 +252,7 @@ it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure
               open: (input) =>
                 Effect.sync(() => {
                   events.push("open");
+                  openedEnv = input.env;
                 }).pipe(
                   // The shell's line editor starts reading, so the runner types the command.
                   Effect.andThen(
@@ -262,7 +270,7 @@ it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure
                   ),
                   Effect.as({} as never),
                 ),
-              getShell: () => Effect.succeed("/bin/zsh"), // fork: project-lifecycle
+              getShell: () => Effect.succeed(mode === "isolated" ? "/bin/bash" : "/bin/zsh"),
               subscribe: (listener) =>
                 Effect.sync(() => {
                   listeners.add(listener);
@@ -308,6 +316,7 @@ it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure
             Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
               getSettings: Effect.succeed({ enabled: mode !== "disabled" } as never),
               ensureForThread,
+              shellEnvironment: () => Effect.succeed(laneEnv),
             }),
           ),
         );
@@ -336,6 +345,7 @@ it.effect.each(["setup", "isolated", "disabled", "no-script", "settle", "failure
         assert.equal(result._tag, "Success");
         // The runner returns the open terminal before it types the command.
         if (mode !== "no-script") yield* Deferred.await(written);
+        if (mode === "isolated") expect(openedEnv).toMatchObject(laneEnv);
         assert.deepEqual(
           events,
           mode === "setup" || mode === "isolated"

@@ -2483,11 +2483,24 @@ const make = Effect.gen(function* () {
             : { type: "root" };
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
-        const repositoryPath =
+        let repositoryPath =
           libraryBinding?.repositoryPath ??
           input.repositoryPath ??
           parent.thread.worktreePath ??
           project.workspaceRoot;
+        const parentCheckout = parent.thread.worktreePath;
+        if (
+          parentCheckout !== null &&
+          repositoryPath !== parentCheckout &&
+          (yield* gitDriver
+            .listWorktreePaths(repositoryPath)
+            .pipe(
+              Effect.mapError(() =>
+                failure("invalid_request", "Unable to read the selected repository's worktrees."),
+              ),
+            )).includes(parentCheckout)
+        )
+          repositoryPath = parentCheckout;
         const base = yield* gitDriver
           .resolveCommit({
             cwd: repositoryPath,

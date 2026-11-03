@@ -10424,6 +10424,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const managedWorktrees = yield* (yield* ForkRuntime) === undefined
             ? Effect.serviceOption(ClaudeWorktreeService.ClaudeWorktreeService)
             : withForkRuntime(Effect.serviceOption(ClaudeWorktreeService.ClaudeWorktreeService));
+          const worktreeEnvironment = Option.isSome(managedWorktrees)
+            ? yield* managedWorktrees.value.environment({
+                cwd: turnInput.runtimePolicy.cwd,
+                path: adapterOptions.environment.PATH,
+              })
+            : {};
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
@@ -10439,6 +10445,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               // fork: ext-vault-terminal
               {
                 ...adapterOptions.environment,
+                ...worktreeEnvironment,
                 ...McpProviderSession.vaultTerminalEnvironment(mcpSession),
               },
               turnInput.appThread,

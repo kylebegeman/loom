@@ -182,6 +182,48 @@ it.live(
                 tool_input: {},
                 tool_use_id: "screen-edit",
               });
+            if (index === 1) {
+              for (const completed of [false, true])
+                yield* service.agentState({
+                  ...owner,
+                  cwd,
+                  agentId: "nested-helper",
+                  completed,
+                });
+              yield* service.sweep(owner);
+              expect(yield* fs.exists(cwd)).toBe(true);
+              yield* invoke("SubagentStop", {
+                ...baseInput,
+                cwd,
+                hook_event_name: "SubagentStop",
+                agent_id: agentId,
+                agent_type: "general-purpose",
+                agent_transcript_path: "/test/agent",
+                stop_hook_active: false,
+              });
+              yield* invoke("Stop", {
+                ...baseInput,
+                cwd,
+                hook_event_name: "Stop",
+                stop_hook_active: false,
+              });
+              expect(yield* fs.exists(cwd)).toBe(true);
+              yield* invoke("PreToolUse", {
+                ...baseInput,
+                cwd,
+                hook_event_name: "PreToolUse",
+                agent_id: agentId,
+                tool_name: "Write",
+                tool_input: {},
+                tool_use_id: "resumed-edit",
+              });
+              yield* invoke("Stop", {
+                ...baseInput,
+                hook_event_name: "Stop",
+                stop_hook_active: false,
+              });
+              expect(yield* fs.exists(cwd)).toBe(true);
+            }
             yield* fs.writeFileString(
               path.join(cwd, `screen-${index}.js`),
               `globalThis.screen${index} = ${index};\n`,
@@ -289,7 +331,7 @@ it.live(
       for (const entry of worktrees) yield* command(source, ["merge", "--no-edit", entry.branch]);
       const dirty = worktrees[2]!;
       yield* fs.writeFileString(path.join(dirty.cwd, "unfinished.txt"), "keep this work");
-      yield* restarted.sweep(owner);
+      yield* restarted.sweep({ ...owner, sessionId: "reset-session" });
       expect(yield* git.listWorktreePaths(source)).toEqual([source, dirty.cwd]);
       expect([...retainedCheckouts.keys()]).toEqual([dirty.cwd]);
       const refused = yield* invoke("WorktreeRemove", {

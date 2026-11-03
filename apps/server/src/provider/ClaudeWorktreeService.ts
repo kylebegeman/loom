@@ -60,13 +60,19 @@ export class ClaudeWorktreeService extends Context.Service<
         readonly completed: boolean;
       },
     ) => Effect.Effect<void, ClaudeWorktreeError>;
+    readonly environment: (input: {
+      readonly cwd: string | null;
+      readonly path?: string | undefined;
+    }) => Effect.Effect<Record<string, string>, ClaudeWorktreeError>;
     readonly describe: (
       input: ClaudeWorktreeOwner & { readonly cwd: string },
     ) => Effect.Effect<string | null, ClaudeWorktreeError>;
     readonly remove: (
       input: ClaudeWorktreeOwner & { readonly worktreePath: string },
     ) => Effect.Effect<"removed" | "retained" | "unowned", ClaudeWorktreeError>;
-    readonly sweep: (input: ClaudeWorktreeOwner) => Effect.Effect<void, ClaudeWorktreeError>;
+    readonly sweep: (
+      input: ClaudeWorktreeOwner & { readonly cwd?: string },
+    ) => Effect.Effect<void, ClaudeWorktreeError>;
   }
 >()("t3/provider/ClaudeWorktreeService") {}
 
@@ -278,6 +284,7 @@ const make = Effect.gen(function* () {
             ) ?? find(input, input.cwd);
           if (
             receipt === undefined ||
+            (receipt.agentId !== null && receipt.agentId !== input.agentId) ||
             (receipt.agentId === input.agentId && receipt.completed === input.completed)
           )
             return;
@@ -286,6 +293,17 @@ const make = Effect.gen(function* () {
       );
     },
     Effect.mapError((cause) => new ClaudeWorktreeError({ operation: "track", cause })),
+  );
+
+  const environment = Effect.fn("ClaudeWorktreeService.environment")(
+    function* (input: { readonly cwd: string | null; readonly path?: string | undefined }) {
+      return Option.isSome(lifecycle)
+        ? yield* lifecycle.value.shellEnvironment(input.cwd ?? "", input.path)
+        : {};
+    },
+    Effect.mapError(
+      (cause) => new ClaudeWorktreeError({ operation: "prepare environment for", cause }),
+    ),
   );
 
   const describe = Effect.fn("ClaudeWorktreeService.describe")(
@@ -314,10 +332,15 @@ const make = Effect.gen(function* () {
   );
 
   const sweep = Effect.fn("ClaudeWorktreeService.sweep")(
-    function* (input: ClaudeWorktreeOwner) {
+    function* (input: ClaudeWorktreeOwner & { readonly cwd?: string }) {
       yield* metadata.withPermits(1)(load());
       yield* Effect.forEach(
-        [...receipts.values()].filter((receipt) => owns(receipt, input) && receipt.completed),
+        [...receipts.values()].filter(
+          (receipt) =>
+            receipt.threadId === input.threadId &&
+            receipt.completed &&
+            (input.cwd === undefined || !inside(receipt.worktreePath, input.cwd)),
+        ),
         (receipt) =>
           removeReceipt(receipt).pipe(
             Effect.catchCause((cause) =>
@@ -333,7 +356,7 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new ClaudeWorktreeError({ operation: "clean up", cause })),
   );
 
-  return ClaudeWorktreeService.of({ create, agentState, describe, remove, sweep });
+  return ClaudeWorktreeService.of({ create, agentState, environment, describe, remove, sweep });
 });
 
 export const layer = Layer.effect(ClaudeWorktreeService, make);

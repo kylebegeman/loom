@@ -236,6 +236,7 @@ it.live("restores checkpoint files before preparing the lane and running worktre
       Effect.provide(
         Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
           getSettings: Effect.succeed({ enabled: true } as never),
+          shellEnvironment: () => Effect.succeed({}),
           ensureForThread: (threadId, setupCheckout) =>
             Effect.gen(function* () {
               expect(threadId).toBe(f.input.threadId);

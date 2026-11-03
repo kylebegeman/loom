@@ -1200,6 +1200,51 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     return lane === undefined ? null : buildEnvironmentOf(lane, yield* getSettings);
   });
 
+  const shellEnvironment = Effect.fn("ProjectLifecycle.shellEnvironment")(function* (
+    checkout: string,
+    basePath?: string,
+  ): Effect.fn.Return<Record<string, string>, ProjectLifecycleError> {
+    const settings = yield* getSettings;
+    if (!settings.enabled) return {};
+    const root = rootOf(settings);
+    const locks = sharedLocksDir(root);
+    yield* node("prepare shared locks", () => NodeFSP.mkdir(locks, { recursive: true }));
+    const lane = laneForCheckout(NodePath.resolve(checkout));
+    if (lane === undefined) return { LOOM_SHARED_LOCK_DIR: locks };
+    const host = yield* HostProcess.Environment;
+    const shims = shimsDir(root);
+    const { spacePath, tmpPath, buildPath } = buildEnvironmentOf(lane, settings);
+    return {
+      LOOM_SHARED_LOCK_DIR: locks,
+      LOOM_LANE_CHECKOUT: lane.checkoutPath,
+      LOOM_LANE_SPACE: spacePath,
+      LOOM_LANE_TMP: tmpPath,
+      LOOM_LANE_BUILD: buildPath,
+      LOOM_LANE_DATA: `${spacePath}/data`,
+      LOOM_LANE_ID: lane.id,
+      LOOM_LANE_LEASES: ledgerPath(lane.laneDir),
+      LOOM_LANE_SAVED_TMPDIR: host.LOOM_LANE_SAVED_TMPDIR ?? host.TMPDIR ?? "",
+      LOOM_LANE_SAVED_LOCK_DIR: host.LOOM_LANE_SAVED_LOCK_DIR ?? host.LOOM_SHARED_LOCK_DIR ?? "",
+      LOOM_LANE_HAD_LOCK_DIR:
+        host.LOOM_LANE_HAD_LOCK_DIR ?? (host.LOOM_SHARED_LOCK_DIR === undefined ? "0" : "1"),
+      TMPDIR: `${tmpPath}/`,
+      TMP: tmpPath,
+      TEMP: tmpPath,
+      PATH: [
+        shims,
+        ...(basePath ?? host.PATH ?? "")
+          .split(NodePath.delimiter)
+          .filter((entry) => entry !== shims),
+      ].join(NodePath.delimiter),
+      ...(lane.portBase === null
+        ? {}
+        : {
+            LOOM_LANE_PORT: String(lane.portBase),
+            LOOM_LANE_PORTS: `${lane.portBase}-${lane.portBase + PORT_BLOCK - 1}`,
+          }),
+    };
+  });
+
   const isBusy = (cause: ProjectLifecycleError) => cause.reason === "busy";
 
   /**
@@ -2092,6 +2137,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     releaseCheckout,
     buildEnvironment,
     currentBuildEnvironment,
+    shellEnvironment,
     free,
     grow: growLane,
     mount,

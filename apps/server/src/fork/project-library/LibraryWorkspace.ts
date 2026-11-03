@@ -4492,12 +4492,24 @@ const make = Effect.gen(function* () {
               (yield* fs.realPath(threadCwd)) !== resolved.cwd;
             const existing = yield* store.getBinding(input.threadId);
             const latestRunId = (yield* projections.getThreadShell(input.threadId))?.latestRunId;
+            const awaitingFirstStart =
+              existing === null && latestRunId != null
+                ? yield* projections
+                    .getThreadRecords(input.threadId, ["runs"])
+                    .pipe(
+                      Effect.map(
+                        ({ runs }) =>
+                          runs.length > 0 &&
+                          runs.every((run) => run.status === "preparing" && run.startedAt === null),
+                      ),
+                    )
+                : false;
             // A conversation that ran, or that runs elsewhere with messages (compaction can drop an
             // old one's runs), is saved where it is. A launch retry lands here when its
             // conversation was used before binding finished.
             if (
               existing === null &&
-              (latestRunId != null ||
+              ((latestRunId != null && !awaitingFirstStart) ||
                 (elsewhere && (yield* projections.getMessageCount(input.threadId)) > 0))
             )
               return yield* saveThreadHistory(input, thread.projectId);

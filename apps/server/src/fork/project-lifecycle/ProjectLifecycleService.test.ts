@@ -615,8 +615,35 @@ describe("ProjectLifecycleService", () => {
         (checkout) => t.service.retainCheckout(parentId, checkout),
         { concurrency: 3 },
       );
-      for (const worker of workers)
+      const tools = `${t.home}/bin`;
+      NodeFS.mkdirSync(tools);
+      NodeFS.writeFileSync(`${tools}/xcodebuild`, '#!/bin/sh\nprintf "%s\\n" "$@"\n', {
+        mode: 0o755,
+      });
+      for (const worker of workers) {
         NodeFS.writeFileSync(`${worker.laneDir}/space/build/output`, "worker build");
+        const environment = yield* t.service.shellEnvironment(
+          worker.checkoutPath,
+          `${tools}:/usr/bin:/bin`,
+        );
+        expect(environment).toMatchObject({
+          TMPDIR: `${worker.laneDir}/space/tmp/`,
+          LOOM_LANE_BUILD: `${worker.laneDir}/space/build`,
+          LOOM_SHARED_LOCK_DIR: `${t.home}/Developer/lanes/.loom/locks`,
+          PATH: `${t.home}/Developer/lanes/.loom/shims:${tools}:/usr/bin:/bin`,
+        });
+        expect(
+          NodeChildProcess.execFileSync(
+            "/bin/bash",
+            ["--noprofile", "--norc", "-c", "xcodebuild -showBuildSettings"],
+            {
+              cwd: worker.checkoutPath,
+              env: environment,
+              encoding: "utf8",
+            },
+          ),
+        ).toContain(`${worker.laneDir}/space/build/DerivedData`);
+      }
       expect((yield* t.service.tick()).lanes.map((lane) => lane.checkoutPath).sort()).toEqual(
         [t.checkout, ...checkouts].sort(),
       );

@@ -1158,7 +1158,7 @@ const make = Effect.gen(function* () {
           // fork: library-projects
           libraryLaunch !== null && input.workspaceStrategy.type === "worktree"
             ? { ...input.workspaceStrategy, repositoryPath: libraryLaunch.repositoryPath }
-            : libraryLaunch !== null
+            : libraryLaunch !== null && input.workspaceStrategy.type === "root"
               ? {
                   type: "existing_worktree",
                   worktreePath: libraryLaunch.cwd,
