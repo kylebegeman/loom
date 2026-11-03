@@ -23,9 +23,9 @@ export function explainVariables(
       created.add(match[1]!);
   const references = (text: string) => Array.from(text.matchAll(/<<([^<>]+)>>/g), (m) => m[1]!);
   const pairs = (value: unknown) =>
-    draftRows(value)
-      .filter((row) => row.active !== false && draftText(row.key))
-      .flatMap((row) => [row.key, row.isFile ? "" : row.value]);
+    draftRows(value).flatMap((row) =>
+      row.active !== false && draftText(row.key) ? [row.key, row.isFile ? "" : row.value] : [],
+    );
   const auth = draftObject(request.auth);
   const body = draftObject(request.body);
   const authValues =
