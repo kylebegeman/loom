@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"; // fork: native-dev-client
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer"; // fork: native-dev-client
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
@@ -14,7 +16,8 @@ import {
 } from "./mobile-native-client.ts";
 
 // fork: native-dev-client
-it.layer(NodeServices.layer)("Loom native client identity", (it) => {
+const nativeClientLayer = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer);
+it.layer(nativeClientLayer)("Loom native client identity", (it) => {
   // fork: mobile-identity
   it.effect("does not accept the upstream T3 development client as Loom", () =>
     Effect.gen(function* () {

@@ -1463,7 +1463,7 @@ scripts/dev-runner.ts	tailnet-ownership	6
 scripts/lib/dev-share.test.ts	tailnet-ownership	25
 scripts/lib/dev-share.ts	tailnet-ownership	16
 scripts/mobile-native-client.test.ts	mobile-identity	1
-scripts/mobile-native-client.test.ts	native-dev-client	2
+scripts/mobile-native-client.test.ts	native-dev-client	4
 scripts/tsconfig.json	-	"../apps/desktop/src/updates/releaseNotes.ts"
 t3.json	-	"name": "Development with sample data"
 t3.json	-	"name": "Reset development data"
