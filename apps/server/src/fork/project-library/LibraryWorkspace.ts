@@ -1928,7 +1928,7 @@ const make = Effect.gen(function* () {
 
   /**
    * The folder a conversation binds to: the copy's own folder, or the worktree it started in. That
-   * worktree must be a linked worktree of the one repository in scope and live outside the copy,
+   * worktree must be a linked worktree of a repository in scope and live outside the copy,
    * where the copy's Remove files check finds it and keeps the copy until the worktree is gone.
    */
   const threadFolder = Effect.fn("LibraryWorkspace.threadFolder")(function* (
@@ -1944,9 +1944,7 @@ const make = Effect.gen(function* () {
     if (input.worktreePath === undefined) return resolved;
     const receipt = yield* store.get(resolved.binding.workingCopyId);
     if (
-      resolved.repositoryPaths.length !== 1 ||
-      resolved.repositoryPaths[0] !== resolved.cwd ||
-      !(yield* fs.exists(input.worktreePath))
+      resolved.repositoryPaths.length === 0 || !(yield* fs.exists(input.worktreePath))
     )
       return yield* new LibraryError({ reason: "invalid" });
     const worktree = yield* fs.realPath(input.worktreePath);
@@ -1959,7 +1957,8 @@ const make = Effect.gen(function* () {
       const common = yield* git(directory, ["rev-parse", "--git-common-dir"]);
       return yield* fs.realPath(path.resolve(directory, common!));
     });
-    if ((yield* commonDirectory(worktree)) !== (yield* commonDirectory(resolved.cwd)))
+    const sourceDirectories = yield* Effect.forEach(resolved.repositoryPaths, commonDirectory);
+    if (!sourceDirectories.includes(yield* commonDirectory(worktree)))
       return yield* new LibraryError({ reason: "invalid" });
     return { ...resolved, cwd: worktree, worktreeOf: resolved.cwd };
   });
@@ -3610,9 +3609,11 @@ const make = Effect.gen(function* () {
   }) {
     const current = yield* store.getBinding(input.threadId);
     if (current === null) return yield* new LibraryError({ reason: "invalid" });
-    const folder = yield* threadFolder({ binding: current.binding });
+    const project = yield* store.getBoundProject(input.threadId);
+    const source = { binding: current.binding, ...(project === null ? {} : { project }) };
+    const folder = yield* threadFolder(source);
     const moved = yield* threadFolder({
-      binding: current.binding,
+      ...source,
       worktreePath: input.worktreePath,
     });
     if (current.cwd !== folder.cwd && current.cwd !== moved.cwd)
@@ -4465,6 +4466,11 @@ const make = Effect.gen(function* () {
         mapIo(
           Effect.gen(function* () {
             const savedBinding = yield* store.getBinding(input.threadId);
+            const project =
+              input.project ??
+              (savedBinding === null
+                ? undefined
+                : ((yield* store.getBoundProject(input.threadId)) ?? undefined));
             const savedCopy =
               savedBinding === null ? null : yield* store.get(savedBinding.binding.workingCopyId);
             const resolved =
@@ -4472,6 +4478,7 @@ const make = Effect.gen(function* () {
                 ? { ...savedBinding, binding: input.binding }
                 : yield* threadFolder({
                     ...input,
+                    ...(project === undefined ? {} : { project }),
                     // Binding again, as a retry does, keeps the worktree the conversation started in.
                     worktreePath:
                       input.worktreePath ??
@@ -4497,7 +4504,7 @@ const make = Effect.gen(function* () {
             )
               return yield* saveThreadHistory(input, thread.projectId);
             if (elsewhere) return yield* new LibraryError({ reason: "invalid" });
-            yield* store.bind(input.threadId, resolved, input.project);
+            yield* store.bind(input.threadId, resolved, project);
             return resolved;
           }),
         ),

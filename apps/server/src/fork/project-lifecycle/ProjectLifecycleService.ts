@@ -97,6 +97,7 @@ import {
   shellDir,
   shimsDir,
   slotsDir,
+  sharedLocksDir,
 } from "./shell.ts";
 import {
   SPACE_FOLDERS,
@@ -257,6 +258,8 @@ Cap: ${formatGb(lane.capBytes)} (${lane.backend === "image" ? "capped disk image
 ${ports === null ? "" : `Ports: ${ports.first} to ${ports.last}\n`}
 Shells inside the checkout get \`TMPDIR=${space}/tmp/\`, \`LOOM_LANE_BUILD\` / \`LOOM_LANE_DATA\`,
 \`LOOM_LANE_ID\` and \`LOOM_LANE_PORT\` (the first of the lane's ports).
+\`TMPDIR\` is per lane. Put cross-lane locks in \`LOOM_SHARED_LOCK_DIR=${sharedLocksDir(lanesRoot)}\`,
+which is shared by all lanes and stays outside their disposable space.
 
 - \`space/tmp\`: scratch. Loom removes unused entries older than 24 hours, including while the lane is active.
 - \`space/build\`: DerivedData, package checkouts and other build output.
@@ -504,6 +507,9 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
             portBase: lane.portBase ?? 0,
           })),
         ),
+      );
+      yield* node("create shared lock folder", () =>
+        NodeFSP.mkdir(sharedLocksDir(root), { recursive: true }),
       );
       yield* writeAtomically(`${shellDir(root)}/lanes.tsv`, renderIndex(index));
       yield* writeAtomically(`${shellDir(root)}/lanes.zsh`, renderHook(root));

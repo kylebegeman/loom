@@ -12,6 +12,7 @@ const PROFILE_END = "# <<< loom lanes <<<";
 export const shellDir = (lanesRoot: string) => `${lanesRoot}/.loom`;
 export const shimsDir = (lanesRoot: string) => `${shellDir(lanesRoot)}/shims`;
 export const slotsDir = (lanesRoot: string) => `${shellDir(lanesRoot)}/slots`;
+export const sharedLocksDir = (lanesRoot: string) => `${shellDir(lanesRoot)}/locks`;
 /** The lease ledger beside a lane's space; outside the image so it survives detaching. */
 export const ledgerPath = (laneDir: string) => `${laneDir}/leases.tsv`;
 
@@ -61,7 +62,11 @@ _loom_lane_apply() {
     done < $_loom_lanes_dir/lanes.tsv
   fi
   if [[ -n $best_space && -d $best_space/tmp && -w $best_space/tmp ]]; then
-    [[ -n \${LOOM_LANE_SPACE-} ]] || typeset -gx LOOM_LANE_SAVED_TMPDIR=\${TMPDIR-}
+    if [[ -z \${LOOM_LANE_SPACE-} ]]; then
+      typeset -gx LOOM_LANE_SAVED_TMPDIR=\${TMPDIR-}
+      typeset -gx LOOM_LANE_SAVED_LOCK_DIR=\${LOOM_SHARED_LOCK_DIR-}
+      typeset -gx LOOM_LANE_HAD_LOCK_DIR=\${+LOOM_SHARED_LOCK_DIR}
+    fi
     typeset -gx LOOM_LANE_CHECKOUT=$best LOOM_LANE_SPACE=$best_space
     typeset -gx LOOM_LANE_TMP=$best_space/tmp LOOM_LANE_BUILD=$best_space/build LOOM_LANE_DATA=$best_space/data
     typeset -gx LOOM_LANE_ID=$best_lane LOOM_LANE_LEASES=\${best_space:h}/leases.tsv
@@ -70,7 +75,7 @@ _loom_lane_apply() {
     else
       unset LOOM_LANE_PORT LOOM_LANE_PORTS
     fi
-    typeset -gx TMPDIR=$best_space/tmp/
+    typeset -gx TMPDIR=$best_space/tmp/ LOOM_SHARED_LOCK_DIR=$_loom_lanes_dir/locks
     path=($shims \${path:#$shims})
   elif [[ -n \${LOOM_LANE_SPACE-} ]]; then
     if [[ -n \${LOOM_LANE_SAVED_TMPDIR-} ]]; then
@@ -78,6 +83,12 @@ _loom_lane_apply() {
     else
       unset TMPDIR
     fi
+    if [[ \${LOOM_LANE_HAD_LOCK_DIR-0} == 1 ]]; then
+      typeset -gx LOOM_SHARED_LOCK_DIR=$LOOM_LANE_SAVED_LOCK_DIR
+    else
+      unset LOOM_SHARED_LOCK_DIR
+    fi
+    unset LOOM_LANE_SAVED_LOCK_DIR LOOM_LANE_HAD_LOCK_DIR
     unset LOOM_LANE_SAVED_TMPDIR LOOM_LANE_CHECKOUT LOOM_LANE_SPACE LOOM_LANE_TMP LOOM_LANE_BUILD LOOM_LANE_DATA
     unset LOOM_LANE_ID LOOM_LANE_LEASES LOOM_LANE_PORT LOOM_LANE_PORTS
     path=(\${path:#$shims})
