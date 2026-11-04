@@ -72,8 +72,8 @@ vi.mock("../../components/ui/Button", () => ({
     </button>
   ),
 }));
-vi.mock("../../components/ui/AndroidScreenHeader", () => ({
-  AndroidSheetHeader: ({ onBack }: { onBack?: () => void }) => (
+vi.mock("../../components/ui/AppBar", () => ({
+  AppBar: ({ onBack }: { onBack?: () => void }) => (
     <button disabled={!onBack} onClick={onBack}>
       Back
     </button>

@@ -921,7 +921,7 @@ this task. Package-runner examples keep the actual upstream npm package name; do
 
 | File                                                                | Marker      | Why                                                                   |
 | ------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------- |
-| `apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx`       | `library`   | Route sidebar source actions through the Library project launch flow. |
+| `apps/mobile/src/features/workspace/WorkspaceThreadSidebar.tsx`     | `library`   | Route sidebar source actions through the Library project launch flow. |
 | `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` | `brand`     | Loom pairing instructions in the scanner.                             |
 | `apps/web/src/components/onboarding/WelcomeWizard.tsx`              | `brand`     | Loom CLI pairing/start examples.                                      |
 | `apps/server/src/binCli.ts`                                         | `brand`     | Loom CLI root/help naming.                                            |

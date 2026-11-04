@@ -1,6 +1,7 @@
 // fork: server-weight
 import { ProviderProcesses, type ProviderProcessRegistration } from "@t3tools/shared/AgentScope";
 import * as DocumentText from "../../provider/DocumentText.ts";
+import { mcpToolResultOutput, toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as ClaudeWorktreeService from "../../provider/ClaudeWorktreeServiceTag.ts"; // fork: project-lifecycle
 import { ForkRuntime, withForkRuntime } from "../../fork/ForkRuntime.ts";
 import { claudeWorktreeHooks } from "../../provider/claudeWorktreeHooks.ts";
@@ -3123,7 +3124,14 @@ function claudeNativeToolOutputValue(output: ClaudeNativeToolOutput): unknown | 
     case "none":
       return undefined;
     case "content_block":
+      return output.value;
     case "structured_tool_use_result":
+      if (toolOutputImages(output.value).length === 0) {
+        return mcpToolResultOutput({
+          content: output.fallbackValue,
+          structuredContent: output.value,
+        });
+      }
       return output.value;
     default:
       return assertNever(output);

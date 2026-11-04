@@ -19,7 +19,6 @@ import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyb
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useCompactWorkspaceTabs } from "../../features/workspace/useSystemWorkspaceTabBar";
-import { useWorkspaceSurface } from "../../features/workspace/useWorkspaceSurface";
 import { cn } from "../../lib/cn";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { useEnvironments } from "../../state/environments";
@@ -41,7 +40,6 @@ export function LibraryPage(props: {
   const focused = useIsFocused();
   const route = useRoute();
   const pageBack = useWorkspacePageBack();
-  const workspaceSurface = useWorkspaceSurface();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
   const { layout } = useAdaptiveWorkspaceLayout();
@@ -59,18 +57,11 @@ export function LibraryPage(props: {
   );
   const insets = useSafeAreaInsets();
   // Heading the workspace, the list takes the workspace's surface, as Usage does.
-  const surface =
-    deviceType === "duo-folded"
-      ? "bg-screen"
-      : pageBack === undefined
-        ? workspaceSurface.className
-        : "bg-sheet";
+  const surface = pageBack === undefined || deviceType === "duo-folded" ? "bg-screen" : "bg-sheet";
   return (
     <View collapsable={false} className={cn("flex-1", surface)}>
       <AppBar
         title={props.title}
-        // With no Back, the sidebar toggle is the only way to bring back a hidden list.
-        sidebar={pageBack === undefined}
         hideBottomBorder
         onBack={props.back === false ? undefined : pageBack}
         actions={props.actions}

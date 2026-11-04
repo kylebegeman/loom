@@ -1,11 +1,8 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { NetworkIcon } from "lucide-react";
-import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { useServerConfigs } from "~/state/entities";
 import type { ForkDiffHeaderActionProps } from "../diffHeader/registry";
-import { FEATURE } from "./panel";
 import { openImpact } from "./state";
 
 /** The diff panel's scope labels, as they read inside a sentence. */
@@ -20,8 +17,6 @@ export default function DiffImpactButton({
   files,
   scopeLabel,
 }: ForkDiffHeaderActionProps & { readonly threadRef: ScopedThreadRef }) {
-  const config = useServerConfigs().get(threadRef.environmentId);
-  if (!loomFeaturesOf(config?.environment.capabilities).includes(FEATURE)) return null;
   return (
     <Tooltip>
       <TooltipTrigger

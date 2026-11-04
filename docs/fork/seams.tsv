@@ -319,9 +319,9 @@ apps/mobile/src/features/home/HomeRouteScreen.tsx	fleet-connections	1
 apps/mobile/src/features/home/HomeRouteScreen.tsx	library	19
 apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	14
 apps/mobile/src/features/home/HomeScreen.tsx	library	13
-apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
-apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
-apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
+apps/mobile/src/features/home/ThreadListToolbar.android.tsx	project-navigation	5
+apps/mobile/src/features/home/ThreadListToolbar.android.tsx	brand	3
+apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	3
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	4
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	21
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	library	22
@@ -508,7 +508,7 @@ apps/mobile/src/features/settings/SettingsRouteScreen.tsx	bots	2
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	bots	4
 apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	bots	8
 apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	library	26
-apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx	library	2
+apps/mobile/src/features/workspace/WorkspaceThreadSidebar.tsx	library	2
 apps/web/src/components/CommandPaletteContent.tsx	library-palette	3
 apps/web/src/components/CommandPaletteContent.tsx	fleet-connections	1
 apps/desktop/src/app/DesktopApp.ts	brand	1
