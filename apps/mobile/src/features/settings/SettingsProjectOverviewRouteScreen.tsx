@@ -50,7 +50,7 @@ import { SettingsSection } from "./components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
-  AndroidSettingsEnvironmentFilter,
+  useSettingsEnvironmentMenu,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
@@ -66,6 +66,7 @@ export function SettingsProjectOverviewRouteScreen({
   | { readonly initialEnvironmentId?: EnvironmentId; readonly initialProjectId?: ProjectId }
   | undefined
 >) {
+  const environmentMenu = useSettingsEnvironmentMenu();
   const insets = useSafeAreaInsets();
   const [isRemoving, setIsRemoving] = useState(false);
   const removalPending = useRef(false);
@@ -141,7 +142,7 @@ export function SettingsProjectOverviewRouteScreen({
     <>
       <SettingsEnvironmentFilterHeader />
       {/* fork: project-checkout-management - Library projects are Projects; this page manages folders. */}
-      <SettingsScreen title="Computer folders" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Computer folders" menus={[environmentMenu]}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}

@@ -23,6 +23,7 @@ import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsDragHandle } from "./components/SettingsDragHandle";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import {
   deviceMicrophoneOrder,
@@ -104,14 +105,14 @@ const UNAVAILABLE_EXPLANATION =
 export function SettingsMicrophoneRouteScreen() {
   const transcriber = useAtomValue(localVoiceTranscriberAtom);
   // Android's probe is asynchronous; an empty sheet avoids flashing "unavailable" first.
-  if (transcriber === "checking") return <View collapsable={false} className="flex-1 bg-sheet" />;
+  if (transcriber === "checking") return <SettingsScreen title="Microphone">{null}</SettingsScreen>;
   return transcriber === null ? <VoiceInputUnavailable /> : <MicrophoneSettings />;
 }
 
 function VoiceInputUnavailable() {
   const insets = useSafeAreaInsets();
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SettingsScreen title="Microphone">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -124,7 +125,7 @@ function VoiceInputUnavailable() {
         </SettingsSection>
         <Text className="px-2 text-sm text-foreground-muted">{UNAVAILABLE_EXPLANATION}</Text>
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }
 
@@ -176,7 +177,7 @@ function MicrophoneSettings() {
   const dragTo = drag === null ? -1 : dragFrom + dropSteps(dragFrom, drag.translation);
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <SettingsScreen title="Microphone">
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -246,7 +247,7 @@ function MicrophoneSettings() {
             : null}
         </Text>
       </ScrollView>
-    </View>
+    </SettingsScreen>
   );
 }
 

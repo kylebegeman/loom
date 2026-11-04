@@ -508,7 +508,7 @@ apps/mobile/src/features/settings/SettingsRouteScreen.tsx	bots	2
 apps/mobile/src/features/threads/thread-list-v2-items.tsx	bots	4
 apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	bots	8
 apps/mobile/src/features/threads/ThreadSettingsSheet.tsx	library	26
-apps/mobile/src/features/layout/AdaptiveWorkspaceLayout.tsx	library	2
+apps/mobile/src/features/workspace/WorkspaceThreadSidebar.tsx	library	2
 apps/web/src/components/CommandPaletteContent.tsx	library-palette	3
 apps/web/src/components/CommandPaletteContent.tsx	fleet-connections	1
 apps/desktop/src/app/DesktopApp.ts	brand	1
