@@ -7,6 +7,7 @@ import {
   createVaultCoreAtoms,
   createVaultSecretAtoms,
   secretRequestAcceptsItem,
+  secretRequestSavedMatch,
   supportsLoomFeature,
   VAULT_SEARCH_DEBOUNCE_MS,
   VAULT_KIND_LABELS,
@@ -42,6 +43,10 @@ export function SavedSecretAnswer({
   const config = useEnvironmentServerConfig(environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, VAULT_SECRET_FEATURE);
   const allowed = useAtomValue(secret.answerFromItem.permissionAtom(environmentId));
+  const status = useEnvironmentQuery(
+    supported && allowed ? vault.status({ environmentId, input: {} }) : null,
+  );
+  const ready = status.data?.state === "ready";
   const answer = useAtomCommand(secret.answerFromItem, {
     reportFailure: false,
     reportDefect: false,
@@ -53,7 +58,7 @@ export function SavedSecretAnswer({
   const busy = useRef(false);
   const search = useDebouncedValue(query.trim(), VAULT_SEARCH_DEBOUNCE_MS);
   const page = useEnvironmentQuery(
-    supported
+    ready
       ? vault.list({
           environmentId,
           input: { cursor, includeArchived: false, query: search, sort: "label" },
@@ -64,9 +69,7 @@ export function SavedSecretAnswer({
     page.data?.items.filter((item) =>
       secretRequestAcceptsItem(item, request.delivery === "file"),
     ) ?? [];
-  const exact = items.find(
-    (item) => item.label.toLowerCase() === request.label.trim().toLowerCase(),
-  );
+  const exact = secretRequestSavedMatch(items, request.label, request.delivery === "file");
   const answerWithItem = async (item: VaultItemSummary) => {
     if (busy.current || disabled || !allowed) return;
     busy.current = true;
@@ -92,6 +95,13 @@ export function SavedSecretAnswer({
       });
   };
   if (!supported) return null;
+  if (!allowed)
+    return (
+      <Text className="text-xs text-foreground-muted">
+        This sign-in cannot use saved Vault items. Type the value instead.
+      </Text>
+    );
+  if (!ready) return null;
   return (
     <View className="gap-2">
       <Text className="text-xs text-foreground-muted">Or use a saved item</Text>
@@ -131,7 +141,7 @@ export function SavedSecretAnswer({
           {items.map((item) => (
             <Button
               key={item.id}
-              label={`${item.label} · ${VAULT_KIND_LABELS[item.kind]}`}
+              label={`${item.label} · ${VAULT_KIND_LABELS[item.kind]} · Version ${item.version} · ${item.id.slice(0, 8)}`}
               tone="secondary"
               disabled={disabled || !allowed || search !== query.trim()}
               onPress={() => void answerWithItem(item)}

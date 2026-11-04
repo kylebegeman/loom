@@ -12,6 +12,7 @@ const state = vi.hoisted(() => {
   return {
     allowed: true,
     supported: true,
+    vaultState: "ready",
     revision: 0,
     items: [] as VaultItemSummary[],
     refresh: vi.fn(),
@@ -42,7 +43,11 @@ vi.mock("@t3tools/client-runtime/fork", async () => {
   const { secretSaveTarget } = await import("@t3tools/client-runtime/fork/vault-secret");
   return {
     supportsLoomFeature: () => state.supported,
-    createVaultCoreAtoms: () => ({ save: { permissionAtom: () => null }, list: () => "matches" }),
+    createVaultCoreAtoms: () => ({
+      save: { permissionAtom: () => null },
+      list: () => "matches",
+      status: () => "status",
+    }),
     secretSaveTarget,
     VAULT_SEARCH_DEBOUNCE_MS: 250,
     VAULT_KIND_LABELS: { account: "Account", secret: "Secret" },
@@ -63,7 +68,12 @@ vi.mock("../../state/query", async () => {
     useEnvironmentQuery: (atom: unknown) => {
       useSyncExternalStore(state.subscribe, () => state.revision);
       return {
-        data: atom ? { items: state.items, nextCursor: null } : null,
+        data:
+          atom === "status"
+            ? { state: state.vaultState }
+            : atom
+              ? { items: state.items, nextCursor: null }
+              : null,
         isPending: false,
         isSuccess: true,
         refresh: state.refresh,
@@ -185,6 +195,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   state.allowed = true;
   state.supported = true;
+  state.vaultState = "ready";
   state.items = [];
   state.revision = 0;
   state.refresh.mockReset();
@@ -231,6 +242,17 @@ async function submit() {
   });
 }
 it("answers normally unless the human selects a Vault copy", async () => {
+  fillSecret();
+  await submit();
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.answer).toHaveBeenCalledOnce();
+});
+it("hides the Vault copy and answers normally while Vault is not ready", async () => {
+  act(() => {
+    state.vaultState = "unconfigured";
+    state.notify();
+  });
+  expect(container.querySelector("input[type=checkbox]")).toBeNull();
   fillSecret();
   await submit();
   expect(state.save).not.toHaveBeenCalled();

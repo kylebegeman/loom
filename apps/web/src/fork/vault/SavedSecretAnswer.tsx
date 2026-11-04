@@ -10,6 +10,7 @@ import {
 import {
   createVaultSecretAtoms,
   secretRequestAcceptsItem,
+  secretRequestSavedMatch,
   supportsLoomFeature,
   VAULT_SEARCH_DEBOUNCE_MS,
   VAULT_KIND_LABELS,
@@ -22,6 +23,7 @@ import * as Cause from "effect/Cause";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { useServerConfigs } from "~/state/entities";
 import { useDebouncedValue } from "~/state/queries";
+import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -51,6 +53,10 @@ export function SavedSecretAnswer({
     VAULT_SECRET_FEATURE,
   );
   const allowed = useAtomValue(secret.answerFromItem.permissionAtom(environmentId));
+  const status = useEnvironmentQuery(
+    supported && allowed ? vault.status({ environmentId, input: {} }) : null,
+  );
+  const ready = status.data?.state === "ready";
   const answer = useAtomCommand(secret.answerFromItem, {
     reportFailure: false,
     reportDefect: false,
@@ -61,7 +67,7 @@ export function SavedSecretAnswer({
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
   const search = useDebouncedValue(query.trim(), VAULT_SEARCH_DEBOUNCE_MS);
-  const listAtom = supported
+  const listAtom = ready
     ? vault.list({
         environmentId,
         input: { cursor, includeArchived: false, query: search, sort: "label" },
@@ -72,9 +78,7 @@ export function SavedSecretAnswer({
   const page = Option.getOrNull(AsyncResult.value(result));
   const items =
     page?.items.filter((item) => secretRequestAcceptsItem(item, request.delivery === "file")) ?? [];
-  const exact = items.find(
-    (item) => item.label.toLowerCase() === request.label.trim().toLowerCase(),
-  );
+  const exact = secretRequestSavedMatch(items, request.label, request.delivery === "file");
   const answerWithItem = async (item: VaultItemSummary) => {
     if (busy.current || disabled || !allowed) return;
     busy.current = true;
@@ -96,6 +100,13 @@ export function SavedSecretAnswer({
     else setError(message(squashAtomCommandFailure(response)));
   };
   if (!supported) return null;
+  if (!allowed)
+    return (
+      <p className="text-xs text-muted-foreground">
+        This sign-in cannot use saved Vault items. Type the value instead.
+      </p>
+    );
+  if (!ready) return null;
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <p className="text-xs text-muted-foreground">Or use a saved item</p>
@@ -155,7 +166,8 @@ export function SavedSecretAnswer({
               onClick={() => void answerWithItem(item)}
             >
               <span className="min-w-0 wrap-anywhere">
-                {item.label} · {VAULT_KIND_LABELS[item.kind]}
+                {item.label} · {VAULT_KIND_LABELS[item.kind]} · Version {item.version} ·{" "}
+                {item.id.slice(0, 8)}
               </span>
             </Button>
           ))}

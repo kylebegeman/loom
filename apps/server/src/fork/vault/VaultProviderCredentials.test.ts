@@ -227,7 +227,7 @@ it.effect.each(["archive", "delete", "replace"] as const)(
         expect(failure.reason).toBe(
           operation === "replace" ? "conflict" : operation === "delete" ? "not-found" : "denied",
         );
-        expect(f.state.policyWrites).toBe(1);
+        expect(f.state.policyWrites).toBe(0);
       }),
     );
   },
@@ -251,7 +251,7 @@ it.effect("checks saved binding and variable consumer on every use", () => {
       expect((yield* service.validate(reference, consumer).pipe(Effect.flip)).reason).toBe(
         "denied",
       );
-      expect(f.state.policyWrites).toBe(1);
+      expect(f.state.policyWrites).toBe(0);
     }),
   );
 });
@@ -279,6 +279,9 @@ it.effect.each(["protected", "unclassified", "unknown-format", "wrong-environmen
         f.records.set(policyPath, { value: Redacted.make(policy), version: 1 });
         const result = yield* service.read(reference, consumer).pipe(Effect.result);
         expect(result._tag).toBe("Failure");
+        expect((yield* service.validate(reference, consumer).pipe(Effect.result))._tag).toBe(
+          "Failure",
+        );
         expect(f.state.policyWrites).toBe(0);
       }),
     );
@@ -320,7 +323,7 @@ it.effect("preserves owner and ordinary protection policy through audited use", 
         }),
         version: 1,
       });
-      yield* service.validate(reference, consumer);
+      yield* service.read(reference, consumer);
       const stored = Redacted.value(f.records.get(policyPath)!.value);
       expect(stored).toMatchObject({ schemaVersion: 5, ownerPolicy, ownerReceipts: [] });
       const decoded = decodePolicy(stored);
@@ -341,7 +344,9 @@ it.effect.each(["unavailable", "conflict"] as const)(
       Effect.gen(function* () {
         f.state.failAudit = failure === "unavailable";
         f.state.auditConflicts = failure === "conflict" ? 4 : 0;
-        expect((yield* service.read(reference, consumer).pipe(Effect.flip)).reason).toBe(failure);
+        expect((yield* service.read(reference, consumer).pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
       }),
     );
   },

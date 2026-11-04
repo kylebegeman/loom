@@ -15,6 +15,7 @@ const state = vi.hoisted(() => {
   return {
     allowed: true,
     supported: true,
+    vaultState: "ready",
     configs: new Map(),
     revision: 0,
     items: [] as VaultItemSummary[],
@@ -40,7 +41,9 @@ vi.mock("@effect/atom-react", async () => {
       useSyncExternalStore(state.subscribe, () => state.revision);
       return atom === "permission"
         ? state.allowed
-        : AsyncResult.success({ items: state.items, nextCursor: null });
+        : atom === "status"
+          ? AsyncResult.success({ backend: "openbao", state: state.vaultState, origin: null })
+          : AsyncResult.success({ items: state.items, nextCursor: null });
     },
     useAtomRefresh: () => state.refresh,
   };
@@ -61,7 +64,11 @@ vi.mock("~/state/entities", async () => {
   return { useServerConfigs: () => useSyncExternalStore(state.subscribe, () => state.configs) };
 });
 vi.mock("~/fork/vault/state", () => ({
-  vault: { save: { permissionAtom: () => "permission" }, list: () => "matches" },
+  vault: {
+    save: { permissionAtom: () => "permission" },
+    list: () => "matches",
+    status: () => "status",
+  },
 }));
 vi.mock("~/state/server", () => ({ serverEnvironment: { answerSecretRequest: "answer" } }));
 vi.mock("~/state/use-atom-command", () => ({
@@ -130,6 +137,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   state.allowed = true;
   state.supported = true;
+  state.vaultState = "ready";
   state.configs = new Map();
   state.items = [];
   state.revision = 0;
@@ -165,6 +173,17 @@ async function submit() {
   });
 }
 it("answers normally unless the human selects a Vault copy", async () => {
+  fillSecret();
+  await submit();
+  expect(state.save).not.toHaveBeenCalled();
+  expect(state.answer).toHaveBeenCalledOnce();
+});
+it("hides the Vault copy and answers normally while Vault is not ready", async () => {
+  act(() => {
+    state.vaultState = "unconfigured";
+    state.notify();
+  });
+  expect(container.querySelector("input[type=checkbox]")).toBeNull();
   fillSecret();
   await submit();
   expect(state.save).not.toHaveBeenCalled();

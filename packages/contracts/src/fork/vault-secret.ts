@@ -13,9 +13,15 @@ const messages = {
     "Use loom_vault_github_exec for a GitHub connection. It cannot answer a private secret request.",
   "secret-file-required":
     "This saved item is a file. Ask again with request_secret and delivery: file.",
+  "secret-empty": "This saved item is empty. Type the value instead.",
 } as const;
 export class VaultSecretError extends Schema.TaggedError<VaultSecretError>()("VaultSecretError", {
-  reason: Schema.Literals(["secret-ssh-key", "secret-service-connection", "secret-file-required"]),
+  reason: Schema.Literals([
+    "secret-ssh-key",
+    "secret-service-connection",
+    "secret-file-required",
+    "secret-empty",
+  ]),
 }) {
   override get message() {
     return messages[this.reason];

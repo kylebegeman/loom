@@ -66,15 +66,8 @@ const make = Effect.gen(function* () {
     ),
   );
   const policyPath = `environments/${namespace}/access-policy`;
-  const read = Effect.fn("VaultProviderCredentials.read")(function* (
-    reference: SecretReference,
-    consumer: Consumer,
-  ) {
-    const binding = vaultProviderBinding(reference);
-    if (binding === null || !isConsumer(consumer))
-      return yield* new VaultError({ reason: "invalid-input" });
-    if (binding.environmentId !== environmentId) return yield* new VaultError({ reason: "denied" });
-    const requireBinding = settings
+  const requireBinding = (reference: SecretReference, consumer: Consumer) =>
+    settings
       .withSettingsSnapshot((current) => {
         const variables = current.providerInstances[consumer.instanceId]?.environment ?? [];
         const matching = variables.filter((variable) => variable.name === consumer.variableName);
@@ -91,26 +84,47 @@ const make = Effect.gen(function* () {
           ServerSettingsError: () => Effect.fail(new VaultError({ reason: "unavailable" })),
         }),
       );
-    yield* requireBinding;
+  const bind = Effect.fn("VaultProviderCredentials.bind")(function* (
+    reference: SecretReference,
+    consumer: Consumer,
+  ) {
+    const binding = vaultProviderBinding(reference);
+    if (binding === null || !isConsumer(consumer))
+      return yield* new VaultError({ reason: "invalid-input" });
+    if (binding.environmentId !== environmentId) return yield* new VaultError({ reason: "denied" });
+    yield* requireBinding(reference, consumer);
+    return binding;
+  });
+  const authorize = Effect.fn("VaultProviderCredentials.authorize")(function* (
+    binding: NonNullable<ReturnType<typeof vaultProviderBinding>>,
+  ) {
+    const stored = yield* store.read(policyPath);
+    const decoded =
+      stored === null ? Option.some(EMPTY_POLICY) : decodePolicy(Redacted.value(stored.value));
+    if (Option.isNone(decoded)) return yield* new VaultError({ reason: "invalid-response" });
+    const policy = decoded.value;
+    if (
+      (policy.schemaVersion === 4 && policy.environmentId !== environmentId) ||
+      (policy.ownerPolicy !== undefined && policy.ownerPolicy.environmentId !== environmentId)
+    )
+      return yield* new VaultError({ reason: "invalid-response" });
+    if (credentialUseRefusal(policy, binding.itemId))
+      return yield* new VaultError({ reason: "denied" });
+    const item = yield* core.inspect(binding.itemId);
+    if (item === null) return yield* new VaultError({ reason: "not-found" });
+    if (item.kind !== "secret" || item.state !== "active")
+      return yield* new VaultError({ reason: "denied" });
+    if (item.version !== binding.expectedVersion)
+      return yield* new VaultError({ reason: "conflict" });
+    return { stored, policy };
+  });
+  const read = Effect.fn("VaultProviderCredentials.read")(function* (
+    reference: SecretReference,
+    consumer: Consumer,
+  ) {
+    const binding = yield* bind(reference, consumer);
     for (let attempt = 0; attempt < MAX_AUDIT_ATTEMPTS; attempt++) {
-      const stored = yield* store.read(policyPath);
-      const decoded =
-        stored === null ? Option.some(EMPTY_POLICY) : decodePolicy(Redacted.value(stored.value));
-      if (Option.isNone(decoded)) return yield* new VaultError({ reason: "invalid-response" });
-      const policy = decoded.value;
-      if (
-        (policy.schemaVersion === 4 && policy.environmentId !== environmentId) ||
-        (policy.ownerPolicy !== undefined && policy.ownerPolicy.environmentId !== environmentId)
-      )
-        return yield* new VaultError({ reason: "invalid-response" });
-      if (credentialUseRefusal(policy, binding.itemId))
-        return yield* new VaultError({ reason: "denied" });
-      const item = yield* core.inspect(binding.itemId);
-      if (item === null) return yield* new VaultError({ reason: "not-found" });
-      if (item.kind !== "secret" || item.state !== "active")
-        return yield* new VaultError({ reason: "denied" });
-      if (item.version !== binding.expectedVersion)
-        return yield* new VaultError({ reason: "conflict" });
+      const { stored, policy } = yield* authorize(binding);
       const value = yield* core.reveal(
         { id: binding.itemId, expectedVersion: binding.expectedVersion },
         stored === null ? null : policy,
@@ -153,16 +167,18 @@ const make = Effect.gen(function* () {
         return yield* new VaultError({ reason: "denied" });
       if (currentItem.version !== binding.expectedVersion)
         return yield* new VaultError({ reason: "conflict" });
-      yield* requireBinding;
+      yield* requireBinding(reference, consumer);
       return value.value;
     }
-    return yield* new VaultError({ reason: "conflict" });
+    // Busy policy writes, not a changed item: "conflict" would send the user to rebind.
+    return yield* new VaultError({ reason: "unavailable" });
   });
   return VaultProviderCredentials.of({
     read,
-    validate: Effect.fn("VaultProviderCredentials.validate")((reference, consumer) =>
-      read(reference, consumer).pipe(Effect.asVoid),
-    ),
+    // Guards check on every spawn and probe; only a released value is a durable "use".
+    validate: Effect.fn("VaultProviderCredentials.validate")(function* (reference, consumer) {
+      yield* authorize(yield* bind(reference, consumer));
+    }),
   });
 });
 

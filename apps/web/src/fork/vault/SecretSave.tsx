@@ -11,6 +11,7 @@ import { VAULT_SECRET_FEATURE, type VaultItemPage, type VaultError } from "@t3to
 import { Atom, AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { useDebouncedValue } from "~/state/queries";
+import { useEnvironmentQuery } from "~/state/query";
 import { Button } from "~/components/ui/button";
 import * as Redacted from "effect/Redacted";
 import { useServerConfigs } from "~/state/entities";
@@ -36,11 +37,14 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
   const [name, setName] = useState(initialName.slice(0, 200));
   const [saveAsNew, setSaveAsNew] = useState(false);
   const query = useDebouncedValue(name.trim().slice(0, 100), VAULT_SEARCH_DEBOUNCE_MS);
-  const matchingSupported = supportsLoomFeature(
-    configs.get(environmentId)?.environment.capabilities,
-    VAULT_SECRET_FEATURE,
+  const status = useEnvironmentQuery(
+    supported && allowed ? vault.status({ environmentId, input: {} }) : null,
   );
-  const matchAtom = matchingSupported
+  const ready = status.data?.state === "ready";
+  const matching =
+    (ready || enabled) &&
+    supportsLoomFeature(configs.get(environmentId)?.environment.capabilities, VAULT_SECRET_FEATURE);
+  const matchAtom = matching
     ? vault.list({
         environmentId,
         input: { cursor: null, includeArchived: false, query, sort: "label" },
@@ -55,9 +59,9 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
   );
   const target = saveAsNew ? null : matchingItem;
   const lookupPending =
-    matchingSupported &&
+    matching &&
     (query !== name.trim().slice(0, 100) || matches.waiting || matches._tag === "Initial");
-  const lookupFailed = matchingSupported && matches._tag === "Failure";
+  const lookupFailed = matching && matches._tag === "Failure";
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const beforeReply = async (secret: string) => {
@@ -67,10 +71,10 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
       return false;
     }
     if (
-      matchingSupported &&
+      matching &&
       (query !== name.trim().slice(0, 100) || matches.waiting || matches._tag !== "Success")
     ) {
-      setError("Wait for the saved-item lookup, or retry if Vault is unavailable.");
+      setError("Wait for the saved-item lookup, or uncheck this option to answer only.");
       return false;
     }
     const result = await save({
@@ -95,7 +99,7 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
     return true;
   };
   const control = (disabled: boolean) =>
-    supported || enabled ? (
+    (supported && allowed && ready) || enabled ? (
       <div className="flex min-w-0 flex-col gap-3">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
@@ -123,7 +127,8 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
               </p>
             ) : lookupFailed ? (
               <p role="alert" className="text-xs text-destructive">
-                Could not check saved items. Refresh the lookup before saving to Vault.
+                Could not check saved items. Refresh the lookup, or uncheck this option to answer
+                only.
               </p>
             ) : matchingItem ? (
               <RadioGroup
@@ -166,7 +171,7 @@ export function useSecretVaultSave(environmentId: EnvironmentId, initialName: st
             Saved to Vault as {name}. The private request still needs to finish.
           </p>
         ) : null}
-        {enabled && matchingSupported && (error || lookupFailed) ? (
+        {enabled && matching && (error || lookupFailed) ? (
           <div>
             <Button
               type="button"

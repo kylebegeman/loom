@@ -23,6 +23,20 @@ export const secretSaveTarget = (
           item.label.toLowerCase() === name.trim().toLowerCase(),
       ) ?? null);
 
+/** Duplicate labels go to the list, since one click cannot tell the items apart. */
+export const secretRequestSavedMatch = (
+  items: ReadonlyArray<VaultItemSummary>,
+  label: string,
+  fileDelivery: boolean,
+): VaultItemSummary | null => {
+  const matches = items.filter(
+    (item) =>
+      secretRequestAcceptsItem(item, fileDelivery) &&
+      item.label.toLowerCase() === label.trim().toLowerCase(),
+  );
+  return matches.length === 1 ? matches[0]! : null;
+};
+
 export function createVaultSecretAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {

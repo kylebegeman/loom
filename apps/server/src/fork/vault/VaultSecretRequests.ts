@@ -82,7 +82,10 @@ const make = Effect.gen(function* () {
           bytes,
         );
       } else {
-        yield* requests.answer({ ...input, answer: { type: "save", secret: value } });
+        // Typed answers decode as TrimmedNonEmptyString; a saved value must meet the same rule.
+        const secret = value.trim();
+        if (secret === "") return yield* new VaultSecretError({ reason: "secret-empty" });
+        yield* requests.answer({ ...input, answer: { type: "save", secret } });
       }
     }),
   });

@@ -1,6 +1,10 @@
 import { expect, it } from "vite-plus/test";
 import type { VaultItemSummary } from "@t3tools/contracts/fork";
-import { secretRequestAcceptsItem, secretSaveTarget } from "./vault-secret.ts";
+import {
+  secretRequestAcceptsItem,
+  secretRequestSavedMatch,
+  secretSaveTarget,
+} from "./vault-secret.ts";
 
 const item: VaultItemSummary = {
   id: "a".repeat(32),
@@ -22,4 +26,13 @@ it("allows a saved file only when delivery is a file and rejects managed connect
   expect(secretRequestAcceptsItem({ ...item, kind: "secure-file" }, false)).toBe(false);
   expect(secretRequestAcceptsItem({ ...item, kind: "secure-file" }, true)).toBe(true);
   expect(secretRequestAcceptsItem({ ...item, kind: "service-connection" }, true)).toBe(false);
+});
+it("offers one-click answering only for a single usable label match", () => {
+  const twin = { ...item, id: "b".repeat(32) };
+  expect(secretRequestSavedMatch([item], " api KEY ", false)).toEqual(item);
+  expect(secretRequestSavedMatch([item, twin], item.label, false)).toBeNull();
+  expect(
+    secretRequestSavedMatch([item, { ...twin, state: "archived" }], item.label, false),
+  ).toEqual(item);
+  expect(secretRequestSavedMatch([{ ...item, kind: "secure-file" }], item.label, false)).toBeNull();
 });

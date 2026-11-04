@@ -84,6 +84,27 @@ it.effect.each(["secret", "account", "secure-note"] as const)(
     }).pipe(Effect.provide(f.layer));
   },
 );
+it.effect.each([
+  [
+    " synthetic-private-value\n",
+    "answered",
+    [{ secret: "synthetic-private-value", file: undefined }],
+  ],
+  [" \n", "secret-empty", []],
+] as const)("answers saved value %j trimmed like a typed answer", ([value, outcome, answers]) => {
+  const f = fixture({ value });
+  return Effect.gen(function* () {
+    const service = yield* VaultSecret.VaultSecretRequests;
+    const result = yield* service
+      .answerFromItem(input, "owner")
+      .pipe(
+        Effect.as("answered"),
+        Effect.catchTags({ VaultSecretError: (error) => Effect.succeed(error.reason) }),
+      );
+    expect(result).toBe(outcome);
+    expect(f.answers).toEqual(answers);
+  }).pipe(Effect.provide(f.layer));
+});
 it.effect("decodes a secure file only for a file request", () => {
   const f = fixture({
     kind: "secure-file",
