@@ -17,7 +17,6 @@ import type {
   ServerSettings,
   ServerSettingsError,
   TerminalSummary,
-  ThreadId, // fork: project-lifecycle
   WorktreeCleanupRules,
   StorageCleanupReport,
   StorageCleanupReportEntry,
