@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { BotDefinition, BotOperationMode } from "@t3tools/contracts/fork";
+import { hostedThreadLink } from "@t3tools/shared/threadLinks";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -339,13 +340,16 @@ it.effect("remote result links open the execution computer's conversation", () =
             sessionId: "hosted",
             label: "Hosted Bot",
             access: "read-only",
-            webOrigin: "https://loom.example",
+            hostedAppUrl: "https://loom.example",
           },
         }),
       );
       const response = result.at(-1)?.result;
       expect(response && "link" in response ? response.link : undefined).toBe(
-        `https://loom.example/remote-worker/${admitted.threadId}`,
+        hostedThreadLink(
+          { environmentId: EnvironmentId.make("remote-worker"), threadId: admitted.threadId },
+          "https://loom.example",
+        ),
       );
     }),
   ),

@@ -209,11 +209,11 @@ const recordingTracer = () => {
 };
 
 // fork: server-weight
-it.effect("traces one compaction span with its counts instead of a span per page", () =>
+it.effect("traces one prune span with its counts instead of a span per page", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-    // Three pages of one thread's archive state; only the newest survives.
+    // Three pages of one thread's archive state the projections cover; only the newest survives.
     yield* sql`
       WITH RECURSIVE history(n) AS (
         SELECT 1 UNION ALL SELECT n + 1 FROM history WHERE n < 120
@@ -226,15 +226,22 @@ it.effect("traces one compaction span with its counts instead of a span per page
         '2026-10-24T00:00:00.000Z', 'server', '{}', '{}', 2
       FROM history
     `;
+    yield* sql`
+      UPDATE orchestration_v2_projection_metadata SET last_sequence = 120
+      WHERE projection_name = 'thread-projections'
+    `;
+    // The first pass only marks the head; the second prunes through it once it is a day old.
+    yield* maintenance.pruneEventStore();
+    yield* TestClock.adjust("1 day");
     const recorder = recordingTracer();
-    const result = yield* maintenance.compactEventStore().pipe(Effect.withTracer(recorder.tracer));
+    const result = yield* maintenance.pruneEventStore().pipe(Effect.withTracer(recorder.tracer));
 
     assert.equal(result.deletedEventCount, 119);
     assert.deepEqual(yield* sql`SELECT event_id FROM orchestration_events`, [
       { event_id: "archived:120" },
     ]);
     const passes = recorder.ended.filter(
-      (span) => span.name === "ProjectionMaintenance.compactEventStore",
+      (span) => span.name === "ProjectionMaintenance.pruneEventStore",
     );
     assert.equal(passes.length, 1);
     assert.deepInclude(Object.fromEntries(passes[0]!.attributes), {
@@ -247,17 +254,10 @@ it.effect("traces one compaction span with its counts instead of a span per page
       recorder
         .queries()
         .some((query) =>
-          /ORDER BY event\.sequence DESC|DELETE FROM orchestration_events/.test(query),
+          /ORDER BY event\.sequence ASC|DELETE FROM orchestration_events/.test(query),
         ),
     );
-  }).pipe(
-    Effect.provide(
-      ProjectionMaintenance.layer.pipe(
-        Layer.provide(Layer.merge(EventStore.layer, ProjectionStore.layer)),
-        Layer.provideMerge(Sqlite.layerMemory),
-      ),
-    ),
-  ),
+  }).pipe(Effect.provide(ProjectionMaintenance.layer.pipe(Layer.provideMerge(Sqlite.layerMemory)))),
 );
 
 // fork: server-weight
