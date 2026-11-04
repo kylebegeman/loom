@@ -1,5 +1,4 @@
-import { type ProjectId, ThreadId } from "@t3tools/contracts";
-import * as Context from "effect/Context";
+import { ThreadId } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -14,67 +13,16 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
+import {
+  ClaudeWorktreeError,
+  ClaudeWorktreeService,
+  type ClaudeWorktreeOwner,
+  Receipt,
+} from "./ClaudeWorktreeServiceTag.ts";
 
-const Receipt = Schema.Struct({
-  id: Schema.String,
-  threadId: Schema.String,
-  sessionId: Schema.String,
-  sourceCwd: Schema.String,
-  worktreePath: Schema.String,
-  branch: Schema.String,
-  baseCommit: Schema.String,
-  agentId: Schema.NullOr(Schema.String),
-  completed: Schema.Boolean,
-});
-type Receipt = typeof Receipt.Type;
 const decodeReceipt = Schema.decodeUnknownEffect(Schema.fromJsonString(Receipt));
 const encodeReceipt = Schema.encodeEffect(Schema.fromJsonString(Receipt));
-
-export interface ClaudeWorktreeOwner {
-  readonly threadId: ThreadId;
-  readonly sessionId: string;
-  readonly projectId: ProjectId;
-}
-
-export class ClaudeWorktreeError extends Schema.TaggedError<ClaudeWorktreeError>()(
-  "ClaudeWorktreeError",
-  { operation: Schema.String, cause: Schema.Defect() },
-) {
-  override get message(): string {
-    return `Loom could not ${this.operation} the Claude worktree.`;
-  }
-}
-
 const isClaudeWorktreeError = Schema.is(ClaudeWorktreeError);
-
-export class ClaudeWorktreeService extends Context.Service<
-  ClaudeWorktreeService,
-  {
-    readonly create: (
-      input: ClaudeWorktreeOwner & { readonly cwd: string; readonly name: string },
-    ) => Effect.Effect<Receipt, ClaudeWorktreeError>;
-    readonly agentState: (
-      input: ClaudeWorktreeOwner & {
-        readonly cwd: string;
-        readonly agentId: string;
-        readonly completed: boolean;
-      },
-    ) => Effect.Effect<void, ClaudeWorktreeError>;
-    readonly environment: (input: {
-      readonly cwd: string | null;
-      readonly path?: string | undefined;
-    }) => Effect.Effect<Record<string, string>, ClaudeWorktreeError>;
-    readonly describe: (
-      input: ClaudeWorktreeOwner & { readonly cwd: string },
-    ) => Effect.Effect<string | null, ClaudeWorktreeError>;
-    readonly remove: (
-      input: ClaudeWorktreeOwner & { readonly worktreePath: string },
-    ) => Effect.Effect<"removed" | "retained" | "unowned", ClaudeWorktreeError>;
-    readonly sweep: (
-      input: ClaudeWorktreeOwner & { readonly cwd?: string },
-    ) => Effect.Effect<void, ClaudeWorktreeError>;
-  }
->()("t3/provider/ClaudeWorktreeService") {}
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

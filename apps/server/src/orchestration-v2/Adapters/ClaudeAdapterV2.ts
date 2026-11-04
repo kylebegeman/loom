@@ -1,7 +1,7 @@
 // fork: server-weight
 import { ProviderProcesses, type ProviderProcessRegistration } from "@t3tools/shared/AgentScope";
 import * as DocumentText from "../../provider/DocumentText.ts";
-import * as ClaudeWorktreeService from "../../provider/ClaudeWorktreeService.ts";
+import * as ClaudeWorktreeService from "../../provider/ClaudeWorktreeServiceTag.ts"; // fork: project-lifecycle
 import { ForkRuntime, withForkRuntime } from "../../fork/ForkRuntime.ts";
 import { claudeWorktreeHooks } from "../../provider/claudeWorktreeHooks.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";

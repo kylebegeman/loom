@@ -1083,7 +1083,9 @@ describe("subagent worktree ownership", () => {
                 ? "Settled for 2 of 8 days"
                 : scenario === "running-child" || scenario === "pending-child"
                   ? "Thread is running or has pending work"
-                  : "Not settled",
+                  : scenario === "pinned-child" // fork: project-lifecycle
+                    ? "Thread is pinned" // fork: project-lifecycle
+                    : "Not settled", // fork: project-lifecycle
       });
     }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
   );

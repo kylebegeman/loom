@@ -1256,6 +1256,7 @@ function makeLocalCommandHarness(input: {
           : Layer.mock(ProjectLifecycle.ProjectLifecycleService)({
               getSettings: Effect.succeed({ enabled: input.lanesEnabled ?? true } as never),
               ensureForThread: () => Effect.as(input.prepareLane!, {} as never),
+              shellEnvironment: () => Effect.succeed({}), // fork: project-lifecycle
             }),
         // fork: library-launch-files
         input.prepareLibraryFiles

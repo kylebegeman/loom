@@ -182,7 +182,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
     },
     {
       label: "the local network opens",
-      prints: "Run `t3 pair --base-dir <baseDir>`.",
+      prints: "Run `loom pair --base-dir <baseDir>`.", // fork: brand
       installed: true,
       env: "T3CODE_LAN=false\n",
       args: ["--lan"],
