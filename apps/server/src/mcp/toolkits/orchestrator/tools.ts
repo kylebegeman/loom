@@ -86,7 +86,7 @@ const OrchestratorCapabilitiesTool = Tool.make("orchestrator_capabilities", {
 
 const DelegateTaskTool = Tool.make("delegate_task", {
   description:
-    "Start one child agent with only `task`. No parent history. Separate checkout or PR per child: `isolation:'worktree'`. Keep `taskId` for `task_status` and `task_cancel`.",
+    "Start one child agent with only `task`. No parent history. Separate checkout or PR per child: `isolation:'worktree'`. Keep `taskId` for `task_status` and `task_cancel`. No secrets in `task`.",
   parameters: OrchestratorMcpDelegateTaskInput,
   success: OrchestratorMcpDelegateTaskResult,
   failure: OrchestratorMcpFailure,
@@ -199,7 +199,7 @@ const DeleteScheduledTaskTool = Tool.make("delete_scheduled_task", {
 const RequestSecretTool = Tool.make("request_secret", {
   description:
     // fork: ext-vault
-    'Ask the user to enter a secret in a private card and wait. If loom_vault_references_search is available, search it first. For a matching plain item, tell the user to choose that saved Vault item in the private card instead of retyping it, then call this with its exact label. Say that instruction in chat before the call; putting it only in the card reason is not enough. Use the dedicated Vault tools for SSH keys and GitHub connections. You never see the value. Returns a one-use `secretRef` for a tool that accepts it, or with `delivery: "file"` a private file path to read inside a shell command. Asked how to provide a secret: open the card now after that brief instruction.',
+    'Ask for a secret in a private card and wait; open it, don\'t offer it. If loom_vault_references_search is available, search it first. For a matching plain item, tell the user to choose that saved Vault item in the private card instead of retyping it, then call this with its exact label. Say that instruction in chat before the call; putting it only in the card reason is not enough. Use the dedicated Vault tools for SSH keys and GitHub connections. Returns a one-use `secretRef`, or with `delivery: "file"` a file to read only in its command, e.g. `adb pair <ip:port> "$(cat <file>)"`. Asked how to give one: call now, after that brief instruction. Pasted secret for child or script: `value`. Not one from an old thread.',
   parameters: OrchestratorMcpRequestSecretInput,
   success: OrchestratorMcpRequestSecretResult,
   failure: OrchestratorMcpFailure,
@@ -207,7 +207,9 @@ const RequestSecretTool = Tool.make("request_secret", {
   dependencies,
 })
   .annotate(Tool.Title, "Request a secret from the user")
-  .annotate(Tool.Destructive, false);
+  .annotate(Tool.Destructive, false)
+  // Claude Code defers MCP tools behind ToolSearch; agents that never load this one ask in chat.
+  .annotate(Tool.Meta, { "anthropic/alwaysLoad": true });
 
 const CreateThreadsTool = Tool.make("create_threads", {
   description:

@@ -1,6 +1,7 @@
 // Answers stay in the secret store behind one-use refs; orchestration records only request status.
 // Consuming tools keep values out of transcripts, projections, clients and model context.
 // A `file` request instead moves its value to an owner-only file for the agent's own shell.
+// A secret the user pasted in chat goes straight to such a file, with no card.
 import { pipe } from "effect/Function";
 import {
   CommandId,
@@ -89,6 +90,14 @@ export class SecretRequests extends Context.Service<
     readonly saveToFile: (input: {
       readonly threadId: ThreadId;
       readonly turnItemId: string;
+    }) => Effect.Effect<string, SecretRequestError>;
+    /** Writes a secret the user pasted in chat to an owner-only file and returns its path. */
+    readonly savePasted: (input: {
+      readonly threadId: ThreadId;
+      /** The provider session's namespace, so two sessions' keys never share a file. */
+      readonly requestNamespace: string;
+      readonly requestKey: string;
+      readonly value: string;
     }) => Effect.Effect<string, SecretRequestError>;
   }
 >()("t3/secrets/SecretRequests") {}
@@ -289,6 +298,23 @@ const make = Effect.gen(function* () {
     return stored.value; // fork: ext-vault
   });
 
+  const writeSecretFile = (dir: string, file: string, value: string) => {
+    const partial = `${file}.partial`;
+    return fileSystem.makeDirectory(dir, { recursive: true, mode: 0o700 }).pipe(
+      Effect.andThen(fileSystem.chmod(dir, 0o700)),
+      Effect.andThen(fileSystem.remove(partial, { force: true })),
+      // `wx` never follows or replaces an existing path.
+      Effect.andThen(
+        fileSystem.writeFile(partial, new TextEncoder().encode(value), {
+          flag: "wx",
+          mode: 0o600,
+        }),
+      ),
+      Effect.andThen(fileSystem.rename(partial, file)),
+      Effect.mapError((cause) => new SecretRequestError({ reason: "store_failed", cause })),
+    );
+  };
+
   const saveToFile: SecretRequests["Service"]["saveToFile"] = Effect.fn(
     "SecretRequests.saveToFile",
   )(function* (input) {
@@ -326,21 +352,7 @@ const make = Effect.gen(function* () {
       const stored = yield* readRef({ ref, projectId: records.thread.projectId });
       if (stored.claimedBy !== undefined)
         return yield* new SecretRequestError({ reason: "ref_unavailable" });
-      const value = stored.value;
-      const partial = `${file}.partial`;
-      yield* fileSystem.makeDirectory(filesDir, { recursive: true, mode: 0o700 }).pipe(
-        Effect.andThen(fileSystem.chmod(filesDir, 0o700)),
-        Effect.andThen(fileSystem.remove(partial, { force: true })),
-        // `wx` never follows or replaces an existing path.
-        Effect.andThen(
-          fileSystem.writeFile(partial, new TextEncoder().encode(value), {
-            flag: "wx",
-            mode: 0o600,
-          }),
-        ),
-        Effect.andThen(fileSystem.rename(partial, file)),
-        Effect.mapError((cause) => new SecretRequestError({ reason: "store_failed", cause })),
-      );
+      yield* writeSecretFile(filesDir, file, stored.value);
       return yield* removeStored;
     }).pipe((effect) => TxReentrantLock.withWriteLock(consumeLock, effect));
   });
@@ -380,6 +392,25 @@ const make = Effect.gen(function* () {
     },
     (effect) => TxReentrantLock.withWriteLock(consumeLock, effect),
   );
+
+  const savePasted: SecretRequests["Service"]["savePasted"] = Effect.fn(
+    "SecretRequests.savePasted",
+  )(function* (input) {
+    if (filesDir === undefined) return yield* new SecretRequestError({ reason: "store_failed" });
+    const ref = refFor(
+      salt,
+      input.threadId,
+      `pasted\u0000${input.requestNamespace}\u0000${input.requestKey}`,
+    );
+    const file = path.join(filesDir, ref.slice(SECRET_REF_PREFIX.length));
+    // A retry with the same clientRequestId gets the file the first call wrote, unchanged, so a
+    // command already holding that path never reads another value.
+    return yield* Effect.gen(function* () {
+      if (yield* fileSystem.exists(file).pipe(Effect.orElseSucceed(() => false))) return file;
+      yield* writeSecretFile(filesDir, file, input.value);
+      return file;
+    }).pipe((effect) => TxReentrantLock.withWriteLock(consumeLock, effect)); // fork: ext-vault
+  });
 
   const sweepExpired = Effect.gen(function* () {
     if (store.directory === undefined) return;
@@ -428,7 +459,7 @@ const make = Effect.gen(function* () {
   );
 
   // fork: ext-vault
-  return SecretRequests.of({ answer, savedRef, consume, saveToFile, transfer });
+  return SecretRequests.of({ answer, savedRef, consume, saveToFile, savePasted, transfer });
 });
 
 export const layer = Layer.effect(SecretRequests, make);

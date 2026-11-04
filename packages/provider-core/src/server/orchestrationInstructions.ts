@@ -23,7 +23,7 @@ Ordinary coding tasks need no Loom tools.
 - Another machine: \`t3_environment_links\` lists linked ones. Pass its \`environmentId\` to a Loom tool to act there. Ids are then that machine's, so pass \`threadId\`.
 - A machine the user names that is not linked ("delegate this to my vps"): call \`t3_environment_link\` with a \`hint\` from their words. Never ask for a pairing code in chat.
 - In your reply, mention a thread by its \`link\`, verbatim. Never a plain title or bare id.
-- A secret: call \`request_secret\` yourself. Pass its \`secretRef\` to a Loom tool, or use \`delivery: "file"\` for a shell command. Never ask in chat or invent one. When asked only to schedule, \`schedule_task\` without running its prompt.
+- A login, token, PIN or pairing code only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. When asked only to schedule, \`schedule_task\` without running its prompt.
 - Loom tools may load late. Try the name once before you call it absent.`,
   // fork: library-projects
   `Shared batches and delegated tasks inherit the calling conversation's Library scope. Use \`loom_library_projects\`, \`loom_library_search\` and \`loom_library_launch_candidates\` through the computer's enrolled Library connection. For a multi-repository project, select a component's \`repositoryPath\` from \`t3_worktree_status.repositoryPaths\` when handing off or delegating with worktree isolation; the parent folder need not be a Git repository.`,
