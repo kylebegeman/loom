@@ -70,14 +70,20 @@ export function buildRecordName(buildEnv: string): string | null {
   return version && commit ? `${version}-${commit.slice(0, 10)}` : null;
 }
 
+/** Like loom.sh's `[ -f ]` tests: a file beside the records, such as `installed`, is not one. */
 const isPublishedRecord = Effect.fn("desktop.rollbackSnapshot.isPublishedRecord")(function* (
   record: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const isFile = (file: string) =>
+    fs.stat(file).pipe(
+      Effect.map((info) => info.type === "File"),
+      Effect.orElseSucceed(() => false),
+    );
   return (
-    (yield* fs.exists(path.join(record, "build.env"))) &&
-    (yield* fs.exists(path.join(record, "updates", "ready")))
+    (yield* isFile(path.join(record, "build.env"))) &&
+    (yield* isFile(path.join(record, "updates", "ready")))
   );
 });
 
