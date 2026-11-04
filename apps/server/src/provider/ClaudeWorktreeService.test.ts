@@ -18,6 +18,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProjectLifecycle from "../fork/project-lifecycle/ProjectLifecycleService.ts";
 import * as ClaudeWorktreeService from "./ClaudeWorktreeService.ts";
+import { ClaudeWorktreeService as ClaudeWorktreeServiceTag } from "./ClaudeWorktreeServiceTag.ts";
 import { claudeWorktreeHooks } from "./claudeWorktreeHooks.ts";
 
 const decodeCreatedWorktree = Schema.decodeUnknownEffect(
@@ -124,9 +125,7 @@ it.live(
           }),
         ),
       );
-      const service = yield* ClaudeWorktreeService.ClaudeWorktreeService.pipe(
-        Effect.provide(serviceLayer),
-      );
+      const service = yield* ClaudeWorktreeServiceTag.pipe(Effect.provide(serviceLayer));
       const hooks = yield* claudeWorktreeHooks(service, owner);
       const invoke = (event: HookEvent, input: HookInput) =>
         Effect.tryPromise(() => {
@@ -323,7 +322,7 @@ it.live(
           worktreePath: worktrees[0]!.cwd,
         }),
       ).toBe("unowned");
-      const restarted = yield* ClaudeWorktreeService.ClaudeWorktreeService.pipe(
+      const restarted = yield* ClaudeWorktreeServiceTag.pipe(
         Effect.provide(Layer.fresh(serviceLayer)),
       );
       expect(yield* restarted.describe({ ...owner, cwd: worktrees[0]!.cwd })).toContain(

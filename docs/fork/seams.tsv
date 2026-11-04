@@ -115,6 +115,7 @@ apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	3
 apps/server/src/mcp/toolkits/environment/tools.ts	file-placement	6
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	project-profiles	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	project-lifecycle	1
 evals/mcp-tool-use/devices.test.ts	project-profiles	1
 apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	2
 apps/server/src/mcp/toolkits/environment/handlers.ts	file-placement	5
@@ -129,7 +130,7 @@ packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	19
 apps/mobile/app.config.ts	mobile-identity	24
-apps/mobile/app.config.test.ts	mobile-identity	1
+apps/mobile/app.config.test.ts	mobile-identity	3
 apps/mobile/src/App.tsx	mobile-identity	1
 apps/mobile/src/lib/appLinking.ts	mobile-identity	1
 apps/mobile/src/lib/appLinking.test.ts	mobile-identity	3
@@ -161,12 +162,12 @@ apps/mobile/package.json	-	--scheme loom-dev
 apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	32
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	33
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
-apps/server/src/storageCleanup.test.ts	project-lifecycle	31
+apps/server/src/storageCleanup.test.ts	project-lifecycle	34
 packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	14
@@ -236,7 +237,7 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	everyda
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library	3
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	3
 apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	3
-apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	34
+apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	31
 apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	7
 apps/mobile/src/features/home/home-list-filter-menu.ts	fleet-connections	2
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
@@ -413,6 +414,8 @@ apps/desktop/src/app/DesktopCliCommand.test.ts	brand	15
 apps/desktop/src/app/DesktopCliShim.test.ts	brand	1
 apps/server/src/cli/invocation.ts	brand	3
 apps/server/src/cli/invocation.ts	ext-vault	1
+apps/server/src/cli/automaticPort.ts	brand	1
+apps/server/src/policy/policyTemplates.ts	brand	12
 apps/server/src/cli/invocation.test.ts	brand	9
 apps/server/src/cli/server.ts	brand	3
 apps/web/src/components/settings/CliCommandSettingsRow.tsx	brand	4
@@ -517,7 +520,7 @@ apps/desktop/src/backend/DesktopBackendPool.ts	brand	4
 apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts	brand	1
 apps/desktop/src/electron/WindowsForeground.ts	brand	1
 apps/desktop/src/permissions/MacPermissionHelper.ts	brand	3
-apps/desktop/src/app/DesktopStartupRecovery.ts	brand	8
+apps/desktop/src/app/DesktopStartupRecovery.ts	brand	9
 apps/desktop/src/snapShot/DesktopSnapShot.ts	brand	7
 apps/desktop/src/snapShot/DesktopSnapShot.test.ts	brand	2
 apps/desktop/src/snapShot/GnomeCaptureSetup.ts	brand	5
@@ -560,6 +563,7 @@ apps/server/src/cli/update.test.ts	brand	1
 apps/server/src/cli/update.test.ts	fleet-connect	1
 apps/server/src/cli/updateProgress.ts	brand	1
 apps/server/src/cli/up.ts	brand	7
+apps/server/src/cli/up.test.ts	brand	1
 apps/server/src/cloud/ConnectReachability.ts	brand	1
 apps/server/src/cloud/bootService.ts	brand	3
 apps/server/src/cloud/selfUpdate.ts	brand	2
@@ -591,7 +595,7 @@ apps/server/src/orchestration-v2/pullRequestWatch.ts	brand	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	brand	2
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.test.ts	brand	1
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts	brand	1
-apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
+apps/server/src/persistence/DatabaseMaintenance.ts	brand	2
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
 apps/server/src/preview/PreviewBrowserHost.ts	brand	4
@@ -628,7 +632,7 @@ apps/web/src/components/onboarding/FirstRunGate.tsx	brand	1
 apps/web/src/components/onboarding/FirstRunGate.tsx	library-only	1
 apps/web/src/components/preview/PreviewPanel.tsx	brand	1
 apps/web/src/components/preview/PreviewView.tsx	brand	1
-apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	brand	1
+apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	brand	2
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	brand	2
 apps/web/src/components/promptLinks/linkedPrompt.ts	brand	1
 apps/web/src/components/settings/AcpSessionManagementSection.tsx	brand	1
@@ -1668,8 +1672,8 @@ apps/server/src/cli/update.test.ts	brand	2
 apps/server/src/cloud/selfUpdate.test.ts	brand	2
 apps/web/src/components/sidebar/updateEverything.logic.test.ts	brand	2
 packages/contracts/src/managedPolicy.ts	brand	1
-packages/shared/src/managedPolicyFile.ts	brand	2
-packages/shared/src/managedPolicyFile.test.ts	brand	1
+packages/shared/src/managedPolicyFile.ts	brand	6
+packages/shared/src/managedPolicyFile.test.ts	brand	5
 apps/server/src/preview/ServerBrowser.ts	browser-dev-tools	3
 apps/web/src/components/preview/PreviewEmptyState.tsx	browser-dev-tools	3
 evals/mcp-tool-use/run.ts	browser-dev-tools	2

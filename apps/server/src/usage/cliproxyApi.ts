@@ -20,6 +20,12 @@ import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageL
 import { switchboardUsageController } from "../fork/switchboard/switchboard.ts"; // fork: switchboard
 import { readSwitchboardUsage, requestSharedCollection } from "../fork/switchboard/usage.ts"; // fork: switchboard
 
+/** A hub with its management key already read from wherever the setting keeps it. */
+export interface CliproxyHub {
+  readonly url: UsageLimitSourceConfig["url"];
+  readonly managementKey: string;
+}
+
 const AuthFile = Schema.Struct({
   id: Schema.String,
   name: Schema.optional(Schema.String), // fork: switchboard
@@ -176,7 +182,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
   const digest = yield* Digest.Digest;
 
   const management = Effect.fn("CliproxyApi.management")(function* (
-    config: UsageLimitSourceConfig,
+    hub: CliproxyHub,
     path: string,
     body?: unknown,
   ) {
@@ -184,13 +190,13 @@ export const makeCliproxyApi = Effect.gen(function* () {
       try: () =>
         new URL(
           `v0/management/${path}`,
-          config.url.endsWith("/") ? config.url : `${config.url}/`,
+          hub.url.endsWith("/") ? hub.url : `${hub.url}/`,
         ).toString(),
       catch: () => new UsageLimitSourceError({ detail: "The hub URL is not valid." }),
     });
     const request = (
       body === undefined ? HttpClientRequest.get(url) : HttpClientRequest.post(url)
-    ).pipe(HttpClientRequest.setHeader("Authorization", `Bearer ${config.managementKey}`));
+    ).pipe(HttpClientRequest.setHeader("Authorization", `Bearer ${hub.managementKey}`));
     const response = yield* client
       .execute(body === undefined ? request : request.pipe(HttpClientRequest.bodyJsonUnsafe(body)))
       .pipe(
@@ -204,13 +210,13 @@ export const makeCliproxyApi = Effect.gen(function* () {
     return response;
   });
 
-  const authFiles = Effect.fn("CliproxyApi.authFiles")(function* (config: UsageLimitSourceConfig) {
-    const response = yield* management(config, "auth-files");
+  const authFiles = Effect.fn("CliproxyApi.authFiles")(function* (hub: CliproxyHub) {
+    const response = yield* management(hub, "auth-files");
     return (yield* decodeAuthFiles(response)).files;
   });
 
   const apiCall = Effect.fn("CliproxyApi.apiCall")(function* (
-    config: UsageLimitSourceConfig,
+    hub: CliproxyHub,
     account: typeof AuthFile.Type,
     url: string,
     data?: unknown,
@@ -232,7 +238,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
             // The OAuth usage endpoint can return 429 without a Claude Code user agent.
             "User-Agent": "claude-code/2.1.273",
           };
-    const raw = yield* management(config, "api-call", {
+    const raw = yield* management(hub, "api-call", {
       auth_index: account.auth_index,
       method: data === undefined ? "GET" : "POST",
       url,
@@ -249,10 +255,10 @@ export const makeCliproxyApi = Effect.gen(function* () {
   });
 
   const credits = Effect.fn("CliproxyApi.credits")(function* (
-    config: UsageLimitSourceConfig,
+    hub: CliproxyHub,
     account: typeof AuthFile.Type,
   ) {
-    const body = yield* apiCall(config, account, CREDIT_URL);
+    const body = yield* apiCall(hub, account, CREDIT_URL);
     const response = yield* decodeCreditList(body);
     const now = DateTime.toEpochMillis(yield* DateTime.now);
     return response.credits
@@ -266,7 +272,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
   });
 
   const readAccount = Effect.fn("CliproxyApi.readAccount")(function* (
-    config: UsageLimitSourceConfig,
+    hub: CliproxyHub,
     account: typeof AuthFile.Type,
   ) {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
@@ -280,7 +286,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
     };
     const read = Effect.gen(function* () {
       if (account.provider === "claude") {
-        const body = yield* apiCall(config, account, "https://api.anthropic.com/api/oauth/usage");
+        const body = yield* apiCall(hub, account, "https://api.anthropic.com/api/oauth/usage");
         const usage = yield* decodeClaudeUsage(body);
         const model_scoped = (usage.limits ?? []).flatMap((limit) =>
           limit.kind === "weekly_scoped" && limit.scope?.model && typeof limit.percent === "number"
@@ -312,7 +318,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
           }).limits,
         };
       }
-      const body = yield* apiCall(config, account, `${CODEX_BASE}/usage`);
+      const body = yield* apiCall(hub, account, `${CODEX_BASE}/usage`);
       const usage = yield* decodeCodexUsage(body);
       const toWindow = (window: typeof CodexWindow.Type | null | undefined) =>
         window
@@ -324,7 +330,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
                 : { windowDurationMins: window.limit_window_seconds / 60 }),
             }
           : null;
-      const available = yield* credits(config, account).pipe(Effect.orElseSucceed(() => undefined));
+      const available = yield* credits(hub, account).pipe(Effect.orElseSucceed(() => undefined));
       const next = available?.[0];
       const planType =
         usage.plan_type ?? account.id_token?.plan_type ?? account.id_token?.chatgpt_plan_type;
@@ -369,16 +375,16 @@ export const makeCliproxyApi = Effect.gen(function* () {
   });
 
   const readAccounts = Effect.fn("CliproxyApi.readAccounts")(function* (
-    config: UsageLimitSourceConfig,
+    hub: CliproxyHub,
   ): Effect.fn.Return<ReadonlyArray<UsageLimitSourceAccount>, UsageLimitSourceError> {
-    const switchboard = switchboardUsageController(config.url); // fork: switchboard
+    const switchboard = switchboardUsageController(hub.url); // fork: switchboard
     if (switchboard !== null) {
       // fork: switchboard. Its controller already holds this hub's readings.
-      return yield* readSwitchboardUsage(switchboard, authFiles(config)).pipe(
+      return yield* readSwitchboardUsage(switchboard, authFiles(hub)).pipe(
         Effect.provideService(HttpClient.HttpClient, client),
       );
     } // fork: switchboard
-    const accounts = yield* authFiles(config).pipe(
+    const accounts = yield* authFiles(hub).pipe(
       Effect.mapError((error) =>
         isUsageLimitSourceError(error)
           ? error
@@ -390,18 +396,18 @@ export const makeCliproxyApi = Effect.gen(function* () {
         (account) =>
           !account.disabled && (account.provider === "codex" || account.provider === "claude"),
       ),
-      (account) => readAccount(config, account),
+      (account) => readAccount(hub, account),
       { concurrency: 4 },
     );
   });
 
   const consume = Effect.fn("CliproxyApi.consume")(function* (
-    config: UsageLimitSourceConfig,
+    hub: CliproxyHub,
     accountId: string,
     creditId: string,
   ): Effect.fn.Return<ProviderConsumeResetCreditResult, UsageLimitSourceError> {
     const operation = Effect.gen(function* () {
-      const account = (yield* authFiles(config)).find(
+      const account = (yield* authFiles(hub)).find(
         (account) => account.id === accountId || account.name === accountId, // fork: switchboard
       );
       if (!account || account.disabled || account.provider !== "codex") {
@@ -409,7 +415,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
           detail: "The Codex hub account is missing or disabled.",
         });
       }
-      const body = yield* apiCall(config, account, `${CREDIT_URL}/consume`, {
+      const body = yield* apiCall(hub, account, `${CREDIT_URL}/consume`, {
         redeem_request_id: yield* creditRedeemRequestId(
           account.id_token?.chatgpt_account_id ?? account.id,
           creditId,
@@ -426,10 +432,10 @@ export const makeCliproxyApi = Effect.gen(function* () {
         } as const
       )[response.code];
       if (outcome !== "reset" && outcome !== "alreadyRedeemed") return { outcome };
-      const cleared = yield* management(config, "reset-quota", {
+      const cleared = yield* management(hub, "reset-quota", {
         auth_index: account.auth_index,
       }).pipe(Effect.result);
-      const switchboard = switchboardUsageController(config.url); // fork: switchboard
+      const switchboard = switchboardUsageController(hub.url); // fork: switchboard
       if (switchboard !== null) {
         // fork: switchboard. Ask its controller to collect the redeemed account again.
         yield* requestSharedCollection(switchboard).pipe(

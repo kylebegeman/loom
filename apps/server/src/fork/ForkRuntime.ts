@@ -1,4 +1,4 @@
-import type { ClaudeWorktreeService } from "../provider/ClaudeWorktreeService.ts";
+import type { ClaudeWorktreeService } from "../provider/ClaudeWorktreeServiceTag.ts";
 import type { DevApiLibrary } from "./browser-dev-tools/DevApiLibrary.ts";
 import type { DevApiService } from "./browser-dev-tools/DevApiService.ts";
 import type { DevRequestsService } from "./browser-dev-tools/DevRequestsService.ts";

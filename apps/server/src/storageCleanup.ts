@@ -17,10 +17,10 @@ import type {
   ServerSettings,
   ServerSettingsError,
   TerminalSummary,
-  ThreadId, // fork: project-lifecycle
   WorktreeCleanupRules,
   StorageCleanupReport,
   StorageCleanupReportEntry,
+  ThreadId,
   StorageCleanupGitMirror, // fork: library-launch-files
 } from "@t3tools/contracts";
 import { ProjectLifecycleError } from "@t3tools/contracts/fork"; // fork: project-lifecycle
@@ -289,11 +289,17 @@ export function storageCleanupThreadIdle(
   now: number,
   settings: LimitRecoverySettings,
 ): boolean {
+  return thread.worktreePath !== null && threadIdle(thread, now, settings);
+}
+
+function threadIdle(
+  thread: OrchestrationV2ThreadShell,
+  now: number,
+  settings: LimitRecoverySettings,
+): boolean {
   return (
-    thread.worktreePath !== null &&
     // fork: project-lifecycle -- the shared workspace-idle rule also gates settlement.
-    threadWorkspaceIdle(thread, now) &&
-    !heldForLimitRecovery(thread, now, settings)
+    threadWorkspaceIdle(thread, now) && !heldForLimitRecovery(thread, now, settings)
   );
 }
 
@@ -380,6 +386,36 @@ function worktreeOwner<T extends Pick<OrchestrationV2ThreadShell, "id" | "lineag
   // fork: project-lifecycle
   const owners = worktreeOwners(threads);
   return owners?.length === 1 ? owners[0] : undefined;
+}
+
+function worktreeSettlementChain(
+  thread: OrchestrationV2ThreadShell,
+  byId: ReadonlyMap<ThreadId, OrchestrationV2ThreadShell>,
+  now: number,
+  settings: LimitRecoverySettings,
+) {
+  const chain = [thread];
+  let current = thread;
+  while (current.settledAt === null) {
+    if (
+      current.lineage.relationshipToParent !== "subagent" ||
+      current.settledOverride === "active" ||
+      current.pinnedAt != null
+    )
+      return [];
+    const parent = byId.get(current.lineage.parentThreadId!);
+    if (
+      parent === undefined ||
+      chain.some((member) => member.id === parent.id) ||
+      parent.projectId !== thread.projectId ||
+      parent.lineage.rootThreadId !== thread.lineage.rootThreadId ||
+      !threadIdle(parent, now, settings)
+    )
+      return [];
+    chain.push(parent);
+    current = parent;
+  }
+  return chain;
 }
 
 /** Squash/rebase merges require the merged PR to name this exact head commit. */
@@ -1303,6 +1339,7 @@ const make = Effect.gen(function* () {
       ),
     )).filter((thread) => thread.worktreePath !== null && thread.branch !== null);
     const snapshot = yield* readThreads();
+    const threadsById = new Map(snapshot.threads.map((thread) => [thread.id, thread]));
     // fork: project-lifecycle -- failed refreshes are remembered too (an Exit replays its
     // result), so a sweep fetches each repository's default ref at most once.
     const refreshedDefaultRefs = new Map<string, Effect.Effect<void, GitCommandError>>();
@@ -1465,6 +1502,10 @@ const make = Effect.gen(function* () {
       const group = groups.get(worktreePath) ?? [];
       const activityAt = Math.max(...group.map(storageCleanupActivityAt));
       const deleted = "workspaceRoot" in thread;
+      const settlementChain = deleted
+        ? []
+        : worktreeSettlementChain(thread, threadsById, now, serverSettings);
+      const settledThread = settlementChain.at(-1);
       const members = deleted ? [thread, ...group] : group;
       const project = deleted
         ? { workspaceRoot: thread.workspaceRoot }
@@ -1594,7 +1635,7 @@ const make = Effect.gen(function* () {
         // fork: project-lifecycle -- settle cleanup runs only after the settle script finished.
         if (
           !settled && // fork: project-lifecycle
-          group.some(
+          [...group, ...settlementChain.slice(1)].some(
             (member) =>
               member.settledAt !== null &&
               now - Math.max(DateTime.toEpochMillis(member.updatedAt), activityAt) <
@@ -1635,9 +1676,9 @@ const make = Effect.gen(function* () {
           if (published.exitCode !== 0) return keep("branch has unpublished commits");
         }
         const settledFor =
-          deleted || thread.settledAt === null
+          settledThread?.settledAt == null
             ? null
-            : now - Math.max(DateTime.toEpochMillis(thread.settledAt), activityAt);
+            : now - Math.max(DateTime.toEpochMillis(settledThread.settledAt), activityAt);
         const settledDays = settledFor === null ? null : Math.floor(settledFor / DAY_MS);
         const settledElapsed = // fork: project-lifecycle
           settledFor !== null &&
@@ -1778,6 +1819,27 @@ const make = Effect.gen(function* () {
             const effects = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
             WHERE thread_id = ${holder.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1`;
             if (effects.length > 0) return "thread effects are still pending";
+          }
+          if (settlementChain.length > 1) {
+            const ancestors = yield* Effect.forEach(settlementChain.slice(1), (ancestor) =>
+              projections.getThreadShell(ancestor.id),
+            );
+            const latestSettlement = worktreeSettlementChain(
+              latestGroup.find((shell) => shell.id === thread.id)!,
+              new Map(
+                [...latestGroup, ...ancestors.filter((ancestor) => ancestor !== null)].map(
+                  (ancestor) => [ancestor.id, ancestor],
+                ),
+              ),
+              now,
+              serverSettings,
+            ).at(-1);
+            if (
+              latestSettlement?.id !== settledThread?.id ||
+              !Equal.equals(latestSettlement?.settledAt, settledThread?.settledAt) ||
+              !Equal.equals(latestSettlement?.updatedAt, settledThread?.updatedAt)
+            )
+              return "parent settlement changed since check";
           }
           // Sessions can outlive their run and can be shared across app threads.
           const sessionRows = yield* sql<{ payload_json: string }>`

@@ -1,7 +1,7 @@
 import type { HookCallback, Options } from "@anthropic-ai/claude-agent-sdk";
 import * as Effect from "effect/Effect";
 
-import type { ClaudeWorktreeOwner, ClaudeWorktreeService } from "./ClaudeWorktreeService.ts";
+import type { ClaudeWorktreeOwner, ClaudeWorktreeService } from "./ClaudeWorktreeServiceTag.ts";
 
 export const claudeWorktreeHooks = Effect.fn("claudeWorktreeHooks")(function* (
   service: ClaudeWorktreeService["Service"],

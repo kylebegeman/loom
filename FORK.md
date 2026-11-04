@@ -235,6 +235,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | File                                                                         | Packet              | Why                                                                                           |
 | ---------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
 | `apps/server/src/storageCleanup.ts`                                          | `project-lifecycle` | Share bounded filesystem measurement with the computer storage inventory.                     |
+| `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`               | `project-lifecycle` | Import the Claude worktree service tag without an import cycle.                               |
 | `apps/server/src/mcp/toolkits/environment/tools.ts`                          | `project-lifecycle` | Expose measured storage and separate fork cleanup entries.                                    |
 | `apps/server/src/mcp/toolkits/environment/handlers.ts`                       | `project-lifecycle` | Read storage through the shared fork runtime.                                                 |
 | `apps/server/src/mcp/toolkits/environment/handlers.test.ts`                  | `project-lifecycle` | Keep storage reads scoped to the caller's environment.                                        |

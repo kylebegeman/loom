@@ -213,7 +213,6 @@ import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementSer
 import * as IdleCompactionService from "./orchestration-v2/IdleCompactionService.ts";
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
-import * as EventStoreV2 from "./orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import { makePersistedServerRuntimeState } from "./serverRuntimeState.ts";
@@ -619,12 +618,7 @@ const layerOrchestrationApplication = Layer.merge(
 // fork: project-lifecycle -- settlement and the runtime share one storage cleanup service.
 const layerStorageCleanup = RuntimeLayer.layerStorageCleanup;
 // fork: project-lifecycle
-const layerDatabaseStorage = DatabaseStorage.layer.pipe(
-  Layer.provide(ProjectionMaintenance.layer),
-  Layer.provide(
-    Layer.merge(EventStoreV2.layerFromOrchestrationEventStore, ProjectionStoreV2.layer),
-  ),
-);
+const layerDatabaseStorage = DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer));
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
   // fork: project-lifecycle

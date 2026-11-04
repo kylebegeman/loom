@@ -31,7 +31,7 @@ import * as ServerConfig from "../../config.ts";
 import { CodexProviderCapabilitiesV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as EventStore from "../../orchestration-v2/EventStore.ts";
-import * as ProjectionMaintenance from "../../orchestration-v2/ProjectionMaintenance.ts";
+import * as ProjectionReplay from "../../orchestration-v2/testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { ServerActivation } from "../../serverActivation.ts";
@@ -279,7 +279,7 @@ const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer).pipe(
 );
 const testLayer = Layer.mergeAll(
   EventSink.layer,
-  ProjectionMaintenance.layer,
+  ProjectionReplay.layer,
   ServerConfig.layerTest(process.cwd(), { prefix: "deleted-history-" }),
 ).pipe(Layer.provideMerge(stores));
 
@@ -302,7 +302,7 @@ const fixture = Effect.gen(function* () {
   const sink = yield* EventSink.EventSinkV2;
   const eventStore = yield* EventStore.EventStoreV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+  const maintenance = yield* ProjectionReplay.ProjectionReplay;
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
