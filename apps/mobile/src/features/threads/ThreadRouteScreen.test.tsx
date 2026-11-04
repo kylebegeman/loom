@@ -135,6 +135,10 @@ vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   }),
   useAdaptiveWorkspacePaneRole: () => {},
   useRegisterWorkspaceInspector: () => {},
+  Inspector: () => null,
+}));
+vi.mock("../layout/workspace-inspector-sheet", async () => ({
+  InspectorSheetContext: (await import("react")).createContext(null),
 }));
 vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
   useAndroidWorkspaceBack: () => {},
