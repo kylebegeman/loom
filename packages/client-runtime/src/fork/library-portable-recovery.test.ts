@@ -182,7 +182,13 @@ describe("portable project files", () => {
       needsSnapshot: true,
     });
   });
-  it("does not reuse a removed external registration or a source from another project", () => {
+  it("clones past a removed external registration and never reuses it or another project's source", () => {
+    const removed = copy({
+      ownership: "borrowed",
+      registered: false,
+      environmentId: destinationEnvironment,
+    });
+    expect(plan([removed])).toEqual({ kind: "clone" });
     expect(
       plan([copy({ registered: false })], { sourceWorkingCopyId: "source-copy" }),
     ).toMatchObject({ kind: "unavailable" });

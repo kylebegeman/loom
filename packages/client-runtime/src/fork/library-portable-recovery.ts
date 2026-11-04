@@ -50,11 +50,14 @@ export function libraryPortableRecoveryPlan(input: {
       input.resourceIds,
     ).length === 1;
   if (input.project.archived) return unavailable("Restore this project before starting work.");
-  const copies = input.copies.filter((copy) => copy.projectId === input.project.id);
+  // Unregistered folders left the project with their files; they never supply or block a start.
+  const copies = input.copies.filter(
+    (copy) =>
+      copy.projectId === input.project.id &&
+      (copy.registered !== false || copy.state === "released"),
+  );
   const usable = (copy: LibraryWorkingCopy) =>
-    compatible(copy) &&
-    ((copy.state === "ready" && copy.registered !== false) ||
-      (copy.state === "released" && saved(copy)));
+    compatible(copy) && (copy.state === "ready" || (copy.state === "released" && saved(copy)));
   const plan = (copy: LibraryWorkingCopy): LibraryPortableRecoveryPlan => {
     if (!usable(copy))
       return unavailable(
