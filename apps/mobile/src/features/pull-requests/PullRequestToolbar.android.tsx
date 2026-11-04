@@ -55,7 +55,7 @@ export function PullRequestToolbar(props: {
   }, [searching, closeSearch, navigation, isTabActive]);
   return (
     <AppBar
-      title="T3 Code"
+      title={BRAND_NAME} // fork: brand
       titleContent={
         <WorkspaceBrandTitle
           accessibilityLabel={`${BRAND_NAME}, Pull requests`} // fork: brand
