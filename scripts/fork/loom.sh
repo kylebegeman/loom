@@ -121,6 +121,15 @@ export GH_REPO
 
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
+# For idempotent GitHub requests: GitHub sometimes fails one it accepts a moment later.
+retry() {
+  local attempt
+  for attempt in 1 2; do
+    "$@" && return 0
+    sleep $((attempt * 20))
+  done
+  "$@"
+}
 
 latest_stable() { git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 1p; }
 latest_nightly() { git tag -l 'v*-nightly.*' --sort=-creatordate | sed -n 1p; }
@@ -1083,7 +1092,7 @@ checkpoint_integration() {
   tag=${branch#integrate/}
   existing=$(gh pr list --head "$branch" --state open --json number,isDraft --jq '.[] | "\(.number) \(.isDraft)"')
   if [[ "$existing" == *" false" ]]; then gh pr ready "${existing% *}" --undo; fi
-  git push -q -u origin "HEAD:$branch"
+  retry git push -q -u origin "HEAD:$branch"
   body="$(resolve_logs)/checkpoint.md"
   mkdir -p "$(dirname "$body")"
   cat >"$body" <<EOF
@@ -1103,7 +1112,7 @@ open_pr() {
   local tag=$1 branch=$2 added body draft
   added=$(git diff --name-only --diff-filter=A origin/main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
   say "Pushing $branch and opening its pull request"
-  git push -q -u origin "$branch"
+  retry git push -q -u origin "$branch"
   body="Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests and upstream's tests beside the files it changes pass, every package typechecks, and the built web client boots.
 
 Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, publishes the next Loom release and installs it. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
@@ -1604,7 +1613,7 @@ cmd_review_integration() {
     } | git commit -q -F -
     printf '\nAfter review %s:\n\n' "$round" >>"$logs/repair.md"
     checks_with_repair "$tag"
-    git push -q origin "$branch"
+    retry git push -q origin "$branch"
     round=$((round + 1))
   done
 }
@@ -1620,11 +1629,14 @@ cmd_merge_integration() {
   [ "$(git rev-parse --abbrev-ref HEAD)" != "$branch" ] || head=(--match-head-commit "$(git rev-parse HEAD)")
   # gh deletes the merged branch locally too; it must not be checked out.
   git checkout -q --detach
-  gh pr merge "$number" --merge --delete-branch ${head[@]+"${head[@]}"}
-  merged=$(gh pr view "$number" --json mergeCommit --jq .mergeCommit.oid)
+  # GitHub can answer an error for a merge it went on to make.
+  gh pr merge "$number" --merge --delete-branch ${head[@]+"${head[@]}"} ||
+    [ "$(retry gh pr view "$number" --json state --jq .state)" = MERGED ] ||
+    die "could not merge #$number"
+  merged=$(retry gh pr view "$number" --json mergeCommit --jq .mergeCommit.oid)
   git fetch -q origin main
   git tag -a "loom-$tag" -m "Loom built from upstream $tag" "$merged"
-  git push -q origin "loom-$tag"
+  retry git push -q origin "loom-$tag"
 }
 
 # Rings the Loom upstream alert: a scheduled task on Kyle's Mac that opens a thread and

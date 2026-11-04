@@ -1712,6 +1712,58 @@ printf 'Checked every hunk.\\n\\nVERDICT: %s\\n' "$LOOM_TEST_VERDICT"
   expect(failed.stderr).toContain(`the review did not pass the resolution of ${NIGHTLY}`);
 });
 
+it("tags an integration GitHub merged even when the merge call answered with an error", () => {
+  const f = repositoryFixture();
+  const origin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-merge-origin-"));
+  roots.push(origin);
+  NodeChildProcess.execFileSync("git", ["init", "--quiet", "--bare", origin]);
+  f.git("remote", "add", "origin", origin);
+  f.git("push", "--quiet", "origin", "main");
+  const merged = f.git("rev-parse", "HEAD");
+  const bin = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-bin`);
+  roots.push(bin);
+  NodeFS.mkdirSync(bin);
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "gh"),
+    `#!/bin/bash
+case "$*" in
+  "pr view integrate/"*) echo 9 ;;
+  "pr merge"*) echo 'non-200 OK status code: 502 Bad Gateway' >&2; exit 1 ;;
+  "pr view 9 --json state"*) echo "$LOOM_TEST_STATE" ;;
+  "pr view 9 --json mergeCommit"*) echo "$LOOM_TEST_MERGED" ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  // The origin fails the first push the way GitHub's 500s do.
+  const rejected = NodePath.join(bin, "rejected");
+  NodeFS.writeFileSync(
+    NodePath.join(origin, "hooks", "pre-receive"),
+    `#!/bin/bash\n[ -e "${rejected}" ] && exit 0\ntouch "${rejected}"\necho 'Internal Server Error' >&2\nexit 1\n`,
+    { mode: 0o755 },
+  );
+  const mergeIntegration = (state: string) =>
+    runSync(f.root, `sleep() { :; }; cmd_merge_integration integrate/${NIGHTLY}`, {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      LOOM_TEST_STATE: state,
+      LOOM_TEST_MERGED: merged,
+    });
+  const originTag = () =>
+    NodeChildProcess.spawnSync("git", ["rev-parse", "-q", "--verify", `loom-${NIGHTLY}^{commit}`], {
+      cwd: origin,
+      encoding: "utf8",
+    }).stdout.trim();
+
+  const open = mergeIntegration("OPEN");
+  expect(open.status).toBe(1);
+  expect(originTag()).toBe("");
+
+  const result = mergeIntegration("MERGED");
+  expect(result.status, result.stderr).toBe(0);
+  expect(NodeFS.existsSync(rejected)).toBe(true);
+  expect(originTag()).toBe(merged);
+});
+
 // A committed resolution pushed to a bare origin, and one agent that reviews or fixes by prompt.
 function reviewFixFixture(reviewer: string) {
   const f = conflictFixture("");
