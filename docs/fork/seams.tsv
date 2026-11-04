@@ -319,8 +319,8 @@ apps/mobile/src/features/home/HomeRouteScreen.tsx	fleet-connections	1
 apps/mobile/src/features/home/HomeRouteScreen.tsx	library	19
 apps/mobile/src/features/home/HomeScreen.tsx	fleet-connections	14
 apps/mobile/src/features/home/HomeScreen.tsx	library	13
-apps/mobile/src/features/home/ThreadListToolbar.tsx	project-navigation	6
-apps/mobile/src/features/home/ThreadListToolbar.tsx	brand	2
+apps/mobile/src/features/home/ThreadListToolbar.android.tsx	project-navigation	5
+apps/mobile/src/features/home/ThreadListToolbar.android.tsx	brand	3
 apps/mobile/src/features/pull-requests/PullRequestToolbar.android.tsx	brand	2
 apps/mobile/src/features/threads/NewTaskContextPickerScreens.tsx	fleet-connections	4
 apps/mobile/src/features/threads/NewTaskRouteScreen.tsx	fleet-connections	21
