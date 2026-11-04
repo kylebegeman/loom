@@ -122,7 +122,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
 
   return (
     <View className="flex-1 bg-sheet">
-      <AppBar title="Sign in to Connect" sidebar={false} onBack={props.onBack} />
+      <AppBar title="Sign in to Connect" onBack={props.onBack} />
       <ScreenScrollView
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -300,7 +300,6 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
       <View className="flex-1 bg-sheet">
         <AppBar
           title="Linked computers"
-          sidebar={false}
           options={{ headerBackVisible: false }}
           onBack={() => setPage("account")}
         />
@@ -320,7 +319,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
   }
   return (
     <View className="flex-1 bg-sheet">
-      <AppBar title="Connect account" sidebar={false} onBack={props.onBack} />
+      <AppBar title="Connect account" onBack={props.onBack} />
       <ScreenScrollView contentInsetAdjustmentBehavior="automatic">
         <View className="w-full max-w-xl self-center gap-5 px-5 py-6">
           <AppText className="font-t3-medium">
