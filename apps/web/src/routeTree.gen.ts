@@ -29,8 +29,8 @@ import { Route as ChatUsageRouteImport } from './routes/_chat.usage'
 import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
-import { Route as LibraryConversationsConversationIdRouteImport } from './routes/library.conversations.$conversationId'
 import { Route as ThreadsEnvironmentIdThreadIdRouteImport } from './routes/threads.$environmentId.$threadId'
+import { Route as LibraryConversationsConversationIdRouteImport } from './routes/library.conversations.$conversationId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
 import { Route as ChatSettingsVaultRouteImport } from './routes/_chat.settings.vault'
 import { Route as ChatSettingsToolsRouteImport } from './routes/_chat.settings.tools'
@@ -163,17 +163,17 @@ const ChatNewRoute = ChatNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ChatRoute,
 } as any)
-const LibraryConversationsConversationIdRoute =
-  LibraryConversationsConversationIdRouteImport.update({
-    id: '/conversations/$conversationId',
-    path: '/conversations/$conversationId',
-    getParentRoute: () => LibraryRoute,
-  } as any)
 const ThreadsEnvironmentIdThreadIdRoute =
   ThreadsEnvironmentIdThreadIdRouteImport.update({
     id: '/threads/$environmentId/$threadId',
     path: '/threads/$environmentId/$threadId',
     getParentRoute: () => rootRouteImport,
+  } as any)
+const LibraryConversationsConversationIdRoute =
+  LibraryConversationsConversationIdRouteImport.update({
+    id: '/conversations/$conversationId',
+    path: '/conversations/$conversationId',
+    getParentRoute: () => LibraryRoute,
   } as any)
 const ChatSettingsWorktreesRoute = ChatSettingsWorktreesRouteImport.update({
   id: '/worktrees',
@@ -835,19 +835,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatNewRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/library/conversations/$conversationId': {
-      id: '/library/conversations/$conversationId'
-      path: '/conversations/$conversationId'
-      fullPath: '/library/conversations/$conversationId'
-      preLoaderRoute: typeof LibraryConversationsConversationIdRouteImport
-      parentRoute: typeof LibraryRoute
-    }
     '/threads/$environmentId/$threadId': {
       id: '/threads/$environmentId/$threadId'
       path: '/threads/$environmentId/$threadId'
       fullPath: '/threads/$environmentId/$threadId'
       preLoaderRoute: typeof ThreadsEnvironmentIdThreadIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/library/conversations/$conversationId': {
+      id: '/library/conversations/$conversationId'
+      path: '/conversations/$conversationId'
+      fullPath: '/library/conversations/$conversationId'
+      preLoaderRoute: typeof LibraryConversationsConversationIdRouteImport
+      parentRoute: typeof LibraryRoute
     }
     '/_chat/settings/worktrees': {
       id: '/_chat/settings/worktrees'

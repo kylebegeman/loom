@@ -236,7 +236,7 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	everyda
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library	3
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	3
 apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	3
-apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	34
+apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	31
 apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	7
 apps/mobile/src/features/home/home-list-filter-menu.ts	fleet-connections	2
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
@@ -591,7 +591,7 @@ apps/server/src/orchestration-v2/pullRequestWatch.ts	brand	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	brand	2
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.test.ts	brand	1
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts	brand	1
-apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
+apps/server/src/persistence/DatabaseMaintenance.ts	brand	2
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
 apps/server/src/preview/PreviewBrowserHost.ts	brand	4
