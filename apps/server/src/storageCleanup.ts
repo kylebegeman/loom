@@ -300,8 +300,7 @@ function threadIdle(
 ): boolean {
   return (
     // fork: project-lifecycle -- the shared workspace-idle rule also gates settlement.
-    threadWorkspaceIdle(thread, now) &&
-    !heldForLimitRecovery(thread, now, settings)
+    threadWorkspaceIdle(thread, now) && !heldForLimitRecovery(thread, now, settings)
   );
 }
 
