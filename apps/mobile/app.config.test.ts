@@ -39,10 +39,9 @@ it.each([
   expect(config.android?.package).toBe(identifier);
   // Copied thread links open this app only while app.t3.codes lists it.
   const host = new URL(DEFAULT_HOSTED_APP_URL).host;
-  expect(config.ios?.associatedDomains).toContain(`applinks:${host}`);
-  expect(appleAppSiteAssociation.applinks.details[0]?.appIDs).toContain(
-    `${config.ios?.appleTeamId}.${identifier}`,
-  );
+  // fork: mobile-identity -- app.t3.codes lists only upstream's Apple team and IDs, so Loom's iOS app does not claim it
+  expect(config.ios?.associatedDomains ?? []).not.toContain(`applinks:${host}`);
+  expect(appleAppSiteAssociation.applinks.details[0]?.appIDs).toContain(`ARK85ZXQ4Z.${identifier}`); // fork: mobile-identity
   expect(config.android?.intentFilters?.[0]?.data).toEqual([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
