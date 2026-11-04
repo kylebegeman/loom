@@ -30,6 +30,7 @@ import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
 import { Route as LibraryConversationsConversationIdRouteImport } from './routes/library.conversations.$conversationId'
+import { Route as ThreadsEnvironmentIdThreadIdRouteImport } from './routes/threads.$environmentId.$threadId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
 import { Route as ChatSettingsVaultRouteImport } from './routes/_chat.settings.vault'
 import { Route as ChatSettingsToolsRouteImport } from './routes/_chat.settings.tools'
@@ -167,6 +168,12 @@ const LibraryConversationsConversationIdRoute =
     id: '/conversations/$conversationId',
     path: '/conversations/$conversationId',
     getParentRoute: () => LibraryRoute,
+  } as any)
+const ThreadsEnvironmentIdThreadIdRoute =
+  ThreadsEnvironmentIdThreadIdRouteImport.update({
+    id: '/threads/$environmentId/$threadId',
+    path: '/threads/$environmentId/$threadId',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const ChatSettingsWorktreesRoute = ChatSettingsWorktreesRouteImport.update({
   id: '/worktrees',
@@ -388,6 +395,7 @@ export interface FileRoutesByFullPath {
   '/settings/vault': typeof ChatSettingsVaultRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
+  '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -441,6 +449,7 @@ export interface FileRoutesByTo {
   '/settings/vault': typeof ChatSettingsVaultRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
+  '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -497,6 +506,7 @@ export interface FileRoutesById {
   '/_chat/settings/vault': typeof ChatSettingsVaultRoute
   '/_chat/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
+  '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -553,6 +563,7 @@ export interface FileRouteTypes {
     | '/settings/vault'
     | '/settings/worktrees'
     | '/library/conversations/$conversationId'
+    | '/threads/$environmentId/$threadId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -606,6 +617,7 @@ export interface FileRouteTypes {
     | '/settings/vault'
     | '/settings/worktrees'
     | '/library/conversations/$conversationId'
+    | '/threads/$environmentId/$threadId'
   id:
     | '__root__'
     | '/_chat'
@@ -661,6 +673,7 @@ export interface FileRouteTypes {
     | '/_chat/settings/vault'
     | '/_chat/settings/worktrees'
     | '/library/conversations/$conversationId'
+    | '/threads/$environmentId/$threadId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -677,6 +690,7 @@ export interface RootRouteChildren {
   ProjectsProjectKeyRoute: typeof ProjectsProjectKeyRoute
   ProjectsStorageRoute: typeof ProjectsStorageRoute
   ProjectsIndexRoute: typeof ProjectsIndexRoute
+  ThreadsEnvironmentIdThreadIdRoute: typeof ThreadsEnvironmentIdThreadIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -827,6 +841,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/library/conversations/$conversationId'
       preLoaderRoute: typeof LibraryConversationsConversationIdRouteImport
       parentRoute: typeof LibraryRoute
+    }
+    '/threads/$environmentId/$threadId': {
+      id: '/threads/$environmentId/$threadId'
+      path: '/threads/$environmentId/$threadId'
+      fullPath: '/threads/$environmentId/$threadId'
+      preLoaderRoute: typeof ThreadsEnvironmentIdThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_chat/settings/worktrees': {
       id: '/_chat/settings/worktrees'
@@ -1177,6 +1198,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectsProjectKeyRoute: ProjectsProjectKeyRoute,
   ProjectsStorageRoute: ProjectsStorageRoute,
   ProjectsIndexRoute: ProjectsIndexRoute,
+  ThreadsEnvironmentIdThreadIdRoute: ThreadsEnvironmentIdThreadIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

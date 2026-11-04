@@ -144,8 +144,9 @@ export function claudeSettingsPaths(
   ];
 }
 
+// Untraced: skill discovery resolves every distinct plugin project path, too often for spans.
 // fork: skill-registry
-export const findRepositoryRoot = Effect.fn("findRepositoryRoot")(function* (
+export const findRepositoryRoot = Effect.fnUntraced(function* (
   cwd: string,
 ): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -166,7 +167,7 @@ export const findRepositoryRoot = Effect.fn("findRepositoryRoot")(function* (
   }
 });
 
-const findPluginRepositoryRoot = Effect.fn("findPluginRepositoryRoot")(function* (cwd: string) {
+const findPluginRepositoryRoot = Effect.fnUntraced(function* (cwd: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const root = yield* findRepositoryRoot(cwd);
@@ -338,6 +339,8 @@ const discoverPluginSkillRoots = Effect.fn("discoverPluginSkillRoots")(function*
     cwd === undefined
       ? undefined
       : yield* fileSystem.realPath(cwd).pipe(Effect.orElseSucceed(() => path.resolve(cwd)));
+  // Install records repeat project paths, often hundreds of times per discovery.
+  const projectRepositoryRoots = new Map<string, string | undefined>();
   const repositoryRoot =
     workspace === undefined ? undefined : yield* findPluginRepositoryRoot(workspace);
 
@@ -349,11 +352,13 @@ const discoverPluginSkillRoots = Effect.fn("discoverPluginSkillRoots")(function*
         Effect.gen(function* () {
           if (record.scope === "user" || record.scope === "managed") return true;
           if (record.projectPath === undefined || workspace === undefined) return false;
-          if (path.resolve(record.projectPath) === workspace) return true;
-          return (
-            repositoryRoot !== undefined &&
-            (yield* findPluginRepositoryRoot(record.projectPath)) === repositoryRoot
-          );
+          const projectPath = path.resolve(record.projectPath);
+          if (projectPath === workspace) return true;
+          if (repositoryRoot === undefined) return false;
+          if (!projectRepositoryRoots.has(projectPath)) {
+            projectRepositoryRoots.set(projectPath, yield* findPluginRepositoryRoot(projectPath));
+          }
+          return projectRepositoryRoots.get(projectPath) === repositoryRoot;
         }),
     );
     // The native loader keeps registry order, preferring the first install that exists.

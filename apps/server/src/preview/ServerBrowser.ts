@@ -478,7 +478,11 @@ const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const launchServices = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner>();
-  const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND);
+  // sudo resets the environment, so the command has to name this server's home.
+  const setupCommand = yield* resolveRootCliCommand(PreviewBrowserHost.SETUP_SUBCOMMAND, [
+    "--base-dir",
+    config.baseDir,
+  ]);
   const agentScope = yield* AgentScope;
   const launchersDir = NodePath.join(config.stateDir, "server-browser", "launchers");
 
@@ -828,12 +832,27 @@ const make = Effect.gen(function* () {
   };
 
   const createTab = async (snapshot: PreviewSessionSnapshot): Promise<ServerTab> => {
+    const opened: Array<() => Promise<void>> = [];
+    try {
+      return await setUpTab(snapshot, opened);
+    } catch (cause) {
+      // An unpublished tab is in no list, so nothing else would ever close it.
+      for (const close of opened.reverse()) await close().catch(constVoid);
+      throw cause;
+    }
+  };
+
+  const setUpTab = async (
+    snapshot: PreviewSessionSnapshot,
+    opened: Array<() => Promise<void>>,
+  ): Promise<ServerTab> => {
     const adopted = adoptedPages.get(tabKey(snapshot.threadId, snapshot.tabId));
     adoptedPages.delete(tabKey(snapshot.threadId, snapshot.tabId));
     const desktop =
       adopted === undefined && (await desktopRenders(snapshot))
         ? await connectDesktop(snapshot)
         : null;
+    if (desktop) opened.push(desktop.close);
     // Otherwise a desktop that attaches late shows its own page, and the agent drives another.
     if (!desktop && desktopChannel.available) {
       await runPromise(
@@ -842,261 +861,251 @@ const make = Effect.gen(function* () {
           .pipe(Effect.ignore),
       );
     }
-    // fork: browser-timeout-recovery -- a failed setup releases the native endpoint (catch below).
-    try {
-      // An agent tab without a profile (no client reported one) keeps throwaway storage.
-      const isolatedContext =
-        adopted === undefined &&
-        desktop === null &&
-        ((snapshot.automationOwner !== undefined && snapshot.profileId === undefined) ||
-          snapshot.profileId === INCOGNITO_BROWSER_PROFILE_ID);
-      // fork: browser-timeout-recovery -- a recovering tab reuses its retained context when the profile matches.
-      const key = tabKey(snapshot.threadId, snapshot.tabId);
-      const recovery = recoveryPages.get(key); // fork: browser-timeout-recovery
-      const retainedContext =
-        desktop === null && recovery !== undefined && recovery.profileId === snapshot.profileId
-          ? recovery.context
-          : undefined;
-      if (recovery !== undefined && retainedContext === undefined) {
-        recoveryPages.delete(key);
-        if (recovery.isolated) await recovery.context.close().catch(constVoid);
-      }
-      const context =
-        adopted?.page.context() ??
-        desktop?.page.context() ??
-        retainedContext ?? // fork: browser-timeout-recovery
-        (await contexts.contextFor(
-          snapshot.profileId ?? "default",
-          isolatedContext ? tabKey(snapshot.threadId, snapshot.tabId) : undefined,
-        ));
-      if (adopted?.page.isClosed()) throw new Error("The popup closed before it opened.");
-      if (!desktop) await prepareContext(context);
-      const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
-      const cdp = await context.newCDPSession(page);
-      await installPdfDocumentNavigation(cdp);
-      // The desktop's page is already a normal browser. A popup's first request
-      // went out before it became a tab; everything after presents as Chrome.
-      if (!desktop) await presentAsChrome(cdp, host);
-      if (!desktop) await recordCopies(cdp);
-      page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
-      page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
-      const control = new SessionControl(snapshot.automationOwner ?? null, () =>
-        ServerBrowserPage.invalidateRefs(page),
-      );
-      let pendingFileChooserOffer = Promise.resolve();
-      const tab: ServerTab = {
-        threadId: ThreadId.make(snapshot.threadId),
-        tabId: snapshot.tabId,
-        page,
-        cdp,
-        frameSessions: new Map(),
-        createdAt: Date.now(),
-        usedAt: Date.now(),
-        viewers: new Set(),
-        consoleEntries: [],
-        networkEntries: [],
-        actionTimeline: [],
-        control,
-        agentOperating: false,
-        fileChooserIntercepted: false,
-        onFileChooser: (chooser) => {
-          pendingFileChooserOffer = pendingFileChooserOffer
-            .then(() => offerFileChooser(tab, chooser))
-            .catch(constVoid);
-        },
-        isolatedContext,
-        desktop: desktop === null ? null : { close: desktop.close },
-        profileId: snapshot.profileId,
-        openerTabId: adopted?.openerTabId,
-        downloads: [],
-        fileChooser: null,
-        dialog: null,
-        setting: snapshot.viewport ?? FILL_PREVIEW_VIEWPORT,
-        colorScheme: "system",
-        zoomFactor: 1,
-        desktopViewport: null,
-        desktopViewportRead: Promise.resolve(null),
-        desktopViewportNext: null,
-        loading: false,
-        closing: false,
-        recording: null,
-        recordingStart: null,
-        recordingTimeout: null, // fork: browser-timeout-recovery
-        initialNavigation: null,
-        navigationGeneration: 0,
-        abortedNavigation: null,
-        captureLock: Promise.resolve(),
-        capturing: 0,
+    // An agent tab without a profile (no client reported one) keeps throwaway storage.
+    const isolatedContext =
+      adopted === undefined &&
+      desktop === null &&
+      ((snapshot.automationOwner !== undefined && snapshot.profileId === undefined) ||
+        snapshot.profileId === INCOGNITO_BROWSER_PROFILE_ID);
+    // fork: browser-timeout-recovery -- a recovering tab reuses its retained context when the profile matches.
+    const key = tabKey(snapshot.threadId, snapshot.tabId);
+    const recovery = recoveryPages.get(key); // fork: browser-timeout-recovery
+    const retainedContext =
+      desktop === null && recovery !== undefined && recovery.profileId === snapshot.profileId
+        ? recovery.context
+        : undefined;
+    if (recovery !== undefined && retainedContext === undefined) {
+      recoveryPages.delete(key);
+      if (recovery.isolated) await recovery.context.close().catch(constVoid);
+    }
+    const context =
+      adopted?.page.context() ??
+      desktop?.page.context() ??
+      retainedContext ?? // fork: browser-timeout-recovery
+      (await contexts.contextFor(
+        snapshot.profileId ?? "default",
+        isolatedContext ? tabKey(snapshot.threadId, snapshot.tabId) : undefined,
+      ));
+    if (isolatedContext) opened.push(() => context.close());
+    if (adopted?.page.isClosed()) throw new Error("The popup closed before it opened.");
+    if (!desktop) await prepareContext(context);
+    const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
+    if (!desktop) opened.push(() => page.close());
+    const cdp = await context.newCDPSession(page);
+    await installPdfDocumentNavigation(cdp);
+    // The desktop's page is already a normal browser. A popup's first request
+    // went out before it became a tab; everything after presents as Chrome.
+    if (!desktop) await presentAsChrome(cdp, host);
+    if (!desktop) await recordCopies(cdp);
+    page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
+    page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
+    const control = new SessionControl(snapshot.automationOwner ?? null, () =>
+      ServerBrowserPage.invalidateRefs(page),
+    );
+    let pendingFileChooserOffer = Promise.resolve();
+    const tab: ServerTab = {
+      threadId: ThreadId.make(snapshot.threadId),
+      tabId: snapshot.tabId,
+      page,
+      cdp,
+      frameSessions: new Map(),
+      createdAt: Date.now(),
+      usedAt: Date.now(),
+      viewers: new Set(),
+      consoleEntries: [],
+      networkEntries: [],
+      actionTimeline: [],
+      control,
+      agentOperating: false,
+      fileChooserIntercepted: false,
+      onFileChooser: (chooser) => {
+        pendingFileChooserOffer = pendingFileChooserOffer
+          .then(() => offerFileChooser(tab, chooser))
+          .catch(constVoid);
+      },
+      isolatedContext,
+      desktop: desktop === null ? null : { close: desktop.close },
+      profileId: snapshot.profileId,
+      openerTabId: adopted?.openerTabId,
+      downloads: [],
+      fileChooser: null,
+      dialog: null,
+      setting: snapshot.viewport ?? FILL_PREVIEW_VIEWPORT,
+      colorScheme: "system",
+      zoomFactor: 1,
+      desktopViewport: null,
+      desktopViewportRead: Promise.resolve(null),
+      desktopViewportNext: null,
+      loading: false,
+      closing: false,
+      recording: null,
+      recordingStart: null,
+      recordingTimeout: null, // fork: browser-timeout-recovery
+      initialNavigation: null,
+      navigationGeneration: 0,
+      abortedNavigation: null,
+      captureLock: Promise.resolve(),
+      capturing: 0,
+    };
+    if (!desktop) {
+      await page.setViewportSize(fixedViewportSize(tab.setting) ?? UNATTACHED_FILL_VIEWPORT);
+    }
+    await applyRendering(tab, snapshot);
+    if (desktop) {
+      // The desktop resizes and zooms its webview itself; viewers map input with the new size.
+      const remeasure = () => {
+        if (tab.viewers.size > 0) return broadcastViewport(tab).catch(constVoid);
       };
-      if (!desktop) {
-        await page.setViewportSize(fixedViewportSize(tab.setting) ?? UNATTACHED_FILL_VIEWPORT);
-      }
-      await applyRendering(tab, snapshot);
-      if (desktop) {
-        // The desktop resizes and zooms its webview itself; viewers map input with the new size.
-        const remeasure = () => {
-          if (tab.viewers.size > 0) return broadcastViewport(tab).catch(constVoid);
-        };
-        cdp.on("Page.frameResized", remeasure);
-        // A read a navigation broke has a fresh page to measure.
-        cdp.on("Page.loadEventFired", remeasure);
-        // Closing a dialog resizes nothing, and the host can close it without us.
-        cdp.on("Page.javascriptDialogClosed", () => {
-          tab.dialog = null;
-          return remeasure();
+      cdp.on("Page.frameResized", remeasure);
+      // A read a navigation broke has a fresh page to measure.
+      cdp.on("Page.loadEventFired", remeasure);
+      // Closing a dialog resizes nothing, and the host can close it without us.
+      cdp.on("Page.javascriptDialogClosed", () => {
+        tab.dialog = null;
+        return remeasure();
+      });
+      await cdp.send("Page.enable");
+    }
+    const isMainNavigation = (request: { isNavigationRequest(): boolean; frame(): unknown }) =>
+      request.isNavigationRequest() && request.frame() === page.mainFrame();
+    const navigationGenerations = new WeakMap<object, number>();
+    page.on("request", (request) => {
+      if (!isMainNavigation(request)) return;
+      navigationGenerations.set(request, ++tab.navigationGeneration);
+      clearAbortedNavigation(tab);
+      tab.loading = true;
+      report(tab, {
+        _tag: "Loading",
+        url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
+        title: "",
+      });
+    });
+    page.on("load", () => {
+      tab.loading = false;
+      void reportLoaded(tab);
+    });
+    page.on("framenavigated", (frame) => {
+      const open = tab.fileChooser;
+      if (open) {
+        void isFileChooserCurrent(open.chooser).then((current) => {
+          if (!current && tab.fileChooser?.chooser === open.chooser) closeFileChooser(tab);
         });
-        await cdp.send("Page.enable");
       }
-      const isMainNavigation = (request: { isNavigationRequest(): boolean; frame(): unknown }) =>
-        request.isNavigationRequest() && request.frame() === page.mainFrame();
-      const navigationGenerations = new WeakMap<object, number>();
-      page.on("request", (request) => {
-        if (!isMainNavigation(request)) return;
-        navigationGenerations.set(request, ++tab.navigationGeneration);
+      // Same-document navigations (SPA routes) fire no load event.
+      if (frame === page.mainFrame() && !tab.loading) void reportLoaded(tab);
+      if (!desktop) void recordFrameCopies(tab, frame);
+    });
+    // An adopted popup's frames may have loaded before the tab listened.
+    if (adopted) for (const frame of page.frames()) void recordFrameCopies(tab, frame);
+    page.on("requestfailed", (request) => {
+      const errorText = request.failure()?.errorText ?? "";
+      pushBounded(tab.networkEntries, {
+        url: ServerBrowserPage.withoutDataPayload(request.url()),
+        method: request.method(),
+        status: null,
+        failed: true,
+        errorText,
+        timestamp: new Date().toISOString(),
+      });
+      if (!isMainNavigation(request)) return;
+      // Newer navigations own status; untracked initial popup requests yield to any tracked navigation.
+      const generation = navigationGenerations.get(request) ?? 0;
+      if (generation !== tab.navigationGeneration) return;
+      // An aborted navigation is usually a download; its `download` event settles the status.
+      if (errorText.includes("ERR_ABORTED")) {
+        const url = request.url();
+        const navigationGeneration = tab.navigationGeneration;
         clearAbortedNavigation(tab);
-        tab.loading = true;
-        report(tab, {
-          _tag: "Loading",
-          url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
-          title: "",
-        });
-      });
-      page.on("load", () => {
-        tab.loading = false;
-        void reportLoaded(tab);
-      });
-      page.on("framenavigated", (frame) => {
-        const open = tab.fileChooser;
-        if (open) {
-          void isFileChooserCurrent(open.chooser).then((current) => {
-            if (!current && tab.fileChooser?.chooser === open.chooser) closeFileChooser(tab);
-          });
-        }
-        // Same-document navigations (SPA routes) fire no load event.
-        if (frame === page.mainFrame() && !tab.loading) void reportLoaded(tab);
-        if (!desktop) void recordFrameCopies(tab, frame);
-      });
-      // An adopted popup's frames may have loaded before the tab listened.
-      if (adopted) for (const frame of page.frames()) void recordFrameCopies(tab, frame);
-      page.on("requestfailed", (request) => {
-        const errorText = request.failure()?.errorText ?? "";
-        pushBounded(tab.networkEntries, {
-          url: ServerBrowserPage.withoutDataPayload(request.url()),
-          method: request.method(),
-          status: null,
-          failed: true,
-          errorText,
-          timestamp: new Date().toISOString(),
-        });
-        if (!isMainNavigation(request)) return;
-        // Newer navigations own status; untracked initial popup requests yield to any tracked navigation.
-        const generation = navigationGenerations.get(request) ?? 0;
-        if (generation !== tab.navigationGeneration) return;
-        // An aborted navigation is usually a download; its `download` event settles the status.
-        if (errorText.includes("ERR_ABORTED")) {
-          const url = request.url();
-          const navigationGeneration = tab.navigationGeneration;
-          clearAbortedNavigation(tab);
-          tab.abortedNavigation = {
-            url,
-            generation: navigationGeneration,
-            timer: setTimeout(() => {
-              if (tab.abortedNavigation?.generation !== navigationGeneration) return;
-              tab.abortedNavigation = null;
-              if (!tab.closing) settleAbortedNavigation(tab, navigationGeneration, url, undefined);
-            }, ABORTED_NAVIGATION_DOWNLOAD_WAIT_MS),
-          };
-          return;
-        }
-        tab.loading = false;
-        const { code, description } = ServerBrowserPage.parseNetError(errorText);
-        report(tab, {
-          _tag: "LoadFailed",
-          url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
-          title: "",
-          code,
-          description,
-        });
-      });
-      page.on("response", (response) => {
-        pushBounded(tab.networkEntries, {
-          url: ServerBrowserPage.withoutDataPayload(response.url()),
-          method: response.request().method(),
-          status: response.status(),
-          failed: false,
-          timestamp: new Date().toISOString(),
-        });
-      });
-      page.on("console", (message) => {
-        pushBounded(tab.consoleEntries, {
-          level: message.type(),
-          text: ServerBrowserPage.consoleText(message).slice(0, 2_000),
-          timestamp: new Date().toISOString(),
-        });
-      });
-      page.on("dialog", (dialog) => {
-        tab.dialog = dialog;
-        broadcastControl(tab);
-      });
-      page.on("download", (download) => void saveDownload(tab, download));
-      updateFileChooserInterception(tab);
-      // Popups become tabs and keep `window.opener`, so sign-in popups can report back.
-      page.on("popup", (popup) => void adoptPopup(tab, popup));
-      // Playwright cannot reload a crashed page, so it must leave the tab list.
-      // fork: browser-timeout-recovery -- renamed: `key` above already names the recovery lookup.
-      const currentKey = tabKey(tab.threadId, tab.tabId);
-      if (closedPendingTabs.delete(currentKey)) {
-        await control.close().catch(constVoid);
-        if (desktop) await desktop.close().catch(constVoid);
-        else await page.close().catch(constVoid);
-        if (isolatedContext) await context.close().catch(constVoid);
-        throw new ServerBrowserTabNotFoundError({ threadId: tab.threadId, tabId: tab.tabId });
+        tab.abortedNavigation = {
+          url,
+          generation: navigationGeneration,
+          timer: setTimeout(() => {
+            if (tab.abortedNavigation?.generation !== navigationGeneration) return;
+            tab.abortedNavigation = null;
+            if (!tab.closing) settleAbortedNavigation(tab, navigationGeneration, url, undefined);
+          }, ABORTED_NAVIGATION_DOWNLOAD_WAIT_MS),
+        };
+        return;
       }
-      page.on("close", () => dropTab(tab, true));
-      page.on("crash", () => dropTab(tab, true));
-      tabs.set(currentKey, tab); // fork: browser-timeout-recovery
-      recoveryPages.delete(currentKey); // fork: browser-timeout-recovery
-      reportLiveTabs();
-      // A desktop page navigates on its own and can finish loading before these listeners attach.
-      if (desktop) void page.waitForLoadState("load").then(() => reportLoaded(tab), constVoid);
-      // fork: browser-timeout-recovery -- a recovered tab restores its page.
-      // A popup is already loading its own URL, and the desktop loads its tab's.
-      const initialUrl =
-        retainedContext !== undefined && recovery?.url !== "about:blank"
-          ? recovery?.url
-          : snapshot.navStatus._tag === "Loading" || snapshot.navStatus._tag === "Success"
-            ? snapshot.navStatus.url
-            : undefined;
-      if (!adopted && !desktop && initialUrl !== undefined) {
-        tab.initialNavigation = page
-          .goto(initialUrl, { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS })
-          .then(constVoid, (cause: unknown) => {
-            throw ServerBrowserPage.toOperationError(cause, NAVIGATION_TIMEOUT_MS);
-          });
-        if (tab.control.agentId !== null) tab.control.track(tab.initialNavigation);
-        else void tab.initialNavigation.catch(constVoid);
-      } else if (snapshot.navStatus._tag === "Loading" && isPdfAssetUrl(snapshot.navStatus.url)) {
-        // Existing desktop and popup PDFs can start loading before interception attaches.
-        const options = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
-        tab.initialNavigation = (
-          page.url() === snapshot.navStatus.url // fork: browser-timeout-recovery
-            ? page.reload(options)
-            : page.goto(snapshot.navStatus.url, options)
-        ).then(constVoid, (cause: unknown) => {
+      tab.loading = false;
+      const { code, description } = ServerBrowserPage.parseNetError(errorText);
+      report(tab, {
+        _tag: "LoadFailed",
+        url: ServerBrowserPage.withoutDataPayload(request.url()).slice(0, 2048),
+        title: "",
+        code,
+        description,
+      });
+    });
+    page.on("response", (response) => {
+      pushBounded(tab.networkEntries, {
+        url: ServerBrowserPage.withoutDataPayload(response.url()),
+        method: response.request().method(),
+        status: response.status(),
+        failed: false,
+        timestamp: new Date().toISOString(),
+      });
+    });
+    page.on("console", (message) => {
+      pushBounded(tab.consoleEntries, {
+        level: message.type(),
+        text: ServerBrowserPage.consoleText(message).slice(0, 2_000),
+        timestamp: new Date().toISOString(),
+      });
+    });
+    page.on("dialog", (dialog) => {
+      tab.dialog = dialog;
+      broadcastControl(tab);
+    });
+    page.on("download", (download) => void saveDownload(tab, download));
+    updateFileChooserInterception(tab);
+    // Popups become tabs and keep `window.opener`, so sign-in popups can report back.
+    page.on("popup", (popup) => void adoptPopup(tab, popup));
+    // Playwright cannot reload a crashed page, so it must leave the tab list.
+    // fork: browser-timeout-recovery -- renamed: `key` above already names the recovery lookup.
+    const currentKey = tabKey(tab.threadId, tab.tabId);
+    if (closedPendingTabs.delete(currentKey)) {
+      await control.close().catch(constVoid);
+      throw new ServerBrowserTabNotFoundError({ threadId: tab.threadId, tabId: tab.tabId });
+    }
+    page.on("close", () => dropTab(tab, true));
+    page.on("crash", () => dropTab(tab, true));
+    tabs.set(currentKey, tab); // fork: browser-timeout-recovery
+    recoveryPages.delete(currentKey); // fork: browser-timeout-recovery
+    reportLiveTabs();
+    // A desktop page navigates on its own and can finish loading before these listeners attach.
+    if (desktop) void page.waitForLoadState("load").then(() => reportLoaded(tab), constVoid);
+    // fork: browser-timeout-recovery -- a recovered tab restores its page.
+    // A popup is already loading its own URL, and the desktop loads its tab's.
+    const initialUrl =
+      retainedContext !== undefined && recovery?.url !== "about:blank"
+        ? recovery?.url
+        : snapshot.navStatus._tag === "Loading" || snapshot.navStatus._tag === "Success"
+          ? snapshot.navStatus.url
+          : undefined;
+    if (!adopted && !desktop && initialUrl !== undefined) {
+      tab.initialNavigation = page
+        .goto(initialUrl, { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS })
+        .then(constVoid, (cause: unknown) => {
           throw ServerBrowserPage.toOperationError(cause, NAVIGATION_TIMEOUT_MS);
         });
+      if (tab.control.agentId !== null) tab.control.track(tab.initialNavigation);
+      else void tab.initialNavigation.catch(constVoid);
+    } else if (snapshot.navStatus._tag === "Loading" && isPdfAssetUrl(snapshot.navStatus.url)) {
+      // Existing desktop and popup PDFs can start loading before interception attaches.
+      const options = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
+      tab.initialNavigation = (
+        page.url() === snapshot.navStatus.url // fork: browser-timeout-recovery
+          ? page.reload(options)
+          : page.goto(snapshot.navStatus.url, options)
+      ).then(constVoid, (cause: unknown) => {
+        throw ServerBrowserPage.toOperationError(cause, NAVIGATION_TIMEOUT_MS);
+      });
 
-        if (tab.control.agentId !== null) tab.control.track(tab.initialNavigation);
-        else void tab.initialNavigation.catch(constVoid);
-      }
-      return tab;
-    } catch (cause) {
-      // fork: browser-timeout-recovery
-      // Native pages outlive failed automation setup, but their endpoint does not.
-      await desktop?.close().catch(constVoid);
-      throw cause;
+      if (tab.control.agentId !== null) tab.control.track(tab.initialNavigation);
+      else void tab.initialNavigation.catch(constVoid);
     }
-    // fork: browser-timeout-recovery -- `return tab` moved inside the try block above.
+    return tab;
   };
 
   const downloadsRoot = NodePath.join(config.stateDir, "server-browser", "downloads");
@@ -2132,7 +2141,16 @@ const make = Effect.gen(function* () {
             if (existing) {
               if (url) await navigate(tab, url, "load", navigationTimeout);
             } else {
-              await tab.initialNavigation;
+              // A failed open returns no tabId; a leftover hidden tab would block later reuse.
+              await tab.initialNavigation?.catch(async (cause: unknown) => {
+                // Playwright rejects downloads too; their tab must survive to save the file.
+                if (cause instanceof Error && cause.message.includes("Download is starting")) {
+                  throw cause;
+                }
+                await runPromise(manager.close({ threadId: tab.threadId, tabId: tab.tabId }));
+                dropTab(tab, false);
+                throw cause;
+              });
             }
             const reveal = open.open ?? open.show;
             if (reveal !== false) {

@@ -237,6 +237,12 @@ export function BranchToolbarBranchSelector({
           input: { cwd: branchCwd },
         }),
   );
+  const projectStatusQuery = useEnvironmentQuery(
+    activeProjectCwd === null
+      ? null
+      : vcsEnvironment.status({ environmentId, input: { cwd: activeProjectCwd } }),
+  );
+  const activeProjectCheckoutRoot = projectStatusQuery.data?.workingTree.rootPath;
   const trimmedBranchQuery = branchQuery.trim();
   const branchRefState = usePaginatedBranches({
     environmentId,
@@ -402,6 +408,7 @@ export function BranchToolbarBranchSelector({
 
     const selectionTarget = resolveBranchSelectionTarget({
       activeProjectCwd,
+      activeProjectCheckoutRoot,
       activeWorktreePath,
       refName,
     });
@@ -644,6 +651,7 @@ export function BranchToolbarBranchSelector({
             (!activeProjectCwd ||
               !resolveBranchSelectionTarget({
                 activeProjectCwd,
+                activeProjectCheckoutRoot,
                 activeWorktreePath,
                 refName,
               }).reuseExistingWorktree))
