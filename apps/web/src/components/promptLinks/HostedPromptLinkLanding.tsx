@@ -47,7 +47,8 @@ function summarize(
         prompt.value === null
           ? {
               title: "Open this thread",
-              description: "It opens in T3 Code if you're connected to the machine it runs on.",
+              // fork: brand
+              description: "It opens in Loom if you're connected to the machine it runs on.",
               prompt: null,
               details: [],
             }

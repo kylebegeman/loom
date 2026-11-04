@@ -413,6 +413,8 @@ apps/desktop/src/app/DesktopCliCommand.test.ts	brand	15
 apps/desktop/src/app/DesktopCliShim.test.ts	brand	1
 apps/server/src/cli/invocation.ts	brand	3
 apps/server/src/cli/invocation.ts	ext-vault	1
+apps/server/src/cli/automaticPort.ts	brand	1
+apps/server/src/policy/policyTemplates.ts	brand	12
 apps/server/src/cli/invocation.test.ts	brand	9
 apps/server/src/cli/server.ts	brand	3
 apps/web/src/components/settings/CliCommandSettingsRow.tsx	brand	4
@@ -517,7 +519,7 @@ apps/desktop/src/backend/DesktopBackendPool.ts	brand	4
 apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts	brand	1
 apps/desktop/src/electron/WindowsForeground.ts	brand	1
 apps/desktop/src/permissions/MacPermissionHelper.ts	brand	3
-apps/desktop/src/app/DesktopStartupRecovery.ts	brand	8
+apps/desktop/src/app/DesktopStartupRecovery.ts	brand	9
 apps/desktop/src/snapShot/DesktopSnapShot.ts	brand	7
 apps/desktop/src/snapShot/DesktopSnapShot.test.ts	brand	2
 apps/desktop/src/snapShot/GnomeCaptureSetup.ts	brand	5
@@ -628,7 +630,7 @@ apps/web/src/components/onboarding/FirstRunGate.tsx	brand	1
 apps/web/src/components/onboarding/FirstRunGate.tsx	library-only	1
 apps/web/src/components/preview/PreviewPanel.tsx	brand	1
 apps/web/src/components/preview/PreviewView.tsx	brand	1
-apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	brand	1
+apps/web/src/components/promptLinks/HostedPromptLinkLanding.tsx	brand	2
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	brand	2
 apps/web/src/components/promptLinks/linkedPrompt.ts	brand	1
 apps/web/src/components/settings/AcpSessionManagementSection.tsx	brand	1
@@ -1668,8 +1670,8 @@ apps/server/src/cli/update.test.ts	brand	2
 apps/server/src/cloud/selfUpdate.test.ts	brand	2
 apps/web/src/components/sidebar/updateEverything.logic.test.ts	brand	2
 packages/contracts/src/managedPolicy.ts	brand	1
-packages/shared/src/managedPolicyFile.ts	brand	2
-packages/shared/src/managedPolicyFile.test.ts	brand	1
+packages/shared/src/managedPolicyFile.ts	brand	6
+packages/shared/src/managedPolicyFile.test.ts	brand	5
 apps/server/src/preview/ServerBrowser.ts	browser-dev-tools	3
 apps/web/src/components/preview/PreviewEmptyState.tsx	browser-dev-tools	3
 evals/mcp-tool-use/run.ts	browser-dev-tools	2
