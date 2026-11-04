@@ -1764,6 +1764,45 @@ esac
   expect(originTag()).toBe(merged);
 });
 
+it("lists every file of a large open upstream pull request and reuses the listing", () => {
+  const f = repositoryFixture();
+  const bin = NodePath.join(f.root, "..", `${NodePath.basename(f.root)}-bin`);
+  roots.push(bin);
+  NodeFS.mkdirSync(bin);
+  const calls = NodePath.join(bin, "calls");
+  // The fake applies each --jq filter to the JSON GitHub would return.
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "gh"),
+    `#!/bin/bash
+echo "$1 $2" >> "${calls}"
+for arg; do [ "$prev" = --jq ] && filter=$arg; prev=$arg; done
+case "$1 $2" in
+  "pr list") json='[{"number":1,"title":"small","changedFiles":1,"files":[{"path":"apps/a.ts"}]},
+    {"number":2,"title":"big","changedFiles":3,"files":[{"path":"apps/b.ts"}]}]' ;;
+  "api --paginate") json='[{"filename":"apps/b.ts"},{"filename":"apps/c.ts"},{"filename":"apps/d.ts"}]' ;;
+esac
+jq -r "$filter" <<<"$json"
+`,
+    { mode: 0o755 },
+  );
+  const list = () =>
+    runSync(f.root, "upstream_open_prs", { PATH: `${bin}:${process.env.PATH ?? ""}` });
+
+  const first = list();
+  expect(first.status, first.stderr).toBe(0);
+  expect(first.stdout.trim().split("\n")).toEqual([
+    "1\tsmall\tapps/a.ts",
+    "2\tbig\tapps/b.ts",
+    "2\tbig\tapps/c.ts",
+    "2\tbig\tapps/d.ts",
+  ]);
+  expect(list().stdout).toBe(first.stdout);
+  expect(NodeFS.readFileSync(calls, "utf8").trim().split("\n")).toEqual([
+    "pr list",
+    "api --paginate",
+  ]);
+});
+
 // A committed resolution pushed to a bare origin, and one agent that reviews or fixes by prompt.
 function reviewFixFixture(reviewer: string) {
   const f = conflictFixture("");

@@ -91,6 +91,10 @@ BRAND_TESTS=(
 )
 UPSTREAM_REPO=pingdotgg/t3code
 UPSTREAM_RELEASES=https://github.com/$UPSTREAM_REPO/releases/tag
+# Listing every open upstream pull request with its files takes minutes, so one listing
+# serves upstream-overlap this long.
+UPSTREAM_PRS_CACHE_MINUTES=180
+UPSTREAM_PRS_JOBS=6
 # A nightly may wait this long for main: upstream can publish it four hours after its commit,
 # and its run can queue up to six hours behind a running integration, then take six itself.
 # Longer means runs are failing or not running, and upstream-status --check fails.
@@ -1293,10 +1297,35 @@ cmd_upstream_due() {
   upstream_due
 }
 
-# Open upstream pull requests, with the files each one changes, as number<TAB>title<TAB>file lines.
+# Every open upstream pull request, with the files each one changes, as number<TAB>title<TAB>file lines.
 upstream_open_prs() {
-  gh pr list -R "$UPSTREAM_REPO" --state open --limit 300 --json number,title,files \
-    --jq '.[] | . as $pr | (.files // [])[] | "\($pr.number)\t\($pr.title)\t\(.path)"'
+  local cache listing files number title path
+  cache="$(git rev-parse --absolute-git-dir)/loom-upstream-prs.tsv"
+  if [ -z "$(find "$cache" -mmin "-$UPSTREAM_PRS_CACHE_MINUTES" 2>/dev/null)" ]; then
+    echo "Listing open upstream pull requests; this takes a few minutes and lasts ${UPSTREAM_PRS_CACHE_MINUTES} minutes." >&2
+    # GraphQL lists at most 100 files a pull request; "+" marks one whose full list REST gives.
+    listing=$(retry gh pr list -R "$UPSTREAM_REPO" --state open --limit 100000 --json number,title,changedFiles,files \
+      --jq '.[] | . as $pr | if .changedFiles > ((.files // []) | length)
+        then "+\(.number)\t\(.title)" else (.files // [])[] | "\($pr.number)\t\($pr.title)\t\(.path)" end') ||
+      return 1
+    files=$(mktemp -d)
+    # xargs appends each pull request number after the fixed arguments.
+    if ! sed -n 's/^+//p' <<<"$listing" | cut -f1 | xargs -n 1 -P "$UPSTREAM_PRS_JOBS" bash -c \
+      'source "$1" >/dev/null && retry gh api --paginate "repos/$UPSTREAM_REPO/pulls/$3/files?per_page=100" \
+        --jq ".[].filename" >"$2/$3"' loom-pr-files "$REPO_ROOT/scripts/fork/loom.sh" "$files"; then
+      rm -rf "$files"
+      return 1
+    fi
+    {
+      grep -v '^+' <<<"$listing" || true
+      sed -n 's/^+//p' <<<"$listing" | while IFS=$'\t' read -r number title; do
+        while IFS= read -r path; do printf '%s\t%s\t%s\n' "$number" "$title" "$path"; done <"$files/$number"
+      done
+    } >"$cache.tmp"
+    rm -rf "$files"
+    mv "$cache.tmp" "$cache"
+  fi
+  cat "$cache"
 }
 
 # Upstream work a fork change would conflict with or duplicate. A path lists upstream's
@@ -1307,7 +1336,10 @@ cmd_upstream_overlap() {
   git fetch -q upstream --tags
   git fetch -q origin
   local prs arg found=0 lines
-  prs=$(upstream_open_prs) || prs=""
+  prs=$(upstream_open_prs) || {
+    echo "Could not list open upstream pull requests, so only upstream commits are shown." >&2
+    prs=""
+  }
   for arg in "$@"; do
     if [ -e "$arg" ] || git cat-file -e "upstream/main:$arg" 2>/dev/null; then
       lines=$(git log --no-merges --date=short --format='  commit %h %ad %s' origin/main..upstream/main -- "$arg")
