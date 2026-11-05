@@ -12,6 +12,9 @@ import {
 import {
   LIBRARY_MANAGEMENT_FEATURE,
   LIBRARY_API_FEATURE,
+  LIBRARY_SITES_FEATURE,
+  type LibrarySitesMutation,
+  type SitesError,
   LibraryError,
   type LibraryManagementInvocation,
 } from "@t3tools/contracts/fork";
@@ -20,6 +23,8 @@ import { directoryPublicKeyFromPem } from "@t3tools/shared/fork/directory";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -46,6 +51,7 @@ import { LibraryPublisher } from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Workflows from "./ProjectWorkflows.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
+import * as SitesService from "../sites/SitesService.ts";
 
 const authority = EnvironmentId.make("library");
 const memorySecrets = () => {
@@ -103,6 +109,29 @@ const fixture = Effect.gen(function* () {
   const supported = yield* Ref.make(true);
   const sent = yield* Ref.make<LibraryManagementInvocation[]>([]);
   const lostReply = yield* Ref.make(false);
+  const sitesWrites = yield* Ref.make<LibrarySitesMutation[]>([]);
+  const pauseSites = yield* Ref.make(false);
+  const sitesEntered = yield* Deferred.make<void>();
+  const sitesRelease = yield* Deferred.make<void>();
+  const sitesSnapshot = {
+    schemaVersion: 1 as const,
+    primarySiteId: "example",
+    observedAt: "2026-11-05T00:00:00Z",
+    staleAfterSeconds: 900,
+    sites: [],
+    services: [],
+    checks: [],
+  };
+  const siteWrite = (input: LibrarySitesMutation, authorize?: Effect.Effect<void, SitesError>) =>
+    Effect.gen(function* () {
+      if (yield* Ref.get(pauseSites)) {
+        yield* Deferred.succeed(sitesEntered, undefined);
+        yield* Deferred.await(sitesRelease);
+      }
+      yield* authorize ?? Effect.void;
+      yield* Ref.update(sitesWrites, (writes) => [...writes, input]);
+      return sitesSnapshot;
+    });
   const workflows = yield* Workflows.ProjectWorkflows.pipe(
     Effect.provide(Workflows.layer),
     Effect.provideService(Catalog.LibraryService, catalog),
@@ -122,7 +151,9 @@ const fixture = Effect.gen(function* () {
           Ref.get(supported).pipe(
             Effect.map((value) => ({
               ...info,
-              features: value ? [LIBRARY_MANAGEMENT_FEATURE, LIBRARY_API_FEATURE] : [],
+              features: value
+                ? [LIBRARY_MANAGEMENT_FEATURE, LIBRARY_API_FEATURE, LIBRARY_SITES_FEATURE]
+                : [],
             })),
           ),
         ),
@@ -153,6 +184,14 @@ const fixture = Effect.gen(function* () {
     Effect.provide(
       Management.layer.pipe(
         Layer.provide(dependencies),
+        Layer.provide(
+          Layer.mock(SitesService.SitesService)({
+            saveSite: (input, check) => siteWrite({ action: "saveSite", input }, check),
+            saveService: (input, check) => siteWrite({ action: "saveService", input }, check),
+            saveCheck: (input, check) => siteWrite({ action: "saveCheck", input }, check),
+            runChecks: (check) => siteWrite({ action: "runChecks" }, check),
+          }),
+        ),
         Layer.provide(memorySecrets()),
         Layer.provide(
           Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(authority) }),
@@ -199,6 +238,7 @@ const fixture = Effect.gen(function* () {
       Effect.provide(
         Management.layer.pipe(
           Layer.provide(dependencies),
+          Layer.provide(Layer.mock(SitesService.SitesService)({})),
           Layer.provide(Layer.succeed(ServerSecretStore, secrets)),
           Layer.provide(connection),
           Layer.provide(
@@ -251,6 +291,11 @@ const fixture = Effect.gen(function* () {
     supported,
     sent,
     lostReply,
+    sitesWrites,
+    pauseSites,
+    sitesEntered,
+    sitesRelease,
+    sitesSnapshot,
     receiver,
     computer,
     first,
@@ -275,6 +320,76 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
   );
 
 describe("authority-routed project management", () => {
+  it.effect(
+    "routes Sites writes through the enrolled Library and rechecks its owner before dispatch",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const input = {
+            action: "saveSite" as const,
+            input: {
+              id: "example",
+              name: "Example",
+              url: "https://example.test",
+              active: false,
+              origins: ["https://example.test"],
+              serviceIds: [],
+              projectIds: [f.project.id],
+            },
+          };
+          expect(
+            yield* f.first.manager.sitesAgent(input, {
+              threadId,
+              providerInstanceId: f.actor.providerInstanceId,
+            }),
+          ).toEqual(f.sitesSnapshot);
+          yield* f.first.manager.sites(
+            {
+              action: "saveService",
+              input: {
+                id: "worker",
+                name: "Worker",
+                url: "https://example.test",
+                active: false,
+                kind: "website",
+              },
+            },
+            f.actor,
+          );
+          yield* f.first.manager.sites(
+            {
+              action: "saveCheck",
+              input: {
+                id: "health",
+                name: "Health",
+                url: "https://example.test/health",
+                active: false,
+                service_id: "worker",
+                expected_status: 200,
+                content: "",
+              },
+            },
+            f.actor,
+          );
+          yield* f.first.manager.sites({ action: "runChecks" }, f.actor);
+          expect((yield* Ref.get(f.sitesWrites)).map((write) => write.action)).toEqual([
+            "saveSite",
+            "saveService",
+            "saveCheck",
+            "runChecks",
+          ]);
+          expect((yield* Ref.get(f.sent))[0]?.request).toEqual({ kind: "sites", input });
+          yield* Ref.set(f.pauseSites, true);
+          const pending = yield* f.first.manager.sites(input, f.actor).pipe(Effect.forkChild);
+          yield* Deferred.await(f.sitesEntered);
+          yield* Ref.set(f.active, []);
+          yield* Deferred.succeed(f.sitesRelease, undefined);
+          expect((yield* Fiber.join(pending).pipe(Effect.flip)).reason).toBe("io");
+          expect(yield* Ref.get(f.sitesWrites)).toHaveLength(4);
+        }),
+      ),
+  );
+
   it.effect(
     "finishes a narrow edit across two enrolled computers and safely replays a lost response",
     () =>

@@ -5,6 +5,8 @@ import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const SITES_FEATURE = "sites";
 export const SITES_MANAGEMENT_FEATURE = "sites-management";
+export const LIBRARY_SITES_FEATURE = "library-sites";
+export const LIBRARY_SITES_READ_ROUTE = "/api/loom/library/sites/read";
 const projectId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
 const text = Schema.String.check(Schema.isMaxLength(2048));
 const count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
@@ -143,6 +145,14 @@ export const SaveSiteCheckRequest = Schema.Struct({
   content: Schema.String.check(Schema.isMaxLength(120)),
 });
 export type SaveSiteCheckRequest = typeof SaveSiteCheckRequest.Type;
+export const LibrarySitesMutation = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("saveSite"), input: SaveSiteRequest }),
+  Schema.Struct({ action: Schema.Literal("saveService"), input: SaveSiteServiceRequest }),
+  Schema.Struct({ action: Schema.Literal("saveCheck"), input: SaveSiteCheckRequest }),
+  Schema.Struct({ action: Schema.Literal("runChecks") }),
+]);
+export type LibrarySitesMutation = typeof LibrarySitesMutation.Type;
+export const LibrarySitesRead = Schema.Struct({ siteId: Schema.optionalKey(SiteId) });
 export const SitesState = Schema.Struct({
   configured: Schema.Boolean,
   snapshot: Schema.NullOr(SitesSnapshot),

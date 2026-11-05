@@ -727,6 +727,9 @@ Agents use `loom_sites`, `loom_site_analytics`, `loom_site_save`,
 `loom_site_service_save`, `loom_site_check_save`, and `loom_site_checks_run`.
 The same operations are available from a configured terminal through
 `t3 sites list`, `analytics`, `save`, `save-service`, `save-check`, and `run-checks`.
+Agents and the CLI use this computer's enrolled Library, including its Sites
+connection. The work computer does not need its own Sites credentials. Both
+computers must run a Loom version that supports Library Sites requests.
 Pass a JSON object matching the corresponding MCP tool. Saves replace the entry's
 settings, so include its project, origin, and service selections.
 Use the agent terminal's MCP connection or set `LOOM_MCP_ENDPOINT` and

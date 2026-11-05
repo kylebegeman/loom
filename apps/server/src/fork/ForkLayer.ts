@@ -351,7 +351,13 @@ export const layerReachLibrary = ReachProvisioner.layer.pipe(
   Layer.provideMerge(Layer.merge(layerDirectory, layerReachStore)),
 );
 
+const layerSites = SitesService.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(layerLibraryService),
+  Layer.provide(LibraryConnection.layer),
+);
 const layerLibraryManagement = LibraryManagement.layer.pipe(
+  Layer.provide(layerSites),
   Layer.provide(LibraryApis.layer.pipe(Layer.provide(layerLibraryService))),
   Layer.provide(layerProjectWorkflows),
   Layer.provide(layerLibraryService),
@@ -424,10 +430,6 @@ const layerDevApi = DevApi.layer.pipe(
 const layerDevContainers = DevContainers.layer.pipe(
   Layer.provide(layerDevEnvironment),
   Layer.provide(ProcessRunner.layer),
-);
-const layerSites = SitesService.layer.pipe(
-  Layer.provide(FetchHttpClient.layer),
-  Layer.provide(layerLibraryService),
 );
 // Credential preparation runs before the full fork runtime; share these exact layer instances.
 export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(

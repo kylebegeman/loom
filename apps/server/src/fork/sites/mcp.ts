@@ -1,6 +1,8 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { AuthSessionId, OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   SaveSiteRequest,
+  type LibrarySitesMutation,
+  LibraryError,
   SaveSiteServiceRequest,
   SaveSiteCheckRequest,
   SitesSnapshot,
@@ -16,8 +18,10 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import * as SitesService from "./SitesService.ts";
 const failure = Schema.Union([SitesError, OrchestratorMcpFailure]);
+const isSitesError = Schema.is(SitesError);
 export const SitesToolkit = Toolkit.make(
   Tool.make("loom_site_save", {
     description:
@@ -70,64 +74,47 @@ export const sitesHandlers = McpToolAccess.toLayer(
     const runtime = yield* ForkRuntime;
     const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
+    const mutate = Effect.fn("SitesMcp.mutate")(function* <R>(
+      input: LibrarySitesMutation,
+      check: Effect.Effect<unknown, OrchestratorMcpFailure, R>,
+    ) {
+      const context = yield* Effect.context<R>();
+      const scope = yield* McpInvocationContext;
+      const authorize = check.pipe(
+        Effect.asVoid,
+        Effect.provide(context),
+        Effect.mapError((cause) => new LibraryError({ reason: "blocked", cause })),
+      );
+      return yield* onHost(
+        Effect.flatMap(LibraryManagement, (management) =>
+          scope.thread
+            ? management.sitesAgent(input, scope.thread, authorize)
+            : scope.client
+              ? management.sites(
+                  input,
+                  { kind: "client", sessionId: AuthSessionId.make(scope.client.sessionId) },
+                  authorize,
+                )
+              : Effect.fail(new LibraryError({ reason: "blocked" })),
+        ),
+      ).pipe(
+        Effect.mapError((cause) =>
+          isSitesError(cause.cause) ? cause.cause : new SitesError({ stage: "write", cause }),
+        ),
+      );
+    });
     return {
       loom_site_save: McpToolAccess.writesEnvironment((input, check) =>
-        Effect.gen(function* () {
-          const context = yield* Effect.context<Effect.Services<typeof check>>();
-          const authorize = check.pipe(
-            Effect.asVoid,
-            Effect.provide(context),
-            Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
-          );
-          return yield* onHost(
-            Effect.flatMap(SitesService.SitesService, (service) =>
-              service.saveSite(input, authorize),
-            ),
-          );
-        }),
+        mutate({ action: "saveSite", input }, check),
       ),
       loom_site_service_save: McpToolAccess.writesEnvironment((input, check) =>
-        Effect.gen(function* () {
-          const context = yield* Effect.context<Effect.Services<typeof check>>();
-          const authorize = check.pipe(
-            Effect.asVoid,
-            Effect.provide(context),
-            Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
-          );
-          return yield* onHost(
-            Effect.flatMap(SitesService.SitesService, (service) =>
-              service.saveService(input, authorize),
-            ),
-          );
-        }),
+        mutate({ action: "saveService", input }, check),
       ),
       loom_site_check_save: McpToolAccess.writesEnvironment((input, check) =>
-        Effect.gen(function* () {
-          const context = yield* Effect.context<Effect.Services<typeof check>>();
-          const authorize = check.pipe(
-            Effect.asVoid,
-            Effect.provide(context),
-            Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
-          );
-          return yield* onHost(
-            Effect.flatMap(SitesService.SitesService, (service) =>
-              service.saveCheck(input, authorize),
-            ),
-          );
-        }),
+        mutate({ action: "saveCheck", input }, check),
       ),
       loom_site_checks_run: McpToolAccess.writesEnvironment((_, check) =>
-        Effect.gen(function* () {
-          const context = yield* Effect.context<Effect.Services<typeof check>>();
-          const authorize = check.pipe(
-            Effect.asVoid,
-            Effect.provide(context),
-            Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
-          );
-          return yield* onHost(
-            Effect.flatMap(SitesService.SitesService, (service) => service.runChecks(authorize)),
-          );
-        }),
+        mutate({ action: "runChecks" }, check),
       ),
       loom_sites: McpToolAccess.reads(() =>
         onHost(Effect.flatMap(SitesService.SitesService, (service) => service.snapshot)),

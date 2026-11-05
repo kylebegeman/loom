@@ -24,6 +24,7 @@ import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import * as Library from "./LibraryService.ts";
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
+import * as SitesService from "../sites/SitesService.ts";
 import { LibraryHttpRoutes } from "./http.ts";
 import { source, resource, archiveFor } from "./Library.testkit.ts";
 const encodeIngest = Schema.encodeEffect(
@@ -61,6 +62,7 @@ const fixture = Effect.gen(function* () {
           authorityId: "authority",
           authorityEpoch: 1,
           assets: "local",
+          isAuthority: true,
         }),
         registerComputer: (input) =>
           Ref.update(calls, (count) => count + 1).pipe(
@@ -105,8 +107,33 @@ const fixture = Effect.gen(function* () {
     saveWorkstream: () => Effect.die("unused"),
     applyBlueprint: () => Effect.die("unused"),
   });
+  const sites = yield* SitesService.SitesService.pipe(
+    Effect.provide(
+      Layer.mock(SitesService.SitesService)({
+        snapshot: Ref.update(calls, (count) => count + 1).pipe(
+          Effect.as({ configured: true, managementConfigured: true, snapshot: null }),
+        ),
+        analytics: () =>
+          Ref.update(calls, (count) => count + 1).pipe(
+            Effect.as({
+              siteId: "example",
+              lastEventAt: null,
+              days: 30,
+              since: "2026-10-06",
+              pageviews: 0,
+              visitors: 0,
+              events: 0,
+              byDay: [],
+              pages: [],
+              named: [],
+            }),
+          ),
+      }),
+    ),
+  );
   const runtime = Context.make(Library.LibraryService, library).pipe(
     Context.add(ProjectWorkflows, workflows),
+    Context.add(SitesService.SitesService, sites),
   ) as Context.Context<ForkServices>;
   const app = LibraryHttpRoutes.pipe(
     Layer.provide(Layer.succeed(ForkRuntime, runtime)),
@@ -163,6 +190,8 @@ describe("Library host HTTP publishing boundaries", () => {
       Effect.gen(function* () {
         for (const [path, input] of [
           ["projects/list", {}],
+          ["sites/read", {}],
+          ["sites/read", { siteId: "example" }],
           ["conversations/list", { projectId: "project", offset: 1, limit: 1 }],
           ["history/search", { query: "fix", limit: 1 }],
           ["workstreams/read", { projectId: "project" }],
@@ -174,10 +203,11 @@ describe("Library host HTTP publishing boundaries", () => {
         expect(
           (yield* f.request("conversations/list", yield* encodeJson({ limit: 201 }))).status,
         ).toBe(400);
-        expect(yield* Ref.get(f.calls)).toBe(7);
+        expect(yield* Ref.get(f.calls)).toBe(9);
         for (const subject of ["mcp-client", "other-client"]) {
           yield* Ref.update(f.session, (session) => ({ ...session, subject }));
           expect((yield* f.request("projects/list", "{}")).status).toBe(403);
+          expect((yield* f.request("sites/read", "{}")).status).toBe(403);
         }
         yield* Ref.update(f.session, (session) => ({
           ...session,
@@ -185,7 +215,7 @@ describe("Library host HTTP publishing boundaries", () => {
           scopes: [AuthLibraryRecoveryReadScope],
         }));
         expect((yield* f.request("projects/list", "{}")).status).toBe(403);
-        expect(yield* Ref.get(f.calls)).toBe(7);
+        expect(yield* Ref.get(f.calls)).toBe(9);
       }),
     ),
   );

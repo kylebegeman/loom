@@ -6,6 +6,9 @@ import {
   SiteId,
   SitesError,
   SitesSnapshot,
+  SitesState,
+  LibrarySitesRead,
+  LIBRARY_SITES_READ_ROUTE,
 } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ByteSize from "effect/ByteSize";
@@ -22,6 +25,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import * as LibraryService from "../project-library/LibraryService.ts";
 
 export class SitesService extends Context.Service<
@@ -69,6 +73,7 @@ const make = Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
   const http = yield* HttpClient.HttpClient;
   const library = yield* LibraryService.LibraryService;
+  const connection = yield* LibraryConnectionService;
   const noRedirects = Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" });
   const api = env.LOOM_SITES_API_ORIGIN?.trim() || "https://api.begam.in";
   const issuer = env.LOOM_IDENTITY_ISSUER?.trim();
@@ -160,6 +165,37 @@ const make = Effect.gen(function* () {
       Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
     );
   });
+  const readLibrary = Effect.fn("SitesService.readLibrary")(function* <A, I>(
+    input: typeof LibrarySitesRead.Type,
+    schema: Schema.Codec<A, I>,
+  ) {
+    const response = yield* connection
+      .send(
+        HttpClientRequest.post(LIBRARY_SITES_READ_ROUTE).pipe(
+          HttpClientRequest.bodyJsonUnsafe(input),
+        ),
+      )
+      .pipe(
+        Effect.timeout("30 seconds"),
+        Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
+      );
+    if (response.status === 401 || response.status === 403)
+      return yield* new SitesError({ stage: "authentication" });
+    return yield* HttpClientResponse.filterStatusOk(response).pipe(
+      Effect.flatMap((response) => response.json),
+      Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(2)),
+      Effect.timeout("15 seconds"),
+      Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
+    );
+  });
+  const isRemote = connection.current.pipe(
+    Effect.flatMap((current) => {
+      if (current.kind === "unavailable")
+        return Effect.fail(new SitesError({ stage: "authentication" }));
+      return Effect.succeed(current.kind === "remote");
+    }),
+  );
   const write = Effect.fn("SitesService.write")(function* (
     path: string,
     input: unknown,
@@ -233,19 +269,22 @@ const make = Effect.gen(function* () {
     runChecks: Effect.fn("SitesService.runChecks")(function (authorize) {
       return write("/v1/integrations/sites/checks/run", undefined, authorize);
     }),
-    snapshot: configured
-      ? read("/v1/integrations/sites", SitesSnapshot).pipe(
-          Effect.map((snapshot) => ({ configured: true, managementConfigured, snapshot })),
-        )
-      : Effect.succeed({ configured: false, managementConfigured: false, snapshot: null }),
+    snapshot: Effect.gen(function* () {
+      if (yield* isRemote) {
+        const state = yield* readLibrary({}, SitesState);
+        return { ...state, managementConfigured: state.managementConfigured ?? false };
+      }
+      if (!configured) return { configured: false, managementConfigured: false, snapshot: null };
+      const snapshot = yield* read("/v1/integrations/sites", SitesSnapshot);
+      return { configured: true, managementConfigured, snapshot };
+    }),
     analytics: Effect.fn("SitesService.analytics")(function* (input) {
       const siteId = yield* decodeSiteId(input.siteId).pipe(
         Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
       );
-      const result = yield* read(
-        `/v1/integrations/sites/${encodeURIComponent(siteId)}/analytics`,
-        SiteAnalytics,
-      );
+      const result = yield* (yield* isRemote)
+        ? readLibrary({ siteId }, SiteAnalytics)
+        : read(`/v1/integrations/sites/${encodeURIComponent(siteId)}/analytics`, SiteAnalytics);
       if (result.siteId !== siteId) return yield* new SitesError({ stage: "read" });
       return result;
     }),

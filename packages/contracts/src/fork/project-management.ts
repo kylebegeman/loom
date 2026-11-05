@@ -1,3 +1,4 @@
+import { LibrarySitesMutation } from "./sites.ts";
 import { LibraryApiRequest } from "./api-library.ts";
 import * as Schema from "effect/Schema";
 import { EnvironmentId, PositiveInt } from "../baseSchemas.ts";
@@ -19,6 +20,7 @@ export const LibraryProjectManagementRequest = Schema.Union([
 export type LibraryProjectManagementRequest = typeof LibraryProjectManagementRequest.Type;
 export const LibraryManagementRequest = Schema.Union([
   LibraryProjectManagementRequest,
+  Schema.Struct({ kind: Schema.Literal("sites"), input: LibrarySitesMutation }),
   Schema.Struct({ kind: Schema.Literal("api-workspace"), input: LibraryApiRequest }),
   Schema.Struct({ kind: Schema.Literal("save-workstream"), input: LibrarySaveWorkstream }),
 ]);

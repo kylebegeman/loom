@@ -3,11 +3,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { TestClock } from "effect/testing";
 import { LibraryError, SitesError } from "@t3tools/contracts/fork";
 import * as LibraryService from "../project-library/LibraryService.ts";
 import * as SitesService from "./SitesService.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 
 const snapshot = {
   schemaVersion: 1,
@@ -55,6 +57,8 @@ function fixture(
     manager?: boolean;
     archived?: boolean;
     missing?: boolean;
+    remote?: boolean;
+    unavailable?: boolean;
   } = {},
 ) {
   const requests: Array<{ url: string; method: string; authorization: string | undefined }> = [];
@@ -81,6 +85,30 @@ function fixture(
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(HttpClient.HttpClient, http),
+        Layer.mock(LibraryConnectionService)({
+          current: Effect.succeed(
+            options.unavailable
+              ? { kind: "unavailable" }
+              : options.remote
+                ? {
+                    kind: "remote",
+                    origin: "https://library.example.test",
+                    credential: null,
+                    endpoint: (path) => `https://library.example.test${path}`,
+                    send: () => Effect.die("Use the managed connection"),
+                  }
+                : { kind: "authority" },
+          ),
+          send: (request) =>
+            http
+              .execute(
+                HttpClientRequest.setUrl(
+                  request,
+                  new URL(request.url, "https://library.example.test").toString(),
+                ),
+              )
+              .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
+        }),
         Layer.mock(LibraryService.LibraryService, {
           project: ({ projectId }) =>
             options.missing
@@ -153,6 +181,51 @@ it.effect("unconfigured servers remain usable and perform no external reads", ()
     expect(f.requests).toHaveLength(0);
   }).pipe(Effect.provide(f.layer));
 });
+it.effect.each([
+  {},
+  {
+    LOOM_IDENTITY_ISSUER: "https://local.example.test",
+    LOOM_SITES_CLIENT_ID: "local-reader",
+    LOOM_SITES_CLIENT_SECRET: "local-secret",
+  },
+])(
+  "uses the enrolled Library for Sites reads regardless of local integration credentials",
+  (env) => {
+    const f = fixture({
+      env,
+      remote: true,
+      payload: { configured: true, managementConfigured: true, snapshot },
+    });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      expect(yield* service.snapshot).toEqual({
+        configured: true,
+        managementConfigured: true,
+        snapshot,
+      });
+      expect(f.requests.map((r) => r.url)).toEqual([
+        "https://library.example.test/api/loom/library/sites/read",
+      ]);
+      expect(f.requests.every((r) => r.authorization === undefined)).toBe(true);
+    }).pipe(Effect.provide(f.layer));
+  },
+);
+it.effect(
+  "reads Library analytics and refuses unavailable enrollment without local fallback",
+  () => {
+    const f = fixture({ env: {}, remote: true, payload: analytics });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      expect(yield* service.analytics({ siteId: "portfolio" })).toEqual(analytics);
+      const unavailable = fixture({ unavailable: true });
+      yield* Effect.gen(function* () {
+        const local = yield* SitesService.SitesService;
+        expect((yield* Effect.flip(local.snapshot)).stage).toBe("authentication");
+        expect(unavailable.requests).toHaveLength(0);
+      }).pipe(Effect.provide(Layer.fresh(unavailable.layer)));
+    }).pipe(Effect.provide(f.layer));
+  },
+);
 it.effect("blank reader secrets are unconfigured and never sent to the issuer", () => {
   const f = fixture({
     env: {
