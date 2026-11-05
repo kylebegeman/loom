@@ -73,6 +73,30 @@ export const SitesSnapshot = Schema.Struct({
 });
 export type SitesSnapshot = typeof SitesSnapshot.Type;
 export const SiteAnalytics = Schema.Struct({
+  product: Schema.optionalKey(
+    Schema.Struct({
+      events: count,
+      dailyInstallations: count,
+      lastEventAt: Schema.NullOr(Schema.String),
+      since: Schema.String,
+      channel: Schema.String,
+      retentionDays: count,
+      byDay: Schema.Array(
+        Schema.Struct({ day: Schema.String, events: count, installations: count }),
+      ),
+      byEvent: Schema.Array(
+        Schema.Struct({ name: text, outcome: text, count, installations: count }),
+      ),
+      byCommand: Schema.Array(
+        Schema.Struct({ command: text, outcome: text, count, averageDurationMS: count }),
+      ),
+      byPlatform: Schema.Array(Schema.Struct({ platform: text, count })),
+      bySurface: Schema.Array(Schema.Struct({ surface: text, count })),
+      byVersion: Schema.Array(Schema.Struct({ version: text, count })),
+      byFeatureGroup: Schema.Array(Schema.Struct({ featureGroup: text, count })),
+      byStack: Schema.Array(Schema.Struct({ stack: text, count })),
+    }),
+  ),
   siteId: SiteId,
   lastEventAt: Schema.NullOr(Schema.String),
   days: count,

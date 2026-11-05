@@ -48,6 +48,7 @@ export function SiteTraffic({
   const ratios = siteTrafficRatios(analytics);
   return (
     <View className="gap-5 p-4">
+      <ProductUsage analytics={analytics} color={color} />
       <View className="flex-row">
         <Figure label="Page views" value={analytics.pageviews} first />
         <Figure label="Visitors" value={analytics.visitors} />
@@ -302,6 +303,95 @@ export function SiteTrafficSkeleton() {
         <View className="h-7 w-full rounded-md bg-row-hover" />
         <View className="h-7 w-3/4 rounded-md bg-row-hover" />
       </View>
+    </View>
+  );
+}
+
+function ProductUsage({
+  analytics,
+  color,
+}: {
+  readonly analytics: SiteAnalytics;
+  readonly color: string;
+}) {
+  const product = analytics.product;
+  if (!product)
+    return analytics.siteId === "corbelo" ? (
+      <View className="gap-2">
+        <Text className="text-sm font-t3-medium text-foreground">Developer usage</Text>
+        <Text className="text-xs text-foreground-muted">
+          Reporting is unavailable on this collector or Library version.
+        </Text>
+      </View>
+    ) : null;
+  const rows = [
+    ...product.byCommand.map((row) => ({
+      key: `command:${row.command}:${row.outcome}`,
+      label: `${row.command} · ${row.outcome} · ${row.averageDurationMS} ms average`,
+      value: row.count,
+    })),
+    ...product.byPlatform.map((row) => ({
+      key: `platform:${row.platform}`,
+      label: `Platform · ${row.platform}`,
+      value: row.count,
+    })),
+    ...product.byEvent.map((row) => ({
+      key: `event:${row.name}:${row.outcome}`,
+      label: `${row.name} · ${row.outcome}`,
+      value: row.count,
+    })),
+    ...product.bySurface.map((row) => ({
+      key: `surface:${row.surface}`,
+      label: `Surface · ${row.surface}`,
+      value: row.count,
+    })),
+    ...product.byVersion.map((row) => ({
+      key: `version:${row.version}`,
+      label: `Version · ${row.version}`,
+      value: row.count,
+    })),
+    ...product.byFeatureGroup.map((row) => ({
+      key: `feature:${row.featureGroup}`,
+      label: `Feature group · ${row.featureGroup}`,
+      value: row.count,
+    })),
+    ...product.byStack.map((row) => ({
+      key: `stack:${row.stack}`,
+      label: `Stack · ${row.stack}`,
+      value: row.count,
+    })),
+  ];
+  return (
+    <View className="gap-3 rounded-lg border border-border p-3">
+      <Text className="text-sm font-t3-medium text-foreground">Developer usage</Text>
+      <Text className="text-xs text-foreground-muted">
+        Optional anonymous {product.channel} activity. {product.retentionDays}-day retention, daily
+        installation counts, no account linking or cross-day tracking.
+      </Text>
+      <Text className="text-sm text-foreground">
+        {formatCount(product.events)} events · {formatCount(product.dailyInstallations)} daily
+        installations summed
+      </Text>
+      <RankedList
+        title="Daily usage (UTC)"
+        empty="No opted-in usage received in this window."
+        color={color}
+        rows={product.byDay.map((row) => ({
+          key: row.day,
+          label: `${row.day} · ${row.installations} daily installations`,
+          value: row.events,
+        }))}
+      />
+      <RankedList
+        title="Operations and breakdowns"
+        empty="No developer operations in this window."
+        color={color}
+        rows={rows}
+      />
+      <Text className="text-xs text-foreground-muted">
+        Client-reported activity, independent of purchase and license records. These counts do not
+        identify distinct developers or projects.
+      </Text>
     </View>
   );
 }

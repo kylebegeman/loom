@@ -713,6 +713,14 @@ show live front pages on the Sites cards, turn on **Display** > **Live
 previews**. It is off by default because every card's load counts as a visit
 too.
 
+Loom Sites is the primary reporting and management interface. The older Begam.in
+admin uses the same backend data and remains available for diagnostics and recovery.
+For Corbelo, **Traffic → Developer usage** shows optional anonymous command counts,
+outcomes, average durations, versions, platforms and feature groups. Daily installation
+counts reset each UTC day; they do not identify people or measure individual retention.
+Purchases and license totals remain in Corbelo's protected operator view, linked there.
+An older collector or Library shows usage as unavailable until it is updated.
+
 Register and edit sites directly in Loom. Each site belongs to at least one
 Library project; project pages link back to their sites. Register shared
 services on the **Services** tab, link them to sites, and add HTTPS endpoint

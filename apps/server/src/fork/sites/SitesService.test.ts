@@ -36,6 +36,22 @@ const analytics = {
 it.effect("returns attribution and audience breakdowns without discarding API fields", () => {
   const payload = {
     ...analytics,
+    product: {
+      events: 4,
+      dailyInstallations: 3,
+      lastEventAt: null,
+      since: "2026-10-06",
+      channel: "production",
+      retentionDays: 90,
+      byCommand: [],
+      byPlatform: [],
+      byDay: [{ day: "2026-11-05", events: 4, installations: 3 }],
+      byEvent: [{ name: "project.created", outcome: "ok", count: 4, installations: 3 }],
+      bySurface: [{ surface: "cli", count: 4 }],
+      byVersion: [{ version: "1.0.12", count: 4 }],
+      byFeatureGroup: [],
+      byStack: [],
+    },
     referrers: [{ referrer_host: "example.com", pageviews: 5 }],
     sources: [{ source: "x", medium: "social", campaign: "launch", pageviews: 4 }],
     countries: [{ country: "US", pageviews: 5 }],
