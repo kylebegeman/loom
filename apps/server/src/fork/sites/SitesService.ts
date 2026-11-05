@@ -177,10 +177,11 @@ const make = Effect.gen(function* () {
       )
       .pipe(
         Effect.timeout("30 seconds"),
-        Effect.mapError((cause) => new SitesError({ stage: "read", cause })),
+        Effect.mapError((cause) => new SitesError({ stage: "library-connection", cause })),
       );
     if (response.status === 401 || response.status === 403)
-      return yield* new SitesError({ stage: "authentication" });
+      return yield* new SitesError({ stage: "library-connection" });
+    if (response.status === 404) return yield* new SitesError({ stage: "library-update" });
     return yield* HttpClientResponse.filterStatusOk(response).pipe(
       Effect.flatMap((response) => response.json),
       Effect.flatMap(Schema.decodeUnknownEffect(schema)),
@@ -192,7 +193,7 @@ const make = Effect.gen(function* () {
   const isRemote = connection.current.pipe(
     Effect.flatMap((current) => {
       if (current.kind === "unavailable")
-        return Effect.fail(new SitesError({ stage: "authentication" }));
+        return Effect.fail(new SitesError({ stage: "library-connection" }));
       return Effect.succeed(current.kind === "remote");
     }),
   );

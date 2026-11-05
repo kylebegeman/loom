@@ -20,7 +20,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import * as SitesService from "./SitesService.ts";
-const failure = Schema.Union([SitesError, OrchestratorMcpFailure]);
+const failure = Schema.Union([SitesError, LibraryError, OrchestratorMcpFailure]);
 const isSitesError = Schema.is(SitesError);
 export const SitesToolkit = Toolkit.make(
   Tool.make("loom_site_save", {
@@ -57,7 +57,7 @@ export const SitesToolkit = Toolkit.make(
 
   Tool.make("loom_sites", {
     description:
-      "Read the registered sites, services and endpoint status from this server's personal API integration.",
+      "Read sites, services and endpoint status through this computer's enrolled Library. Sites credentials stay on the Library. If an older work computer reports unconfigured, check its Loom version before changing the existing Library connections.",
     success: SitesState,
     failure,
   }).annotate(Tool.Readonly, true),
@@ -97,11 +97,7 @@ export const sitesHandlers = McpToolAccess.toLayer(
                 )
               : Effect.fail(new LibraryError({ reason: "blocked" })),
         ),
-      ).pipe(
-        Effect.mapError((cause) =>
-          isSitesError(cause.cause) ? cause.cause : new SitesError({ stage: "write", cause }),
-        ),
-      );
+      ).pipe(Effect.mapError((cause) => (isSitesError(cause.cause) ? cause.cause : cause)));
     });
     return {
       loom_site_save: McpToolAccess.writesEnvironment((input, check) =>

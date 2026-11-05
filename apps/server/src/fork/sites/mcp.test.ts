@@ -44,6 +44,7 @@ it.effect.each(cases)(
         const release = yield* Deferred.make<void>();
         let writes = 0;
         let calls = 0;
+        let managementError: LibraryError | null = null;
         const write = (authorize?: Effect.Effect<void, SitesError>) =>
           Effect.gen(function* () {
             calls += 1;
@@ -65,11 +66,13 @@ it.effect.each(cases)(
           Effect.provide(
             Layer.mock(LibraryManagement)({
               sitesAgent: (_, _caller, authorize) =>
-                write(
-                  authorize?.pipe(
-                    Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
-                  ),
-                ).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
+                managementError
+                  ? Effect.fail(managementError)
+                  : write(
+                      authorize?.pipe(
+                        Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
+                      ),
+                    ).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
             }),
           ),
         );
@@ -140,6 +143,18 @@ it.effect.each(cases)(
         const allowed = yield* invoke(scope);
         expect(allowed[0]?.result).toEqual(snapshot);
         expect(writes).toBe(1);
+        for (const detail of [
+          "Update Loom on the Library to manage Sites from agents. Keep this computer enrolled.",
+          "This computer's Library enrollment has expired or been revoked. Sign in to the existing Library connection.",
+        ]) {
+          managementError = new LibraryError({ reason: "blocked", detail });
+          expect(yield* invoke(scope).pipe(Effect.flip)).toMatchObject({
+            _tag: "LibraryError",
+            reason: "blocked",
+            detail,
+          });
+          expect(writes).toBe(1);
+        }
       }),
     ),
 );

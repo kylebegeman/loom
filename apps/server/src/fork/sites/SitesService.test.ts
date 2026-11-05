@@ -236,7 +236,7 @@ it.effect(
       const unavailable = fixture({ unavailable: true });
       yield* Effect.gen(function* () {
         const local = yield* SitesService.SitesService;
-        expect((yield* Effect.flip(local.snapshot)).stage).toBe("authentication");
+        expect((yield* Effect.flip(local.snapshot)).stage).toBe("library-connection");
         expect(unavailable.requests).toHaveLength(0);
       }).pipe(Effect.provide(Layer.fresh(unavailable.layer)));
     }).pipe(Effect.provide(f.layer));
@@ -292,6 +292,9 @@ it.effect.each([
   ["token refusal", { tokenStatus: 401 }, "authentication"],
   ["API refusal", { readStatus: 403 }, "authentication"],
   ["API failure", { readStatus: 503 }, "read"],
+  ["older Library", { env: {}, remote: true, readStatus: 404 }, "library-update"],
+  ["Library sign-in refused", { env: {}, remote: true, readStatus: 401 }, "library-connection"],
+  ["Library access refused", { env: {}, remote: true, readStatus: 403 }, "library-connection"],
   ["invalid response", { payload: { sites: [] } }, "read"],
 ] as const)("handles %s without exposing credentials", ([, options, stage]) => {
   const f = fixture(options);

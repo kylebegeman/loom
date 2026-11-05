@@ -184,6 +184,8 @@ export const SitesState = Schema.Struct({
 });
 export class SitesError extends Schema.TaggedError<SitesError>()("SitesError", {
   stage: Schema.Literals([
+    "library-connection",
+    "library-update",
     "configuration",
     "authentication",
     "read",
@@ -194,17 +196,21 @@ export class SitesError extends Schema.TaggedError<SitesError>()("SitesError", {
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
-    return this.stage === "configuration"
-      ? "Sites is not configured on this Library server."
-      : this.stage === "authentication"
-        ? "Sites could not sign in to the personal API. Check the Library server's integration."
-        : this.stage === "project"
-          ? "Choose existing projects from this Library before saving the site."
-          : this.stage === "validation"
-            ? "Check the site settings. Use exact HTTPS origins, unique analytics origins, and registered services. Checks must use their service's origin."
-            : this.stage === "write"
-              ? "Sites could not save to the personal API. Refresh before trying again."
-              : "Sites could not load from the personal API. Try refreshing.";
+    return this.stage === "library-connection"
+      ? "Sites cannot use this computer's enrolled Library connection. Check Settings > Connections on this computer. Keep the existing Sites connections on the Library."
+      : this.stage === "library-update"
+        ? "Update Loom on the Library to use Sites from agents. Keep this computer enrolled and keep the existing Sites connections."
+        : this.stage === "configuration"
+          ? "Sites is not configured on this Library server."
+          : this.stage === "authentication"
+            ? "Sites could not sign in to the personal API. Check the Library server's integration."
+            : this.stage === "project"
+              ? "Choose existing projects from this Library before saving the site."
+              : this.stage === "validation"
+                ? "Check the site settings. Use exact HTTPS origins, unique analytics origins, and registered services. Checks must use their service's origin."
+                : this.stage === "write"
+                  ? "Sites could not save to the personal API. Refresh before trying again."
+                  : "Sites could not load from the personal API. Try refreshing.";
   }
 }
 export const SITES_WS_METHODS = {
