@@ -19,6 +19,12 @@ tears down the native Search field and returns it to the top header on Back.
 Split and hinge layouts retain their column visibility policy. The patch includes
 source, distributed JavaScript and declarations. Archive metadata identifies the
 original fork source, and pnpm records the local change in the patch and lockfile.
+Scroll-view registration retries after attachment or child mounting until both
+the scroll view and its seeking ancestor exist. A failed first attempt must not
+mark it registered, since retained tab content can mount before native containment
+is ready. A lazily mounted split host also invalidates its enclosing tab controller's
+layout after attachment. Without that update, UIKit can omit the top tab bar from
+the new split columns' safe area until another navigation change.
 Run `vp i` after changing the patch, then rebuild the native client. Stop and
 restart Metro with `vp run dev:client --clear` from `apps/mobile` before
 loading that client. A running Metro resolver can retain the previous package

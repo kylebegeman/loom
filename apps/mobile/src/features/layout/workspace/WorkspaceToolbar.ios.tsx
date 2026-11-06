@@ -5,6 +5,7 @@ import { useActiveNewTask } from "../../../state/active-new-task";
 import { Toolbar } from "../../../components/ui/Toolbar";
 import { useIsFocused } from "@react-navigation/native";
 import { use, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { Platform } from "react-native";
 import { isDuoDevice } from "../../../lib/device-type";
 import { useDeviceType } from "../../../native/native-layout-metrics";
 import type { SearchBarCommands } from "react-native-screens";
@@ -106,9 +107,13 @@ export function WorkspaceToolbar(props: {
     return true;
   };
   const cancelSearch = () => {
+    if (!acceptsNativeSearchEvent({ globalSearch, focused, tabActive: isTabActive(selectedTab) }))
+      return;
     workspace.recordScrollOffset(selectedTab, tab.searchEntryOffset);
     workspace.dispatch({ type: "cancel", tab: selectedTab });
-    if (globalSearch) selectTab(workspace.state.searchReturnTab);
+    // UIKit restores UISearchTab on cancel; RNS uses that tab type from iOS 26.1.
+    if (globalSearch && Number.parseFloat(String(Platform.Version)) < 26.1)
+      selectTab(workspace.state.searchReturnTab);
   };
   const searchFocused = () => {
     return tab.searchMode === "resting"
