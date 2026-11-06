@@ -27,9 +27,7 @@ import { loadLibraryIdentity } from "./libraryIdentity";
 import { useLibraryAuthorityId } from "./libraryState";
 
 const minuteAtom = Atom.make((get) => {
-  // @effect-diagnostics-next-line globalDate:off -- Client clock for the sign-in's end time.
   const now = Date.now();
-  // @effect-diagnostics-next-line globalTimers:off -- Atom-owned tick is disposed on refresh and unmount.
   const timer = setTimeout(() => get.refreshSelf(), 60_000 - (now % 60_000));
   get.addFinalizer(() => clearTimeout(timer));
   return now;

@@ -1685,3 +1685,4 @@ apps/server/src/device/SshDeviceHost.ts	brand	1
 packages/shared/package.json	-	./fork/relayJwt
 apps/server/src/device/DeviceService.test.ts	brand	2
 apps/web/src/connection/storage.browser.test.ts	library	1
+apps/web/src/components/CommandPalette.composition.browser.test.tsx	file-placement	1
