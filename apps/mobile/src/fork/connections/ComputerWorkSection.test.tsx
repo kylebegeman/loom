@@ -24,7 +24,7 @@ vi.mock("@effect/atom-react", () => ({
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: harness.navigate }),
 }));
-vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+vi.mock("../../features/layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => harness.selectDetail,
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "request" }));

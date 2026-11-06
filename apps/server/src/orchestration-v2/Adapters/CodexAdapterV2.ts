@@ -1,5 +1,9 @@
 // fork: server-weight
-import { makeSwitchboardCodexCatalog } from "../../fork/switchboard/serviceTier.ts";
+// fork: switchboard
+import {
+  codexAdvertisesUltrafast,
+  makeSwitchboardCodexArgs,
+} from "../../fork/switchboard/serviceTier.ts";
 import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
@@ -1156,7 +1160,8 @@ function codexUsageLimitError(
 
 /**
  * ChatGPT sharing reports its own reason inside Codex's generic turn error, so
- * the code it names replaces Codex's, and clients pick a recovery from it.
+ * the code it names replaces Codex's, and clients pick a recovery from it. Its
+ * allowance limits get the usage-limit recovery; other sharing failures keep their class.
  */
 function withCodexManagedFailure(
   failure: OrchestrationV2ProviderFailure,
@@ -1165,7 +1170,22 @@ function withCodexManagedFailure(
   const managed = classifyCodexManagedError(nativeError);
   return managed === undefined
     ? failure
-    : { ...failure, message: managed.message, code: managed.code };
+    : {
+        ...failure,
+        message: managed.message,
+        code: managed.code,
+        ...(managed.usageLimit ? { class: "usage_limit" } : {}),
+      };
+}
+
+function failureResetAt(
+  failure: OrchestrationV2ProviderFailure,
+  snapshot: CodexRateLimitSnapshot | undefined,
+) {
+  // Sharing caps have no reset timestamp in the ordinary Codex allowance snapshot.
+  return classifyCodexManagedError(failure.code)?.usageLimit
+    ? null
+    : codexUsageLimitResetAt(snapshot);
 }
 
 interface ActiveCodexTurnContext {
@@ -1576,12 +1596,11 @@ function isSensitiveCodexProtocolKey(key: string): boolean {
   );
 }
 
-const encodeCodexConfigString = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
-
 export const layerAppServerClientFactory: Layer.Layer<
   CodexAppServerClientFactory,
   never,
   | ChildProcessSpawner.ChildProcessSpawner
+  // fork: switchboard
   | FileSystem.FileSystem
   | Path.Path
   | PortScanner.PortDiscovery
@@ -1593,7 +1612,9 @@ export const layerAppServerClientFactory: Layer.Layer<
     const { native: nativeEventLogger } = yield* ProviderEventLoggers.ProviderEventLoggers;
     const agentScope = yield* AgentScope;
     const portDiscovery = yield* PortScanner.PortDiscovery;
+    // fork: switchboard
     const fileSystem = yield* FileSystem.FileSystem;
+    // fork: switchboard
     const path = yield* Path.Path;
 
     return CodexAppServerClientFactory.of({
@@ -1603,36 +1624,28 @@ export const layerAppServerClientFactory: Layer.Layer<
           ...codexAppServerEnvironment(input.environment),
           ...(input.settings.homePath ? { CODEX_HOME: input.settings.homePath } : {}),
         };
-        const catalogArgument =
-          input.switchboardArgs && input.switchboardArgs.length > 0
-            ? yield* Effect.gen(function* () {
-                const home =
-                  input.settings.homePath ||
-                  environment.CODEX_HOME ||
-                  path.join(yield* HostProcess.HomeDirectory, ".codex");
-                const file = yield* makeSwitchboardCodexCatalog(home).pipe(
-                  Effect.provideService(FileSystem.FileSystem, fileSystem),
-                  Effect.provideService(Path.Path, path),
-                );
-                return file
-                  ? `model_catalog_json=${yield* encodeCodexConfigString(file)}`
-                  : undefined;
-              }).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ProviderAdapter.ProviderAdapterOpenSessionError({
-                      driver: CODEX_PROVIDER,
-                      providerSessionId: input.providerSessionId,
-                      cause,
-                    }),
-                ),
-              )
-            : undefined;
+        // fork: switchboard
+        const launchSwitchboardArgs = yield* makeSwitchboardCodexArgs(
+          input.switchboardArgs,
+          input.settings.homePath,
+          environment,
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapter.ProviderAdapterOpenSessionError({
+                driver: CODEX_PROVIDER,
+                providerSessionId: input.providerSessionId,
+                cause,
+              }),
+          ),
+        );
         const command = yield* makeCodexAppServerSpawnCommand({
           command: input.settings.binaryPath || "codex",
           args: codexAppServerArgs(
             resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
-            [...(input.switchboardArgs ?? []), ...(catalogArgument ? ["-c", catalogArgument] : [])], // fork: switchboard
+            launchSwitchboardArgs, // fork: switchboard
           ),
           env: environment,
           threadId: input.threadId,
@@ -1768,8 +1781,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const readMcpSession = (threadId: ThreadId | null) =>
-    // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
-    threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
+    threadId === null ? Effect.undefined : mcpSessions.read(threadId);
   const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
   const continuationRequests = adapterOptions.continuationRequests;
 
@@ -4591,8 +4603,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const previous = yield* Ref.getAndUpdate(rateLimitSnapshot, (previous) =>
               mergeCodexRateLimits(previous, payload.rateLimits),
             );
-            const resetAt = codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot));
+            const snapshot = yield* Ref.get(rateLimitSnapshot);
             for (const item of (yield* Ref.get(limitedTurnItems)).values()) {
+              const resetAt = failureResetAt(item.failure, snapshot);
               if (resetAt === null || item.failure.resetAt != null) continue;
               const updated = {
                 ...item,
@@ -5945,7 +5958,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   failure.class === "usage_limit"
                     ? {
                         ...failure,
-                        resetAt: codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot)),
+                        resetAt: failureResetAt(failure, yield* Ref.get(rateLimitSnapshot)),
                       }
                     : failure,
                 ...(input.providerRetry === undefined
@@ -5985,7 +5998,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     ...event.failure,
                     resetAt:
                       event.failure.resetAt ??
-                      codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot)),
+                      failureResetAt(event.failure, yield* Ref.get(rateLimitSnapshot)),
                   },
                 }
               : event;
@@ -6890,30 +6903,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             codexInput: ReadonlyArray<CodexSchema.V2TurnStartParams__UserInput>,
           ) {
             const threadId = yield* getNativeThreadId(turnInput.providerThread);
+            // fork: switchboard
             if (
               switchboardRouting.modelProvider &&
               getModelSelectionStringOptionValue(turnInput.modelSelection, "serviceTier") ===
-                "ultrafast"
-            ) {
-              let cursor: string | null = null;
-              let advertised = false;
-              do {
-                const page: CodexSchema.V2ModelListResponse = yield* client.request("model/list", {
-                  includeHidden: true,
-                  ...(cursor ? { cursor } : {}),
-                });
-                advertised = page.data.some(
-                  (model) =>
-                    model.model === turnInput.modelSelection.model &&
-                    model.serviceTiers?.some((tier) => tier.id === "ultrafast"),
-                );
-                cursor = page.nextCursor ?? null;
-              } while (!advertised && cursor);
-              if (!advertised)
-                return yield* toProtocolError(
-                  "Codex cannot send Ultrafast with its current model catalog. Refresh Codex's native model catalog and reconnect this provider, or select Fast.",
-                );
-            }
+                "ultrafast" &&
+              !(yield* codexAdvertisesUltrafast(client, turnInput.modelSelection.model))
+            )
+              return yield* toProtocolError(
+                "Codex cannot send Ultrafast with its current model catalog. Refresh Codex's native model catalog and reconnect this provider, or select Fast.",
+              );
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const turnStartParams = yield* buildCodexTurnStartParams({
               nativeThreadId: threadId,

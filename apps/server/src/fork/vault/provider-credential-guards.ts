@@ -287,6 +287,10 @@ export const guardVaultProviderCredentials = Effect.fn(
         guardAdapter(adapter.openSession)(...args).pipe(Effect.map(guardRuntime)),
     },
     textGeneration: {
+      generateTranscriptionPostProcessing: guardGeneration(
+        generation.generateTranscriptionPostProcessing,
+        "generateTranscriptionPostProcessing",
+      ),
       generateCommitMessage: guardGeneration(
         generation.generateCommitMessage,
         "generateCommitMessage",

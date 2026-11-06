@@ -161,6 +161,7 @@ export interface EnvironmentThreadShell {
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly pendingRuntimeRequestAt?: string | null; // fork: bots
+  readonly pendingUserInputAt?: string | null;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
   /** Guest messages waiting for the owner to send or dismiss. */
   readonly pendingGuestMessageCount?: number;
@@ -319,6 +320,10 @@ export function presentThreadShell(
     hasPendingUserInput: thread.pendingRuntimeRequest?.kind === "user_input",
     // fork: bots
     pendingRuntimeRequestAt: nullableIso(thread.pendingRuntimeRequest?.createdAt ?? null),
+    pendingUserInputAt:
+      thread.pendingRuntimeRequest?.kind === "user_input"
+        ? iso(thread.pendingRuntimeRequest.createdAt)
+        : null,
     pendingSubagentRequest,
     pendingGuestMessageCount: thread.pendingGuestMessageCount ?? 0,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,

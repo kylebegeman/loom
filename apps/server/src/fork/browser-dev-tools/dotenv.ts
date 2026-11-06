@@ -18,13 +18,13 @@ export function updateDotenv(source: string, variables: readonly ApiVariable[]):
   for (const variable of variables) {
     const { key, value } = variable;
     if (!/^[A-Za-z_][A-Za-z\d_]*$/.test(key) || value.includes("\0"))
-      throw new HoppscotchInputError("invalid-format");
+      throw HoppscotchInputError.new("invalid-format");
     if (values[key] === value) continue;
     const quote = ["'", "`", '"'].find((q) => !value.includes(q));
-    if (!quote) throw new HoppscotchInputError("invalid-format");
+    if (!quote) throw HoppscotchInputError.new("invalid-format");
     const text = `${quote}${value}${quote}`;
     if (NodeUtil.parseEnv(`${key}=${text}\n`)[key] !== value)
-      throw new HoppscotchInputError("invalid-format");
+      throw HoppscotchInputError.new("invalid-format");
     const item = items.findLast((i) => i.key === key);
     const valueRange = item?.value && "data" in item.value ? location(item.value.data) : null;
     if (valueRange) {
@@ -32,12 +32,12 @@ export function updateDotenv(source: string, variables: readonly ApiVariable[]):
       edits.push({ ...valueRange, text: text + trailing });
     } else if (item) {
       const range = location(item.data);
-      if (!range) throw new HoppscotchInputError("invalid-format");
+      if (!range) throw HoppscotchInputError.new("invalid-format");
       const section = source.slice(range.start, range.end);
       const match = new RegExp(`^[\\t ]*(?:export[\\t ]+)?${key}[\\t ]*=[\\t ]*`, "m").exec(
         section,
       );
-      if (!match) throw new HoppscotchInputError("invalid-format");
+      if (!match) throw HoppscotchInputError.new("invalid-format");
       const start = range.start + match.index + match[0].length;
       edits.push({ start, end: start, text });
     } else additions.push(`${key}=${text}`);

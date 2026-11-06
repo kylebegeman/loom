@@ -34,9 +34,7 @@ export class BrokerRunner extends Context.Service<
       origin: string,
       invitationFile: string,
     ) => Effect.Effect<{ machineId: string; state: "awaiting-approval" }, Failure>;
-    readonly check: (
-      directory: string,
-    ) => Effect.Effect<typeof VaultBrokerHeartbeatResult.Type, Failure>;
+    readonly check: (directory: string) => Effect.Effect<VaultBrokerHeartbeatResult, Failure>;
   }
 >()("t3/fork/vault/BrokerRunner") {}
 const decodeUnknownEffectInvitation = Schema.decodeUnknownEffect(VaultBrokerInvitation);

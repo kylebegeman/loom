@@ -1,3 +1,4 @@
+import * as TestClock from "effect/testing/TestClock"; // fork: library
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -66,6 +67,7 @@ describe("offline database caches", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const now = Date.UTC(2026, 9, 15);
+          yield* TestClock.setTime(now);
           using _now = vi.spyOn(Date, "now").mockReturnValue(now);
           const sqlite = yield* Effect.promise(sqliteDatabase);
           const database = yield* MobileDatabase.make;

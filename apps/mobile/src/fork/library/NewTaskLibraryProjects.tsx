@@ -1,5 +1,5 @@
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import {
   libraryHoldsLocalRefs,
   supportsLoomFeature,

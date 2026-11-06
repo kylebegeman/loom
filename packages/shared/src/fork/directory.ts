@@ -6,13 +6,15 @@ import {
   LoomOsIdentityPayload,
   type LoomOsSignedIdentity,
 } from "@t3tools/contracts/fork";
+import type * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
+import { verifyRelayJwt } from "./relayJwt.ts";
 import * as Base64 from "effect/encoding/Base64";
 import * as Hex from "effect/encoding/Hex";
 import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { RelayJwtError, signRelayJwt, verifyRelayJwt } from "../relayJwt.ts";
+import { RelayJwtError, signRelayJwt } from "../relayJwt.ts";
 
 /** Distinct from every relay typ, so neither kind of proof can be replayed as the other. */
 export const DIRECTORY_REPORT_TYP = "loom-directory-report+jwt";
@@ -126,7 +128,7 @@ export const signDirectoryReport = Effect.fn("DirectoryReport.sign")(function* (
   /** The directory's URL; only its origin is signed. */
   readonly audience: string;
   readonly nowEpochSeconds: number;
-}): Effect.fn.Return<string, DirectoryReportError> {
+}): Effect.fn.Return<string, DirectoryReportError, Signature.Signature> {
   const audience = directoryAudience(input.audience);
   if (audience === null) {
     return yield* new DirectoryReportError({ operation: "sign", reason: "invalid-audience" });
@@ -162,9 +164,7 @@ export const signDirectoryReport = Effect.fn("DirectoryReport.sign")(function* (
 });
 
 const isIssuerClaimFailure = (error: RelayJwtError) =>
-  Predicate.isObject(error.cause) &&
-  Predicate.hasProperty(error.cause, "claim") &&
-  error.cause.claim === "iss";
+  RelayJwtError.diagnosticCode(error).startsWith("ClaimValidationFailed.iss.");
 
 /**
  * Verifies a report token against the environment's public key (base64 DER SPKI) and the
@@ -177,7 +177,7 @@ export function verifyDirectoryReport(input: {
   /** This directory's URL; only its origin is compared. */
   readonly audience: string;
   readonly nowEpochSeconds: number;
-}): Effect.Effect<DirectoryEnvironmentReport, DirectoryReportError> {
+}): Effect.Effect<DirectoryEnvironmentReport, DirectoryReportError, Signature.Signature> {
   const fail = (reason: DirectoryReportError["reason"], diagnostic?: string) =>
     new DirectoryReportError({ operation: "verify", reason, diagnostic });
   return Effect.gen(function* () {

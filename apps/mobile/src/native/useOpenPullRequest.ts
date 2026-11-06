@@ -1,12 +1,13 @@
 import { useNavigation, useRoute, StackActions } from "@react-navigation/native";
 import { nativePullRequestDestination } from "../lib/pullRequestNavigation";
 import { Platform } from "react-native";
-import { useSelectWorkspaceDetail } from "../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../features/layout/workspace/useSelectWorkspaceDetail";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useProjects, useThreadShell } from "../state/entities";
 import { openThreadUrlExternally } from "../fork/preview-links/navigation"; // fork: preview-links
 import { appAtomRegistry } from "../state/atom-registry";
 import { environmentServerConfigsAtom } from "../state/server";
+import { withKnownPullRequestSummary } from "../state/use-thread-pr";
 
 type PullRequestContext = { readonly environmentId: string; readonly projectId: string };
 
@@ -19,10 +20,16 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
   return async (url: string, context: PullRequestContext | null) => {
     // Read at press time so a config push does not hand every link a new handler.
     const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
-    const params = nativePullRequestDestination(url, context, projects, (environmentId) =>
+    const destination = nativePullRequestDestination(url, context, projects, (environmentId) =>
       serverConfigs.has(environmentId),
     );
-    if (!params) return openThreadUrlExternally(context?.environmentId, url, "pull-request"); // fork: preview-links
+    if (!destination)
+      return openThreadUrlExternally(
+        context?.environmentId,
+        url,
+        "pull-request",
+      ); /* fork: preview-links */
+    const params = withKnownPullRequestSummary(destination);
     // Android shows one page at a time; iOS opens it over the current page, so Back returns.
     if (Platform.OS === "android") selectDetail({ name: "PullRequest", params });
     else if (replace) navigation.dispatch(StackActions.replace("PullRequest", params));

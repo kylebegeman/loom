@@ -1300,6 +1300,16 @@ starts. The workflows need these repository secrets:
   push the upstream workflow changes most merges carry. It expires; renew it when runs fail
   to push.
 
+When the Claude pool is exhausted, run the same integration and review locally on
+Dorothy with `LOOM_AGENT_PROVIDER=codex LOOM_RESOLVE_JOBS=1` exported. Codex uses
+`switchboard run codex` and the existing local credential broker, with
+`LOOM_CODEX_MODEL` defaulting to `gpt-6.1-sol`. Resolution and repair sessions use the
+workspace-write sandbox; independent reviews use read-only. Start from `origin/main`
+and use `integrate <tag> --pr --resolve`, `review-integration --fix`, then
+`merge-integration <branch>`. Keep the single resolver so sessions never edit the
+shared checkout concurrently. This does not grant the hosted CI credential Codex
+access or change the scheduled Claude workflow.
+
 The repository variable `LOOM_AUTO_MERGE` is `true`, which lets the workflow merge an
 integration pull request that passed its checks, and its review when it needed one. Set it
 to anything else and every pull request waits for `land` or `merge-integration`, and the

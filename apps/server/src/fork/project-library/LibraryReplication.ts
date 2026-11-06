@@ -38,6 +38,17 @@ import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import { isWithheldError } from "../deleted-history/deletedHistory.ts";
 
+class LibraryReplicationOperationError extends Schema.TaggedError<LibraryReplicationOperationError>()(
+  "LibraryReplicationOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Library Replication operation failed.";
+  }
+}
+
 export class LibraryReplication extends Context.Service<
   LibraryReplication,
   {
@@ -90,6 +101,7 @@ const encodeCopy = Schema.encodeEffect(Schema.fromJsonString(LibraryWorkingCopy)
 // Encoding stringifies separately: the schema's JSON step reports V8's string limit as an
 // invalid value, which would hide an oversized conversation behind a generic failure.
 const encodeArchiveJson = Schema.encodeEffect(archiveJson);
+const stringifyArchive = (value: Schema.Json) => JSON.stringify(value);
 const decodeArchive = Schema.decodeEffect(Schema.fromJsonString(archiveJson));
 const isLibraryError = Schema.is(LibraryError);
 const mapIo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -287,8 +299,7 @@ const make = Effect.gen(function* () {
     const json = yield* encodeArchiveJson(snapshot);
     // A history longer than V8 can hold in one string is larger than any outbox.
     const payload = yield* Effect.try({
-      // @effect-diagnostics-next-line preferSchemaOverJson:off - The schema's JSON step hides V8's string limit; see encodeArchiveJson.
-      try: () => JSON.stringify(json),
+      try: () => stringifyArchive(json),
       catch: (cause) =>
         new LibraryError({ reason: cause instanceof RangeError ? "storage-limit" : "io", cause }),
     }).pipe(
@@ -322,7 +333,10 @@ const make = Effect.gen(function* () {
         NodeSqliteClient.readOnly,
       ))[0];
       if (baseline !== undefined) {
-        const previous = yield* Effect.tryPromise(() => decompress(baseline.bytes)).pipe(
+        const previous = yield* Effect.tryPromise({
+          try: () => decompress(baseline.bytes),
+          catch: (cause) => new LibraryReplicationOperationError({ cause }),
+        }).pipe(
           Effect.flatMap((bytes) => decodeArchive(bytes.toString("utf8"))),
           Effect.orElseSucceed(() => null),
         );
@@ -698,7 +712,10 @@ const make = Effect.gen(function* () {
       const baselines = yield* Effect.forEach(payloads, (row, index) =>
         fullEntries[index]!.thread.summary.deleted === true
           ? Effect.succeed(null)
-          : Effect.tryPromise(() => compress(row.payload_json)),
+          : Effect.tryPromise({
+              try: () => compress(row.payload_json),
+              catch: (cause) => new LibraryReplicationOperationError({ cause }),
+            }),
       );
       // A cursor beyond this batch does not prove any later local entry was uploaded.
       yield* sql.withTransaction(

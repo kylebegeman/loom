@@ -110,14 +110,14 @@ export class LibraryPublisher extends Context.Service<
       input: typeof LibraryHistoryRead.Type,
     ) => Effect.Effect<LibraryThreadArchive, LibraryError>;
     readonly search: (
-      input: typeof LibrarySearchRequest.Type,
+      input: LibrarySearchRequest,
     ) => Effect.Effect<LibrarySearchResult, LibraryError>;
     readonly timeline: (
-      input: typeof LibraryTimelineRequest.Type,
+      input: LibraryTimelineRequest,
     ) => Effect.Effect<LibraryTimelinePage, LibraryError>;
     readonly launchCandidates: (
-      input: typeof LibraryLaunchCandidatesRequest.Type,
-    ) => Effect.Effect<typeof LaunchCandidatesResult.Type, LibraryError>;
+      input: LibraryLaunchCandidatesRequest,
+    ) => Effect.Effect<LaunchCandidatesResult, LibraryError>;
 
     readonly decisions: (
       input: LibraryDecisionsSearchInput,

@@ -48,7 +48,10 @@ vi.mock("../../state/use-atom-command", () => ({
 }));
 vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
 vi.mock("../../state/entities", () => ({ useProjects: () => [] }));
-vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
+vi.mock("../../lib/uuid", () => {
+  let next = 0;
+  return { uuidv4: () => `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}` };
+});
 vi.mock("./libraryProjectColors", () => ({ useLibraryProjectColorValue: () => () => "#000" }));
 vi.mock("./LibraryProfileSection", () => ({ LibraryProfileSection: () => null }));
 vi.mock("./LibraryFolderPicker", () => ({ LibraryFolderPicker: () => null }));

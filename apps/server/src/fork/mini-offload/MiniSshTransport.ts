@@ -29,14 +29,14 @@ const SSH_FAILURE_EXIT = 255;
 const HOST_KEY_FAILED = /^Host key verification failed\.\r?$/m;
 
 /** The cause of a transfer failure where SSH refused the worker's host key. Carries no SSH output. */
-export class HostKeyRejected extends Error {
-  constructor() {
-    super("SSH refused the worker's host key.");
-    this.name = "HostKeyRejected";
+export class HostKeyRejected extends Schema.TaggedError<HostKeyRejected>()("HostKeyRejected", {}) {
+  override get message(): string {
+    return "SSH refused the worker's host key.";
   }
 }
-export const isHostKeyRejected = (error: MiniOffloadError) =>
-  error.cause instanceof HostKeyRejected;
+const isHostKeyRejectedValue = Schema.is(HostKeyRejected);
+
+export const isHostKeyRejected = (error: MiniOffloadError) => isHostKeyRejectedValue(error.cause);
 const RPC_DEADLINE = Duration.seconds(120);
 // LoomOS gives a snapshot upload 1800 s, so wait a little longer to hear whether it accepted the job.
 // ServerAlive still ends a dead connection within a minute.

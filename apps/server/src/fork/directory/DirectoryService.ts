@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import { REACH_LIST_ROUTE, ReachLibraryListing, ReachLibraryError } from "@t3tools/contracts/fork";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -17,7 +18,7 @@ import {
   directoryPublicKeyFromPem,
   isDirectoryRouteUrl,
   keyFingerprint,
-  verifyDirectoryReport,
+  verifyDirectoryReport as verifyDirectoryReportEffect,
   verifyLoomOsIdentity,
 } from "@t3tools/shared/fork/directory";
 import * as Clock from "effect/Clock";
@@ -32,7 +33,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { HttpClientRequest } from "effect/http";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
+import { getOrCreateEnvironmentKeyPairFromSecretStore as getOrCreateEnvironmentKeyPairFromSecretStoreEffect } from "../../cloud/environmentKeys.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import {
@@ -136,6 +137,17 @@ const withReach = (
 };
 
 const make = Effect.gen(function* () {
+  const signature = yield* Signature.Signature;
+  const verifyDirectoryReport = (...args: Parameters<typeof verifyDirectoryReportEffect>) =>
+    verifyDirectoryReportEffect(...args).pipe(
+      Effect.provideService(Signature.Signature, signature),
+    );
+  const getOrCreateEnvironmentKeyPairFromSecretStore = (
+    ...args: Parameters<typeof getOrCreateEnvironmentKeyPairFromSecretStoreEffect>
+  ) =>
+    getOrCreateEnvironmentKeyPairFromSecretStoreEffect(...args).pipe(
+      Effect.provideService(Signature.Signature, signature),
+    );
   const authority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(Config.withDefault(false));
   // Reports are signed for the Library's public origin, the one its identity callback names.
   // A computer signs for its Library URL's origin, so that URL must be this public origin too.

@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, BearerConnectionTarget } from "../connection/model.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
@@ -67,7 +67,11 @@ it.effect.each(["unavailable", "invalid-response"] as const)(
           },
         } as unknown as RpcSession;
         const supervisor = {
-          target: { environmentId, label: "History recovery" },
+          target: new BearerConnectionTarget({
+            environmentId,
+            label: "History recovery",
+            connectionId: "fixture",
+          }),
           state: yield* SubscriptionRef.make({ ...AVAILABLE_CONNECTION_STATE, phase: "connected" }),
           session: yield* SubscriptionRef.make(Option.some(session)),
         } as EnvironmentSupervisor["Service"];

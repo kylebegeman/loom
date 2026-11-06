@@ -14,7 +14,7 @@ import {
 } from "../../components/ui/ScreenScrollView";
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { useCompactWorkspaceTabs } from "../../features/workspace/useSystemWorkspaceTabBar";
+import { useCompactWorkspaceTabs } from "../../features/layout/workspace/useSystemWorkspaceTabBar";
 import { cn } from "../../lib/cn";
 import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { useDeviceType } from "../../native/native-layout-metrics";

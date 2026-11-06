@@ -27,6 +27,17 @@ import {
 import { SkillStore } from "./SkillStore.ts";
 import { validateSkill } from "./validation.ts";
 
+class SkillSourcesOperationError extends Schema.TaggedError<SkillSourcesOperationError>()(
+  "SkillSourcesOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Skill Sources operation failed.";
+  }
+}
+
 const isSkillError = Schema.is(SkillRegistryError);
 const encodeFetch = Schema.encodeEffect(Schema.fromJsonString(SkillFetchInput));
 
@@ -303,9 +314,10 @@ export const makeSkillSources = Effect.gen(function* () {
               ],
             } satisfies SkillSourceSkill;
           const bytes = yield* blob(id, entry);
-          const text = yield* Effect.try(() =>
-            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-          ).pipe(Effect.orElseSucceed(() => null));
+          const text = yield* Effect.try({
+            try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+            catch: (cause) => new SkillSourcesOperationError({ cause }),
+          }).pipe(Effect.orElseSucceed(() => null));
           const validation =
             text === null
               ? {

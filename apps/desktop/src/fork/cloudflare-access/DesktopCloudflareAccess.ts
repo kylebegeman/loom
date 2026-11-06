@@ -12,6 +12,17 @@ import * as Scope from "effect/Scope";
 import { makeCloudflareAccess } from "@t3tools/shared/fork/cloudflare-access";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 
+class DesktopCloudflareAccessOperationError extends Schema.TaggedError<DesktopCloudflareAccessOperationError>()(
+  "DesktopCloudflareAccessOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Desktop Cloudflare Access operation failed.";
+  }
+}
+
 const REDIRECT_URI = "http://127.0.0.1:43974/loom/access/callback";
 
 export class DesktopAccessError extends Schema.TaggedError<DesktopAccessError>()(
@@ -216,7 +227,10 @@ const make = Effect.gen(function* () {
     fetch: access.fetch,
     signIn,
     cancel: Effect.fn("DesktopCloudflareAccess.cancel")((value) =>
-      Effect.try(() => new URL(value).origin).pipe(
+      Effect.try({
+        try: () => new URL(value).origin,
+        catch: (cause) => new DesktopCloudflareAccessOperationError({ cause }),
+      }).pipe(
         Effect.match({
           onFailure: () => undefined,
           onSuccess: (origin) => {

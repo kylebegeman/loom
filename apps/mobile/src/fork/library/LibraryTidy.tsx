@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, usePreventRemove, type StaticScreenProps } from "@react-navigation/native";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import {
   isRestingEntry,
   libraryActiveCopies,

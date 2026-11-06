@@ -28,6 +28,17 @@ import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
+class PocketIdFixtureError extends Schema.TaggedError<PocketIdFixtureError>()(
+  "PocketIdFixtureError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Pocket Id operation failed.";
+  }
+}
+
 const ISSUER = "https://id.example.test";
 const AUDIENCE = "https://library.example.test";
 const CLIENT_ID = "loom-web";
@@ -37,23 +48,31 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const fixture = Effect.gen(function* () {
   const now = yield* DateTime.now;
   const seconds = Math.floor(now.epochMilliseconds / 1000);
-  const pair = yield* Effect.tryPromise(() => Jose.generateKeyPair("RS256"));
-  const publicKey = yield* Effect.tryPromise(() => Jose.exportJWK(pair.publicKey));
+  const pair = yield* Effect.tryPromise({
+    try: () => Jose.generateKeyPair("RS256"),
+    catch: (cause) => new PocketIdFixtureError({ cause }),
+  });
+  const publicKey = yield* Effect.tryPromise({
+    try: () => Jose.exportJWK(pair.publicKey),
+    catch: (cause) => new PocketIdFixtureError({ cause }),
+  });
   const signed = (
     payload: Jose.JWTPayload,
     audience: string | string[],
     typ: string,
     issuer = ISSUER,
   ) =>
-    Effect.tryPromise(() =>
-      new Jose.SignJWT({ sub: "owner-id", ...payload })
-        .setProtectedHeader({ alg: "RS256", kid: "test-key", typ })
-        .setIssuer(issuer)
-        .setAudience(audience)
-        .setIssuedAt(seconds)
-        .setExpirationTime(seconds + 120)
-        .sign(pair.privateKey),
-    );
+    Effect.tryPromise({
+      try: () =>
+        new Jose.SignJWT({ sub: "owner-id", ...payload })
+          .setProtectedHeader({ alg: "RS256", kid: "test-key", typ })
+          .setIssuer(issuer)
+          .setAudience(audience)
+          .setIssuedAt(seconds)
+          .setExpirationTime(seconds + 120)
+          .sign(pair.privateKey),
+      catch: (cause) => new PocketIdFixtureError({ cause }),
+    });
   const access = (overrides: Jose.JWTPayload = {}, audience = AUDIENCE, typ = "at+jwt") =>
     signed({ client_id: CLIENT_ID, scope: "openid profile", ...overrides }, audience, typ);
   const issued: Array<NonNullable<Parameters<SessionStore.SessionStore["Service"]["issue"]>[0]>> =

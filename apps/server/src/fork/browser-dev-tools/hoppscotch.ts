@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 // @effect-diagnostics nodeBuiltinImport:off -- A deterministic multipart boundary keeps encoded uploads stable across request receipts.
 import * as NodeCrypto from "node:crypto";
 import type { DevApiUpload, DevHttpRequest } from "@t3tools/contracts/fork";
@@ -28,9 +29,24 @@ type InputReason =
   | "invalid-upload"
   | "upload-too-large"
   | "unsupported-method";
-export class HoppscotchInputError extends Error {
-  readonly reason: InputReason;
-  constructor(reason: InputReason) {
+export class HoppscotchInputError extends Schema.TaggedError<HoppscotchInputError>()(
+  "HoppscotchInputError",
+  {
+    reason: Schema.Literals([
+      "invalid-format",
+      "unsupported-version",
+      "missing-variable",
+      "variable-cycle",
+      "unsupported-auth",
+      "unsupported-body",
+      "invalid-upload",
+      "upload-too-large",
+      "unsupported-method",
+    ]),
+    message: Schema.String,
+  },
+) {
+  static new(reason: InputReason) {
     const messages = {
       "invalid-format": "This is not a supported Hoppscotch collection or environment file.",
       "unsupported-version":
@@ -46,18 +62,17 @@ export class HoppscotchInputError extends Error {
         "This request body needs a file or an unsupported body encoder. Its native data has been preserved.",
       "unsupported-method": "This request uses an unsupported HTTP method.",
     };
-    super(messages[reason]);
-    this.reason = reason;
+    return new HoppscotchInputError({ reason, message: messages[reason] });
   }
 }
 export function nativeObject(value: unknown): NativeObject {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new HoppscotchInputError("invalid-format");
+    throw HoppscotchInputError.new("invalid-format");
   return value as NativeObject;
 }
 const objects = (value: unknown): readonly NativeObject[] => {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new HoppscotchInputError("invalid-format");
+  if (!Array.isArray(value)) throw HoppscotchInputError.new("invalid-format");
   return value.map(nativeObject);
 };
 const nativeText = (value: unknown, fallback = ""): string =>
@@ -69,17 +84,17 @@ const scripts = (value: unknown) =>
         typeof value === "string"
           ? value
           : (() => {
-              throw new HoppscotchInputError("invalid-format");
+              throw HoppscotchInputError.new("invalid-format");
             })(),
       ];
 function variables(value: unknown): readonly ApiVariable[] {
   const items = objects(value);
-  if (items.length > 1000) throw new HoppscotchInputError("invalid-format");
+  if (items.length > 1000) throw HoppscotchInputError.new("invalid-format");
   return items
     .filter((v) => v.active !== false)
     .map((v) => {
       if (typeof v.key !== "string" || !v.key || v.key.length > 200)
-        throw new HoppscotchInputError("invalid-format");
+        throw HoppscotchInputError.new("invalid-format");
       const initial = nativeText(v.initialValue, nativeText(v.value));
       const current = nativeText(v.currentValue);
       return {
@@ -110,17 +125,17 @@ export function importHoppscotch(
   try {
     source = JSON.parse(text);
   } catch {
-    throw new HoppscotchInputError("invalid-format");
+    throw HoppscotchInputError.new("invalid-format");
   }
   const roots = objects(Array.isArray(source) ? source : [source]);
-  if (!roots.length) throw new HoppscotchInputError("invalid-format");
+  if (!roots.length) throw HoppscotchInputError.new("invalid-format");
   const isEnvironment = roots.every(
     (r) => Array.isArray(r.variables) && r.folders === undefined && r.requests === undefined,
   );
   if (isEnvironment) {
     const environments = roots.map((r) => {
-      if (r.v !== 2) throw new HoppscotchInputError("unsupported-version");
-      if (typeof r.name !== "string" || !r.name) throw new HoppscotchInputError("invalid-format");
+      if (r.v !== 2) throw HoppscotchInputError.new("unsupported-version");
+      if (typeof r.name !== "string" || !r.name) throw HoppscotchInputError.new("invalid-format");
       return { name: r.name, variables: variables(r.variables) };
     });
     return { kind: "environments", source, environments };
@@ -138,14 +153,14 @@ export function importHoppscotch(
       post: readonly string[];
     },
   ) => {
-    if (node.v !== 12) throw new HoppscotchInputError("unsupported-version");
+    if (node.v !== 12) throw HoppscotchInputError.new("unsupported-version");
     if (
       typeof node.name !== "string" ||
       !Array.isArray(node.folders) ||
       !Array.isArray(node.requests) ||
       parents.length > 30
     )
-      throw new HoppscotchInputError("invalid-format");
+      throw HoppscotchInputError.new("invalid-format");
     const folders = [...parents, node.name];
     const selectedAuth = node.auth === undefined ? inherited.auth : nativeObject(node.auth);
     const auth =
@@ -157,14 +172,14 @@ export function importHoppscotch(
     const pre = [...inherited.pre, ...scripts(node.preRequestScript)];
     const post = [...scripts(node.testScript), ...inherited.post];
     for (const [index, r] of objects(node.requests).entries()) {
-      if (r.v !== "17") throw new HoppscotchInputError("unsupported-version");
+      if (r.v !== "17") throw HoppscotchInputError.new("unsupported-version");
       if (
         typeof r.name !== "string" ||
         typeof r.method !== "string" ||
         typeof r.endpoint !== "string" ||
         requests.length >= 10000
       )
-        throw new HoppscotchInputError("invalid-format");
+        throw HoppscotchInputError.new("invalid-format");
       const ownAuth = r.auth === undefined ? { authType: "inherit" } : nativeObject(r.auth);
       requests.push({
         id:
@@ -194,7 +209,7 @@ export function importHoppscotch(
     }),
   );
   if (new Set(requests.map((r) => r.id)).size !== requests.length)
-    throw new HoppscotchInputError("invalid-format");
+    throw HoppscotchInputError.new("invalid-format");
   return { kind: "collections", source, requests };
 }
 export function resolveVariables(
@@ -203,9 +218,9 @@ export function resolveVariables(
 ): string {
   const resolve = (text: string, seen: ReadonlySet<string>): string =>
     text.replace(/<<([^<>]+)>>/g, (_match, key: string) => {
-      if (seen.has(key) || seen.size > 30) throw new HoppscotchInputError("variable-cycle");
+      if (seen.has(key) || seen.size > 30) throw HoppscotchInputError.new("variable-cycle");
       if (!Object.hasOwn(values, key) || values[key] === "")
-        throw new HoppscotchInputError("missing-variable");
+        throw HoppscotchInputError.new("missing-variable");
       return resolve(values[key]!, new Set([...seen, key]));
     });
   return resolve(template, new Set());
@@ -215,7 +230,7 @@ function multipartBody(
   uploads: readonly DevApiUpload[],
   resolve: (value: unknown) => string,
 ) {
-  if (fields.length > 1000 || uploads.length > 32) throw new HoppscotchInputError("invalid-upload");
+  if (fields.length > 1000 || uploads.length > 32) throw HoppscotchInputError.new("invalid-upload");
   const quote = (value: string) =>
     value.replaceAll("\r", "%0D").replaceAll("\n", "%0A").replaceAll('"', "%22");
   const contentType = (value: unknown) => {
@@ -225,7 +240,7 @@ function multipartBody(
       value.length > 200 ||
       !/^[\w!#$&^_.+-]+\/[\w!#$&^_.+-]+(?:;[ -~]*)?$/.test(value)
     )
-      throw new HoppscotchInputError("invalid-upload");
+      throw HoppscotchInputError.new("invalid-upload");
     return value;
   };
   for (const file of uploads) {
@@ -240,10 +255,10 @@ function multipartBody(
       /[\r\n\0/\\]/.test(file.fileName) ||
       !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.base64)
     )
-      throw new HoppscotchInputError("invalid-upload");
+      throw HoppscotchInputError.new("invalid-upload");
     contentType(file.contentType);
     if (Buffer.byteLength(file.base64, "base64") > 131072)
-      throw new HoppscotchInputError("upload-too-large");
+      throw HoppscotchInputError.new("upload-too-large");
   }
   const parts: Buffer[] = [];
   const append = (key: string, bytes: Buffer, type: string, fileName?: string) => {
@@ -263,7 +278,7 @@ function multipartBody(
     const type = contentType(field.contentType);
     if (field.isFile === true) {
       const files = uploads.filter((file) => file.fieldIndex === index);
-      if (!files.length) throw new HoppscotchInputError("invalid-upload");
+      if (!files.length) throw HoppscotchInputError.new("invalid-upload");
       for (const file of files)
         append(
           key,
@@ -272,7 +287,7 @@ function multipartBody(
           file.fileName,
         );
     } else {
-      if (typeof field.value !== "string") throw new HoppscotchInputError("invalid-format");
+      if (typeof field.value !== "string") throw HoppscotchInputError.new("invalid-format");
       append(key, Buffer.from(resolve(field.value)), type);
     }
   }
@@ -284,7 +299,7 @@ function multipartBody(
     ...parts.flatMap((part) => [Buffer.from(`--${boundary}\r\n`), part]),
     Buffer.from(`--${boundary}--\r\n`),
   ]);
-  if (body.length > 131072) throw new HoppscotchInputError("upload-too-large");
+  if (body.length > 131072) throw HoppscotchInputError.new("upload-too-large");
   return {
     body: body.toString("base64"),
     contentType: `multipart/form-data; boundary=${boundary}`,
@@ -303,7 +318,7 @@ export function prepareHoppscotchRequest(
       !("contentType" in request.source.body) ||
       request.source.body.contentType !== "multipart/form-data")
   )
-    throw new HoppscotchInputError("invalid-upload");
+    throw HoppscotchInputError.new("invalid-upload");
   const variables = {
     ...values,
     ...Object.fromEntries(request.variables.map((v) => [v.key, v.value])),
@@ -319,7 +334,7 @@ export function prepareHoppscotchRequest(
     method !== "DELETE" &&
     method !== "OPTIONS"
   )
-    throw new HoppscotchInputError("unsupported-method");
+    throw HoppscotchInputError.new("unsupported-method");
   const url = new URL(resolve(request.source.endpoint));
   for (const param of objects(request.source.params))
     if (param.active !== false && nativeText(param.key))
@@ -338,7 +353,7 @@ export function prepareHoppscotchRequest(
         url.searchParams.set(resolve(request.auth.key), resolve(request.auth.value));
       else headers[resolve(request.auth.key).toLowerCase()] = resolve(request.auth.value);
     } else if (type !== "none" && type !== undefined)
-      throw new HoppscotchInputError("unsupported-auth");
+      throw HoppscotchInputError.new("unsupported-auth");
   }
   let body = "";
   if (
@@ -351,7 +366,7 @@ export function prepareHoppscotchRequest(
     const contentType = b.contentType;
     if (contentType !== undefined && contentType !== null) {
       if (contentType === "multipart/form-data") {
-        if (!Array.isArray(b.body)) throw new HoppscotchInputError("unsupported-body");
+        if (!Array.isArray(b.body)) throw HoppscotchInputError.new("unsupported-body");
         const multipart = multipartBody(objects(b.body), uploads, resolve);
         headers["content-type"] = multipart.contentType;
         return {
@@ -368,7 +383,7 @@ export function prepareHoppscotchRequest(
           bodyBase64 === undefined ||
           !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(bodyBase64)
         )
-          throw new HoppscotchInputError("unsupported-body");
+          throw HoppscotchInputError.new("unsupported-body");
         headers["content-type"] = contentType;
         return {
           method,
@@ -379,7 +394,7 @@ export function prepareHoppscotchRequest(
           timeoutMs: 30000,
         };
       }
-      if (typeof contentType !== "string") throw new HoppscotchInputError("invalid-format");
+      if (typeof contentType !== "string") throw HoppscotchInputError.new("invalid-format");
       headers["content-type"] ??= contentType;
       if (contentType === "application/x-www-form-urlencoded" && Array.isArray(b.body)) {
         const encoded = new URLSearchParams();
@@ -389,7 +404,7 @@ export function prepareHoppscotchRequest(
         body = encoded.toString();
       } else if (typeof b.body === "string") body = resolve(b.body);
       else if (b.body !== null && b.body !== undefined)
-        throw new HoppscotchInputError("unsupported-body");
+        throw HoppscotchInputError.new("unsupported-body");
     }
   }
   return { method, url: url.toString(), headers, body, timeoutMs: 30000 };

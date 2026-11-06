@@ -6,6 +6,17 @@ import * as Schema from "effect/Schema";
 import { parse as parseYaml } from "yaml";
 import { isNetworkPath } from "@t3tools/shared/path";
 
+class StorageMeasurementOperationError extends Schema.TaggedError<StorageMeasurementOperationError>()(
+  "StorageMeasurementOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Storage Measurement operation failed.";
+  }
+}
+
 // pnpm 11 writes this file as JSON, older versions as YAML.
 const decodePnpmModulesManifest = Schema.decodeUnknownEffect(
   Schema.Struct({
@@ -20,7 +31,12 @@ const sharedPnpmVirtualStore = Effect.fn("ProjectStorage.sharedPnpmVirtualStore"
     const path = yield* Path.Path;
     const nodeModules = path.join(root, "node_modules");
     const text = yield* fs.readFileString(path.join(nodeModules, ".modules.yaml"));
-    const manifest = yield* decodePnpmModulesManifest(yield* Effect.try(() => parseYaml(text)));
+    const manifest = yield* decodePnpmModulesManifest(
+      yield* Effect.try({
+        try: () => parseYaml(text),
+        catch: (cause) => new StorageMeasurementOperationError({ cause }),
+      }),
+    );
     if (isNetworkPath(manifest.storeDir) || isNetworkPath(manifest.virtualStoreDir ?? ""))
       return null;
     const virtual = path.resolve(nodeModules, manifest.virtualStoreDir ?? ".pnpm");

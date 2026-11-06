@@ -125,7 +125,6 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
     icon: "line.3.horizontal.decrease.circle",
     items: [],
   }),
-  SettingsEnvironmentFilterHeader: () => null,
 }));
 // fork: github-host-setup
 vi.mock("./components/GitHubHostSetupSettings", () => ({ GitHubHostSetupSettings: () => null }));

@@ -46,7 +46,9 @@ const jsonBytes = (value: object) => Buffer.byteLength(JSON.stringify(value)) + 
 // Matches the LoomOS worker's receive limit. Patches travel inside JSON, so they stay smaller.
 const MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024;
 const MAX_PATCH_BYTES = 64 * 1024 * 1024;
-class ArchiveTooLarge extends Error {}
+class ArchiveTooLarge extends Schema.TaggedError<ArchiveTooLarge>()("ArchiveTooLarge", {}) {}
+const isArchiveTooLargeValue = Schema.is(ArchiveTooLarge);
+
 // Receipts saved before compression have no encoding and replay their plain tar unchanged.
 const Stored = Schema.Struct({
   receipt: MiniReceipt,
@@ -205,7 +207,7 @@ export const archiveRepository = (
         })()),
       catch: (cause) =>
         new MiniOffloadError({
-          reason: cause instanceof ArchiveTooLarge ? "too_large" : "storage",
+          reason: isArchiveTooLargeValue(cause) ? "too_large" : "storage",
           cause,
         }),
     }).pipe(

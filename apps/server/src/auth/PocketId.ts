@@ -36,7 +36,8 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { IDENTITY_PASSKEY_REQUIRED_TEXT } from "@t3tools/shared/fork/identity-grant";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
-import { signPayload, timingSafeEqualBase64Url } from "./utils.ts";
+import { timingSafeEqualBase64Url } from "./utils.ts";
+import * as PayloadSigner from "./PayloadSigner.ts";
 import { identitySessionPrefix, parseMaxSessionAge, passkeyRequired } from "./identityPolicy.ts";
 
 const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
@@ -273,7 +274,9 @@ const make = Effect.gen(function* () {
     optional("LOOM_IDENTITY_ALLOW_ADMIN") === "true"
       ? AuthStandardClientScopes
       : PocketIdStandardScopes;
-  const stateSecret = yield* secureRandom.randomBytes(32).pipe(Effect.orDie);
+  const stateSigner = yield* PayloadSigner.fromSecret(
+    yield* secureRandom.randomBytes(32).pipe(Effect.orDie),
+  );
   const cookieName = `loom_identity_state_${Base64Url.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)).pipe(Effect.orDie)).slice(0, 16)}`;
   const pending = yield* Ref.make<ReadonlyMap<string, PendingLogin>>(new Map());
   const handoffs = yield* Ref.make<
@@ -691,7 +694,7 @@ const make = Effect.gen(function* () {
       );
     return {
       authorizationUrl: authorization.toString(),
-      cookieValue: `${state}.${signPayload(state, stateSecret)}`,
+      cookieValue: `${state}.${yield* stateSigner.sign(state)}`,
       expiresAt: DateTime.add(now, { milliseconds: LOGIN_TTL_MS }),
     };
   });
@@ -712,7 +715,7 @@ const make = Effect.gen(function* () {
         cookieState !== input.state ||
         signature === undefined ||
         extra !== undefined ||
-        !timingSafeEqualBase64Url(signature, signPayload(input.state, stateSecret))
+        !(yield* stateSigner.verify(input.state, signature))
       )
         return yield* new PocketIdError({ reason: "state" });
       const now = yield* DateTime.now;

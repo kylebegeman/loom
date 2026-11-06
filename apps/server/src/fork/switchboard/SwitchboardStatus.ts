@@ -11,6 +11,17 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { SwitchboardAvailability, switchboardLimits } from "./limits.ts";
 import { resolveSwitchboardController } from "./switchboard.ts";
 
+class SwitchboardStatusOperationError extends Schema.TaggedError<SwitchboardStatusOperationError>()(
+  "SwitchboardStatusOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Switchboard Status operation failed.";
+  }
+}
+
 /** Model availability for the picker, read from the Switchboard this server routes through. */
 export class SwitchboardStatus extends Context.Service<
   SwitchboardStatus,
@@ -39,9 +50,10 @@ const make = Effect.gen(function* () {
     if (!current.switchboardEnabled) return DISABLED;
     // A remote hub with no controller setting, or an invalid one, is a setup gap
     // the picker can name, not an outage.
-    const controller = yield* Effect.try(() => resolveSwitchboardController(environment)).pipe(
-      Effect.orElseSucceed(() => null),
-    );
+    const controller = yield* Effect.try({
+      try: () => resolveSwitchboardController(environment),
+      catch: (cause) => new SwitchboardStatusOperationError({ cause }),
+    }).pipe(Effect.orElseSucceed(() => null));
     if (controller === null) return UNCONFIGURED;
     const response = yield* http.get(`${controller}/api/v1/availability`);
     if (response.status !== 200) return UNAVAILABLE;

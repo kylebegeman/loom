@@ -1,3 +1,4 @@
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation.
 import * as NodeCrypto from "node:crypto";
 
@@ -638,6 +639,7 @@ export const makeReachHarness = Effect.fn("ReachTesting.makeHarness")(function* 
           ),
         ),
         Layer.provide(services),
+        Layer.provide(PlatformCrypto.layerSignature),
         Layer.provide(Layer.succeed(HostProcess.Environment, { ...env, ...overrides.env })),
         Layer.provide(Layer.succeed(FileSystem.FileSystem, fs)),
         Layer.provide(Layer.succeed(Path.Path, path)),

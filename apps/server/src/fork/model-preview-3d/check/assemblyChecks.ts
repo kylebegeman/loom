@@ -4,6 +4,7 @@ import type { AssemblyPairResult } from "@t3tools/contracts/fork";
 import type { AssemblyWorkerRequest, AssemblyWorkerCore, AssemblyWorkerPart } from "./protocol.ts";
 import {
   CheckFailure,
+  isCheckFailure,
   unionFind,
   capTriangles,
   vertex,
@@ -18,6 +19,7 @@ import { read3mf } from "./read3mf.ts";
 import { readGltf } from "./readGltf.ts";
 import { buildGrid, raycast, type Grid } from "./grid.ts";
 import { topologyOf } from "./topology.ts";
+
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
@@ -240,7 +242,7 @@ const contactRegions = () => {
     let cell = cells.get(key);
     if (!cell) {
       if (cells.size === REGION_CELL_LIMIT)
-        throw new CheckFailure("too-large", "Assembly contact-region budget reached.");
+        throw CheckFailure("too-large", "Assembly contact-region budget reached.");
       cell = {
         index: cells.size,
         coordinate,
@@ -319,7 +321,7 @@ export const runAssemblyChecks = (request: AssemblyWorkerRequest): AssemblyWorke
   const pairs: AssemblyPairResult[] = [];
   const budget = () => {
     if (++intersectionTests > request.limits.intersections)
-      throw new CheckFailure("too-large", "Assembly intersection budget reached.");
+      throw CheckFailure("too-large", "Assembly intersection budget reached.");
   };
   for (const pair of request.pairs) {
     const a = loaded.get(pair.a),
@@ -355,7 +357,7 @@ export const runAssemblyChecks = (request: AssemblyWorkerRequest): AssemblyWorke
             const triB = triangle(b.mesh, tb);
             if (boundsGap(box, bounds(triB)) > radius) continue;
             if (++distanceTests > request.limits.distances)
-              throw new CheckFailure("too-large", "Assembly distance budget reached.");
+              throw CheckFailure("too-large", "Assembly distance budget reached.");
             const hit = triangleDistance(triA, triB, epsilon);
             if (hit.distance < minimum) {
               minimum = hit.distance;
@@ -410,7 +412,7 @@ export const runAssemblyChecks = (request: AssemblyWorkerRequest): AssemblyWorke
         }
       }
     } catch (cause) {
-      if (!(cause instanceof CheckFailure) || cause.reason !== "too-large") throw cause;
+      if (!isCheckFailure(cause) || cause.reason !== "too-large") throw cause;
       pairComplete = false;
       complete = false;
     }

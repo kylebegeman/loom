@@ -1293,6 +1293,56 @@ function runSync(root: string, command: string, extraEnv: Record<string, string>
   );
 }
 
+it("runs Codex through Switchboard with sandboxed edits and read-only reviews", () => {
+  const f = repositoryFixture();
+  const bin = NodePath.join(f.root, "bin");
+  NodeFS.mkdirSync(bin);
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "switchboard"),
+    `#!/bin/bash
+printf '%s\\n' "$@" > "$LOOM_TEST_ARGS"
+cat > "$LOOM_TEST_PROMPT"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --output-last-message ]; then shift; printf 'VERDICT: pass\\n' > "$1"; fi
+  shift
+done
+echo 'diagnostics' >&2
+exit "\${LOOM_TEST_EXIT:-0}"
+`,
+    { mode: 0o755 },
+  );
+  const args = NodePath.join(f.root, "args");
+  const prompt = NodePath.join(f.root, "prompt");
+  const env = {
+    PATH: `${bin}:${process.env.PATH}`,
+    LOOM_AGENT_PROVIDER: "codex",
+    LOOM_TEST_ARGS: args,
+    LOOM_TEST_PROMPT: prompt,
+  };
+  for (const [mode, sandbox] of [
+    ["acceptEdits", "workspace-write"],
+    ["default", "read-only"],
+  ]) {
+    const result = runSync(f.root, `printf 'Review this' | run_agent 80 ${mode} Read`, env);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("VERDICT: pass\n");
+    expect(NodeFS.readFileSync(prompt, "utf8")).toBe("Review this");
+    const argv = NodeFS.readFileSync(args, "utf8").trim().split("\n");
+    expect(argv.slice(0, 2)).toEqual(["run", "codex"]);
+    expect(argv.indexOf("-c")).toBeLessThan(argv.indexOf("exec"));
+    expect(argv.slice(argv.indexOf("exec"))).not.toContain("-c");
+    expect(argv).toContain(sandbox);
+    expect(argv).toContain("--ephemeral");
+    expect(argv).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  }
+  const failed = runSync(f.root, "printf 'Review' | run_agent 80 default Read", {
+    ...env,
+    LOOM_TEST_EXIT: "42",
+  });
+  expect(failed.status).toBe(42);
+  expect(failed.stdout).not.toContain("VERDICT: pass");
+});
+
 function commitAt(root: string, date: string, message: string) {
   NodeChildProcess.execFileSync("git", ["commit", "--quiet", "--allow-empty", "-m", message], {
     cwd: root,

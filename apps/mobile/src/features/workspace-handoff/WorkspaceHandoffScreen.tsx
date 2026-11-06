@@ -46,7 +46,7 @@ import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { runtime } from "../../lib/runtime";
 import * as MobileDatabase from "../../persistence/mobile-database";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 const handoff = createWorkspaceHandoffAtoms(connectionAtomRuntime);
 const JsonRecord = Schema.fromJsonString(WorkspaceHandoffAttemptRecord);

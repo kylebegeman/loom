@@ -19,7 +19,7 @@ const UNIT_MM: Readonly<Record<string, number>> = {
   meter: 1000,
 };
 const fail = (message: string): never => {
-  throw new CheckFailure("command-failed", message);
+  throw CheckFailure("command-failed", message);
 };
 const unescape = (value: string): string =>
   value.replace(/&(?:amp|lt|gt|quot|apos);|&#(?:x[0-9a-f]+|\d+);/gi, (entity) => {

@@ -26,9 +26,12 @@ export function loomIdentityUrl(baseUrl: string, path: string) {
   return new URL(path, base.origin).href;
 }
 
-export class LoomAccessRequiredError extends Error {
-  constructor() {
-    super("Sign in through Cloudflare Access before connecting to this computer.");
+export class LoomAccessRequiredError extends Schema.TaggedError<LoomAccessRequiredError>()(
+  "LoomAccessRequiredError",
+  {},
+) {
+  override get message(): string {
+    return "Sign in through Cloudflare Access before connecting to this computer.";
   }
 }
 

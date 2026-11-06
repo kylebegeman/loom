@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
@@ -67,6 +68,7 @@ const withClient = <A, E>(
 ) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(NOW);
+    const signature = yield* Signature.Signature;
     const secrets = yield* ServerSecretStore.ServerSecretStore;
     const queue = [...answers];
     const sent: Array<Sent> = [];
@@ -93,7 +95,7 @@ const withClient = <A, E>(
           audience: LIBRARY,
           action: (path.endsWith("/ensure") ? "ensure" : "remove") satisfies ReachAction,
           nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
-        }).pipe(Effect.orDie);
+        }).pipe(Effect.provideService(Signature.Signature, signature), Effect.orDie);
         sent.push({ path, claims, savedSeq: lastSeq });
         const answer = queue.shift() ?? Response.json(ensureReply());
         if (isLibraryError(answer)) return yield* answer;
@@ -107,6 +109,7 @@ const withClient = <A, E>(
       send,
     };
     const client = makeReachLibraryClient({
+      signature,
       library,
       environmentId: STUDIO,
       secrets,
