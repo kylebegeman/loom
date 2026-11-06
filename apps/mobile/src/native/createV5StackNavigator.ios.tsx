@@ -53,7 +53,6 @@ export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
 /** Keep outgoing screens until UIKit completes its pop, as required by v5. */
 export function V5CardStackView(
   props: V5StackViewProps & {
-    readonly topInset?: number;
     readonly onRootVisibilityChange?: (visible: boolean) => void;
     /** The card native Back is popping, which the router still shows until the pop finishes. */
     readonly onNativePopChange?: (key: string | null) => void;
@@ -152,7 +151,7 @@ export function V5CardStackView(
     }
   };
   return (
-    <View className="flex-1 bg-screen" style={{ paddingTop: props.topInset }}>
+    <View className="flex-1 bg-screen">
       <Stack.Host>
         {screens.routes.map((route, index) => {
           const descriptor = props.descriptors[route.key] ?? screens.descriptors[route.key];
@@ -284,7 +283,6 @@ export function V5StackView(props: V5StackViewProps) {
           render: () => (
             <V5CardStackView
               {...props}
-              topInset={(descriptor.options as AppNativeStackNavigationOptions).nativeStackTopInset}
               state={{
                 ...props.state,
                 routes: group,

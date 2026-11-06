@@ -609,9 +609,6 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
                   <PaneContext value={null}>
                     <V5CardStackView
                       {...props}
-                      topInset={
-                        (descriptor.options as AppNativeStackNavigationOptions).nativeStackTopInset
-                      }
                       state={{
                         ...props.state,
                         routes: group,

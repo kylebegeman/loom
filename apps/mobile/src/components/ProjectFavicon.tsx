@@ -111,11 +111,9 @@ function ProjectIconGlyphView(props: { readonly glyph: ProjectIconGlyph; readonl
   const colors = projectIconColorClassNames(glyph.color);
   return (
     <View
-      className={colors.background}
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.25,
         alignItems: "center",
         justifyContent: "center",
       }}

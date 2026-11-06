@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import { Atom } from "effect/reactivity";
 import { useRef, useSyncExternalStore } from "react";
 import { Platform, View } from "react-native";
-import Svg, { Rect, Text } from "react-native-svg";
+import Svg, { Text } from "react-native-svg";
 import { useResolveClassNames } from "uniwind";
 
 import { countGlyphs, projectIconColorClassNames, type ProjectIconGlyph } from "../lib/projectIcon";
@@ -123,28 +123,19 @@ function GlyphCapture(props: { readonly tile: PendingTile }) {
 
 function MonogramTile(props: { readonly text: string; readonly color: ProjectIconColor }) {
   const classNames = projectIconColorClassNames(props.color);
-  const background = useResolveClassNames(classNames.background);
   const foreground = useResolveClassNames(`font-mono ${classNames.text}`);
   const fontSize = TILE_SIZE * (countGlyphs(props.text) === 1 ? 0.6 : 0.515625);
   return (
-    <>
-      <Rect
-        width={TILE_SIZE}
-        height={TILE_SIZE}
-        rx={TILE_SIZE * 0.25}
-        fill={String(background.backgroundColor)}
-      />
-      <Text
-        x={TILE_SIZE / 2}
-        y={TILE_SIZE / 2 + fontSize * 0.36}
-        textAnchor="middle"
-        fill={String(foreground.color)}
-        fontFamily={typeof foreground.fontFamily === "string" ? foreground.fontFamily : undefined}
-        fontWeight="700"
-        fontSize={fontSize}
-      >
-        {props.text}
-      </Text>
-    </>
+    <Text
+      x={TILE_SIZE / 2}
+      y={TILE_SIZE / 2 + fontSize * 0.36}
+      textAnchor="middle"
+      fill={String(foreground.color)}
+      fontFamily={typeof foreground.fontFamily === "string" ? foreground.fontFamily : undefined}
+      fontWeight="700"
+      fontSize={fontSize}
+    >
+      {props.text}
+    </Text>
   );
 }
