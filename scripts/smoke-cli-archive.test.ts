@@ -29,6 +29,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 if (process.argv.includes('--version')) { console.log('1.2.3'); process.exit(0); }
+if (process.argv.includes('__service-launcher')) { console.error('T3CODE_HOME is required'); process.exit(1); }
 const port = Number(process.argv[process.argv.indexOf('--port') + 1]);
 const server = http.createServer((_req, res) => { res.end('fixture'); });
 server.listen(port, '127.0.0.1', () => {
