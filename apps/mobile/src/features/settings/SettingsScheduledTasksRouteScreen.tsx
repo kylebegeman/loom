@@ -22,7 +22,9 @@ import {
   MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
   MAX_WEBHOOK_FILTERS,
   resolveEnvironmentMachineKind,
+  scheduledTaskThreadMode,
 } from "@t3tools/contracts";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import type { MenuAction } from "@react-native-menu/menu";
 import { DateTimePicker } from "@expo/ui/community/datetime-picker";
 import {
@@ -1431,6 +1433,7 @@ function EnvironmentTasks({
     label: "scheduled task delete",
     reportFailure: false,
   });
+  const selectDetail = useSelectWorkspaceDetail();
   const failure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       Dialog.alert(title, String(squashAtomCommandFailure(result)));
@@ -1520,6 +1523,9 @@ function EnvironmentTasks({
             <Menu
               actions={[
                 { id: "edit", title: "Edit" },
+                ...(task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread"
+                  ? [{ id: "thread", title: "Open thread" }]
+                  : []),
                 {
                   id: "toggle",
                   title: task.enabled ? "Pause" : "Resume",
@@ -1538,6 +1544,14 @@ function EnvironmentTasks({
                 const action = nativeEvent.event;
                 if (action === "edit") {
                   onEdit(task);
+                } else if (action === "thread" && task.threadId !== null) {
+                  selectDetail({
+                    name: "Thread",
+                    params: {
+                      environmentId: String(environmentId),
+                      threadId: String(task.threadId),
+                    },
+                  });
                 } else if (action === "delete") {
                   Dialog.alert("Delete task?", task.title, [
                     { text: "Cancel", style: "cancel" },

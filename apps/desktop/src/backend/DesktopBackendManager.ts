@@ -44,15 +44,17 @@ const DEFAULT_BACKEND_READINESS_REQUEST_TIMEOUT = Duration.seconds(1);
 // leaves its agents running. Three of four measured install stops hit the old
 // 5 s cap (5001, 5002 and 5001 ms; the fourth took 4725 ms), so busy backends
 // were cut off while still stopping provider sessions.
-const BACKEND_TERMINATE_GRACE = Duration.seconds(15);
-// fork: restart-continuity: the grace, then SIGKILL and the spawner's
-// one-second wait for the process group, so a stop that returns has really
-// ended the backend instead of leaving it to outlive a quitting app. A killed
-// backend's providers are stopped after it exits, within their own bound.
-export const BACKEND_STOP_TIMEOUT = Duration.sum(
-  Duration.sum(BACKEND_TERMINATE_GRACE, Duration.seconds(2)),
-  OrphanedProviders.CLEANUP_TIMEOUT,
+const DEFAULT_BACKEND_TERMINATE_GRACE = Duration.seconds(15); // fork: restart-continuity
+// Allow SIGKILL and the spawner exit wait after the SIGTERM grace so quit cannot
+// orphan a backend whose shutdown hangs.
+export const BACKEND_QUIT_STOP_TIMEOUT = Duration.sum(
+  DEFAULT_BACKEND_TERMINATE_GRACE,
+  // fork: restart-continuity: a killed backend's providers are stopped after it
+  // exits, within their own bound, so a stop that returns has ended them too.
+  Duration.sum(Duration.seconds(2), OrphanedProviders.CLEANUP_TIMEOUT),
 );
+// fork: restart-continuity: updates stop backends with the same budget as quit.
+export const BACKEND_STOP_TIMEOUT = BACKEND_QUIT_STOP_TIMEOUT;
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 const BACKEND_READINESS_PATH = "/.well-known/t3/environment";
 // Three restarts without readiness is about 2 s of backoff: past a blip, early enough to help.
@@ -323,7 +325,10 @@ const closeRun = (
     onNone: () => Effect.void,
     onSome: (fiber) => Fiber.await(fiber).pipe(Effect.asVoid),
   });
-  const close = Scope.close(run.scope, Exit.void).pipe(Effect.andThen(waitForFiber));
+  const close = Scope.close(run.scope, Exit.void).pipe(
+    Effect.withSpan("desktop.backendInstance.closeScope"),
+    Effect.andThen(waitForFiber.pipe(Effect.withSpan("desktop.backendInstance.awaitRun"))),
+  );
   const timeout = options?.timeout;
 
   if (!timeout) {
@@ -502,7 +507,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     stdout: options.captureOutput ? "pipe" : "inherit",
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
-    forceKillAfter: BACKEND_TERMINATE_GRACE, // fork: restart-continuity
+    forceKillAfter: DEFAULT_BACKEND_TERMINATE_GRACE,
     // wsl.exe drops extra file descriptors; deliver its bootstrap via stdin.
     ...(options.bootstrapDelivery === "fd3" ? { additionalFds } : {}),
   });
@@ -626,6 +631,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   yield* probeReadiness().pipe(Effect.repeat({ while: (ready) => !ready }), Effect.forkScoped);
 
   const exit = yield* handle.exitCode.pipe(
+    Effect.withSpan("desktop.backendProcess.awaitExit"),
     Effect.map((exitCode) => ({
       code: Option.some(exitCode),
       reason: `code=${exitCode}`,
@@ -661,6 +667,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   }).pipe(
     Effect.timeout(options.outputDrainTimeout ?? DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT),
     Effect.ignore,
+    Effect.withSpan("desktop.backendProcess.drainOutput"),
   );
   if (Exit.isFailure(exit)) {
     return yield* Effect.failCause(exit.cause);

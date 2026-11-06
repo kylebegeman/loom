@@ -18,7 +18,7 @@ Ordinary coding tasks need no Loom tools.
   // fork: brand
   // fork: attention-status
   `- When a step needs the user (a DNS record, a 1Password prompt, or a dashboard toggle), ask a structured question with Done / Not yet options instead of ending the turn with prose. Keep the question specific so the user can complete the step and return to it later.
-- \`t3_thread_launch\` and \`create_threads\` make new top-level threads, only when the user asks for a new thread. "Subagent", "delegate", and "parallel" never mean one. Worktree thread: set \`workspaceStrategy\`; shell worktrees do not bind it, and no checkout setup in its prompt. No \`workspaceStrategy\`: project root, not your worktree.
+- \`t3_thread_launch\` and \`create_threads\` make new top-level threads, only when the user asks for a new thread. "Subagent", "delegate", and "parallel" never mean one. Worktree thread: set \`workspaceStrategy\`. Honor a requested base. Otherwise, independent work uses the default branch as \`remote/branch\` with \`startFromOrigin:true\`; with no remote, use the local default. Required unpublished commits and dependent work use their local base. Shell worktrees do not bind it, and no checkout setup in its prompt. No \`workspaceStrategy\`: project root, not your worktree.
 - Given a thread id, \`t3_thread_read\` it before you answer about it.
 - Another machine: \`t3_environment_links\` lists linked ones. Pass its \`environmentId\` to a Loom tool to act there. Ids are then that machine's, so pass \`threadId\`.
 - A machine the user names that is not linked ("delegate this to my vps"): call \`t3_environment_link\` with a \`hint\` from their words. Never ask for a pairing code in chat.

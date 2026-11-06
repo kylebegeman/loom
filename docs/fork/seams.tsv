@@ -1337,7 +1337,7 @@ apps/server/src/assets/AssetAccess.test.ts	project-lifecycle	2
 apps/server/src/auth/EnvironmentAuth.ts	library-sign-in	5
 apps/server/src/auth/EnvironmentAuthPolicy.test.ts	directory-computers	1
 apps/server/src/auth/EnvironmentAuthPolicy.ts	directory-computers	1
-apps/server/src/bin.ts	mini-native-retention	1
+apps/server/src/binMain.ts	mini-native-retention	1
 apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1

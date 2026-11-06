@@ -20,6 +20,7 @@ import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as PreviewPasskeys from "../preview/Passkeys.ts";
+import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
@@ -165,7 +166,7 @@ export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances"
     const instances = yield* pool.list;
     yield* Effect.forEach(
       instances,
-      (instance) => instance.stop({ timeout: DesktopBackendPool.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
+      (instance) => instance.stop({ timeout: DesktopBackendManager.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
       { concurrency: "unbounded" },
     );
   },
@@ -374,6 +375,7 @@ const scopedProgram = Effect.scoped(
       stopAllPoolInstances().pipe(
         Effect.ensuring(rendererHistory.shutdown),
         Effect.ensuring(shutdown.markComplete),
+        Effect.withSpan("desktop.app.shutdown"),
       ),
     );
 

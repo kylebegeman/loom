@@ -610,7 +610,7 @@ export const make = Effect.gen(function* () {
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
       if (settled.settledOverride !== "settled") return true; // fork: project-lifecycle
-      yield* terminals.closeIdle({ threadId });
+      yield* terminals.closeOnSettle({ threadId });
       const worktreePath = settled.worktreePath;
       if (worktreePath === null) return true; // fork: server-weight
       if (!(yield* fileSystem.exists(worktreePath))) return yield* doneWithWorktree; // fork: server-weight
