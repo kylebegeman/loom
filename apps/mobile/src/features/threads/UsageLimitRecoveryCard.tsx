@@ -199,12 +199,7 @@ export function UsageLimitRecoveryCard({
         ) : null}
         {/* fork: failed-run-retry */}
         {onRetry ? (
-          <Button
-            label="Retry now"
-            tone="secondary"
-            disabled={pending}
-            onPress={() => void retry()}
-          />
+          <RecoveryAction label="Retry now" disabled={pending} onPress={() => void retry()} />
         ) : null}
         {error ? (
           <Text accessibilityRole="alert" className="text-sm text-destructive">
