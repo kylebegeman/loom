@@ -7,6 +7,8 @@ import { resolveLoomMobileIdentity } from "../../scripts/fork/mobileIdentity.ts"
 // fork: mobile-identity -- release archives consume only the publisher's sanitized environment.
 const repoEnv = loadRepoEnv({ readFiles: process.env.LOOM_IOS_RELEASE_BUILD !== "1" });
 Object.assign(process.env, repoEnv);
+// Expo's TypeScript setup otherwise installs `typescript` on every start; we typecheck with tsrs.
+process.env.EXPO_NO_TYPESCRIPT_SETUP = "1";
 
 // fork: mobile-identity -- variant, personal team and bundle ID come from the identity
 const identity = resolveLoomMobileIdentity(repoEnv);

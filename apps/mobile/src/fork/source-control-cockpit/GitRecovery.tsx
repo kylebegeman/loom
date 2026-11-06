@@ -27,7 +27,7 @@ import {
   useReleaseThreadCheckout,
   useThreadListActions,
 } from "../../features/home/useThreadListActions";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 
 export function useGitRecoveryPrompt() {
   const { selectedThread } = useThreadSelection();

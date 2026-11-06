@@ -18,7 +18,7 @@ export function Sheet(props: SheetProps) {
   const screenId = useId();
   const [isOpen, setIsOpen] = useState(true);
   // fork: sites-editor-dismiss -- Pending forms must retain their input until saving settles.
-  const dismissible = props.dismissible ?? true;
+  const dismissible = (props.dismissible ?? true) && !props.dismissDisabled;
   const close = () => {
     if (dismissible) setIsOpen(false);
   };

@@ -1,11 +1,4 @@
-// fork: library
-import {
-  cachedQuery,
-  queryCacheRemovals,
-  LIBRARY_CACHE_ENTRY_MAX_BYTES,
-  LIBRARY_CACHE_MAX_AGE_MS,
-} from "./queryCache";
-import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
+import { cachedQuery } from "./queryCache"; // fork: library
 import {
   ConnectionCatalogDocument,
   type ConnectionCatalogDocument as ConnectionCatalogDocumentType,
@@ -36,8 +29,9 @@ import {
   pullRequestRoutingConnectionKey,
   pullRequestRoutingPermissionFor,
 } from "@t3tools/client-runtime/connection";
+import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
 import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
-import * as Clock from "effect/Clock"; // fork: library
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -50,13 +44,23 @@ import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
 const DATABASE_NAME = "t3code:connection-runtime";
-const DATABASE_VERSION = 5; // fork: library
+const DATABASE_VERSION = 6; // fork: library -- upgrade existing Loom v5 caches to upstream indexed rows.
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
 const THREAD_STORE_NAME = "thread";
 const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
-const QUERY_STORE_NAME = "query"; // fork: library
+const QUERY_STORE_NAME = "query";
+const QUERY_UPDATED_INDEX_NAME = "environment-updated";
+const QUERY_MAX_ROWS = 256;
+const QUERY_MAX_BYTES = 32 * 1024 * 1024;
+const QUERY_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const QUERY_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
+// A stats answer saves one row per listed PR, so the bounds index is walked once per batch of
+// saves. Each walk trims a batch below the caps, so the caps hold between walks. The batch count
+// lives in the database, so tabs sharing it share one count.
+const QUERY_PRUNE_BATCH_ROWS = 32;
+const QUERY_PRUNE_BATCH_BYTES = 1024 * 1024;
 const CATALOG_KEY = "document";
 const StoredShellSnapshot = StoredOrchestrationShellSnapshot;
 const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
@@ -75,6 +79,10 @@ const StoredVcsRefs = Schema.Struct({
   refs: VcsListRefsResult,
 });
 const StoredVcsRefsJson = Schema.fromJsonString(StoredVcsRefs);
+const isStoredQuery = Schema.is(
+  Schema.Struct({ environmentId: Schema.String, payload: Schema.String, updatedAt: Schema.Number }),
+);
+const isQueryBatch = Schema.is(Schema.Struct({ rows: Schema.Number, bytes: Schema.Number }));
 const ConnectionCatalogDocumentJson = Schema.fromJsonString(ConnectionCatalogDocument);
 const decodeConnectionCatalogDocument = Schema.decodeUnknownEffect(ConnectionCatalogDocumentJson);
 const encodeConnectionCatalogDocument = Schema.encodeEffect(ConnectionCatalogDocumentJson);
@@ -132,10 +140,6 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
     try {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
       request.addEventListener("upgradeneeded", () => {
-        // fork: library
-        if (!request.result.objectStoreNames.contains(QUERY_STORE_NAME)) {
-          request.result.createObjectStore(QUERY_STORE_NAME);
-        }
         if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
           request.result.createObjectStore(CATALOG_STORE_NAME);
         }
@@ -150,6 +154,30 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
         }
         if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
           request.result.createObjectStore(VCS_REFS_STORE_NAME);
+        }
+        // fork: library -- Loom v5 already has this store, with savedAt rows and no index.
+        const queryStore = request.result.objectStoreNames.contains(QUERY_STORE_NAME)
+          ? request.transaction!.objectStore(QUERY_STORE_NAME)
+          : request.result.createObjectStore(QUERY_STORE_NAME);
+        if (!queryStore.indexNames.contains(QUERY_UPDATED_INDEX_NAME)) {
+          queryStore.createIndex(QUERY_UPDATED_INDEX_NAME, ["environmentId", "updatedAt", "bytes"]);
+          const cursor = queryStore.openCursor();
+          cursor.addEventListener("success", () => {
+            const current = cursor.result;
+            if (!current) return;
+            const legacy = cachedQuery(current.value);
+            if (legacy && typeof current.key === "string") {
+              const separator = current.key.indexOf(":");
+              if (separator > 0)
+                current.update({
+                  environmentId: current.key.slice(0, separator),
+                  payload: legacy.payload,
+                  updatedAt: legacy.savedAt,
+                  bytes: legacy.bytes,
+                });
+            }
+            current.continue();
+          });
         }
       });
       request.addEventListener("error", () => {
@@ -340,6 +368,75 @@ function removeDatabaseValuesInRangeOnConnection(
   }).pipe(Effect.withSpan("web.connectionStorage.removeDatabaseValuesInRange"));
 }
 
+// Mirrors mobile's pull-request cache bounds, per environment.
+function saveQueryOnConnection(
+  database: IDBDatabase,
+  environmentId: EnvironmentId,
+  key: string,
+  payload: string,
+  updatedAt: number,
+) {
+  return Effect.callback<void, ConnectionTransientError>((resume) => {
+    try {
+      const bytes = new TextEncoder().encode(payload).length;
+      const transaction = database.transaction(QUERY_STORE_NAME, "readwrite");
+      transaction.addEventListener("abort", () => {
+        resume(
+          Effect.fail(catalogError("write", transaction.error ?? "Unknown IndexedDB write error")),
+        );
+      });
+      transaction.addEventListener("complete", () => {
+        resume(Effect.void);
+      });
+      const store = transaction.objectStore(QUERY_STORE_NAME);
+      // An answer too large to keep must not leave its older copy to paint on the next start.
+      if (bytes > QUERY_MAX_PAYLOAD_BYTES) {
+        store.delete(queryCacheKey(environmentId, key));
+        return;
+      }
+      store.put({ environmentId, payload, updatedAt, bytes }, queryCacheKey(environmentId, key));
+      const batchKey = queryBatchKey(environmentId);
+      const batchRequest = store.get(batchKey);
+      batchRequest.addEventListener("success", () => {
+        const batch: unknown = batchRequest.result;
+        const rows = (isQueryBatch(batch) ? batch.rows : 0) + 1;
+        const written = (isQueryBatch(batch) ? batch.bytes : 0) + bytes;
+        if (
+          isQueryBatch(batch) &&
+          rows < QUERY_PRUNE_BATCH_ROWS &&
+          written < QUERY_PRUNE_BATCH_BYTES
+        ) {
+          store.put({ rows, bytes: written }, batchKey);
+          return;
+        }
+        store.put({ rows: 0, bytes: 0 }, batchKey);
+        const request = store
+          .index(QUERY_UPDATED_INDEX_NAME)
+          .openKeyCursor(IDBKeyRange.bound([environmentId], [environmentId, []]), "prev");
+        let kept = 0;
+        let totalBytes = 0;
+        request.addEventListener("success", () => {
+          const cursor = request.result;
+          if (cursor === null) return;
+          const [, rowUpdatedAt, rowBytes] = cursor.key as [string, number, number];
+          kept += 1;
+          totalBytes += rowBytes;
+          if (
+            kept > QUERY_MAX_ROWS - QUERY_PRUNE_BATCH_ROWS ||
+            totalBytes > QUERY_MAX_BYTES - QUERY_PRUNE_BATCH_BYTES ||
+            rowUpdatedAt < updatedAt - QUERY_MAX_AGE_MS
+          ) {
+            store.delete(cursor.primaryKey);
+          }
+          cursor.continue();
+        });
+      });
+    } catch (cause) {
+      resume(Effect.fail(catalogError("write", cause)));
+    }
+  }).pipe(Effect.withSpan("web.connectionStorage.saveQuery"));
+}
+
 function readDatabaseValue(database: DatabaseHandle, storeName: string, key: IDBValidKey) {
   return withDatabase(database, (opened) => readDatabaseValueOnConnection(opened, storeName, key));
 }
@@ -373,6 +470,14 @@ function removeDatabaseValuesInRange(
 
 function threadCacheKey(environmentId: EnvironmentId, threadId: ThreadId) {
   return `${environmentId}:${threadId}`;
+}
+
+function queryCacheKey(environmentId: EnvironmentId, key: string) {
+  return `${environmentId}:v1:${key}`;
+}
+
+function queryBatchKey(environmentId: EnvironmentId) {
+  return `${environmentId}:batch`;
 }
 
 function vcsRefsCacheKey(environmentId: EnvironmentId, cwd: string) {
@@ -957,12 +1062,6 @@ export const layer = Layer.effectContext(
         return Effect.all(
           [
             Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)),
-            // fork: library
-            removeDatabaseValuesInRange(
-              database,
-              QUERY_STORE_NAME,
-              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
-            ),
             removeDatabaseValue(database, SHELL_STORE_NAME, environmentId),
             removeDatabaseValuesInRange(
               database,
@@ -975,73 +1074,54 @@ export const layer = Layer.effectContext(
               VCS_REFS_STORE_NAME,
               IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
             ),
+            removeDatabaseValuesInRange(
+              database,
+              QUERY_STORE_NAME,
+              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+            ),
           ],
           { concurrency: "unbounded", discard: true },
         ).pipe(Effect.mapError((cause) => persistenceError("clear-environment", cause)));
       }),
     });
 
-    // fork: library
-    const saveBoundedQuery = (key: string, payload: string) =>
-      withDatabase(database, (opened) =>
-        Effect.flatMap(Clock.currentTimeMillis, (now) =>
-          Effect.callback<void, ConnectionTransientError>((resume) => {
-            try {
-              const transaction = opened.transaction(QUERY_STORE_NAME, "readwrite");
-              const store = transaction.objectStore(QUERY_STORE_NAME);
-              const bytes = new TextEncoder().encode(payload).length;
-              if (bytes > LIBRARY_CACHE_ENTRY_MAX_BYTES) store.delete(key);
-              else store.put({ payload, bytes, savedAt: now }, key);
-              const entries: { key: IDBValidKey; value: unknown }[] = [];
-              const cursor = store.openCursor();
-              cursor.addEventListener("success", () => {
-                const current = cursor.result;
-                if (current) {
-                  entries.push({ key: current.key, value: current.value });
-                  current.continue();
-                } else for (const remove of queryCacheRemovals(entries, now)) store.delete(remove);
-              });
-              transaction.addEventListener("complete", () => resume(Effect.void));
-              transaction.addEventListener("abort", () =>
-                resume(Effect.fail(catalogError("save query", transaction.error))),
-              );
-              transaction.addEventListener("error", () =>
-                resume(Effect.fail(catalogError("save query", transaction.error))),
-              );
-            } catch (cause) {
-              resume(Effect.fail(catalogError("save query", cause)));
-            }
-          }),
-        ),
-      );
     const queryStore: NonNullable<typeof EnvironmentQueryStore.Service> = {
-      load: (environmentId, key) =>
-        readDatabaseValue(database, QUERY_STORE_NAME, `${environmentId}:${key}`).pipe(
-          Effect.flatMap((value) =>
-            Clock.currentTimeMillis.pipe(
-              Effect.map((now) => {
-                const row = cachedQuery(value);
-                return row !== null && now - row.savedAt <= LIBRARY_CACHE_MAX_AGE_MS
-                  ? Option.some(row.payload)
-                  : Option.none();
-              }),
+      load: Effect.fn("EnvironmentQueryStore.load")(
+        function* (environmentId, key) {
+          const stored = yield* readDatabaseValue(
+            database,
+            QUERY_STORE_NAME,
+            queryCacheKey(environmentId, key),
+          );
+          const now = yield* Clock.currentTimeMillis;
+          return isStoredQuery(stored) &&
+            stored.environmentId === environmentId &&
+            stored.updatedAt >= now - QUERY_MAX_AGE_MS
+            ? Option.some(stored.payload)
+            : Option.none();
+        },
+        Effect.catch(() => Effect.succeedNone),
+      ),
+      save: (environmentId, key, payload) =>
+        Clock.currentTimeMillis.pipe(
+          Effect.flatMap((now) =>
+            withDatabase(database, (opened) =>
+              saveQueryOnConnection(opened, environmentId, key, payload, now),
             ),
           ),
-          Effect.catch(() => Effect.succeedNone),
-        ),
-      save: (environmentId, key, payload) =>
-        saveBoundedQuery(`${environmentId}:${key}`, payload).pipe(
-          Effect.catch(() => Effect.logWarning("Offline Library cache could not be saved")),
+          Effect.catch(() => Effect.logWarning("Offline query database save failed")),
         ),
     };
+
     return Context.make(Persistence.ConnectionTargetStore, targetStore).pipe(
-      Context.add(EnvironmentQueryStore, queryStore), // fork: library
+      Context.add(EnvironmentQueryStore, queryStore),
       Context.add(PullRequestRoutingPermissions, pullRequestRoutingPermissions),
       Context.add(Persistence.ConnectionRegistrationStore, registrationStore),
       Context.add(ProfileStore.ConnectionProfileStore, profileStore),
       Context.add(CredentialStore.ConnectionCredentialStore, credentialStore),
       Context.add(TokenStore.RemoteDpopAccessTokenStore, remoteTokenStore),
       Context.add(Persistence.EnvironmentCacheStore, cacheStore),
+      Context.add(EnvironmentQueryStore, queryStore),
     );
   }),
 );

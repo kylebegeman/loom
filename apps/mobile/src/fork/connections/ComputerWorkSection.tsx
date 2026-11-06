@@ -10,7 +10,7 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import { uuidv4 } from "../../lib/uuid";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";

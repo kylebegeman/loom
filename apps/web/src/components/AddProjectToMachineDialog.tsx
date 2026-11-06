@@ -4,7 +4,7 @@ import { serverChoosesFolders } from "@t3tools/client-runtime/fork"; // fork: fi
 import {
   getAddProjectInitialQuery,
   getCloneDestinationPath,
-  getCloneDirectoryName,
+  getCloneDirectoryPath,
 } from "@t3tools/client-runtime/operations/projects";
 import { resolvePastedPath } from "@t3tools/shared/path";
 import {
@@ -114,7 +114,10 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
   const targetEnvironment = environments.find((env) => env.environmentId === target?.environmentId);
   const defaultPath = getCloneDestinationPath(
     getAddProjectInitialQuery(targetEnvironment?.serverConfig?.settings.addProjectBaseDirectory),
-    getCloneDirectoryName(sourceUrl),
+    getCloneDirectoryPath(
+      sourceUrl,
+      targetEnvironment?.serverConfig?.settings.ghqCloneLayout === true,
+    ),
   );
   const [pathOverride, setPathOverride] = useState<string | null>(null);
   // fork: file-placement - Left empty, a computer that chooses folders picks or reuses one.

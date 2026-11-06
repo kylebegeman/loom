@@ -31,7 +31,7 @@ vi.mock("@react-navigation/native", () => ({
   }),
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
 }));
-vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+vi.mock("../../features/layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => state.selectDetail,
 }));
 vi.mock("./libraryState", () => ({
