@@ -2,6 +2,17 @@ import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+
+class ReadJsonOperationError extends Schema.TaggedError<ReadJsonOperationError>()(
+  "ReadJsonOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Read Json operation failed.";
+  }
+}
 class ReadGlbError extends Schema.TaggedError<ReadGlbError>()("ReadGlbError", {
   message: Schema.String,
 }) {}
@@ -29,21 +40,27 @@ export const readGlbDocument = (file: string) =>
       const header = yield* exact(20),
         v = new DataView(header.buffer),
         n = v.getUint32(12, true);
-      const parse = yield* Effect.try(() => {
-        if (
-          v.getUint32(0, true) !== 0x46546c67 ||
-          v.getUint32(4, true) !== 2 ||
-          v.getUint32(8, true) !== Number(info.size) ||
-          v.getUint32(16, true) !== 0x4e4f534a ||
-          n % 4 !== 0 ||
-          n > 16 * 1024 * 1024 ||
-          n + 20 > Number(info.size)
-        )
-          throw new Error("Invalid board reference.");
-        return n;
+      const parse = yield* Effect.try({
+        try: () => {
+          if (
+            v.getUint32(0, true) !== 0x46546c67 ||
+            v.getUint32(4, true) !== 2 ||
+            v.getUint32(8, true) !== Number(info.size) ||
+            v.getUint32(16, true) !== 0x4e4f534a ||
+            n % 4 !== 0 ||
+            n > 16 * 1024 * 1024 ||
+            n + 20 > Number(info.size)
+          )
+            throw new Error("Invalid board reference.");
+          return n;
+        },
+        catch: (cause) => new ReadJsonOperationError({ cause }),
       });
       const bytes = yield* exact(parse);
-      const text = yield* Effect.try(() => new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      const text = yield* Effect.try({
+        try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+        catch: (cause) => new ReadJsonOperationError({ cause }),
+      });
       return yield* decodeJson(text);
     }),
   );

@@ -59,11 +59,15 @@ export function identityGrantKey(account: {
 }
 
 /** Thrown for failures worth retrying later: network, timeouts, 5xx and unreadable replies. */
-export class IdentityGrantTransientError extends Error {
-  readonly _tag = "IdentityGrantTransientError";
-  constructor(message: string, options?: { readonly cause?: unknown }) {
-    super(message, options);
-    this.name = "IdentityGrantTransientError";
+export class IdentityGrantTransientError extends Schema.TaggedError<IdentityGrantTransientError>()(
+  "IdentityGrantTransientError",
+  {
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  static new(message: string, options?: { readonly cause?: unknown }) {
+    return new IdentityGrantTransientError({ message, ...options });
   }
 }
 
@@ -286,7 +290,7 @@ async function send(
       return { status: response.status, body: await response.text() };
     });
   } catch (cause) {
-    throw new IdentityGrantTransientError(failure, { cause });
+    throw IdentityGrantTransientError.new(failure, { cause });
   }
 }
 
@@ -334,12 +338,12 @@ async function refreshIdentityGrant(
     if (reason !== undefined) return signInRequired(reason);
   }
   if (reply.status < 200 || reply.status >= 300)
-    throw new IdentityGrantTransientError(
+    throw IdentityGrantTransientError.new(
       `Loom Identity could not renew access (HTTP ${reply.status}).`,
     );
   const tokens = decodeTokenReply(reply.body);
   if (Option.isNone(tokens))
-    throw new IdentityGrantTransientError("Loom Identity returned an unreadable renewal.");
+    throw IdentityGrantTransientError.new("Loom Identity returned an unreadable renewal.");
   const { token_type, access_token, id_token, refresh_token } = tokens.value;
   if (token_type?.toLowerCase() !== "bearer" || !access_token || !id_token)
     return signInRequired("Loom Identity returned an incomplete renewal. Sign in again.");
@@ -399,20 +403,20 @@ async function exchangeNativeIdentitySession(input: {
   if (refusal?.error === LOOM_IDENTITY_PASSKEY_REQUIRED)
     return signInRequired(IDENTITY_PASSKEY_REQUIRED_TEXT);
   if (reply.status >= 500 || reply.status === 408 || reply.status === 429)
-    throw new IdentityGrantTransientError(
+    throw IdentityGrantTransientError.new(
       `This computer could not renew Loom access (HTTP ${reply.status}).`,
     );
   // Renewal may use any of a computer's addresses, and one that now reaches another server must
   // not cost the grant; only a refusal from Loom itself carries its error document.
   if ((reply.status < 200 || reply.status >= 300) && Option.isNone(decodeErrorCode(reply.body)))
-    throw new IdentityGrantTransientError(
+    throw IdentityGrantTransientError.new(
       `This address did not answer as a Loom computer (HTTP ${reply.status}).`,
     );
   if (reply.status < 200 || reply.status >= 300)
     return signInRequired("This computer did not accept the Loom sign-in. Sign in again.");
   const session = decodeSessionReply(reply.body);
   if (Option.isNone(session))
-    throw new IdentityGrantTransientError("This computer returned an unreadable Loom session.");
+    throw IdentityGrantTransientError.new("This computer returned an unreadable Loom session.");
   const issued = session.value;
   if (
     issued.environmentId !== input.environmentId ||
@@ -464,7 +468,7 @@ export async function renewIdentityGrant(
   try {
     await options.onRotated(refreshed.grant);
   } catch (cause) {
-    throw new IdentityGrantTransientError("Could not save the renewed Loom sign-in.", { cause });
+    throw IdentityGrantTransientError.new("Could not save the renewed Loom sign-in.", { cause });
   }
   const exchanged = await exchangeNativeIdentitySession({
     httpBaseUrl: options.httpBaseUrl ?? grant.httpBaseUrl,

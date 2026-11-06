@@ -59,6 +59,8 @@ import {
   type LibraryProfileDraft,
 } from "@t3tools/client-runtime/fork";
 
+const isLibraryErrorValue = Schema.is(LibraryError);
+
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
 
 type ResourceDraft = {
@@ -166,7 +168,7 @@ function LibraryProjectForm({
   const [blueprintText, setBlueprintText] = useState<string | null>(null);
   const [importedBlueprint, setImportedBlueprint] = useState(false);
   const decodedBlueprint =
-    blueprintText === null ? null : Schema.decodeUnknownOption(blueprintCodec)(blueprintText);
+    blueprintText === null ? null : Schema.decodeOption(blueprintCodec)(blueprintText);
   const blueprint = decodedBlueprint?._tag === "Some" ? decodedBlueprint.value : null;
   const copies = useEnvironmentQuery(
     initial && authority.environmentId
@@ -377,7 +379,7 @@ function LibraryProjectForm({
       else
         navigation.dispatch(StackActions.replace("LibraryProject", { projectId: result.value.id }));
     } catch (cause) {
-      if (cause instanceof LibraryError && cause.reason !== "io") {
+      if (isLibraryErrorValue(cause) && cause.reason !== "io") {
         setAwaitingResult(false);
         request.current = uuidv4();
         submittedAuthority.current = null;

@@ -71,14 +71,13 @@ import {
   useNativeColumnLayoutMetrics,
   useNativeLayoutMetrics,
 } from "../../native/native-layout-metrics";
-// fork: project-navigation -- the early-return empty state and its glass inset are gone
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { useThreadListSearchMatches } from "../threads/useThreadListSearchMatches";
 import { useThreadListV2 } from "../threads/useThreadListV2";
 import { useThreadListNow } from "../threads/use-thread-list-now";
-import { useSearchScrollRestoration } from "../workspace/useSearchScrollRestoration";
+import { useSearchScrollRestoration } from "../layout/workspace/useSearchScrollRestoration";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/presentation";
@@ -115,7 +114,7 @@ import {
 import { createSwipeRowActivation } from "./swipe-row-activation";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
 import { useFabScroll } from "./FabScrollContext";
-import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
 
 interface HomeScreenProps {
@@ -1010,7 +1009,7 @@ export function HomeScreen(props: HomeScreenProps) {
                 onTouchStart={(event) => trackListTouches(event, true)}
                 onTouchEnd={(event) => trackListTouches(event, false)}
                 onTouchCancel={(event) => trackListTouches(event, false)}
-                renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
+                renderScrollComponent={renderHomeScrollView}
                 data={navigationItems} // fork: project-navigation
                 renderItem={renderNavigationItem} // fork: project-navigation
                 keyExtractor={v2KeyExtractor}
@@ -1051,7 +1050,7 @@ export function HomeScreen(props: HomeScreenProps) {
                 }
                 ListEmptyComponent={sharedAuthority.environmentId ? null : v2ListEmpty} // fork: library
                 style={{ flex: 1 }}
-                automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
+                automaticallyAdjustsScrollIndicatorInsets
                 // UIKit owns the bar's inset, so a minimizing bar and a resized column move
                 // the list in the same frame as the bar.
                 contentInsetAdjustmentBehavior="automatic"

@@ -1,3 +1,4 @@
+import * as Mac from "effect/crypto/Mac";
 import {
   UPDATE_ACTIVITY_ROUTE,
   UPDATE_FENCE_ROUTE,
@@ -34,14 +35,15 @@ export type BackendPost = (
 
 export const makeBackendPost = Effect.gen(function* () {
   const client = yield* Effect.serviceOption(HttpClient.HttpClient);
+  const mac = yield* Mac.Mac;
   return Effect.fn("DesktopIdleInstall.post")(
     function* (config: DesktopBackendStartConfig, route: string, body: unknown) {
       if (Option.isNone(client)) return yield* new BackendUpdateError();
       const token = config.bootstrap.desktopBootstrapSecret
-        ? currentDesktopBootstrapToken(
+        ? yield* currentDesktopBootstrapToken(
             config.bootstrap.desktopBootstrapSecret,
             yield* Clock.currentTimeMillis,
-          )
+          ).pipe(Effect.provideService(Mac.Mac, mac))
         : config.bootstrap.desktopBootstrapToken;
       if (!token) return yield* new BackendUpdateError();
       const request = yield* HttpClientRequest.bodyJson(

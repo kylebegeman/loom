@@ -12,6 +12,17 @@ import { isSqlError } from "effect/sql/SqlError";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { Fragment } from "effect/sql/Statement";
 
+class LibraryStoreOperationError extends Schema.TaggedError<LibraryStoreOperationError>()(
+  "LibraryStoreOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Library Store operation failed.";
+  }
+}
+
 export class LibraryStoreError extends Schema.TaggedError<LibraryStoreError>()(
   "LibraryStoreError",
   {
@@ -231,7 +242,10 @@ const make = Effect.gen(function* () {
     const existing =
       yield* sql`SELECT digest FROM fork_library_history_blobs WHERE digest=${digest}`;
     if (existing.length === 0) {
-      const bytes = yield* Effect.tryPromise(() => compress(payload));
+      const bytes = yield* Effect.tryPromise({
+        try: () => compress(payload),
+        catch: (cause) => new LibraryStoreOperationError({ cause }),
+      });
       yield* sql`INSERT INTO fork_library_history_blobs(digest,bytes) VALUES (${digest},${new Uint8Array(bytes)}) ON CONFLICT(digest) DO NOTHING`;
     }
     return BLOB_PREFIX + digest;
@@ -265,7 +279,10 @@ const make = Effect.gen(function* () {
     if (bytes === null)
       return yield* new LibraryStoreError({ operation: "missing-history-blob", cause: null });
     yield* Effect.annotateCurrentSpan({ "library.blobBytes": bytes.byteLength });
-    const text = (yield* Effect.tryPromise(() => decompress(bytes))).toString("utf8");
+    const text = (yield* Effect.tryPromise({
+      try: () => decompress(bytes),
+      catch: (cause) => new LibraryStoreOperationError({ cause }),
+    })).toString("utf8");
     if ((yield* hash(text)) !== row.payload_json.slice(BLOB_PREFIX.length))
       return yield* new LibraryStoreError({ operation: "corrupt-history-blob", cause: null });
     return text;

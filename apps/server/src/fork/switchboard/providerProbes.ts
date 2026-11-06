@@ -6,11 +6,23 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
 
 import { probeClaudeCapabilities } from "../../provider/ClaudeProvider.ts";
 import { probeSwitchboardCredential, resolveSwitchboardClaudeProbeRouting } from "./switchboard.ts";
+
+class ProviderProbesOperationError extends Schema.TaggedError<ProviderProbesOperationError>()(
+  "ProviderProbesOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Provider Probes operation failed.";
+  }
+}
 
 export type SwitchboardSnapshotSettings<Settings> = ProviderSnapshotSettings<Settings> & {
   readonly switchboardEnabled: boolean;
@@ -60,7 +72,10 @@ export const makeSwitchboardClaudeProbes = Effect.fn("Switchboard.makeClaudeProb
   const { settings } = yield* ProviderHost.ProviderHost;
   const hostEnvironment = yield* HostProcess.Environment;
   const platform = yield* HostProcess.Platform;
-  const routing = Effect.try(() => resolveSwitchboardClaudeProbeRouting(hostEnvironment, platform));
+  const routing = Effect.try({
+    try: () => resolveSwitchboardClaudeProbeRouting(hostEnvironment, platform),
+    catch: (cause) => new ProviderProbesOperationError({ cause }),
+  });
   const cache = yield* Cache.makeWith(
     () =>
       routing.pipe(

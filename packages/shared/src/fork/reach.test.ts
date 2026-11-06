@@ -1,7 +1,8 @@
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation or signing.
 import * as NodeCrypto from "node:crypto";
 
-import { describe, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import { DirectoryEnvironmentReport, type ReachRequestClaims } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -116,12 +117,12 @@ const baseClaims = {
 };
 
 /** Everything a failure would print through the usual `Effect.logWarning(message, cause)`. */
-const printedFailure = <A, E>(effect: Effect.Effect<A, E>) =>
+const printedFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.exit(effect).pipe(
     Effect.map((exit) => (Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "")),
   );
 
-describe("reach requests", () => {
+it.layer(PlatformCrypto.layer)("reach requests", (it) => {
   it.effect("round trips an ensure and a remove", () =>
     Effect.gen(function* () {
       expect(yield* verify(yield* sign())).toEqual(ensureClaims);
@@ -156,7 +157,7 @@ describe("reach requests", () => {
       });
       const asReach = yield* verify(reportToken).pipe(Effect.flip);
       expect(asReach.reason).toBe("unverified");
-      expect(asReach.diagnostic).toBe("ERR_JWT_CLAIM_VALIDATION_FAILED");
+      expect(asReach.diagnostic).toBe("ClaimValidationFailed.typ.mismatch");
     }),
   );
 
@@ -173,7 +174,7 @@ describe("reach requests", () => {
     Effect.gen(function* () {
       const late = yield* verify(yield* sign(), { nowEpochSeconds: NOW + 200 }).pipe(Effect.flip);
       expect(late.reason).toBe("unverified");
-      expect(late.diagnostic).toBe("ERR_JWT_EXPIRED");
+      expect(late.diagnostic).toBe("ClaimValidationFailed.exp.expired");
 
       const longLived = yield* signClaims({
         ...baseClaims,
@@ -267,7 +268,7 @@ describe("reach requests", () => {
   );
 });
 
-describe("reach allowlist", () => {
+it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
   it("admits every listed path and prefix with every allowed method", () => {
     for (const method of REACH_ALLOWED_METHODS) {
       for (const path of REACH_ALLOWED_PATHS) {
@@ -424,7 +425,7 @@ describe("reach allowlist", () => {
   });
 });
 
-describe("reach hostnames", () => {
+it.layer(PlatformCrypto.layer)("reach hostnames", (it) => {
   it("slugs a computer's label", () => {
     expect(reachSlug("Kyle's MacBook Pro")).toBe("kyles-macbook-pro");
     expect(reachSlug("Kyle’s Mac")).toBe("kyles-mac");

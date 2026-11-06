@@ -7,7 +7,7 @@ export const readStl = (
   limits: { readonly maxTriangles: number },
 ): TriangleSoup => {
   const bytes = files[0]?.bytes;
-  if (!bytes) throw new CheckFailure("command-failed", "This STL file is damaged.");
+  if (!bytes) throw CheckFailure("command-failed", "This STL file is damaged.");
   const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const count = bytes.length >= 84 ? data.getUint32(80, true) : 0;
   if (bytes.length >= 84 && bytes.length === 84 + 50 * count) {
@@ -17,7 +17,7 @@ export const readStl = (
       for (let coordinate = 0; coordinate < 9; coordinate++) {
         const value = data.getFloat32(84 + triangle * 50 + 12 + coordinate * 4, true);
         if (!Number.isFinite(value))
-          throw new CheckFailure("command-failed", "This STL file contains invalid coordinates.");
+          throw CheckFailure("command-failed", "This STL file contains invalid coordinates.");
         triangles[triangle * 9 + coordinate] = value;
       }
     }
@@ -25,16 +25,13 @@ export const readStl = (
   }
   const source = new TextDecoder().decode(bytes);
   if (!/^\s*solid\b/i.test(source))
-    throw new CheckFailure("command-failed", "This STL file is damaged.");
+    throw CheckFailure("command-failed", "This STL file is damaged.");
   const values: number[] = [];
   let vertices = 0;
   let facet = false;
   for (const [index, line] of source.split(/\r?\n/).entries()) {
     const fail = () => {
-      throw new CheckFailure(
-        "command-failed",
-        `This STL has a damaged facet at line ${index + 1}.`,
-      );
+      throw CheckFailure("command-failed", `This STL has a damaged facet at line ${index + 1}.`);
     };
     if (/^\s*facet\b/i.test(line)) {
       if (facet) fail();
@@ -53,7 +50,7 @@ export const readStl = (
     }
   }
   if (facet)
-    throw new CheckFailure(
+    throw CheckFailure(
       "command-failed",
       "This STL has an incomplete facet at the end of the file.",
     );

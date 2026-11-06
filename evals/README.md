@@ -10,6 +10,7 @@ Write or run an eval when a change affects what a model sees or does: agent inst
 | [thread-titles](thread-titles/) | Whether generated thread titles name the right subject.                                                   |
 | [Loom skills](fork/skills/)     | Whether imported workflows preserve explicit delivery, exact models, bot boundaries and read-only recall. |
 | [test-signal](test-signal/)     | Whether a cheap model running the test-signal check flags low-signal tests.                               |
+| [voice-cleanup](voice-cleanup/) | Whether optional dictation cleanup edits only the spoken text and preserves its meaning.                  |
 
 ## Run an eval
 

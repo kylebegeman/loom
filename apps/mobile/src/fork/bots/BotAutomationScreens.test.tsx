@@ -40,7 +40,10 @@ const harness = vi.hoisted(() => ({
   run: null as BotPipelineRun | null,
   reconnect: [] as Array<() => void>,
 }));
-vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
+vi.mock("../../lib/uuid", () => {
+  let next = 0;
+  return { uuidv4: () => `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}` };
+});
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
 vi.mock("../../components/ui/RowPressable", () => ({
   RowPressable: ({ children }: { children: ReactNode }) => <div>{children}</div>,

@@ -9,13 +9,21 @@ import {
   secretRequestDisplay,
   secretRequestFailureMessage,
   secretRequestPrivacyNote,
+  secretRequestReference,
+  secretRequestSources,
   type SecretRequestItem,
+  type SecretRequestReply,
 } from "@t3tools/client-runtime/secret-request";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ProjectedTurnItem,
+  SecretProviderId,
+} from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 import { View, type ColorValue } from "react-native";
 
@@ -24,6 +32,7 @@ import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../../components/ui/Button";
+import { Chip } from "../../components/ui/Chip";
 
 const LOCK_SYMBOL: AppSymbolName = { ios: "lock", android: "lock" };
 const PRIVATE_SYMBOL: AppSymbolName = { ios: "checkmark.shield", android: "lock" };
@@ -76,15 +85,18 @@ function PendingSecretRequestForm(props: {
   });
   // fork: vault-core
   const vaultSave = useSecretVaultSave(props.environmentId, item.label);
+  const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  const sources = secretRequestSources(config, config?.settings.secretProviders ?? {});
+  const [sourceId, setSourceId] = useState<SecretProviderId | null>(null);
+  const source = sources.find((candidate) => candidate.id === sourceId) ?? null;
   const [secret, setSecret] = useState("");
+  const [reference, setReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Submit then a tap can both run before a re-render; this guard is synchronous.
   const inFlight = useRef(false);
 
-  const send = async (
-    reply: { readonly type: "save"; readonly secret: string } | { readonly type: "decline" },
-  ) => {
+  const send = async (reply: SecretRequestReply) => {
     const input = secretRequestAnswerInput(item, reply);
     if (input === null || inFlight.current) return;
     inFlight.current = true;
@@ -102,12 +114,23 @@ function PendingSecretRequestForm(props: {
     });
     if (result._tag === "Success") {
       setSecret("");
+      setReference("");
       return;
     }
     if (!isAtomCommandInterrupted(result)) {
       pipe(squashAtomCommandFailure(result), secretRequestFailureMessage, setError);
     }
   };
+  const save = () => {
+    if (source === null) {
+      void send({ type: "save", secret });
+    } else if (secretRequestReference(source, reference) === undefined) {
+      setError(source.invalidReferenceMessage);
+    } else {
+      void send({ type: "reference", source, reference });
+    }
+  };
+  const draft = source === null ? secret : reference;
 
   return (
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
@@ -119,25 +142,73 @@ function PendingSecretRequestForm(props: {
           </Text>
         ) : null}
       </View>
-      <Text className="font-t3-medium text-xs text-foreground-muted">Private value</Text>
-      <TextInput
-        accessibilityLabel={item.label}
-        placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
-        value={secret}
-        onChangeText={setSecret}
-        editable={!submitting && !vaultSave.saved} // fork: vault-core
-        secureTextEntry
-        autoCorrect={false}
-        autoCapitalize="none"
-        autoComplete="off"
-        textContentType="none"
-        importantForAutofill="no"
-        spellCheck={false}
-        returnKeyType="done"
-        onSubmitEditing={() => void send({ type: "save", secret })}
-      />
+      {sources.length > 0 ? (
+        <View className="flex-row flex-wrap gap-2">
+          <Chip
+            label="Value"
+            size="small"
+            selected={source === null}
+            disabled={submitting}
+            onPress={() => {
+              setSourceId(null);
+              setError(null);
+            }}
+          />
+          {sources.map((candidate) => (
+            <Chip
+              key={candidate.id}
+              label={candidate.label}
+              size="small"
+              selected={candidate.id === source?.id}
+              disabled={submitting}
+              onPress={() => {
+                setSourceId(candidate.id);
+                setError(null);
+              }}
+            />
+          ))}
+        </View>
+      ) : null}
+      {source === null ? (
+        <TextInput
+          accessibilityLabel={item.label}
+          placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
+          value={secret}
+          onChangeText={setSecret}
+          editable={!submitting && !vaultSave.saved} // fork: vault-core
+          secureTextEntry
+          autoCorrect={false}
+          autoCapitalize="none"
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          spellCheck={false}
+          returnKeyType="done"
+          onSubmitEditing={save}
+        />
+      ) : (
+        <TextInput
+          key={source.id}
+          accessibilityLabel={`${item.label} reference in ${source.label}`}
+          placeholder={source.referencePlaceholder}
+          value={reference}
+          onChangeText={(next) => {
+            setReference(next);
+            setError(null);
+          }}
+          editable={!submitting && !vaultSave.saved} // fork: vault-core
+          autoCorrect={false}
+          autoCapitalize="none"
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          spellCheck={false}
+          returnKeyType="done"
+          onSubmitEditing={save}
+        />
+      )}
       {/* fork: vault-core */}
-      {vaultSave.control(submitting)}
+      {source === null ? vaultSave.control(submitting) : null}
       {/* fork: vault-core */}
       <SavedSecretAnswer
         environmentId={props.environmentId}
@@ -162,8 +233,8 @@ function PendingSecretRequestForm(props: {
         label="Save securely"
         tone="primary"
         fullWidth
-        disabled={submitting || secret.trim().length === 0}
-        onPress={() => void send({ type: "save", secret })}
+        disabled={submitting || draft.trim().length === 0}
+        onPress={save}
       />
       <View className="flex-row items-center justify-between gap-2">
         <View className="flex-1 flex-row items-center gap-1.5">

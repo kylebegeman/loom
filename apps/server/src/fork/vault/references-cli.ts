@@ -48,7 +48,7 @@ const page = Schema.decodeUnknownOption(VaultReferencePage);
 const textPage = Schema.decodeUnknownOption(Schema.fromJsonString(VaultReferencePage));
 export const completeVaultReferences = Effect.fn("completeVaultReferences")(function* (
   query: string,
-  kind: typeof VaultItemKind.Type | null,
+  kind: VaultItemKind | null,
   environment: Readonly<Record<string, string | undefined>>,
 ) {
   if (query.length > 100 || (kind !== null && !isKind(kind)))
@@ -72,7 +72,7 @@ export const completeVaultReferences = Effect.fn("completeVaultReferences")(func
     const result =
       response.value.structuredContent !== undefined
         ? page(response.value.structuredContent)
-        : (response.value.content ?? []).reduce<Option.Option<typeof VaultReferencePage.Type>>(
+        : (response.value.content ?? []).reduce<Option.Option<VaultReferencePage>>(
             (found, item) =>
               Option.isSome(found)
                 ? found

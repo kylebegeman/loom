@@ -100,7 +100,7 @@ it.effect("cancels one fit-check lease while another retains the same worker", (
     let runs = 0,
       reads = 0;
     const service = yield* makeAssemblyChecker({
-      assembly: () => Effect.sync(() => snapshot),
+      assembly: () => Effect.succeed(snapshot),
       geometry: () =>
         Effect.gen(function* () {
           if (++reads === 4) yield* Deferred.succeed(prepared, undefined);

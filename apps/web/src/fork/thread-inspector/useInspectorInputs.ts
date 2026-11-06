@@ -17,7 +17,7 @@ import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useMemo } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
-import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { deriveProviderInstanceEntries } from "~/providerInstances";
 import {
   derivePendingApprovals,

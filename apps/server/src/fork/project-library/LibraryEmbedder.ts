@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off -- the feature list checks the weights synchronously at startup, and the model loads into a worker thread.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
@@ -104,9 +105,10 @@ export const libraryEmbeddingConfiguration = () =>
   (configured ??= resolveLibraryEmbeddingFiles(process.env));
 
 /** Say why semantic search is off when a weights directory was configured but not usable. */
-export const warnIfLibraryEmbeddingsUnusable = Effect.suspend(() => {
+export const warnIfLibraryEmbeddingsUnusable = Effect.gen(function* () {
+  const environment = yield* HostProcess.Environment;
   const configuration = libraryEmbeddingConfiguration();
-  return "off" in configuration && process.env[LIBRARY_EMBEDDINGS_DIR_ENV]
+  return yield* "off" in configuration && environment[LIBRARY_EMBEDDINGS_DIR_ENV]
     ? Effect.logWarning(`Semantic search is off: ${configuration.off}`)
     : Effect.void;
 });

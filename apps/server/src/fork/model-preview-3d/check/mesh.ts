@@ -9,16 +9,19 @@ export type IndexedMesh = {
   bounds: { min: Vec3; max: Vec3 };
   degenerate: number;
 };
-export class CheckFailure extends Error {
+export type CheckFailure = Error & {
+  readonly _tag: "CheckFailure";
   readonly reason: "unsupported-format" | "too-large" | "command-failed";
-  constructor(reason: "unsupported-format" | "too-large" | "command-failed", message: string) {
-    super(message);
-    this.reason = reason;
-  }
-}
+};
+// Worker math stays dependency-free while failures retain a domain tag and native Error semantics.
+export const CheckFailure = (reason: CheckFailure["reason"], message: string): CheckFailure =>
+  Object.assign(new Error(message), { _tag: "CheckFailure" as const, reason });
+export const isCheckFailure = (value: unknown): value is CheckFailure =>
+  value instanceof Error && "_tag" in value && value._tag === "CheckFailure";
+
 export const capTriangles = (count: number, max: number) => {
   if (count > max)
-    throw new CheckFailure(
+    throw CheckFailure(
       "too-large",
       `Too many triangles to check (${count.toLocaleString("en-US")}). The limit is ${max.toLocaleString("en-US")}.`,
     );
@@ -52,15 +55,14 @@ export const normal = (mesh: IndexedMesh, t: number): Vec3 => [
 ];
 /** Quantized open-addressing weld avoids a per-vertex object graph on large STL meshes. */
 export const weld = (soup: TriangleSoup, orientation: Quaternion | null = null): IndexedMesh => {
-  if (soup.length % 9)
-    throw new CheckFailure("command-failed", "This mesh has incomplete triangles.");
+  if (soup.length % 9) throw CheckFailure("command-failed", "This mesh has incomplete triangles.");
   const min = [Infinity, Infinity, Infinity],
     max = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < soup.length; i += 3) {
     const p = rotatePoint([soup[i]!, soup[i + 1]!, soup[i + 2]!], orientation);
     for (let k = 0; k < 3; k++) {
       if (!Number.isFinite(p[k]))
-        throw new CheckFailure("command-failed", "This mesh contains invalid coordinates.");
+        throw CheckFailure("command-failed", "This mesh contains invalid coordinates.");
       min[k] = Math.min(min[k]!, p[k]!);
       max[k] = Math.max(max[k]!, p[k]!);
     }

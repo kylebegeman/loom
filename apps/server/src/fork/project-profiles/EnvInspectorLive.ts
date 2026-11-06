@@ -1,6 +1,7 @@
 import { ProjectProfileError, type EnvReport } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
@@ -11,6 +12,17 @@ import {
   parseEnvSource,
   type EnvSource,
 } from "./envInspector.ts";
+
+class EnvInspectorLiveOperationError extends Schema.TaggedError<EnvInspectorLiveOperationError>()(
+  "EnvInspectorLiveOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Env Inspector Live operation failed.";
+  }
+}
 
 export class EnvInspector extends Context.Service<
   EnvInspector,
@@ -65,12 +77,14 @@ const make = Effect.gen(function* () {
       if (source !== null) envSources.push({ path: file, source });
     }
     // inspectEnv reports a value-free parse location.
-    const schema = yield* Effect.try(() =>
-      schemaSource === null ? null : parseEnvSource(schemaSource),
-    ).pipe(Effect.orElseSucceed(() => null));
-    const currentEnv: string | null = yield* Effect.try(() =>
-      schema ? currentEnvFor(schema, envSources, process.env) : null,
-    ).pipe(Effect.orElseSucceed(() => null));
+    const schema = yield* Effect.try({
+      try: () => (schemaSource === null ? null : parseEnvSource(schemaSource)),
+      catch: (cause) => new EnvInspectorLiveOperationError({ cause }),
+    }).pipe(Effect.orElseSucceed(() => null));
+    const currentEnv: string | null = yield* Effect.try({
+      try: () => (schema ? currentEnvFor(schema, envSources, process.env) : null),
+      catch: (cause) => new EnvInspectorLiveOperationError({ cause }),
+    }).pipe(Effect.orElseSucceed(() => null));
     if (currentEnv)
       for (const file of [`.env.${currentEnv}`, `.env.${currentEnv}.local`]) {
         const source = yield* read(file);

@@ -1,3 +1,6 @@
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
+import type * as Signature from "effect/crypto/Signature";
+import * as Layer from "effect/Layer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { AuthLibraryPublishScope, EnvironmentId } from "@t3tools/contracts";
@@ -61,7 +64,9 @@ interface Fixture extends ReachHarness {
 }
 
 const withReach = <A, E>(
-  use: (fixture: Fixture) => Effect.Effect<A, E, Scope.Scope | FileSystem.FileSystem | Path.Path>,
+  use: (
+    fixture: Fixture,
+  ) => Effect.Effect<A, E, Scope.Scope | FileSystem.FileSystem | Path.Path | Signature.Signature>,
   options: { readonly env?: Env } = {},
 ) =>
   Effect.gen(function* () {
@@ -79,7 +84,7 @@ const withReach = <A, E>(
     harness.pins.set(STUDIO, pinOf(studio, "Studio"));
     harness.sessions.set("session-studio", sessionRecord("session-studio", "active"));
     return yield* use({ ...harness, provisioner, store, studio, rebuild });
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer)));
 
 interface CallOptions {
   readonly environmentId?: EnvironmentId;

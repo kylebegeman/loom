@@ -6,6 +6,17 @@ import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
 import { resolveSwitchboardController, switchboardCodexThreadOptions } from "./switchboard.ts";
 
+class ServiceTierOperationError extends Schema.TaggedError<ServiceTierOperationError>()(
+  "ServiceTierOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Service Tier operation failed.";
+  }
+}
+
 export function withSwitchboardServiceTiers(
   models: ReadonlyArray<ServerProviderModel>,
 ): ReadonlyArray<ServerProviderModel> {
@@ -84,7 +95,10 @@ export const makeSwitchboardTierReader = Effect.fn("Switchboard.makeTierReader")
         getModelSelectionStringOptionValue(selection, "serviceTier") !== "ultrafast"
       )
         return null;
-      const controller = yield* Effect.try(() => resolveSwitchboardController(environment));
+      const controller = yield* Effect.try({
+        try: () => resolveSwitchboardController(environment),
+        catch: (cause) => new ServiceTierOperationError({ cause }),
+      });
       if (!controller) return null;
       const response = yield* http.get(
         `${controller}/api/v1/service-tier?session=${encodeURIComponent(session)}&since=${since}`,

@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -41,14 +42,14 @@ it.effect("authenticates primary and WSL activity with each backend's own rotati
     assert.deepEqual(requests, [
       {
         url: "http://127.0.0.1:3001/api/loom/updates/activity",
-        authorization: `Bearer ${currentDesktopBootstrapToken("primary-secret", 0)}`,
+        authorization: `Bearer ${yield* currentDesktopBootstrapToken("primary-secret", 0)}`,
       },
       {
         url: "http://127.0.0.1:3002/api/loom/updates/activity",
-        authorization: `Bearer ${currentDesktopBootstrapToken("wsl-secret", 0)}`,
+        authorization: `Bearer ${yield* currentDesktopBootstrapToken("wsl-secret", 0)}`,
       },
     ]);
-  }),
+  }).pipe(Effect.provide(NodeCrypto.layer)),
 );
 
 it.effect(

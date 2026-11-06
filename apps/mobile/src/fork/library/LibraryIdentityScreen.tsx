@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { loadIdentityDirectoryAddresses } from "@t3tools/client-runtime/fork";
 import { createRuntimeCommand } from "@t3tools/client-runtime/state/runtime";
@@ -20,6 +21,8 @@ import {
   saveNativeIdentitySignIn,
   signInWithNativeIdentity,
 } from "./nativeIdentitySignIn";
+
+const isNativeIdentitySignInExpiredValue = Schema.is(NativeIdentitySignInExpired);
 
 type IdentityRouteParams = { readonly environmentId?: string; readonly address?: string };
 
@@ -154,7 +157,7 @@ function IdentityContent({
     })()
       .catch((cause: unknown) =>
         setError(
-          abort.signal.aborted || cause instanceof NativeIdentitySignInExpired
+          abort.signal.aborted || isNativeIdentitySignInExpiredValue(cause)
             ? CANCELLED_OR_EXPIRED
             : cause instanceof Error
               ? cause.message

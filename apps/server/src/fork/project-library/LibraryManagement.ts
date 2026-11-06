@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import {
   AuthSessionId,
   AuthSettingsWriteScope,
@@ -32,7 +33,8 @@ import {
   directoryPublicKeyFromPem,
   keyFingerprint,
 } from "@t3tools/shared/fork/directory";
-import { signRelayJwt, verifyRelayJwt } from "@t3tools/shared/relayJwt";
+import { signRelayJwt as signRelayJwtEffect } from "@t3tools/shared/relayJwt";
+import { verifyRelayJwt as verifyRelayJwtEffect } from "@t3tools/shared/fork/relayJwt";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -46,7 +48,7 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import { isCurrentIdentitySession, identitySessionPrefix } from "../../auth/identityPolicy.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
+import { getOrCreateEnvironmentKeyPairFromSecretStore as getOrCreateEnvironmentKeyPairFromSecretStoreEffect } from "../../cloud/environmentKeys.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { DirectoryService } from "../directory/DirectoryService.ts";
@@ -172,6 +174,17 @@ export class LibraryManagement extends Context.Service<
 >()("t3/fork/project-library/LibraryManagement") {}
 
 const make = Effect.gen(function* () {
+  const signature = yield* Signature.Signature;
+  const signRelayJwt = (...args: Parameters<typeof signRelayJwtEffect>) =>
+    signRelayJwtEffect(...args).pipe(Effect.provideService(Signature.Signature, signature));
+  const verifyRelayJwt = (...args: Parameters<typeof verifyRelayJwtEffect>) =>
+    verifyRelayJwtEffect(...args).pipe(Effect.provideService(Signature.Signature, signature));
+  const getOrCreateEnvironmentKeyPairFromSecretStore = (
+    ...args: Parameters<typeof getOrCreateEnvironmentKeyPairFromSecretStoreEffect>
+  ) =>
+    getOrCreateEnvironmentKeyPairFromSecretStoreEffect(...args).pipe(
+      Effect.provideService(Signature.Signature, signature),
+    );
   const library = yield* LibraryService;
   const sites = yield* SitesService.SitesService;
   const apis = yield* Effect.serviceOption(LibraryApis.LibraryApiWorkspaces);

@@ -18,36 +18,41 @@ export type CloudflareAccessClient = typeof Client.Type;
 const Document = Schema.Struct({ version: Schema.Literal(1), clients: Schema.Array(Client) });
 const decodeDocument = Schema.decodeUnknownSync(Schema.fromJsonString(Document));
 
-class CloudflareAccessError extends Error {
-  readonly reason:
-    | "storage"
-    | "configuration"
-    | "network"
-    | "sign-in-required"
-    | "response"
-    | "cancelled";
-  constructor(reason: CloudflareAccessError["reason"]) {
-    super(
-      {
-        storage: "Could not use this device's protected Access sign-in storage. Try again.",
-        configuration: "This computer's Cloudflare Access configuration could not be verified.",
-        network: "Could not reach Cloudflare Access. Your saved sign-in is retained. Try again.",
-        "sign-in-required": "Sign in to this computer again to renew Cloudflare Access.",
-        response: "Cloudflare Access returned an unsupported sign-in response.",
-        cancelled: "Cloudflare Access sign-in was cancelled.",
-      }[reason],
-    );
-    this.name = "CloudflareAccessError";
-    this.reason = reason;
+class CloudflareAccessError extends Schema.TaggedError<CloudflareAccessError>()(
+  "CloudflareAccessError",
+  {
+    reason: Schema.Literals([
+      "storage",
+      "configuration",
+      "network",
+      "sign-in-required",
+      "response",
+      "cancelled",
+    ]),
+  },
+) {
+  static new(reason: CloudflareAccessError["reason"]) {
+    return new CloudflareAccessError({ reason });
+  }
+  override get message(): string {
+    return {
+      storage: "Could not use this device's protected Access sign-in storage. Try again.",
+      configuration: "This computer's Cloudflare Access configuration could not be verified.",
+      network: "Could not reach Cloudflare Access. Your saved sign-in is retained. Try again.",
+      "sign-in-required": "Sign in to this computer again to renew Cloudflare Access.",
+      response: "Cloudflare Access returned an unsupported sign-in response.",
+      cancelled: "Cloudflare Access sign-in was cancelled.",
+    }[this.reason];
   }
 }
+const isCloudflareAccessErrorValue = Schema.is(CloudflareAccessError);
 
 function originOf(value: string) {
   const url = new URL(value);
   if (url.protocol === "wss:") url.protocol = "https:";
   if (url.protocol === "ws:") url.protocol = "http:";
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
-    throw new CloudflareAccessError("configuration");
+    throw CloudflareAccessError.new("configuration");
   return url.origin;
 }
 
@@ -120,7 +125,7 @@ export function makeCloudflareAccess(options: {
     try {
       await options.storage.write(JSON.stringify({ version: 1, clients: [...clients!.values()] }));
     } catch {
-      throw new CloudflareAccessError("storage");
+      throw CloudflareAccessError.new("storage");
     }
     dirty = false;
   };
@@ -133,10 +138,10 @@ export function makeCloudflareAccess(options: {
           stored.some((c) => !validClient(c)) ||
           new Set(stored.map((c) => c.origin)).size !== stored.length
         )
-          throw new CloudflareAccessError("storage");
+          throw CloudflareAccessError.new("storage");
         clients = new Map(stored.map((c) => [c.origin, c]));
       } catch {
-        throw new CloudflareAccessError("storage");
+        throw CloudflareAccessError.new("storage");
       }
     }
     if (dirty) await save();
@@ -153,7 +158,7 @@ export function makeCloudflareAccess(options: {
         signal: abort.signal,
       });
       const text = await response.text();
-      if (text.length > 131072) throw new CloudflareAccessError("response");
+      if (text.length > 131072) throw CloudflareAccessError.new("response");
       let body: unknown;
       try {
         body = text ? JSON.parse(text) : null;
@@ -162,8 +167,8 @@ export function makeCloudflareAccess(options: {
       }
       return { response, body };
     } catch (error) {
-      if (error instanceof CloudflareAccessError) throw error;
-      throw new CloudflareAccessError("network");
+      if (isCloudflareAccessErrorValue(error)) throw error;
+      throw CloudflareAccessError.new("network");
     } finally {
       clearTimeout(timer);
     }
@@ -198,7 +203,7 @@ export function makeCloudflareAccess(options: {
       body.expires_in <= 0 ||
       body.expires_in > 3600
     )
-      throw new CloudflareAccessError("response");
+      throw CloudflareAccessError.new("response");
     return {
       accessToken: body.access_token,
       refreshToken: body.refresh_token,
@@ -206,7 +211,7 @@ export function makeCloudflareAccess(options: {
     };
   };
   const currentToken = async (client: CloudflareAccessClient) => {
-    if (!client.grant) throw new CloudflareAccessError("sign-in-required");
+    if (!client.grant) throw CloudflareAccessError.new("sign-in-required");
     if (client.grant.expiresAt > options.now() + 60000) return client.grant.accessToken;
     const { response, body } = await jsonRequest(
       client.issuer + "/cdn-cgi/access/oauth/token",
@@ -220,9 +225,9 @@ export function makeCloudflareAccess(options: {
     if (response.status === 400 || response.status === 401) {
       clients!.set(client.origin, withoutGrant(client));
       await save();
-      throw new CloudflareAccessError("sign-in-required");
+      throw CloudflareAccessError.new("sign-in-required");
     }
-    if (!response.ok) throw new CloudflareAccessError("network");
+    if (!response.ok) throw CloudflareAccessError.new("network");
     const grant = readGrant(body);
     // Keep the rotated grant in memory before saving; a failed write must never replay its predecessor.
     clients!.set(client.origin, { ...client, grant });
@@ -298,7 +303,7 @@ export function makeCloudflareAccess(options: {
             if (!accessRefused(response, origin)) return null;
             await clearRejected(origin, token);
           } catch (error) {
-            if (!(error instanceof CloudflareAccessError) || error.reason !== "sign-in-required")
+            if (!isCloudflareAccessErrorValue(error) || error.reason !== "sign-in-required")
               throw error;
           }
           client = stored.get(origin);
@@ -323,13 +328,13 @@ export function makeCloudflareAccess(options: {
             resource.authorization_servers.length !== 1 ||
             !validRedirect(redirectUri)
           )
-            throw new CloudflareAccessError("configuration");
+            throw CloudflareAccessError.new("configuration");
           const issuer: unknown = resource.authorization_servers[0];
           if (
             typeof issuer !== "string" ||
             !/^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/u.test(issuer)
           )
-            throw new CloudflareAccessError("configuration");
+            throw CloudflareAccessError.new("configuration");
           const discovery = await jsonRequest(issuer + "/.well-known/oauth-authorization-server");
           const data = discovery.body;
           if (
@@ -345,7 +350,7 @@ export function makeCloudflareAccess(options: {
             !("registration_endpoint" in data) ||
             data.registration_endpoint !== issuer + "/cdn-cgi/access/oauth/registration"
           )
-            throw new CloudflareAccessError("configuration");
+            throw CloudflareAccessError.new("configuration");
           const registration = await jsonRequest(issuer + "/cdn-cgi/access/oauth/registration", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -365,13 +370,13 @@ export function makeCloudflareAccess(options: {
             !("client_id" in result) ||
             typeof result.client_id !== "string"
           )
-            throw new CloudflareAccessError("response");
+            throw CloudflareAccessError.new("response");
           client = { origin, issuer, clientId: result.client_id, redirectUri };
-          if (!validClient(client)) throw new CloudflareAccessError("response");
+          if (!validClient(client)) throw CloudflareAccessError.new("response");
           stored.set(origin, client);
           await save();
         }
-        if (client.redirectUri !== redirectUri) throw new CloudflareAccessError("configuration");
+        if (client.redirectUri !== redirectUri) throw CloudflareAccessError.new("configuration");
         const attempt = ++nextAttempt;
         active.set(origin, attempt);
         return { registration: client, attempt };
@@ -381,7 +386,7 @@ export function makeCloudflareAccess(options: {
         await load();
         const client = ticket.registration;
         if (active.get(client.origin) !== ticket.attempt)
-          throw new CloudflareAccessError("cancelled");
+          throw CloudflareAccessError.new("cancelled");
         const { response, body } = await jsonRequest(
           client.issuer + "/cdn-cgi/access/oauth/token",
           form({
@@ -393,7 +398,7 @@ export function makeCloudflareAccess(options: {
             resource: client.origin,
           }),
         );
-        if (!response.ok) throw new CloudflareAccessError("sign-in-required");
+        if (!response.ok) throw CloudflareAccessError.new("sign-in-required");
         const grant = readGrant(body);
         if (active.get(client.origin) !== ticket.attempt) {
           await jsonRequest(
@@ -404,7 +409,7 @@ export function makeCloudflareAccess(options: {
               token_type_hint: "refresh_token",
             }),
           ).catch(() => undefined);
-          throw new CloudflareAccessError("cancelled");
+          throw CloudflareAccessError.new("cancelled");
         }
         clients!.set(client.origin, { ...client, grant });
         await save();
@@ -422,7 +427,7 @@ export function makeCloudflareAccess(options: {
               }),
             ).catch(() => undefined);
           }
-          throw new CloudflareAccessError("cancelled");
+          throw CloudflareAccessError.new("cancelled");
         }
         active.delete(client.origin);
       }),
@@ -451,8 +456,8 @@ export function makeCloudflareAccess(options: {
             token_type_hint: "refresh_token",
           }),
         );
-        if (!response.ok) throw new CloudflareAccessError("network");
-        if (storageFailed) throw new CloudflareAccessError("storage");
+        if (!response.ok) throw CloudflareAccessError.new("network");
+        if (storageFailed) throw CloudflareAccessError.new("storage");
       });
     },
   };

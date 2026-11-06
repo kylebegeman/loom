@@ -1,5 +1,9 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { getCloneDestinationPath } from "@t3tools/client-runtime/operations/projects";
+import {
+  getAddProjectInitialQuery,
+  getCloneDestinationPath,
+  getCloneDirectoryPath,
+} from "@t3tools/client-runtime/operations/projects";
 import { serverChoosesFolders } from "@t3tools/client-runtime/fork"; // fork: file-placement
 import {
   findPromptLinkProjects,
@@ -204,10 +208,12 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
       .map((id) => environments.find((entry) => entry.environmentId === id)) // fork: file-placement
       .find((entry) => entry !== undefined && runsWork(entry)); // fork: file-placement
     const environmentId = environment?.environmentId ?? null; // fork: file-placement
+    const serverConfig = environment?.serverConfig ?? null;
     const newProjectsRoot = environment?.serverConfig?.newProjectsRoot ?? null;
     const serverPlaces = serverChoosesFolders(environment?.serverConfig); // fork: file-placement
     if (
       environmentId === null ||
+      serverConfig === null ||
       (newProjectsRoot === null && !serverPlaces) // fork: file-placement
     ) {
       setState({
@@ -220,16 +226,26 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
     }
     setState({ status: "opening" });
     const projectId = newProjectId();
+    const remoteUrl = `https://github.com/${repository.owner}/${repository.name}.git`;
+    const settings = serverConfig.settings;
     const result = await startProjectClone({
       environmentId,
       input: {
         projectId,
         title: repository.name,
         createdAt: new Date().toISOString(),
-        remoteUrl: `https://github.com/${repository.owner}/${repository.name}.git`,
-        ...(serverPlaces || newProjectsRoot === null // fork: file-placement
+        remoteUrl,
+        // fork: file-placement
+        ...(serverPlaces || newProjectsRoot === null
           ? {}
-          : { destinationPath: getCloneDestinationPath(newProjectsRoot, repository.name) }),
+          : {
+              destinationPath: getCloneDestinationPath(
+                settings.ghqCloneLayout
+                  ? getAddProjectInitialQuery(settings.addProjectBaseDirectory)
+                  : newProjectsRoot,
+                getCloneDirectoryPath(remoteUrl, settings.ghqCloneLayout === true),
+              ),
+            }),
       },
     });
     if (result._tag === "Failure") {

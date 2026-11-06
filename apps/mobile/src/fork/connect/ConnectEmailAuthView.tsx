@@ -298,11 +298,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
   if (page === "computers" && linkedComputersAvailable) {
     return (
       <View className="flex-1 bg-sheet">
-        <AppBar
-          title="Linked computers"
-          options={{ headerBackVisible: false }}
-          onBack={() => setPage("account")}
-        />
+        <AppBar title="Linked computers" guardBack onBack={() => setPage("account")} />
         {Platform.OS === "ios" ? (
           <NativeHeaderToolbar placement="left">
             <NativeHeaderToolbar.Button

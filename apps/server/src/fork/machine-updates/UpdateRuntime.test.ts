@@ -61,9 +61,9 @@ it.effect.each([
   (input) =>
     Effect.gen(function* () {
       const provided = yield* runtimeFixture(input);
-      const supported = yield* Effect.flatMap(UpdateRuntime, (runtime) =>
-        Effect.succeed(runtime.supported),
-      ).pipe(Effect.provide(provided));
+      const supported = yield* Effect.map(UpdateRuntime, (runtime) => runtime.supported).pipe(
+        Effect.provide(provided),
+      );
       assert.equal(supported, input.supported);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

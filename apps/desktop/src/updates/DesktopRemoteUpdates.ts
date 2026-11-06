@@ -1,3 +1,4 @@
+import type * as Mac from "effect/crypto/Mac"; // fork: machine-updates
 import type { DesktopUpdateRemoteOutcome, DesktopUpdateState } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Clock from "effect/Clock";
@@ -54,6 +55,7 @@ export const listen: Effect.Effect<
   | DesktopTelemetryPublisher.DesktopTelemetryPublisher
   | DesktopBackendPool.DesktopBackendPool
   | Scope.Scope
+  | Mac.Mac // fork: machine-updates
 > = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const backends = yield* DesktopBackendPool.DesktopBackendPool;

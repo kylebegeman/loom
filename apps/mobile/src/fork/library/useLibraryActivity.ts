@@ -2,7 +2,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { LibraryTimelineLink } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentServerConfig } from "../../state/entities";

@@ -15,7 +15,7 @@ import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, BearerConnectionTarget } from "../connection/model.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
@@ -96,7 +96,11 @@ it.effect("refreshes mounted core lists and SSH details across factories after m
         },
       } as unknown as RpcSession;
       const supervisor = {
-        target: { environmentId, label: "Vault test" },
+        target: new BearerConnectionTarget({
+          environmentId,
+          label: "Vault test",
+          connectionId: "fixture",
+        }),
         state: yield* SubscriptionRef.make({ ...AVAILABLE_CONNECTION_STATE, phase: "connected" }),
         session: yield* SubscriptionRef.make(Option.some(session)),
       } as EnvironmentSupervisor["Service"];
