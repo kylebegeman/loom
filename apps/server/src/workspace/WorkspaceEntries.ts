@@ -31,6 +31,18 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
+// fork: path-picker
+class WorkspaceEntriesOperationError extends Schema.TaggedError<WorkspaceEntriesOperationError>()(
+  "WorkspaceEntriesOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Workspace Entries operation failed.";
+  }
+}
+
 export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<WorkspaceEntriesWindowsPathUnsupportedError>()(
   "WorkspaceEntriesWindowsPathUnsupportedError",
   {
@@ -178,7 +190,10 @@ const classifyBrowseEntries = Effect.fn("WorkspaceEntries.classifyBrowseEntries"
   const linked = yield* Effect.forEach(
     dirents.filter((dirent) => dirent.isSymbolicLink()),
     ({ name }) =>
-      Effect.tryPromise(() => NodeFSP.stat(path.join(parentPath, name))).pipe(
+      Effect.tryPromise({
+        try: () => NodeFSP.stat(path.join(parentPath, name)),
+        catch: (cause) => new WorkspaceEntriesOperationError({ cause }),
+      }).pipe(
         Effect.map((stats) => toEntries(name, kindOf(stats))),
         Effect.orElseSucceed(() => []),
       ),

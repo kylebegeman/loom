@@ -16,6 +16,17 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as ServerConfig from "../../config.ts";
 
+class HostIdentityOperationError extends Schema.TaggedError<HostIdentityOperationError>()(
+  "HostIdentityOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Host Identity operation failed.";
+  }
+}
+
 const HostIdentityFile = Schema.Struct({
   version: Schema.Literal(1),
   prepared: ReachPrepared,
@@ -66,9 +77,10 @@ export const applyHostIdentity = Effect.fn("HostIdentity.apply")(
     )
       return yield* new ReachError({ reason: "identity-allowlist" });
     for (const value of [prepared.issuer, prepared.resource]) {
-      const url = yield* Effect.try(() => new URL(value)).pipe(
-        Effect.mapError(() => new ReachError({ reason: "unavailable" })),
-      );
+      const url = yield* Effect.try({
+        try: () => new URL(value),
+        catch: (cause) => new HostIdentityOperationError({ cause }),
+      }).pipe(Effect.mapError(() => new ReachError({ reason: "unavailable" })));
       if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
         return yield* new ReachError({ reason: "unavailable" });
     }

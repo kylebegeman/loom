@@ -21,6 +21,17 @@ import * as ClaudeWorktreeService from "./ClaudeWorktreeService.ts";
 import { ClaudeWorktreeService as ClaudeWorktreeServiceTag } from "./ClaudeWorktreeServiceTag.ts";
 import { claudeWorktreeHooks } from "./claudeWorktreeHooks.ts";
 
+class ClaudeWorktreeServiceFixtureError extends Schema.TaggedError<ClaudeWorktreeServiceFixtureError>()(
+  "ClaudeWorktreeServiceFixtureError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Claude Worktree Service operation failed.";
+  }
+}
+
 const decodeCreatedWorktree = Schema.decodeUnknownEffect(
   Schema.Struct({ hookSpecificOutput: Schema.Struct({ worktreePath: Schema.String }) }),
 );
@@ -128,10 +139,13 @@ it.live(
       const service = yield* ClaudeWorktreeServiceTag.pipe(Effect.provide(serviceLayer));
       const hooks = yield* claudeWorktreeHooks(service, owner);
       const invoke = (event: HookEvent, input: HookInput) =>
-        Effect.tryPromise(() => {
-          const callback = hooks[event]?.[0]?.hooks[0];
-          if (callback === undefined) throw new Error(`Missing ${event} hook`);
-          return callback(input, undefined, { signal: new AbortController().signal });
+        Effect.tryPromise({
+          try: () => {
+            const callback = hooks[event]?.[0]?.hooks[0];
+            if (callback === undefined) throw new Error(`Missing ${event} hook`);
+            return callback(input, undefined, { signal: new AbortController().signal });
+          },
+          catch: (cause) => new ClaudeWorktreeServiceFixtureError({ cause }),
         });
       const baseInput = {
         session_id: owner.sessionId,
@@ -239,13 +253,14 @@ it.live(
         worktrees.map(({ cwd }) => cwd).toSorted(),
       );
 
-      yield* Effect.tryPromise(async () => {
-        const workers = worktrees.map(({ cwd, index }) => {
-          const child = NodeChildProcess.spawn(
-            process.execPath,
-            [
-              "-e",
-              `
+      yield* Effect.tryPromise({
+        try: async () => {
+          const workers = worktrees.map(({ cwd, index }) => {
+            const child = NodeChildProcess.spawn(
+              process.execPath,
+              [
+                "-e",
+                `
         const fs = require('node:fs');
         const vm = require('node:vm');
         const path = require('node:path');
@@ -259,40 +274,42 @@ it.live(
           process.disconnect();
         });
       `,
-            ],
-            {
-              cwd,
-              env: {
-                ...process.env,
-                TMPDIR: path.join(cwd, ".build/tmp"),
-                LOOM_LANE_BUILD: path.join(cwd, ".build"),
+              ],
+              {
+                cwd,
+                env: {
+                  ...process.env,
+                  TMPDIR: path.join(cwd, ".build/tmp"),
+                  LOOM_LANE_BUILD: path.join(cwd, ".build"),
+                },
+                stdio: ["ignore", "ignore", "pipe", "ipc"],
               },
-              stdio: ["ignore", "ignore", "pipe", "ipc"],
-            },
-          );
-          const ready = new Promise<void>((resolve, reject) => {
-            child.once("message", (message) =>
-              message === "building" ? resolve() : reject(new Error("Unexpected build event")),
             );
-            child.once("error", reject);
-            child.once("exit", () => reject(new Error("Build exited before the barrier")));
+            const ready = new Promise<void>((resolve, reject) => {
+              child.once("message", (message) =>
+                message === "building" ? resolve() : reject(new Error("Unexpected build event")),
+              );
+              child.once("error", reject);
+              child.once("exit", () => reject(new Error("Build exited before the barrier")));
+            });
+            const exited = new Promise<void>((resolve, reject) => {
+              child.once("error", reject);
+              child.once("exit", (code) =>
+                code === 0 ? resolve() : reject(new Error(`Build exited ${code}`)),
+              );
+            });
+            return { child, ready, exited };
           });
-          const exited = new Promise<void>((resolve, reject) => {
-            child.once("error", reject);
-            child.once("exit", (code) =>
-              code === 0 ? resolve() : reject(new Error(`Build exited ${code}`)),
-            );
-          });
-          return { child, ready, exited };
-        });
-        try {
-          await Promise.all(workers.map((worker) => worker.ready));
-          expect(workers.every((worker) => worker.child.exitCode === null)).toBe(true);
-          for (const worker of workers) worker.child.send("finish");
-          await Promise.all(workers.map((worker) => worker.exited));
-        } finally {
-          for (const worker of workers) if (worker.child.exitCode === null) worker.child.kill();
-        }
+          try {
+            await Promise.all(workers.map((worker) => worker.ready));
+            expect(workers.every((worker) => worker.child.exitCode === null)).toBe(true);
+            for (const worker of workers) worker.child.send("finish");
+            await Promise.all(workers.map((worker) => worker.exited));
+          } finally {
+            for (const worker of workers) if (worker.child.exitCode === null) worker.child.kill();
+          }
+        },
+        catch: (cause) => new ClaudeWorktreeServiceFixtureError({ cause }),
       });
       for (const entry of worktrees) {
         expect(yield* fs.readFileString(path.join(entry.cwd, ".build", "result"))).toBe(

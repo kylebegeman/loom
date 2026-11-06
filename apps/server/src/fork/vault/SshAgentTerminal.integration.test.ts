@@ -28,6 +28,17 @@ import * as BrokerIdentity from "./BrokerIdentity.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import { sshFixture } from "./VaultSsh.testkit.ts";
 
+class SshAgentTerminalintegrationFixtureError extends Schema.TaggedError<SshAgentTerminalintegrationFixtureError>()(
+  "SshAgentTerminalintegrationFixtureError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Ssh Agent Terminalintegration operation failed.";
+  }
+}
+
 const configured = Boolean(
   process.env.LOOM_VAULT_TEST_SSH_PORT && process.env.LOOM_VAULT_TEST_OPENBAO_URL,
 );
@@ -60,12 +71,13 @@ const decodeRequest = Schema.decodeUnknownEffect(
   }),
 );
 const fixture = Effect.gen(function* () {
+  const hostEnvironment = yield* HostProcess.Environment;
   const f = yield* sshFixture();
   const target = {
     hostname: "127.0.0.1",
-    username: process.env.LOOM_VAULT_TEST_SSH_USER!,
-    port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
-    hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+    username: hostEnvironment.LOOM_VAULT_TEST_SSH_USER!,
+    port: Number(hostEnvironment.LOOM_VAULT_TEST_SSH_PORT),
+    hostKey: hostEnvironment.LOOM_VAULT_TEST_SSH_HOST_KEY!,
   };
   const key = yield* f.ssh.generate(
     { id: f.itemId, operationId: yield* f.id, label: "Disposable terminal key", target },
@@ -73,7 +85,7 @@ const fixture = Effect.gen(function* () {
     Effect.void,
   );
   yield* Effect.promise(() =>
-    NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
+    NodeFSP.writeFile(hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
       mode: 0o600,
     }),
   );
@@ -169,8 +181,8 @@ const fixture = Effect.gen(function* () {
   if (!("port" in address)) return yield* Effect.die("Missing fixture port");
   const entrypoint = NodeURL.fileURLToPath(new URL("../../bin.ts", import.meta.url));
   const execute = (command: VaultSshAgentRun["command"], timeoutMs = 30000, pi = false) =>
-    Effect.tryPromise(
-      () =>
+    Effect.tryPromise({
+      try: () =>
         new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
           const env: NodeJS.ProcessEnv = {
             PATH: "/usr/bin:/bin",
@@ -210,13 +222,15 @@ const fixture = Effect.gen(function* () {
           child.on("error", reject);
           child.on("close", (code) => resolve({ code, stdout, stderr }));
         }),
-    );
+      catch: (cause) => new SshAgentTerminalintegrationFixtureError({ cause }),
+    });
   return { ...f, root, key, target, control, execute };
 });
 it.live.skipIf(!configured)(
   "real CLI SSH and Git clone/fetch/push use a remote signing agent, retain exact streams/exits and clean every activation",
   () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const before = new Set(yield* Effect.promise(() => NodeFSP.readdir("/private/tmp")));
       const f = yield* fixture;
       const result = yield* f.execute(
@@ -236,7 +250,7 @@ it.live.skipIf(!configured)(
         stderr: "terminal stderr\n",
       });
       expect(yield* f.workloads.list(f.threadId)).toEqual([]);
-      const remote = process.env.LOOM_VAULT_TEST_GIT_REMOTE!,
+      const remote = hostEnvironment.LOOM_VAULT_TEST_GIT_REMOTE!,
         checkout = NodePath.join(f.root, "cloned");
       const clone = yield* f.execute({
         tool: "git",

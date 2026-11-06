@@ -1,4 +1,5 @@
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
+import { brandTitleOffset } from "../../components/CompactBrandTitle"; // fork: fleet-connections
 import { Animated, Platform, Pressable, View } from "react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";

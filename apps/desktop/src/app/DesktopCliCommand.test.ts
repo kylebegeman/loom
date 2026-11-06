@@ -128,7 +128,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const home = yield* fs.makeTempDirectoryScoped();
       const env: NodeJS.ProcessEnv = { PATH: "" };
       const command = yield* commandIn({ home, env });
-// fork: brand
+      // fork: brand
       const theirs = path.join(home, ".local", "bin", "loom");
       yield* fs.makeDirectory(path.dirname(theirs), { recursive: true });
       yield* fs.writeFileString(theirs, "npm's t3\n");
@@ -181,12 +181,12 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const home = yield* fs.makeTempDirectoryScoped();
       const shadow = path.join(home, "shadow");
       yield* fs.makeDirectory(shadow);
-// fork: brand
+      // fork: brand
       yield* fs.writeFileString(path.join(shadow, "loom"), "#!/bin/sh\n", { mode: 0o755 });
       const env = { PATH: [shadow, path.join(home, ".local", "bin")].join(":") };
 
       const command = yield* commandIn({ home, env });
-// fork: brand
+      // fork: brand
       const theirs = path.join(shadow, "loom");
       expect((yield* command.state).shadowedBy).toBe(theirs);
       const error = yield* Effect.flip(command.install);
@@ -222,12 +222,12 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
         // fork: brand
         yield* fs.chmod(path.join(plain, "loom"), process.getuid?.() === 0 ? 0o600 : 0o601);
         yield* fs.makeDirectory(shadow);
-// fork: brand
+        // fork: brand
         yield* fs.writeFileString(path.join(shadow, "loom"), "#!/bin/sh\n", { mode: 0o755 });
         const env = { PATH: [folder, plain, shadow, path.join(home, ".local", "bin")].join(":") };
 
         const command = yield* commandIn({ home, env });
-// fork: brand
+        // fork: brand
         expect((yield* command.state).shadowedBy).toBe(path.join(shadow, "loom"));
 
         const error = yield* Effect.flip(command.install);
@@ -246,7 +246,7 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fs.makeTempDirectoryScoped();
-// fork: brand
+      // fork: brand
       const launcher = path.join(home, ".t3", "bin", "loom");
       const env = { PATH: [path.dirname(launcher), path.join(home, ".local", "bin")].join(":") };
 

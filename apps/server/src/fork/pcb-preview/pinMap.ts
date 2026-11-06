@@ -126,15 +126,13 @@ export const makePinMap = Effect.fn("PcbPreview.makePinMap")(function* (deps: {
         .pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path),
-          Effect.catch((cause) =>
-            Effect.fail(
-              cause._tag === "PcbPreviewError"
-                ? cause
-                : error(
-                    "io-failed",
-                    "The pin map could not be saved. Check the destination and try again.",
-                  ),
-            ),
+          Effect.mapError((cause) =>
+            cause._tag === "PcbPreviewError"
+              ? cause
+              : error(
+                  "io-failed",
+                  "The pin map could not be saved. Check the destination and try again.",
+                ),
           ),
         );
       yield* deps.refresh(root);

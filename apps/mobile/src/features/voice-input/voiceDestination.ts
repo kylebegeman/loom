@@ -119,7 +119,7 @@ function environmentTranscriber(prepared: PreparedConnection, canSend: () => boo
       if (!native?.decodeRecording)
         throw new VoiceTranscriptionError({
           code: "unavailable",
-          message: "Update T3 Code to transcribe on an environment.",
+          message: "Update Loom to transcribe on an environment.", // fork: brand
         });
       return native.decodeRecording(uri);
     },

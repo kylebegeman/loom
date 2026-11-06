@@ -241,7 +241,14 @@ describe("t3 app", () => {
           (root) =>
             Effect.gen(function* () {
               yield* Effect.acquireRelease(
-                Effect.sync(() => setProcessEnv("TMPDIR", root)),
+                Effect.sync(() => {
+                  const restoreTemp = setProcessEnv("TMPDIR", root);
+                  const restoreSystemTemp = setProcessEnv("LOOM_LANE_SAVED_TMPDIR", root); // fork: project-lifecycle
+                  return () => {
+                    restoreSystemTemp();
+                    restoreTemp();
+                  };
+                }),
                 (restore) => Effect.sync(restore),
               );
               const baseDir = NodePath.join(root, ".t3");

@@ -24,6 +24,8 @@ vi.mock("../../state/threads", () => ({
     loadEarlierHistory: {},
     mergeBack: {},
     startTurn: {},
+    forkSideChat: { label: "fork side chat" },
+    delete: { label: "delete" },
   },
   useThreadFamily: () => {},
 }));

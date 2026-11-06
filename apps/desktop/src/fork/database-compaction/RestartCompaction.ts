@@ -34,6 +34,17 @@ import {
   formatBytes,
 } from "./RestartCompactionSplash.ts";
 
+class RestartCompactionOperationError extends Schema.TaggedError<RestartCompactionOperationError>()(
+  "RestartCompactionOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Restart Compaction operation failed.";
+  }
+}
+
 /** The state database `doctor --base-dir` repairs; see deriveServerPaths in apps/server. */
 const DATABASE_FILE = "statev2.sqlite";
 /** The version this desktop last launched, so the first launch of an update can compact. */
@@ -163,7 +174,10 @@ const readSqliteHeader = Effect.fn("desktop.restartCompaction.readHeader")(funct
 });
 
 const freeDiskBytes = (directory: string) =>
-  Effect.tryPromise(() => NodeFSP.statfs(directory)).pipe(
+  Effect.tryPromise({
+    try: () => NodeFSP.statfs(directory),
+    catch: (cause) => new RestartCompactionOperationError({ cause }),
+  }).pipe(
     Effect.map((stats) => stats.bavail * stats.bsize),
     Effect.orElseSucceed(() => null),
   );

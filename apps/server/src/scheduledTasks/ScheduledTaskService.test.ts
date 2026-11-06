@@ -513,7 +513,6 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
           }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,
@@ -588,7 +587,6 @@ it.effect("a first run whose thread was deleted before it bound removes the task
           }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,
@@ -640,7 +638,6 @@ it.effect.each(["recreated under the same id", "moved to another project"] as co
             Layer.mock(ThreadManagementService.ThreadManagementService)({}),
             Layer.mock(SecretRequests.SecretRequests)({}),
             Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-              namedProjectsRoot: "/projects",
               isScratchProject: () => Effect.succeed(false),
             }),
             NodeCrypto.layer,

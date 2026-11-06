@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { ConnectionTransientError } from "@t3tools/client-runtime/connection";
 import type {
   IdentityRenewal,
@@ -15,6 +16,8 @@ import {
 import * as Effect from "effect/Effect";
 
 import type { MobileIdentityGrantStore } from "./grantStore";
+
+const isIdentityGrantTransientErrorValue = Schema.is(IdentityGrantTransientError);
 
 type IdentityRenewalService = NonNullable<typeof IdentityRenewal.Service>;
 
@@ -40,7 +43,7 @@ const signInRequired = (reason: string): IdentityRenewalOutcome => ({
 });
 
 function transientRenewalError(cause: unknown) {
-  return cause instanceof IdentityGrantTransientError
+  return isIdentityGrantTransientErrorValue(cause)
     ? new ConnectionTransientError({ reason: "network", detail: cause.message })
     : new ConnectionTransientError({
         reason: "remote-unavailable",
@@ -114,7 +117,10 @@ export function makeIdentityRenewal(deps: {
       });
     }),
     forget: Effect.fn("MobileIdentityRenewal.forget")(function* (request) {
-      yield* Effect.tryPromise({ try: () => forgetOnce(request), catch: (cause) => cause }).pipe(
+      yield* Effect.tryPromise({
+        try: () => forgetOnce(request),
+        catch: transientRenewalError,
+      }).pipe(
         Effect.catch((cause) =>
           Effect.logWarning("Could not forget this device's Loom sign-in.", {
             environmentId: request.environmentId,

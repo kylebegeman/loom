@@ -18,6 +18,7 @@ import * as Path from "effect/Path";
 import * as DateTime from "effect/DateTime";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -41,6 +42,17 @@ import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { LibraryRecoveryHttpRoutes } from "./assets/recoveryHttp.ts";
 import { copyFor, source, resource } from "./Library.testkit.ts";
 import { recoveryDescriptorDigest, recoveryGrantSubject } from "./recoveryGrant.ts";
+
+class LibraryRecoveryAuthorizationFixtureError extends Schema.TaggedError<LibraryRecoveryAuthorizationFixtureError>()(
+  "LibraryRecoveryAuthorizationFixtureError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Library Recovery Authorization operation failed.";
+  }
+}
 
 const authority = EnvironmentId.make("library");
 const destination = EnvironmentId.make("destination");
@@ -472,46 +484,53 @@ describe("destination-authorized recovery", () => {
         yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(routes, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const url = `https://library.test/api/loom/library/recovery-grants/${destination}/${source}/${f.copy.id}/${f.read.sha256}`;
-              const headers = {
-                authorization: `Bearer ${f.grant.accessToken}`,
-                "x-loom-recovery-descriptor": f.read.descriptorDigest,
-              };
-              const granted = await web.handler(new Request(url, { headers }));
-              expect(granted.status).toBe(200);
-              expect([...new Uint8Array(await granted.arrayBuffer())]).toEqual([...bytes]);
-              expect(granted.headers.get("cache-control")).toBe("no-store");
-              for (const deniedUrl of [
-                url.replace(`/${destination}/`, "/another-destination/"),
-                url.replace(`/${f.copy.id}/`, "/another-copy/"),
-              ])
-                expect((await web.handler(new Request(deniedUrl, { headers }))).status).toBe(403);
-              expect(
-                (
-                  await web.handler(
-                    new Request(url, {
-                      headers: { ...headers, authorization: `Bearer ${hostB.token}` },
-                    }),
-                  )
-                ).status,
-              ).toBe(403);
-              const ordinary = `https://library.test/api/loom/library/recovery/${source}/${f.copy.id}/${f.read.sha256}`;
-              expect(
-                (
-                  await web.handler(
-                    new Request(ordinary, { headers: { authorization: `Bearer ${hostB.token}` } }),
-                  )
-                ).status,
-              ).toBe(403);
-              expect(
-                (
-                  await web.handler(
-                    new Request(ordinary, { headers: { authorization: `Bearer ${hostA.token}` } }),
-                  )
-                ).status,
-              ).toBe(200);
-              expect((await web.handler(new Request(ordinary, { headers }))).status).toBe(403);
+            Effect.tryPromise({
+              try: async () => {
+                const url = `https://library.test/api/loom/library/recovery-grants/${destination}/${source}/${f.copy.id}/${f.read.sha256}`;
+                const headers = {
+                  authorization: `Bearer ${f.grant.accessToken}`,
+                  "x-loom-recovery-descriptor": f.read.descriptorDigest,
+                };
+                const granted = await web.handler(new Request(url, { headers }));
+                expect(granted.status).toBe(200);
+                expect([...new Uint8Array(await granted.arrayBuffer())]).toEqual([...bytes]);
+                expect(granted.headers.get("cache-control")).toBe("no-store");
+                for (const deniedUrl of [
+                  url.replace(`/${destination}/`, "/another-destination/"),
+                  url.replace(`/${f.copy.id}/`, "/another-copy/"),
+                ])
+                  expect((await web.handler(new Request(deniedUrl, { headers }))).status).toBe(403);
+                expect(
+                  (
+                    await web.handler(
+                      new Request(url, {
+                        headers: { ...headers, authorization: `Bearer ${hostB.token}` },
+                      }),
+                    )
+                  ).status,
+                ).toBe(403);
+                const ordinary = `https://library.test/api/loom/library/recovery/${source}/${f.copy.id}/${f.read.sha256}`;
+                expect(
+                  (
+                    await web.handler(
+                      new Request(ordinary, {
+                        headers: { authorization: `Bearer ${hostB.token}` },
+                      }),
+                    )
+                  ).status,
+                ).toBe(403);
+                expect(
+                  (
+                    await web.handler(
+                      new Request(ordinary, {
+                        headers: { authorization: `Bearer ${hostA.token}` },
+                      }),
+                    )
+                  ).status,
+                ).toBe(200);
+                expect((await web.handler(new Request(ordinary, { headers }))).status).toBe(403);
+              },
+              catch: (cause) => new LibraryRecoveryAuthorizationFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );

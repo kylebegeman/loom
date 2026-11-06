@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
@@ -41,6 +42,8 @@ import {
   useLibraryAuthority,
   useLoomFeature,
 } from "./libraryState";
+
+const isLibraryErrorValue = Schema.is(LibraryError);
 
 type Decision = "accept" | "dismiss";
 
@@ -242,7 +245,7 @@ function BriefProposalReview(props: {
     if (AsyncResult.isFailure(result)) {
       const cause = squashAtomCommandFailure(result);
       // The brief moved since this screen loaded it; reload so the changes show against it.
-      if (cause instanceof LibraryError && cause.reason === "revision-conflict") {
+      if (isLibraryErrorValue(cause) && cause.reason === "revision-conflict") {
         setConfirmingStale(false);
         setConflict(true);
         props.onConflict();

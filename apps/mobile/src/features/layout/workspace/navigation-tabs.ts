@@ -1,4 +1,4 @@
-import { hiddenNavigationTabsForPlatform } from "../../fork/usage-navigation/tabs"; // fork: usage-navigation
+import { hiddenNavigationTabsForPlatform } from "../../../fork/usage-navigation/tabs"; // fork: usage-navigation
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 import { Platform } from "react-native";

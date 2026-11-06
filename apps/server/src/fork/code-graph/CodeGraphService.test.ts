@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off - Runs a stub Graphify against a scratch git repository.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -70,6 +71,7 @@ esac
 
 const setup = (options: { readonly graphify?: string; readonly installed?: boolean } = {}) =>
   Effect.gen(function* () {
+    const hostEnvironment = yield* HostProcess.Environment;
     const home = NodeFS.realpathSync(
       NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-graph-")),
     );
@@ -96,7 +98,10 @@ const setup = (options: { readonly graphify?: string; readonly installed?: boole
       ).pipe(Layer.provideMerge(NodeServices.layer)),
     );
     yield* runForkMigrationSet(CodeGraphMigrations).pipe(Effect.provide(context));
-    const service = yield* makeWith({ env: { PATH: process.env.PATH }, freshnessTtlMs: 0 }).pipe(
+    const service = yield* makeWith({
+      env: { PATH: hostEnvironment.PATH },
+      freshnessTtlMs: 0,
+    }).pipe(
       Effect.provide(context),
       Effect.provideService(
         ProjectionStore.ProjectionStoreV2,

@@ -21,6 +21,17 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { signInToLoomBrowser } from "~/rpc/loomIdentity";
 import { connectionAtomRuntime } from "~/connection/runtime";
 
+class ConnectionOperationError extends Schema.TaggedError<ConnectionOperationError>()(
+  "ConnectionOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Connection operation failed.";
+  }
+}
+
 class LoomIdentityConnectionError extends Schema.TaggedError<LoomIdentityConnectionError>()(
   "LoomIdentityConnectionError",
   { detail: Schema.String },
@@ -167,14 +178,15 @@ export const connectLoomIdentity = createRuntimeCommand(connectionAtomRuntime, {
     ).pipe(
       Effect.onError(() =>
         unsaved && identity
-          ? Effect.tryPromise(
-              async () =>
+          ? Effect.tryPromise({
+              try: async () =>
                 await window.desktopBridge?.forgetLoomIdentity?.({
                   httpBaseUrl: result.httpBaseUrl,
                   environmentId: result.environmentId,
                   identity,
                 }),
-            ).pipe(Effect.ignore)
+              catch: (cause) => new ConnectionOperationError({ cause }),
+            }).pipe(Effect.ignore)
           : Effect.void,
       ),
     );

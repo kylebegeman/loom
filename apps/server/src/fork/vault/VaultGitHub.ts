@@ -232,10 +232,7 @@ const make = Effect.gen(function* () {
       });
     return record;
   });
-  const acquireSession = (
-    credential: typeof VaultGitHubCredential.Type,
-    repositories: ReadonlyArray<string>,
-  ) =>
+  const acquireSession = (credential: VaultGitHubCredential, repositories: ReadonlyArray<string>) =>
     Effect.acquireRelease(transport.session(credential, repositories), (session) =>
       transport
         .release(session)

@@ -1,6 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { loadLibraryAttachment } from "../../fork/library/rpc/libraryAssets"; // fork: library
-import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {

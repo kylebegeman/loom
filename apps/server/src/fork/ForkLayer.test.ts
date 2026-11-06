@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
@@ -75,7 +76,7 @@ const dependencies = Layer.mergeAll(
   Layer.mock(DeviceService.DeviceService)({}),
   // Match server construction: background workers remain parked until activation.
   Layer.succeed(ServerActivation, Effect.never),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect(
   "migrates fresh lane tables before the shared lifecycle is acquired by runtime callers",
@@ -120,7 +121,7 @@ const reachDependencies = Layer.mergeAll(
   Layer.succeed(ServerEnvironmentIdentity, {
     getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-library")),
   }),
-).pipe(Layer.provideMerge(NodeServices.layer));
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect("hands the directory the reach store the provisioner writes, so forget waits (F2)", () =>
   Effect.gen(function* () {

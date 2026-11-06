@@ -2602,10 +2602,10 @@ it.effect.each(["waitFor", "click"] as const)(
               started.resolve();
               // A locator that has its own deadline must settle before the hard host watchdog.
               if ((input.timeoutMs ?? 15_000) >= 1000) return new Promise<never>(() => {});
-              throw new ServerBrowserPage.ServerBrowserOperationError(
-                "PreviewAutomationTimeoutError",
-                "The condition did not match before its locator deadline.",
-              );
+              throw new ServerBrowserPage.ServerBrowserOperationError({
+                tag: "PreviewAutomationTimeoutError",
+                message: "The condition did not match before its locator deadline.",
+              });
             },
           );
         yield* Effect.addFinalizer(() => Effect.sync(() => wait.mockRestore()));

@@ -233,7 +233,7 @@ function PendingSecretRequestForm(props: {
         label="Save securely"
         tone="primary"
         fullWidth
-        disabled={submitting || vaultSave.saved || draft.trim().length === 0} // fork: vault-core
+        disabled={submitting || draft.trim().length === 0}
         onPress={save}
       />
       <View className="flex-row items-center justify-between gap-2">

@@ -8,7 +8,6 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as SecureRandom from "effect/crypto/SecureRandom"; // fork: secure-native-random
-import { verifyDpopProof } from "@t3tools/shared/dpop";
 
 import { loadOrCreateDpopProofKeyPair } from "./dpop";
 import * as Dpop from "./dpop";

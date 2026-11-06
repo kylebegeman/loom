@@ -12,8 +12,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-// fork: project-lifecycle
-import type * as Scope from "effect/Scope";
 import * as PlatformError from "effect/PlatformError";
 import type * as Scope from "effect/Scope";
 import type * as SqlClient from "effect/sql/SqlClient";

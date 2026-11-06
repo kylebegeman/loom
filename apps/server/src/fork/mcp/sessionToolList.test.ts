@@ -1,3 +1,4 @@
+import * as AssetSigner from "../../assets/AssetSigner.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -53,6 +54,7 @@ import { filterSessionTools, hideUnusableTools } from "./sessionToolList.ts";
 
 // Listing tools never calls these; they only satisfy the production layer.
 const layerStubServices = Layer.mergeAll(
+  Layer.mock(AssetSigner.AssetSigner)({}),
   Layer.mock(StorageCleanup.StorageCleanup)({ latestReport: Effect.succeed(null) }),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),

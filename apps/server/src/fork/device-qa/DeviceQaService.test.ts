@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off - Runs real stub executables in a scratch workspace.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -121,6 +122,7 @@ const FLOW = "steps:\n  - launch: { ios: com.example.app }\n  - tap: { text: Sig
 
 const setup = () =>
   Effect.gen(function* () {
+    const hostEnvironment = yield* HostProcess.Environment;
     const home = NodeFS.realpathSync(
       NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-qa-")),
     );
@@ -150,7 +152,7 @@ const setup = () =>
     yield* runForkMigrationSet(DeviceQaMigrations).pipe(Effect.provide(context));
     const service = yield* makeWith({
       platform: "darwin",
-      env: { PATH: process.env.PATH, HOME: home, ANDROID_HOME: NodePath.join(home, "no-sdk") },
+      env: { PATH: hostEnvironment.PATH, HOME: home, ANDROID_HOME: NodePath.join(home, "no-sdk") },
       homeDir: home,
       tools,
       killAfterMs: 2_000,

@@ -15,8 +15,20 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "../../config.ts";
+
+class ProviderProcessesOperationError extends Schema.TaggedError<ProviderProcessesOperationError>()(
+  "ProviderProcessesOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Provider Processes operation failed.";
+  }
+}
 
 export interface ProcessRegistryHost {
   readonly owner: Identity;
@@ -66,9 +78,12 @@ export const makeRegistry = (
       if (!holds(record, threadId, cwd)) continue;
       // A second server accidentally pointed at the same state directory owns no right
       // to terminate the first server's providers, even though the child identity matches.
-      const ownerAlive = yield* Effect.try(() => {
-        const owner = host.inspect(record.owner.pid);
-        return owner !== null && owner.lstart === record.owner.lstart;
+      const ownerAlive = yield* Effect.try({
+        try: () => {
+          const owner = host.inspect(record.owner.pid);
+          return owner !== null && owner.lstart === record.owner.lstart;
+        },
+        catch: (cause) => new ProviderProcessesOperationError({ cause }),
       }).pipe(Effect.orElseSucceed(() => true));
       if (ownerAlive) continue;
       const state = inspect(record);
@@ -78,14 +93,17 @@ export const makeRegistry = (
       }
       if (state !== "owned") continue;
       // A failed stop keeps ownership so it blocks restart continuation.
-      yield* Effect.try(() => {
-        const members = host.members(record.pgid).map((member) => ({ ...record, ...member }));
-        if (inspect(record) !== "owned") return;
-        host.signal(record.pgid, "SIGTERM");
-        pending.push({
-          record,
-          members: [record, ...members.filter((member) => member.pid !== record.pid)],
-        });
+      yield* Effect.try({
+        try: () => {
+          const members = host.members(record.pgid).map((member) => ({ ...record, ...member }));
+          if (inspect(record) !== "owned") return;
+          host.signal(record.pgid, "SIGTERM");
+          pending.push({
+            record,
+            members: [record, ...members.filter((member) => member.pid !== record.pid)],
+          });
+        },
+        catch: (cause) => new ProviderProcessesOperationError({ cause }),
       }).pipe(Effect.ignore);
     }
     if (pending.length > 0) yield* Effect.sleep("250 millis");
@@ -94,7 +112,10 @@ export const makeRegistry = (
       // signalling so escalation still has an identity witness for the original group.
       if (members.some((member) => inspect(member) === "owned")) {
         // A failed kill is retained and reported below.
-        yield* Effect.try(() => host.signal(record.pgid, "SIGKILL")).pipe(Effect.ignore);
+        yield* Effect.try({
+          try: () => host.signal(record.pgid, "SIGKILL"),
+          catch: (cause) => new ProviderProcessesOperationError({ cause }),
+        }).pipe(Effect.ignore);
       }
     }
     if (pending.length > 0) yield* Effect.sleep("50 millis");
@@ -114,9 +135,10 @@ export const makeRegistry = (
         });
       }
     }
-    yield* Effect.try(persist).pipe(
-      Effect.catch(() => Effect.logWarning("Could not update provider process ownership")),
-    );
+    yield* Effect.try({
+      try: persist,
+      catch: (cause) => new ProviderProcessesOperationError({ cause }),
+    }).pipe(Effect.catch(() => Effect.logWarning("Could not update provider process ownership")));
   });
   return ProviderProcesses.of({
     register(input: ProviderProcessRegistration) {
@@ -221,53 +243,56 @@ export const layer = Layer.effect(
     const path = NodePath.join(stateDir, ...PROVIDER_PROCESS_LEDGER_PATH);
     const directory = NodePath.dirname(path);
     let unreadable: unknown;
-    const registry = yield* Effect.try(() => {
-      NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 });
-      const owner = inspectProcess(process.pid);
-      if (owner === null) throw new Error("Could not verify server process identity");
-      return makeRegistry(
-        {
-          owner,
-          inspect: inspectProcess,
-          members: (pgid) => {
-            // Enumerate only numeric group membership; inspect only members of the owned group.
-            const output = NodeChildProcess.execFileSync(
-              "/bin/ps",
-              ["-A", "-o", "pid=", "-o", "pgid="],
-              { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] },
-            );
-            return output.split("\n").flatMap((line) => {
-              const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
-              if (!match || Number(match[2]) !== pgid) return [];
-              const member = inspectProcess(Number(match[1]));
-              return member !== null && member.pgid === pgid ? [member] : [];
-            });
+    const registry = yield* Effect.try({
+      try: () => {
+        NodeFS.mkdirSync(directory, { recursive: true, mode: 0o700 });
+        const owner = inspectProcess(process.pid);
+        if (owner === null) throw new Error("Could not verify server process identity");
+        return makeRegistry(
+          {
+            owner,
+            inspect: inspectProcess,
+            members: (pgid) => {
+              // Enumerate only numeric group membership; inspect only members of the owned group.
+              const output = NodeChildProcess.execFileSync(
+                "/bin/ps",
+                ["-A", "-o", "pid=", "-o", "pgid="],
+                { encoding: "utf8", timeout: 1000, stdio: ["ignore", "pipe", "ignore"] },
+              );
+              return output.split("\n").flatMap((line) => {
+                const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+                if (!match || Number(match[2]) !== pgid) return [];
+                const member = inspectProcess(Number(match[1]));
+                return member !== null && member.pgid === pgid ? [member] : [];
+              });
+            },
+            signal: (pgid, signal) => process.kill(-pgid, signal),
+            read: () => {
+              try {
+                return NodeFS.readFileSync(path, "utf8");
+              } catch (cause) {
+                if (
+                  typeof cause === "object" &&
+                  cause !== null &&
+                  "code" in cause &&
+                  cause.code === "ENOENT"
+                )
+                  return null;
+                throw cause;
+              }
+            },
+            write: (contents) => {
+              const temporary = `${path}.${process.pid}.tmp`;
+              NodeFS.writeFileSync(temporary, contents, { mode: 0o600 });
+              NodeFS.renameSync(temporary, path);
+            },
           },
-          signal: (pgid, signal) => process.kill(-pgid, signal),
-          read: () => {
-            try {
-              return NodeFS.readFileSync(path, "utf8");
-            } catch (cause) {
-              if (
-                typeof cause === "object" &&
-                cause !== null &&
-                "code" in cause &&
-                cause.code === "ENOENT"
-              )
-                return null;
-              throw cause;
-            }
+          (cause) => {
+            unreadable = cause;
           },
-          write: (contents) => {
-            const temporary = `${path}.${process.pid}.tmp`;
-            NodeFS.writeFileSync(temporary, contents, { mode: 0o600 });
-            NodeFS.renameSync(temporary, path);
-          },
-        },
-        (cause) => {
-          unreadable = cause;
-        },
-      );
+        );
+      },
+      catch: (cause) => new ProviderProcessesOperationError({ cause }),
     }).pipe(
       // Without a verified server identity nothing can be proven owned, so nothing is reaped;
       // the server still starts.

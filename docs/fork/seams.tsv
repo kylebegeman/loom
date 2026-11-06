@@ -947,7 +947,7 @@ apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts	project-lifec
 apps/server/src/orchestration-v2/CheckpointRollbackService.ts	project-lifecycle	14
 apps/server/src/orchestration-v2/EffectWorker.test.ts	project-lifecycle	1
 apps/server/src/orchestration-v2/EffectWorker.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts	project-lifecycle	6
+apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts	project-lifecycle	5
 apps/server/src/ws.ts	project-lifecycle	3
 apps/web/src/components/ChatView.logic.test.ts	project-lifecycle	1
 apps/web/src/components/ChatView.logic.test.ts	library-launch-files	1
@@ -1678,3 +1678,8 @@ apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	library	6
 apps/mobile/src/features/layout/workspace/WorkspaceToolbar.ios.tsx	project-navigation	3
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	brand	2
 apps/mobile/src/components/FilePreviewModal.test.tsx	cloudflare-access	4
+apps/mobile/src/features/settings/VoiceModelSection.tsx	brand	1
+apps/mobile/src/features/voice-input/voiceDestination.ts	brand	1
+apps/mobile/src/state/use-thread-composer-state.ts	brand	1
+apps/server/src/device/SshDeviceHost.ts	brand	1
+packages/shared/package.json	-	./fork/relayJwt

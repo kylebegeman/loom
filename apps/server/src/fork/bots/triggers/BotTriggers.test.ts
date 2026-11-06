@@ -1,3 +1,4 @@
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no synchronous HMAC.
 import * as NodeCrypto from "node:crypto";
 
@@ -62,6 +63,7 @@ const makeTriggers = (harness: Harness) =>
     const triggers = yield* provideBatchDeps(make).pipe(
       Effect.provideService(BotBatches, batches),
       Effect.provideService(BotPipelines, pipelines),
+      Effect.provide(PlatformCrypto.layer),
     );
     return { bots, batches, pipelines, triggers };
   });

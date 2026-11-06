@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { mobileAccess } from "../cloudflare-access/mobileAccess"; // fork: cloudflare-access
 // @effect-diagnostics globalDate:off globalTimers:off -- Expo OAuth is an imperative native boundary with a bounded cancellation timer.
 import type { BearerConnectionRegistration } from "@t3tools/client-runtime/connection";
@@ -32,9 +33,17 @@ export type NativeIdentitySignIn = Awaited<ReturnType<typeof completeNativeIdent
 export type NativeIdentitySignInStage = "signing-in" | "verifying";
 
 /** The sign-in outlived its time limit and its sheet was closed. */
-export class NativeIdentitySignInExpired extends Error {
-  constructor(options?: ErrorOptions) {
-    super("Sign-in expired. Try again.", options);
+export class NativeIdentitySignInExpired extends Schema.TaggedError<NativeIdentitySignInExpired>()(
+  "NativeIdentitySignInExpired",
+  {
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  static new(options?: ErrorOptions) {
+    return new NativeIdentitySignInExpired({ ...options });
+  }
+  override get message(): string {
+    return "Sign-in expired. Try again.";
   }
 }
 
@@ -158,7 +167,7 @@ export async function signInWithNativeIdentity(input: {
     completed = true;
     return signedIn;
   } catch (cause) {
-    if (expired) throw new NativeIdentitySignInExpired({ cause });
+    if (expired) throw NativeIdentitySignInExpired.new({ cause });
     if (abort.signal.aborted) return null;
     throw cause;
   } finally {

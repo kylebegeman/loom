@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
@@ -18,6 +19,8 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { loomSignInDestination } from "./returnTo";
 import { connectLoomIdentity } from "./connection";
 import { identityRenewalAvailable } from "./renewal";
+
+const isLoomAccessRequiredErrorValue = Schema.is(LoomAccessRequiredError);
 
 /** Keep Loom host authentication distinct from the existing T3 Connect account. */
 interface LoomSignInProps {
@@ -109,7 +112,7 @@ function LoomSignInTarget({
       })
       .catch((cause: unknown) => {
         if (!abort.signal.aborted) {
-          const accessRequired = isElectron && cause instanceof LoomAccessRequiredError;
+          const accessRequired = isElectron && isLoomAccessRequiredErrorValue(cause);
           setAccessTarget(accessRequired ? target : null);
           setChecked(target);
           setIdentity(null);

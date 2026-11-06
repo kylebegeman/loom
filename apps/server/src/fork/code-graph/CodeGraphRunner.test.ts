@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off - Writes a stub Graphify script to a temp directory.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -93,12 +94,13 @@ describe("startGraphify", () => {
 
   it.effect("streams lines and reports the exit code and environment", () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const file = stub('echo "args: $*"\necho "out: $GRAPHIFY_OUT"\necho "oops" >&2\nexit 3\n');
       const seen: string[] = [];
       const child = yield* startGraphify({
         command: ["/bin/sh", file],
         invocation: { _tag: "update", root: "/repo", force: false },
-        env: graphifyEnvironment({ PATH: process.env.PATH }, "/state/out"),
+        env: graphifyEnvironment({ PATH: hostEnvironment.PATH }, "/state/out"),
         timeoutMs: 10_000,
         onLine: (line) => seen.push(line),
       });
@@ -112,11 +114,12 @@ describe("startGraphify", () => {
 
   it.effect("stops a running process and reports a missing command", () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const file = stub("echo started\nsleep 30\n");
       const child = yield* startGraphify({
         command: ["/bin/sh", file],
         invocation: { _tag: "version" },
-        env: { PATH: process.env.PATH },
+        env: { PATH: hostEnvironment.PATH },
         timeoutMs: 60_000,
       });
       yield* child.stop;

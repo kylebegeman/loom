@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { error, ok, type UtilityToolImpl } from "../types";
 import { formatLocal, isValidTimeZone, zonedParts } from "./time";
 
@@ -116,10 +117,18 @@ interface Schedule {
   readonly expansion: string | null;
 }
 
-class CronSyntaxError extends Error {}
+class CronSyntaxError extends Schema.TaggedError<CronSyntaxError>()("CronSyntaxError", {
+  message: Schema.String,
+}) {
+  static new(message: string) {
+    return new CronSyntaxError({ message });
+  }
+}
+
+const isCronSyntaxErrorValue = Schema.is(CronSyntaxError);
 
 function fail(message: string): never {
-  throw new CronSyntaxError(message);
+  throw CronSyntaxError.new(message);
 }
 
 function parseValue(token: string, spec: FieldSpec): number {
@@ -249,7 +258,7 @@ function parseCron(text: string): Schedule | string {
   try {
     return parseExpression(text);
   } catch (cause) {
-    if (cause instanceof CronSyntaxError) return cause.message;
+    if (isCronSyntaxErrorValue(cause)) return cause.message;
     throw cause;
   }
 }
