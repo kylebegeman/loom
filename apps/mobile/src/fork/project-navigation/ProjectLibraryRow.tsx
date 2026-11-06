@@ -73,6 +73,12 @@ export function ProjectLibraryRow(props: {
       props.computerNames.get(taskProject.environmentId) ??
       "Computer")
     : null;
+  const actionsHint =
+    taskProject === null
+      ? onlineProject === undefined
+        ? "Reconnect a computer to start a task or change settings."
+        : "New tasks need a connection with task access."
+      : `New task on ${taskComputerName} and project settings.`;
   return (
     <View className="mx-2 mb-1">
       <View className="flex-row items-center">
@@ -147,6 +153,11 @@ export function ProjectLibraryRow(props: {
           </View>
         </Pressable>
         <Menu
+          nativeTrigger={{
+            icon: "ellipsis",
+            accessibilityLabel: `Actions for ${entry.title}`,
+            accessibilityHint: actionsHint,
+          }}
           actions={[
             {
               id: "new-task",
@@ -178,13 +189,7 @@ export function ProjectLibraryRow(props: {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Actions for ${entry.title}`}
-            accessibilityHint={
-              taskProject === null
-                ? onlineProject === undefined
-                  ? "Reconnect a computer to start a task or change settings."
-                  : "New tasks need a connection with task access."
-                : `New task on ${taskComputerName} and project settings.`
-            }
+            accessibilityHint={actionsHint}
             className="h-[44px] w-[44px] items-center justify-center active:opacity-70"
           >
             <SymbolView name="ellipsis" size={17} tintColorClassName="accent-icon-muted" />

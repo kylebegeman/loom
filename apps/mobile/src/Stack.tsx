@@ -60,6 +60,9 @@ import { androidWorkspaceDestinationAnimation } from "./lib/android-workspace-na
 import { getCompactBrandHeaderOptions } from "./features/layout/workspace/brand-header-options";
 import { WorkspaceConnectionStatusProvider } from "./features/home/WorkspaceConnectionTitle";
 import { WorkspaceRootScreen } from "./features/layout/workspace/WorkspaceRootScreen";
+// fork: mobile-navigation
+import { PullRequestsRouteScreen } from "./fork/mobile-navigation/PullRequestsRouteScreen";
+import { MobileSettingsRouteScreen } from "./fork/mobile-navigation/MobileSettingsRouteScreen";
 import {
   recordHomeFocus,
   recordHomeTransitionEnd,
@@ -195,12 +198,15 @@ const THREAD_SETTINGS_ROUTE = sheetRoute({
 // header peeking above it once the keyboard opens.
 const SEARCH_SHEET_ROUTE = sheetRoute({ detent: 0.75, android: "card", itemStyle: "editor" });
 
+// fork: mobile-navigation
 const SETTINGS_SCREENS = {
   Settings: createNativeStackScreen({
-    screen: SettingsRouteScreen,
+    screen: Platform.OS === "ios" ? MobileSettingsRouteScreen : SettingsRouteScreen,
     linking: "settings",
     options: {
-      ...pageRoute({ title: "Settings", itemStyle: "standard", root: true }),
+      ...(Platform.OS === "ios"
+        ? sheetRoute({ title: "Settings", detent: "full" })
+        : pageRoute({ title: "Settings", itemStyle: "standard", root: true })),
       ...(Platform.OS === "android" ? { animation: "none" as const } : {}),
     },
   }),
@@ -379,7 +385,7 @@ const SETTINGS_SCREENS = {
   SettingsUsage: createNativeStackScreen({
     screen: UsageRouteScreen,
     linking: "settings/usage",
-    options: settingsPage("Usage"),
+    options: settingsPage(Platform.OS === "ios" ? "Usage & limits" : "Usage"),
   }),
   SettingsAuth: createNativeStackScreen({
     screen: SettingsAuthRouteScreen,
@@ -402,7 +408,7 @@ export function workspaceLocationFromState(state: NavigationState) {
     routes.length > 0 && routes.length !== state.routes.length
       ? ({ ...state, routes, index: routes.length - 1 } as NavigationState)
       : state;
-  const path = getPathFromState(effectiveState, navigationPathConfig);
+  const path = getPathFromState(withoutWorkspaceTab(effectiveState), navigationPathConfig);
   const route = effectiveState.routes[effectiveState.index];
   return {
     pathname: path.startsWith("/") ? path : `/${path}`,
@@ -412,8 +418,24 @@ export function workspaceLocationFromState(state: NavigationState) {
 }
 
 export function rootPathnameFromState(state: NavigationState): string {
-  const path = getPathFromState(state, navigationPathConfig);
+  const path = getPathFromState(withoutWorkspaceTab(state), navigationPathConfig);
   return path.startsWith("/") ? path : `/${path}`;
+}
+
+// fork: mobile-navigation
+function withoutWorkspaceTab(state: NavigationState): NavigationState {
+  return {
+    ...state,
+    routes: state.routes.map((route) => {
+      if (route.name !== "Home" || !route.params) return route;
+      const {
+        workspaceTab: _,
+        searchReturnTab: _searchReturnTab,
+        ...params
+      } = route.params as { workspaceTab?: unknown; searchReturnTab?: unknown };
+      return { ...route, params };
+    }),
+  };
 }
 
 function RootStackLayout(props: {
@@ -425,7 +447,7 @@ function RootStackLayout(props: {
   const settingsOpen = settingsOpenIn(
     props.state.routes
       .slice(0, props.state.index + 1)
-      .filter((route) => !isWorkspaceOverlayRoute(route.name)),
+      .filter((route) => route.name === "Settings" || !isWorkspaceOverlayRoute(route.name)),
   );
   // The flow follows the draft route even while a pushed Thread covers it, so
   // its state lives exactly as long as the route.
@@ -507,9 +529,11 @@ function NotFoundScreen() {
   );
 }
 
+// fork: mobile-navigation
 const RootStackConfig = createWorkspaceStackNavigator({
   initialRouteName: APP_LINKING_CONFIG.initialRouteName, // fork: project-navigation
-  UNSTABLE_router: workspaceDetailRouter,
+  UNSTABLE_router: (router) =>
+    workspaceDetailRouter(router, { primaryTabs: Platform.OS === "ios" }),
   // React Navigation calls layouts inline; compiled components would share the navigator's memo cache.
   layout: (props) => <RootStackLayout {...props} />,
   screenOptions: {
@@ -705,6 +729,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       },
       options: pageRoute({ duoMinimize: "never" }),
     }),
+    PullRequests: createNativeStackScreen({
+      screen: PullRequestsRouteScreen,
+      linking: "pull-requests",
+      options: pageRoute({ title: "Pull requests", duoMinimize: "never" }),
+    }),
     PullRequestGuideStop: createNativeStackScreen({
       screen: PullRequestGuideStopScreen,
       options: pageRoute(),
@@ -849,7 +878,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ThreadBrowserPreview: createNativeStackScreen({
       screen: BrowserPreviewRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/browser`,
-      options: { ...modalRoute({ header: "solid" }), gestureEnabled: false },
+      options: { ...modalRoute({ header: "glass" }), gestureEnabled: false },
     }),
     ThreadReview: createNativeStackScreen({
       screen: ReviewSheet,

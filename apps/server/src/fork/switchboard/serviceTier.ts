@@ -1,11 +1,24 @@
+import type * as CodexClient from "effect-codex-app-server/client";
+import type * as CodexSchema from "effect-codex-app-server/schema";
 import type { ModelSelection, ServerProviderModel } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/http";
 import { resolveSwitchboardController, switchboardCodexThreadOptions } from "./switchboard.ts";
 
+const SWITCHBOARD_CODEX_MODELS = new Set(["gpt-6-astra", "gpt-6.1-sol"]);
+const SWITCHBOARD_CODEX_TIERS = [
+  { id: "priority", name: "Fast", description: "Priority processing through Switchboard" },
+  {
+    id: "ultrafast",
+    name: "Ultrafast",
+    description: "Switchboard routes to an eligible account or falls back to Fast",
+  },
+];
 class ServiceTierOperationError extends Schema.TaggedError<ServiceTierOperationError>()(
   "ServiceTierOperationError",
   {
@@ -21,7 +34,7 @@ export function withSwitchboardServiceTiers(
   models: ReadonlyArray<ServerProviderModel>,
 ): ReadonlyArray<ServerProviderModel> {
   return models.map((model) => {
-    if (model.slug !== "gpt-6-astra" && model.slug !== "gpt-6.1-sol") return model;
+    if (!SWITCHBOARD_CODEX_MODELS.has(model.slug)) return model;
     const descriptors = model.capabilities?.optionDescriptors ?? [];
     const previous = descriptors.find(
       (option) => option.id === "serviceTier" && option.type === "select",
@@ -80,6 +93,9 @@ const Decision = Schema.Struct({
       model: Schema.String,
       requested: Schema.Literal("ultrafast"),
       effective: Schema.Literals(["ultrafast", "priority"]),
+      observed: Schema.optional(
+        Schema.NullOr(Schema.Literals(["default", "priority", "ultrafast", "flex", "scale"])),
+      ),
       at: Schema.Number,
     }),
   ),
@@ -108,9 +124,97 @@ export const makeSwitchboardTierReader = Effect.fn("Switchboard.makeTierReader")
         Effect.flatMap(Schema.decodeUnknownEffect(Decision)),
       );
       if (!decision || decision.model !== selection.model || decision.at < since) return null;
+      if (decision.observed && decision.observed !== decision.effective) {
+        yield* Effect.logDebug(
+          "Switchboard response tier metadata differs from its routing decision",
+          {
+            model: decision.model,
+            requested: decision.requested,
+            forwarded: decision.effective,
+            observed: decision.observed,
+          },
+        );
+      }
       return switchboardTierSelection(selection, decision.effective);
     },
     Effect.timeout("2 seconds"),
     Effect.orElseSucceed(() => null),
   );
 });
+
+const CodexCatalog = Schema.fromJsonString(
+  Schema.Struct({
+    models: Schema.Array(Schema.Record(Schema.String, Schema.Json)),
+  }),
+);
+
+const decodeCodexCatalog = Schema.decodeUnknownEffect(CodexCatalog);
+const encodeCodexCatalog = Schema.encodeEffect(CodexCatalog);
+
+// Codex removes service tiers its runtime catalog does not advertise.
+export const makeSwitchboardCodexCatalog = Effect.fn("Switchboard.makeCodexCatalog")(function* (
+  home: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const source = path.join(home, "models_cache.json");
+  if (!(yield* fs.exists(source))) return undefined;
+  const catalog = yield* fs.readFileString(source).pipe(Effect.flatMap(decodeCodexCatalog));
+  const models = catalog.models.map((model) => {
+    if (typeof model.slug !== "string" || !SWITCHBOARD_CODEX_MODELS.has(model.slug)) return model;
+    const tiers = Array.isArray(model.service_tiers) ? model.service_tiers : [];
+    const additions = SWITCHBOARD_CODEX_TIERS.filter(
+      (supported) =>
+        !tiers.some(
+          (tier) =>
+            tier !== null &&
+            typeof tier === "object" &&
+            !Array.isArray(tier) &&
+            tier.id === supported.id,
+        ),
+    );
+    return additions.length === 0 ? model : { ...model, service_tiers: [...tiers, ...additions] };
+  });
+  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "loom-switchboard-codex-" });
+  const file = path.join(directory, "models.json");
+  yield* fs.writeFileString(file, yield* encodeCodexCatalog({ models }));
+  return file;
+});
+
+const encodeCodexConfigString = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
+
+export const makeSwitchboardCodexArgs = Effect.fn("Switchboard.makeCodexArgs")(function* (
+  args: ReadonlyArray<string> | undefined,
+  homePath: string,
+  environment: NodeJS.ProcessEnv,
+) {
+  if (!args?.length) return args;
+  const path = yield* Path.Path;
+  const home =
+    homePath || environment.CODEX_HOME || path.join(yield* HostProcess.HomeDirectory, ".codex");
+  const file = yield* makeSwitchboardCodexCatalog(home);
+  return file
+    ? [...args, "-c", `model_catalog_json=${yield* encodeCodexConfigString(file)}`]
+    : args;
+});
+
+export const codexAdvertisesUltrafast = Effect.fn("Switchboard.codexAdvertisesUltrafast")(
+  function* (client: CodexClient.CodexAppServerClient["Service"], model: string) {
+    let cursor: string | null = null;
+    do {
+      const page: CodexSchema.V2ModelListResponse = yield* client.request("model/list", {
+        includeHidden: true,
+        ...(cursor ? { cursor } : {}),
+      });
+      if (
+        page.data.some(
+          (entry) =>
+            entry.model === model && entry.serviceTiers?.some((tier) => tier.id === "ultrafast"),
+        )
+      )
+        return true;
+      cursor = page.nextCursor ?? null;
+    } while (cursor);
+    return false;
+  },
+);

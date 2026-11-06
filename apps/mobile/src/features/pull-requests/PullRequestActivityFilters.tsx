@@ -21,6 +21,12 @@ export function PullRequestActivityFilters({
   return (
     <View className="mb-4 flex-row items-center justify-between gap-3">
       <Menu
+        nativeTrigger={{
+          // fork: native-menus
+          label: kinds.find((kind) => kind.id === value.kind)?.title,
+          accessibilityLabel: `Activity type, ${kinds.find((kind) => kind.id === value.kind)?.title}`,
+          size: "compact",
+        }}
         title="Activity"
         actions={kinds.map((kind) => ({ ...kind, state: value.kind === kind.id ? "on" : "off" }))}
         onPressAction={({ nativeEvent }) => {
@@ -41,6 +47,14 @@ export function PullRequestActivityFilters({
       </Menu>
       <View className="flex-row items-center gap-3">
         <Menu
+          nativeTrigger={{
+            // fork: native-menus
+            label: hiddenCount > 0 ? `${hiddenCount} hidden` : undefined,
+            icon: "line.3.horizontal.decrease",
+            accessibilityLabel: `Filter activity, ${hiddenCount} hidden`,
+            selected: hiddenCount > 0,
+            size: "compact",
+          }}
           title="Show in activity"
           actions={[
             { id: "bots", title: "Bot comments", state: value.bots ? "on" : "off" },

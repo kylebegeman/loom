@@ -4,6 +4,7 @@ import {
   resolveNavigationTabOrder,
   type NavigationTab,
 } from "./navigation-tab-order";
+import type { WorkspaceRegularTab } from "./workspace-primary-navigation";
 
 export function resolveWorkspaceTabOrder(saved: readonly unknown[] | undefined) {
   return navigationCustomizationAvailable()
@@ -16,9 +17,9 @@ export type WorkspaceTab = NavigationTab;
 export type WorkspaceSearchTab = WorkspaceTab | "settings";
 export type WorkspaceSearchMode = "resting" | "active" | "expanded";
 
-/** Settings, Chats and pull requests pair a list with a detail column; Usage is one page. */
+/** Browsable sections pair their list with a detail column; Usage is one page. */
 export function workspaceUsesColumns(tab: WorkspaceTab, settingsOpen = false) {
-  return settingsOpen || tab === "threads" || tab === "pullRequests";
+  return settingsOpen || tab !== "usage";
 }
 
 export interface WorkspaceTabState {
@@ -28,9 +29,11 @@ export interface WorkspaceTabState {
   readonly searchEntryOffset: number;
 }
 
+// fork: mobile-navigation
 export interface WorkspaceTabsState {
   readonly selectedTab: WorkspaceTab;
   readonly selectionRevision: number;
+  readonly searchReturnTab: WorkspaceRegularTab;
   readonly tabs: Readonly<Record<WorkspaceSearchTab, WorkspaceTabState>>;
 }
 
@@ -42,8 +45,11 @@ export function initialWorkspaceTabsState(): WorkspaceTabsState {
   return {
     selectedTab: "threads",
     selectionRevision: 0,
+    searchReturnTab: "threads",
     tabs: {
       threads: emptyTab(),
+      sites: emptyTab(),
+      search: emptyTab(),
       pullRequests: emptyTab(),
       usage: emptyTab(),
       settings: emptyTab(),
@@ -69,10 +75,12 @@ export function workspaceTabsReducer(
       : {
           ...state,
           selectedTab: action.tab,
+          searchReturnTab:
+            action.tab === "threads" || action.tab === "sites" ? action.tab : state.searchReturnTab,
           selectionRevision: state.selectionRevision + 1,
         };
   const tab = action.tab ?? state.selectedTab;
-  if (tab !== "threads" && tab !== "pullRequests" && tab !== "settings") return state;
+  if (tab === "usage") return state;
   const current = state.tabs[tab];
   let next: WorkspaceTabState;
   switch (action.type) {

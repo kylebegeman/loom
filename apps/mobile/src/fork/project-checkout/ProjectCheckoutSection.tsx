@@ -329,6 +329,13 @@ function ProjectCheckoutReview({
         ) : preview && canChange ? (
           <>
             <Menu
+              nativeTrigger={{
+                label: "Working files",
+                detail: PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention],
+                accessibilityLabel: `Working files preference for ${workspaceRoot} on ${computerLabel}. ${PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}`,
+                disabled: pending !== null,
+                fullWidth: true,
+              }}
               accessible
               accessibilityRole="button"
               accessibilityLabel={`Working files preference for ${workspaceRoot} on ${computerLabel}. ${PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}`}

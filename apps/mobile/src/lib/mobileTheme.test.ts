@@ -3,8 +3,6 @@ import {
   BUILT_IN_THEME_IDS,
   BUILT_IN_THEMES,
   T3_CHAT_THEME,
-  T3_CODE_LIGHT_THEME_COLORS,
-  T3_CODE_DARK_THEME_COLORS,
   MOBILE_THEME_IDS,
   getThemeColorsForAppearance,
 } from "@t3tools/shared/themePalettes";
@@ -24,6 +22,7 @@ import {
   themeColorWithAlpha,
   themeColorToNativeColor,
 } from "./mobileTheme";
+import { LOOM_MOBILE_DARK_COLORS, LOOM_MOBILE_LIGHT_COLORS } from "./loomMobilePalette";
 
 function relativeLuminance(hex: string): number {
   const channels = hex
@@ -67,14 +66,14 @@ describe("mobile themes", () => {
     );
   });
 
-  it.each(MOBILE_THEME_IDS)("uses the web color roles for %s in both appearances", (themeId) => {
+  it.each(MOBILE_THEME_IDS)("uses the palette roles for %s in both appearances", (themeId) => {
     for (const appearance of ["light", "dark"] as const) {
       const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId);
       const colors = theme
         ? getThemeColorsForAppearance(theme, appearance)!
         : appearance === "dark"
-          ? T3_CODE_DARK_THEME_COLORS
-          : T3_CODE_LIGHT_THEME_COLORS;
+          ? LOOM_MOBILE_DARK_COLORS
+          : LOOM_MOBILE_LIGHT_COLORS;
       const variables =
         themeId === DEFAULT_MOBILE_THEME_ID
           ? readDefaultMobileThemeVariables(appearance)
@@ -104,6 +103,19 @@ describe("mobile themes", () => {
       expect(
         contrastRatio(variables["--color-foreground"], variables["--color-screen"]),
       ).toBeGreaterThanOrEqual(4.5);
+      if (themeId === DEFAULT_MOBILE_THEME_ID) {
+        for (const surface of [
+          "--color-screen",
+          "--color-card",
+          "--color-card-alt",
+          "--color-secondary",
+        ] as const) {
+          expect(
+            contrastRatio(variables["--color-foreground-tertiary"], variables[surface]),
+            `${appearance}: tertiary metadata on ${surface}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
       for (const [foreground, surface] of [
         ["--color-drawer-foreground", "--color-drawer"],
         ["--color-drawer-foreground-muted", "--color-drawer"],

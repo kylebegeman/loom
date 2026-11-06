@@ -244,6 +244,15 @@ function FolderReview({
       </View>
       {!saved && choices.length > 0 ? (
         <Menu
+          nativeTrigger={{
+            label: "After settling",
+            detail: row.choice
+              ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice]
+              : "Choose what stays here",
+            accessibilityLabel: `Storage choice for ${row.target.projectName} on ${row.target.environmentLabel} at ${row.target.workspaceRoot}. ${row.choice ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice] : "Choose what stays here"}`,
+            disabled: busy,
+            fullWidth: true,
+          }}
           accessible
           accessibilityRole="button"
           accessibilityLabel={`Storage choice for ${row.target.projectName} on ${row.target.environmentLabel} at ${row.target.workspaceRoot}. ${row.choice ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice] : "Choose what stays here"}`}

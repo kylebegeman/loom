@@ -4,7 +4,8 @@ Open **Usage** from the sidebar or the command palette, or press `mod+u` on web 
 desktop when the terminal is not focused. Customize `usage.open` in
 **Settings → Keybindings**.
 
-On mobile, choose **Usage** in the workspace navigation.
+On iOS, open **Settings → Usage & limits**, or search for **usage** or **limits** in
+**Search**. On Android, choose **Usage** in the workspace navigation.
 
 ## Understand your usage
 

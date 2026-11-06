@@ -13,12 +13,14 @@ function useWorkspacePage() {
   );
 }
 
+// fork: mobile-navigation
 export function useSidebarWorkspaceTabs(): "picker" | "toolbar" | null {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
   const metrics = useNativeLayoutMetrics();
   const page = useWorkspacePage();
-  if (Platform.OS !== "ios" || !layout.usesSplitView || page) return null;
+  if (Platform.OS !== "ios" || NATIVE_LIQUID_GLASS_SUPPORTED || !layout.usesSplitView || page)
+    return null;
   if (deviceType === "pad") return null;
   // Portrait Duo has no system rail; keep its tabs in the sidebar like iPad.
   if (deviceType === "duo-unfolded" && (metrics?.verticalBarEdge ?? "none") === "none")
@@ -29,24 +31,14 @@ export function useSidebarWorkspaceTabs(): "picker" | "toolbar" | null {
 export function useCompactWorkspaceTabs() {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
-  // The compact glass picker reserves the trailing edge for a separate compose button.
+  // Medium-width layouts use the sidebar's native bar when no system bar is visible.
   return (
     Platform.OS === "ios" &&
+    !NATIVE_LIQUID_GLASS_SUPPORTED &&
     deviceType !== "pad" &&
+    layout.variant === "medium" &&
     !layout.usesSplitView &&
     !isDuoDevice(deviceType)
-  );
-}
-
-/** The workspace tab bar floats with compose beside it. Before iOS 26 UITabBar is opaque and
- * full width, so it sits flush and compose stays in the header. */
-export function useFloatingWorkspaceTabs() {
-  const { layout } = useAdaptiveWorkspaceLayout();
-  const deviceType = useDeviceType();
-  const compactTabs = useCompactWorkspaceTabs();
-  return (
-    NATIVE_LIQUID_GLASS_SUPPORTED &&
-    (compactTabs || (deviceType === "pad" && !layout.usesSplitView))
   );
 }
 
@@ -57,9 +49,7 @@ export function useSystemWorkspaceTabBar() {
   const compactTabs = useCompactWorkspaceTabs();
   return (
     Platform.OS === "ios" &&
-    deviceType !== "pad" &&
-    layout.variant !== "medium" &&
-    sidebarTabs === null &&
-    !compactTabs
+    (NATIVE_LIQUID_GLASS_SUPPORTED ||
+      (deviceType !== "pad" && layout.variant !== "medium" && sidebarTabs === null && !compactTabs))
   );
 }

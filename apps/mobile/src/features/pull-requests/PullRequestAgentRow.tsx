@@ -30,6 +30,13 @@ export function PullRequestAgentRow(props: {
   if (agent.threads.length <= 1 || action.attributes.disabled) return row;
   return (
     <Menu
+      nativeTrigger={{
+        // fork: native-menus
+        label: props.title ?? action.title,
+        icon: "sparkles",
+        accessibilityLabel: props.title ?? action.title,
+        fullWidth: true,
+      }}
       title={props.title ?? action.title}
       actions={agent.threadActions(props.task)}
       onPressAction={({ nativeEvent }) => agent.select(nativeEvent.event)}

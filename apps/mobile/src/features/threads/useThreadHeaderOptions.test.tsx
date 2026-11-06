@@ -1,4 +1,4 @@
-import type { AppBarProps } from "../../components/ui/AppBar.types";
+import type { AppBarMenuItem, AppBarProps } from "../../components/ui/AppBar.types";
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -11,6 +11,9 @@ const harness = vi.hoisted(() => ({
   skipDefaultBranchConfirmation: false,
   runActions: [] as string[],
   recoveryRequests: [] as VcsStatusResult[],
+  platform: "ios",
+  splitView: false,
+  sidebarVisible: false,
 }));
 
 vi.mock("@react-navigation/native", async () => {
@@ -60,13 +63,23 @@ vi.mock("../../components/ui/AppBar", () => ({
     return null;
   },
 }));
-vi.mock("react-native", () => ({ Alert: { alert: () => {} }, Linking: {}, Platform: {} }));
+vi.mock("react-native", () => ({
+  Alert: { alert: () => {} },
+  Linking: {},
+  Platform: {
+    get OS() {
+      return harness.platform;
+    },
+  },
+}));
+vi.mock("../../native/native-layout-metrics", () => ({ useDeviceType: () => "phone" }));
 vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useAdaptiveWorkspaceLayout: () => ({
-    layout: { usesSplitView: false },
-    panes: { primarySidebarVisible: false, auxiliaryPaneVisible: false },
+    layout: { usesSplitView: harness.splitView },
+    panes: { primarySidebarVisible: harness.sidebarVisible, auxiliaryPaneVisible: false },
     togglePrimarySidebar: () => {},
     toggleAuxiliaryPane: () => {},
+    startNewTask: () => {},
   }),
 }));
 vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
@@ -111,6 +124,7 @@ function Header(props: {
   readonly gitStatus: VcsStatusResult | null;
   readonly title?: string;
   readonly onOpenDetails?: () => void;
+  readonly canOpenTerminal?: boolean;
 }) {
   return (
     <ThreadHeader
@@ -129,7 +143,7 @@ function Header(props: {
           harness.runActions.push(input.action);
           return null;
         },
-        canOpenTerminal: true,
+        canOpenTerminal: props.canOpenTerminal ?? true,
         canOperateTerminal: true,
         canOpenFiles: true,
         projectScripts,
@@ -147,10 +161,16 @@ function Header(props: {
   );
 }
 
+function renderedToolMenuItems(title: string): Extract<AppBarMenuItem, { onPress: unknown }>[] {
+  const tools = harness.renderedBars.at(-1)?.menus?.find((menu) => menu.title === "Thread tools");
+  const submenu = tools?.items.find((item) => item.title === title && "items" in item);
+  return (submenu && "items" in submenu ? submenu.items : []).flatMap((item) =>
+    "onPress" in item ? [item] : [],
+  );
+}
+
 function renderedGitMenuItems() {
-  return (
-    harness.renderedBars.at(-1)?.menus?.find((menu) => menu.title === "Git controls")?.items ?? []
-  ).flatMap((item) => ("onPress" in item ? [item] : []));
+  return renderedToolMenuItems("Source control");
 }
 
 let root: Root | null = null;
@@ -170,9 +190,34 @@ afterEach(() => {
   harness.skipDefaultBranchConfirmation = false;
   harness.runActions = [];
   harness.recoveryRequests = [];
+  harness.platform = "ios";
+  harness.splitView = false;
+  harness.sidebarVisible = false;
 });
 
 describe("ThreadHeader", () => {
+  it("keeps terminal actions unavailable under Tools without terminal access", () => {
+    render(<Header gitStatus={null} canOpenTerminal={false} />);
+    expect(renderedToolMenuItems("Terminal")).toEqual([]);
+    expect(renderedGitMenuItems().length).toBeGreaterThan(0);
+  });
+
+  it.each(["android", "ios"])("keeps direct menus on %s beside a visible sidebar", (platform) => {
+    harness.platform = platform;
+    harness.splitView = true;
+    harness.sidebarVisible = true;
+    render(<Header gitStatus={null} />);
+    expect(harness.renderedBars.at(-1)?.menus?.map((menu) => menu.title)).toEqual([
+      "Git controls",
+      "Terminal",
+    ]);
+    expect(harness.renderedBars.at(-1)?.onCompose).toBeUndefined();
+
+    harness.sidebarVisible = false;
+    render(<Header gitStatus={null} />);
+    expect(harness.renderedBars.at(-1)?.onCompose).toBeTypeOf("function");
+  });
+
   // fork: source-control-cockpit
   it("runs a default-branch push directly after the project remembers consent", async () => {
     harness.skipDefaultBranchConfirmation = true;

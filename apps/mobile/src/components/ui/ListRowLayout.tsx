@@ -7,6 +7,7 @@ import { SymbolView, type AppSymbolName } from "./AppSymbol";
 
 export interface ListRowContentProps {
   readonly icon?: AppSymbolName;
+  readonly iconPresentation?: "plain" | "well";
   /** Drawn in the icon column for marks a single symbol can't express. */
   readonly leading?: ReactNode;
   readonly label: string;
@@ -17,8 +18,10 @@ export interface ListRowContentProps {
   readonly disabled?: boolean;
 }
 
+// fork: mobile-design
 export function ListRowLayout({
   icon,
+  iconPresentation = "plain",
   leading,
   label,
   description,
@@ -39,11 +42,22 @@ export function ListRowLayout({
       )}
     >
       {icon ? (
-        <View className="size-6 items-center justify-center">
+        <View
+          className={cn(
+            "items-center justify-center",
+            iconPresentation === "well" ? "size-9 rounded-xl bg-secondary" : "size-6",
+          )}
+        >
           <SymbolView
             name={icon}
-            size={Platform.OS === "android" ? 24 : 22}
-            tintColorClassName={tone === "danger" ? "accent-danger-foreground" : "accent-icon"}
+            size={iconPresentation === "well" ? 20 : Platform.OS === "android" ? 24 : 22}
+            tintColorClassName={
+              tone === "danger"
+                ? "accent-danger-foreground"
+                : iconPresentation === "well"
+                  ? "accent-primary-text"
+                  : "accent-icon"
+            }
             type="monochrome"
             weight="regular"
           />
@@ -54,7 +68,10 @@ export function ListRowLayout({
       <View className="min-w-0 flex-1 gap-1">
         <AppText
           textRole="body"
-          className={tone === "danger" ? "text-danger-foreground" : "text-foreground"}
+          className={cn(
+            "font-t3-medium",
+            tone === "danger" ? "text-danger-foreground" : "text-foreground",
+          )}
         >
           {label}
         </AppText>

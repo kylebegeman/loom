@@ -60,6 +60,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { AppBar } from "../../components/ui/AppBar";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
@@ -146,6 +147,7 @@ const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
 const FAVORITES_PROVIDER_FILTER = "@favorites";
 // Servers that predate `migrateModelPreferences` drop it and keep reporting null favorites.
 const attemptedMigrationGenerations = new Map<EnvironmentId, number>();
+// fork: mobile-design
 function ProviderHeader(props: {
   readonly driver: string | undefined;
   readonly iconUrl: string | undefined;
@@ -157,13 +159,17 @@ function ProviderHeader(props: {
 }) {
   const content = (
     <>
-      <ProviderIcon iconUrl={props.iconUrl} provider={props.driver} size={15} />
-      <Text className="text-sm font-t3-medium text-foreground-muted">{props.label}</Text>
+      <View className="size-8 items-center justify-center rounded-full bg-subtle">
+        <ProviderIcon iconUrl={props.iconUrl} provider={props.driver} size={20} />
+      </View>
+      <Text textRole="body" className="min-w-0 shrink font-t3-bold text-foreground">
+        {props.label}
+      </Text>
       {props.collapsible ? (
         <>
           <View className="flex-1" />
           {props.collapsed ? (
-            <Text className="text-2xs font-t3-medium text-foreground-muted">
+            <Text textRole="footnote" className="font-t3-medium tabular-nums text-foreground-muted">
               {props.modelCount}
             </Text>
           ) : null}
@@ -184,7 +190,7 @@ function ProviderHeader(props: {
         accessibilityLabel={`${props.label}, ${props.modelCount} models`}
         accessibilityRole="button"
         accessibilityState={{ expanded: !props.collapsed }}
-        className="mx-4 mt-1 min-h-11 flex-row items-center gap-2 rounded-xl px-1 pt-2 active:opacity-60 android:min-h-12"
+        className="mx-4 mt-1 min-h-14 flex-row items-center gap-2.5 rounded-xl px-1 py-2 active:opacity-60"
         onPress={props.onToggle}
       >
         {content}
@@ -193,7 +199,10 @@ function ProviderHeader(props: {
   }
 
   return (
-    <View accessibilityRole="header" className="mx-4 min-h-9 flex-row items-center gap-2 px-1 pt-1">
+    <View
+      accessibilityRole="header"
+      className="mx-4 min-h-14 flex-row items-center gap-2.5 px-1 py-2"
+    >
       {content}
     </View>
   );
@@ -210,14 +219,15 @@ function DisclosureRow(props: {
       accessibilityRole="button"
       onPress={props.onPress}
       className={cn(
-        "min-h-11 flex-row items-center gap-2 bg-grouped-card px-4 py-2 active:bg-subtle android:min-h-14",
+        "min-h-14 flex-row items-center gap-3 bg-grouped-card px-4 py-3 active:bg-subtle",
         !props.isLast && "border-b border-border-subtle",
       )}
     >
-      <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
-      <View className="flex-1" />
+      <Text textRole="body" className="min-w-0 flex-1 text-foreground">
+        {props.label}
+      </Text>
       {props.value ? (
-        <Text className="text-sm text-foreground-muted" numberOfLines={1}>
+        <Text textRole="footnote" className="max-w-[45%] shrink text-right text-foreground-muted">
           {props.value}
         </Text>
       ) : null}
@@ -240,11 +250,13 @@ function SwitchRow(props: {
   return (
     <View
       className={cn(
-        "min-h-11 flex-row items-center justify-between bg-grouped-card px-4 py-1",
+        "min-h-14 flex-row items-center justify-between gap-3 bg-grouped-card px-4 py-2",
         !props.isLast && "border-b border-border-subtle",
       )}
     >
-      <Text className="text-sm font-t3-medium text-foreground">{props.label}</Text>
+      <Text textRole="body" className="min-w-0 flex-1 text-foreground">
+        {props.label}
+      </Text>
       <ThemedSwitch
         accessibilityLabel={props.label}
         onValueChange={props.onValueChange}
@@ -878,7 +890,7 @@ function ThreadSettingsOptionsItem(props: {
       {/* fork: bots: bot forms without options or runtime hide the card. */}
       {session.displayedDescriptors.length > 0 || !session.hideRuntimeMode ? (
         <>
-          <Text className="px-5 pb-2 pt-2 text-sm font-t3-medium text-foreground-muted">
+          <Text textRole="headline" className="px-5 pb-2 pt-4 font-t3-bold text-foreground">
             Options
           </Text>
           <Animated.View
@@ -958,7 +970,9 @@ function ThreadSettingsOptionsItem(props: {
         </>
       ) : null}
 
-      <Text className="px-5 pb-2 pt-7 text-sm font-t3-medium text-foreground-muted">Catalog</Text>
+      <Text textRole="headline" className="px-5 pb-2 pt-7 font-t3-bold text-foreground">
+        Catalog
+      </Text>
       <View className="mx-4 overflow-hidden rounded-2xl bg-grouped-card">
         <SwitchRow
           label="Manage hidden models"
@@ -1017,19 +1031,34 @@ function ThreadSettingsMainContent(props: {
         />
       );
     } else if (item.kind === "notice") {
-      content = <Text className="mx-8 mt-2 text-xs text-foreground-muted">{item.text}</Text>;
+      content = (
+        <Text textRole="footnote" className="mx-5 mt-2 text-foreground-muted">
+          {item.text}
+        </Text>
+      );
     } else if (item.kind === "empty") {
       content = (
-        <View className="items-center px-8 py-14">
-          <Text className="text-center text-sm text-foreground-muted">
-            {session.providerFilter === FAVORITES_PROVIDER_FILTER &&
+        <EmptyState
+          variant="plain"
+          title={
+            session.providerFilter === FAVORITES_PROVIDER_FILTER &&
             session.searchQuery.trim().length === 0
               ? "No favorite models"
               : hasActiveCatalogFilter
                 ? "No matching models"
-                : "No available models"}
-          </Text>
-        </View>
+                : "No available models"
+          }
+          detail={
+            session.providerFilter === FAVORITES_PROVIDER_FILTER &&
+            session.searchQuery.trim().length === 0
+              ? "Use the star beside a model to add it to favorites."
+              : hasActiveCatalogFilter
+                ? "Try another name or change the provider filter."
+                : session.environmentId
+                  ? "Pull down to refresh the model catalog."
+                  : "Connect a computer to load its models."
+          }
+        />
       );
     } else {
       content = (

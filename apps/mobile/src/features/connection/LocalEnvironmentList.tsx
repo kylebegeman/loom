@@ -10,6 +10,7 @@ import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
 type EnvironmentRowProps = ComponentProps<typeof ConnectionEnvironmentRow>;
 
 // fork: fleet-connections - Computer wording matches the unified inventory.
+// fork: mobile-design
 export function LocalEnvironmentList({
   environments,
   expandedId,
@@ -27,19 +28,16 @@ export function LocalEnvironmentList({
 }) {
   if (environments.length === 0) {
     return (
-      <View
-        collapsable={false}
-        className="items-center gap-3 rounded-[24px] bg-grouped-card px-6 py-8"
-      >
-        <View className="h-12 w-12 items-center justify-center rounded-[16px] bg-subtle">
+      <View collapsable={false} className="items-start gap-4 py-4">
+        <View className="size-14 items-center justify-center rounded-full bg-secondary">
           <SymbolView
             name="point.3.connected.trianglepath.dotted"
             size={20}
-            tintColorClassName="accent-icon-muted"
+            tintColorClassName="accent-secondary-foreground"
             type="monochrome"
           />
         </View>
-        <Text className="text-center text-sm leading-normal text-foreground-muted">
+        <Text textRole="body" className="text-foreground-muted">
           {/* fork: fleet-connections */}
           No computers connected yet. Add the computer where your agents and project folders live.
         </Text>
@@ -51,8 +49,9 @@ export function LocalEnvironmentList({
 
   return (
     <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
-      {environments.map((environment) => (
+      {environments.map((environment, index) => (
         <View key={environment.environmentId} collapsable={false}>
+          {index > 0 ? <View className="ms-18 h-px bg-border-subtle" /> : null}
           <ConnectionEnvironmentRow
             environment={environment}
             expanded={expandedId === environment.environmentId}

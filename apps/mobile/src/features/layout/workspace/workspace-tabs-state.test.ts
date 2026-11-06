@@ -98,6 +98,23 @@ describe("workspace root navigation", () => {
     });
   });
 
+  it("remembers Search's return tab without losing the searches and ignores duplicate selections", () => {
+    let state = workspaceTabsReducer(initialWorkspaceTabsState(), { type: "select", tab: "sites" });
+    state = workspaceTabsReducer(state, { type: "query", tab: "sites", query: "loom" });
+    state = workspaceTabsReducer(state, { type: "select", tab: "search" });
+    expect(state.searchReturnTab).toBe("sites");
+    state = workspaceTabsReducer(state, { type: "query", query: "renderer" });
+    state = workspaceTabsReducer(state, { type: "scroll", tab: "search", offset: 320 });
+    expect(workspaceTabsReducer(state, { type: "select", tab: "search" })).toBe(state);
+    state = workspaceTabsReducer(state, { type: "select", tab: state.searchReturnTab });
+    expect(state.tabs.sites.query).toBe("loom");
+    expect(state.tabs.search).toMatchObject({ query: "renderer", scrollOffset: 320 });
+    state = workspaceTabsReducer(state, { type: "select", tab: "threads" });
+    state = workspaceTabsReducer(state, { type: "select", tab: "search" });
+    expect(state.searchReturnTab).toBe("threads");
+    expect(state.tabs.search.query).toBe("renderer");
+  });
+
   it("clear keeps search active without losing the position cancel restores", () => {
     let state = initialWorkspaceTabsState();
     state = workspaceTabsReducer(state, { type: "scroll", tab: "threads", offset: 500 });

@@ -1,4 +1,5 @@
 import type {
+  NavigationAction,
   NavigationState,
   ParamListBase,
   StackNavigationState,
@@ -6,7 +7,25 @@ import type {
 
 type Route = StackNavigationState<ParamListBase>["routes"][number];
 
+/** UIKit dismisses envelopes, while their visible descriptors can name child pages. */
+export function presentationEnvelopeAction<const Action extends NavigationAction>(
+  state: Pick<NavigationState, "key" | "index" | "routes">,
+  groups: readonly (readonly { readonly key: string }[])[],
+  action: Action,
+) {
+  if (action.type !== "POP" || action.target !== state.key || !action.source) return action;
+  const count = (action.payload as { readonly count?: unknown } | undefined)?.count;
+  if (typeof count !== "number" || !Number.isInteger(count) || count <= 0) return action;
+  const groupIndex = groups.findIndex((group) =>
+    group.some((route) => route.key === action.source),
+  );
+  if (groupIndex < 0) return action;
+  const first = groups[Math.max(0, groupIndex - count + 1)]?.[0];
+  return first ? (nativeWorkspacePopAction(state, first.key) ?? action) : action;
+}
+
 /** Keep the presenting history mounted while modal routes cover the whole workspace. */
+// fork: mobile-navigation
 export function projectStackPresentation(
   state: StackNavigationState<ParamListBase>,
   isOverlay: (route: Route) => boolean,

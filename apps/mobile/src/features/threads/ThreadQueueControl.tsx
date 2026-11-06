@@ -206,8 +206,11 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
     >
       {workflow?.isHeld && queuedRuns.length > 0 ? (
-        <View className="gap-2 py-3">
-          <Text className="text-sm text-foreground-muted">Queue paused</Text>
+        <View className="gap-3 py-4">
+          <View className="flex-row items-center gap-2">
+            <SymbolView name="pause" size={20} tintColorClassName="accent-warning-foreground" />
+            <Text className="font-t3-semibold text-base text-warning-foreground">Queue paused</Text>
+          </View>
           <Button
             label="Resume queue"
             disabled={resuming || busyRunId !== null}
@@ -226,7 +229,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         <Text className="py-3 text-sm text-foreground-muted">{editBlockedReason}</Text>
       ) : null}
       {queuedRuns.length === 0 ? (
-        <Text className="pt-6 text-center text-sm text-foreground-muted">
+        <Text className="py-5 text-base text-foreground-muted">
           No messages waiting in this queue.
         </Text>
       ) : null}
@@ -246,7 +249,10 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         const title =
           controls.displayText || (attachments.length > 0 ? "Attachments" : "Queued message");
         return (
-          <View key={run.id} className="flex-row items-center border-b border-border bg-sheet">
+          <View
+            key={run.id}
+            className="flex-row items-center border-b border-border-subtle bg-sheet"
+          >
             <QueueRowSwipeable
               enabled={busyRunId === null && controls.canDismiss}
               background={theme["--color-sheet"]}
@@ -294,23 +300,23 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     }
                     disabled={!controls.canEdit}
                     onPress={() => void act(run.id, "edit")}
-                    className="min-h-14 flex-row items-center gap-2.5 py-2.5 active:opacity-70"
+                    className="min-h-16 flex-row items-center gap-3 py-3 active:opacity-70"
                   >
                     <QueueAttachmentThumbnails
                       environmentId={target.environmentId}
                       attachments={attachments}
                     />
-                    <View className="min-w-0 flex-1 gap-0.5">
+                    <View className="min-w-0 flex-1 gap-1">
                       {message ? (
                         <QueuedRunSender environmentId={target.environmentId} message={message} />
                       ) : null}
                       <Text
                         className={
                           controls.isEditing
-                            ? "text-sm text-foreground-muted"
-                            : "text-sm text-foreground"
+                            ? "text-base text-foreground-muted"
+                            : "text-base text-foreground"
                         }
-                        numberOfLines={1}
+                        numberOfLines={2}
                       >
                         {context?.guest === undefined ? null : (
                           <Text className="font-t3-medium text-adaptive-fuchsia-600-300">
@@ -321,9 +327,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       </Text>
                     </View>
                     {controls.isEditing ? (
-                      <Text className="shrink-0 text-2xs uppercase tracking-wide text-primary">
-                        Editing
-                      </Text>
+                      <Text className="shrink-0 font-t3-medium text-xs text-primary">Editing</Text>
                     ) : null}
                   </Pressable>
                 </Menu>

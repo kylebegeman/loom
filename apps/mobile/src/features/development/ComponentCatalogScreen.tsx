@@ -247,6 +247,11 @@ export function ComponentCatalogScreen() {
               />
               <Menu
                 title="Example menu"
+                nativeTrigger={{
+                  // fork: native-menus
+                  label: "Menu",
+                  accessibilityLabel: "Example menu",
+                }}
                 actions={[
                   { id: "copy", title: "Copy", image: "doc.on.doc" },
                   { id: "discard", title: "Discard", attributes: { destructive: true } },

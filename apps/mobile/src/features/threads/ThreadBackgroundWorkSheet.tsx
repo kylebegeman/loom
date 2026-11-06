@@ -49,7 +49,7 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
     >
       {presentation === null ? (
-        <Text className="pt-6 text-center text-sm text-foreground-muted">
+        <Text className="py-5 text-base text-foreground-muted">
           Nothing running in the background.
         </Text>
       ) : (
@@ -74,17 +74,19 @@ function BackgroundWorkRow(props: {
   const { item } = props;
   const childThreadId = item.childThreadId;
   const row = (
-    <View className="flex-row items-center gap-3 border-b border-border py-3.5">
-      <SymbolView
-        name={
-          item.kind === "subagent" ? "person.2" : item.kind === "monitor" ? "clock" : "terminal"
-        }
-        size={15}
-        tintColorClassName="accent-foreground-muted"
-        type="monochrome"
-      />
-      <View className="min-w-0 flex-1">
-        <Text className="font-t3-medium text-sm text-foreground">{item.label}</Text>
+    <View className="flex-row items-center gap-3 border-b border-border-subtle py-4">
+      <View className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+        <SymbolView
+          name={
+            item.kind === "subagent" ? "person.2" : item.kind === "monitor" ? "clock" : "terminal"
+          }
+          size={18}
+          tintColorClassName="accent-primary"
+          type="monochrome"
+        />
+      </View>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text className="font-t3-semibold text-base text-foreground">{item.label}</Text>
         <Text className="text-xs text-foreground-muted">{KIND_LABELS[item.kind]}</Text>
       </View>
       {childThreadId === undefined ? null : (

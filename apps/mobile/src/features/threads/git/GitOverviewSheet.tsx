@@ -61,6 +61,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   return <GitOverviewSheetContent {...props} />;
 }
 
+// fork: mobile-design
 function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -244,8 +245,8 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
       contentContainerStyle={{
         paddingHorizontal: Platform.OS === "android" ? 8 : isInspector ? 12 : 20,
-        paddingTop: 8,
-        gap: Platform.OS === "android" ? 8 : 14,
+        paddingTop: 12,
+        gap: Platform.OS === "android" ? 12 : 20,
       }}
       refreshControl={
         <RefreshControl refreshing={isRefreshing} onRefresh={() => void handleRefresh()} />
@@ -254,7 +255,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       {/* fork: source-control-cockpit */}
       <GitRecovery status={gitStatus.data} />
       <DefaultBranchPreference />
-      <ListSection>
+      <ListSection title="Repository actions">
         {sheetMenuItems.map(({ item, disabledReason }) => (
           <ListRow
             key={`${item.id}-${item.label}`}
@@ -338,11 +339,14 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
       ) : null}
 
       {currentWorktreePath ? (
-        <ListSection title="Worktree">
-          <Text selectable textRole="footnote" className="p-4 text-foreground-muted">
+        <View className="gap-2 px-1">
+          <Text textRole="footnote" className="font-t3-semibold">
+            Worktree
+          </Text>
+          <Text selectable textRole="label" className="font-mono text-foreground-muted">
             {currentWorktreePath}
           </Text>
-        </ListSection>
+        </View>
       ) : null}
     </NativeScrollView>
   );

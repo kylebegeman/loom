@@ -1,5 +1,20 @@
 export const NAVIGATION_TAB_ORDER = ["threads", "pullRequests", "usage"] as const;
-export type NavigationTab = (typeof NAVIGATION_TAB_ORDER)[number];
+// fork: mobile-navigation
+export const IOS_NAVIGATION_TAB_ORDER = ["threads", "sites", "search"] as const;
+export type NavigationTab =
+  | (typeof NAVIGATION_TAB_ORDER)[number]
+  | (typeof IOS_NAVIGATION_TAB_ORDER)[number];
+
+export function navigationTabsForPlatform(
+  platform: string,
+  saved?: readonly unknown[],
+): readonly NavigationTab[] {
+  return platform === "ios"
+    ? IOS_NAVIGATION_TAB_ORDER
+    : resolveNavigationTabOrder(saved).filter((tab) =>
+        NAVIGATION_TAB_ORDER.some((candidate) => candidate === tab),
+      );
+}
 
 export function navigationCustomizationAvailable(
   registeredSections: number = NAVIGATION_TAB_ORDER.length,
@@ -11,10 +26,14 @@ export const NAVIGATION_TAB_LABELS: Readonly<Record<NavigationTab, string>> = {
   threads: "Threads",
   pullRequests: "Pulls",
   usage: "Usage",
+  sites: "Sites",
+  search: "Search",
 };
 
 function isNavigationTab(value: unknown): value is NavigationTab {
-  return NAVIGATION_TAB_ORDER.some((tab) => tab === value);
+  return (
+    value === "sites" || value === "search" || NAVIGATION_TAB_ORDER.some((tab) => tab === value)
+  );
 }
 
 /** Complete older preferences without losing their order or retaining removed sections. */

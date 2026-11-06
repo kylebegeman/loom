@@ -7,7 +7,10 @@ import { AppBar } from "../../../components/ui/AppBar";
 import { ScreenContent as SettingsScreenContent } from "../../../components/ui/ScreenContent";
 import { useWorkspaceTabs } from "../../layout/workspace/WorkspaceTabsContext";
 import { useDeviceType } from "../../../native/native-layout-metrics";
-import { useCompactWorkspaceTabs } from "../../layout/workspace/useSystemWorkspaceTabBar";
+import {
+  useCompactWorkspaceTabs,
+  useSystemWorkspaceTabBar,
+} from "../../layout/workspace/useSystemWorkspaceTabBar";
 import { useSettingsPageBack } from "../useSettingsPageBack";
 import {
   ScreenScrollViewBottomInset,
@@ -16,6 +19,7 @@ import {
 
 export { SettingsScreenContent };
 
+// fork: mobile-navigation
 export function SettingsScreen(
   props: Pick<
     AppBarProps,
@@ -29,6 +33,7 @@ export function SettingsScreen(
   const workspace = useWorkspaceTabs();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
+  const systemTabBar = useSystemWorkspaceTabBar();
   const back = useSettingsPageBack();
   const cover = deviceType === "duo-folded";
   // Opened as a workspace tab, the Settings list has nothing to go back to.
@@ -49,7 +54,9 @@ export function SettingsScreen(
         guardBack={props.guardBack}
         hideBottomBorder
       />
-      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+      <ScreenScrollViewBottomInset
+        value={(deviceType === "pad" && !systemTabBar) || compactTabs ? 80 : 0}
+      >
         <ScreenScrollViewSurface value={surfaceClassName}>
           <SettingsScreenContent>{props.children}</SettingsScreenContent>
         </ScreenScrollViewSurface>

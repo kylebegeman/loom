@@ -46,6 +46,13 @@ export function ComposerAttachmentButton(props: {
       accessible
       accessibilityLabel="Add attachment"
       accessibilityRole="button"
+      nativeTrigger={{
+        // fork: native-menus
+        icon: "plus",
+        accessibilityLabel: "Add attachment",
+        disabled: props.disabled,
+        size: "default",
+      }}
       actions={ATTACHMENT_MENU_ACTIONS}
       onPressAction={({ nativeEvent }) => {
         if (nativeEvent.event === "photos") {

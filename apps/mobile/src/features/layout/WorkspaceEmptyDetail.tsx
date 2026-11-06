@@ -8,6 +8,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import type { WorkspaceTab } from "./workspace/workspace-tabs-state";
 
+// fork: mobile-navigation
 export function WorkspaceEmptyDetail(props: {
   readonly tab?: WorkspaceTab | "settings";
   readonly onStartNewTask?: () => void;
@@ -15,6 +16,7 @@ export function WorkspaceEmptyDetail(props: {
 }) {
   const pullRequests = props.tab === "pullRequests";
   const settings = props.tab === "settings";
+  const browsing = props.tab === "sites" || props.tab === "search";
   if (props.tab === "usage") return <View className="flex-1 bg-screen" />;
   return (
     <ScreenContent surface="screen">
@@ -55,18 +57,26 @@ export function WorkspaceEmptyDetail(props: {
                 ? "Select a setting"
                 : pullRequests
                   ? "Select a pull request"
-                  : "Select a thread"}
+                  : browsing
+                    ? props.tab === "sites"
+                      ? "Open a website"
+                      : "Find something in Loom"
+                    : "Select a thread"}
             </Text>
             <Text className="text-center text-base text-foreground-muted">
               {settings
                 ? "Choose a page from the sidebar."
                 : pullRequests
                   ? "Choose a pull request from the sidebar to review it."
-                  : Platform.OS === "android"
-                    ? "Choose a thread from the sidebar or start a new thread."
-                    : "Choose a thread from the sidebar or start a new task."}
+                  : browsing
+                    ? props.tab === "sites"
+                      ? "Choose a monitored website or live preview."
+                      : "Search for threads, projects, websites, or settings."
+                    : Platform.OS === "android"
+                      ? "Choose a thread from the sidebar or start a new thread."
+                      : "Choose a thread from the sidebar or start a new task."}
             </Text>
-            {props.onStartNewTask && !pullRequests && !settings ? (
+            {props.onStartNewTask && !pullRequests && !settings && !browsing ? (
               Platform.OS === "android" ? (
                 <NewThreadButton extended className="mt-2" onPress={props.onStartNewTask} />
               ) : (

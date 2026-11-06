@@ -357,6 +357,12 @@ function ProviderAccount({
       accessible
       accessibilityRole="button"
       accessibilityLabel={`${name} account options`}
+      nativeTrigger={{
+        // fork: native-menus
+        icon: "ellipsis",
+        accessibilityLabel: `${name} account options`,
+        size: "default",
+      }}
       title={name}
       actions={accountActions}
       onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
@@ -368,6 +374,11 @@ function ProviderAccount({
       accessible
       accessibilityRole="button"
       accessibilityLabel={`Sign in to ${name}`}
+      nativeTrigger={{
+        // fork: native-menus
+        label: "Sign in",
+        accessibilityLabel: `Sign in to ${name}`,
+      }}
       title="Sign in with"
       actions={methodActions}
       onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}

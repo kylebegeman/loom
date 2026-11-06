@@ -376,6 +376,11 @@ export function DevicePreviewScreen({
 function DeviceOptionsMenu({ items }: { readonly items: ReadonlyArray<AppBarMenuItem> }) {
   return (
     <Menu
+      nativeTrigger={{
+        // fork: native-menus
+        icon: "ellipsis",
+        accessibilityLabel: "Device options",
+      }}
       actions={androidHeaderMenuActions(items)}
       isAnchoredToRight
       title="Device options"

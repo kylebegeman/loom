@@ -319,13 +319,49 @@ turned off in Settings the upstream list and menu render unchanged. See the
 [L12 packet](docs/fork/packets/L12-panel-picker/SEAMS.md) and
 [user help](docs/fork/user/panel-picker.md).
 
-iOS keeps Limits in Settings and the Threads toolbar instead of the tab bar. The
-`usage-navigation` seams apply the same hidden-tab policy to native, sidebar and
-floating navigation, including a previously selected Usage tab. Android keeps its tabs.
+### Mobile navigation and native design
 
-Bots navigation is temporarily hidden across clients and the command palette by
-`BOTS_NAVIGATION_VISIBLE` in `packages/client-runtime/src/fork/bots-presentation.ts`.
-Existing definitions, runs and server tools remain available for the later bot redesign.
+Loom's iOS workspace has Threads and Sites with a detached native Search tab. Settings
+opens from the gear as a sheet, and Usage & limits and Pull requests remain reachable
+inside it and through Search. Compose is a separate native toolbar item. Android keeps
+its existing workspace navigation. The `usage-navigation` seam still handles saved Usage
+tab preferences; it does not define the iOS primary tab set.
+
+The mobile integration boundaries have separate markers in `docs/fork/seams.tsv`:
+
+| Marker               | Contract to preserve when upstream changes the host code                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mobile-navigation`  | Keep the iOS primary tab set, route-owned selection, per-tab history and Settings sheet entry. A thread selected from Search, Sites or a project returns to that origin with Back.    |
+| `native-menus`       | A declared native trigger owns the visible iOS button and menu transition. Keep the original React children for Android and the contextual long-press path for content rows.          |
+| `native-scroll-edge` | Keep transparent native bar appearances and soft scroll-edge effects in stacks and sheets. Apply visual spacing inside scroll content so no opaque strip interrupts the material.     |
+| `mobile-design`      | Keep native text roles, the CSS type scale and the generated default palette in agreement. Project identities use their standard icon surface without an additional circular backing. |
+
+The implementations under `apps/mobile/src/fork/global-search`, `site-browser` and
+`mobile-navigation` are fork-owned. Their host registrations and the shared native
+adapters are upstream seams, so accepting a whole upstream file or keeping a whole Loom
+file is insufficient. Reapply the contract to the changed upstream structure and retain
+its new controls, state and accessibility behavior. The marker check detects removed
+boundaries; the navigation and menu behavior checks still need to pass.
+
+[Mobile navigation](docs/internals/mobile-navigation.md) records the controller and
+scroll-view ownership constraints. Default colors come from
+`apps/mobile/src/lib/loomMobilePalette.ts` through `mobileTheme.ts`; regenerate the CSS,
+default-variable JSON and Clerk theme with `vp run --filter @t3tools/mobile generate`
+instead of resolving those generated files by hand. The generator test verifies their
+semantic roles across appearances.
+
+After a merge touches these seams, run the adjacent workspace navigation, global-search,
+site-browser, native-header and theme-generator tests and the mobile typecheck. An iOS
+native-client change also needs simulator verification of Search cancellation and result
+Back navigation, opening and dismissing Settings, a primary menu and a long-press menu,
+and scrolling a sheet beneath its header. A TypeScript pass cannot establish UIKit
+transition or clipping behavior. Rebuild native code through
+`vp run mobile:install ios` when the native fingerprint changes, following
+[mobile verification](.agents/skills/test-t3-mobile/SKILL.md).
+
+`BOTS_NAVIGATION_VISIBLE` in `packages/client-runtime/src/fork/bots-presentation.ts`
+enables Bots navigation and the command-palette entry. On mobile, Bots remains a
+secondary destination in Settings and Search. It does not join the iOS primary tab set.
 
 L89 adds the Bots footer entry after Sites in `apps/web/src/components/sidebar/SidebarChrome.tsx`
 (`fork: bots`, 15 marker lines with L94's attention count) and lists `/loom/bots` as a
@@ -919,14 +955,14 @@ compatible. Stored connection identifiers are unchanged. No global command was i
 this task. Package-runner examples keep the actual upstream npm package name; do not substitute
 `npx loom`, which could fetch an unrelated package.
 
-| File                                                                | Marker      | Why                                                                   |
-| ------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------- |
-| `apps/mobile/src/features/workspace/WorkspaceThreadSidebar.tsx`     | `library`   | Route sidebar source actions through the Library project launch flow. |
-| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` | `brand`     | Loom pairing instructions in the scanner.                             |
-| `apps/web/src/components/onboarding/WelcomeWizard.tsx`              | `brand`     | Loom CLI pairing/start examples.                                      |
-| `apps/server/src/binCli.ts`                                         | `brand`     | Loom CLI root/help naming.                                            |
-| `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`        | `brand`     | Loom server errors and new credential labels.                         |
-| `apps/server/package.json`                                          | (no marker) | Add the `loom` executable alias.                                      |
+| File                                                                   | Marker      | Why                                                                   |
+| ---------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------- |
+| `apps/mobile/src/features/layout/workspace/WorkspaceThreadSidebar.tsx` | `library`   | Route sidebar source actions through the Library project launch flow. |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx`    | `brand`     | Loom pairing instructions in the scanner.                             |
+| `apps/web/src/components/onboarding/WelcomeWizard.tsx`                 | `brand`     | Loom CLI pairing/start examples.                                      |
+| `apps/server/src/binCli.ts`                                            | `brand`     | Loom CLI root/help naming.                                            |
+| `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`           | `brand`     | Loom server errors and new credential labels.                         |
+| `apps/server/package.json`                                             | (no marker) | Add the `loom` executable alias.                                      |
 
 | `apps/desktop/src/app/DesktopCliCommand.ts` | `brand` | Install, inspect and remove the Loom command without replacing unrelated executables. |
 | `apps/desktop/src/app/DesktopCliShim.ts` | `brand` | Use the Loom launcher filename; preserve legacy shim ownership and runtime identifiers. |

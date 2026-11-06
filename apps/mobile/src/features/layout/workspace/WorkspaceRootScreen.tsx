@@ -43,6 +43,10 @@ import {
   useSystemWorkspaceTabBar,
 } from "./useSystemWorkspaceTabBar";
 import { openSettings } from "../../settings/settings-navigation";
+// fork: mobile-navigation
+import { SiteBrowserScreen } from "../../../fork/site-browser/SiteBrowserScreen";
+import { GlobalSearchScreen } from "../../../fork/global-search/GlobalSearchScreen";
+import { WorkspaceSettingsButton } from "../../../fork/mobile-navigation/WorkspaceSettingsButton";
 
 const TAB_TITLES = WORKSPACE_TAB_LABELS;
 
@@ -73,6 +77,7 @@ function WorkspaceRootTitle(props: {
   );
 }
 
+// fork: mobile-navigation
 function WorkspaceRootContent() {
   const navigation = useNavigation();
   const { width: windowWidth } = useWindowDimensions();
@@ -92,7 +97,8 @@ function WorkspaceRootContent() {
   const compactTabs = useCompactWorkspaceTabs();
   const enabled = useEnabledNavigationTabs();
   const sidebarTabs = useSidebarWorkspaceTabs();
-  const sidebarPicker = sidebarTabs === "picker" || (deviceType === "pad" && layout.usesSplitView);
+  const sidebarPicker =
+    sidebarTabs === "picker" || (!systemTabBar && deviceType === "pad" && layout.usesSplitView);
   const sidebarNavigation =
     primaryColumn !== null &&
     (layout.usesSplitView ||
@@ -118,7 +124,7 @@ function WorkspaceRootContent() {
       : isDuoDevice(deviceType)
         ? // The column's safe area already holds the Duo's search toolbar and keyboard.
           Math.max(insets.bottom, keyboardHeight) + 16
-        : compactTabs || deviceType === "pad"
+        : compactTabs || (!systemTabBar && deviceType === "pad")
           ? workspaceDockBottomClearance({ bottomInset: insets.bottom, keyboardHeight })
           : Math.max(insets.bottom, keyboardHeight) +
             (systemTabBar || sidebarTabs || tab.searchMode !== "resting"
@@ -147,6 +153,7 @@ function WorkspaceRootContent() {
                 ? TAB_TITLES[state.selectedTab]
                 : "Navigation",
             headerShown: true,
+            headerLargeTitle: !sidebarNavigation && state.selectedTab !== "search",
             headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
             headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED
               ? { backgroundColor: "transparent" }
@@ -155,15 +162,12 @@ function WorkspaceRootContent() {
             ...(enabled.length === 0
               ? { headerSearchBarOptions: undefined, unstable_headerRightItems: () => [] }
               : {}),
-            unstable_headerLeftItems: () => [],
             // Beside a detail column the tab bar names the tab and the detail header the page,
             // so the sidebar keeps the brand.
-            headerTitle:
-              sidebarNavigation || (!settingsOpen && state.selectedTab !== "usage")
-                ? renderHeaderTitle
-                : undefined,
+            headerTitle: sidebarNavigation ? renderHeaderTitle : undefined,
           }}
         />
+        {!settingsOpen ? <WorkspaceSettingsButton /> : null}
         <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>
           {settingsOpen ? (
             <WorkspaceSettingsList />
@@ -173,6 +177,10 @@ function WorkspaceRootContent() {
             <HomeRouteScreen />
           ) : state.selectedTab === "pullRequests" ? (
             <PullRequestsScreen />
+          ) : state.selectedTab === "sites" ? (
+            <SiteBrowserScreen />
+          ) : state.selectedTab === "search" ? (
+            <GlobalSearchScreen />
           ) : (
             <WorkspaceExtraTab tab={state.selectedTab} />
           )}
@@ -180,13 +188,12 @@ function WorkspaceRootContent() {
         {deviceType !== "pad" && deviceType !== "phone" && sidebarPicker ? (
           <WorkspaceSidebarTabs />
         ) : null}
-        {enabled.length === 0 && !settingsOpen ? null : settingsOpen ||
+        {(enabled.length === 0 || state.selectedTab === "sites") &&
+        !settingsOpen ? null : settingsOpen ||
           state.selectedTab === "threads" ||
-          state.selectedTab === "pullRequests" ? (
-          <WorkspaceToolbar
-            sidebar={sidebarNavigation}
-            onNewTask={startConversation} /* fork: library */
-          />
+          state.selectedTab === "pullRequests" ||
+          state.selectedTab === "search" ? (
+          <WorkspaceToolbar sidebar={sidebarNavigation} onNewTask={startConversation} />
         ) : (
           <WorkspaceSectionToolbar
             onNewTask={startConversation}

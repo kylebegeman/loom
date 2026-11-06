@@ -89,6 +89,12 @@ function ReactionPills(props: {
       ))}
       {props.canReact ? (
         <Menu
+          nativeTrigger={{
+            // fork: native-menus
+            icon: "face.smiling",
+            accessibilityLabel: "Add a reaction",
+            size: "compact",
+          }}
           accessibilityLabel="Add a reaction"
           actions={PULL_REQUEST_REACTION_ORDER.map((content) => ({
             id: content,

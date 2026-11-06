@@ -1,5 +1,6 @@
 import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-order";
 import { Toolbar } from "../../../components/ui/Toolbar";
+import { Platform } from "react-native";
 import { useControlTheme } from "../../../components/ui/useControlTheme";
 import { useDeviceType } from "../../../native/native-layout-metrics";
 import {
@@ -14,6 +15,7 @@ import { useCompactWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWor
 
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
 
+// fork: mobile-navigation
 export function WorkspaceTabToolbarButtons() {
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
@@ -28,7 +30,7 @@ export function WorkspaceTabToolbarButtons() {
   const selectedTint = useControlTheme().colors["--color-primary"];
   return (
     <>
-      {visibleNavigationTabs(order, hidden).map((tab) => (
+      {(Platform.OS === "ios" ? order : visibleNavigationTabs(order, hidden)).map((tab) => (
         <Toolbar.Button
           key={tab}
           identifier={`workspace-tab-${tab}`}
@@ -42,13 +44,15 @@ export function WorkspaceTabToolbarButtons() {
           onPress={() => selectTab(tab)}
         />
       ))}
-      <Toolbar.Button
-        identifier="workspace-tab-settings"
-        accessibilityLabel="Settings"
-        icon="gearshape"
-        tintColor={selected === "settings" ? selectedTint : undefined}
-        onPress={() => selectTab("settings")}
-      />
+      {Platform.OS !== "ios" ? (
+        <Toolbar.Button
+          identifier="workspace-tab-settings"
+          accessibilityLabel="Settings"
+          icon="gearshape"
+          tintColor={selected === "settings" ? selectedTint : undefined}
+          onPress={() => selectTab("settings")}
+        />
+      ) : null}
     </>
   );
 }
@@ -68,7 +72,7 @@ export function WorkspaceSectionToolbar({
       {showCompose && sidebarTabs !== "picker" && deviceType !== "duo-unfolded" && !compactTabs ? (
         <Toolbar placement="right">
           <Toolbar.Button
-            accessibilityLabel="New chat"
+            accessibilityLabel="New thread"
             icon="square.and.pencil"
             onPress={onNewTask}
           />

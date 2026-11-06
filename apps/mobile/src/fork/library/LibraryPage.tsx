@@ -18,7 +18,10 @@ import {
 import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyboardCommands";
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { useCompactWorkspaceTabs } from "../../features/layout/workspace/useSystemWorkspaceTabBar";
+import {
+  useCompactWorkspaceTabs,
+  useSystemWorkspaceTabBar,
+} from "../../features/layout/workspace/useSystemWorkspaceTabBar";
 import { cn } from "../../lib/cn";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { useEnvironments } from "../../state/environments";
@@ -35,6 +38,7 @@ export function LibraryPage(props: {
   back?: boolean;
   scroll?: boolean;
   actions?: Parameters<typeof AppBar>[0]["actions"];
+  menus?: Parameters<typeof AppBar>[0]["menus"];
 }) {
   const navigation = useNavigation();
   const focused = useIsFocused();
@@ -42,6 +46,7 @@ export function LibraryPage(props: {
   const pageBack = useWorkspacePageBack();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
+  const systemTabBar = useSystemWorkspaceTabBar();
   const { layout } = useAdaptiveWorkspaceLayout();
   useHardwareKeyboardCommand(
     "newTask",
@@ -65,8 +70,11 @@ export function LibraryPage(props: {
         hideBottomBorder
         onBack={props.back === false ? undefined : pageBack}
         actions={props.actions}
+        menus={props.menus}
       />
-      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+      <ScreenScrollViewBottomInset
+        value={(deviceType === "pad" && !systemTabBar) || compactTabs ? 80 : 0}
+      >
         <ScreenScrollViewSurface value={surface}>
           <ScreenContent insetHorizontal={Platform.OS === "android" && layout.usesSplitView}>
             {props.scroll === false ? (
@@ -78,7 +86,7 @@ export function LibraryPage(props: {
                 automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 contentInsetAdjustmentBehavior="automatic"
-                contentContainerClassName="gap-6 px-5 pt-4"
+                contentContainerClassName="gap-7 px-5 pt-5"
                 contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
               >
                 {props.children}

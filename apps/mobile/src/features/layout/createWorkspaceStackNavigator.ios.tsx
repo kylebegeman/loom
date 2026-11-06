@@ -41,6 +41,10 @@ import {
   WorkspaceSidebarTabsFooter,
 } from "./workspace/WorkspaceNativeTabs.ios";
 import { workspaceUsesColumns } from "./workspace/workspace-tabs-state";
+import {
+  workspacePrimaryTab,
+  workspaceSearchReturnTab,
+} from "./workspace/workspace-primary-navigation";
 import { isSettingsRoute, settingsOpenIn } from "../settings/settings-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { setNativelyPoppingWorkspaceRoute } from "./workspace/workspace-detail-selection";
@@ -49,6 +53,7 @@ import { useDeviceType, useNativeLayoutMetrics } from "../../native/native-layou
 import { useAdaptiveWorkspaceLayout } from "./AdaptiveWorkspaceLayout";
 import { WorkspacePaneDivider } from "./workspace-pane-divider";
 import { WorkspaceEmptyDetail } from "./WorkspaceEmptyDetail";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { NativeColumnContent as ColumnContent } from "../../native/NativeColumnContent.ios";
 import {
   modalEnvelopeOptions,
@@ -69,6 +74,7 @@ import {
   nativeWorkspacePopAction,
   projectWorkspaceStack,
   partitionStackPresentations,
+  presentationEnvelopeAction,
   reconcileStackScreens,
   type CollapsedSplitColumn,
   isPresentedRoute,
@@ -258,7 +264,10 @@ function WorkspaceColumns(
   // The cover detail rail needs room for thread tools above the fixed tabs.
   // The unfolded Duo keeps compose in its detail bar.
   const detailCompose =
-    deviceType === "duo-unfolded" && selectedTab !== "pullRequests" && !settingsOpen
+    deviceType === "duo-unfolded" &&
+    selectedTab === "threads" &&
+    !settingsOpen &&
+    !panes.primarySidebarVisible
       ? openNewTask
       : undefined;
   const inspector = use(NativeWorkspaceInspectorContext);
@@ -360,7 +369,7 @@ function WorkspaceColumns(
         if (workspace.some((route) => route.name !== "Home" && route.name !== "Settings")) return;
         const tab = workspace.some((route) => route.name === "Settings")
           ? "settings"
-          : (["threads", "pullRequests", "usage"] as const).find((candidate) =>
+          : (["threads", "sites", "search"] as const).find((candidate) =>
               workspaceTabs?.isTabActive(candidate),
             );
         openWorkspaceTab(tab ?? "threads", { columns: true });
@@ -431,13 +440,20 @@ function WorkspaceColumns(
               <EmptyDetailHeader onCompose={detailCompose} />
             </PaneContext>
             <ColumnContent>
-              <WorkspaceEmptyDetail
-                tab={settingsOpen ? "settings" : selectedTab}
-                onStartNewTask={
-                  // Duo provides compose in the detail bar; iPad uses the empty-state action.
-                  detailCompose ? undefined : openNewTask
-                }
-              />
+              <ScreenScrollView
+                className="flex-1 bg-screen"
+                contentInsetAdjustmentBehavior="never"
+                contentContainerStyle={{ flexGrow: 1 }}
+                bounces={false}
+              >
+                <WorkspaceEmptyDetail
+                  tab={settingsOpen ? "settings" : selectedTab}
+                  onStartNewTask={
+                    // Duo provides compose in the detail bar; iPad uses the empty-state action.
+                    detailCompose ? undefined : openNewTask
+                  }
+                />
+              </ScreenScrollView>
             </ColumnContent>
           </Split.Screen>
           {screens.routes.map((route) => {
@@ -497,25 +513,15 @@ function WorkspaceColumns(
   );
 }
 
+// fork: mobile-navigation
 function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean }) {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
   const workspace = useWorkspaceTabs()!;
-  // Native dismiss commits the route pop after the transition. Restore the dock
-  // when the primary screen starts appearing, including interactive back gestures.
-  const [primaryVisible, setPrimaryVisible] = useState(false);
   const metrics = useNativeLayoutMetrics();
   const projection = projectWorkspaceStack(props.state, (route) => {
     return isPresentedRoute(props.descriptors[route.key]?.options);
   });
-  // The root's willDisappear reaches JS frames into the push, so hide the dock in the commit that
-  // pushes; the native events still own every later change, including back gestures.
-  const topDetailKey = projection.detail.at(-1)?.key;
-  const [pushedDetailKey, setPushedDetailKey] = useState(topDetailKey);
-  if (pushedDetailKey !== topDetailKey) {
-    setPushedDetailKey(topDetailKey);
-    if (topDetailKey !== undefined && primaryVisible) setPrimaryVisible(false);
-  }
   // Detail-only histories must stay single-stack: placeholder descriptors cannot own sidebar actions or setOptions.
   const primaryRoute = projection.primary;
   if (!primaryRoute) return <V5StackView {...props} />;
@@ -534,9 +540,9 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
       <WorkspaceNativeTabs
         tabsInSidebarColumn={props.nativeColumns && !workspacePage && deviceType === "pad"}
         hidden={
+          props.nativeColumns &&
           !workspacePage &&
           projection.detail.length > 0 &&
-          !primaryVisible &&
           !layout.usesSplitView &&
           (metrics?.verticalBarEdge ?? "none") === "none"
         }
@@ -551,7 +557,7 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
         ) : (
           <V5CardStackView
             {...props}
-            onRootVisibilityChange={setPrimaryVisible}
+            hideBottomBarOnPush={!workspacePage}
             onNativePopChange={setNativelyPoppingWorkspaceRoute}
             descriptors={descriptors}
             state={{
@@ -573,6 +579,15 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
     <NativeStackView
       presentationEnvelope
       {...props}
+      navigation={{
+        ...props.navigation,
+        dispatch: (action) =>
+          props.navigation.dispatch(
+            typeof action === "function"
+              ? (state) => presentationEnvelopeAction(state, overlays, action(state))
+              : presentationEnvelopeAction(props.navigation.getState(), overlays, action),
+          ),
+      }}
       state={{ ...props.state, routes, index: routes.length - 1, preloadedRoutes: [] }}
       descriptors={{
         ...Object.fromEntries(
@@ -651,7 +666,11 @@ function WorkspaceStackNavigator({
   return (
     <NativeWorkspaceModeContext value={usesNativeWorkspaceColumns}>
       <NavigationContent>
-        <WorkspaceTabsProvider settingsOpen={settingsOpen}>
+        <WorkspaceTabsProvider
+          settingsOpen={settingsOpen}
+          selectedTab={workspacePrimaryTab(state.routes)}
+          searchReturnTab={workspaceSearchReturnTab(state.routes)}
+        >
           <WorkspaceStackView
             nativeColumns={usesNativeWorkspaceColumns}
             {...rest}

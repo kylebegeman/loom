@@ -1,6 +1,9 @@
+import { Platform } from "react-native";
 import { AppBar } from "../../components/ui/AppBar";
 import { ScreenHeaderButton } from "../../components/ui/ScreenHeaderButton";
 import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
+import { isDuoDevice } from "../../lib/device-type";
+import { useDeviceType } from "../../native/native-layout-metrics";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-navigation";
 import { useWorkspaceBackNavigation } from "../layout/workspace/useAndroidWorkspaceNavigation";
@@ -24,7 +27,8 @@ export function ThreadHeader(props: {
   readonly onOpenFilesInspector: () => void;
 }) {
   const goBack = useWorkspaceBackNavigation("threads");
-  const { panes, toggleAuxiliaryPane, composerKeyboardActive, startNewTask } =
+  const deviceType = useDeviceType();
+  const { layout, panes, toggleAuxiliaryPane, composerKeyboardActive, startNewTask } =
     useAdaptiveWorkspaceLayout();
   const gitMenu = useThreadGitMenuDefinition(props.gitControls);
   const terminalMenu = threadTerminalMenu(props.gitControls);
@@ -49,14 +53,33 @@ export function ThreadHeader(props: {
       icon: "info.circle",
       onPress: props.onOpenDetails,
     });
-  const menus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+  const actionMenus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+  // fork: native-menus
+  const compactMenus = Platform.OS === "ios" && !layout.usesSplitView && !isDuoDevice(deviceType);
+  const menus: AppBarMenu[] =
+    compactMenus && actionMenus.length > 0
+      ? [
+          {
+            title: "Thread tools",
+            icon: "ellipsis",
+            separateBackground: false,
+            items: actionMenus.map((menu) => ({
+              id: menu.title,
+              title: menu === gitMenu ? "Source control" : menu.title,
+              icon: typeof menu.icon === "string" ? menu.icon : menu.icon.ios,
+              items: menu.items,
+            })),
+          },
+        ]
+      : actionMenus;
 
+  // fork: mobile-navigation
   return (
     <AppBar
       title={props.title}
       subtitle={props.subtitle}
       onBackToList={goBack}
-      onCompose={props.draft ? undefined : startNewTask}
+      onCompose={props.draft || panes.primarySidebarVisible ? undefined : startNewTask}
       backInSplitView={
         props.onReturnToThread
           ? {

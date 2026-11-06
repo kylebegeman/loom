@@ -24,6 +24,7 @@ import {
   BOTS_LIST_RUNS_MAX_LIMIT,
 } from "@t3tools/contracts/fork";
 import { AppText } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
 import { ListFilterMenu } from "../../features/layout/workspace/ListFilterMenu";
@@ -182,10 +183,15 @@ export function ThreadAttentionHeader(props: {
   };
   return (
     <>
-      <View className="flex-row items-center justify-between px-4 py-2">
+      <View className="flex-row items-center justify-between gap-3 px-5 py-1">
         <Pressable
+          className="min-h-11 min-w-0 flex-1 flex-row items-center gap-2"
           accessibilityRole="button"
-          accessibilityLabel={`${props.threads.length} need you`}
+          accessibilityLabel={
+            props.threads.length > 0
+              ? `${props.threads.length} ${props.threads.length === 1 ? "thread needs" : "threads need"} you`
+              : "No threads need you"
+          }
           disabled={!supported && props.threads.length === 0}
           hitSlop={8}
           onPress={() => {
@@ -204,9 +210,29 @@ export function ThreadAttentionHeader(props: {
             }
           }}
         >
-          <AppText className="text-foreground-muted text-sm">
-            {props.threads.length} need you
-          </AppText>
+          {props.threads.length > 0 ? (
+            <>
+              <View className="min-h-7 min-w-7 items-center justify-center rounded-full bg-primary/12 px-2 py-0.5">
+                <AppText className="font-t3-semibold text-sm tabular-nums text-primary">
+                  {props.threads.length}
+                </AppText>
+              </View>
+              <AppText className="shrink font-t3-semibold text-sm text-primary">
+                {props.threads.length === 1 ? "Needs you" : "Need you"}
+              </AppText>
+            </>
+          ) : (
+            <>
+              <SymbolView
+                name="checkmark.circle"
+                size={16}
+                tintColorClassName="accent-foreground-muted"
+              />
+              <AppText className="shrink text-sm text-foreground-muted">
+                No threads need you
+              </AppText>
+            </>
+          )}
         </Pressable>
         <ListFilterMenu
           label={

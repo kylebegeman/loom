@@ -24,6 +24,7 @@ export function ConnectOnboardingRouteScreen() {
   return hasCloudPublicConfig() ? <ConfiguredConnectOnboardingRouteScreen /> : null;
 }
 
+// fork: mobile-design
 function ConfiguredConnectOnboardingRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -60,7 +61,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       <AppBar
-        title="Set up T3 Connect"
+        title="Set up Loom Connect"
         onClose={handleClose}
         refresh={{
           accessibilityLabel: "Refresh environments",
@@ -83,17 +84,37 @@ function ConfiguredConnectOnboardingRouteScreen() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
       >
         {isSignedIn ? (
-          <CloudEnvironmentRows
-            connectedCloudEnvironments={connectedCloudEnvironments}
-            onSetEnvironmentEnabled={onSetEnvironmentEnabled}
-            onRemoveEnvironment={onRemoveEnvironmentPress}
-            showHeader={false}
-          />
+          <>
+            <View className="gap-2 px-1 pb-2">
+              <Text textRole="title" className="font-t3-bold text-foreground">
+                Your computers
+              </Text>
+              <Text textRole="body" className="text-foreground-muted">
+                Connect to run agents and continue work from this device.
+              </Text>
+            </View>
+            <CloudEnvironmentRows
+              connectedCloudEnvironments={connectedCloudEnvironments}
+              onSetEnvironmentEnabled={onSetEnvironmentEnabled}
+              onRemoveEnvironment={onRemoveEnvironmentPress}
+              showHeader={false}
+            />
+          </>
         ) : (
-          <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
-            <Text className="text-sm leading-normal text-foreground-muted">
-              Sign in to your T3 account to set up T3 Connect.
+          <View collapsable={false} className="gap-3 px-1 py-4">
+            <Text textRole="title" className="font-t3-bold text-foreground">
+              Connect your computers
             </Text>
+            <Text textRole="body" className="text-foreground-muted">
+              Sign in to your Loom Connect account to find your computers.
+            </Text>
+            <View className="self-start">
+              <Button
+                label="Sign in"
+                tone="primary"
+                onPress={() => navigation.navigate("SettingsAuth")}
+              />
+            </View>
           </View>
         )}
 

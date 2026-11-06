@@ -25,6 +25,7 @@ const TONE_CLASS_NAMES = {
   text: ["bg-transparent", "text-primary-text"],
 } as const;
 
+// fork: mobile-design
 export function Button(props: ButtonProps) {
   const [containerClassName, labelClassName] = TONE_CLASS_NAMES[props.tone ?? "secondary"];
   const disabled = Boolean(props.disabled || props.loading);
@@ -38,7 +39,7 @@ export function Button(props: ButtonProps) {
       onPress={props.onPress}
       className={cn(
         "flex-row items-center justify-center gap-2 rounded-full active:opacity-70",
-        props.size === "compact" ? "min-h-10 px-5" : "min-h-12 px-6",
+        props.size === "compact" ? "min-h-11 px-4" : "min-h-12 px-6",
         props.fullWidth ? "w-full" : "self-start",
         disabled ? "bg-subtle-strong" : containerClassName,
       )}
@@ -55,6 +56,7 @@ export function Button(props: ButtonProps) {
         />
       ) : null}
       <AppText
+        textRole={props.size === "compact" ? "footnote" : "body"}
         className={cn(
           "min-w-0 shrink text-center font-t3-medium",
           disabled ? "text-foreground-muted" : labelClassName,

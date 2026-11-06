@@ -1,10 +1,8 @@
 import { useProjectNavigation } from "../../../fork/project-navigation/useProjectNavigation"; // fork: project-navigation
-import { useRef } from "react";
-import type { SearchBarCommands } from "react-native-screens";
-
 import { NativeStackScreenOptions } from "../../../native/StackHeader";
 import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardCommands";
 import { getConnectionAwareBrandHeaderOptions } from "./brand-header-options";
+import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { createWorkspaceListHeaderItems } from "./workspace-list-header-items";
 import {
   workspaceListFilterIcon,
@@ -20,18 +18,12 @@ function SidebarColumnHeader(
     readonly sidebar: NonNullable<WorkspaceListHeaderProps["sidebar"]>;
   },
 ) {
-  const { search, sidebar } = props;
+  const { sidebar } = props;
   const { view } = useProjectNavigation(); // fork: project-navigation
-  const searchBarRef = useRef<SearchBarCommands>(null);
+  const selectTab = useSelectWorkspaceTab();
+  // fork: mobile-navigation
   useHardwareKeyboardCommand("focusSearch", () => {
-    const focus = () => searchBarRef.current?.focus();
-    if (!sidebar.visible) {
-      sidebar.onRequestVisibility();
-      // Focus once the revealed sidebar has slid in.
-      setTimeout(focus, 240);
-    } else {
-      focus();
-    }
+    selectTab("search");
     return true;
   });
   const items = createWorkspaceListHeaderItems({
@@ -54,17 +46,7 @@ function SidebarColumnHeader(
           onOpenEnvironments: props.onOpenEnvironments,
           fallbackTitleStyle: { fontSize: 18, fontWeight: "800" },
         }),
-        headerSearchBarOptions: {
-          ref: searchBarRef,
-          autoCapitalize: "none",
-          hideNavigationBar: false,
-          hideWhenScrolling: false,
-          obscureBackground: false,
-          placeholder: search.placeholder,
-          placement: "stacked",
-          onCancelButtonPress: () => search.onChangeText(""),
-          onChangeText: (event) => search.onChangeText(event.nativeEvent.text),
-        },
+        headerSearchBarOptions: undefined,
         unstable_headerRightItems: () => items,
       }}
     />

@@ -11,9 +11,24 @@ The app opens with your threads. Use the existing project filter above the threa
 to narrow it to one project, or choose **All projects** to see every thread. Filtering
 does not move conversations or change the computer they run on.
 
-**Projects** in the sidebar utility row opens the projects page, which lists every project
-and its conversations across your computers. Use **Settings → Projects** for project
-settings. Returning from either restores the conversation you left.
+On web and desktop, **Projects** in the sidebar utility row opens the projects page,
+which lists every project and its conversations across your computers. On iOS, open
+**Settings** with the toolbar gear, then choose **Projects** under **Work**. Open a
+project to see its conversations and settings. Returning restores the conversation you left.
+
+## Find work on iOS
+
+Use **Threads** to continue conversations and **Sites** to find your monitored websites.
+Tap a website to view its details and health, then choose **Visit website** to open it.
+Pin websites you revisit to keep them first. The separate
+**Live previews** section shows temporary apps running on a selected computer; manage
+their links and published pages in **Settings → Previews**.
+
+Use **Search** to find threads, message text, projects, sites, bots and settings across
+your computers and shared Library. Opening a match keeps a return path to your search.
+Search for **limits**, or open **Settings → Usage & limits**, to check provider quotas.
+The toolbar's **Settings** gear opens Settings. **Work** contains Projects, Bots, pull
+requests, Usage & limits and Archive. **Connections** contains Computers and Library.
 
 <!-- fork: attention-status -->
 
@@ -291,8 +306,8 @@ you last picked for a query ranks higher when you type that query again.
 Threads whose messages contain all your words appear below, under **In
 messages**, and open at the matching message. Message search needs at least
 one word of three or more letters, or two for Chinese, Japanese, and Korean.
-On mobile, the thread list search also lists message matches and opens them at
-the matching message; on an iPad with a keyboard, `Cmd+K` opens the same
+On iOS, **Search** includes message matches and opens them at the matching message.
+On Android, use the thread list search. On an iPad with a keyboard, `Cmd+K` opens the same
 palette.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files

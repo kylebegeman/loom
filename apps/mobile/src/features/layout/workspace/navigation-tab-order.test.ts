@@ -10,9 +10,29 @@ import {
   resolveNavigationTabOrder,
   selectedNavigationTab,
   visibleNavigationTabs,
+  navigationTabsForPlatform,
+  NAVIGATION_TAB_LABELS,
 } from "./navigation-tab-order";
 
 describe("navigation tab order", () => {
+  it("uses Threads, Sites and Search on iOS regardless of legacy navigation preferences", () => {
+    expect(navigationTabsForPlatform("ios", ["usage", "pullRequests", "threads"])).toEqual([
+      "threads",
+      "sites",
+      "search",
+    ]);
+    expect(navigationTabsForPlatform("ios", ["results"])).toEqual(["threads", "sites", "search"]);
+    expect(NAVIGATION_TAB_LABELS.threads).toBe("Threads");
+    expect(NAVIGATION_TAB_LABELS.sites).toBe("Sites");
+    expect(NAVIGATION_TAB_LABELS.search).toBe("Search");
+    expect(navigationTabsForPlatform("android")).toEqual(NAVIGATION_TAB_ORDER);
+    expect(navigationTabsForPlatform("android", ["results"])).toEqual(NAVIGATION_TAB_ORDER);
+    expect(navigationTabsForPlatform("android", ["sites", "search", "usage"])).toEqual([
+      "usage",
+      "threads",
+      "pullRequests",
+    ]);
+  });
   it("enables customization only above four registered sections, excluding Settings", () => {
     expect(navigationCustomizationAvailable()).toBe(false);
     expect(navigationCustomizationAvailable(3)).toBe(false);

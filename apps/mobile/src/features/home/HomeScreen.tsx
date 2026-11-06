@@ -171,7 +171,7 @@ interface HomeScreenProps {
 
 type HomeNavigationItem = ThreadListV2ListItem | ProjectLibraryItem; // fork: project-navigation
 
-const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
+const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 96;
 // Rows away from the viewport skip their swipe actions (see
 // swipe-row-activation), so render further ahead: a fast fling then reaches
 // rows that are already built instead of rows still being rebuilt.
@@ -263,10 +263,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
     <ScrollViewMarker
       style={{ flex: 1 }}
-      scrollEdgeEffects={{
-        ...nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version),
-        top: Number.parseInt(String(Platform.Version), 10) >= 27 ? "automatic" : "soft",
-      }}
+      scrollEdgeEffects={nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version)}
     >
       <ScrollView
         {...props}
@@ -282,6 +279,7 @@ function renderHomeScrollView(props: ScrollViewProps) {
   return <HomeScrollView {...props} />;
 }
 
+// fork: mobile-navigation
 export function HomeScreen(props: HomeScreenProps) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -880,13 +878,15 @@ export function HomeScreen(props: HomeScreenProps) {
         onSelect={props.onSelectThread}
       />
       {/* fork: project-navigation */}
-      <ProjectNavigationControl
-        view={navigationView}
-        onChange={(view) => {
-          openSwipeableRef.current?.close();
-          setNavigationView(view);
-        }}
-      />
+      {Platform.OS !== "ios" ? (
+        <ProjectNavigationControl
+          view={navigationView}
+          onChange={(view) => {
+            openSwipeableRef.current?.close();
+            setNavigationView(view);
+          }}
+        />
+      ) : null}
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           gutter={sidebarSurface ? 8 : 0}

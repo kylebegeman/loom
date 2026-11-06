@@ -7,6 +7,7 @@ import { BOTS_FEATURE, type BotDefinition } from "@t3tools/contracts/fork";
 
 const harness = vi.hoisted(() => ({
   allowed: true,
+  unavailable: null as "offline" | "unsupported" | null,
   bots: [] as ReadonlyArray<BotDefinition>,
   navigate: vi.fn(),
   setParams: vi.fn(),
@@ -30,7 +31,9 @@ vi.mock("../../state/environments", () => ({
       environmentId: EnvironmentId.make(id),
       label: id,
       entry: { enabled: true },
-      connection: { phase: "connected" },
+      connection: {
+        phase: id === "first" && harness.unavailable === "offline" ? "disconnected" : "connected",
+      },
       serverConfig: { environment: { capabilities: { loomFeatures: [BOTS_FEATURE] } } },
     })),
   }),
@@ -239,8 +242,8 @@ vi.mock("./state", () => {
     },
     useBotsCapabilities: (environmentId: string | null) => ({
       label: environmentId,
-      connected: true,
-      supported: true,
+      connected: environmentId !== "first" || harness.unavailable !== "offline",
+      supported: environmentId !== "first" || harness.unavailable !== "unsupported",
       startersSupported: true,
       fromThreadSupported: true,
       versionsSupported: true,
@@ -311,6 +314,7 @@ function button(label: string) {
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   harness.allowed = true;
+  harness.unavailable = null;
   harness.bots = [fixture];
   harness.navigate.mockClear();
   harness.setParams.mockClear();
@@ -376,6 +380,32 @@ it("uses the selected computer for definitions and clears a caller thread when s
     environmentId: EnvironmentId.make("second"),
   });
 });
+
+it.each(["offline", "unsupported"] as const)(
+  "can switch away from an %s computer without cached bots",
+  (unavailable) => {
+    harness.unavailable = unavailable;
+    harness.bots = [];
+    renderCatalog("first", "first-thread");
+
+    act(() => button("Computer: first").click());
+    const picker = container.querySelector<HTMLSelectElement>('[aria-label="Computer"]')!;
+    act(() => {
+      picker.value = "second";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(harness.setParams).toHaveBeenCalledWith({
+      environmentId: "second",
+      callerThreadId: undefined,
+    });
+
+    renderCatalog("second");
+    act(() => button("New bot").click());
+    expect(harness.navigate).toHaveBeenLastCalledWith("BotsCreate", {
+      environmentId: EnvironmentId.make("second"),
+    });
+  },
+);
 
 it.each(["switch", "unmount"])(
   "ignores a starter restore that finishes after %s",

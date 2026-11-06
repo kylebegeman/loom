@@ -142,11 +142,12 @@ export function resolveProjectScriptTerminalId(input: {
   return nextTerminalId(input.existingTerminalIds, input.uniqueSuffix);
 }
 
+// fork: native-menus
 export function projectScriptMenuIcon(icon: ProjectScript["icon"]) {
-  if (icon === "test") return "flask";
-  if (icon === "lint") return "checklist";
-  if (icon === "configure") return "wrench.and.screwdriver";
-  if (icon === "build") return "hammer";
-  if (icon === "debug") return "ladybug";
-  return "play";
+  if (icon === "test") return "flask" as const;
+  if (icon === "lint") return "checklist" as const;
+  if (icon === "configure") return "wrench.and.screwdriver" as const;
+  if (icon === "build") return "hammer" as const;
+  if (icon === "debug") return "ladybug" as const;
+  return "play" as const;
 }

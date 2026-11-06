@@ -39,7 +39,7 @@ if ! pairing_output="$({
   exit 1
 fi
 
-pairing_url="$(printf '%s\n' "$pairing_output" | sed -n 's/^Pair URL: //p' | tail -n 1)"
+pairing_url="$(printf '%s\n' "$pairing_output" | sed -nE 's/^Pair(ing)? URL: //p' | tail -n 1)"
 if [[ -z "$pairing_url" ]]; then
   echo "Could not parse the mobile pairing URL." >&2
   exit 1

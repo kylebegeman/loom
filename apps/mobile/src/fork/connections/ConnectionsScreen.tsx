@@ -171,7 +171,7 @@ export function ConnectionsScreen() {
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         className="flex-1"
-        contentContainerClassName="gap-5 px-5 pt-4"
+        contentContainerClassName="gap-7 px-5 pt-5"
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
@@ -189,8 +189,7 @@ export function ConnectionsScreen() {
         }
       >
         <View className="gap-2 px-1">
-          <Text className="text-xl font-t3-bold text-foreground">Your computers</Text>
-          <Text className="text-sm leading-normal text-foreground-muted">
+          <Text textRole="body" className="text-foreground-muted">
             Connect to a computer to run agents and access its project folders. Saved conversations
             remain available when it is offline.
           </Text>

@@ -1,12 +1,13 @@
 import { useProjectNavigation } from "../../../fork/project-navigation/useProjectNavigation"; // fork: project-navigation
-import { useActiveNewTask } from "../../../state/active-new-task";
-import { Toolbar } from "../../../components/ui/Toolbar";
-import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native"; // fork: usage-navigation
-import { use, useCallback, useEffect, useRef } from "react";
-import { isDuoDevice } from "../../../lib/device-type";
-import { useDeviceType } from "../../../native/native-layout-metrics";
 import { createNativeHeaderMenu } from "../../../components/ui/nativeHeaderMenu.ios";
 import { useSettingsEnvironmentMenu } from "../../settings/components/SettingsEnvironmentFilterHeader";
+import { useActiveNewTask } from "../../../state/active-new-task";
+import { Toolbar } from "../../../components/ui/Toolbar";
+import { useIsFocused } from "@react-navigation/native";
+import { use, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { Platform } from "react-native";
+import { isDuoDevice } from "../../../lib/device-type";
+import { useDeviceType } from "../../../native/native-layout-metrics";
 import type { SearchBarCommands } from "react-native-screens";
 
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../../native/native-glass";
@@ -18,42 +19,52 @@ import {
 import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardCommands";
 import { useAdaptiveWorkspaceLayout } from "../AdaptiveWorkspaceLayout";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
-import { shouldRestoreNativeSearch } from "./workspace-tabs-state";
-import { useFloatingWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
+import { shouldRestoreNativeSearch, type WorkspaceSearchTab } from "./workspace-tabs-state";
+import { useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { WorkspaceTabToolbarButtons } from "./WorkspaceSectionToolbar";
+import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
+import { acceptsNativeSearchEvent } from "./native-search-events";
 
 const SEARCH_LABELS = {
   threads: "Search threads",
+  sites: "Search websites",
+  search: "Search Loom",
   pullRequests: "Search pull requests",
   settings: "Search settings",
 } as const;
 
+// fork: mobile-navigation
 export function WorkspaceToolbar(props: {
-  readonly onNewTask: () => void;
+  readonly onNewTask?: () => void;
   readonly sidebar?: boolean;
+  readonly searchTab?: Exclude<WorkspaceSearchTab, "usage">;
+  readonly showCompose?: boolean;
 }) {
   const workspace = useWorkspaceTabs()!;
   const { searchLabel: navigationSearchLabel } = useProjectNavigation(); // fork: project-navigation
-  const navigation = useNavigation(); // fork: usage-navigation
+  const selectTab = useSelectWorkspaceTab();
   const activeNewTask = useActiveNewTask();
   const deviceType = useDeviceType();
   const sidebarTabs = useSidebarWorkspaceTabs();
-  const floatingTabs = useFloatingWorkspaceTabs();
-  const duoSearch = NATIVE_LIQUID_GLASS_SUPPORTED && isDuoDevice(deviceType);
-  const bottomSearch = duoSearch && sidebarTabs !== "picker";
-  // On the Duo, compose belongs to the threads tab, in the detail column's bar when unfolded.
-  const nativeToolbarCompose =
-    deviceType === "duo-folded" &&
-    !workspace.settingsOpen &&
-    workspace.state.selectedTab === "threads" &&
-    activeNewTask === null;
+  const duoSearch =
+    props.searchTab === undefined && NATIVE_LIQUID_GLASS_SUPPORTED && isDuoDevice(deviceType);
   const tabActive = use(NativeWorkspaceTabActivityContext)?.active ?? true;
   const focused = useIsFocused();
-  const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
+  const { panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
   const searchRef = useRef<SearchBarCommands>(null);
   const settingsMenu = useSettingsEnvironmentMenu();
   // The Settings list takes the selected tab's place, so search follows it.
-  const selectedTab = workspace.settingsOpen ? "settings" : workspace.state.selectedTab;
+  const selectedTab =
+    props.searchTab ?? (workspace.settingsOpen ? "settings" : workspace.state.selectedTab);
+  const globalSearch = selectedTab === "search";
+  const bottomSearch = !globalSearch && duoSearch && sidebarTabs !== "picker";
+  const supportsSearch =
+    props.searchTab !== undefined || globalSearch || selectedTab === "settings";
+  const nativeToolbarCompose =
+    props.showCompose !== false &&
+    props.onNewTask !== undefined &&
+    selectedTab === "threads" &&
+    activeNewTask === null;
   const tab = workspace.state.tabs[selectedTab];
   // fork: project-navigation
   const searchLabel =
@@ -63,14 +74,19 @@ export function WorkspaceToolbar(props: {
   const { isTabActive: isListTabActive } = workspace;
   // A retained tab slot stays mounted while another is shown.
   const isTabActive = (tab: typeof selectedTab) =>
-    tab === "settings" ? tabActive : isListTabActive(tab);
-  const foldedSearch = deviceType === "duo-folded";
+    props.searchTab !== undefined ? focused : tab === "settings" ? tabActive : isListTabActive(tab);
+  const foldedSearch =
+    props.searchTab === undefined && deviceType === "duo-folded" && supportsSearch && !globalSearch;
   const primaryColumn = use(NativePrimaryColumnContext);
   // UIKit hosts integrated search outside the sidebar's sliding content.
   // Mount it after native appearance so it cannot precede the pane's reveal.
-  const searchVisible = foldedSearch
-    ? tab.searchMode !== "resting"
-    : deviceType !== "duo-unfolded" || primaryColumn?.presented !== false;
+  const searchVisible =
+    supportsSearch &&
+    (props.searchTab !== undefined ||
+      globalSearch ||
+      (foldedSearch
+        ? tab.searchMode !== "resting"
+        : deviceType !== "duo-unfolded" || primaryColumn?.presented !== false));
   const enterSearch = useCallback(() => {
     workspace.dispatch({
       type: "scroll",
@@ -82,22 +98,34 @@ export function WorkspaceToolbar(props: {
   }, [workspace, selectedTab, props.sidebar, panes.primarySidebarVisible, togglePrimarySidebar]);
   const focusSearch = () => {
     if (!isTabActive(selectedTab)) return false;
+    if (!supportsSearch) {
+      selectTab("search");
+      return true;
+    }
     if (duoSearch || !NATIVE_LIQUID_GLASS_SUPPORTED) enterSearch();
     searchRef.current?.focus();
     return true;
   };
   const cancelSearch = () => {
+    if (!acceptsNativeSearchEvent({ globalSearch, focused, tabActive: isTabActive(selectedTab) }))
+      return;
     workspace.recordScrollOffset(selectedTab, tab.searchEntryOffset);
     workspace.dispatch({ type: "cancel", tab: selectedTab });
+    // UIKit restores UISearchTab on cancel; RNS uses that tab type from iOS 26.1.
+    if (globalSearch && Number.parseFloat(String(Platform.Version)) < 26.1)
+      selectTab(workspace.state.searchReturnTab);
   };
-  const searchFocused = () =>
-    tab.searchMode === "resting"
+  const searchFocused = () => {
+    return tab.searchMode === "resting"
       ? enterSearch()
       : workspace.dispatch({ type: "search", tab: selectedTab });
+  };
   useHardwareKeyboardCommand("focusSearch", focusSearch);
   // The sidebar remains visible while its detail owns navigation focus.
-  const searchHostVisible = focused || primaryColumn?.presented === true;
-  const restoreSearch = () => {
+  const searchHostVisible =
+    focused ||
+    (!globalSearch && props.searchTab === undefined && primaryColumn?.presented === true);
+  const restoreSearch = (afterTransition = false) => {
     if (
       searchHostVisible &&
       searchVisible &&
@@ -105,6 +133,7 @@ export function WorkspaceToolbar(props: {
       shouldRestoreNativeSearch(tab, duoSearch)
     ) {
       searchRef.current?.setText(tab.query);
+      if (globalSearch && !afterTransition) return;
       // Integrated search collapses to its button when its screen reappears,
       // which would hide the query that still filters the list.
       if (NATIVE_LIQUID_GLASS_SUPPORTED) {
@@ -113,23 +142,26 @@ export function WorkspaceToolbar(props: {
       }
     }
   };
-  useFocusEffect(
-    useCallback(() => {
-      const frame = requestAnimationFrame(restoreSearch);
-      return () => cancelAnimationFrame(frame);
-    }, [restoreSearch]),
+  const restoreNativeSearch = useRef(restoreSearch);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- native appearance callbacks read the latest committed query without resubscribing or rewriting text during typing
+  useLayoutEffect(() => {
+    restoreNativeSearch.current = restoreSearch;
+  }, [restoreSearch]);
+  const searchListeners = useMemo(
+    () => ({ transitionEnd: () => requestAnimationFrame(() => restoreNativeSearch.current(true)) }),
+    [],
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules a frame to restore the native search bar's text and focus when its tab becomes active
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the field only when its host, tab or placement changes, leaving native text edits alone
   useEffect(() => {
-    if (!tabActive) return;
-    const frame = requestAnimationFrame(restoreSearch);
+    if (!tabActive || !searchHostVisible || !searchVisible) return;
+    const frame = requestAnimationFrame(() => restoreNativeSearch.current());
     return () => cancelAnimationFrame(frame);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Moving the search bar to the bottom toolbar restores its focus and query.
-  }, [restoreSearch, tabActive, bottomSearch]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- switching the native tab or search placement requires restoring its controller
+  }, [tabActive, bottomSearch, searchHostVisible, searchVisible, selectedTab]);
   const composeButton = nativeToolbarCompose ? (
     <Toolbar.Button
       identifier="workspace-compose"
-      accessibilityLabel="New chat"
+      accessibilityLabel="New thread"
       icon="square.and.pencil"
       onPress={props.onNewTask}
       separateBackground
@@ -144,64 +176,67 @@ export function WorkspaceToolbar(props: {
       separateBackground
     />
   ) : null;
-  // fork: usage-navigation
-  const limitsButton =
-    selectedTab === "threads" ? (
-      <Toolbar.Button
-        identifier="workspace-limits"
-        accessibilityLabel="Limits"
-        icon="chart.bar.xaxis"
-        onPress={() => navigation.navigate("SettingsUsage")}
-        separateBackground
-      />
-    ) : null;
   return (
     <>
       <NativeStackScreenOptions
         optionsVersion={[selectedTab, tab.searchMode]}
-        listeners={{ transitionEnd: restoreSearch }}
+        listeners={searchListeners}
         options={{
           // Without Liquid Glass, Settings keeps its search field out instead of a search button,
           // which would take the header's trailing items from the scope filter.
           headerSearchBarOptions:
             (NATIVE_LIQUID_GLASS_SUPPORTED ||
               tab.searchMode !== "resting" ||
-              workspace.settingsOpen) &&
+              selectedTab === "settings") &&
             searchVisible
               ? {
                   ref: searchRef,
-                  autoFocus: tab.searchMode === "active",
+                  autoFocus: globalSearch
+                    ? tabActive && focused && tab.searchMode === "resting"
+                    : tab.searchMode === "active",
                   autoCapitalize: "none",
                   hideNavigationBar: false,
                   hideWhenScrolling: false,
                   obscureBackground: false,
-                  placement: NATIVE_LIQUID_GLASS_SUPPORTED
-                    ? bottomSearch
-                      ? "integrated"
-                      : "integratedButton"
-                    : "stacked",
+                  placement: globalSearch
+                    ? "automatic"
+                    : NATIVE_LIQUID_GLASS_SUPPORTED
+                      ? bottomSearch
+                        ? "integrated"
+                        : "integratedButton"
+                      : "stacked",
                   allowToolbarIntegration:
                     NATIVE_LIQUID_GLASS_SUPPORTED &&
-                    deviceType !== "phone" &&
+                    (globalSearch || deviceType !== "phone") &&
                     sidebarTabs !== "picker",
                   placeholder: searchLabel,
                   cancelButtonHidden: foldedSearch,
                   onFocus: searchFocused,
                   onBlur: () => workspace.dispatch({ type: "expand", tab: selectedTab }),
                   onSearchButtonPress: () => searchRef.current?.blur(),
-                  onChangeText: ({ nativeEvent }) =>
+                  onChangeText: ({ nativeEvent }) => {
+                    if (
+                      !acceptsNativeSearchEvent({
+                        globalSearch,
+                        focused:
+                          focused || (props.sidebar === true && primaryColumn?.presented === true),
+                        tabActive: isTabActive(selectedTab),
+                      })
+                    )
+                      return;
                     workspace.dispatch({
                       type: "query",
                       query: nativeEvent.text,
                       tab: selectedTab,
-                    }),
+                    });
+                  },
                   onCancelButtonPress: cancelSearch,
                 }
               : undefined,
         }}
       />
       {/* UIKit lays trailing items out from the edge inward. */}
-      {workspace.settingsOpen ? (
+      {selectedTab === "settings" ? (
         <Toolbar placement="right">
           {searchButton}
           {createNativeHeaderMenu(settingsMenu)}
@@ -209,34 +244,21 @@ export function WorkspaceToolbar(props: {
       ) : (
         <Toolbar placement="right">
           {searchButton}
-          {/* fork: usage-navigation */}
-          {NATIVE_LIQUID_GLASS_SUPPORTED || foldedSearch ? limitsButton : null}
           {nativeToolbarCompose && foldedSearch ? <Toolbar.Spacer width={8} /> : null}
           {composeButton}
-          {selectedTab !== "threads" ||
-          isDuoDevice(deviceType) ||
-          (deviceType === "pad" && layout.usesSplitView) ||
-          sidebarTabs === "picker" ||
-          floatingTabs ? null : (
-            <Toolbar.Button
-              accessibilityLabel="New chat"
-              icon="square.and.pencil"
-              onPress={props.onNewTask}
-            />
-          )}
-          {NATIVE_LIQUID_GLASS_SUPPORTED ? null : (
+          {!supportsSearch || NATIVE_LIQUID_GLASS_SUPPORTED ? null : (
             <Toolbar.Button
               accessibilityLabel={searchLabel}
               icon="magnifyingglass"
               onPress={focusSearch}
             />
           )}
-          {/* fork: usage-navigation */}
-          {!NATIVE_LIQUID_GLASS_SUPPORTED && !foldedSearch ? limitsButton : null}
         </Toolbar>
       )}
       <Toolbar placement="bottom">
-        {sidebarTabs === "toolbar" ? <WorkspaceTabToolbarButtons /> : null}
+        {props.searchTab === undefined && sidebarTabs === "toolbar" ? (
+          <WorkspaceTabToolbarButtons />
+        ) : null}
         {bottomSearch && searchVisible ? <Toolbar.SearchBarSlot /> : null}
       </Toolbar>
     </>

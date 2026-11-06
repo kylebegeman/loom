@@ -49,7 +49,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "../../components/ui/Button";
 import { AppText as Text } from "../../components/ui/AppText";
-import { SymbolView } from "../../components/ui/AppSymbol";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import {
   EnvironmentMachineSymbol,
   ENVIRONMENT_MACHINE_SYMBOLS,
@@ -202,6 +202,7 @@ function SelectRow(props: {
   readonly label: string;
   readonly value: string;
   readonly valueIcon?: ReactNode;
+  readonly nativeValueIcon?: AppSymbolName;
   readonly actions: MenuAction[];
   readonly onSelect: (id: string) => void;
   readonly borderTop?: boolean;
@@ -236,6 +237,15 @@ function SelectRow(props: {
   }
   return (
     <Menu
+      nativeTrigger={{
+        // fork: native-menus
+        label: props.label,
+        detail: props.value,
+        detailIcon: props.nativeValueIcon,
+        accessibilityLabel: `${props.label}, ${props.value}`,
+        size: "default",
+        fullWidth: true,
+      }}
       actions={props.actions}
       onPressAction={({ nativeEvent }) => props.onSelect(nativeEvent.event)}
     >
@@ -825,6 +835,7 @@ function TaskForm({
           <SelectRow
             label="Runs on"
             value={environmentLabel}
+            nativeValueIcon={ENVIRONMENT_MACHINE_SYMBOLS[resolveEnvironmentMachineKind(config)]}
             valueIcon={
               <EnvironmentMachineSymbol
                 kind={resolveEnvironmentMachineKind(config)}
@@ -1521,6 +1532,12 @@ function EnvironmentTasks({
               ) : null}
             </Pressable>
             <Menu
+              nativeTrigger={{
+                // fork: native-menus
+                icon: "ellipsis",
+                accessibilityLabel: `Actions for ${task.title}`,
+                size: "default",
+              }}
               actions={[
                 { id: "edit", title: "Edit" },
                 ...(task.threadId !== null && scheduledTaskThreadMode(task) !== "new_thread"

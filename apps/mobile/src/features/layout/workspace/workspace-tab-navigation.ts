@@ -5,12 +5,15 @@ import {
 } from "../../settings/components/settings-page-targets";
 import { settingsNavigationState } from "../../settings/settings-navigation";
 import type { WorkspaceTab } from "./workspace-tabs-state";
+import { withWorkspacePrimaryTab, workspaceSearchReturnTab } from "./workspace-primary-navigation";
 
 type RouteLike = {
   readonly name: string;
   readonly key?: string;
   readonly params?: object | undefined;
 };
+
+export type WorkspaceTabHistory = Partial<Record<WorkspaceTab, readonly RouteLike[]>>;
 type ThreadSelection = NonNullable<WorkspaceSelections["threads"]>;
 type PullRequestSelection = NonNullable<WorkspaceSelections["pullRequests"]>;
 
@@ -194,12 +197,33 @@ function detailRoute(
   );
 }
 
+function restoredTabRoutes(routes: readonly RouteLike[], check: WorkspaceSelectionCheck) {
+  const missing = routes.findIndex((route) => {
+    if (route.name === "Thread") {
+      const environmentId = stringParam(route.params, "environmentId");
+      const threadId = stringParam(route.params, "threadId");
+      return (
+        environmentId !== undefined &&
+        threadId !== undefined &&
+        !check.thread({ environmentId, threadId })
+      );
+    }
+    if (route.name === "PullRequest") {
+      const selection = pullRequestSelection(route.params);
+      return selection !== undefined && !check.pullRequest(selection);
+    }
+    return false;
+  });
+  return missing < 0 ? routes : routes.slice(0, missing);
+}
+
 /**
  * The root stack for opening a workspace tab. With columns the detail column must show
  * something, so the tab reopens the page it last showed (Settings falls back to its default);
  * without columns the tab opens on its list. Routes already on screen keep their keys, and
  * `overlays` (open sheets) stay on top.
  */
+// fork: mobile-navigation
 export function workspaceTabNavigationState<
   State extends { readonly routes: readonly RouteLike[] },
 >(
@@ -210,6 +234,8 @@ export function workspaceTabNavigationState<
     readonly columns: boolean;
     readonly check: WorkspaceSelectionCheck;
     readonly overlays?: readonly RouteLike[];
+    readonly history?: WorkspaceTabHistory;
+    readonly primaryTabs?: boolean;
     readonly seedPullRequest?: (identity: Omit<PullRequestSelection, "key">) => object;
   },
 ) {
@@ -225,9 +251,29 @@ export function workspaceTabNavigationState<
     const routes = [...settings.routes.map(keyed), ...overlays];
     return { ...settings, index: routes.length - 1, routes };
   }
-  const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
+  const existingHome = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
+  const primaryTab = tab === "sites" || tab === "search" ? tab : "threads";
+  const searchReturnTab = workspaceSearchReturnTab(state.routes);
+  const home = options.primaryTabs
+    ? withWorkspacePrimaryTab(existingHome, primaryTab, searchReturnTab)
+    : existingHome;
+  const remembered = options.history?.[tab];
+  if (remembered?.length) {
+    const restored = restoredTabRoutes(remembered, options.check);
+    const routes = [
+      ...(restored.length ? restored : [home]).map((route) =>
+        keyed(
+          options.primaryTabs && route.name === "Home"
+            ? withWorkspacePrimaryTab(route, primaryTab, searchReturnTab)
+            : route,
+        ),
+      ),
+      ...overlays,
+    ];
+    return { ...state, index: routes.length - 1, routes };
+  }
   const detail =
-    options.columns && tab !== "usage"
+    options.columns && (tab === "threads" || tab === "pullRequests")
       ? detailRoute(state, tab, selections, options.check, options.seedPullRequest)
       : undefined;
   const routes = [...[home, ...(detail ? [detail] : [])].map(keyed), ...overlays];
