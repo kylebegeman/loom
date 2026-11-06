@@ -493,6 +493,24 @@ export const layer: Layer.Layer<
                 }),
               ];
             }
+            case "model_selection.updated": {
+              const existing = yield* projections.getThread(input.event.threadId);
+              if (
+                !modelSelectionsEqual(existing.modelSelection, input.event.expected) ||
+                input.event.expected.instanceId !== input.event.selection.instanceId ||
+                input.event.expected.model !== input.event.selection.model
+              )
+                return [];
+              const now = yield* DateTime.now;
+              return [
+                yield* makeDomainEvent(input, {
+                  type: "thread.model-selection-updated",
+                  threadId: existing.id,
+                  payload: { ...existing, modelSelection: input.event.selection, updatedAt: now },
+                  occurredAt: now,
+                }),
+              ];
+            }
             case "provider_session.updated":
               return [
                 yield* makeDomainEvent(input, {

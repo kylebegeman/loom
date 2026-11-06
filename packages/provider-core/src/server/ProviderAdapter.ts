@@ -88,6 +88,13 @@ export const ProviderAdapterV2Event = Schema.Union([
     createOnly: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
+    type: Schema.Literal("model_selection.updated"),
+    driver: ProviderDriverKind,
+    threadId: ThreadId,
+    expected: ModelSelection,
+    selection: ModelSelection,
+  }),
+  Schema.Struct({
     type: Schema.Literal("provider_session.updated"),
     driver: ProviderDriverKind,
     providerSession: OrchestrationV2ProviderSession,

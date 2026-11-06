@@ -1,4 +1,8 @@
 import {
+  makeSwitchboardTierReader,
+  withSwitchboardServiceTiers,
+} from "../../fork/switchboard/serviceTier.ts";
+import {
   ProviderDriverKind,
   ProviderSetupError,
   TextGenerationError,
@@ -71,6 +75,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     ),
   );
   const check = Effect.gen(function* () {
+    const routed = (yield* host.settings.get).switchboardEnabled;
     const base = yield* pending;
     if (!enabled) return base;
     const executable = yield* runtime.installation.resolve().pipe(Effect.option);
@@ -157,19 +162,21 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
           auth: managedAuth,
           version: draft.version ?? executable.value.version,
           usageLimits,
-          models: draft.models.map((model) => ({
-            ...model,
-            ...(model.capabilities
-              ? {
-                  capabilities: {
-                    ...model.capabilities,
-                    optionDescriptors: (model.capabilities.optionDescriptors ?? []).filter(
-                      (option) => option.id !== "serviceTier",
-                    ),
-                  },
-                }
-              : {}),
-          })),
+          models: routed
+            ? withSwitchboardServiceTiers(draft.models)
+            : draft.models.map((model) => ({
+                ...model,
+                ...(model.capabilities
+                  ? {
+                      capabilities: {
+                        ...model.capabilities,
+                        optionDescriptors: (model.capabilities.optionDescriptors ?? []).filter(
+                          (option) => option.id !== "serviceTier",
+                        ),
+                      },
+                    }
+                  : {}),
+              })),
           setup,
           runtimePaths,
           ...(draft.slashCommands
@@ -219,7 +226,8 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     resolveMaintenance: () => Effect.succeed({ provider: DRIVER, packageName: null, update: null }),
     getSettings: host.settings.get,
     streamSettings: host.settings.changes,
-    haveSettingsChanged: () => false,
+    haveSettingsChanged: (previous, next) =>
+      previous.switchboardEnabled !== next.switchboardEnabled,
     initialSnapshot: () => pending,
     checkProvider: check,
   }).pipe(
@@ -245,6 +253,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
   const orchestrationAdapter = yield* createCodexAdapterV2(input, {
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     resolveRuntime: runtime.resolve,
+    readServiceTier: yield* makeSwitchboardTierReader(),
   }).pipe(
     Effect.mapError(
       (cause) =>

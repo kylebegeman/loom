@@ -1657,7 +1657,10 @@ export type CodexAdapterV2DriverEnv =
 
 export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapterV2")(function* (
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
-  hooks: Pick<CodexAdapterV2Options, "onUsageLimits" | "resolveRuntime" | "compatibility"> = {},
+  hooks: Pick<
+    CodexAdapterV2Options,
+    "onUsageLimits" | "resolveRuntime" | "compatibility" | "readServiceTier"
+  > = {},
 ) {
   const clientFactory = yield* CodexAppServerClientFactory;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
@@ -1707,6 +1710,11 @@ export interface CodexAdapterV2Options {
   readonly environment: NodeJS.ProcessEnv;
   readonly clientFactory: CodexAppServerClientFactoryShape;
   readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
+  readonly readServiceTier?: (
+    nativeThreadId: string,
+    since: number,
+    selection: ModelSelection,
+  ) => Effect.Effect<ModelSelection | null>;
   readonly resolveRuntime?: Effect.Effect<CodexEffectiveRuntime, ProviderSetupError, Scope.Scope>;
   readonly compatibility?: (
     version: string,
@@ -2029,6 +2037,28 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
           Queue.offer(events, event).pipe(Effect.asVoid);
+
+        const tierReadTurns = new Set<string>();
+        const syncSwitchboardTier = Effect.fn("CodexAdapterV2.syncSwitchboardTier")(function* (
+          context: ActiveCodexTurnContext,
+        ) {
+          if (!adapterOptions.readServiceTier || context.subagent !== null) return;
+          const nativeThreadId = context.providerThread.nativeThreadRef?.nativeId;
+          if (!nativeThreadId) return;
+          const selection = yield* adapterOptions.readServiceTier(
+            nativeThreadId,
+            DateTime.toEpochMillis(context.startedAt),
+            context.input.modelSelection,
+          );
+          if (selection)
+            yield* emitProviderEvent({
+              type: "model_selection.updated",
+              driver: CODEX_PROVIDER,
+              threadId: context.projectionThreadId,
+              expected: context.input.modelSelection,
+              selection,
+            });
+        });
 
         const emitImageWorkState =
           /* Provider events include streaming deltas; avoid a span for each update. */
@@ -4887,6 +4917,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               return;
             }
 
+            if (
+              (payload.item.type === "reasoning" || payload.item.type === "agentMessage") &&
+              !tierReadTurns.has(payload.turnId)
+            ) {
+              tierReadTurns.add(payload.turnId);
+              yield* syncSwitchboardTier(context);
+            }
+
             if (payload.item.type === "contextCompaction") {
               yield* emitCompactionItem(
                 context,
@@ -6604,6 +6642,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (context === undefined) {
               return;
             }
+            yield* syncSwitchboardTier(context);
+            tierReadTurns.delete(payload.turn.id);
             const nativeStatus = mapCodexTurnStatus(payload.turn.status);
             const status =
               nativeStatus === "completed" &&
@@ -6827,7 +6867,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               hasT3Mcp: mcpSession !== undefined,
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
-              omitServiceTier: adapterOptions.resolveRuntime !== undefined,
+              omitServiceTier:
+                adapterOptions.resolveRuntime !== undefined &&
+                switchboardCodexThreadOptions().modelProvider === undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
             });
             yield* Ref.update(pendingRootTurns, (current) => {
