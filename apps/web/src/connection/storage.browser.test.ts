@@ -11,6 +11,45 @@ import { TestClock } from "effect/testing";
 import * as ConnectionStorage from "./storage";
 
 describe("IndexedDB query cache", () => {
+  // fork: library
+  it.effect("migrates Loom v5 offline Library rows to versioned query keys", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const request = indexedDB.deleteDatabase("t3code:connection-runtime");
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          }),
+      );
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const request = indexedDB.open("t3code:connection-runtime", 5);
+            request.onupgradeneeded = () => {
+              request.result
+                .createObjectStore("query")
+                .put(
+                  { payload: "offline Library", bytes: 15, savedAt: 0 },
+                  "legacy-environment:library:projects",
+                );
+            };
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              request.result.close();
+              resolve();
+            };
+          }),
+      );
+      yield* Effect.gen(function* () {
+        const store = (yield* EnvironmentQueryStore)!;
+        expect(
+          yield* store.load(EnvironmentId.make("legacy-environment"), "library:projects"),
+        ).toEqual(Option.some("offline Library"));
+      }).pipe(Effect.provide(ConnectionStorage.layer));
+    }),
+  );
+
   it.effect("round trips per environment and clears with the environment", () =>
     Effect.gen(function* () {
       const store = (yield* EnvironmentQueryStore)!;

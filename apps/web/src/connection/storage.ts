@@ -168,13 +168,20 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
             const legacy = cachedQuery(current.value);
             if (legacy && typeof current.key === "string") {
               const separator = current.key.indexOf(":");
-              if (separator > 0)
-                current.update({
-                  environmentId: current.key.slice(0, separator),
-                  payload: legacy.payload,
-                  updatedAt: legacy.savedAt,
-                  bytes: legacy.bytes,
-                });
+              if (separator > 0) {
+                const environmentId = EnvironmentId.make(current.key.slice(0, separator));
+                const key = current.key.slice(separator + 1);
+                queryStore.put(
+                  {
+                    environmentId,
+                    payload: legacy.payload,
+                    updatedAt: legacy.savedAt,
+                    bytes: legacy.bytes,
+                  },
+                  queryCacheKey(environmentId, key),
+                );
+                current.delete();
+              }
             }
             current.continue();
           });
