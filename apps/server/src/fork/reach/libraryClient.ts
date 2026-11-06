@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import {
   REACH_ENSURE_ROUTE,
   REACH_IDENTITY_ROUTE,
@@ -44,6 +45,7 @@ export type ReachLibraryOutcome<A> =
 export type ReachLibraryFailure = Exclude<ReachLibraryOutcome<never>, { readonly kind: "ok" }>;
 
 export interface ReachLibraryClientOptions {
+  readonly signature: Signature.Signature["Service"];
   readonly library: RemoteLibrary;
   readonly environmentId: string;
   readonly secrets: ServerSecretStore.ServerSecretStore["Service"];
@@ -125,6 +127,7 @@ export const makeReachLibraryClient = (options: ReachLibraryClientOptions): Reac
   ): Effect.fn.Return<ReachLibraryOutcome<A>> {
     const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(options.secrets).pipe(
       Effect.option,
+      Effect.provideService(Signature.Signature, options.signature),
     );
     if (Option.isNone(keyPair)) return failed("storage");
     const publicKey = directoryPublicKeyFromPem(keyPair.value.publicKey);
@@ -139,7 +142,7 @@ export const makeReachLibraryClient = (options: ReachLibraryClientOptions): Reac
       audience: library.origin,
       claims: origin === undefined ? { action, seq } : { action, seq, origin },
       nowEpochSeconds: nowMs / 1000,
-    }).pipe(Effect.option);
+    }).pipe(Effect.option, Effect.provideService(Signature.Signature, options.signature));
     if (Option.isNone(token)) return failed("invalid");
     const route = action === "ensure" ? REACH_ENSURE_ROUTE : REACH_REMOVE_ROUTE;
     return yield* post(route, { token: token.value, publicKey }, decode);

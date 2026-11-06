@@ -210,7 +210,7 @@ export const makeFabCatalog = Effect.fn("PcbPreview.makeFabCatalog")(function* (
   });
   const read = stored.pipe(Effect.map(toCatalog));
   const update = Effect.fn("PcbPreview.updateFabCapabilities")(function* (
-    input: typeof PcbFabCapabilitiesUpdate.Type,
+    input: PcbFabCapabilitiesUpdate,
   ) {
     return yield* lock.withPermit(
       Effect.gen(function* () {

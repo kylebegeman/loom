@@ -14,7 +14,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, BearerConnectionTarget } from "../connection/model.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { createVaultAccessAtoms, vaultOwnerAccessSummary } from "./vault-access.ts";
 
@@ -113,7 +113,11 @@ it.effect("a mode change refreshes other mounted policy views only in its destin
           },
         } as unknown as RpcSession;
         supervisors.set(environmentId, {
-          target: { environmentId, label: "Policy test" },
+          target: new BearerConnectionTarget({
+            environmentId,
+            label: "Policy test",
+            connectionId: "fixture",
+          }),
           state: yield* SubscriptionRef.make({ ...AVAILABLE_CONNECTION_STATE, phase: "connected" }),
           session: yield* SubscriptionRef.make(Option.some(session)),
         } as EnvironmentSupervisor["Service"]);

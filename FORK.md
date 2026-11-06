@@ -955,14 +955,14 @@ compatible. Stored connection identifiers are unchanged. No global command was i
 this task. Package-runner examples keep the actual upstream npm package name; do not substitute
 `npx loom`, which could fetch an unrelated package.
 
-| File                                                                | Marker      | Why                                                                   |
-| ------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------- |
-| `apps/mobile/src/features/workspace/WorkspaceThreadSidebar.tsx`     | `library`   | Route sidebar source actions through the Library project launch flow. |
-| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx` | `brand`     | Loom pairing instructions in the scanner.                             |
-| `apps/web/src/components/onboarding/WelcomeWizard.tsx`              | `brand`     | Loom CLI pairing/start examples.                                      |
-| `apps/server/src/binCli.ts`                                         | `brand`     | Loom CLI root/help naming.                                            |
-| `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`        | `brand`     | Loom server errors and new credential labels.                         |
-| `apps/server/package.json`                                          | (no marker) | Add the `loom` executable alias.                                      |
+| File                                                                   | Marker      | Why                                                                   |
+| ---------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------- |
+| `apps/mobile/src/features/layout/workspace/WorkspaceThreadSidebar.tsx` | `library`   | Route sidebar source actions through the Library project launch flow. |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx`    | `brand`     | Loom pairing instructions in the scanner.                             |
+| `apps/web/src/components/onboarding/WelcomeWizard.tsx`                 | `brand`     | Loom CLI pairing/start examples.                                      |
+| `apps/server/src/binCli.ts`                                            | `brand`     | Loom CLI root/help naming.                                            |
+| `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`           | `brand`     | Loom server errors and new credential labels.                         |
+| `apps/server/package.json`                                             | (no marker) | Add the `loom` executable alias.                                      |
 
 | `apps/desktop/src/app/DesktopCliCommand.ts` | `brand` | Install, inspect and remove the Loom command without replacing unrelated executables. |
 | `apps/desktop/src/app/DesktopCliShim.ts` | `brand` | Use the Loom launcher filename; preserve legacy shim ownership and runtime identifiers. |
@@ -1335,6 +1335,16 @@ starts. The workflows need these repository secrets:
   read and write access to Contents, Pull requests and Workflows. The built-in token cannot
   push the upstream workflow changes most merges carry. It expires; renew it when runs fail
   to push.
+
+When the Claude pool is exhausted, run the same integration and review locally on
+Dorothy with `LOOM_AGENT_PROVIDER=codex LOOM_RESOLVE_JOBS=1` exported. Codex uses
+`switchboard run codex` and the existing local credential broker, with
+`LOOM_CODEX_MODEL` defaulting to `gpt-6.1-sol`. Resolution and repair sessions use the
+workspace-write sandbox; independent reviews use read-only. Start from `origin/main`
+and use `integrate <tag> --pr --resolve`, `review-integration --fix`, then
+`merge-integration <branch>`. Keep the single resolver so sessions never edit the
+shared checkout concurrently. This does not grant the hosted CI credential Codex
+access or change the scheduled Claude workflow.
 
 The repository variable `LOOM_AUTO_MERGE` is `true`, which lets the workflow merge an
 integration pull request that passed its checks, and its review when it needed one. Set it

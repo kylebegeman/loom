@@ -7,16 +7,13 @@ export const readObj = (
   limits: { readonly maxTriangles: number },
 ): TriangleSoup => {
   const bytes = files[0]?.bytes;
-  if (!bytes) throw new CheckFailure("command-failed", "This OBJ file is damaged.");
+  if (!bytes) throw CheckFailure("command-failed", "This OBJ file is damaged.");
   const points: number[] = [];
   const values: number[] = [];
   for (const [index, line] of new TextDecoder().decode(bytes).split(/\r?\n/).entries()) {
     const fields = line.split("#", 1)[0]!.trim().split(/\s+/);
     const fail = () => {
-      throw new CheckFailure(
-        "command-failed",
-        `This OBJ has invalid geometry at line ${index + 1}.`,
-      );
+      throw CheckFailure("command-failed", `This OBJ has invalid geometry at line ${index + 1}.`);
     };
     if (fields[0] === "v") {
       if (fields.length < 4) fail();

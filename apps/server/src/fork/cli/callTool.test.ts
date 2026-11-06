@@ -39,7 +39,10 @@ const server = (failed = false) =>
             }),
           );
       });
-      await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+      await new Promise<void>((resolve, reject) => {
+        http.once("error", reject);
+        http.listen(0, "127.0.0.1", resolve);
+      });
       const address = http.address();
       if (!address || typeof address === "string") throw new Error("No test port");
       return { http, endpoint: `http://127.0.0.1:${address.port}/mcp`, calls };

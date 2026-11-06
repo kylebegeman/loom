@@ -32,6 +32,17 @@ import * as AuthHttp from "./http.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 
+class PocketIdHttpFixtureError extends Schema.TaggedError<PocketIdHttpFixtureError>()(
+  "PocketIdHttpFixtureError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Pocket Id Http operation failed.";
+  }
+}
+
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const metadata = {
   enabled: true,
@@ -177,55 +188,58 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const response = await web.handler(
-                new Request("https://host.example.test/api/loom/identity"),
-                context,
-              );
-              expect(response.status).toBe(200);
-              expect(await response.json()).toMatchObject(metadata);
-              const login = await web.handler(
-                new Request("https://host.example.test/api/loom/identity/login"),
-                context,
-              );
-              expect(login.headers.get("location")).toBe(
-                "https://id.example.test/authorize?state=verified",
-              );
-              expect(login.headers.get("set-cookie")).toContain("Secure");
-              expect(login.headers.get("set-cookie")).toContain("HttpOnly");
-              const callback = await web.handler(
-                new Request(
-                  "https://attacker.invalid/api/loom/identity/callback?state=verified&code=code&returnTo=https://attacker.invalid",
-                  { headers: { cookie: "identity-state=signed-state" } },
-                ),
-                context,
-              );
-              expect(callback.headers.get("location")).toBe("/sites");
-              expect(
-                callback.headers
-                  .getSetCookie()
-                  .find((cookie) => cookie.startsWith("host-session=")),
-              ).toContain("Secure");
-              expect(callback.headers.getSetCookie()).toContainEqual(
-                expect.stringContaining("identity-state=;"),
-              );
-              const handoff = await web.handler(
-                new Request(
-                  "https://host.example.test/api/loom/identity/callback?state=verified&code=handoff",
-                  { headers: { cookie: "identity-state=signed-state" } },
-                ),
-                context,
-              );
-              expect(handoff.status).toBe(200);
-              expect(handoff.headers.has("location")).toBe(false);
-              expect(handoff.headers.get("content-security-policy")).toContain(
-                "script-src 'sha256-",
-              );
-              expect(handoff.headers.get("cache-control")).toBe("no-store");
-              const html = await handoff.text();
-              expect(html).toContain("window.opener.postMessage(");
-              expect(html).toContain('"https://app.example.test"');
-              expect(html).not.toContain("host-browser-token");
+            Effect.tryPromise({
+              try: async () => {
+                const response = await web.handler(
+                  new Request("https://host.example.test/api/loom/identity"),
+                  context,
+                );
+                expect(response.status).toBe(200);
+                expect(await response.json()).toMatchObject(metadata);
+                const login = await web.handler(
+                  new Request("https://host.example.test/api/loom/identity/login"),
+                  context,
+                );
+                expect(login.headers.get("location")).toBe(
+                  "https://id.example.test/authorize?state=verified",
+                );
+                expect(login.headers.get("set-cookie")).toContain("Secure");
+                expect(login.headers.get("set-cookie")).toContain("HttpOnly");
+                const callback = await web.handler(
+                  new Request(
+                    "https://attacker.invalid/api/loom/identity/callback?state=verified&code=code&returnTo=https://attacker.invalid",
+                    { headers: { cookie: "identity-state=signed-state" } },
+                  ),
+                  context,
+                );
+                expect(callback.headers.get("location")).toBe("/sites");
+                expect(
+                  callback.headers
+                    .getSetCookie()
+                    .find((cookie) => cookie.startsWith("host-session=")),
+                ).toContain("Secure");
+                expect(callback.headers.getSetCookie()).toContainEqual(
+                  expect.stringContaining("identity-state=;"),
+                );
+                const handoff = await web.handler(
+                  new Request(
+                    "https://host.example.test/api/loom/identity/callback?state=verified&code=handoff",
+                    { headers: { cookie: "identity-state=signed-state" } },
+                  ),
+                  context,
+                );
+                expect(handoff.status).toBe(200);
+                expect(handoff.headers.has("location")).toBe(false);
+                expect(handoff.headers.get("content-security-policy")).toContain(
+                  "script-src 'sha256-",
+                );
+                expect(handoff.headers.get("cache-control")).toBe("no-store");
+                const html = await handoff.text();
+                expect(html).toContain("window.opener.postMessage(");
+                expect(html).toContain('"https://app.example.test"');
+                expect(html).not.toContain("host-browser-token");
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );
@@ -251,27 +265,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerTokens, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const request = (token: string) =>
-                new Request("https://host.example.test/oauth/token", {
-                  method: "POST",
-                  body: new URLSearchParams({
-                    grant_type: AuthTokenExchangeGrantType,
-                    subject_token_type: AuthAccessTokenType,
-                    requested_token_type: AuthAccessTokenType,
-                    subject_token: token,
-                    client_label: "My phone",
-                    client_device_type: "mobile",
-                  }),
+            Effect.tryPromise({
+              try: async () => {
+                const request = (token: string) =>
+                  new Request("https://host.example.test/oauth/token", {
+                    method: "POST",
+                    body: new URLSearchParams({
+                      grant_type: AuthTokenExchangeGrantType,
+                      subject_token_type: AuthAccessTokenType,
+                      requested_token_type: AuthAccessTokenType,
+                      subject_token: token,
+                      client_label: "My phone",
+                      client_device_type: "mobile",
+                    }),
+                  });
+                const accepted = await web.handler(request("verified-access-jwt"), context);
+                expect(accepted.status).toBe(200);
+                expect(await accepted.json()).toMatchObject({
+                  access_token: "host-bearer",
+                  token_type: "Bearer",
                 });
-              const accepted = await web.handler(request("verified-access-jwt"), context);
-              expect(accepted.status).toBe(200);
-              expect(await accepted.json()).toMatchObject({
-                access_token: "host-bearer",
-                token_type: "Bearer",
-              });
-              const refused = await web.handler(request("not-verified"), context);
-              expect(refused.status).toBe(401);
+                const refused = await web.handler(request("not-verified"), context);
+                expect(refused.status).toBe(401);
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );
@@ -292,47 +309,50 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(routes, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const preflight = await web.handler(
-                new Request("https://host.example.test/api/loom/identity/session", {
-                  method: "OPTIONS",
-                  headers: {
-                    origin: "https://app.example.test",
-                    "access-control-request-method": "POST",
-                    "access-control-request-headers": "content-type",
-                  },
-                }),
-                context,
-              );
-              expect(preflight.status).toBeLessThan(300);
-              expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
-              expect(preflight.headers.get("access-control-allow-methods")).toContain("POST");
-              expect(preflight.headers.get("access-control-allow-headers")).toContain(
-                "content-type",
-              );
-              const exchange = (origin: string) =>
-                web.handler(
+            Effect.tryPromise({
+              try: async () => {
+                const preflight = await web.handler(
                   new Request("https://host.example.test/api/loom/identity/session", {
-                    method: "POST",
-                    headers: { origin, "content-type": "application/json" },
-                    body: encodeJson({
-                      type: "browser",
-                      code: "c".repeat(43),
-                      verifier: "v".repeat(43),
-                      environmentId: "host",
-                    }),
+                    method: "OPTIONS",
+                    headers: {
+                      origin: "https://app.example.test",
+                      "access-control-request-method": "POST",
+                      "access-control-request-headers": "content-type",
+                    },
                   }),
                   context,
                 );
-              const accepted = await exchange("https://app.example.test");
-              expect(accepted.status).toBe(200);
-              expect(accepted.headers.get("access-control-allow-origin")).toBe("*");
-              expect(accepted.headers.get("access-control-allow-credentials")).not.toBe("true");
-              expect(await accepted.json()).toMatchObject({
-                access_token: "host-bearer",
-                environmentId: "host",
-              });
-              expect((await exchange("https://attacker.test")).status).toBe(401);
+                expect(preflight.status).toBeLessThan(300);
+                expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+                expect(preflight.headers.get("access-control-allow-methods")).toContain("POST");
+                expect(preflight.headers.get("access-control-allow-headers")).toContain(
+                  "content-type",
+                );
+                const exchange = (origin: string) =>
+                  web.handler(
+                    new Request("https://host.example.test/api/loom/identity/session", {
+                      method: "POST",
+                      headers: { origin, "content-type": "application/json" },
+                      body: encodeJson({
+                        type: "browser",
+                        code: "c".repeat(43),
+                        verifier: "v".repeat(43),
+                        environmentId: "host",
+                      }),
+                    }),
+                    context,
+                  );
+                const accepted = await exchange("https://app.example.test");
+                expect(accepted.status).toBe(200);
+                expect(accepted.headers.get("access-control-allow-origin")).toBe("*");
+                expect(accepted.headers.get("access-control-allow-credentials")).not.toBe("true");
+                expect(await accepted.json()).toMatchObject({
+                  access_token: "host-bearer",
+                  environmentId: "host",
+                });
+                expect((await exchange("https://attacker.test")).status).toBe(401);
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );
@@ -347,36 +367,39 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const renew = (accessToken: string, currentToken = "current-host-bearer") =>
-                web.handler(
-                  new Request("https://host.example.test/api/loom/identity/session", {
-                    method: "POST",
-                    headers: {
-                      "content-type": "application/json",
-                      authorization: `Bearer ${currentToken}`,
-                    },
-                    body: encodeJson({
-                      type: "native",
-                      accessToken,
-                      idToken: "id-token",
-                      environmentId: "host",
+            Effect.tryPromise({
+              try: async () => {
+                const renew = (accessToken: string, currentToken = "current-host-bearer") =>
+                  web.handler(
+                    new Request("https://host.example.test/api/loom/identity/session", {
+                      method: "POST",
+                      headers: {
+                        "content-type": "application/json",
+                        authorization: `Bearer ${currentToken}`,
+                      },
+                      body: encodeJson({
+                        type: "native",
+                        accessToken,
+                        idToken: "id-token",
+                        environmentId: "host",
+                      }),
                     }),
-                  }),
-                  context,
-                );
-              const renewed = await renew("renewed-access-jwt");
-              expect(renewed.status).toBe(200);
-              expect(await renewed.json()).toMatchObject({ access_token: "renewed-host-bearer" });
-              const expired = await renew("old-sign-in");
-              expect(expired.status).toBe(401);
-              expect(await expired.json()).toMatchObject({ error: "sign_in_expired" });
-              expect((await renew("issuer-unreachable")).status).toBe(503);
-              // A mistyped host setting must not make every renewing device drop its grant.
-              expect((await renew("host-misconfigured")).status).toBe(503);
-              const rejected = await renew("renewed-access-jwt", "another-host-bearer");
-              expect(rejected.status).toBe(401);
-              expect(await rejected.json()).toMatchObject({ error: "sign_in_failed" });
+                    context,
+                  );
+                const renewed = await renew("renewed-access-jwt");
+                expect(renewed.status).toBe(200);
+                expect(await renewed.json()).toMatchObject({ access_token: "renewed-host-bearer" });
+                const expired = await renew("old-sign-in");
+                expect(expired.status).toBe(401);
+                expect(await expired.json()).toMatchObject({ error: "sign_in_expired" });
+                expect((await renew("issuer-unreachable")).status).toBe(503);
+                // A mistyped host setting must not make every renewing device drop its grant.
+                expect((await renew("host-misconfigured")).status).toBe(503);
+                const rejected = await renew("renewed-access-jwt", "another-host-bearer");
+                expect(rejected.status).toBe(401);
+                expect(await rejected.json()).toMatchObject({ error: "sign_in_failed" });
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );
@@ -391,84 +414,90 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const passkey = new PocketId.PocketIdError({ reason: "passkey" }).message;
-              const renewal = await web.handler(
-                new Request("https://host.example.test/api/loom/identity/session", {
-                  method: "POST",
-                  headers: {
-                    "content-type": "application/json",
-                    authorization: "Bearer current-host-bearer",
-                  },
-                  body: encodeJson({
-                    type: "native",
-                    accessToken: "one-time-code-sign-in",
-                    idToken: "id-token",
-                    environmentId: "host",
+            Effect.tryPromise({
+              try: async () => {
+                const passkey = new PocketId.PocketIdError({ reason: "passkey" }).message;
+                const renewal = await web.handler(
+                  new Request("https://host.example.test/api/loom/identity/session", {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                      authorization: "Bearer current-host-bearer",
+                    },
+                    body: encodeJson({
+                      type: "native",
+                      accessToken: "one-time-code-sign-in",
+                      idToken: "id-token",
+                      environmentId: "host",
+                    }),
                   }),
-                }),
-                context,
-              );
-              expect(renewal.status).toBe(401);
-              expect(await renewal.json()).toEqual({ error: "passkey_required", message: passkey });
-              const callback = await web.handler(
-                new Request(
-                  "https://host.example.test/api/loom/identity/callback?state=verified&code=one-time-code-sign-in",
-                  { headers: { cookie: "identity-state=signed-state" } },
-                ),
-                context,
-              );
-              // A person reads the callback, so it says what to do instead of returning JSON.
-              expect(callback.status).toBe(401);
-              expect(callback.headers.get("content-type")).toContain("text/html");
-              expect(callback.headers.get("content-security-policy")).toContain(
-                "script-src 'none'",
-              );
-              const page = await callback.text();
-              expect(page).toContain("accepts passkey sign-ins only");
-              expect(page).toContain('href="/"');
-              expect(page).not.toContain("<script>");
-              expect(passkey).toContain("accepts passkey sign-ins only");
-              expect(
-                callback.headers
-                  .getSetCookie()
-                  .some((cookie) => cookie.startsWith("host-session=")),
-              ).toBe(false);
-              expect(callback.headers.getSetCookie()).toContainEqual(
-                expect.stringContaining("identity-state=;"),
-              );
+                  context,
+                );
+                expect(renewal.status).toBe(401);
+                expect(await renewal.json()).toEqual({
+                  error: "passkey_required",
+                  message: passkey,
+                });
+                const callback = await web.handler(
+                  new Request(
+                    "https://host.example.test/api/loom/identity/callback?state=verified&code=one-time-code-sign-in",
+                    { headers: { cookie: "identity-state=signed-state" } },
+                  ),
+                  context,
+                );
+                // A person reads the callback, so it says what to do instead of returning JSON.
+                expect(callback.status).toBe(401);
+                expect(callback.headers.get("content-type")).toContain("text/html");
+                expect(callback.headers.get("content-security-policy")).toContain(
+                  "script-src 'none'",
+                );
+                const page = await callback.text();
+                expect(page).toContain("accepts passkey sign-ins only");
+                expect(page).toContain('href="/"');
+                expect(page).not.toContain("<script>");
+                expect(passkey).toContain("accepts passkey sign-ins only");
+                expect(
+                  callback.headers
+                    .getSetCookie()
+                    .some((cookie) => cookie.startsWith("host-session=")),
+                ).toBe(false);
+                expect(callback.headers.getSetCookie()).toContainEqual(
+                  expect.stringContaining("identity-state=;"),
+                );
 
-              // The app window that opened the sign-in hears why, at its own origin only.
-              const popup = await web.handler(
-                new Request(
-                  "https://host.example.test/api/loom/identity/callback?state=verified&code=popup-sign-in",
-                  { headers: { cookie: "identity-state=signed-state" } },
-                ),
-                context,
-              );
-              expect(popup.status).toBe(401);
-              const script = /<script>(.*)<\/script>/u.exec(await popup.text())?.[1] ?? "";
-              const hash = NodeCrypto.createHash("sha256").update(script).digest("base64");
-              expect(popup.headers.get("content-security-policy")).toContain(
-                `script-src 'sha256-${hash}'`,
-              );
-              const posted: Array<unknown> = [];
-              NodeVM.runInNewContext(script, {
-                window: {
-                  opener: { postMessage: (...args: Array<unknown>) => posted.push(args) },
-                  close: () => posted.push("closed"),
-                },
-              });
-              expect(posted).toEqual([
-                [
-                  {
-                    type: "loom:identity:failed",
-                    state: "s".repeat(43),
-                    error: "passkey_required",
+                // The app window that opened the sign-in hears why, at its own origin only.
+                const popup = await web.handler(
+                  new Request(
+                    "https://host.example.test/api/loom/identity/callback?state=verified&code=popup-sign-in",
+                    { headers: { cookie: "identity-state=signed-state" } },
+                  ),
+                  context,
+                );
+                expect(popup.status).toBe(401);
+                const script = /<script>(.*)<\/script>/u.exec(await popup.text())?.[1] ?? "";
+                const hash = NodeCrypto.createHash("sha256").update(script).digest("base64");
+                expect(popup.headers.get("content-security-policy")).toContain(
+                  `script-src 'sha256-${hash}'`,
+                );
+                const posted: Array<unknown> = [];
+                NodeVM.runInNewContext(script, {
+                  window: {
+                    opener: { postMessage: (...args: Array<unknown>) => posted.push(args) },
+                    close: () => posted.push("closed"),
                   },
-                  "https://app.example.test",
-                ],
-              ]);
+                });
+                expect(posted).toEqual([
+                  [
+                    {
+                      type: "loom:identity:failed",
+                      state: "s".repeat(43),
+                      error: "passkey_required",
+                    },
+                    "https://app.example.test",
+                  ],
+                ]);
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );
@@ -483,50 +512,53 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
         return yield* Effect.acquireUseRelease(
           Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
           (web) =>
-            Effect.tryPromise(async () => {
-              const logout = (origin?: string) =>
-                web.handler(
+            Effect.tryPromise({
+              try: async () => {
+                const logout = (origin?: string) =>
+                  web.handler(
+                    new Request("https://host.example.test/api/loom/identity/logout", {
+                      method: "POST",
+                      headers: {
+                        cookie: "host-session=host-browser-token",
+                        ...(origin ? { origin } : {}),
+                      },
+                    }),
+                    context,
+                  );
+                for (const origin of [
+                  undefined,
+                  "https://attacker.test",
+                  "https://host.example.test.attacker.test",
+                ]) {
+                  const rejected = await logout(origin);
+                  expect(rejected.status).toBe(401);
+                  expect(rejected.headers.getSetCookie()).toEqual([]);
+                }
+                const signedOut = await logout("https://host.example.test");
+                expect(signedOut.status).toBe(200);
+                expect(signedOut.headers.getSetCookie()).toContainEqual(
+                  expect.stringContaining("host-session=;"),
+                );
+                expect(signedOut.headers.getSetCookie()).toContainEqual(
+                  expect.stringContaining("HttpOnly"),
+                );
+                expect(signedOut.headers.getSetCookie()).toContainEqual(
+                  expect.stringContaining("Secure"),
+                );
+                const bearer = await web.handler(
                   new Request("https://host.example.test/api/loom/identity/logout", {
                     method: "POST",
                     headers: {
-                      cookie: "host-session=host-browser-token",
-                      ...(origin ? { origin } : {}),
+                      authorization: "Bearer host-bearer",
+                      origin: "https://app.example.test",
                     },
                   }),
                   context,
                 );
-              for (const origin of [
-                undefined,
-                "https://attacker.test",
-                "https://host.example.test.attacker.test",
-              ]) {
-                const rejected = await logout(origin);
-                expect(rejected.status).toBe(401);
-                expect(rejected.headers.getSetCookie()).toEqual([]);
-              }
-              const signedOut = await logout("https://host.example.test");
-              expect(signedOut.status).toBe(200);
-              expect(signedOut.headers.getSetCookie()).toContainEqual(
-                expect.stringContaining("host-session=;"),
-              );
-              expect(signedOut.headers.getSetCookie()).toContainEqual(
-                expect.stringContaining("HttpOnly"),
-              );
-              expect(signedOut.headers.getSetCookie()).toContainEqual(
-                expect.stringContaining("Secure"),
-              );
-              const bearer = await web.handler(
-                new Request("https://host.example.test/api/loom/identity/logout", {
-                  method: "POST",
-                  headers: {
-                    authorization: "Bearer host-bearer",
-                    origin: "https://app.example.test",
-                  },
-                }),
-                context,
-              );
-              expect(bearer.status).toBe(200);
-              expect(bearer.headers.getSetCookie()).toEqual([]);
+                expect(bearer.status).toBe(200);
+                expect(bearer.headers.getSetCookie()).toEqual([]);
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),
           (web) => Effect.promise(() => web.dispose()),
         );

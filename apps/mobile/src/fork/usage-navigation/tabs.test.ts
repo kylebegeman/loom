@@ -2,7 +2,7 @@ import { expect, it } from "vite-plus/test";
 import {
   enabledNavigationTabs,
   resolveSelectedNavigationTab,
-} from "../../features/workspace/navigation-tab-order";
+} from "../../features/layout/workspace/navigation-tab-order";
 import { hiddenNavigationTabsForPlatform } from "./tabs";
 
 it.each([

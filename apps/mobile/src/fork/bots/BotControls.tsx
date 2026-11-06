@@ -17,7 +17,7 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import {
   useCompactWorkspaceTabs,
   useSystemWorkspaceTabBar,
-} from "../../features/workspace/useSystemWorkspaceTabBar";
+} from "../../features/layout/workspace/useSystemWorkspaceTabBar";
 import { cn } from "../../lib/cn";
 import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { useDeviceType } from "../../native/native-layout-metrics";

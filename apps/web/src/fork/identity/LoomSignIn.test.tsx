@@ -9,11 +9,15 @@ vi.mock("~/env", () => ({ isElectron: true }));
 vi.mock("~/environments/primary", () => ({
   resolvePrimaryEnvironmentHttpUrl: () => "https://primary.example",
 }));
-vi.mock("~/rpc/loomIdentity", () => ({
-  LoomAccessRequiredError: class extends Error {},
-  readLoomIdentity: (...args: unknown[]) => harness.metadata(...args),
-  loomBrowserLoginUrl: () => null,
-}));
+vi.mock("~/rpc/loomIdentity", async (importOriginal) => {
+  const { LoomAccessRequiredError } = await importOriginal<typeof import("~/rpc/loomIdentity")>();
+  return {
+    LoomAccessRequiredError,
+    readLoomIdentity: (...args: unknown[]) => harness.metadata(...args),
+    loomBrowserLoginUrl: () => null,
+    cancelLoomBrowserSignIn: vi.fn(),
+  };
+});
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => harness.connect }));
 vi.mock("./connection", () => ({ connectLoomIdentity: {} }));
 vi.mock("~/fork/project-library/state", () => ({ readLibraryAuthorityId: () => "library" }));

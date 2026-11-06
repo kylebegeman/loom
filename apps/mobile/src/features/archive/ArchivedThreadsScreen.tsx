@@ -107,15 +107,11 @@ function ArchivedThreadsHeader(props: {
                 },
               ],
             },
-            ...(Platform.OS === "android"
-              ? [
-                  {
-                    id: "refresh",
-                    title: "Refresh archived threads",
-                    onPress: props.onRefresh,
-                  },
-                ]
-              : []),
+            {
+              id: "refresh",
+              title: "Refresh archived threads",
+              onPress: props.onRefresh,
+            },
           ],
         },
       ]}
@@ -500,7 +496,7 @@ export function ArchivedThreadsScreen(props: {
       <SettingsScreenContent>
         <GestureDetector gesture={archiveScrollGesture}>
           <LegendList
-            renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
+            renderScrollComponent={NativeScrollView}
             className="flex-1"
             contentContainerStyle={{
               paddingBottom: 32,

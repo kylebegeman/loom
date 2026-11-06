@@ -627,11 +627,11 @@ export const makeWith = Effect.fn("CodeGraph.makeWith")(function* (options: Code
   const updateSettings = Effect.fn("CodeGraph.updateSettings")(function* (
     patch: CodeGraphSettingsPatch,
   ) {
-    settings = yield* store.updateSettings(mergeSettings(settings, patch)).pipe(Effect.orDie);
+    settings = yield* store.updateSettings(mergeSettings(settings, patch));
     availabilityCache = null;
-    for (const record of yield* store.list().pipe(Effect.orDie)) notify(record.projectId);
+    for (const record of yield* store.list()) notify(record.projectId);
     return settings;
-  });
+  }, Effect.orDie);
 
   return {
     status: (projectId: ProjectId) => statusOf(projectId),

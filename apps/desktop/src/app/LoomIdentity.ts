@@ -168,15 +168,15 @@ export async function verifyLoomIdToken(
   return verified.payload.sub;
 }
 
-class LoomRequestRejected extends Error {
-  readonly code: string | undefined;
-  constructor(code: string | undefined) {
-    super(
-      "The Loom sign-in service rejected the request. Check the computer address and account access, then try again.",
-    );
-    this.code = code;
+class LoomRequestRejected extends Schema.TaggedError<LoomRequestRejected>()("LoomRequestRejected", {
+  code: Schema.UndefinedOr(Schema.String),
+}) {
+  override get message(): string {
+    return "The Loom sign-in service rejected the request. Check the computer address and account access, then try again.";
   }
 }
+
+const isLoomRequestRejectedValue = Schema.is(LoomRequestRejected);
 
 async function nativeJsonRequest(
   url: string,
@@ -195,7 +195,7 @@ async function nativeJsonRequest(
       typeof body === "object" && body !== null && "error" in body && typeof body.error === "string"
         ? body.error
         : undefined;
-    throw new LoomRequestRejected(code);
+    throw new LoomRequestRejected({ code });
   }
   return response.json() as Promise<unknown>;
 }
@@ -448,9 +448,9 @@ export async function signInToLoom(
             );
       } catch (error) {
         // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
-        if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_SIGN_IN_EXPIRED)
+        if (isLoomRequestRejectedValue(error) && error.code === LOOM_IDENTITY_SIGN_IN_EXPIRED)
           throw new Error(IDENTITY_FRESH_SIGN_IN_TEXT, { cause: error });
-        if (error instanceof LoomRequestRejected && error.code === LOOM_IDENTITY_PASSKEY_REQUIRED)
+        if (isLoomRequestRejectedValue(error) && error.code === LOOM_IDENTITY_PASSKEY_REQUIRED)
           throw new Error(IDENTITY_PASSKEY_REQUIRED_TEXT, { cause: error });
         // oxlint-disable-next-line preserve-caught-error -- A failed session decode can quote the issued token.
         throw new Error(

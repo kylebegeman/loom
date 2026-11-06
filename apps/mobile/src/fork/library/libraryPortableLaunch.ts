@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryError,
@@ -9,6 +10,8 @@ import {
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import type { LibraryLaunchReceipt } from "./libraryLaunch";
+
+const isLibraryErrorValue = Schema.is(LibraryError);
 
 const sameSource = (left: LibraryWorkingCopy, right: LibraryWorkingCopy) =>
   left.id === right.id &&
@@ -92,7 +95,7 @@ export async function preparePortableLibraryLaunchCopy(
         },
       })
       .catch(async (cause: unknown) => {
-        if (cause instanceof LibraryError && cause.reason === "blocked") {
+        if (isLibraryErrorValue(cause) && cause.reason === "blocked") {
           receipt.recoverySnapshotRejected = true;
           await ports.persist();
         }

@@ -1,7 +1,8 @@
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation or signing.
 import * as NodeCrypto from "node:crypto";
 
-import { describe, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import { DirectoryEnvironmentReport, type LoomOsSignedIdentity } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -10,12 +11,8 @@ import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import {
-  RELAY_HEALTH_RESPONSE_TYP,
-  RelayJwtError,
-  signRelayJwt,
-  verifyRelayJwt,
-} from "../relayJwt.ts";
+import { RELAY_HEALTH_RESPONSE_TYP, RelayJwtError, signRelayJwt } from "../relayJwt.ts";
+import { verifyRelayJwt } from "./relayJwt.ts";
 import {
   DIRECTORY_REPORT_TYP,
   decodeEd25519PublicKey,
@@ -94,7 +91,7 @@ const signClaims = (typ: string, payload: Record<string, unknown>) =>
   signRelayJwt({ privateKey: environmentKey.privateKeyPem, typ, payload });
 
 /** Everything a failure would print through the usual `Effect.logWarning(message, cause)`. */
-const printedFailure = <A, E>(effect: Effect.Effect<A, E>) =>
+const printedFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.exit(effect).pipe(
     Effect.map((exit) => (Exit.isFailure(exit) ? Cause.pretty(exit.cause) : "")),
   );
@@ -110,7 +107,7 @@ const reportClaims = {
   report,
 };
 
-describe("directory reports", () => {
+it.layer(PlatformCrypto.layer)("directory reports", (it) => {
   it.effect("round trips a signed report", () =>
     Effect.gen(function* () {
       const token = yield* sign();
@@ -136,7 +133,7 @@ describe("directory reports", () => {
         Effect.flip,
       );
       expect(error.reason).toBe("unverified");
-      expect(error.diagnostic).toBe("ERR_JWT_CLAIM_VALIDATION_FAILED");
+      expect(error.diagnostic).toBe("ClaimValidationFailed.aud.mismatch");
     }),
   );
 
@@ -145,7 +142,7 @@ describe("directory reports", () => {
       const token = yield* signClaims(RELAY_HEALTH_RESPONSE_TYP, reportClaims);
       const error = yield* verify(token).pipe(Effect.flip);
       expect(error.reason).toBe("unverified");
-      expect(error.diagnostic).toBe("ERR_JWT_CLAIM_VALIDATION_FAILED");
+      expect(error.diagnostic).toBe("ClaimValidationFailed.typ.mismatch");
     }),
   );
 
@@ -153,7 +150,7 @@ describe("directory reports", () => {
     Effect.gen(function* () {
       const error = yield* verify(yield* sign({ nowEpochSeconds: NOW - 600 })).pipe(Effect.flip);
       expect(error.reason).toBe("unverified");
-      expect(error.diagnostic).toBe("ERR_JWT_EXPIRED");
+      expect(error.diagnostic).toBe("ClaimValidationFailed.exp.expired");
     }),
   );
 
@@ -189,6 +186,7 @@ describe("directory reports", () => {
         issuer: `t3-env:${report.environmentId}`,
         audience: "https://library.example.com",
         nowEpochSeconds: NOW,
+        maxTokenAge: 300,
       }).pipe(Effect.flip);
       expect(relayError).toBeInstanceOf(RelayJwtError);
     }),
@@ -203,7 +201,7 @@ describe("directory reports", () => {
 
       const error = yield* verify(tampered).pipe(Effect.flip);
       expect(error.reason).toBe("unverified");
-      expect(error.diagnostic).toBe("ERR_JWS_SIGNATURE_VERIFICATION_FAILED");
+      expect(error.diagnostic).toBe("SignatureVerificationFailed");
     }),
   );
 
@@ -287,7 +285,7 @@ describe("directory reports", () => {
   );
 });
 
-describe("isDirectoryRouteUrl", () => {
+it.layer(PlatformCrypto.layer)("isDirectoryRouteUrl", (it) => {
   it("keeps HTTPS routes with a DNS name", () => {
     for (const url of [
       "https://computer.example.ts.net/",
@@ -384,7 +382,7 @@ const identityFailure = (identity: LoomOsSignedIdentity) =>
     Effect.map((error) => error.reason),
   );
 
-describe("verifyLoomOsIdentity", () => {
+it.layer(PlatformCrypto.layer)("verifyLoomOsIdentity", (it) => {
   it.effect("verifies an identity OpenSSL signed", () =>
     Effect.gen(function* () {
       const identity = yield* verifyLoomOsIdentity(LOOM_OS_FIXTURE);

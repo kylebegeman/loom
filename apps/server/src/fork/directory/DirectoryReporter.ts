@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import type { ServerProvider } from "@t3tools/contracts";
 import {
@@ -11,7 +12,7 @@ import {
 import {
   directoryPublicKeyFromPem,
   isDirectoryRouteUrl,
-  signDirectoryReport,
+  signDirectoryReport as signDirectoryReportEffect,
 } from "@t3tools/shared/fork/directory";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -26,7 +27,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
+import { getOrCreateEnvironmentKeyPairFromSecretStore as getOrCreateEnvironmentKeyPairFromSecretStoreEffect } from "../../cloud/environmentKeys.ts";
 import { DirectEndpoints } from "../../environment/DirectEndpoints.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
@@ -110,6 +111,15 @@ const providerStatuses = (snapshot: ReadonlyArray<ServerProvider>) =>
     .map((provider) => ({ id: provider.instanceId, status: provider.status }));
 
 const make = Effect.gen(function* () {
+  const signature = yield* Signature.Signature;
+  const signDirectoryReport = (...args: Parameters<typeof signDirectoryReportEffect>) =>
+    signDirectoryReportEffect(...args).pipe(Effect.provideService(Signature.Signature, signature));
+  const getOrCreateEnvironmentKeyPairFromSecretStore = (
+    ...args: Parameters<typeof getOrCreateEnvironmentKeyPairFromSecretStoreEffect>
+  ) =>
+    getOrCreateEnvironmentKeyPairFromSecretStoreEffect(...args).pipe(
+      Effect.provideService(Signature.Signature, signature),
+    );
   const libraryConnection = yield* LibraryConnection.LibraryConnectionService;
   const environment = yield* ServerEnvironment;
   const secrets = yield* ServerSecretStore.ServerSecretStore;

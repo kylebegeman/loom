@@ -81,7 +81,7 @@ export const makePrinterLibrary = Effect.fn("ModelPrinters.make")(function* (opt
     return yield* store.savePrinters(migrated);
   });
   const library = () => checked(lock.withPermit(read()));
-  const update = (input: typeof PrinterLibraryUpdate.Type) =>
+  const update = (input: PrinterLibraryUpdate) =>
     checked(
       lock.withPermit(
         Effect.gen(function* () {

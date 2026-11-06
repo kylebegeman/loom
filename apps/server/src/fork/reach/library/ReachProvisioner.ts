@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import { AuthLibraryPublishScope } from "@t3tools/contracts";
 import { AuthSessionId, EnvironmentId, PositiveInt } from "@t3tools/contracts";
 import {
@@ -23,7 +24,7 @@ import {
   reachHostname,
   reachResource,
   reachSlug,
-  verifyReachRequest,
+  verifyReachRequest as verifyReachRequestEffect,
 } from "@t3tools/shared/fork/reach";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -255,6 +256,9 @@ interface Admitted {
 type StepError = ReachCloudflareError | ReachStoreError | ReachProvisionError;
 
 const make = Effect.gen(function* () {
+  const signature = yield* Signature.Signature;
+  const verifyReachRequest = (input: Parameters<typeof verifyReachRequestEffect>[0]) =>
+    verifyReachRequestEffect(input).pipe(Effect.provideService(Signature.Signature, signature));
   const env = yield* HostProcess.Environment;
   const config = reachLibraryConfig(env);
   const configured = config.zone !== null && config.cloudflareTokenFile !== null;

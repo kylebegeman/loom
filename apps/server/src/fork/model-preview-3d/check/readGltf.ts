@@ -4,7 +4,7 @@ import type { CheckFile } from "./protocol.ts";
 type JsonObject = Readonly<Record<string, unknown>>;
 type Matrix = readonly number[];
 const fail = (message = "This glTF contains invalid geometry."): never => {
-  throw new CheckFailure("command-failed", message);
+  throw CheckFailure("command-failed", message);
 };
 const object = (value: unknown): JsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -216,12 +216,12 @@ export const readGltf = (
   const { json, binary } = manifest(main);
   const extensions = list(json.extensionsRequired);
   if (extensions.includes("KHR_draco_mesh_compression"))
-    throw new CheckFailure(
+    throw CheckFailure(
       "unsupported-format",
       "This glTF uses Draco compression. Export an uncompressed model.",
     );
   if (extensions.includes("EXT_meshopt_compression"))
-    throw new CheckFailure(
+    throw CheckFailure(
       "unsupported-format",
       "This glTF uses meshopt compression. Export an uncompressed model.",
     );

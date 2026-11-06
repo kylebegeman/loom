@@ -12,7 +12,7 @@ Opening a page has two intents, and each has one action:
 
 - **Select** replaces the active thread or pull request. Everything that selects
   (rows, the command palette, compose, notifications, deep links) uses
-  [`selectWorkspaceDetail`](../../apps/mobile/src/features/workspace/workspace-detail-selection.ts),
+  [`selectWorkspaceDetail`](../../apps/mobile/src/features/layout/workspace/workspace-detail-selection.ts),
   which the root stack's router handles. On iOS a selection from Sites, Search or a
   project retains its originating route chain so Back returns there; a direct
   link or root selection starts from Threads. The page already showing keeps its
@@ -64,7 +64,7 @@ containers cannot carry disabled, destructive or subtitle properties, so gate
 each executable leaf action and preserve its permission checks when regrouping
 header tools. A disabled parent alone cannot protect the actions inside it.
 
-Native headers leave both standard and scroll-edge appearances transparent, and
+Native glass headers leave both standard and scroll-edge appearances transparent, and
 registered scroll views own the soft edge effect. Clearing only the scroll-edge
 appearance lets the standard appearance return as an opaque band when scrolled.
 Keep extra Settings spacing inside the scroll view's content inset. Padding around

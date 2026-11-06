@@ -68,7 +68,7 @@ function BrokerManager({
     canApply = useAtomValue(brokers.apply.permissionAtom(environmentId));
   const now = useVaultTime(snapshot.data?.machines.map((machine) => machine.leaseUntil) ?? []);
   const [adding, setAdding] = useState(false),
-    [invitation, setInvitation] = useState<typeof VaultBrokerInvitation.Type | null>(null);
+    [invitation, setInvitation] = useState<VaultBrokerInvitation | null>(null);
   const [label, setLabel] = useState(""),
     [publicKey, setPublicKey] = useState(""),
     [platform, setPlatform] = useState<"linux" | "darwin">("linux");

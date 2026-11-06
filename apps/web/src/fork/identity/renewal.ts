@@ -3,6 +3,18 @@ import type { IdentityRenewal } from "@t3tools/client-runtime/fork";
 import type { DesktopBridge } from "@t3tools/contracts";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+class RenewalOperationError extends Schema.TaggedError<RenewalOperationError>()(
+  "RenewalOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Renewal operation failed.";
+  }
+}
 
 /** Desktop main holds each computer's refresh grant; a plain browser never sees Identity tokens. */
 export function identityRenewalAvailable(bridge: DesktopBridge | undefined = window.desktopBridge) {
@@ -53,7 +65,10 @@ export function desktopIdentityRenewal(
     forget: (request) =>
       bridge.forgetLoomIdentity === undefined
         ? Effect.void
-        : Effect.tryPromise(() => bridge.forgetLoomIdentity!(request)).pipe(
+        : Effect.tryPromise({
+            try: () => bridge.forgetLoomIdentity!(request),
+            catch: (cause) => new RenewalOperationError({ cause }),
+          }).pipe(
             Effect.catch((error) =>
               Effect.logWarning("Could not forget the Identity grant on this device.", { error }),
             ),

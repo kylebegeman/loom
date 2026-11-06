@@ -947,7 +947,7 @@ export const make = Effect.gen(function* () {
     let timedOut = waited.timedOut;
     if (timedOut) {
       const stopped = yield* interruptThread(entry, "The bot run reached its time limit.").pipe(
-        Effect.match({ onSuccess: () => true, onFailure: () => false }),
+        Effect.isSuccess,
       );
       timedOut = stopped;
       // Effect keeps an infinite timeout on the persisted-event stream without a timer or polling.

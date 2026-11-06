@@ -87,6 +87,18 @@ import { normalizeGitRemoteUrl } from "@t3tools/shared/git"; // fork: project-li
 const decodeCleanupThread = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
+
+// fork: project-lifecycle
+class StorageCleanupOperationError extends Schema.TaggedError<StorageCleanupOperationError>()(
+  "StorageCleanupOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Storage Cleanup operation failed.";
+  }
+}
 const decodeCleanupSession = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ProviderSessionJson),
 );
@@ -725,7 +737,10 @@ const make = Effect.gen(function* () {
     if (!roots.some((root) => pathKey(path.dirname(directory)) === pathKey(root))) return;
     if (yield* containsProjectRoot(directory, yield* projectStore.listShells())) return;
     if (pathKey(yield* fs.realPath(directory)) !== pathKey(directory)) return;
-    yield* Effect.tryPromise(() => NodeFSP.rmdir(directory)).pipe(Effect.ignore);
+    yield* Effect.tryPromise({
+      try: () => NodeFSP.rmdir(directory),
+      catch: (cause) => new StorageCleanupOperationError({ cause }),
+    }).pipe(Effect.ignore);
   });
 
   const reportOrphanWorktrees = Effect.fn("StorageCleanup.reportOrphanWorktrees")(function* (

@@ -17,7 +17,7 @@ import { RowPressable } from "../../components/ui/RowPressable";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { Toolbar } from "../../components/ui/Toolbar";
-import { useWorkspaceTabs } from "../../features/workspace/WorkspaceTabsContext";
+import { useWorkspaceTabs } from "../../features/layout/workspace/WorkspaceTabsContext";
 import { useAppActive } from "../../lib/appState";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import {

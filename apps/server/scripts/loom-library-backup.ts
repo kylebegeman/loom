@@ -8,7 +8,6 @@ import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { LibraryError } from "@t3tools/contracts/fork";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
-import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -164,9 +163,12 @@ const sourceLayer = (database: string, stateDir: string, readonly = true) => {
     Layer.provide(FetchHttpClient.layer),
   );
 };
-class LibrarySnapshotSkipped extends Data.TaggedError("LibrarySnapshotSkipped")<{
-  readonly message: string;
-}> {}
+class LibrarySnapshotSkipped extends Schema.TaggedError<LibrarySnapshotSkipped>()(
+  "LibrarySnapshotSkipped",
+  {
+    message: Schema.String,
+  },
+) {}
 const syncFile = Effect.fnUntraced(function* (file: string) {
   const fs = yield* FileSystem.FileSystem;
   yield* Effect.scoped(fs.open(file).pipe(Effect.flatMap((handle) => handle.sync)));

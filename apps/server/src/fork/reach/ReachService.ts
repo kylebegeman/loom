@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import { applyHostIdentity, HostIdentityRestart } from "./HostIdentity.ts";
 import type { ReachApplyIdentityInput } from "@t3tools/contracts/fork";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
@@ -292,6 +293,7 @@ interface ConnectorRuntime {
 export const makeReachService = Effect.fn("ReachService.make")(function* (
   dependencies: ReachServiceDependencies,
 ) {
+  const signature = yield* Signature.Signature;
   const identityContext =
     yield* Effect.context<Effect.Services<ReturnType<typeof applyHostIdentity>>>();
   const identityRestart = yield* Effect.serviceOption(HostIdentityRestart);
@@ -440,6 +442,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     connection = yield* libraryConnection.current;
     if (connection.kind !== "remote") return null;
     return makeReachLibraryClient({
+      signature,
       library: connection,
       environmentId,
       secrets,

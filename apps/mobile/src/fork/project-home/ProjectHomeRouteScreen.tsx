@@ -45,7 +45,7 @@ import { Button } from "../../components/ui/Button";
 import { AppBar } from "../../components/ui/AppBar";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { buildHomeProjectScopes, findHomeProjectScope } from "../../features/home/homeThreadList";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import { uuidv4 } from "../../lib/uuid";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { relativeTime } from "../../lib/time";

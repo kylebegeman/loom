@@ -92,7 +92,7 @@ export const buildGrid = (mesh: IndexedMesh, maxReferences = 2 ** 25): Grid => {
       mesh,
     };
   }
-  throw new CheckFailure("too-large", "This mesh is too dense to check.");
+  throw CheckFailure("too-large", "This mesh is too dense to check.");
 };
 const intersection = (mesh: IndexedMesh, t: number, o: Vec3, d: Vec3): number | null => {
   const a = vertex(mesh, mesh.triangles[t * 3]!),

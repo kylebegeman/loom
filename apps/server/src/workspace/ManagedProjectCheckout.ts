@@ -119,7 +119,7 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
   repositoryIdentity: RepositoryIdentity,
   options?: {
     readonly ownershipSource: "clone" | "adopted";
-    readonly retention: typeof ProjectCheckoutRetention.Type;
+    readonly retention: ProjectCheckoutRetention;
     readonly projectId: ProjectId;
   },
 ) {
@@ -234,7 +234,7 @@ export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.asser
 export const setManagedProjectRetention = Effect.fn("ManagedProjectCheckout.setRetention")(
   function* (
     workspaceRoot: string,
-    retention: typeof ProjectCheckoutRetention.Type,
+    retention: ProjectCheckoutRetention,
     projectId: ProjectId,
     workspaceLeaseHeld = false,
   ) {
@@ -567,7 +567,7 @@ export const managedProjectProcessReason = Effect.fn("ManagedProjectCheckout.pro
 
 /** Explicit project policy takes precedence over environment defaults. */
 export const resolveManagedProjectRetention = (
-  retention: typeof ProjectCheckoutRetention.Type,
+  retention: ProjectCheckoutRetention,
   settings: { readonly projectOnSettle: boolean; readonly projectAfterDays: number | null },
 ) =>
   retention === "keep"

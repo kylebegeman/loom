@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
@@ -144,6 +145,7 @@ const writeExpiredSignIn = Effect.gen(function* () {
 const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Effect<A, E>) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(NOW);
+    const signature = yield* Signature.Signature;
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
@@ -192,7 +194,7 @@ const withReach = <A, E>(options: Options, use: (harness: Harness) => Effect.Eff
           audience: LIBRARY,
           action,
           nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
-        });
+        }).pipe(Effect.provideService(Signature.Signature, signature));
         yield* Queue.offer(events, {
           kind: "request",
           action,

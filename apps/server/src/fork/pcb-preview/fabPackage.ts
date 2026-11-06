@@ -57,6 +57,17 @@ import {
   type Position,
   type FabPart,
 } from "./fabOutputs.ts";
+
+class FabPackageOperationError extends Schema.TaggedError<FabPackageOperationError>()(
+  "FabPackageOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Fab Package operation failed.";
+  }
+}
 const decodeManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(PcbFabPackageManifest));
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -245,7 +256,10 @@ export const makeFabPackages = Effect.fn("PcbPreview.makeFabPackages")(function*
     const file = yield* deps.safePath(d.root, `fab/${id}/loom-fab-package.json`);
     if (Number((yield* fs.stat(file)).size) > 256 * 1024) return null;
     const text = yield* fs.readFileString(file);
-    const raw = yield* Effect.try(() => decodeJson(text)).pipe(Effect.orElseSucceed(() => null));
+    const raw = yield* Effect.try({
+      try: () => decodeJson(text),
+      catch: (cause) => new FabPackageOperationError({ cause }),
+    }).pipe(Effect.orElseSucceed(() => null));
     if (raw && typeof raw === "object" && "designId" in raw && raw.designId !== d.design.id)
       return null;
     const stem =

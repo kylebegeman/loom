@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off - The fake connector is a real shell script in a temp folder.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -36,17 +37,19 @@ const tempDir = Effect.acquireRelease(
 );
 
 /** cloudflared would read this in place of the token file, so the runner must not pass it on. */
-const inheritedTunnelToken = Effect.acquireRelease(
-  Effect.sync(() => {
-    const saved = process.env.TUNNEL_TOKEN;
-    process.env.TUNNEL_TOKEN = "inherited-tunnel-token";
-    return saved;
-  }),
-  (saved) =>
+const inheritedTunnelToken = Effect.flatMap(HostProcess.Environment, (environment) =>
+  Effect.acquireRelease(
     Effect.sync(() => {
-      if (saved === undefined) delete process.env.TUNNEL_TOKEN;
-      else process.env.TUNNEL_TOKEN = saved;
+      const saved = environment.TUNNEL_TOKEN;
+      environment.TUNNEL_TOKEN = "inherited-tunnel-token";
+      return saved;
     }),
+    (saved) =>
+      Effect.sync(() => {
+        if (saved === undefined) delete environment.TUNNEL_TOKEN;
+        else environment.TUNNEL_TOKEN = saved;
+      }),
+  ),
 );
 
 /** Writes an executable stand-in for cloudflared; `body` runs with all output on stderr. */

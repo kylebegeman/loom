@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off - A bounded cancellable child joins the real synthetic Python inbox fixture.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
@@ -1525,9 +1526,10 @@ it.effect("does not reactivate a start fenced by reconciliation before the adapt
 
 // No live connector or credential ingress: this child imports only synthetic Python fixtures.
 const pythonMailRead = (binding: SyntheticMailBinding) =>
-  Effect.callback<unknown, VaultError>((resume, signal) => {
-    const directory = NodeURL.fileURLToPath(new URL("./testkit/", import.meta.url));
-    const script = `import json,sys
+  Effect.flatMap(HostProcess.Environment, (hostEnvironment) =>
+    Effect.callback<unknown, VaultError>((resume, signal) => {
+      const directory = NodeURL.fileURLToPath(new URL("./testkit/", import.meta.url));
+      const script = `import json,sys
 from datetime import datetime,timezone
 import migadu_inbox as inbox
 from test_migadu_inbox import FixtureClient,message,CREDENTIALS
@@ -1545,29 +1547,30 @@ result["scope"]=payload["scope"]
 result["messageUids"]=uids
 assert result["messageUids"]==[2] and client.body_fetches==[3,2]
 print(json.dumps(result))`;
-    const child = NodeChildProcess.execFile(
-      "python3",
-      ["-c", script],
-      {
-        cwd: directory,
-        env: { PATH: process.env.PATH, PYTHONPATH: directory, PYTHONDONTWRITEBYTECODE: "1" },
-        maxBuffer: 16_384,
-        timeout: 10_000,
-        signal,
-      },
-      (error, stdout) => {
-        resume(
-          error
-            ? Effect.fail(new VaultError({ reason: "unavailable" }))
-            : Effect.try({
-                try: () => JSON.parse(stdout) as unknown,
-                catch: () => new VaultError({ reason: "unavailable" }),
-              }),
-        );
-      },
-    );
-    child.stdin?.end(JSON.stringify({ binding, scope: syntheticMailScope(binding) }));
-  });
+      const child = NodeChildProcess.execFile(
+        "python3",
+        ["-c", script],
+        {
+          cwd: directory,
+          env: { PATH: hostEnvironment.PATH, PYTHONPATH: directory, PYTHONDONTWRITEBYTECODE: "1" },
+          maxBuffer: 16_384,
+          timeout: 10_000,
+          signal,
+        },
+        (error, stdout) => {
+          resume(
+            error
+              ? Effect.fail(new VaultError({ reason: "unavailable" }))
+              : Effect.try({
+                  try: () => JSON.parse(stdout) as unknown,
+                  catch: () => new VaultError({ reason: "unavailable" }),
+                }),
+          );
+        },
+      );
+      child.stdin?.end(JSON.stringify({ binding, scope: syntheticMailScope(binding) }));
+    }),
+  );
 
 const syntheticMailDelivery = Effect.fnUntraced(function* (
   f: Effect.Success<typeof setup> & ReturnType<typeof fixture>,

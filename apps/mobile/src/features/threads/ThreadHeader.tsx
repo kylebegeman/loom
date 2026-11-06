@@ -1,102 +1,108 @@
-import { useMemo } from "react";
+import { Platform } from "react-native";
 import { AppBar } from "../../components/ui/AppBar";
 import { ScreenHeaderButton } from "../../components/ui/ScreenHeaderButton";
-import type { AppBarAction } from "../../components/ui/AppBar.types";
+import type { AppBarAction, AppBarMenu } from "../../components/ui/AppBar.types";
+import { isDuoDevice } from "../../lib/device-type";
+import { useDeviceType } from "../../native/native-layout-metrics";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import type { ThreadInspectorMode } from "./thread-inspector-navigation";
-import { useThreadHeaderOptions } from "./useThreadHeaderOptions";
-import { useWorkspaceBackNavigation } from "../workspace/useAndroidWorkspaceNavigation";
-// fork: source-control-cockpit -- latest-turn transfer is shown beside the conversation.
+import { useWorkspaceBackNavigation } from "../layout/workspace/useAndroidWorkspaceNavigation";
+import {
+  threadTerminalMenu,
+  useThreadGitMenuDefinition,
+  type ThreadGitControlsProps,
+} from "./ThreadGitControls";
 
-export function ThreadHeader(
-  props: Parameters<typeof useThreadHeaderOptions>[0] & {
-    readonly hasThreadCwd: boolean;
-    readonly hasWorkspaceRoot: boolean;
-    readonly fileInspectorSupported: boolean;
-    readonly inspectorMode: ThreadInspectorMode | null;
-    readonly onToggleInspector: () => void;
-    readonly onOpenGitInspector: () => void;
-    readonly onOpenFilesInspector: () => void;
-  },
-) {
+export function ThreadHeader(props: {
+  readonly title: string;
+  readonly subtitle: string;
+  readonly gitControls: ThreadGitControlsProps;
+  readonly onReturnToThread?: () => void;
+  readonly onOpenDetails?: () => void; // fork: library
+  readonly draft?: boolean;
+  readonly hasThreadCwd: boolean;
+  readonly fileInspectorSupported: boolean;
+  readonly inspectorMode: ThreadInspectorMode | null;
+  readonly onToggleInspector: () => void;
+  readonly onOpenFilesInspector: () => void;
+}) {
   const goBack = useWorkspaceBackNavigation("threads");
-  const { layout, panes, toggleAuxiliaryPane, composerKeyboardActive } =
+  const deviceType = useDeviceType();
+  const { layout, panes, toggleAuxiliaryPane, composerKeyboardActive, startNewTask } =
     useAdaptiveWorkspaceLayout();
-  const { onOpenTerminal } = props.gitControls; // fork: source-control-cockpit
-  const native = useThreadHeaderOptions(props);
-  const androidHeaderActions = useMemo<ReadonlyArray<AppBarAction>>(() => {
-    const actions: AppBarAction[] = [];
-    if (props.onReturnToThread) {
-      actions.push({
-        accessibilityLabel: "Return to chat",
-        icon: "chevron.left",
-        onPress: props.onReturnToThread,
-      });
-    }
-    if (props.hasThreadCwd) {
-      const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
-      actions.push({
-        accessibilityLabel: filesVisible ? "Close files" : "Open files",
-        selected: filesVisible,
-        icon: "folder",
-        onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
-      });
-    }
-    if (props.hasWorkspaceRoot && props.gitControls.canOpenTerminal) {
-      actions.push({
-        accessibilityLabel: "Open terminal",
-        icon: "terminal",
-        onPress: () => onOpenTerminal(null),
-      });
-    }
+  const gitMenu = useThreadGitMenuDefinition(props.gitControls);
+  const terminalMenu = threadTerminalMenu(props.gitControls);
+  const filesVisible = props.inspectorMode === "files" && panes.auxiliaryPaneVisible;
+  const inspectorVisible = props.inspectorMode !== null && panes.auxiliaryPaneVisible;
+  const actions: AppBarAction[] = props.hasThreadCwd
+    ? [
+        {
+          accessibilityLabel: filesVisible ? "Close files" : "Open files",
+          icon: "folder",
+          selected: filesVisible,
+          disabled: !props.gitControls.canOpenFiles,
+          separateBackground: false,
+          onPress: filesVisible ? toggleAuxiliaryPane : props.onOpenFilesInspector,
+        },
+      ]
+    : [];
+  // fork: library
+  if (props.onOpenDetails)
     actions.push({
-      accessibilityLabel: "Open git controls",
-      icon: "point.topleft.down.curvedto.point.bottomright.up",
-      onPress: props.onOpenGitInspector,
+      accessibilityLabel: "Conversation details",
+      icon: "info.circle",
+      onPress: props.onOpenDetails,
     });
-    // fork: source-control-cockpit -- keep the Android Git toolbar free of context-transfer actions.
-    return actions;
-  }, [
-    props.inspectorMode,
-    panes.auxiliaryPaneVisible,
-    props.onOpenFilesInspector,
-    onOpenTerminal,
-    // fork: source-control-cockpit
-    props.onOpenGitInspector,
-    toggleAuxiliaryPane,
-    props.onReturnToThread,
-    props.hasThreadCwd,
-    props.hasWorkspaceRoot,
-    props.gitControls.canOpenTerminal,
-  ]);
+  const actionMenus = [gitMenu, terminalMenu].filter((menu): menu is AppBarMenu => menu !== null);
+  // fork: native-menus
+  const compactMenus = Platform.OS === "ios" && !layout.usesSplitView && !isDuoDevice(deviceType);
+  const menus: AppBarMenu[] =
+    compactMenus && actionMenus.length > 0
+      ? [
+          {
+            title: "Thread tools",
+            icon: "ellipsis",
+            separateBackground: false,
+            items: actionMenus.map((menu) => ({
+              id: menu.title,
+              title: menu === gitMenu ? "Source control" : menu.title,
+              icon: typeof menu.icon === "string" ? menu.icon : menu.icon.ios,
+              items: menu.items,
+            })),
+          },
+        ]
+      : actionMenus;
 
+  // fork: mobile-navigation
   return (
-    <>
-      <AppBar
-        title={props.title}
-        subtitle={props.subtitle}
-        options={native.options}
-        optionsVersion={native.optionsVersion}
-        trailing={
-          props.fileInspectorSupported && props.hasThreadCwd ? (
-            <ScreenHeaderButton
-              accessibilityLabel={
-                props.inspectorMode !== null && panes.auxiliaryPaneVisible
-                  ? "Hide inspector"
-                  : "Show inspector"
-              }
-              icon="sidebar.right"
-              selected={props.inspectorMode !== null && panes.auxiliaryPaneVisible}
-              onPress={props.onToggleInspector}
-            />
-          ) : null
-        }
-        onBack={layout.usesSplitView ? undefined : goBack}
-        actions={androidHeaderActions}
-        hideBottomBorder
-        compact={composerKeyboardActive}
-      />
-      {native.fallback}
-    </>
+    <AppBar
+      title={props.title}
+      subtitle={props.subtitle}
+      onBackToList={goBack}
+      onCompose={props.draft || panes.primarySidebarVisible ? undefined : startNewTask}
+      backInSplitView={
+        props.onReturnToThread
+          ? {
+              accessibilityLabel: "Return to chat",
+              icon: "chevron.left",
+              onPress: props.onReturnToThread,
+            }
+          : undefined
+      }
+      actions={actions}
+      menus={menus}
+      trailing={
+        props.fileInspectorSupported && props.hasThreadCwd ? (
+          <ScreenHeaderButton
+            accessibilityLabel={inspectorVisible ? "Hide inspector" : "Show inspector"}
+            icon="sidebar.right"
+            selected={inspectorVisible}
+            onPress={props.onToggleInspector}
+          />
+        ) : null
+      }
+      hideBottomBorder
+      compact={composerKeyboardActive}
+    />
   );
 }

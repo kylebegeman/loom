@@ -12,7 +12,7 @@ export function Sheet(props: SheetProps) {
   const containerStyle = useResolveClassNames("bg-header");
   const [isOpen, setIsOpen] = useState(true);
   // fork: sites-editor-dismiss -- Pending forms must retain their input until saving settles.
-  const dismissible = props.dismissible ?? true;
+  const dismissible = (props.dismissible ?? true) && !props.dismissDisabled;
   return (
     <FormSheet
       isOpen={isOpen}
