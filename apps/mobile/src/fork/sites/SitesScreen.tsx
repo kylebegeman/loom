@@ -39,8 +39,11 @@ function SitesScreen({
   const navigation = useNavigation();
   const config = useEnvironmentServerConfig(authority.environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE);
+  const authorityConfirmed =
+    authority.info.data?.isAuthority === true &&
+    authority.info.data.environmentId === authority.environmentId;
   const query = useEnvironmentQuery(
-    authority.environmentId && supported && authority.canRead
+    authority.environmentId && authorityConfirmed && supported && authority.canRead
       ? sites.snapshot({ environmentId: authority.environmentId, input: {} })
       : null,
   );
@@ -58,7 +61,7 @@ function SitesScreen({
     manages && query.data?.managementConfigured && allowed && authority.connected,
   );
   const projects = useEnvironmentQuery(
-    authority.environmentId && authority.canRead
+    authority.environmentId && authorityConfirmed && authority.canRead
       ? library.projects({
           environmentId: authority.environmentId,
           input: { includeArchived: true },
@@ -175,11 +178,31 @@ function SitesScreen({
           title="Website access unavailable"
           detail="This connection does not have permission to read your Library."
         />
+      ) : authority.connected && config === null ? (
+        <View accessibilityLabel="Loading Library capabilities" className="items-center p-5">
+          <AppActivityIndicator />
+        </View>
       ) : authority.connected && !supported ? (
         <EmptyState
           variant="plain"
           title="Websites need a newer Library server"
           detail={`Update ${authority.label} to view your websites here.`}
+        />
+      ) : authority.connected && !authority.info.data ? (
+        authority.info.error ? (
+          <LibraryNotice error={authority.info.error} onRetry={authority.info.refresh} />
+        ) : (
+          <View accessibilityLabel="Loading Library" className="items-center p-5">
+            <AppActivityIndicator />
+          </View>
+        )
+      ) : authority.connected && !authorityConfirmed ? (
+        <EmptyState
+          variant="plain"
+          title="Choose your Library server"
+          detail="This computer runs your work. Connect your Library to view linked websites."
+          actionLabel="Connect Library"
+          onAction={() => navigation.navigate("LibrarySettings")}
         />
       ) : query.data?.configured === false ? (
         <EmptyState

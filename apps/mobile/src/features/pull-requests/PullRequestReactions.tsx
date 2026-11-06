@@ -90,6 +90,7 @@ function ReactionPills(props: {
       {props.canReact ? (
         <Menu
           nativeTrigger={{
+            // fork: native-menus
             icon: "face.smiling",
             accessibilityLabel: "Add a reaction",
             size: "compact",

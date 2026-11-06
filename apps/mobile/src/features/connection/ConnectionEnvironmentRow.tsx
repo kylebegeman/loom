@@ -40,6 +40,7 @@ function connectionStatusLabel(environment: ConnectedEnvironmentSummary): string
   });
 }
 
+// fork: mobile-design
 export function ConnectionEnvironmentRow(props: {
   readonly environment: ConnectedEnvironmentSummary;
   readonly expanded: boolean;

@@ -41,11 +41,52 @@ and the native tab controller agree even above the React tabs provider. Search
 also records `searchReturnTab` for native cancellation. The workspace keeps each
 tab's route chain separately; selecting a match retains Search as its origin.
 
+The iOS primary set is Threads, Sites and the native search-role tab, regardless of
+older saved tab order or visibility preferences. Search spans connected computers
+and the shared Library, and category routes remain useful when a source is offline.
+The secondary destinations retain their own routes rather than being remapped to
+primary tabs. Keep the Android tab policy independent when changing shared state
+or route types.
+
+## Native controls and surfaces
+
+An iOS drop-down with `nativeTrigger` renders its visible button and menu through
+the same SwiftUI `Menu`. The source button must own its glass material for the
+system's button-to-menu transition. A React-rendered glass label under a separate
+native menu gives two unrelated surfaces. The shared adapter keeps action IDs,
+checked states, disabled/destructive actions, nesting and persistent selection
+menus; its React children remain the Android fallback. Content-row long-press
+menus continue through the contextual menu path and must preserve a normal tap.
+
+The native stack header bridge also preserves submenu icons and palette layout.
+Its menu state comes from JavaScript on each update. The screens fork's submenu
+containers cannot carry disabled, destructive or subtitle properties, so gate
+each executable leaf action and preserve its permission checks when regrouping
+header tools. A disabled parent alone cannot protect the actions inside it.
+
+Native headers leave both standard and scroll-edge appearances transparent, and
+registered scroll views own the soft edge effect. Clearing only the scroll-edge
+appearance lets the standard appearance return as an opaque band when scrolled.
+Keep extra Settings spacing inside the scroll view's content inset. Padding around
+the containing native stack creates a fixed strip outside the scroll view's blur.
+
+Project icons retain their standard rounded-square monogram or image treatment.
+Rows can reserve an alignment slot, but the slot must not add another circular
+surface around the icon.
+
 ## UIKit constraints
 
 The [react-native-screens fork](../operations/mobile-screens-fork.md)
 preserves behavior that is easy to break when changing native headers:
 
+- Compact workspace detail cards hide the bottom bar through
+  `Stack.Screen.hidesBottomBarWhenPushed`. The native navigation controller
+  forwards this policy only for an opted-in stack in the selected tab, before
+  root layout, and restores the actual top screen after a cancelled interactive
+  Back. Its appearance callback also covers returning to a retained detail tab.
+  Toggling `Tabs.Host.tabBarHidden` from JavaScript for a
+  card push tears down the tab-hosted Search field, which returns in the top
+  header. Split and hinge layouts retain their column visibility policy.
 - The brand belongs in `headerTitle`. On iOS 26.5, UIKit morphs a background-free
   leading toolbar item's rectangle into the next screen's glass back button,
   even when the items have different identifiers.

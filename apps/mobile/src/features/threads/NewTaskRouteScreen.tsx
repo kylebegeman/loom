@@ -123,6 +123,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
   };
 }
 
+// fork: mobile-design
 function NewTaskHeader(props: {
   readonly title: string;
   readonly subtitle: string | null;

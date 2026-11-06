@@ -46,6 +46,7 @@ export function useWorkspaceTabs() {
 type MobilePreferencesResult = Atom.Type<typeof mobilePreferencesAtom>;
 
 /** Moves the selection off a tab the user has hidden or that no longer exists. */
+// fork: mobile-navigation
 function resolveWorkspaceTabsSelection(
   state: WorkspaceTabsState,
   preferences: MobilePreferencesResult,
@@ -93,6 +94,7 @@ function createWorkspaceTabsModel() {
   };
 }
 
+// fork: mobile-navigation
 export function WorkspaceTabsProvider(props: {
   readonly children: ReactNode;
   readonly settingsOpen?: boolean;

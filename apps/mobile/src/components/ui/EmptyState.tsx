@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppText as Text } from "./AppText";
 import { Button } from "./Button";
 
+// fork: mobile-design
 export function EmptyState(props: {
   readonly title: string;
   readonly detail: string;

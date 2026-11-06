@@ -268,6 +268,7 @@ function CloudEnvironmentRow(props: {
   );
 }
 
+// fork: mobile-design
 function CloudEnvironmentRowShell(props: {
   readonly showChevron?: boolean;
   readonly opensDetails?: boolean;

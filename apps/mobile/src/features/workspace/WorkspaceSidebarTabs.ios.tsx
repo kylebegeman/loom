@@ -18,6 +18,7 @@ const NativeSidebarTabBar = requireNativeView<
   }
 >("T3NativeControls", "SidebarTabBar");
 
+// fork: mobile-navigation
 export function WorkspaceSidebarTabs(props: {
   readonly onNewTask?: () => void;
   readonly compact?: boolean;

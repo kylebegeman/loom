@@ -29,6 +29,7 @@ export function SettingsAuthRouteScreen() {
   return hasCloudPublicConfig() ? <ConfiguredSettingsAuthRouteScreen /> : null;
 }
 
+// fork: mobile-design
 function ConfiguredSettingsAuthRouteScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const navigation = useNavigation();

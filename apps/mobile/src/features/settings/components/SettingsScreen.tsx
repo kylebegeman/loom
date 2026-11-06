@@ -20,6 +20,7 @@ import {
 
 export { SettingsScreenContent };
 
+// fork: mobile-navigation
 export function SettingsScreen(
   props: Pick<AppBarProps, "title" | "actions" | "trailing" | "search" | "menus" | "options"> & {
     readonly children: ReactNode;

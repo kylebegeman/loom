@@ -33,6 +33,7 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   private let composeButton = UIButton(type: .system)
   private lazy var tabBarTrailing = tabBar.trailingAnchor.constraint(equalTo: trailingAnchor)
   private var itemsByTab: [String: UITabBarItem] = [:]
+  // fork: mobile-navigation
   var tabs = ["threads", "sites", "search"] {
     didSet { if tabs != oldValue { updateItems() } }
   }

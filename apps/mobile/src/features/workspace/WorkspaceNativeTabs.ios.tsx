@@ -64,6 +64,7 @@ function RetainedWorkspaceTab(props: {
   ) : null;
 }
 
+// fork: mobile-navigation
 export function WorkspaceNativeTabs(props: {
   readonly children: ReactNode;
   readonly hidden: boolean;

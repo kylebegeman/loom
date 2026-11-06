@@ -22,6 +22,7 @@ export function PullRequestActivityFilters({
     <View className="mb-4 flex-row items-center justify-between gap-3">
       <Menu
         nativeTrigger={{
+          // fork: native-menus
           label: kinds.find((kind) => kind.id === value.kind)?.title,
           accessibilityLabel: `Activity type, ${kinds.find((kind) => kind.id === value.kind)?.title}`,
           size: "compact",
@@ -47,6 +48,7 @@ export function PullRequestActivityFilters({
       <View className="flex-row items-center gap-3">
         <Menu
           nativeTrigger={{
+            // fork: native-menus
             label: hiddenCount > 0 ? `${hiddenCount} hidden` : undefined,
             icon: "line.3.horizontal.decrease",
             accessibilityLabel: `Filter activity, ${hiddenCount} hidden`,

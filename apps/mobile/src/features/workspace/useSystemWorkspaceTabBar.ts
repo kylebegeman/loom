@@ -13,6 +13,7 @@ function useWorkspacePage() {
   );
 }
 
+// fork: mobile-navigation
 export function useSidebarWorkspaceTabs(): "picker" | "toolbar" | null {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();

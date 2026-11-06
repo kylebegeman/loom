@@ -14,6 +14,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { useAppForeground } from "../../lib/appState";
 import { AppBar } from "../../components/ui/AppBar";
+// fork: native-scroll-edge
 import { GLASS_HEADER_OPTIONS } from "../../native/glass-header-options";
 
 import { useThreadServerBrowserTabs } from "../../state/preview";

@@ -709,6 +709,7 @@ function SwipeActionButton(props: {
         <>
           <Menu
             nativeTrigger={{
+              // fork: native-menus
               icon: props.icon,
               accessibilityLabel: props.accessibilityLabel,
             }}

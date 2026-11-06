@@ -1,9 +1,11 @@
 import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { LIBRARY_SEARCH_FEATURE, SITES_FEATURE } from "@t3tools/contracts/fork";
 import { expect, it } from "vite-plus/test";
 import { AsyncResult } from "effect/reactivity";
 import {
   GLOBAL_SEARCH_SETTINGS,
   globalSearchQueryComputers,
+  globalSearchLibrarySources,
   searchSourceIsLoading,
   rankGlobalSearchItems,
   serverResultsMatchQuery,
@@ -64,6 +66,23 @@ it("ranks visible titles above keyword matches and finds limits by usage synonym
     ),
   ).toBe(true);
   expect(rankGlobalSearchItems([exact], "unrelated")).toEqual([]);
+});
+
+it.each([
+  ["new line", "SettingsKeyboard"],
+  ["project grouping", "SettingsOrganization"],
+  ["branch prefix", "SettingsWorktrees"],
+  ["cache", "SettingsClientStorage"],
+  ["licenses", "SettingsOpenSourceLicenses"],
+  ["restart", "SettingsEnvironmentMaintenance"],
+  ["quota", "SettingsUsage"],
+  ["published pages", "SettingsPreviewLinks"],
+] as const)("finds %s through the shared Settings index", (query, page) => {
+  expect(
+    rankGlobalSearchItems(GLOBAL_SEARCH_SETTINGS, query).some(
+      (entry) => entry.destination.kind === "settings" && entry.destination.page === page,
+    ),
+  ).toBe(true);
 });
 
 it("retains server message matches even when the snippet does not contain every query token", () => {
@@ -149,4 +168,32 @@ it("stops loading once a live subscription has supplied data while it keeps list
   expect(searchSourceIsLoading(AsyncResult.initial(true))).toBe(true);
   expect(searchSourceIsLoading(AsyncResult.success({ links: [] }, { waiting: true }))).toBe(false);
   expect(searchSourceIsLoading(null)).toBe(false);
+});
+
+it("queries Library sources only after the connection is confirmed as the Library authority", () => {
+  const authority = {
+    environmentId: EnvironmentId.make("library"),
+    connected: true,
+    canRead: true,
+    ready: false,
+  };
+  const capabilities = {
+    repositoryIdentity: false,
+    loomFeatures: [LIBRARY_SEARCH_FEATURE, SITES_FEATURE],
+  };
+  expect(globalSearchLibrarySources(authority, capabilities)).toEqual({
+    projects: null,
+    sites: null,
+    history: null,
+  });
+  expect(globalSearchLibrarySources({ ...authority, ready: true }, capabilities)).toEqual({
+    projects: authority.environmentId,
+    sites: authority.environmentId,
+    history: authority.environmentId,
+  });
+  expect(globalSearchLibrarySources({ ...authority, ready: true }, undefined)).toEqual({
+    projects: authority.environmentId,
+    sites: null,
+    history: null,
+  });
 });

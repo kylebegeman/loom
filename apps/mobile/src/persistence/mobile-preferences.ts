@@ -3,6 +3,7 @@ import {
   sanitizePreparationReceipts,
   type ProjectPreparationReceipts,
 } from "../fork/project-home/projectPreparationReceipt";
+// fork: mobile-navigation
 import { sanitizePinnedSites, type PinnedSites } from "../fork/site-browser/site-browser-model";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -121,6 +122,7 @@ export interface Preferences {
   // fork: project-navigation - Shared compact/sidebar navigation mode on this device.
   readonly loomNavigationView?: "threads" | "projects";
   readonly loomProjectPreparations?: ProjectPreparationReceipts; // fork: project-home
+  // fork: mobile-navigation
   readonly loomPinnedSites?: PinnedSites;
   // fork: library
   readonly loomLibraryLaunches?: Readonly<Record<string, string>>;
@@ -403,6 +405,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   // fork: project-home
   const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
   if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;
+  // fork: mobile-navigation
   const pinnedSites = sanitizePinnedSites(parsed.loomPinnedSites);
   if (pinnedSites !== undefined) preferences.loomPinnedSites = pinnedSites;
   if (isThreadListFilters(parsed.threadListFilters)) {

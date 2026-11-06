@@ -66,6 +66,7 @@ type SettingsPageArgs<Name extends SettingsPageName> = undefined extends RootPar
 type RouteLike = { readonly name: string; readonly key?: string; readonly params?: object };
 
 /** Settings keeps stable route keys, retaining the origin when it opens as a secondary stack. */
+// fork: mobile-navigation
 export function settingsNavigationState<
   State extends { readonly routes: readonly RouteLike[]; readonly index?: number },
 >(

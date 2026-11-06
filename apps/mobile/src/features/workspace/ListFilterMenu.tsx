@@ -17,6 +17,7 @@ export function ListFilterMenu(props: {
     <Menu
       title={props.accessibilityLabel}
       nativeTrigger={{
+        // fork: native-menus
         label: props.label,
         accessibilityLabel: props.accessibilityLabel,
         icon: props.icon ? "line.3.horizontal.decrease" : undefined,

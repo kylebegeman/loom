@@ -178,6 +178,7 @@ function usePullRequestActivityRows(params: PullRequestParams, filter: ActivityF
   };
 }
 
+// fork: mobile-design
 function PullRequestIdentity(props: {
   readonly pr: PullRequestDetail | PullRequestListEntry;
   readonly params: PullRequestParams;

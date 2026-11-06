@@ -29,6 +29,7 @@ const SEARCH_LABELS = {
   settings: "Search settings",
 } as const;
 
+// fork: mobile-navigation
 export function WorkspaceToolbar(props: {
   readonly onNewTask?: () => void;
   readonly sidebar?: boolean;

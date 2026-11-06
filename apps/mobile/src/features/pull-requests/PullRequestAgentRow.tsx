@@ -31,6 +31,7 @@ export function PullRequestAgentRow(props: {
   return (
     <Menu
       nativeTrigger={{
+        // fork: native-menus
         label: props.title ?? action.title,
         icon: "sparkles",
         accessibilityLabel: props.title ?? action.title,

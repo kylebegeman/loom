@@ -46,6 +46,7 @@ import {
 } from "./useSystemWorkspaceTabBar";
 import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
+// fork: mobile-navigation
 import { SiteBrowserScreen } from "../../fork/site-browser/SiteBrowserScreen";
 import { GlobalSearchScreen } from "../../fork/global-search/GlobalSearchScreen";
 import { WorkspaceSettingsButton } from "../../fork/mobile-navigation/WorkspaceSettingsButton";
@@ -76,6 +77,7 @@ function WorkspaceRootTitle(props: {
   );
 }
 
+// fork: mobile-navigation
 function WorkspaceRootContent() {
   const navigation = useNavigation();
   const selectTab = useSelectWorkspaceTab();
@@ -159,7 +161,6 @@ function WorkspaceRootContent() {
               ...(enabled.length === 0
                 ? { headerSearchBarOptions: undefined, unstable_headerRightItems: () => [] }
                 : {}),
-              unstable_headerLeftItems: () => [],
               // Beside a detail column the tab bar names the tab and the detail header the page,
               // so the sidebar keeps the brand.
               headerTitle: sidebarNavigation ? renderHeaderTitle : undefined,

@@ -7,12 +7,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AuthOrchestrationReadScope } from "@t3tools/contracts";
-import {
-  BOTS_FEATURE,
-  LIBRARY_SEARCH_FEATURE,
-  PREVIEW_LINKS_FEATURE,
-  SITES_FEATURE,
-} from "@t3tools/contracts/fork";
+import { BOTS_FEATURE, PREVIEW_LINKS_FEATURE } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { use, useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
@@ -53,6 +48,7 @@ import {
   GLOBAL_SEARCH_PAGE_SIZE,
   GLOBAL_SEARCH_SETTINGS,
   globalSearchQueryComputers,
+  globalSearchLibrarySources,
   searchSourceIsLoading,
   rankGlobalSearchItems,
   serverResultsMatchQuery,
@@ -128,19 +124,16 @@ export function GlobalSearchScreen() {
   const authority = useLibraryAuthority();
   const libraryConfig = useEnvironmentServerConfig(authority.environmentId);
   const historyRequest = librarySearchRequest(historyQuery);
-  const canReadLibrary = authority.connected && authority.canRead;
-  const canSearchHistory =
-    canReadLibrary &&
-    supportsLoomFeature(libraryConfig?.environment.capabilities, LIBRARY_SEARCH_FEATURE);
+  const librarySources = globalSearchLibrarySources(
+    authority,
+    libraryConfig?.environment.capabilities,
+  );
+  const canSearchHistory = librarySources.history !== null;
   const targets: GlobalSearchSourceTargets =
     active && debouncedQuery.length >= 2
       ? {
-          library: authority.supported && canReadLibrary ? authority.environmentId : null,
-          sites:
-            canReadLibrary &&
-            supportsLoomFeature(libraryConfig?.environment.capabilities, SITES_FEATURE)
-              ? authority.environmentId
-              : null,
+          library: librarySources.projects,
+          sites: librarySources.sites,
           computers: queryComputers
             .map((environment) => ({
               environmentId: environment.environmentId,
@@ -158,8 +151,8 @@ export function GlobalSearchScreen() {
       : EMPTY_SEARCH_SOURCES;
   const sourceResults = useAtomValue(globalSearchSources(JSON.stringify(targets)));
   const historyTarget =
-    active && query.length >= 2 && canSearchHistory && authority.environmentId && historyRequest
-      ? { environmentId: authority.environmentId, input: historyRequest }
+    active && query.length >= 2 && librarySources.history && historyRequest
+      ? { environmentId: librarySources.history, input: historyRequest }
       : null;
   const historyEnabled = historyTarget !== null;
   const historyResult = useEnvironmentQuery(historyTarget ? library.search(historyTarget) : null);
@@ -436,6 +429,7 @@ export function GlobalSearchScreen() {
       ref={scrollRef}
       className="flex-1 bg-screen"
       contentInsetAdjustmentBehavior="automatic"
+      scrollToOverflowEnabled
       contentOffset={
         initialOffset > 0
           ? { x: 0, y: initialOffset - (Platform.OS === "ios" ? insets.top : 0) }

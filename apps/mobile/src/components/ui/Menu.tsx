@@ -42,6 +42,7 @@ const ThemedMenuView = withUniwind(
   },
 );
 
+// fork: native-menus
 export function Menu(props: MenuProps) {
   return props.nativeTrigger && !props.shouldOpenOnLongPress ? (
     <NativeMenuButton {...props} trigger={props.nativeTrigger} />

@@ -74,6 +74,7 @@ function hasWorkspaceDetailOrigin(routes: readonly RouteLike[]) {
   return detailOrigin(routes).some((route) => route.name !== "Home");
 }
 
+// fork: mobile-navigation
 export function shouldPreserveWorkspaceDetailOrigin(
   platform: string,
   routes: readonly RouteLike[],

@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from "react";
 import type { AccessibilityProps } from "react-native";
 import type { AppSymbolName } from "./AppSymbol";
 
+// fork: native-menus
 export interface NativeMenuTrigger {
   readonly label?: string;
   readonly subtitle?: string;

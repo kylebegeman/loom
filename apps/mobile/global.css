@@ -12,6 +12,7 @@
 }
 
 /* ─── Typography ────────────────────────────────────────────────────── */
+/* fork: mobile-design */
 @theme {
   /* Keep these native family names aligned with app.config.ts. */
   --font-sans: "DMSans-Regular";

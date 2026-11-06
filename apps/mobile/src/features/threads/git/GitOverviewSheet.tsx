@@ -63,6 +63,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
   return <GitOverviewSheetContent {...props} />;
 }
 
+// fork: mobile-design
 function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const { layout } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();

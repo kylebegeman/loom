@@ -29,6 +29,7 @@ export interface WorkspaceTabState {
   readonly searchEntryOffset: number;
 }
 
+// fork: mobile-navigation
 export interface WorkspaceTabsState {
   readonly selectedTab: WorkspaceTab;
   readonly selectionRevision: number;

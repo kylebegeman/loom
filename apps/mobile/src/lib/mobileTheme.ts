@@ -12,6 +12,7 @@ import {
   STANDARD_THEME_PREVIEW_COLORS,
   type ThemePreviewColors,
 } from "@t3tools/shared/themePreview";
+// fork: mobile-design
 import { LOOM_MOBILE_DARK_COLORS, LOOM_MOBILE_LIGHT_COLORS } from "./loomMobilePalette.ts";
 
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
@@ -447,6 +448,7 @@ export function createMobileThemeVariables(
   };
 }
 
+// fork: mobile-design
 export function getMobileThemeColors(
   themeId: SharedMobileThemeId,
   appearance: MobileThemeAppearance,

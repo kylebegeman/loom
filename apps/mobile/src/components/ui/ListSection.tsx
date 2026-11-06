@@ -4,6 +4,7 @@ import { Platform, View } from "react-native";
 
 import { AppText as Text } from "./AppText";
 
+// fork: mobile-design
 export function ListSection(props: {
   readonly title?: string;
   readonly titleIcon?: ReactNode;

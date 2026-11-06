@@ -10,6 +10,10 @@ const harness = vi.hoisted(() => ({
   dispatch: vi.fn(),
   queries: [] as (string | null)[],
   canRead: true,
+  configLoaded: true,
+  isAuthority: true,
+  connected: true,
+  libraryInfoLoaded: true,
   manage: true,
   snapshot: null as unknown,
   analytics: null as unknown,
@@ -25,19 +29,31 @@ vi.mock("../library/libraryState", () => ({
   useLibraryAuthority: () => ({
     loaded: true,
     environmentId: EnvironmentId.make(harness.authorityId),
-    connected: true,
+    connected: harness.connected,
     canRead: harness.canRead,
     label: "Library server",
+    info: {
+      data: harness.libraryInfoLoaded
+        ? {
+            environmentId: EnvironmentId.make(harness.authorityId),
+            isAuthority: harness.isAuthority,
+          }
+        : null,
+      isPending: !harness.libraryInfoLoaded,
+      error: null,
+      refresh: vi.fn(),
+    },
   }),
   library: { projects: () => "projects" },
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => harness.manage }));
 vi.mock("../../state/entities", () => ({
-  useEnvironmentServerConfig: () => ({ environment: { capabilities: {} } }),
+  useEnvironmentServerConfig: () =>
+    harness.configLoaded ? { environment: { capabilities: {} } } : null,
 }));
 vi.mock("@t3tools/client-runtime/fork", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@t3tools/client-runtime/fork")>()),
-  supportsLoomFeature: () => true,
+  supportsLoomFeature: (capabilities: unknown) => capabilities !== undefined,
 }));
 vi.mock("./state", () => ({
   sites: {
@@ -73,7 +89,13 @@ vi.mock("./SiteEditor", () => ({
 vi.mock("react-native", () => ({
   ActivityIndicator: () => <span role="progressbar" />,
   Linking: { openURL: vi.fn() },
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({
+    children,
+    accessibilityLabel,
+  }: {
+    children: ReactNode;
+    accessibilityLabel?: string;
+  }) => <div aria-label={accessibilityLabel}>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Pressable: ({
     children,
@@ -201,6 +223,10 @@ beforeEach(() => {
   harness.snapshot = emptySnapshot;
   harness.analytics = null;
   harness.canRead = true;
+  harness.configLoaded = true;
+  harness.isAuthority = true;
+  harness.connected = true;
+  harness.libraryInfoLoaded = true;
   harness.manage = true;
   harness.queries = [];
   harness.dispatch.mockReset();
@@ -292,6 +318,11 @@ it("opens the exact website and keeps shared services secondary", () => {
   expect(container.textContent).toContain("1.3 s");
   expect(container.textContent).not.toContain("Docs");
   expect(harness.queries).toContain("analytics:home");
+  harness.connected = false;
+  render("home");
+  expect(container.textContent).toContain("Library offline");
+  expect(container.textContent).toContain("0 of 1 checks passing");
+  harness.connected = true;
   harness.manage = false;
   render("home");
   expect(container.querySelector('[aria-label="Actions for Web"]')).toBeNull();
@@ -350,5 +381,27 @@ it("does not request website or project data without Library read access", () =>
   harness.canRead = false;
   render("home");
   expect(container.textContent).toContain("Website access unavailable");
+  expect(harness.queries.every((query) => query === null)).toBe(true);
+});
+
+it("waits for capabilities before declaring that the Library needs an update", () => {
+  harness.configLoaded = false;
+  render("home");
+  expect(container.querySelector('[aria-label="Loading Library capabilities"]')).not.toBeNull();
+  expect(container.textContent).not.toContain("need a newer Library server");
+  expect(harness.queries).not.toContain("snapshot");
+  expect(harness.queries).not.toContain("analytics:home");
+  harness.configLoaded = true;
+  harness.libraryInfoLoaded = false;
+  harness.queries = [];
+  render("home");
+  expect(container.querySelector('[aria-label="Loading Library"]')).not.toBeNull();
+  expect(harness.queries.every((query) => query === null)).toBe(true);
+});
+
+it("does not send Library queries to an execution computer", () => {
+  harness.isAuthority = false;
+  render("home");
+  expect(container.textContent).toContain("Choose your Library server");
   expect(harness.queries.every((query) => query === null)).toBe(true);
 });

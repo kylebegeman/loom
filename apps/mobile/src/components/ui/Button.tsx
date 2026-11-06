@@ -25,6 +25,7 @@ const TONE_CLASS_NAMES = {
   text: ["bg-transparent", "text-primary-text"],
 } as const;
 
+// fork: mobile-design
 export function Button(props: ButtonProps) {
   const [containerClassName, labelClassName] = TONE_CLASS_NAMES[props.tone ?? "secondary"];
   const disabled = Boolean(props.disabled || props.loading);

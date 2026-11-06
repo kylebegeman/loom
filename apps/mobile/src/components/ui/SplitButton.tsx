@@ -39,6 +39,7 @@ export function SplitButton(props: SplitButtonProps) {
         <View pointerEvents={menuEnabled ? "auto" : "none"}>
           <Menu
             nativeTrigger={{
+              // fork: native-menus
               icon: "chevron.down",
               accessibilityLabel: props.menuTitle,
               disabled: !menuEnabled,

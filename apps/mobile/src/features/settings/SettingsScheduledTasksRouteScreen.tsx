@@ -233,6 +233,7 @@ function SelectRow(props: {
   return (
     <Menu
       nativeTrigger={{
+        // fork: native-menus
         label: props.label,
         detail: props.value,
         detailIcon: props.nativeValueIcon,
@@ -1527,6 +1528,7 @@ function EnvironmentTasks({
             </Pressable>
             <Menu
               nativeTrigger={{
+                // fork: native-menus
                 icon: "ellipsis",
                 accessibilityLabel: `Actions for ${task.title}`,
                 size: "default",

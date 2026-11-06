@@ -8,6 +8,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import type { WorkspaceTab } from "../workspace/workspace-tabs-state";
 
+// fork: mobile-navigation
 export function WorkspaceEmptyDetail(props: {
   readonly tab?: WorkspaceTab | "settings";
   readonly onStartNewTask?: () => void;

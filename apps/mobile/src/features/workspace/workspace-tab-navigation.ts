@@ -217,6 +217,7 @@ function restoredTabRoutes(routes: readonly RouteLike[], check: WorkspaceSelecti
  * without columns the tab opens on its list. Routes already on screen keep their keys, and
  * `overlays` (open sheets) stay on top.
  */
+// fork: mobile-navigation
 export function workspaceTabNavigationState<
   State extends { readonly routes: readonly RouteLike[] },
 >(

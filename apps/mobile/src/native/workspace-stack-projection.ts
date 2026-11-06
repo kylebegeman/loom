@@ -25,6 +25,7 @@ export function presentationEnvelopeAction<const Action extends NavigationAction
 }
 
 /** Keep the presenting history mounted while modal routes cover the whole workspace. */
+// fork: mobile-navigation
 export function projectStackPresentation(
   state: StackNavigationState<ParamListBase>,
   isOverlay: (route: Route) => boolean,

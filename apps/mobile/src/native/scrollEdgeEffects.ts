@@ -8,6 +8,7 @@ export type NativeHeaderScrollEdgeEffects = {
   readonly right: "hidden";
 };
 
+// fork: native-scroll-edge
 function nativeTopScrollEdgeEffect(
   os: string,
   _version: number | string,

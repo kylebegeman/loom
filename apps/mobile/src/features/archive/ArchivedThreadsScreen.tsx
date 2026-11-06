@@ -246,6 +246,7 @@ function ArchivedThreadRow(props: {
         <Menu
           title={props.thread.title}
           nativeTrigger={{
+            // fork: native-menus
             icon: "ellipsis",
             accessibilityLabel: `Actions for ${props.thread.title}`,
           }}

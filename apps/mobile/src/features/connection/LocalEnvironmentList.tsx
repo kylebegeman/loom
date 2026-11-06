@@ -10,6 +10,7 @@ import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
 type EnvironmentRowProps = ComponentProps<typeof ConnectionEnvironmentRow>;
 
 // fork: fleet-connections - Computer wording matches the unified inventory.
+// fork: mobile-design
 export function LocalEnvironmentList({
   environments,
   expandedId,

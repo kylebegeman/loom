@@ -69,6 +69,7 @@ export function SettingsRouteScreen(
   );
 }
 
+// fork: mobile-navigation
 export function SettingsListScreen(props: {
   readonly sidebar: boolean;
   readonly selected: string | null;
@@ -240,6 +241,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
         contentContainerClassName="gap-7 px-5"
         contentContainerStyle={{
           // Keep clearance inside the scroll view so its native blur reaches the sheet's top.
+          // fork: native-scroll-edge
           paddingTop: Platform.OS === "ios" && !sidebar ? 28 : 16,
           // The workspace's clearance keeps the last row above its search field and keyboard.
           paddingBottom:
@@ -271,6 +273,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   );
 }
 
+// fork: mobile-navigation
 function useSettingsIndexSections(): SettingsListSection[] {
   const navigation = useNavigation(); // fork: project-home
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();

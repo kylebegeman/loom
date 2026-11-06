@@ -1,4 +1,5 @@
 export const NAVIGATION_TAB_ORDER = ["threads", "pullRequests", "usage"] as const;
+// fork: mobile-navigation
 export const IOS_NAVIGATION_TAB_ORDER = ["threads", "sites", "search"] as const;
 export type NavigationTab =
   | (typeof NAVIGATION_TAB_ORDER)[number]

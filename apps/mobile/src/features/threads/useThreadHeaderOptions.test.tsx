@@ -116,6 +116,7 @@ function Header(props: {
   readonly gitStatus: VcsStatusResult | null;
   readonly title?: string;
   readonly onOpenDetails?: () => void;
+  readonly canOpenTerminal?: boolean;
 }) {
   return (
     <ThreadHeader
@@ -136,7 +137,7 @@ function Header(props: {
           harness.runActions.push(input.action);
           return null;
         },
-        canOpenTerminal: true,
+        canOpenTerminal: props.canOpenTerminal ?? true,
         canOperateTerminal: true,
         canOpenFiles: true,
         projectScripts,
@@ -156,26 +157,30 @@ function Header(props: {
   );
 }
 
-function renderedGitMenuItems(): Array<{
+type RenderedMenuAction = {
   description?: unknown;
   disabled?: boolean;
   label?: unknown;
   onPress?: () => void;
-}> {
+};
+
+function renderedToolMenuItems(label: string): RenderedMenuAction[] {
   const items = harness.renderedRightItems.at(-1) ?? [];
-  const git = items.find((item) => item.identifier === "thread-right-git") as
+  const tools = items.find((item) => item.identifier === "thread-right-tools") as
     | {
         menu: {
           items: Array<{
-            description?: unknown;
-            disabled?: boolean;
-            label?: unknown;
-            onPress?: () => void;
+            label: string;
+            items: RenderedMenuAction[];
           }>;
         };
       }
     | undefined;
-  return git?.menu.items ?? [];
+  return tools?.menu.items.find((item) => item.label === label)?.items ?? [];
+}
+
+function renderedGitMenuItems() {
+  return renderedToolMenuItems("Source control");
 }
 
 let root: Root | null = null;
@@ -198,6 +203,13 @@ afterEach(() => {
 });
 
 describe("ThreadHeader", () => {
+  it("keeps terminal actions disabled when grouped under Tools without terminal access", () => {
+    render(<Header gitStatus={null} canOpenTerminal={false} />);
+    const terminalActions = renderedToolMenuItems("Terminal");
+    expect(terminalActions.length).toBeGreaterThan(0);
+    expect(terminalActions.every((item) => item.disabled)).toBe(true);
+  });
+
   // fork: source-control-cockpit
   it("runs a default-branch push directly after the project remembers consent", async () => {
     harness.skipDefaultBranchConfirmation = true;

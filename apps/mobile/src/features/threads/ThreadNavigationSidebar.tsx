@@ -168,6 +168,7 @@ function NativeSidebarContainer(props: ThreadNavigationSidebarProps) {
   );
 }
 
+// fork: mobile-navigation
 function ThreadNavigationSidebarPane(
   props: ThreadNavigationSidebarProps & { readonly nativeChrome: boolean },
 ) {

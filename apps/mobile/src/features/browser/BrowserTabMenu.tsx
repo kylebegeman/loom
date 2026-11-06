@@ -163,6 +163,7 @@ export function BrowserTabMenu({
       accessibilityLabel="Browser tab options"
       accessibilityRole="button"
       nativeTrigger={{
+        // fork: native-menus
         icon: "ellipsis",
         accessibilityLabel: "Browser tab options",
         size: "default",

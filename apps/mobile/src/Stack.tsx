@@ -60,6 +60,7 @@ import { androidWorkspaceDestinationAnimation } from "./lib/android-workspace-na
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { WorkspaceConnectionStatusProvider } from "./features/home/WorkspaceConnectionTitle";
 import { WorkspaceRootScreen } from "./features/workspace/WorkspaceRootScreen";
+// fork: mobile-navigation
 import { PullRequestsRouteScreen } from "./fork/mobile-navigation/PullRequestsRouteScreen";
 import { MobileSettingsRouteScreen } from "./fork/mobile-navigation/MobileSettingsRouteScreen";
 import {
@@ -245,6 +246,7 @@ const THREAD_SETTINGS_SHEET_OPTIONS = {
 // `Settings` route marks the Settings tab as open (see settings-navigation.ts).
 const SETTINGS_PAGE_OPTIONS = SHEET_GLASS_HEADER_OPTIONS;
 
+// fork: mobile-navigation
 const SETTINGS_SCREENS = {
   Settings: createNativeStackScreen({
     screen: Platform.OS === "ios" ? MobileSettingsRouteScreen : SettingsRouteScreen,
@@ -525,6 +527,7 @@ export function rootPathnameFromState(state: NavigationState): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+// fork: mobile-navigation
 function withoutWorkspaceTab(state: NavigationState): NavigationState {
   return {
     ...state,
@@ -631,6 +634,7 @@ function NotFoundScreen() {
   );
 }
 
+// fork: mobile-navigation
 const RootStackConfig = createWorkspaceStackNavigator({
   initialRouteName: APP_LINKING_CONFIG.initialRouteName, // fork: project-navigation
   UNSTABLE_router: (router) =>

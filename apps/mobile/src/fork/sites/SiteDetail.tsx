@@ -23,7 +23,7 @@ function WebsiteIdentity({ site }: { readonly site: Site }) {
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      className="size-12 items-center justify-center rounded-full bg-secondary"
+      className={`size-12 items-center justify-center ${loaded && !failed ? "" : "rounded-xl bg-secondary"}`}
     >
       <Text
         textRole="title"

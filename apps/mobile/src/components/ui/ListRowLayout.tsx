@@ -14,6 +14,7 @@ export interface ListRowContentProps {
   readonly disabled?: boolean;
 }
 
+// fork: mobile-design
 export function ListRowLayout({
   icon,
   iconPresentation = "plain",

@@ -503,26 +503,16 @@ function WorkspaceColumns(
   );
 }
 
+// fork: mobile-navigation
 function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean }) {
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
   const workspace = useWorkspaceTabs()!;
-  // Native dismiss commits the route pop after the transition. Restore the dock
-  // when the primary screen starts appearing, including interactive back gestures.
-  const [primaryVisible, setPrimaryVisible] = useState(false);
   const metrics = useNativeLayoutMetrics();
   const projection = projectWorkspaceStack(props.state, (route) => {
     const presentation = props.descriptors[route.key]?.options.presentation;
     return presentation !== undefined && presentation !== "card";
   });
-  // The root's willDisappear reaches JS frames into the push, so hide the dock in the commit that
-  // pushes; the native events still own every later change, including back gestures.
-  const topDetailKey = projection.detail.at(-1)?.key;
-  const [pushedDetailKey, setPushedDetailKey] = useState(topDetailKey);
-  if (pushedDetailKey !== topDetailKey) {
-    setPushedDetailKey(topDetailKey);
-    if (topDetailKey !== undefined && primaryVisible) setPrimaryVisible(false);
-  }
   // Detail-only histories must stay single-stack: placeholder descriptors cannot own sidebar actions or setOptions.
   const primaryRoute = projection.primary;
   if (!primaryRoute) return <V5StackView {...props} />;
@@ -541,9 +531,9 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
       <WorkspaceNativeTabs
         tabsInSidebarColumn={props.nativeColumns && !workspacePage && deviceType === "pad"}
         hidden={
+          props.nativeColumns &&
           !workspacePage &&
           projection.detail.length > 0 &&
-          !primaryVisible &&
           !layout.usesSplitView &&
           (metrics?.verticalBarEdge ?? "none") === "none"
         }
@@ -558,7 +548,7 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
         ) : (
           <V5CardStackView
             {...props}
-            onRootVisibilityChange={setPrimaryVisible}
+            hideBottomBarOnPush={!workspacePage}
             onNativePopChange={setNativelyPoppingWorkspaceRoute}
             descriptors={descriptors}
             state={{

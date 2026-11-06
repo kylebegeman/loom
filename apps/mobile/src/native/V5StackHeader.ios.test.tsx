@@ -39,6 +39,62 @@ vi.mock("react-native-screens", () => ({
 
 import { V5StackHeader } from "./V5StackHeader.ios";
 
+it("keeps submenu icons and palette layout in the native header menu", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  try {
+    act(() =>
+      root.render(
+        <V5StackHeader
+          canGoBack={false}
+          options={{
+            unstable_headerRightItems: () => [
+              {
+                type: "menu",
+                label: "Tools",
+                menu: {
+                  layout: "palette",
+                  items: [
+                    {
+                      type: "submenu",
+                      label: "Git",
+                      icon: { type: "sfSymbol", name: "arrow.triangle.branch" },
+                      inline: true,
+                      layout: "palette",
+                      items: [
+                        {
+                          type: "action",
+                          label: "Changes",
+                          state: "on",
+                          onPress: () => {},
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          }}
+        />,
+      ),
+    );
+    const item = bridge.ios?.trailingItems?.[0];
+    if (!item || item.type !== "item" || !("menu" in item))
+      throw new Error("Expected a native menu item");
+    expect(item.menu?.displayAsPalette).toBe(true);
+    expect(item.menu?.children[0]).toMatchObject({
+      title: "Git",
+      icon: { type: "sfSymbol", name: "arrow.triangle.branch" },
+      displayInline: true,
+      displayAsPalette: true,
+      children: [{ itemType: "action", state: "on" }],
+    });
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it("leaves native glass headers clear for the scroll view's edge effect", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.createElement("div"));

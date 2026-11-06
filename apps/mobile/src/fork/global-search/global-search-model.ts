@@ -1,8 +1,17 @@
-import type { EnvironmentId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ExecutionEnvironmentCapabilities,
+  MessageId,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { LIBRARY_SEARCH_FEATURE, SITES_FEATURE } from "@t3tools/contracts/fork";
 import { foldSearchQuery, scoreSearchTerms } from "@t3tools/shared/paletteSearch";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import type { SettingsPageTarget } from "../../features/settings/components/settings-page-targets";
+import { SETTINGS_SEARCH_PAGES } from "../../features/settings/settings-search";
 
 export const GLOBAL_SEARCH_PAGE_SIZE = 6;
 
@@ -137,28 +146,32 @@ export function globalSearchQueryComputers<
   );
 }
 
-const SETTINGS_ENTRIES = [
-  ["Usage & limits", "SettingsUsage", "usage quota quotas tokens subscriptions rate limits"],
-  ["Appearance", "SettingsAppearance", "theme dark light font text size"],
-  ["Notifications", "SettingsNotifications", "push alerts sound"],
-  ["Providers", "SettingsProviderAccounts", "models accounts codex claude cursor"],
-  ["Computers", "SettingsEnvironments", "connections servers remote devices"],
-  ["Scheduled tasks", "SettingsScheduledTasks", "automation schedules recurring"],
-  ["Previews", "SettingsPreviewLinks", "private links live apps ports"],
-  ["Chat", "SettingsFollowUp", "messages follow up composer"],
-  ["Archive", "SettingsArchive", "archived threads restore history"],
-  ["Source control", "SettingsEnvironmentSourceControl", "git github gitlab pull requests"],
-  ["Microphone", "SettingsMicrophone", "voice dictation audio"],
-  ["About Loom", "SettingsAbout", "version updates licenses"],
-] as const satisfies readonly (readonly [string, SettingsPageTarget, string])[];
+export function globalSearchLibrarySources(
+  authority: {
+    readonly environmentId: EnvironmentId | null;
+    readonly ready: boolean;
+  },
+  capabilities: ExecutionEnvironmentCapabilities | undefined,
+) {
+  const environmentId = authority.ready ? authority.environmentId : null;
+  return {
+    projects: environmentId,
+    sites: environmentId && supportsLoomFeature(capabilities, SITES_FEATURE) ? environmentId : null,
+    history:
+      environmentId && supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE)
+        ? environmentId
+        : null,
+  };
+}
 
-export const GLOBAL_SEARCH_SETTINGS: readonly GlobalSearchItem[] = SETTINGS_ENTRIES.map(
-  ([title, page, keywords]) => ({
-    key: `settings:${page}`,
-    category: "settings",
-    title,
-    description: "Settings",
-    terms: [keywords],
-    destination: { kind: "settings", page },
-  }),
-);
+export const GLOBAL_SEARCH_SETTINGS: readonly GlobalSearchItem[] = SETTINGS_SEARCH_PAGES.filter(
+  // iOS fixes its primary tabs; ProjectGrouping is the legacy alias of General.
+  ({ page }) => page !== "SettingsNavigation" && page !== "SettingsProjectGrouping",
+).map(({ label, page, terms }) => ({
+  key: `settings:${page}`,
+  category: "settings",
+  title: label,
+  description: "Settings",
+  terms,
+  destination: { kind: "settings", page },
+}));

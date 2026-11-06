@@ -160,6 +160,7 @@ function FileFilterMenu({ filter }: { readonly filter: ChangedFiles["filter"] })
   return (
     <Menu
       nativeTrigger={{
+        // fork: native-menus
         icon: "line.3.horizontal.decrease",
         accessibilityLabel: "Filter review files",
         selected: filter.hideTestFiles,

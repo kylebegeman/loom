@@ -77,6 +77,7 @@ export function PullRequestStatusMenu(props: RowProps) {
   return (
     <Menu
       nativeTrigger={{
+        // fork: native-menus
         label: status.label,
         icon: status.icon,
         accessibilityLabel: `${term} status, ${status.label}`,
@@ -226,6 +227,7 @@ export function PullRequestBranchRow(props: RowProps) {
   return (
     <Menu
       nativeTrigger={{
+        // fork: native-menus
         label: conflicting
           ? `Conflicts with ${props.pr.baseBranch}`
           : clean

@@ -1,0 +1,248 @@
+diff --git a/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt b/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt
+index 60f1280..60b2e4a 100644
+--- a/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt
++++ b/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt
+@@ -145,6 +145,12 @@ class StackScreenViewManager :
+         view.isPreventNativeDismissEnabled = value
+     }
+ 
++    // UIKit owns tab-bar visibility during a navigation transition.
++    override fun setHidesBottomBarWhenPushed(
++        view: StackScreen,
++        value: Boolean,
++    ) = Unit
++
+     companion object {
+         const val REACT_CLASS = "RNSStackScreen"
+     }
+diff --git a/ios/helpers/stack/RNSStackNavigationController.mm b/ios/helpers/stack/RNSStackNavigationController.mm
+index c1c8325..41b8122 100644
+--- a/ios/helpers/stack/RNSStackNavigationController.mm
++++ b/ios/helpers/stack/RNSStackNavigationController.mm
+@@ -14,7 +14,7 @@
+ #import "RNSStackScreenComponentView.h"
+ #import "RNSViewFrameChangeDelegate.h"
+ 
+-@interface RNSStackNavigationController ()
++@interface RNSStackNavigationController () <UINavigationControllerDelegate>
+ - (BOOL)shouldPreventNativePopToController:(UIViewController *)controller;
+ @end
+ 
+@@ -60,6 +60,7 @@ @implementation RNSStackNavigationController {
+ #if !TARGET_OS_TV
+   RNSStackPopGestureDelegate *_edgePopDelegate;
+   NSMutableDictionary<NSString *, UIBarButtonItem *> *_toolbarIconButtons;
++  BOOL _managesTabBarVisibility;
+ #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
+   RNSStackPopGestureDelegate *_contentPopDelegate;
+ #endif
+@@ -77,6 +78,9 @@ - (instancetype)init
+     _navigationBarCoordinator = [RNSStackNavigationBarCoordinator new];
+     [_navigationBarCoordinator initializeNavigationBarOfNavigationController:self];
+     [self initState];
++#if !TARGET_OS_TV
++    self.delegate = self;
++#endif
+   }
+   return self;
+ }
+@@ -103,6 +107,59 @@ - (void)viewDidLoad
+ }
+ 
+ #if !TARGET_OS_TV
++- (void)applyTabBarVisibilityForController:(UIViewController *)controller animated:(BOOL)animated
++{
++  _managesTabBarVisibility = _managesTabBarVisibility || controller.hidesBottomBarWhenPushed;
++  UITabBarController *tabBarController = self.tabBarController;
++  UIViewController *selectedController = tabBarController.selectedViewController;
++#if RNS_UITAB_API_SDK_AVAILABLE
++  if (RNS_UITAB_API_ENABLED) {
++    selectedController = tabBarController.selectedTab.viewController;
++  }
++#endif
++  if (!_managesTabBarVisibility || selectedController == nil) {
++    return;
++  }
++  UIViewController *ancestor = self;
++  while (ancestor != nil && ancestor != selectedController) {
++    ancestor = ancestor.parentViewController;
++  }
++  if (ancestor == nil) {
++    return;
++  }
++  // Nested tab content cannot use UIKit's direct navigation-controller forwarding.
++  if (@available(iOS 18.0, *)) {
++    [tabBarController setTabBarHidden:controller.hidesBottomBarWhenPushed animated:animated];
++  } else {
++    tabBarController.tabBar.hidden = controller.hidesBottomBarWhenPushed;
++  }
++}
++
++- (void)viewWillAppear:(BOOL)animated
++{
++  [self applyTabBarVisibilityForController:self.topViewController animated:NO];
++  [super viewWillAppear:animated];
++}
++
++- (void)navigationController:(UINavigationController *)navigationController
++      willShowViewController:(UIViewController *)viewController
++                    animated:(BOOL)animated
++{
++  [self applyTabBarVisibilityForController:viewController animated:animated];
++  if (!_managesTabBarVisibility) {
++    return;
++  }
++  __weak RNSStackNavigationController *weakSelf = self;
++  [self.transitionCoordinator
++      animateAlongsideTransition:nil
++                      completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
++                        RNSStackNavigationController *strongSelf = weakSelf;
++                        if (context.isCancelled && strongSelf != nil) {
++                          [strongSelf applyTabBarVisibilityForController:strongSelf.topViewController animated:NO];
++                        }
++                      }];
++}
++
+ - (void)cancelReactTouchesForPopGesture:(UIGestureRecognizer *)gestureRecognizer
+ {
+   if (gestureRecognizer.state != UIGestureRecognizerStateBegan)
+diff --git a/ios/stack/screen/RNSStackScreenComponentView.mm b/ios/stack/screen/RNSStackScreenComponentView.mm
+index 8cf2e51..ee545b5 100644
+--- a/ios/stack/screen/RNSStackScreenComponentView.mm
++++ b/ios/stack/screen/RNSStackScreenComponentView.mm
+@@ -153,6 +153,9 @@ - (void)updateProps:(const facebook::react::Props::Shared &)props
+   }
+ 
+   _preventNativeDismiss = newComponentProps.preventNativeDismiss;
++#if !TARGET_OS_TV
++  _controller.hidesBottomBarWhenPushed = newComponentProps.hidesBottomBarWhenPushed;
++#endif
+ 
+   if (oldComponentProps.screenKey != newComponentProps.screenKey) {
+     RCTAssert(_screenKey == nil, @"[RNScreens] ScreenController cannot change its screenKey");
+diff --git a/lib/commonjs/components/stack/screen/StackScreen.js b/lib/commonjs/components/stack/screen/StackScreen.js
+index df9774b..e711f59 100644
+--- a/lib/commonjs/components/stack/screen/StackScreen.js
++++ b/lib/commonjs/components/stack/screen/StackScreen.js
+@@ -26,7 +26,8 @@ function StackScreen({
+   onNativeDismiss,
+   onNativeDismissPrevented,
+   // Configuration
+-  preventNativeDismiss
++  preventNativeDismiss,
++  hidesBottomBarWhenPushed
+ }) {
+   const onDismissWrapper = _react.default.useCallback(event => {
+     if (event.nativeEvent.isNativeDismiss) {
+@@ -55,7 +56,8 @@ function StackScreen({
+     onNativeDismissPrevented: onNativeDismissPrevented
+     // Configuration
+     ,
+-    preventNativeDismiss: preventNativeDismiss
++    preventNativeDismiss: preventNativeDismiss,
++    hidesBottomBarWhenPushed: hidesBottomBarWhenPushed
+   }, children);
+ }
+ var _default = exports.default = StackScreen;
+diff --git a/lib/module/components/stack/screen/StackScreen.js b/lib/module/components/stack/screen/StackScreen.js
+index 7e35371..2ca5c65 100644
+--- a/lib/module/components/stack/screen/StackScreen.js
++++ b/lib/module/components/stack/screen/StackScreen.js
+@@ -20,7 +20,8 @@ function StackScreen({
+   onNativeDismiss,
+   onNativeDismissPrevented,
+   // Configuration
+-  preventNativeDismiss
++  preventNativeDismiss,
++  hidesBottomBarWhenPushed
+ }) {
+   const onDismissWrapper = React.useCallback(event => {
+     if (event.nativeEvent.isNativeDismiss) {
+@@ -49,7 +50,8 @@ function StackScreen({
+     onNativeDismissPrevented: onNativeDismissPrevented
+     // Configuration
+     ,
+-    preventNativeDismiss: preventNativeDismiss
++    preventNativeDismiss: preventNativeDismiss,
++    hidesBottomBarWhenPushed: hidesBottomBarWhenPushed
+   }, children);
+ }
+ export default StackScreen;
+diff --git a/lib/typescript/components/stack/screen/StackScreen.types.d.ts b/lib/typescript/components/stack/screen/StackScreen.types.d.ts
+index 4bb4a81..d8d4c78 100644
+--- a/lib/typescript/components/stack/screen/StackScreen.types.d.ts
++++ b/lib/typescript/components/stack/screen/StackScreen.types.d.ts
+@@ -18,5 +18,11 @@ export type StackScreenProps = {
+     onNativeDismiss?: ((screenKey: string) => void) | undefined;
+     onNativeDismissPrevented?: StackScreenEventHandler | undefined;
+     preventNativeDismiss?: boolean | undefined;
++    /**
++     * Hides the tab bar while this screen is pushed, using UIKit's navigation transition.
++     * @default false
++     * @platform ios
++     */
++    hidesBottomBarWhenPushed?: boolean | undefined;
+ };
+ //# sourceMappingURL=StackScreen.types.d.ts.map
+\ No newline at end of file
+diff --git a/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts b/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts
+index a77889a..fef4bf4 100644
+--- a/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts
++++ b/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts
+@@ -14,6 +14,7 @@ export interface NativeProps extends ViewProps {
+     onDismiss?: CT.DirectEventHandler<OnDismissEventPayload> | undefined;
+     onNativeDismissPrevented?: CT.DirectEventHandler<GenericEmptyEvent> | undefined;
+     preventNativeDismiss?: CT.WithDefault<boolean, false>;
++    hidesBottomBarWhenPushed?: CT.WithDefault<boolean, false>;
+ }
+ declare const _default: HostComponent<NativeProps>;
+ export default _default;
+diff --git a/src/components/stack/screen/StackScreen.tsx b/src/components/stack/screen/StackScreen.tsx
+index e72e96c..47c7ab0 100644
+--- a/src/components/stack/screen/StackScreen.tsx
++++ b/src/components/stack/screen/StackScreen.tsx
+@@ -22,6 +22,7 @@ function StackScreen({
+   onNativeDismissPrevented,
+   // Configuration
+   preventNativeDismiss,
++  hidesBottomBarWhenPushed,
+ }: StackScreenProps) {
+   const onDismissWrapper = React.useCallback(
+     (event: OnDismissEvent) => {
+@@ -54,7 +55,8 @@ function StackScreen({
+       onDismiss={onDismissWrapper}
+       onNativeDismissPrevented={onNativeDismissPrevented}
+       // Configuration
+-      preventNativeDismiss={preventNativeDismiss}>
++      preventNativeDismiss={preventNativeDismiss}
++      hidesBottomBarWhenPushed={hidesBottomBarWhenPushed}>
+       {children}
+     </StackScreenNativeComponent>
+   );
+diff --git a/src/components/stack/screen/StackScreen.types.ts b/src/components/stack/screen/StackScreen.types.ts
+index 8deb6c8..3b72f98 100644
+--- a/src/components/stack/screen/StackScreen.types.ts
++++ b/src/components/stack/screen/StackScreen.types.ts
+@@ -33,4 +33,10 @@ export type StackScreenProps = {
+ 
+   // Configuration
+   preventNativeDismiss?: boolean | undefined;
++  /**
++   * Hides the tab bar while this screen is pushed, using UIKit's navigation transition.
++   * @default false
++   * @platform ios
++   */
++  hidesBottomBarWhenPushed?: boolean | undefined;
+ };
+diff --git a/src/fabric/stack/StackScreenNativeComponent.ts b/src/fabric/stack/StackScreenNativeComponent.ts
+index 554c17e..55b7eef 100644
+--- a/src/fabric/stack/StackScreenNativeComponent.ts
++++ b/src/fabric/stack/StackScreenNativeComponent.ts
+@@ -39,6 +39,7 @@ export interface NativeProps extends ViewProps {
+   // Configuration
+ 
+   preventNativeDismiss?: CT.WithDefault<boolean, false>;
++  hidesBottomBarWhenPushed?: CT.WithDefault<boolean, false>;
+ }
+ 
+ export default codegenNativeComponent<NativeProps>('RNSStackScreen', {

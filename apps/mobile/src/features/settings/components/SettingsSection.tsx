@@ -8,6 +8,7 @@ import { ListSection } from "../../../components/ui/ListSection";
  * Set while the Settings list is a split view's sidebar, naming the page open beside it. Like the
  * system Settings app, the sidebar lists plain rows and highlights that page instead of cards.
  */
+// fork: mobile-design
 export const SettingsSidebarContext = createContext<{ readonly selected: string | null } | null>(
   null,
 );

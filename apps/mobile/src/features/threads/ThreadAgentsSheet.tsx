@@ -149,7 +149,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
               backgroundColor="rgba(0,0,0,0)"
               tintColorClassName="accent-foreground"
               hideBackButton
-              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED}
+              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED /* fork: native-scroll-edge */}
               title="Agents"
               titleColorClassName="accent-foreground"
               titleFontSize={18}

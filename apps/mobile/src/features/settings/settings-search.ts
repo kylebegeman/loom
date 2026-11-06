@@ -1,9 +1,11 @@
 import { forkSettingsSearchTerms } from "../../fork/connections/settingsSearch"; // fork: ext-settings
 import { foldSearchQuery, rankSearchItems, scoreSearchTerms } from "@t3tools/shared/paletteSearch";
+import { BRAND_NAME } from "@t3tools/shared/brand";
 
-import type { SettingsPageTarget } from "./components/settings-page-targets";
+import { SETTINGS_PAGE_TARGETS, type SettingsPageTarget } from "./components/settings-page-targets";
 
 /** What each page holds besides its row's label, so search finds a setting by its own name. */
+// fork: mobile-navigation
 const SETTINGS_SEARCH_TERMS = {
   account: ["sign in", "sign out", "login", "clerk", "connect"],
   SettingsEnvironments: [
@@ -13,8 +15,9 @@ const SETTINGS_SEARCH_TERMS = {
     "add environment",
     "remote",
     "tailscale",
+    "devices",
   ],
-  SettingsNotifications: ["push", "alerts", "live activity", "agent activity"],
+  SettingsNotifications: ["push", "alerts", "sound", "live activity", "agent activity"],
   SettingsAppearance: [
     "theme",
     "dark mode",
@@ -31,7 +34,7 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsNavigation: ["tabs", "tab order", "reorder", "hide tabs"],
   SettingsKeyboard: ["return key", "send message", "new line", "hardware keyboard"],
   SettingsMicrophone: ["voice", "dictation", "audio input", "bluetooth"],
-  SettingsScheduledTasks: ["automations", "schedule", "cron", "recurring", "webhook"],
+  SettingsScheduledTasks: ["automation", "automations", "schedule", "cron", "recurring", "webhook"],
   SettingsProjectOverview: ["project", "overview", "checkouts", "delete project"],
   SettingsOrganization: [
     "project grouping",
@@ -57,8 +60,15 @@ const SETTINGS_SEARCH_TERMS = {
     "auto-resume",
     "thread behavior",
   ],
-  SettingsFollowUp: ["follow-ups", "queue", "steer", "while the agent is running"],
-  SettingsArchive: ["archive", "archived", "restore", "unarchive"],
+  SettingsFollowUp: [
+    "follow-ups",
+    "queue",
+    "steer",
+    "while the agent is running",
+    "messages",
+    "composer",
+  ],
+  SettingsArchive: ["archive", "archived", "restore", "unarchive", "history"],
   SettingsProviderAccounts: [
     "provider accounts",
     "codex",
@@ -68,6 +78,7 @@ const SETTINGS_SEARCH_TERMS = {
     "sign in",
     "login",
     "auth",
+    "models",
   ],
   SettingsEnvironmentSourceControl: [
     "git",
@@ -76,6 +87,8 @@ const SETTINGS_SEARCH_TERMS = {
     "agent credits",
     "default branch",
     "automatically pull",
+    "github",
+    "gitlab",
   ],
   SettingsWorktrees: [
     "worktree",
@@ -88,6 +101,7 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsEnvironmentMaintenance: ["updates", "provider updates", "restart", "manage environments"],
   SettingsAbout: [
     "version",
+    "updates",
     "diagnostics",
     "client storage",
     "cache",
@@ -96,10 +110,54 @@ const SETTINGS_SEARCH_TERMS = {
     "terms",
     "open source licenses",
   ],
+  SettingsProjectGrouping: ["project grouping", "group projects", "organization"],
+  SettingsClientStorage: ["cache", "local data", "storage", "saved data"],
+  SettingsDiagnostics: ["diagnostics", "logs", "connection health", "errors"],
+  SettingsOpenSourceLicenses: ["licenses", "attributions", "acknowledgements"],
+  SettingsUsage: ["usage", "limits", "quota", "quotas", "tokens", "subscriptions", "rate limits"],
+  SettingsPreviewLinks: ["private links", "live apps", "ports"],
 } satisfies Partial<Record<SettingsPageTarget | "account", readonly string[]>>;
 const termsById: ReadonlyMap<string, readonly string[]> = new Map(
   Object.entries(SETTINGS_SEARCH_TERMS),
 );
+
+const SETTINGS_PAGE_LABELS: Record<SettingsPageTarget, string> = {
+  SettingsEnvironments: "Computers",
+  SettingsNotifications: "Notifications",
+  SettingsThreads: "Threads",
+  SettingsAbout: `About ${BRAND_NAME}`,
+  SettingsArchive: "Archive",
+  SettingsAppearance: "Appearance",
+  SettingsNavigation: "Navigation tabs",
+  SettingsOrganization: "General",
+  SettingsProjectOverview: "Computer folders",
+  SettingsEnvironmentSourceControl: "Source control",
+  SettingsWorktrees: "Worktrees",
+  SettingsLabs: "Labs",
+  SettingsEnvironmentMaintenance: "Maintenance",
+  SettingsProviderAccounts: "Providers",
+  SettingsKeyboard: "Keyboard",
+  SettingsMicrophone: "Microphone",
+  SettingsFollowUp: "Chat",
+  SettingsScheduledTasks: "Scheduled tasks",
+  SettingsProjectGrouping: "Project grouping",
+  SettingsClientStorage: "Client storage",
+  SettingsDiagnostics: "Diagnostics",
+  SettingsOpenSourceLicenses: "Open source licenses",
+  SettingsUsage: "Usage & limits",
+  SettingsPreviewLinks: "Previews",
+};
+
+// fork: ext-settings
+function settingsSearchTerms(id: string): readonly string[] {
+  return [...forkSettingsSearchTerms(id), ...(termsById.get(id) ?? [])];
+}
+
+export const SETTINGS_SEARCH_PAGES = SETTINGS_PAGE_TARGETS.map((page) => ({
+  page,
+  label: SETTINGS_PAGE_LABELS[page],
+  terms: settingsSearchTerms(page),
+}));
 
 export interface SettingsSearchRow {
   readonly id: string;
@@ -128,13 +186,7 @@ export function filterSettingsSections<
         rankSearchItems(rows, ({ row, section }, options) =>
           scoreSearchTerms(
             normalizedQuery,
-            [
-              // fork: ext-settings
-              ...forkSettingsSearchTerms(row.id),
-              row.label,
-              ...(section ? [section] : []),
-              ...(termsById.get(row.id) ?? []),
-            ],
+            [...settingsSearchTerms(row.id), row.label, ...(section ? [section] : [])],
             options,
           ),
         ).map(({ item }) => item.row),

@@ -1,3 +1,4 @@
+// fork: mobile-design
 export const MOBILE_TYPOGRAPHY = {
   micro: { fontSize: 11, lineHeight: 14 },
   caption: { fontSize: 12, lineHeight: 16 },

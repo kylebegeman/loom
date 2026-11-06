@@ -83,7 +83,7 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
               backgroundColor="rgba(0,0,0,0)"
               tintColorClassName="accent-foreground"
               hideBackButton
-              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED}
+              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED /* fork: native-scroll-edge */}
               title="Background work"
               titleColorClassName="accent-foreground"
               titleFontSize={18}

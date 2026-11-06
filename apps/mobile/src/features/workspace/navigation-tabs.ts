@@ -47,6 +47,7 @@ export function useHiddenNavigationTabs() {
   );
 }
 
+// fork: mobile-navigation
 export function useEnabledNavigationTabs(): readonly NavigationTab[] {
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();

@@ -46,7 +46,12 @@ type Options = NativeStackNavigationOptions & {
 type MenuElementInput =
   | NativeStackHeaderItemMenu["menu"]["items"][number]
   | HeaderBarButtonItemWithMenu["menu"]["items"][number];
-type MenuInput = { readonly title?: string; readonly items: readonly MenuElementInput[] };
+type MenuInput = {
+  readonly title?: string;
+  readonly items: readonly MenuElementInput[];
+  readonly layout?: "default" | "palette";
+  readonly displayAsPalette?: boolean;
+};
 
 function convertIcon(
   icon:
@@ -61,6 +66,7 @@ function convertIcon(
   return icon;
 }
 
+// fork: native-menus
 function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
   const children = menu.items.flatMap<StackHeaderMenuElementIOS>((item, index) => {
     if ("hidden" in item && item.hidden) return [];
@@ -68,8 +74,9 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
     if (item.type === "submenu") {
       return [
         {
-          ...convertMenu({ items: item.items }, childId),
+          ...convertMenu(item, childId),
           title: "label" in item ? item.label : item.title,
+          icon: convertIcon(item.icon),
           displayInline:
             "inline" in item
               ? item.inline
@@ -97,9 +104,16 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
       },
     ];
   });
-  return { id, type: "menu", title: menu.title, children };
+  return {
+    id,
+    type: "menu",
+    title: menu.title,
+    displayAsPalette: menu.layout === "palette" || menu.displayAsPalette,
+    children,
+  };
 }
 
+// fork: native-menus
 function groupSeparator(
   previous: ToolbarItem | undefined,
   item: ToolbarItem,
@@ -333,6 +347,7 @@ export function V5StackHeader(props: {
     );
   const titleStyle = StyleSheet.flatten(options.headerTitleStyle);
   const headerStyle = StyleSheet.flatten(options.headerStyle);
+  // fork: native-scroll-edge
   const transparent = options.headerTransparent ?? NATIVE_LIQUID_GLASS_SUPPORTED;
   const appearance = {
     // UIKit's scroll view owns the soft edge effect; a default bar appearance adds a hard band above it.

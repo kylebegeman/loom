@@ -7,6 +7,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 
+// fork: mobile-design
 export function ChatGptUsageSummary({
   selectedEnvironmentIds,
 }: {

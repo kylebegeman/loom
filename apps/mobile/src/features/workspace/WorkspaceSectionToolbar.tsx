@@ -15,6 +15,7 @@ import { useCompactWorkspaceTabs, useSidebarWorkspaceTabs } from "./useSystemWor
 
 const PULL_REQUEST_ICON = require("../../../assets/icons/pull-request.png");
 
+// fork: mobile-navigation
 export function WorkspaceTabToolbarButtons() {
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();

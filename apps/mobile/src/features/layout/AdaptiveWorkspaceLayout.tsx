@@ -239,6 +239,7 @@ function AdaptiveWorkspaceLayoutContent(
   const { width: viewportWidth, height } = nativeMetrics ?? windowDimensions;
   const pathname = props.pathname;
   const workspace = useWorkspaceTabs();
+  // fork: mobile-navigation
   const tabHistory = useRef<WorkspaceTabHistory>({});
   // Settings and Usage occupy the workspace rather than a list/detail pair.
   const androidSettingsOpen = useAndroidWorkspaceRoot()?.settingsOpen ?? false;
@@ -583,6 +584,7 @@ function AdaptiveWorkspaceLayoutContent(
     else showInspector();
   };
   /** Restores each iOS tab's route chain; Android reopens its list and remembered detail. */
+  // fork: mobile-navigation
   const openWorkspaceTab = (
     tab: WorkspaceTab | "settings",
     options?: { readonly columns?: boolean },

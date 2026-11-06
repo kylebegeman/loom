@@ -51,9 +51,10 @@ export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
 }
 
 /** Keep outgoing screens until UIKit completes its pop, as required by v5. */
+// fork: mobile-navigation
 export function V5CardStackView(
   props: V5StackViewProps & {
-    readonly onRootVisibilityChange?: (visible: boolean) => void;
+    readonly hideBottomBarOnPush?: boolean;
     /** The card native Back is popping, which the router still shows until the pop finishes. */
     readonly onNativePopChange?: (key: string | null) => void;
   },
@@ -162,6 +163,7 @@ export function V5CardStackView(
             <Stack.Screen
               key={route.key}
               screenKey={route.key}
+              hidesBottomBarWhenPushed={props.hideBottomBarOnPush === true && index > 0}
               activityMode={
                 attached || screens.nativeCompletingPops.has(route.key) ? "attached" : "detached"
               }
@@ -174,7 +176,6 @@ export function V5CardStackView(
                 if (preventedRoutes[route.key]?.preventRemove) descriptor.navigation.goBack();
               }}
               onWillAppear={() => {
-                if (index === 0) props.onRootVisibilityChange?.(true);
                 props.navigation.emit({
                   type: "transitionStart",
                   target: route.key,
@@ -212,7 +213,6 @@ export function V5CardStackView(
                 });
               }}
               onWillDisappear={() => {
-                if (index === 0) props.onRootVisibilityChange?.(false);
                 const state = props.navigation.getState();
                 // Only native Back leaves the disappearing card active; JS navigation already changed history.
                 if (state.index > 0 && state.routes[state.index]?.key === route.key) {

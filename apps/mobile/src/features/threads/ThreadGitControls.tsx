@@ -20,6 +20,11 @@ import {
   resolveQuickAction,
 } from "@t3tools/client-runtime/state/vcs";
 import { useNavigation } from "@react-navigation/native";
+import type {
+  NativeStackHeaderItemButton,
+  NativeStackHeaderItemMenu,
+  NativeStackHeaderItemMenuAction,
+} from "@react-navigation/native-stack";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 
 import { useEnvironmentScope } from "../../state/session";
@@ -79,9 +84,9 @@ function compactMenuStatus(gitStatus: VcsStatusResult | null): string {
 type HeaderItem = Record<string, unknown>;
 type HeaderItems = HeaderItem[];
 type ThreadGitHeaderActionItems = {
-  readonly terminal: HeaderItem;
-  readonly files: HeaderItem;
-  readonly git: HeaderItem;
+  readonly terminal: NativeStackHeaderItemMenu;
+  readonly files: NativeStackHeaderItemButton;
+  readonly git: NativeStackHeaderItemMenu;
 };
 type QuickActionIcon =
   | "arrow.down.circle"
@@ -309,9 +314,9 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
       label: "Terminal",
       menu: {
         items: [
-          ...props.projectScripts.map((script) => ({
+          ...props.projectScripts.map<NativeStackHeaderItemMenuAction>((script) => ({
             description: script.command,
-            disabled: !props.canOperateTerminal,
+            disabled: !props.canOpenTerminal || !props.canOperateTerminal,
             icon: { name: projectScriptMenuIcon(script.icon), type: "sfSymbol" as const },
             label: projectScriptMenuLabel(script),
             onPress: () => void props.onRunProjectScript(script),
@@ -322,14 +327,15 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
                 {
                   description: "This project has no saved scripts yet",
                   disabled: true,
-                  icon: { name: "play", type: "sfSymbol" as const },
+                  icon: { name: "play" as const, type: "sfSymbol" as const },
                   label: "No project scripts",
                   onPress: () => {},
                   type: "action" as const,
                 },
               ]
             : []),
-          ...props.terminalSessions.map((session) => ({
+          ...props.terminalSessions.map<NativeStackHeaderItemMenuAction>((session) => ({
+            disabled: !props.canOpenTerminal,
             description: [
               getTerminalStatusLabel({
                 status: session.status,
@@ -346,7 +352,7 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
           })),
           {
             description: "Start another shell for this thread",
-            disabled: !props.canOperateTerminal,
+            disabled: !props.canOpenTerminal || !props.canOperateTerminal,
             icon: { name: "plus", type: "sfSymbol" },
             label: "Open new terminal",
             onPress: props.onOpenNewTerminal,
@@ -429,9 +435,37 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
   };
 }
 
+// fork: native-menus
 export function useThreadGitRightHeaderItems(props: ThreadGitControlsProps): HeaderItems {
   const actionItems = useThreadGitHeaderActionItems(props);
-  return [actionItems.git, actionItems.files, actionItems.terminal] as HeaderItems;
+  return [
+    {
+      accessibilityLabel: "Thread tools",
+      icon: { name: "ellipsis", type: "sfSymbol" },
+      identifier: "thread-right-tools",
+      label: "Thread tools",
+      menu: {
+        items: [
+          {
+            type: "submenu",
+            label: "Terminal",
+            icon: actionItems.terminal.icon,
+            items: actionItems.terminal.menu.items,
+          },
+          {
+            type: "submenu",
+            label: "Source control",
+            icon: actionItems.git.icon,
+            items: actionItems.git.menu.items,
+          },
+        ],
+      },
+      sharesBackground: true,
+      type: "menu",
+      variant: "plain",
+    },
+    actionItems.files,
+  ] as HeaderItems;
 }
 
 export function useThreadGitCenterHeaderItems(props: ThreadGitControlsProps): HeaderItems {

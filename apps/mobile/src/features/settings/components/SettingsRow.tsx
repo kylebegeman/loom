@@ -10,6 +10,7 @@ import type { SettingsLegalDocumentTarget, SettingsPageTarget } from "./settings
 import { SettingsSidebarContext } from "./SettingsSection";
 import { openSettings } from "../settings-navigation";
 
+// fork: mobile-design
 export function SettingsRow(props: {
   readonly disabled?: boolean;
   readonly icon: ComponentProps<typeof ListRow>["icon"];

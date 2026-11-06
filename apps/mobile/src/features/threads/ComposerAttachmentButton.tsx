@@ -47,6 +47,7 @@ export function ComposerAttachmentButton(props: {
       accessibilityLabel="Add attachment"
       accessibilityRole="button"
       nativeTrigger={{
+        // fork: native-menus
         icon: "plus",
         accessibilityLabel: "Add attachment",
         disabled: props.disabled,

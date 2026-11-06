@@ -382,7 +382,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                 backgroundColor="rgba(0,0,0,0)"
                 color={theme["--color-foreground"]}
                 hideBackButton
-                hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED}
+                hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED /* fork: native-scroll-edge */}
                 title="Queued"
                 titleColor={theme["--color-foreground"]}
                 titleFontSize={18}

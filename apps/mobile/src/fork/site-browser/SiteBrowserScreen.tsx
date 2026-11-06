@@ -100,7 +100,9 @@ function SiteIdentity(props: { readonly name: string; readonly url: string }) {
   const [loaded, setLoaded] = useState(false);
   const uri = siteFaviconUrl(props.url);
   return (
-    <View className="size-9 items-center justify-center rounded-full bg-secondary">
+    <View
+      className={`size-9 items-center justify-center ${loaded && !failed ? "" : "rounded-lg bg-secondary"}`}
+    >
       <Text
         textRole="headline"
         className="font-t3-semibold text-secondary-foreground"
@@ -194,6 +196,7 @@ function MonitoredSites(props: {
   readonly authority: ReturnType<typeof useLibraryAuthority>;
   readonly query: EnvironmentQueryView<typeof SitesState.Type>;
   readonly supported: boolean;
+  readonly authorityConfirmed: boolean;
   readonly capabilitiesPending: boolean;
   readonly now: number;
 }) {
@@ -265,6 +268,25 @@ function MonitoredSites(props: {
       ) : !authority.canRead ? (
         <BrowseNotice>
           This connection cannot read websites. Sign in with access to your Library.
+        </BrowseNotice>
+      ) : !authority.info.data ? (
+        <BrowseNotice
+          error={Boolean(authority.info.error)}
+          onRetry={authority.info.error ? authority.info.refresh : undefined}
+        >
+          {authority.info.error ?? "Loading your Library…"}
+        </BrowseNotice>
+      ) : !props.authorityConfirmed ? (
+        <BrowseNotice
+          action={
+            <Button
+              label="Connect Library"
+              tone="text"
+              onPress={() => navigation.navigate("LibrarySettings")}
+            />
+          }
+        >
+          This computer runs your work. Connect your Library to view linked websites.
         </BrowseNotice>
       ) : (
         <>
@@ -459,6 +481,9 @@ export function SiteBrowserScreen() {
   const now = useBrowseClock(active);
   const config = useEnvironmentServerConfig(authority.environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE);
+  const authorityConfirmed =
+    authority.info.data?.isAuthority === true &&
+    authority.info.data.environmentId === authority.environmentId;
   // Native pull indicators change the scroll offset; background refreshes must stay silent.
   const [refreshing, setRefreshing] = useState(false);
   const refreshRequest = useRef<AbortController | null>(null);
@@ -469,6 +494,7 @@ export function SiteBrowserScreen() {
       !authority.environmentId ||
       !authority.connected ||
       !authority.canRead ||
+      !authorityConfirmed ||
       !supported
     )
       return;
@@ -477,14 +503,21 @@ export function SiteBrowserScreen() {
       refreshRequest.current = null;
       setRefreshing(false);
     };
-  }, [active, authority.environmentId, authority.connected, authority.canRead, supported]);
+  }, [
+    active,
+    authority.environmentId,
+    authority.connected,
+    authority.canRead,
+    authorityConfirmed,
+    supported,
+  ]);
   const query = useEnvironmentQuery(
-    authority.environmentId && supported && authority.canRead
+    authority.environmentId && authorityConfirmed && supported && authority.canRead
       ? sites.snapshot({ environmentId: authority.environmentId, input: {} })
       : null,
   );
   useVisibleSiteRefresh(
-    active && authority.connected && supported && authority.canRead,
+    active && authority.connected && authorityConfirmed && supported && authority.canRead,
     query.refresh,
   );
   const { environments, isReady } = useEnvironments();
@@ -499,6 +532,7 @@ export function SiteBrowserScreen() {
       !authority.environmentId ||
       !authority.connected ||
       !supported ||
+      !authorityConfirmed ||
       !authority.canRead ||
       refreshRequest.current
     )
@@ -556,6 +590,7 @@ export function SiteBrowserScreen() {
           authority={authority}
           query={query}
           supported={supported}
+          authorityConfirmed={authorityConfirmed}
           capabilitiesPending={config === null}
           now={now}
         />
