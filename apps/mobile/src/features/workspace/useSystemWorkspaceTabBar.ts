@@ -18,7 +18,8 @@ export function useSidebarWorkspaceTabs(): "picker" | "toolbar" | null {
   const deviceType = useDeviceType();
   const metrics = useNativeLayoutMetrics();
   const page = useWorkspacePage();
-  if (Platform.OS !== "ios" || !layout.usesSplitView || page) return null;
+  if (Platform.OS !== "ios" || NATIVE_LIQUID_GLASS_SUPPORTED || !layout.usesSplitView || page)
+    return null;
   if (deviceType === "pad") return null;
   // Portrait Duo has no system rail; keep its tabs in the sidebar like iPad.
   if (deviceType === "duo-unfolded" && (metrics?.verticalBarEdge ?? "none") === "none")
@@ -32,21 +33,11 @@ export function useCompactWorkspaceTabs() {
   // Medium-width layouts use the sidebar's native bar when no system bar is visible.
   return (
     Platform.OS === "ios" &&
+    !NATIVE_LIQUID_GLASS_SUPPORTED &&
     deviceType !== "pad" &&
     layout.variant === "medium" &&
     !layout.usesSplitView &&
     !isDuoDevice(deviceType)
-  );
-}
-
-/** The sidebar bar follows the system's material on layouts without a system tab bar. */
-export function useFloatingWorkspaceTabs() {
-  const { layout } = useAdaptiveWorkspaceLayout();
-  const deviceType = useDeviceType();
-  const compactTabs = useCompactWorkspaceTabs();
-  return (
-    NATIVE_LIQUID_GLASS_SUPPORTED &&
-    (compactTabs || (deviceType === "pad" && !layout.usesSplitView))
   );
 }
 
@@ -57,9 +48,7 @@ export function useSystemWorkspaceTabBar() {
   const compactTabs = useCompactWorkspaceTabs();
   return (
     Platform.OS === "ios" &&
-    deviceType !== "pad" &&
-    layout.variant !== "medium" &&
-    sidebarTabs === null &&
-    !compactTabs
+    (NATIVE_LIQUID_GLASS_SUPPORTED ||
+      (deviceType !== "pad" && layout.variant !== "medium" && sidebarTabs === null && !compactTabs))
   );
 }

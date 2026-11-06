@@ -317,7 +317,9 @@ function useSettingsIndexSections(): SettingsListSection[] {
       rows: [
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
         // fork: usage-navigation
-        ...(Platform.OS === "ios" ? [page("SettingsUsage", "chart.bar.xaxis", "Limits")] : []),
+        ...(Platform.OS === "ios"
+          ? [page("SettingsUsage", "chart.bar.xaxis", "Usage & limits")]
+          : []),
         serverPage("SettingsThreads", "text.bubble", "Threads"),
         ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []), // fork: bots
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),

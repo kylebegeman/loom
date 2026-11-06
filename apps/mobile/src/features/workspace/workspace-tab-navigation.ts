@@ -5,7 +5,7 @@ import {
 } from "../settings/components/settings-page-targets";
 import { settingsNavigationState } from "../settings/settings-navigation";
 import type { WorkspaceTab } from "./workspace-tabs-state";
-import { withWorkspacePrimaryTab } from "./workspace-primary-navigation";
+import { withWorkspacePrimaryTab, workspaceSearchReturnTab } from "./workspace-primary-navigation";
 
 type RouteLike = {
   readonly name: string;
@@ -244,9 +244,10 @@ export function workspaceTabNavigationState<
     return { ...settings, index: routes.length - 1, routes };
   }
   const existingHome = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
-  const primaryTab = tab === "results" ? "results" : "threads";
+  const primaryTab = tab === "sites" || tab === "search" ? tab : "threads";
+  const searchReturnTab = workspaceSearchReturnTab(state.routes);
   const home = options.primaryTabs
-    ? withWorkspacePrimaryTab(existingHome, primaryTab)
+    ? withWorkspacePrimaryTab(existingHome, primaryTab, searchReturnTab)
     : existingHome;
   const remembered = options.history?.[tab];
   if (remembered?.length) {
@@ -255,7 +256,7 @@ export function workspaceTabNavigationState<
       ...(restored.length ? restored : [home]).map((route) =>
         keyed(
           options.primaryTabs && route.name === "Home"
-            ? withWorkspacePrimaryTab(route, primaryTab)
+            ? withWorkspacePrimaryTab(route, primaryTab, searchReturnTab)
             : route,
         ),
       ),

@@ -4,6 +4,7 @@ import {
   resolveNavigationTabOrder,
   type NavigationTab,
 } from "./navigation-tab-order";
+import type { WorkspaceRegularTab } from "./workspace-primary-navigation";
 
 export function resolveWorkspaceTabOrder(saved: readonly unknown[] | undefined) {
   return navigationCustomizationAvailable()
@@ -31,6 +32,7 @@ export interface WorkspaceTabState {
 export interface WorkspaceTabsState {
   readonly selectedTab: WorkspaceTab;
   readonly selectionRevision: number;
+  readonly searchReturnTab: WorkspaceRegularTab;
   readonly tabs: Readonly<Record<WorkspaceSearchTab, WorkspaceTabState>>;
 }
 
@@ -42,9 +44,11 @@ export function initialWorkspaceTabsState(): WorkspaceTabsState {
   return {
     selectedTab: "threads",
     selectionRevision: 0,
+    searchReturnTab: "threads",
     tabs: {
       threads: emptyTab(),
-      results: emptyTab(),
+      sites: emptyTab(),
+      search: emptyTab(),
       pullRequests: emptyTab(),
       usage: emptyTab(),
       settings: emptyTab(),
@@ -70,6 +74,8 @@ export function workspaceTabsReducer(
       : {
           ...state,
           selectedTab: action.tab,
+          searchReturnTab:
+            action.tab === "threads" || action.tab === "sites" ? action.tab : state.searchReturnTab,
           selectionRevision: state.selectionRevision + 1,
         };
   const tab = action.tab ?? state.selectedTab;

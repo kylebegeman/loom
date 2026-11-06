@@ -7,7 +7,10 @@ import { AppBar } from "../../../components/ui/AppBar";
 import { ScreenContent as SettingsScreenContent } from "../../../components/ui/ScreenContent";
 import { useWorkspaceTabs } from "../../workspace/WorkspaceTabsContext";
 import { useDeviceType } from "../../../native/native-layout-metrics";
-import { useCompactWorkspaceTabs } from "../../workspace/useSystemWorkspaceTabBar";
+import {
+  useCompactWorkspaceTabs,
+  useSystemWorkspaceTabBar,
+} from "../../workspace/useSystemWorkspaceTabBar";
 import { useAdaptiveWorkspaceLayout } from "../../layout/adaptive-workspace-context";
 import { useSettingsPageBack } from "../useSettingsPageBack";
 import {
@@ -28,6 +31,7 @@ export function SettingsScreen(
   const workspace = useWorkspaceTabs();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
+  const systemTabBar = useSystemWorkspaceTabBar();
   const { layout } = useAdaptiveWorkspaceLayout();
   const back = useSettingsPageBack();
   const cover = deviceType === "duo-folded";
@@ -52,7 +56,9 @@ export function SettingsScreen(
         hideBottomBorder={!props.formSheet || Platform.OS === "android"}
         options={props.options}
       />
-      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+      <ScreenScrollViewBottomInset
+        value={(deviceType === "pad" && !systemTabBar) || compactTabs ? 80 : 0}
+      >
         <ScreenScrollViewSurface value={surfaceClassName}>
           {props.formSheet && Platform.OS !== "android" ? (
             props.children

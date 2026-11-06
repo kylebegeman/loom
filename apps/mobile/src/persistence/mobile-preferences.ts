@@ -3,6 +3,7 @@ import {
   sanitizePreparationReceipts,
   type ProjectPreparationReceipts,
 } from "../fork/project-home/projectPreparationReceipt";
+import { sanitizePinnedSites, type PinnedSites } from "../fork/site-browser/site-browser-model";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -120,6 +121,7 @@ export interface Preferences {
   // fork: project-navigation - Shared compact/sidebar navigation mode on this device.
   readonly loomNavigationView?: "threads" | "projects";
   readonly loomProjectPreparations?: ProjectPreparationReceipts; // fork: project-home
+  readonly loomPinnedSites?: PinnedSites;
   // fork: library
   readonly loomLibraryLaunches?: Readonly<Record<string, string>>;
   readonly loomLibraryFileChanges?: Readonly<Record<string, string>>;
@@ -209,6 +211,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     dismissedDatabaseStorageNotices?: readonly string[];
     loomNavigationView?: "threads" | "projects"; // fork: project-navigation
     loomProjectPreparations?: ProjectPreparationReceipts; // fork: project-home
+    loomPinnedSites?: PinnedSites;
     // fork: library
     loomLibraryLaunches?: Readonly<Record<string, string>>;
     loomLibraryFileChanges?: Readonly<Record<string, string>>;
@@ -400,6 +403,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   // fork: project-home
   const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
   if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;
+  const pinnedSites = sanitizePinnedSites(parsed.loomPinnedSites);
+  if (pinnedSites !== undefined) preferences.loomPinnedSites = pinnedSites;
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;
   }

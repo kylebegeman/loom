@@ -14,7 +14,10 @@ import {
 } from "../../components/ui/ScreenScrollView";
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { useCompactWorkspaceTabs } from "../../features/workspace/useSystemWorkspaceTabBar";
+import {
+  useCompactWorkspaceTabs,
+  useSystemWorkspaceTabBar,
+} from "../../features/workspace/useSystemWorkspaceTabBar";
 import { cn } from "../../lib/cn";
 import { useWorkspacePageBack } from "../library/workspacePageBack";
 import { useDeviceType } from "../../native/native-layout-metrics";
@@ -39,6 +42,7 @@ export function BotPage({
   const insets = useSafeAreaInsets();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
+  const systemTabBar = useSystemWorkspaceTabBar();
   const { layout } = useAdaptiveWorkspaceLayout();
   const surface = pageBack === undefined || deviceType === "duo-folded" ? "bg-screen" : "bg-sheet";
   return (
@@ -50,7 +54,9 @@ export function BotPage({
         actions={actions}
         menus={menus}
       />
-      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+      <ScreenScrollViewBottomInset
+        value={(deviceType === "pad" && !systemTabBar) || compactTabs ? 80 : 0}
+      >
         <ScreenScrollViewSurface value={surface}>
           <ScreenContent insetHorizontal={Platform.OS === "android" && layout.usesSplitView}>
             {scroll ? (

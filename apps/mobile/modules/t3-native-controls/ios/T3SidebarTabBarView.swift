@@ -33,7 +33,7 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   private let composeButton = UIButton(type: .system)
   private lazy var tabBarTrailing = tabBar.trailingAnchor.constraint(equalTo: trailingAnchor)
   private var itemsByTab: [String: UITabBarItem] = [:]
-  var tabs = ["threads", "results"] {
+  var tabs = ["threads", "sites", "search"] {
     didSet { if tabs != oldValue { updateItems() } }
   }
   var selectedTab = "threads" { didSet { updateSelection() } }
@@ -99,15 +99,14 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
   private func prepareItems() {
     let iconBundle = Bundle(for: Self.self).url(forResource: "T3NativeControlIcons", withExtension: "bundle").flatMap(Bundle.init(url:))
     let pullRequestIcon = UIImage(named: "pull-request", in: iconBundle, compatibleWith: nil)?.withRenderingMode(.alwaysTemplate)
-    let labels = ["threads": "Chats", "results": "Results", "pullRequests": "PRs", "usage": "Usage", "settings": "Settings"]
-    let symbols = ["threads": "text.bubble", "results": "square.grid.2x2", "usage": "chart.bar.xaxis", "settings": "gearshape"]
+    let labels = ["threads": "Threads", "sites": "Sites", "search": "Search", "pullRequests": "PRs", "usage": "Usage", "settings": "Settings"]
+    let symbols = ["threads": "text.bubble", "sites": "globe", "search": "magnifyingglass", "usage": "chart.bar.xaxis", "settings": "gearshape"]
     for (tab, label) in labels {
       let icon = tab == "pullRequests" ? pullRequestIcon : UIImage(systemName: symbols[tab] ?? "circle")
       let item = UITabBarItem(title: label, image: tabIcon(icon), tag: 0)
       item.accessibilityLabel = label
       item.accessibilityIdentifier = "workspace-tab-\(tab)"
       if tab == "threads" { item.selectedImage = tabIcon(UIImage(systemName: "text.bubble.fill")) }
-      if tab == "results" { item.selectedImage = tabIcon(UIImage(systemName: "square.grid.2x2.fill")) }
       itemsByTab[tab] = item
     }
   }

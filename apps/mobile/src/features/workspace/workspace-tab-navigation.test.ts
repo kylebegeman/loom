@@ -6,7 +6,7 @@ import {
   workspaceTabColumns,
   workspaceTabNavigationState,
 } from "./workspace-tab-navigation";
-import { workspacePrimaryTab } from "./workspace-primary-navigation";
+import { workspacePrimaryTab, workspaceSearchReturnTab } from "./workspace-primary-navigation";
 
 const home = { key: "home", name: "Home" };
 const thread = {
@@ -199,14 +199,14 @@ describe("opening a workspace tab", () => {
 
   it("restores a tab's full route chain, including its contextual conversation", () => {
     const site = { key: "site", name: "Sites", params: { siteId: "s" } };
-    const history = { results: [home, site, thread] };
+    const history = { sites: [home, site, thread] };
     const next = workspaceTabNavigationState(
       { routes: [home, pullRequest] },
-      "results",
+      "sites",
       {},
       { columns: false, check: available, history },
     );
-    expect(next.routes).toEqual(history.results);
+    expect(next.routes).toEqual(history.sites);
     expect(next.index).toBe(2);
   });
 
@@ -225,10 +225,27 @@ describe("opening a workspace tab", () => {
     expect(next.routes).toEqual([home, project]);
   });
 
+  it("migrates old Results selection and preserves Search's original tab across detail restoration", () => {
+    const legacyHome = { ...home, params: { workspaceTab: "results" } };
+    expect(workspacePrimaryTab([legacyHome])).toBe("sites");
+    const options = { columns: false, check: available, primaryTabs: true };
+    const search = workspaceTabNavigationState({ routes: [legacyHome] }, "search", {}, options);
+    expect(workspacePrimaryTab(search.routes)).toBe("search");
+    expect(workspaceSearchReturnTab(search.routes)).toBe("sites");
+    const duplicated = workspaceTabNavigationState(search, "search", {}, options);
+    expect(workspaceSearchReturnTab(duplicated.routes)).toBe("sites");
+    const history = { search: [...search.routes, thread] };
+    const sites = workspaceTabNavigationState(search, "sites", {}, options);
+    const restored = workspaceTabNavigationState(sites, "search", {}, { ...options, history });
+    expect(workspacePrimaryTab(restored.routes)).toBe("search");
+    expect(workspaceSearchReturnTab(restored.routes)).toBe("sites");
+    expect(restored.routes.at(-1)).toBe(thread);
+  });
+
   it("records the destination primary tab without changing the root route key", () => {
     const options = { columns: false, check: available, primaryTabs: true };
-    const results = workspaceTabNavigationState({ routes: [home] }, "results", {}, options);
-    expect(workspacePrimaryTab(results.routes)).toBe("results");
+    const results = workspaceTabNavigationState({ routes: [home] }, "sites", {}, options);
+    expect(workspacePrimaryTab(results.routes)).toBe("sites");
     expect(results.routes[0]?.key).toBe(home.key);
     const restored = workspaceTabNavigationState(
       results,
@@ -246,7 +263,8 @@ describe("opening a workspace tab", () => {
 
 describe("Settings links", () => {
   it("preserves the originating page when opening and changing a secondary Settings page", () => {
-    const state = { routes: [home, thread], index: 1 };
+    const searchHome = { ...home, params: { workspaceTab: "search", searchReturnTab: "sites" } };
+    const state = { routes: [searchHome, thread], index: 1 };
     const opened = settingsNavigationState(state, "SettingsAppearance", undefined, undefined, {
       preserveOrigin: true,
     });
@@ -257,6 +275,8 @@ describe("Settings links", () => {
     expect(names(next)).toEqual(["Home", "Thread", "Settings", "SettingsKeyboard"]);
     expect(next.routes[1]).toBe(thread);
     expect(next.routes[2]).toBe(opened.routes[2]);
+    expect(workspacePrimaryTab(next.routes)).toBe("search");
+    expect(workspaceSearchReturnTab(next.routes)).toBe("sites");
   });
 
   it("puts the Settings list under a linked page, and a page beside a bare link with columns", () => {

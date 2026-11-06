@@ -18,11 +18,7 @@ import {
   NativeWorkspaceTabActivityContext,
   WorkspaceSlotOptionsContext,
 } from "../../native/v5-workspace-context";
-import {
-  useCompactWorkspaceTabs,
-  useFloatingWorkspaceTabs,
-  useSystemWorkspaceTabBar,
-} from "./useSystemWorkspaceTabBar";
+import { useCompactWorkspaceTabs, useSystemWorkspaceTabBar } from "./useSystemWorkspaceTabBar";
 import { useControlTheme } from "../../components/ui/useControlTheme";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { WorkspaceSidebarTabs } from "./WorkspaceSidebarTabs";
@@ -89,7 +85,6 @@ export function WorkspaceNativeTabs(props: {
     layout.usesSplitView &&
     workspaceUsesColumns(workspace.state.selectedTab, workspace.settingsOpen) &&
     !panes.primarySidebarVisible;
-  const floatingTabs = useFloatingWorkspaceTabs();
   const { width } = useWindowDimensions();
   const { colors } = useControlTheme();
   const selectedTab = workspace.state.selectedTab;
@@ -129,13 +124,17 @@ export function WorkspaceNativeTabs(props: {
               title={WORKSPACE_TAB_LABELS[tab]}
               tabBarItemAccessibilityLabel={WORKSPACE_TAB_LABELS[tab]}
               ios={{
-                icon: { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
-                selectedIcon:
-                  tab === "threads"
-                    ? { type: "sfSymbol", name: "text.bubble.fill" }
-                    : tab === "results"
-                      ? { type: "sfSymbol", name: "square.grid.2x2.fill" }
-                      : undefined,
+                ...(tab === "search"
+                  ? { role: "search", systemItem: "search", automaticallyActivatesSearch: true }
+                  : {
+                      icon: { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
+                      selectedIcon:
+                        tab === "threads"
+                          ? { type: "sfSymbol", name: "text.bubble.fill" }
+                          : tab === "sites"
+                            ? { type: "sfSymbol", name: "globe" }
+                            : undefined,
+                    }),
                 overrideScrollViewContentInsetAdjustmentBehavior: false,
               }}
             >
@@ -146,7 +145,8 @@ export function WorkspaceNativeTabs(props: {
           );
         })}
       </Tabs.Host>
-      {(deviceType === "pad" ||
+      {!systemTabBar &&
+      (deviceType === "pad" ||
         compactTabs ||
         (layout.variant === "medium" &&
           !workspaceUsesColumns(selectedTab, workspace.settingsOpen))) &&
@@ -161,7 +161,7 @@ export function WorkspaceNativeTabs(props: {
             bottom: 0,
             // UIKit can shrink the sidebar to 280pt independently of its preferred width.
             width:
-              deviceType === "pad" && (floatingTabs || layout.usesSplitView)
+              deviceType === "pad" && layout.usesSplitView
                 ? Math.min(280, layout.listPaneWidth ?? width, width)
                 : (layout.listPaneWidth ?? width),
             height: 128,
@@ -176,6 +176,7 @@ export function WorkspaceNativeTabs(props: {
 
 /** The workspace tabs at the foot of the sidebar. */
 export function WorkspaceSidebarTabsFooter() {
-  const compact = useFloatingWorkspaceTabs();
-  return <WorkspaceSidebarTabs compact={compact} />;
+  const systemTabBar = useSystemWorkspaceTabBar();
+  if (systemTabBar) return null;
+  return <WorkspaceSidebarTabs />;
 }

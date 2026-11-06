@@ -9,7 +9,7 @@ export function useSelectWorkspaceTab() {
   const dispatch = useWorkspaceTabs()?.dispatch;
   const { openWorkspaceTab } = useAdaptiveWorkspaceLayout();
   return (tab: WorkspaceTab | "settings") => {
-    Keyboard.dismiss();
+    if (tab !== "search") Keyboard.dismiss();
     openWorkspaceTab(tab);
     if (tab !== "settings") dispatch?.({ type: "select", tab });
   };

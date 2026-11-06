@@ -8,7 +8,7 @@ import {
   workspaceDetailRouter,
   type WorkspaceDetail,
 } from "./workspace-detail-selection";
-import { workspacePrimaryTab } from "./workspace-primary-navigation";
+import { workspacePrimaryTab, workspaceSearchReturnTab } from "./workspace-primary-navigation";
 
 const require = NodeModule.createRequire(import.meta.url);
 const requireFromNative = NodeModule.createRequire(
@@ -203,31 +203,40 @@ describe("selectWorkspaceDetail", () => {
     expect(page(apply(opened, StackActions.pop()))).toEqual(page(list));
   });
 
-  it("keeps contextual Results selections there, but opens external links in Chats", () => {
-    const results = apply(home(), {
-      type: "RESET",
-      payload: { index: 0, routes: [{ name: "Home", params: { workspaceTab: "results" } }] },
-    });
-    expect(shouldPreserveWorkspaceDetailOrigin("ios", results.routes)).toBe(true);
-    expect(shouldPreserveWorkspaceDetailOrigin("android", results.routes)).toBe(false);
-    expect(shouldPreserveWorkspaceDetailOrigin("ios", home().routes)).toBe(false);
-    const contextual = apply(
-      results,
-      selectWorkspaceDetail(threadA, undefined, {
-        preserveOrigin: true,
-      }) as unknown as RouterAction,
-      true,
-    );
-    expect(workspacePrimaryTab(contextual.routes)).toBe("results");
-    const linked = apply(
-      contextual,
-      workspaceDetailLinkAction({ routes: [threadB] }) as unknown as RouterAction,
-      true,
-    );
-    expect(workspacePrimaryTab(linked.routes)).toBe("threads");
-    expect(linked.routes[0]?.key).toBe(results.routes[0]?.key);
-    expect(workspacePrimaryTab([])).toBe("threads");
-  });
+  it.each(["sites", "search"] as const)(
+    "keeps contextual %s selections there, but opens external links in Threads",
+    (tab) => {
+      const results = apply(home(), {
+        type: "RESET",
+        payload: {
+          index: 0,
+          routes: [{ name: "Home", params: { workspaceTab: tab, searchReturnTab: "sites" } }],
+        },
+      });
+      expect(shouldPreserveWorkspaceDetailOrigin("ios", results.routes)).toBe(true);
+      expect(shouldPreserveWorkspaceDetailOrigin("android", results.routes)).toBe(false);
+      expect(shouldPreserveWorkspaceDetailOrigin("ios", home().routes)).toBe(false);
+      const contextual = apply(
+        results,
+        selectWorkspaceDetail(threadA, undefined, {
+          preserveOrigin: true,
+        }) as unknown as RouterAction,
+        true,
+      );
+      expect(workspacePrimaryTab(contextual.routes)).toBe(tab);
+      const returned = apply(contextual, StackActions.pop());
+      expect(workspacePrimaryTab(returned.routes)).toBe(tab);
+      expect(workspaceSearchReturnTab(returned.routes)).toBe("sites");
+      const linked = apply(
+        contextual,
+        workspaceDetailLinkAction({ routes: [threadB] }) as unknown as RouterAction,
+        true,
+      );
+      expect(workspacePrimaryTab(linked.routes)).toBe("threads");
+      expect(linked.routes[0]?.key).toBe(results.routes[0]?.key);
+      expect(workspacePrimaryTab([])).toBe("threads");
+    },
+  );
 });
 
 describe("workspaceDetailLinkAction", () => {

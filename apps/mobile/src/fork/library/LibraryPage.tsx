@@ -18,7 +18,10 @@ import {
 import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyboardCommands";
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/adaptive-workspace-context";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { useCompactWorkspaceTabs } from "../../features/workspace/useSystemWorkspaceTabBar";
+import {
+  useCompactWorkspaceTabs,
+  useSystemWorkspaceTabBar,
+} from "../../features/workspace/useSystemWorkspaceTabBar";
 import { cn } from "../../lib/cn";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { useEnvironments } from "../../state/environments";
@@ -42,6 +45,7 @@ export function LibraryPage(props: {
   const pageBack = useWorkspacePageBack();
   const deviceType = useDeviceType();
   const compactTabs = useCompactWorkspaceTabs();
+  const systemTabBar = useSystemWorkspaceTabBar();
   const { layout } = useAdaptiveWorkspaceLayout();
   useHardwareKeyboardCommand(
     "newTask",
@@ -66,7 +70,9 @@ export function LibraryPage(props: {
         onBack={props.back === false ? undefined : pageBack}
         actions={props.actions}
       />
-      <ScreenScrollViewBottomInset value={deviceType === "pad" || compactTabs ? 80 : 0}>
+      <ScreenScrollViewBottomInset
+        value={(deviceType === "pad" && !systemTabBar) || compactTabs ? 80 : 0}
+      >
         <ScreenScrollViewSurface value={surface}>
           <ScreenContent insetHorizontal={Platform.OS === "android" && layout.usesSplitView}>
             {props.scroll === false ? (

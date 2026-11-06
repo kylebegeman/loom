@@ -487,7 +487,7 @@ const SETTINGS_SCREENS = {
     linking: "settings/usage",
     options: {
       ...SETTINGS_PAGE_OPTIONS,
-      title: "Usage",
+      title: Platform.OS === "ios" ? "Usage & limits" : "Usage",
     },
   }),
   SettingsAuth: createNativeStackScreen({
@@ -529,8 +529,12 @@ function withoutWorkspaceTab(state: NavigationState): NavigationState {
   return {
     ...state,
     routes: state.routes.map((route) => {
-      if (route.name !== "Home" || !route.params || !("workspaceTab" in route.params)) return route;
-      const { workspaceTab: _, ...params } = route.params;
+      if (route.name !== "Home" || !route.params) return route;
+      const {
+        workspaceTab: _,
+        searchReturnTab: _searchReturnTab,
+        ...params
+      } = route.params as { workspaceTab?: unknown; searchReturnTab?: unknown };
       return { ...route, params };
     }),
   };

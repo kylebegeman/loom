@@ -80,7 +80,7 @@ export function shouldPreserveWorkspaceDetailOrigin(
 ) {
   return (
     platform === "ios" &&
-    (workspacePrimaryTab(routes) === "results" || hasWorkspaceDetailOrigin(routes))
+    (workspacePrimaryTab(routes) !== "threads" || hasWorkspaceDetailOrigin(routes))
   );
 }
 

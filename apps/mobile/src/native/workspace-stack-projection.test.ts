@@ -7,6 +7,7 @@ import {
   nativeStackPopAction,
   nativeWorkspacePopAction,
   nativeWorkspacePopCount,
+  presentationEnvelopeAction,
   projectStackPresentation,
   projectWorkspaceStack,
   partitionStackPresentations,
@@ -122,6 +123,43 @@ describe("workspace presentation envelope", () => {
       overlays: [],
     });
     expect(closed.routes[1]).toBe(thread);
+  });
+
+  it("dismisses a whole envelope when UIKit reports its visible child's native pop", () => {
+    const library = { key: "library-settings", name: "LibrarySettings" };
+    const sites = { key: "sites", name: "Sites" };
+    const state = history([home, thread, settings, library, sites]);
+    const routerOptions = {
+      routeNames: [...state.routeNames, "LibrarySettings", "Sites"],
+      routeParamList: {},
+      routeGetIdList: {},
+    };
+    const groups = [[settings, library, sites]];
+    const action = presentationEnvelopeAction(state, groups, {
+      type: "POP",
+      source: sites.key,
+      target: state.key,
+      payload: { count: 1 },
+    });
+    const closed = StackRouter({}).getStateForAction(state, action, routerOptions);
+    expect(closed?.routes).toEqual([home, thread]);
+    expect(closed?.index).toBe(1);
+    const unchanged = { type: "NAVIGATE", payload: { name: "Sites" } };
+    expect(presentationEnvelopeAction(state, groups, unchanged)).toBe(unchanged);
+    const nextSheet = { key: "next-sheet", name: "ReviewSheet" };
+    const nextPage = { key: "next-page", name: "ReviewDetails" };
+    const stacked = history([...state.routes, nextSheet, nextPage]);
+    const bothClosed = presentationEnvelopeAction(stacked, [...groups, [nextSheet, nextPage]], {
+      type: "POP",
+      source: nextPage.key,
+      target: stacked.key,
+      payload: { count: 2 },
+    });
+    const closedStack = StackRouter({}).getStateForAction(stacked, bothClosed, {
+      ...routerOptions,
+      routeNames: [...routerOptions.routeNames, "ReviewSheet", "ReviewDetails"],
+    });
+    expect(closedStack?.routes).toEqual([home, thread]);
   });
 
   it("preserves a cold-linked detail history without requiring a Home route", () => {

@@ -46,7 +46,8 @@ import {
 } from "./useSystemWorkspaceTabBar";
 import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
-import { ResultsScreen } from "../../fork/results/ResultsScreen";
+import { SiteBrowserScreen } from "../../fork/site-browser/SiteBrowserScreen";
+import { GlobalSearchScreen } from "../../fork/global-search/GlobalSearchScreen";
 import { WorkspaceAppMenu } from "../../fork/mobile-navigation/WorkspaceAppMenu";
 
 const TAB_TITLES = WORKSPACE_TAB_LABELS;
@@ -88,7 +89,8 @@ function WorkspaceRootContent() {
   const compactTabs = useCompactWorkspaceTabs();
   const enabled = useEnabledNavigationTabs();
   const sidebarTabs = useSidebarWorkspaceTabs();
-  const sidebarPicker = sidebarTabs === "picker" || (deviceType === "pad" && layout.usesSplitView);
+  const sidebarPicker =
+    sidebarTabs === "picker" || (!systemTabBar && deviceType === "pad" && layout.usesSplitView);
   const sidebarNavigation =
     primaryColumn !== null &&
     (layout.usesSplitView ||
@@ -114,7 +116,7 @@ function WorkspaceRootContent() {
       : Platform.OS === "ios" && isDuoDevice(deviceType)
         ? // The column's safe area already holds the Duo's search toolbar and keyboard.
           Math.max(insets.bottom, keyboardHeight) + 16
-        : compactTabs || deviceType === "pad"
+        : compactTabs || (!systemTabBar && deviceType === "pad")
           ? workspaceDockBottomClearance({ bottomInset: insets.bottom, keyboardHeight })
           : Platform.OS === "ios"
             ? Math.max(insets.bottom, keyboardHeight) +
@@ -148,6 +150,7 @@ function WorkspaceRootContent() {
                   ? TAB_TITLES[state.selectedTab]
                   : "Navigation",
               headerShown: true,
+              headerLargeTitle: !sidebarNavigation && state.selectedTab !== "search",
               headerTransparent: NATIVE_LIQUID_GLASS_SUPPORTED,
               headerStyle: NATIVE_LIQUID_GLASS_SUPPORTED
                 ? { backgroundColor: "transparent" }
@@ -198,8 +201,10 @@ function WorkspaceRootContent() {
             <HomeRouteScreen />
           ) : state.selectedTab === "pullRequests" ? (
             <PullRequestsScreen />
-          ) : state.selectedTab === "results" ? (
-            <ResultsScreen />
+          ) : state.selectedTab === "sites" ? (
+            <SiteBrowserScreen />
+          ) : state.selectedTab === "search" ? (
+            <GlobalSearchScreen />
           ) : (
             <WorkspaceExtraTab tab={state.selectedTab} />
           )}
@@ -213,7 +218,8 @@ function WorkspaceRootContent() {
               ? Platform.OS === "ios"
               : state.selectedTab === "threads" ||
                 state.selectedTab === "pullRequests" ||
-                state.selectedTab === "results"
+                state.selectedTab === "sites" ||
+                state.selectedTab === "search"
           ) ? (
           <WorkspaceToolbar sidebar={sidebarNavigation} onNewTask={startNewTask} />
         ) : (

@@ -13,9 +13,9 @@ Opening a page has two intents, and each has one action:
 - **Select** replaces the active thread or pull request. Everything that selects
   (rows, the command palette, compose, notifications, deep links) uses
   [`selectWorkspaceDetail`](../../apps/mobile/src/features/workspace/workspace-detail-selection.ts),
-  which the root stack's router handles. On iOS a selection from Results or a
+  which the root stack's router handles. On iOS a selection from Sites, Search or a
   project retains its originating route chain so Back returns there; a direct
-  link or root selection starts from Chats. The page already showing keeps its
+  link or root selection starts from Threads. The page already showing keeps its
   key, so the detail column updates in place instead of pushing.
 - **Drill in** opens a page over the current one so Back returns, with
   `StackActions.push`.
@@ -30,6 +30,11 @@ that card.
 On iOS, Settings is a sheet over the originating tab and keeps its own page
 stack. Dismissing it restores the underlying route and tab. Android retains
 Settings as a workspace destination.
+
+The iOS primary selection lives in `Home.params.workspaceTab`, so external links
+and the native tab controller agree even above the React tabs provider. Search
+also records `searchReturnTab` for native cancellation. The workspace keeps each
+tab's route chain separately; selecting a match retains Search as its origin.
 
 ## UIKit constraints
 

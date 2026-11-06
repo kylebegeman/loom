@@ -16,12 +16,17 @@ which lists every project and its conversations across your computers. On iOS, o
 **Projects** from the navigation menu in the toolbar. Use **Settings → Projects** for
 project settings. Returning from either restores the conversation you left.
 
-## Browse results on iOS
+## Find work on iOS
 
-Open **Results** to find published pages, Sites, private previews and project files.
-Choose a computer for its pages and previews; Sites come from your shared Library.
-Search narrows the results, and opening a project folder lets you browse its files.
-Use the toolbar's navigation menu for Bots, connections and Settings, including limits.
+Use **Threads** to continue conversations and **Sites** to open your monitored websites
+and check their health. Pin websites you revisit to keep them first. The separate
+**Live previews** section shows temporary apps running on a selected computer; manage
+their links and published pages in **Settings → Previews**.
+
+Use **Search** to find threads, message text, projects, sites, bots and settings across
+your computers and shared Library. Opening a match keeps a return path to your search.
+Search for **limits**, or open **Settings → Usage & limits**, to check provider quotas.
+The toolbar's navigation menu opens Projects, Bots, connections, pull requests and Settings.
 
 <!-- fork: attention-status -->
 
@@ -295,8 +300,8 @@ you last picked for a query ranks higher when you type that query again.
 Threads whose messages contain all your words appear below, under **In
 messages**, and open at the matching message. Message search needs at least
 one word of three or more letters, or two for Chinese, Japanese, and Korean.
-On mobile, the thread list search also lists message matches and opens them at
-the matching message; on an iPad with a keyboard, `Cmd+K` opens the same
+On iOS, **Search** includes message matches and opens them at the matching message.
+On Android, use the thread list search. On an iPad with a keyboard, `Cmd+K` opens the same
 palette.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files

@@ -27,6 +27,7 @@ import {
   type WorkspaceTabsAction,
   type WorkspaceTabsState,
 } from "./workspace-tabs-state";
+import type { WorkspaceRegularTab } from "./workspace-primary-navigation";
 
 export const WorkspaceTabsContext = createContext<{
   readonly state: WorkspaceTabsState;
@@ -74,7 +75,8 @@ function createWorkspaceTabsModel() {
   const stored = Atom.make(initialWorkspaceTabsState());
   const scrollOffsets: Record<WorkspaceSearchTab, number> = {
     threads: 0,
-    results: 0,
+    sites: 0,
+    search: 0,
     pullRequests: 0,
     usage: 0,
     settings: 0,
@@ -95,23 +97,32 @@ export function WorkspaceTabsProvider(props: {
   readonly children: ReactNode;
   readonly settingsOpen?: boolean;
   readonly selectedTab?: WorkspaceTab;
+  readonly searchReturnTab?: WorkspaceRegularTab;
 }) {
   const registry = use(RegistryContext);
   const [model] = useState(createWorkspaceTabsModel);
-  const selection = useRef(props.selectedTab);
+  const selection = useRef({ tab: props.selectedTab, searchReturnTab: props.searchReturnTab });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frozen native screens need the committed route selection when their event handlers run
   useLayoutEffect(() => {
-    selection.current = props.selectedTab;
-  }, [props.selectedTab]);
+    selection.current = { tab: props.selectedTab, searchReturnTab: props.searchReturnTab };
+  }, [props.selectedTab, props.searchReturnTab]);
+  const controlledSelection = (state: WorkspaceTabsState, selected: typeof selection.current) => {
+    const next =
+      selected.tab === undefined
+        ? state
+        : workspaceTabsReducer(state, { type: "select", tab: selected.tab });
+    return selected.searchReturnTab === undefined ||
+      selected.searchReturnTab === next.searchReturnTab
+      ? next
+      : { ...next, searchReturnTab: selected.searchReturnTab };
+  };
   const resolveSelection = (state: WorkspaceTabsState) =>
-    selection.current === undefined
-      ? state
-      : workspaceTabsReducer(state, { type: "select", tab: selection.current });
+    controlledSelection(state, selection.current);
   const storedState = useAtomValue(model.resolved);
-  const state =
-    props.selectedTab === undefined
-      ? storedState
-      : workspaceTabsReducer(storedState, { type: "select", tab: props.selectedTab });
+  const state = controlledSelection(storedState, {
+    tab: props.selectedTab,
+    searchReturnTab: props.searchReturnTab,
+  });
   const context = {
     state,
     dispatch: (action: WorkspaceTabsAction) =>

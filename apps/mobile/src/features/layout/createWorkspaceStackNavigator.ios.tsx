@@ -40,7 +40,10 @@ import {
   WorkspaceSidebarTabsFooter,
 } from "../workspace/WorkspaceNativeTabs.ios";
 import { workspaceUsesColumns } from "../workspace/workspace-tabs-state";
-import { workspacePrimaryTab } from "../workspace/workspace-primary-navigation";
+import {
+  workspacePrimaryTab,
+  workspaceSearchReturnTab,
+} from "../workspace/workspace-primary-navigation";
 import { isSettingsRoute, settingsOpenIn } from "../settings/settings-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { setNativelyPoppingWorkspaceRoute } from "../workspace/workspace-detail-selection";
@@ -69,6 +72,7 @@ import {
   nativeWorkspacePopAction,
   projectWorkspaceStack,
   partitionStackPresentations,
+  presentationEnvelopeAction,
   reconcileStackScreens,
   type CollapsedSplitColumn,
 } from "../../native/workspace-stack-projection";
@@ -362,7 +366,7 @@ function WorkspaceColumns(
         if (workspace.some((route) => route.name !== "Home" && route.name !== "Settings")) return;
         const tab = workspace.some((route) => route.name === "Settings")
           ? "settings"
-          : (["threads", "results"] as const).find((candidate) =>
+          : (["threads", "sites", "search"] as const).find((candidate) =>
               workspaceTabs?.isTabActive(candidate),
             );
         openWorkspaceTab(tab ?? "threads", { columns: true });
@@ -577,6 +581,15 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
     <NativeStackView
       presentationEnvelope
       {...props}
+      navigation={{
+        ...props.navigation,
+        dispatch: (action) =>
+          props.navigation.dispatch(
+            typeof action === "function"
+              ? (state) => presentationEnvelopeAction(state, overlays, action(state))
+              : presentationEnvelopeAction(props.navigation.getState(), overlays, action),
+          ),
+      }}
       state={{ ...props.state, routes, index: routes.length - 1, preloadedRoutes: [] }}
       descriptors={{
         ...Object.fromEntries(
@@ -659,6 +672,7 @@ function WorkspaceStackNavigator({
         <WorkspaceTabsProvider
           settingsOpen={settingsOpen}
           selectedTab={workspacePrimaryTab(state.routes)}
+          searchReturnTab={workspaceSearchReturnTab(state.routes)}
         >
           <WorkspaceStackView
             nativeColumns={usesNativeWorkspaceColumns}
