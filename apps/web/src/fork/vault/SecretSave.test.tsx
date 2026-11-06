@@ -39,11 +39,13 @@ vi.mock("@effect/atom-react", async () => {
   return {
     useAtomValue: (atom: unknown) => {
       useSyncExternalStore(state.subscribe, () => state.revision);
-      return atom === "permission"
-        ? state.allowed
-        : atom === "status"
-          ? AsyncResult.success({ backend: "openbao", state: state.vaultState, origin: null })
-          : AsyncResult.success({ items: state.items, nextCursor: null });
+      return atom === "config"
+        ? null
+        : atom === "permission"
+          ? state.allowed
+          : atom === "status"
+            ? AsyncResult.success({ backend: "openbao", state: state.vaultState, origin: null })
+            : AsyncResult.success({ items: state.items, nextCursor: null });
     },
     useAtomRefresh: () => state.refresh,
   };
@@ -70,7 +72,10 @@ vi.mock("~/fork/vault/state", () => ({
     status: () => "status",
   },
 }));
-vi.mock("~/state/server", () => ({ serverEnvironment: { answerSecretRequest: "answer" } }));
+vi.mock("~/state/server", () => ({
+  serverEnvironment: { answerSecretRequest: "answer", configValueAtom: () => "config" },
+}));
+vi.mock("~/components/settings/SecretSourceInput", () => ({ SecretSourceSelect: () => null }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => (command === "answer" ? state.answer : state.save),
 }));
