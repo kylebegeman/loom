@@ -377,6 +377,8 @@ export function routeProviderEvent(
   });
 
   switch (event.type) {
+    case "model_selection.updated":
+      return [ownsThread(event.threadId), state];
     case "provider_session.updated":
       return [false, state];
     case "app_thread.created": {

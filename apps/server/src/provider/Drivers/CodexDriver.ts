@@ -1,3 +1,7 @@
+import {
+  makeSwitchboardTierReader,
+  withSwitchboardServiceTiers,
+} from "../../fork/switchboard/serviceTier.ts";
 import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -202,6 +206,7 @@ export const CodexDriver: ProviderDriver<
       ),
     );
 
+    const readServiceTier = yield* makeSwitchboardTierReader();
     const orchestrationAdapter = yield* createCodexAdapterV2(
       {
         instanceId,
@@ -213,6 +218,7 @@ export const CodexDriver: ProviderDriver<
       },
       {
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
+        readServiceTier,
         compatibility: installation.compatibility,
       },
     ).pipe(
@@ -238,7 +244,11 @@ export const CodexDriver: ProviderDriver<
             Effect.flatMap((routed) =>
               checkCodexProviderStatus(effectiveConfig, undefined, processEnv, undefined, {
                 skipNativeUsage: routed,
-              }),
+              }).pipe(
+                Effect.map((draft) =>
+                  routed ? { ...draft, models: withSwitchboardServiceTiers(draft.models) } : draft,
+                ),
+              ),
             ),
           ), // fork: switchboard
           currentCatalog,

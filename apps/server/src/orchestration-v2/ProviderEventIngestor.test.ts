@@ -2361,3 +2361,56 @@ it.effect.each([
     assert.isEmpty(persisted);
   }).pipe(Effect.provide(layerFailingWrites(errors))),
 );
+
+it.effect("persists effective speed without overwriting a newer user selection", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const sink = yield* EventSink.EventSinkV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    const allocator = yield* IdAllocator.IdAllocatorV2;
+    const created = yield* threadCreatedEvent(now);
+    if (created.type !== "thread.created") throw new Error("Expected thread fixture");
+    const expected = {
+      ...created.payload.modelSelection,
+      options: [{ id: "serviceTier", value: "ultrafast" }],
+    };
+    const selection = { ...expected, options: [{ id: "serviceTier", value: "priority" }] };
+    yield* sink.write({
+      events: [{ ...created, payload: { ...created.payload, modelSelection: expected } }],
+    });
+    const input = {
+      providerInstanceId: expected.instanceId,
+      providerSessionId: yield* allocator.allocate.providerSession({
+        providerInstanceId: expected.instanceId,
+        threadId: created.threadId,
+      }),
+      threadId: created.threadId,
+      event: {
+        type: "model_selection.updated" as const,
+        driver: CODEX_DRIVER,
+        threadId: created.threadId,
+        expected,
+        selection,
+      },
+    };
+    const stored = yield* ingestor.ingestNormalized(input);
+    assert.deepEqual(
+      stored.map(({ event }) => event.type),
+      ["thread.model-selection-updated"],
+    );
+    assert.deepEqual((yield* projections.getThread(created.threadId)).modelSelection, selection);
+    assert.deepEqual(yield* ingestor.ingestNormalized(input), []);
+    assert.deepEqual(
+      yield* ingestor.ingestNormalized({
+        ...input,
+        event: {
+          ...input.event,
+          expected: selection,
+          selection: { ...selection, model: "unrelated-model" },
+        },
+      }),
+      [],
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
