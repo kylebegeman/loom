@@ -9,6 +9,7 @@ export interface NativeMenuTrigger {
   readonly detail?: string;
   readonly icon?: AppSymbolName;
   readonly accessibilityLabel: string;
+  readonly accessibilityHint?: string;
   readonly selected?: boolean;
   readonly disabled?: boolean;
   readonly size?: "compact" | "default";

@@ -12,6 +12,7 @@ import {
 } from "@expo/ui/swift-ui";
 import {
   accessibilityAddTraits,
+  accessibilityHint,
   accessibilityLabel,
   buttonBorderShape,
   buttonStyle,
@@ -204,6 +205,7 @@ export function NativeMenuButton(props: MenuProps & { readonly trigger: NativeMe
           tint(colors["--color-primary"]),
           disabled(Boolean(trigger.disabled)),
           accessibilityLabel(trigger.accessibilityLabel),
+          ...(trigger.accessibilityHint ? [accessibilityHint(trigger.accessibilityHint)] : []),
           ...(trigger.selected ? [accessibilityAddTraits(["isSelected"])] : []),
           frame({
             minWidth: 44,
