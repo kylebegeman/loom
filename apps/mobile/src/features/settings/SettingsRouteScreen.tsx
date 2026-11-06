@@ -26,6 +26,7 @@ import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-g
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsComputerNotice } from "./components/SettingsComputerNotice"; // fork: fleet-connections
@@ -220,8 +221,11 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   const query = workspace?.state.tabs.settings.query ?? "";
   const overflowRows = useOverflowRows();
   const indexSections = useSettingsIndexSections();
+  const connections: SettingsListSection = { title: "Connections", rows: props.connections };
   const sections = filterSettingsSections(
-    [{ rows: overflowRows }, { title: "Connections", rows: props.connections }, ...indexSections],
+    Platform.OS === "ios"
+      ? [...indexSections.slice(0, 1), connections, ...indexSections.slice(1)]
+      : [{ rows: overflowRows }, connections, ...indexSections],
     query,
   );
 
@@ -292,10 +296,64 @@ function useSettingsIndexSections(): SettingsListSection[] {
     page(target, icon, label, { disabled: noServerTargets });
   // fork: library
   const route = (
-    id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory",
+    id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory" | "PullRequests",
     icon: SettingsListRow["icon"],
     label: string,
   ): SettingsListRow => ({ id, icon, label, onPress: () => navigation.navigate(id) });
+  if (Platform.OS === "ios") {
+    return [
+      {
+        title: "Work",
+        rows: [
+          page("SettingsUsage", "chart.bar.xaxis", "Usage & limits"),
+          route("Library", "briefcase", "Projects"),
+          ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []),
+          route("PullRequests", PullRequestGlyph.pullRequest, "Pull requests"),
+          page("SettingsArchive", "archivebox", "Archive"),
+        ],
+      },
+      {
+        title: "App",
+        rows: [
+          page("SettingsOrganization", "gearshape", "General"),
+          page("SettingsAppearance", "paintbrush", "Appearance"),
+          page("SettingsFollowUp", "bubble.left.and.bubble.right", "Chat"),
+          ...(navigationCustomizationAvailable()
+            ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
+            : []),
+          page("SettingsKeyboard", "keyboard", "Keyboard"),
+          page("SettingsMicrophone", "mic", "Microphone"),
+          page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`),
+        ],
+      },
+      {
+        title: "Agents",
+        ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
+        rows: [
+          serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
+          serverPage("SettingsThreads", "text.bubble", "Threads"),
+          page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
+        ],
+      },
+      {
+        title: "Development tools",
+        rows: [
+          page(
+            "SettingsProjectOverview",
+            "folder",
+            "Computer folders",
+            selectedProjectKey !== null ? { value: projectLabel } : undefined,
+          ),
+          route("ProjectStorageInventory", "internaldrive", "Working files"),
+          serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
+          serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
+          page("SettingsPreviewLinks", "globe", "Previews"),
+          serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
+          page("SettingsLabs", "sparkles", "Labs"),
+        ],
+      },
+    ];
+  }
   // The same pages and groups as Settings on web, minus what mobile has no setting for.
   return [
     {
@@ -306,7 +364,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
         ...(navigationCustomizationAvailable()
           ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
           : []),
-        ...(Platform.OS === "ios" ? [page("SettingsKeyboard", "keyboard", "Keyboard")] : []),
         page("SettingsMicrophone", "mic", "Microphone"),
       ],
     },
@@ -316,10 +373,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
       rows: [
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
-        // fork: usage-navigation
-        ...(Platform.OS === "ios"
-          ? [page("SettingsUsage", "chart.bar.xaxis", "Usage & limits")]
-          : []),
         serverPage("SettingsThreads", "text.bubble", "Threads"),
         ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []), // fork: bots
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),

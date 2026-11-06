@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { View } from "react-native";
 import { Button } from "../../components/ui/Button";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import type { SiteAnalytics } from "@t3tools/contracts/fork";
 import {
   siteTrafficDays,
@@ -11,8 +13,6 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
 import { ago, siteHost } from "./SiteHealth";
 
-/** Hex alpha for the soft share bar behind ranked rows, about 12% opacity. */
-const SHARE_ALPHA = "1F";
 const CHART_HEIGHT = 128;
 
 /** Exact up to five digits, compact past that, so a figure never wraps. */
@@ -40,18 +40,17 @@ export function SiteTraffic({
 }: {
   readonly analytics: SiteAnalytics;
   readonly origins: readonly string[];
-  /** The site's color, so its chart reads as part of the projects it serves. */
   readonly color: string;
 }) {
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const days = siteTrafficDays(analytics);
   const quiet = !analytics.pageviews && !analytics.events;
   const ratios = siteTrafficRatios(analytics);
   return (
-    <View className="gap-5 p-4">
-      <ProductUsage analytics={analytics} color={color} />
+    <View className="gap-5 p-5">
       <View className="flex-row">
         <Figure label="Page views" value={analytics.pageviews} first />
-        <Figure label="Visitors" value={analytics.visitors} />
+        <Figure label="Daily visitors" value={analytics.visitors} />
         <Figure label="Events" value={analytics.events} />
       </View>
       {quiet || !days.length ? (
@@ -66,68 +65,90 @@ export function SiteTraffic({
       ) : (
         <DailyChart days={days} analytics={analytics} color={color} />
       )}
-      {quiet ? null : (
-        <>
-          <RankedList
-            title="Top pages"
-            empty="No page views in this period."
-            color={color}
-            rows={analytics.pages.map((page) => ({
-              key: page.path,
-              label: page.path,
-              value: page.pageviews,
-            }))}
-          />
-          <RankedList
-            title="Clicks and events"
-            empty="No clicks or named events in this period."
-            color={color}
-            rows={analytics.named.map((event) => ({
-              key: JSON.stringify([event.name, event.label, event.target]),
-              label: event.name,
-              ...(event.label || event.target
-                ? { detail: [event.label, event.target].filter(Boolean).join(" · ") }
-                : {}),
-              value: event.count,
-            }))}
-          />
-          {analytics.pageviews > 0 ? (
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel="Traffic details"
+        accessibilityState={{ expanded: detailsExpanded }}
+        onPress={() => setDetailsExpanded((expanded) => !expanded)}
+        className="flex-row items-center justify-between gap-3 border-t border-border-subtle pt-4"
+      >
+        <Text textRole="body" className="font-t3-medium text-foreground">
+          Traffic details
+        </Text>
+        <SymbolView
+          name={detailsExpanded ? "chevron.up" : "chevron.down"}
+          size={16}
+          tintColorClassName="accent-icon-muted"
+        />
+      </RowPressable>
+      {detailsExpanded ? (
+        <View className="gap-5">
+          <ProductUsage analytics={analytics} color={color} />
+          {quiet ? null : (
             <>
-              <Text className="text-xs text-foreground-muted">
-                {ratios.viewsPerVisitor?.toLocaleString(undefined, { maximumFractionDigits: 1 }) ??
-                  "Not available"}{" "}
-                views per daily visitor.{" "}
-                {ratios.actionsPerHundredViews?.toLocaleString(undefined, {
-                  maximumFractionDigits: 1,
-                }) ?? "Not available"}{" "}
-                actions per 100 views. Activity averages, not unique-person conversion rates.
-              </Text>
-              {siteTrafficBreakdowns(analytics).map((group) => (
-                <View key={group.id} className="gap-1.5">
-                  <RankedList
-                    title={group.title}
-                    rows={group.rows}
-                    color={color}
-                    empty={
-                      group.available
-                        ? "No page views with this breakdown in this period."
-                        : "Update the connected Loom server to see this breakdown."
-                    }
-                  />
-                  <Text className="text-2xs text-foreground-muted">{group.note}</Text>
-                </View>
-              ))}
+              <RankedList
+                title="Top pages"
+                empty="No page views in this period."
+                color={color}
+                rows={analytics.pages.map((page) => ({
+                  key: page.path,
+                  label: page.path,
+                  value: page.pageviews,
+                }))}
+              />
+              <RankedList
+                title="Clicks and events"
+                empty="No clicks or named events in this period."
+                color={color}
+                rows={analytics.named.map((event) => ({
+                  key: JSON.stringify([event.name, event.label, event.target]),
+                  label: event.name,
+                  ...(event.label || event.target
+                    ? { detail: [event.label, event.target].filter(Boolean).join(" · ") }
+                    : {}),
+                  value: event.count,
+                }))}
+              />
+              {analytics.pageviews > 0 ? (
+                <>
+                  <Text className="text-xs text-foreground-muted">
+                    {ratios.viewsPerVisitor?.toLocaleString(undefined, {
+                      maximumFractionDigits: 1,
+                    }) ?? "Not available"}{" "}
+                    views per daily visitor.{" "}
+                    {ratios.actionsPerHundredViews?.toLocaleString(undefined, {
+                      maximumFractionDigits: 1,
+                    }) ?? "Not available"}{" "}
+                    actions per 100 views. Activity averages, not unique-person conversion rates.
+                  </Text>
+                  {siteTrafficBreakdowns(analytics).map((group) => (
+                    <View key={group.id} className="gap-1.5">
+                      <RankedList
+                        title={group.title}
+                        rows={group.rows}
+                        color={color}
+                        empty={
+                          group.available
+                            ? "No page views with this breakdown in this period."
+                            : "Update the connected Loom server to see this breakdown."
+                        }
+                      />
+                      <Text className="text-2xs text-foreground-muted">{group.note}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : null}
             </>
-          ) : null}
-        </>
-      )}
-      <Text className="border-t border-border-subtle pt-3 text-xs text-foreground-muted">
-        Visitors are counted once per day; a return on another day counts again
-        {analytics.lastEventAt
-          ? `, and the latest visit arrived ${ago(analytics.lastEventAt)}`
-          : ""}
-        . Counting visits from {origins.map(siteHost).join(", ")}.
-      </Text>
+          )}
+          <Text className="border-t border-border-subtle pt-3 text-xs text-foreground-muted">
+            Visitors are counted once per day; a return on another day counts again
+            {analytics.lastEventAt
+              ? `, and the latest visit arrived ${ago(analytics.lastEventAt)}`
+              : ""}
+            . Counting visits from {origins.map(siteHost).join(", ")}.
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -243,7 +264,8 @@ function RankedList({
               className="absolute inset-y-0 left-0 rounded-md"
               style={{
                 width: `${(row.value / max) * 100}%`,
-                backgroundColor: `${color}${SHARE_ALPHA}`,
+                backgroundColor: color,
+                opacity: 0.12,
               }}
             />
             <Text className="min-w-0 flex-1 text-sm text-foreground">

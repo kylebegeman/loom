@@ -1,7 +1,7 @@
-import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { SITE_HEALTH_STATES, siteHealth, supportsLoomFeature } from "@t3tools/client-runtime/fork";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { executeAtomQuery, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AuthOrchestrationReadScope, type EnvironmentId } from "@t3tools/contracts";
 import { SITES_FEATURE, type SitesSnapshot, type SitesState } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
@@ -12,14 +12,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { IconButton } from "../../components/ui/IconButton";
 import { ListRow } from "../../components/ui/ListRow";
-import { ListRowLayout } from "../../components/ui/ListRowLayout";
 import { ListSection } from "../../components/ui/ListSection";
 import { Menu } from "../../components/ui/Menu";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { Toolbar } from "../../components/ui/Toolbar";
 import { useWorkspaceTabs } from "../../features/workspace/WorkspaceTabsContext";
 import { useAppActive } from "../../lib/appState";
 import { cn } from "../../lib/cn";
@@ -144,87 +143,46 @@ function SiteCard(props: {
   readonly pinned: boolean;
   readonly pinDisabled: boolean;
   readonly onPin: () => void;
-  readonly onOpen: () => void;
   readonly onDetails: () => void;
 }) {
   const state = SITE_HEALTH_STATES[siteHealth(props.site, props.snapshot, props.now).state];
-  const identity = (
-    <RowPressable
-      accessibilityRole="link"
-      accessibilityLabel={`Open ${props.site.name}, ${siteHost(props.site.url)}, ${state.label}`}
-      onPress={props.onOpen}
-      className={cn("min-w-0 flex-row items-center gap-3", props.pinned ? "p-5" : "py-4 pl-4")}
-    >
-      <SiteIdentity
-        key={props.site.url}
-        name={props.site.name}
-        url={props.site.url}
-        featured={props.pinned}
-      />
-      <View className="min-w-0 flex-1 gap-1">
-        <Text
-          textRole={props.pinned ? "title" : "headline"}
-          className="font-t3-semibold"
-          numberOfLines={2}
-        >
-          {props.site.name}
-        </Text>
-        <Text textRole="footnote" className="text-foreground-muted" numberOfLines={1}>
-          {siteHost(props.site.url)}
-        </Text>
-        {!props.pinned ? <LibraryStateBadge tone={state.tone} label={state.label} /> : null}
-      </View>
-    </RowPressable>
-  );
   return (
-    <View
-      className={cn(
-        "overflow-hidden rounded-3xl",
-        props.pinned ? "bg-secondary/40" : "bg-grouped-card",
-      )}
+    <Menu
+      title={props.site.name}
+      shouldOpenOnLongPress
+      actions={[
+        {
+          id: "pin",
+          title: props.pinned ? "Unpin website" : "Pin website",
+          image: props.pinned ? "pin.slash" : "pin",
+          attributes: { disabled: props.pinDisabled },
+        },
+      ]}
+      onPressAction={props.onPin}
     >
-      <View className="flex-row items-center">
-        <View className="min-w-0 flex-1">
-          <Menu
-            title={props.site.name}
-            shouldOpenOnLongPress
-            actions={[
-              {
-                id: "pin",
-                title: props.pinned ? "Unpin website" : "Pin website",
-                image: props.pinned ? "pin.slash" : "pin",
-                attributes: { disabled: props.pinDisabled },
-              },
-              { id: "details", title: "Status and details", image: "info.circle" },
-            ]}
-            onPressAction={({ nativeEvent }) =>
-              nativeEvent.event === "pin" ? props.onPin() : props.onDetails()
-            }
-          >
-            {identity}
-          </Menu>
-        </View>
-        <View className="pr-2">
-          <IconButton
-            icon={props.pinned ? "pin.slash" : "info.circle"}
-            accessibilityLabel={
-              props.pinned
-                ? `Unpin ${props.site.name}`
-                : `Status and details for ${props.site.name}`
-            }
-            disabled={props.pinned && props.pinDisabled}
-            onPress={props.pinned ? props.onPin : props.onDetails}
-            tintColorClassName={props.pinned ? "accent-primary-text" : "accent-icon-muted"}
-          />
-        </View>
-      </View>
-      {props.pinned ? (
-        <View className="flex-row flex-wrap items-center justify-between gap-2 px-5 pb-3">
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel={`${props.site.name}, ${state.label}${props.pinned ? ", pinned" : ""}`}
+        accessibilityHint="View website details"
+        onPress={props.onDetails}
+        className="min-w-0 flex-row items-center gap-4 rounded-3xl bg-grouped-card p-5"
+      >
+        <SiteIdentity key={props.site.url} name={props.site.name} url={props.site.url} featured />
+        <View className="min-w-0 flex-1 gap-1.5">
+          <Text textRole="headline" className="font-t3-semibold" numberOfLines={2}>
+            {props.site.name}
+          </Text>
+          <Text textRole="footnote" className="text-foreground-muted" numberOfLines={1}>
+            {siteHost(props.site.url)}
+          </Text>
           <LibraryStateBadge tone={state.tone} label={state.label} />
-          <Button label="Status and details" tone="text" size="compact" onPress={props.onDetails} />
         </View>
-      ) : null}
-    </View>
+        {props.pinned ? (
+          <SymbolView name="pin" size={13} tintColorClassName="accent-icon-muted" />
+        ) : null}
+        <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+      </RowPressable>
+    </Menu>
   );
 }
 
@@ -259,10 +217,6 @@ function MonitoredSites(props: {
     }).catch(() => setError("Could not save pinned websites. Try again."));
     setPinPending(false);
   };
-  const openSite = (site: SitesSnapshot["sites"][number]) => {
-    setError(null);
-    void Linking.openURL(site.url).catch(() => setError(`Could not open ${site.name}. Try again.`));
-  };
   const card = (site: SitesSnapshot["sites"][number], pinned: boolean) =>
     snapshot ? (
       <SiteCard
@@ -273,23 +227,16 @@ function MonitoredSites(props: {
         pinned={pinned}
         pinDisabled={pinPending || !AsyncResult.isSuccess(preferences)}
         onPin={() => void togglePin(site.id)}
-        onOpen={() => openSite(site)}
         onDetails={() => navigation.navigate("Sites", { siteId: site.id })}
       />
     ) : null;
   return (
     <View className="gap-4">
-      <View className="flex-row items-center justify-between gap-3">
-        <Text textRole="headline" className="font-t3-semibold">
-          Your websites
+      {snapshot?.sites.length ? (
+        <Text textRole="footnote" className="px-1 text-foreground-muted">
+          {snapshot.sites.length} {snapshot.sites.length === 1 ? "website" : "websites"}
         </Text>
-        <Button
-          label="Manage"
-          tone="text"
-          size="compact"
-          onPress={() => navigation.navigate("Sites")}
-        />
-      </View>
+      ) : null}
       {error ? <BrowseNotice error>{error}</BrowseNotice> : null}
       {!authority.loaded ? (
         <BrowseNotice>Loading your Library…</BrowseNotice>
@@ -330,7 +277,9 @@ function MonitoredSites(props: {
           {!query.data && !query.error ? (
             <BrowseNotice>Loading websites…</BrowseNotice>
           ) : !query.data ? null : !query.data.configured ? (
-            <BrowseNotice>Connect the personal API in Sites to see linked websites.</BrowseNotice>
+            <BrowseNotice>
+              Connect website monitoring in Loom on your computer to see your websites here.
+            </BrowseNotice>
           ) : !snapshot ? (
             <BrowseNotice onRetry={query.refresh}>
               Monitoring data is not available yet.
@@ -366,9 +315,6 @@ function MonitoredSites(props: {
                   ) : null}
                 </View>
               ) : null}
-              <Text textRole="footnote" className="px-1 text-foreground-muted">
-                Touch and hold a website to pin it.
-              </Text>
             </>
           )}
         </>
@@ -382,7 +328,6 @@ function LivePreviews(props: {
   readonly now: number;
   readonly unavailableReason: string;
 }) {
-  const navigation = useNavigation();
   const { computer } = props;
   const canRead = useEnvironmentScope(computer?.environmentId ?? null, AuthOrchestrationReadScope);
   const query = useEnvironmentQuery(
@@ -429,17 +374,25 @@ function LivePreviews(props: {
         </BrowseNotice>
       ) : null}
       {!computer ? (
-        <BrowseNotice>{props.unavailableReason}</BrowseNotice>
+        <Text textRole="footnote" className="text-foreground-muted">
+          {props.unavailableReason}
+        </Text>
       ) : !computer.connected ? (
-        <BrowseNotice>Reconnect {computer.label} to open its live previews.</BrowseNotice>
+        <Text textRole="footnote" className="text-foreground-muted">
+          Reconnect {computer.label} to open its live previews.
+        </Text>
       ) : !canRead ? (
-        <BrowseNotice>This connection cannot read previews.</BrowseNotice>
+        <Text textRole="footnote" className="text-foreground-muted">
+          This connection cannot read previews.
+        </Text>
       ) : !snapshot && !query.error ? (
-        <BrowseNotice>Loading live previews…</BrowseNotice>
+        <Text textRole="footnote" className="text-foreground-muted">
+          Loading live previews…
+        </Text>
       ) : !snapshot ? null : links.length === 0 ? (
-        <BrowseNotice>
-          No live previews. Share a running app from a thread to open it here.
-        </BrowseNotice>
+        <Text textRole="footnote" className="text-foreground-muted">
+          Live previews shared from your threads will appear here.
+        </Text>
       ) : (
         <>
           {!canOpen ? (
@@ -469,17 +422,13 @@ function LivePreviews(props: {
           </ListSection>
         </>
       )}
-      <Button
-        label="Manage previews"
-        tone="text"
-        size="compact"
-        onPress={() => navigation.navigate("SettingsPreviewLinks")}
-      />
     </View>
   );
 }
 
 export function SiteBrowserScreen() {
+  const navigation = useNavigation();
+  const registry = use(RegistryContext);
   const workspace = useWorkspaceTabs();
   const authority = useLibraryAuthority();
   const focused = useIsFocused();
@@ -490,6 +439,25 @@ export function SiteBrowserScreen() {
   const now = useBrowseClock(active);
   const config = useEnvironmentServerConfig(authority.environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE);
+  // Native pull indicators change the scroll offset; background refreshes must stay silent.
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRequest = useRef<AbortController | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a pull refresh belongs to the visible Library connection and must release its query subscription when that connection changes
+  useEffect(() => {
+    if (
+      !active ||
+      !authority.environmentId ||
+      !authority.connected ||
+      !authority.canRead ||
+      !supported
+    )
+      return;
+    return () => {
+      refreshRequest.current?.abort();
+      refreshRequest.current = null;
+      setRefreshing(false);
+    };
+  }, [active, authority.environmentId, authority.connected, authority.canRead, supported]);
   const query = useEnvironmentQuery(
     authority.environmentId && supported && authority.canRead
       ? sites.snapshot({ environmentId: authority.environmentId, input: {} })
@@ -505,78 +473,114 @@ export function SiteBrowserScreen() {
   const computer = selectedPreviewComputer(computers, selectedComputer);
   const insets = useSafeAreaInsets();
   const bottomSafeArea = useNativeColumnLayoutMetrics()?.safeArea.bottom ?? insets.bottom;
-  return (
-    <ScreenScrollView
-      className="flex-1 bg-screen"
-      contentInsetAdjustmentBehavior="automatic"
-      contentContainerClassName="gap-8 px-5 pt-4"
-      contentContainerStyle={{
-        paddingBottom:
-          Math.max(bottomSafeArea + 24, workspace?.bottomClearance ?? 0) -
-          (Platform.OS === "ios" ? bottomSafeArea : 0),
-      }}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        <RefreshControl
-          refreshing={query.isPending && query.data !== null}
-          onRefresh={query.refresh}
-        />
+  const pullToRefresh = async () => {
+    if (
+      !active ||
+      !authority.environmentId ||
+      !authority.connected ||
+      !supported ||
+      !authority.canRead ||
+      refreshRequest.current
+    )
+      return;
+    const request = new AbortController();
+    refreshRequest.current = request;
+    setRefreshing(true);
+    await executeAtomQuery(
+      registry,
+      sites.snapshot({ environmentId: authority.environmentId, input: {} }),
+      {
+        refresh: true,
+        signal: request.signal,
+        reportFailure: false,
+        reportDefect: false,
+      },
+    ).finally(() => {
+      if (refreshRequest.current === request) {
+        refreshRequest.current = null;
+        setRefreshing(false);
       }
-    >
-      <MonitoredSites
-        key={authority.environmentId ?? "none"}
-        authority={authority}
-        query={query}
-        supported={supported}
-        capabilitiesPending={config === null}
-        now={now}
-      />
-      <View className="gap-3">
-        <Text textRole="headline" className="font-t3-semibold">
-          Live previews
-        </Text>
-        <Text textRole="footnote" className="text-foreground-muted">
-          Temporary links to apps running on your computer.
-        </Text>
-        {computers.length ? (
-          <ListSection>
-            <Menu
-              title="Preview computer"
-              actions={computers.map((entry) => ({
-                id: entry.environmentId,
-                title: entry.label,
-                subtitle: entry.connected ? undefined : "Offline",
-                state: entry.environmentId === computer?.environmentId ? "on" : "off",
-              }))}
-              onPressAction={({ nativeEvent }) => {
-                const selected = computers.find(
-                  (entry) => entry.environmentId === nativeEvent.event,
-                );
-                if (selected) setSelectedComputer(selected.environmentId);
-              }}
-            >
-              <RowPressable
-                accessibilityRole="button"
-                accessibilityLabel={`Preview computer: ${computer?.label ?? "Choose computer"}`}
-              >
-                <ListRowLayout
-                  icon="desktopcomputer"
-                  label={computer?.label ?? "Choose computer"}
-                  accessory={
-                    <SymbolView name="chevron.down" size={14} tintColorClassName="accent-chevron" />
-                  }
-                />
-              </RowPressable>
-            </Menu>
-          </ListSection>
-        ) : null}
-        <LivePreviews
-          key={computer?.environmentId ?? "none"}
-          computer={computer}
+    });
+  };
+  return (
+    <>
+      <Toolbar placement="right">
+        <Toolbar.Menu accessibilityLabel="Website options" icon="ellipsis" separateBackground>
+          <Toolbar.MenuAction icon="globe" onPress={() => navigation.navigate("Sites")}>
+            Manage websites
+          </Toolbar.MenuAction>
+          <Toolbar.MenuAction
+            icon="safari"
+            onPress={() => navigation.navigate("SettingsPreviewLinks")}
+          >
+            Manage previews
+          </Toolbar.MenuAction>
+        </Toolbar.Menu>
+      </Toolbar>
+      <ScreenScrollView
+        className="flex-1 bg-screen"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="gap-8 px-5 pt-4"
+        contentContainerStyle={{
+          paddingBottom:
+            Math.max(bottomSafeArea + 24, workspace?.bottomClearance ?? 0) -
+            (Platform.OS === "ios" ? bottomSafeArea : 0),
+        }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void pullToRefresh()} />
+        }
+      >
+        <MonitoredSites
+          key={authority.environmentId ?? "none"}
+          authority={authority}
+          query={query}
+          supported={supported}
+          capabilitiesPending={config === null}
           now={now}
-          unavailableReason={previewUnavailableReason(environments, isReady)}
         />
-      </View>
-    </ScreenScrollView>
+        <View className="gap-3">
+          <View className="flex-row items-center justify-between gap-3">
+            <Text textRole="headline" className="font-t3-semibold">
+              Live previews
+            </Text>
+            {computers.length > 1 ? (
+              <Menu
+                title="Preview computer"
+                actions={computers.map((entry) => ({
+                  id: entry.environmentId,
+                  title: entry.label,
+                  subtitle: entry.connected ? undefined : "Offline",
+                  state: entry.environmentId === computer?.environmentId ? "on" : "off",
+                }))}
+                onPressAction={({ nativeEvent }) => {
+                  const selected = computers.find(
+                    (entry) => entry.environmentId === nativeEvent.event,
+                  );
+                  if (selected) setSelectedComputer(selected.environmentId);
+                }}
+              >
+                <RowPressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Preview computer: ${computer?.label ?? "Choose computer"}`}
+                  className="min-h-11 flex-row items-center gap-2 px-2"
+                >
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {computer?.label ?? "Choose computer"}
+                  </Text>
+                  <SymbolView name="chevron.down" size={12} tintColorClassName="accent-chevron" />
+                </RowPressable>
+              </Menu>
+            ) : null}
+          </View>
+          <LivePreviews
+            key={computer?.environmentId ?? "none"}
+            computer={computer}
+            now={now}
+            unavailableReason={previewUnavailableReason(environments, isReady)}
+          />
+        </View>
+      </ScreenScrollView>
+    </>
   );
 }

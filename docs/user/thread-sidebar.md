@@ -13,20 +13,22 @@ does not move conversations or change the computer they run on.
 
 On web and desktop, **Projects** in the sidebar utility row opens the projects page,
 which lists every project and its conversations across your computers. On iOS, open
-**Projects** from the navigation menu in the toolbar. Use **Settings → Projects** for
-project settings. Returning from either restores the conversation you left.
+**Settings** with the toolbar gear, then choose **Projects** under **Work**. Open a
+project to see its conversations and settings. Returning restores the conversation you left.
 
 ## Find work on iOS
 
-Use **Threads** to continue conversations and **Sites** to open your monitored websites
-and check their health. Pin websites you revisit to keep them first. The separate
+Use **Threads** to continue conversations and **Sites** to find your monitored websites.
+Tap a website to view its details and health, then choose **Visit website** to open it.
+Pin websites you revisit to keep them first. The separate
 **Live previews** section shows temporary apps running on a selected computer; manage
 their links and published pages in **Settings → Previews**.
 
 Use **Search** to find threads, message text, projects, sites, bots and settings across
 your computers and shared Library. Opening a match keeps a return path to your search.
 Search for **limits**, or open **Settings → Usage & limits**, to check provider quotas.
-The toolbar's navigation menu opens Projects, Bots, connections, pull requests and Settings.
+The toolbar's **Settings** gear opens Settings. **Work** contains Projects, Bots, pull
+requests, Usage & limits and Archive. **Connections** contains Computers and Library.
 
 <!-- fork: attention-status -->
 

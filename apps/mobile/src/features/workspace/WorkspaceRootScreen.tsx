@@ -48,7 +48,7 @@ import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { SiteBrowserScreen } from "../../fork/site-browser/SiteBrowserScreen";
 import { GlobalSearchScreen } from "../../fork/global-search/GlobalSearchScreen";
-import { WorkspaceAppMenu } from "../../fork/mobile-navigation/WorkspaceAppMenu";
+import { WorkspaceSettingsButton } from "../../fork/mobile-navigation/WorkspaceSettingsButton";
 
 const TAB_TITLES = WORKSPACE_TAB_LABELS;
 
@@ -191,7 +191,7 @@ function WorkspaceRootContent() {
             ]}
           />
         )}
-        {Platform.OS === "ios" && !settingsOpen ? <WorkspaceAppMenu /> : null}
+        {Platform.OS === "ios" && !settingsOpen ? <WorkspaceSettingsButton /> : null}
         <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>
           {settingsOpen ? (
             <SettingsRouteScreen />
@@ -213,7 +213,7 @@ function WorkspaceRootContent() {
           <WorkspaceSidebarTabs />
         ) : null}
         {/* Android's Settings list carries its own search in its app bar. */}
-        {enabled.length === 0 && !settingsOpen ? null : (
+        {(enabled.length === 0 || state.selectedTab === "sites") && !settingsOpen ? null : (
             settingsOpen
               ? Platform.OS === "ios"
               : state.selectedTab === "threads" ||

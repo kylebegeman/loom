@@ -14,9 +14,9 @@ import {
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
+import { Menu } from "../../components/ui/Menu";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
-import { LibraryStateBadge } from "../library/LibraryStateBadge";
 
 type Service = SitesSnapshot["services"][number];
 type Check = SitesSnapshot["checks"][number];
@@ -99,37 +99,46 @@ export function SiteServiceGroup({
       accessibilityLabel={`${service.name}, ${state.label}`}
       className={cn(separated && "border-t border-border")}
     >
-      <View className="flex-row items-start gap-2 py-3 ps-4 pe-1">
-        <View className="min-w-0 flex-1 gap-1">
+      <View className="flex-row items-start gap-2 py-4 ps-5 pe-2">
+        <View className="min-w-0 flex-1 gap-1.5">
           <View className="flex-row items-baseline gap-2">
-            <Text numberOfLines={1} className="shrink font-t3-semibold text-foreground">
+            <Text textRole="headline" className="shrink text-foreground">
               {service.name}
             </Text>
-            <Text className="text-xs text-foreground-muted">
+            <Text textRole="footnote" className="text-foreground-muted">
               {SERVICE_KIND_LABELS[service.kind]}
             </Text>
           </View>
-          <Text numberOfLines={1} className="font-mono text-2xs text-foreground-muted">
+          <Text textRole="footnote" className="text-foreground-muted">
             {siteHost(service.url)}
           </Text>
-          <View className="pt-1">
-            <LibraryStateBadge
-              tone={state.tone}
-              label={
-                health.state === "healthy" || health.state === "failing"
-                  ? `${health.passing} of ${health.total} passing`
-                  : state.label
-              }
-            />
+          <View className="flex-row items-center gap-2 pt-1">
+            <SiteStateDot tone={state.tone} />
+            <Text textRole="footnote" className="text-foreground-muted">
+              {health.state === "healthy" || health.state === "failing"
+                ? `${health.passing} of ${health.total} passing`
+                : state.label}
+            </Text>
           </View>
         </View>
-        <IconButton
-          icon="pencil"
-          accessibilityLabel={`Edit service ${service.name}`}
-          tintColorClassName="accent-icon-muted"
-          disabled={!canManage}
-          onPress={onEditService}
-        />
+        {canManage ? (
+          <Menu
+            title={service.name}
+            actions={[
+              { id: "edit", title: "Edit service", image: "pencil" },
+              { id: "check", title: "Add check", image: "plus" },
+            ]}
+            onPressAction={({ nativeEvent }) =>
+              nativeEvent.event === "edit" ? onEditService() : onAddCheck()
+            }
+          >
+            <IconButton
+              icon="ellipsis"
+              accessibilityLabel={`Actions for ${service.name}`}
+              tintColorClassName="accent-icon-muted"
+            />
+          </Menu>
+        ) : null}
       </View>
       {usedBy ? <View className="px-4 pb-3">{usedBy}</View> : null}
       {checks.length ? (
@@ -144,20 +153,25 @@ export function SiteServiceGroup({
           />
         ))
       ) : (
-        <Text className="border-t border-border-subtle px-4 py-3 text-xs text-foreground-muted">
+        <Text
+          textRole="body"
+          className="border-t border-border-subtle px-5 py-4 text-foreground-muted"
+        >
           Nothing watches this service yet. Add a check to know when it stops answering.
         </Text>
       )}
-      <View className="border-t border-border-subtle px-1">
-        <Button
-          label="Add check"
-          icon="plus"
-          tone="text"
-          accessibilityLabel={`Add check to ${service.name}`}
-          disabled={!canManage}
-          onPress={onAddCheck}
-        />
-      </View>
+      {!checks.length && canManage ? (
+        <View className="px-2 pb-2">
+          <Button
+            label="Add check"
+            icon="plus"
+            tone="text"
+            accessibilityLabel={`Add check to ${service.name}`}
+            disabled={!canManage}
+            onPress={onAddCheck}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -181,42 +195,41 @@ function SiteCheckRow({
   const tlsDays = siteTlsDaysLeft(last?.tls_expires_at, now);
   const problem = siteCheckProblem(check, state);
   return (
-    <View className="flex-row items-start gap-2 border-t border-border-subtle py-2.5 ps-4 pe-1">
-      <View className="min-w-0 flex-1 gap-1">
+    <View className="flex-row items-start gap-2 border-t border-border-subtle py-4 ps-5 pe-2">
+      <View className="min-w-0 flex-1 gap-2">
         <View className="flex-row items-center gap-2">
-          <Text numberOfLines={1} className="min-w-0 flex-1 text-sm font-t3-medium text-foreground">
+          <SiteStateDot tone={presentation.tone} />
+          <Text textRole="body" className="min-w-0 flex-1 font-t3-medium text-foreground">
             {check.name}
           </Text>
-          <LibraryStateBadge tone={presentation.tone} label={presentation.label} />
         </View>
-        <Text numberOfLines={1} className="font-mono text-2xs text-foreground-muted">
+        <Text textRole="footnote" className="text-foreground-muted">
           {siteHost(check.url)}
         </Text>
         {last ? (
           <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
-            <View
-              className={cn("rounded-md px-1.5 py-0.5", last.ok ? "bg-row-hover" : "bg-danger")}
+            <Text
+              accessibilityLabel={`Status ${last.status ?? "no answer"}`}
+              textRole="footnote"
+              className={cn(
+                "font-t3-medium tabular-nums",
+                last.ok ? "text-foreground-muted" : "text-danger-foreground",
+              )}
             >
-              <Text
-                accessibilityLabel={`Status ${last.status ?? "no answer"}`}
-                className={cn(
-                  "font-mono text-2xs font-t3-medium",
-                  last.ok ? "text-foreground" : "text-danger-foreground",
-                )}
-              >
-                {last.status ?? "No answer"}
-              </Text>
-            </View>
+              {last.status !== null ? `HTTP ${last.status}` : "No answer"}
+            </Text>
             <Text
               accessibilityLabel={`Response time ${formatDuration(last.duration_ms)}`}
-              className="text-xs tabular-nums text-foreground-muted"
+              textRole="footnote"
+              className="tabular-nums text-foreground-muted"
             >
               {formatDuration(last.duration_ms)}
             </Text>
             {tlsDays !== null ? (
               <Text
+                textRole="footnote"
                 className={cn(
-                  "text-xs tabular-nums",
+                  "tabular-nums",
                   tlsDays < 0
                     ? "text-danger-foreground"
                     : tlsDays <= SITE_TLS_WARNING_DAYS
@@ -224,23 +237,34 @@ function SiteCheckRow({
                       : "text-foreground-muted",
                 )}
               >
-                {tlsDays < 0 ? "Certificate expired" : `Certificate ${tlsDays}d left`}
+                {tlsDays < 0 ? "Certificate expired" : `Certificate: ${tlsDays} days left`}
               </Text>
             ) : null}
-            <Text className="text-xs tabular-nums text-foreground-muted">
-              {ago(last.checked_at)}
-            </Text>
           </View>
         ) : null}
-        {problem ? <Text className="text-xs text-danger-foreground">{problem}</Text> : null}
+        {problem ? (
+          <Text textRole="footnote" className="text-danger-foreground">
+            {problem}
+          </Text>
+        ) : null}
+        <Text textRole="footnote" className="text-foreground-muted">
+          {presentation.label}
+          {last ? ` · Checked ${ago(last.checked_at)}` : " · Waiting for the first check"}
+        </Text>
       </View>
-      <IconButton
-        icon="pencil"
-        accessibilityLabel={`Edit check ${check.name}`}
-        tintColorClassName="accent-icon-muted"
-        disabled={!canManage}
-        onPress={onEdit}
-      />
+      {canManage ? (
+        <Menu
+          title={check.name}
+          actions={[{ id: "edit", title: "Edit check", image: "pencil" }]}
+          onPressAction={onEdit}
+        >
+          <IconButton
+            icon="ellipsis"
+            accessibilityLabel={`Actions for ${check.name}`}
+            tintColorClassName="accent-icon-muted"
+          />
+        </Menu>
+      ) : null}
     </View>
   );
 }

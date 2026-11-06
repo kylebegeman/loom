@@ -27,9 +27,14 @@ split views too. The one native signal the router uses is the card native Back
 is popping. The workspace navigator reports it, and a selection never reuses
 that card.
 
-On iOS, Settings is a sheet over the originating tab and keeps its own page
+On iOS, the toolbar's Settings gear opens a sheet over the originating tab with its own page
 stack. Dismissing it restores the underlying route and tab. Android retains
 Settings as a workspace destination.
+
+The Sites tab browses websites; its `Sites` route drills into one when `siteId` is
+present, or lists all websites when it is absent. An unavailable ID must not fall
+back to a different website. The detail's Visit website action opens the browser;
+selecting a website keeps the native Back path to its originating list or search.
 
 The iOS primary selection lives in `Home.params.workspaceTab`, so external links
 and the native tab controller agree even above the React tabs provider. Search

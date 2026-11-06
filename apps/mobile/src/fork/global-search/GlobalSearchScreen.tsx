@@ -30,6 +30,7 @@ import { openSettings } from "../../features/settings/settings-navigation";
 import { useAtomValueWhileVisible } from "../../features/home/home-route-visibility";
 import { requestThreadMessageJump } from "../../features/threads/threadMessageJump";
 import { useSearchScrollRestoration } from "../../features/workspace/useSearchScrollRestoration";
+import { useSelectWorkspaceTab } from "../../features/workspace/useSelectWorkspaceTab";
 import { startOpeningDetail } from "../../features/workspace/useSelectWorkspaceDetail";
 import { selectWorkspaceDetail } from "../../features/workspace/workspace-detail-selection";
 import { useWorkspaceTabs } from "../../features/workspace/WorkspaceTabsContext";
@@ -95,6 +96,7 @@ function searchSourceError(
 export function GlobalSearchScreen() {
   const registry = use(RegistryContext);
   const navigation = useNavigation();
+  const selectTab = useSelectWorkspaceTab();
   const workspace = useWorkspaceTabs();
   const focused = useIsFocused();
   const foreground = useAppForeground();
@@ -486,7 +488,7 @@ export function GlobalSearchScreen() {
               label="Projects"
               onPress={() => navigation.navigate("Library")}
             />
-            <ListRow icon="globe" label="Sites" onPress={() => navigation.navigate("Sites")} />
+            <ListRow icon="globe" label="Sites" onPress={() => selectTab("sites")} />
             <ListRow icon="bolt.circle" label="Bots" onPress={() => navigation.navigate("Bots")} />
             <ListRow
               icon="gearshape"

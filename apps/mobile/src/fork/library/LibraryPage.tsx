@@ -38,6 +38,7 @@ export function LibraryPage(props: {
   back?: boolean;
   scroll?: boolean;
   actions?: Parameters<typeof AppBar>[0]["actions"];
+  menus?: Parameters<typeof AppBar>[0]["menus"];
 }) {
   const navigation = useNavigation();
   const focused = useIsFocused();
@@ -69,6 +70,7 @@ export function LibraryPage(props: {
         hideBottomBorder
         onBack={props.back === false ? undefined : pageBack}
         actions={props.actions}
+        menus={props.menus}
       />
       <ScreenScrollViewBottomInset
         value={(deviceType === "pad" && !systemTabBar) || compactTabs ? 80 : 0}
