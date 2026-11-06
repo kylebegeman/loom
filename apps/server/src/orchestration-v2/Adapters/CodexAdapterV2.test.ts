@@ -998,6 +998,7 @@ describe("CodexAdapterV2 process exit", () => {
           ),
         ),
       ),
+      Layer.provide(NodeServices.layer), // fork: switchboard
     );
     return Effect.gen(function* () {
       const factory = yield* CodexAdapterV2.CodexAppServerClientFactory;

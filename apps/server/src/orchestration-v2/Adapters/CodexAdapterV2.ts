@@ -1,4 +1,9 @@
 // fork: server-weight
+// fork: switchboard
+import {
+  codexAdvertisesUltrafast,
+  makeSwitchboardCodexArgs,
+} from "../../fork/switchboard/serviceTier.ts";
 import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
@@ -1595,6 +1600,9 @@ export const layerAppServerClientFactory: Layer.Layer<
   CodexAppServerClientFactory,
   never,
   | ChildProcessSpawner.ChildProcessSpawner
+  // fork: switchboard
+  | FileSystem.FileSystem
+  | Path.Path
   | PortScanner.PortDiscovery
   | ProviderEventLoggers.ProviderEventLoggers
 > = Layer.effect(
@@ -1604,6 +1612,10 @@ export const layerAppServerClientFactory: Layer.Layer<
     const { native: nativeEventLogger } = yield* ProviderEventLoggers.ProviderEventLoggers;
     const agentScope = yield* AgentScope;
     const portDiscovery = yield* PortScanner.PortDiscovery;
+    // fork: switchboard
+    const fileSystem = yield* FileSystem.FileSystem;
+    // fork: switchboard
+    const path = yield* Path.Path;
 
     return CodexAppServerClientFactory.of({
       open: Effect.fn("CodexAdapterV2.open")(function* (input) {
@@ -1612,11 +1624,28 @@ export const layerAppServerClientFactory: Layer.Layer<
           ...codexAppServerEnvironment(input.environment),
           ...(input.settings.homePath ? { CODEX_HOME: input.settings.homePath } : {}),
         };
+        // fork: switchboard
+        const launchSwitchboardArgs = yield* makeSwitchboardCodexArgs(
+          input.switchboardArgs,
+          input.settings.homePath,
+          environment,
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapter.ProviderAdapterOpenSessionError({
+                driver: CODEX_PROVIDER,
+                providerSessionId: input.providerSessionId,
+                cause,
+              }),
+          ),
+        );
         const command = yield* makeCodexAppServerSpawnCommand({
           command: input.settings.binaryPath || "codex",
           args: codexAppServerArgs(
             resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
-            input.switchboardArgs, // fork: switchboard
+            launchSwitchboardArgs, // fork: switchboard
           ),
           env: environment,
           threadId: input.threadId,
@@ -6874,6 +6903,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             codexInput: ReadonlyArray<CodexSchema.V2TurnStartParams__UserInput>,
           ) {
             const threadId = yield* getNativeThreadId(turnInput.providerThread);
+            // fork: switchboard
+            if (
+              switchboardRouting.modelProvider &&
+              getModelSelectionStringOptionValue(turnInput.modelSelection, "serviceTier") ===
+                "ultrafast" &&
+              !(yield* codexAdvertisesUltrafast(client, turnInput.modelSelection.model))
+            )
+              return yield* toProtocolError(
+                "Codex cannot send Ultrafast with its current model catalog. Refresh Codex's native model catalog and reconnect this provider, or select Fast.",
+              );
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const turnStartParams = yield* buildCodexTurnStartParams({
               nativeThreadId: threadId,
