@@ -1328,7 +1328,9 @@ exit "\${LOOM_TEST_EXIT:-0}"
     expect(result.stdout).toBe("VERDICT: pass\n");
     expect(NodeFS.readFileSync(prompt, "utf8")).toBe("Review this");
     const argv = NodeFS.readFileSync(args, "utf8").trim().split("\n");
-    expect(argv.slice(0, 3)).toEqual(["run", "codex", "exec"]);
+    expect(argv.slice(0, 2)).toEqual(["run", "codex"]);
+    expect(argv.indexOf("-c")).toBeLessThan(argv.indexOf("exec"));
+    expect(argv.slice(argv.indexOf("exec"))).not.toContain("-c");
     expect(argv).toContain(sandbox);
     expect(argv).toContain("--ephemeral");
     expect(argv).not.toContain("--dangerously-bypass-approvals-and-sandbox");

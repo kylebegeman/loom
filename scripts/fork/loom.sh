@@ -1385,8 +1385,9 @@ run_codex_agent() (
   [ "$1" != acceptEdits ] || sandbox=workspace-write
   reply=$(mktemp)
   trap 'rm -f "$reply"' EXIT
-  switchboard run codex exec --ignore-user-config --model "$LOOM_CODEX_MODEL" --ephemeral --color never \
-    --sandbox "$sandbox" -c 'approval_policy="never"' -c 'model_reasoning_effort="high"' \
+  # Exec-level -c replaces root overrides, including Switchboard's provider.
+  switchboard run codex -c 'approval_policy="never"' -c 'model_reasoning_effort="high"' \
+    exec --ignore-user-config --model "$LOOM_CODEX_MODEL" --ephemeral --color never --sandbox "$sandbox" \
     --output-last-message "$reply" - >&2 || return $?
   cat "$reply"
 )
