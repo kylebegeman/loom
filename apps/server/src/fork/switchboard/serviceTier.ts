@@ -110,8 +110,8 @@ export const makeSwitchboardTierReader = Effect.fn("Switchboard.makeTierReader")
       );
       if (!decision || decision.model !== selection.model || decision.at < since) return null;
       if (decision.observed && decision.observed !== decision.effective) {
-        yield* Effect.logWarning(
-          "Switchboard upstream service tier differs from its routing decision",
+        yield* Effect.logDebug(
+          "Switchboard response tier metadata differs from its routing decision",
           {
             model: decision.model,
             requested: decision.requested,
@@ -120,7 +120,7 @@ export const makeSwitchboardTierReader = Effect.fn("Switchboard.makeTierReader")
           },
         );
       }
-      return switchboardTierSelection(selection, decision.observed ?? decision.effective);
+      return switchboardTierSelection(selection, decision.effective);
     },
     Effect.timeout("2 seconds"),
     Effect.orElseSucceed(() => null),

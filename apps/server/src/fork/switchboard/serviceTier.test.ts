@@ -111,7 +111,10 @@ it.effect(
           observed: "default",
           at: 1000,
         };
-        assert.equal(yield* reader("native-thread", 999, selection), null);
+        assert.equal(
+          (yield* reader("native-thread", 999, selection))?.options?.[0]?.value,
+          "priority",
+        );
         decision = {
           model: "gpt-6-astra",
           requested: "ultrafast",
