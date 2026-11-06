@@ -237,7 +237,7 @@ function BotsCatalog({
     ) : null;
   const header = (
     <View className="gap-4 pb-4">
-      {showList ? (
+      {environmentId ? (
         <View className="flex-row items-center justify-between gap-3">
           <View className="min-w-0 flex-1 gap-1">
             <Pressable
@@ -265,13 +265,13 @@ function BotsCatalog({
                 />
               ) : null}
             </Pressable>
-            {collection.bots.length ? (
+            {showList && collection.bots.length ? (
               <Text textRole="footnote" className="text-foreground-muted">
                 {plural(activeCount, "bot")}
               </Text>
             ) : null}
           </View>
-          {collection.bots.length ? newBot : null}
+          {showList && collection.bots.length ? newBot : null}
         </View>
       ) : null}
       {computerOpen || (computers.length === 1 && computers[0]?.value !== environmentId) ? (

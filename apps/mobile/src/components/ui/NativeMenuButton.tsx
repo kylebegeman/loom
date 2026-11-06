@@ -112,6 +112,8 @@ export function NativeMenuButton(props: MenuProps & { readonly trigger: NativeMe
   const { trigger } = props;
   const size = resolveScaledTextRole(trigger.size === "default" ? "body" : "footnote", fontSize);
   const image = typeof trigger.icon === "string" ? trigger.icon : trigger.icon?.ios;
+  const detailImage =
+    typeof trigger.detailIcon === "string" ? trigger.detailIcon : trigger.detailIcon?.ios;
   const style = NATIVE_LIQUID_GLASS_SUPPORTED
     ? trigger.selected
       ? "glassProminent"
@@ -182,6 +184,13 @@ export function NativeMenuButton(props: MenuProps & { readonly trigger: NativeMe
             {trigger.detail ? (
               <>
                 <Spacer />
+                {detailImage ? (
+                  <Image
+                    systemName={detailImage as SystemImage}
+                    size={size.fontSize}
+                    modifiers={[foregroundStyle(colors["--color-foreground-muted"])]}
+                  />
+                ) : null}
                 <Text
                   modifiers={[
                     font({ family: "DMSans-Regular", size: size.fontSize, textStyle: "footnote" }),
