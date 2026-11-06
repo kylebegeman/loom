@@ -1683,3 +1683,4 @@ apps/mobile/src/features/voice-input/voiceDestination.ts	brand	1
 apps/mobile/src/state/use-thread-composer-state.ts	brand	1
 apps/server/src/device/SshDeviceHost.ts	brand	1
 packages/shared/package.json	-	./fork/relayJwt
+apps/server/src/device/DeviceService.test.ts	brand	2
