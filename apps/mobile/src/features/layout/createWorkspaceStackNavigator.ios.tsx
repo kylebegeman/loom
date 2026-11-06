@@ -52,6 +52,7 @@ import { useDeviceType, useNativeLayoutMetrics } from "../../native/native-layou
 import { useAdaptiveWorkspaceLayout } from "./AdaptiveWorkspaceLayout";
 import { WorkspacePaneDivider } from "./workspace-pane-divider";
 import { WorkspaceEmptyDetail } from "./WorkspaceEmptyDetail";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { NativeColumnContent as ColumnContent } from "../../native/NativeColumnContent.ios";
 import {
   modalEnvelopeOptions,
@@ -437,13 +438,20 @@ function WorkspaceColumns(
               <EmptyDetailHeader onCompose={detailCompose} />
             </PaneContext>
             <ColumnContent>
-              <WorkspaceEmptyDetail
-                tab={settingsOpen ? "settings" : selectedTab}
-                onStartNewTask={
-                  // Duo provides compose in the detail bar; iPad uses the empty-state action.
-                  detailCompose ? undefined : openNewTask
-                }
-              />
+              <ScreenScrollView
+                className="flex-1 bg-screen"
+                contentInsetAdjustmentBehavior="never"
+                contentContainerStyle={{ flexGrow: 1 }}
+                bounces={false}
+              >
+                <WorkspaceEmptyDetail
+                  tab={settingsOpen ? "settings" : selectedTab}
+                  onStartNewTask={
+                    // Duo provides compose in the detail bar; iPad uses the empty-state action.
+                    detailCompose ? undefined : openNewTask
+                  }
+                />
+              </ScreenScrollView>
             </ColumnContent>
           </Split.Screen>
           {screens.routes.map((route) => {
