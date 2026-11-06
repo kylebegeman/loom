@@ -2529,6 +2529,8 @@ describe("storage cleanup reports and local file policies", () => {
           );
           yield* fixture.service.drain;
           const startupReads = fixture.snapshotReads();
+          // fork: project-lifecycle -- Loom sweeps also read threads for projects and Scratch.
+          const sweepReads = startupReads;
           const publish = Effect.fn("StorageCleanupTest.publish")(function* (
             event: OrchestrationV2DomainEvent,
           ) {
@@ -2571,11 +2573,17 @@ describe("storage cleanup reports and local file policies", () => {
           // Release removes the live entry before publishing its final error update.
           fixture.setSessionLive(false);
           yield* publish(sessionUpdated("error", ""));
-          expect(fixture.snapshotReads()).toBe(startupReads + Number(worktreeOnDelete));
+          // fork: project-lifecycle
+          expect(fixture.snapshotReads()).toBe(
+            startupReads + sweepReads * Number(worktreeOnDelete),
+          );
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);
 
           yield* publish(sessionUpdated("stopped", ""));
-          expect(fixture.snapshotReads()).toBe(startupReads + 2 * Number(worktreeOnDelete));
+          // fork: project-lifecycle
+          expect(fixture.snapshotReads()).toBe(
+            startupReads + sweepReads * 2 * Number(worktreeOnDelete),
+          );
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);
 
           fixture.setSessionLive(true);
@@ -2586,7 +2594,10 @@ describe("storage cleanup reports and local file policies", () => {
             occurredAt: at(0),
             payload: { ...shell({ deletedAt: at(0) }), lastVisitedAt: null },
           });
-          expect(fixture.snapshotReads()).toBe(startupReads + 3 * Number(worktreeOnDelete));
+          // fork: project-lifecycle -- Loom's other rules also sweep on deletion.
+          expect(fixture.snapshotReads()).toBe(
+            startupReads + sweepReads * (1 + 2 * Number(worktreeOnDelete)),
+          );
           expect(fixture.sessionLiveChecks()).toBe(worktreeOnDelete ? 6 : 0);
         }),
       ),

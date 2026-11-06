@@ -631,6 +631,20 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         ),
       ),
     );
+    // fork: server-weight -- signed out with no fallback fails without starting the CLI.
+    if (primaryState === "signed out, fallback failed") {
+      const failure = yield* Effect.flip(
+        service.generateThreadTitle({
+          cwd: "/tmp",
+          message: "hello",
+          linkedContext: "",
+          modelSelection: selection,
+        }),
+      );
+      expect(failure.detail).toContain("Sign in");
+      expect(calls).toEqual([]);
+      return;
+    }
     expect(
       yield* service.generateThreadTitle({
         cwd: "/tmp",

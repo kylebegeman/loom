@@ -167,7 +167,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
-apps/server/src/storageCleanup.test.ts	project-lifecycle	34
+apps/server/src/storageCleanup.test.ts	project-lifecycle	38
 packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	14
@@ -853,6 +853,7 @@ apps/server/src/orchestration-v2/ThreadManagementService.test.ts	server-weight	2
 apps/server/src/orchestration-v2/ThreadManagementService.ts	server-weight	3
 apps/server/src/process/agentScope.ts	server-weight	2
 apps/server/src/serverRuntimeStartup.ts	server-weight	6
+apps/server/src/textGeneration/CodexTextGeneration.test.ts	server-weight	1
 apps/server/src/textGeneration/TextGeneration.test.ts	server-weight	3
 apps/server/src/textGeneration/TextGeneration.ts	server-weight	2
 apps/web/src/lib/backgroundActivityReporter.test.ts	server-weight	4
