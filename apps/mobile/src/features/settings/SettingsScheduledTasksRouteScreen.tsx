@@ -231,6 +231,13 @@ function SelectRow(props: {
   }
   return (
     <Menu
+      nativeTrigger={{
+        label: props.label,
+        detail: props.value,
+        accessibilityLabel: `${props.label}, ${props.value}`,
+        size: "default",
+        fullWidth: true,
+      }}
       actions={props.actions}
       onPressAction={({ nativeEvent }) => props.onSelect(nativeEvent.event)}
     >
@@ -1516,6 +1523,11 @@ function EnvironmentTasks({
               ) : null}
             </Pressable>
             <Menu
+              nativeTrigger={{
+                icon: "ellipsis",
+                accessibilityLabel: `Actions for ${task.title}`,
+                size: "default",
+              }}
               actions={[
                 { id: "edit", title: "Edit" },
                 {

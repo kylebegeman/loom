@@ -76,6 +76,12 @@ export function PullRequestStatusMenu(props: RowProps) {
   if (!actions.length) return trigger;
   return (
     <Menu
+      nativeTrigger={{
+        label: status.label,
+        icon: status.icon,
+        accessibilityLabel: `${term} status, ${status.label}`,
+        size: "compact",
+      }}
       title={`${term} status`}
       actions={actions.map((id) => ({
         id,
@@ -219,6 +225,24 @@ export function PullRequestBranchRow(props: RowProps) {
   if (!methods.length && !canResolve) return row;
   return (
     <Menu
+      nativeTrigger={{
+        label: conflicting
+          ? `Conflicts with ${props.pr.baseBranch}`
+          : clean
+            ? `No conflicts with ${props.pr.baseBranch}`
+            : "Branch",
+        icon: conflicting
+          ? PullRequestGlyph.conflicting
+          : clean
+            ? "checkmark.circle"
+            : "arrow.branch",
+        detail:
+          conflicting || (clean && props.pr.baseComparison !== "behind" && !action.busy)
+            ? undefined
+            : summary,
+        accessibilityLabel: `Branch, ${summary}`,
+        fullWidth: true,
+      }}
       title="Branch"
       actions={[
         ...(canResolve ? [agent.menuAction("conflicts")] : []),

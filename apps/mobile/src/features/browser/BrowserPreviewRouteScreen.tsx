@@ -9,10 +9,12 @@ import * as Option from "effect/Option";
 import { useEffect, useRef, useState } from "react";
 import { Platform, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 
 import { ControlPill } from "../../components/ui/ControlPill";
 import { useAppForeground } from "../../lib/appState";
 import { AppBar } from "../../components/ui/AppBar";
+import { GLASS_HEADER_OPTIONS } from "../../native/glass-header-options";
 
 import { useThreadServerBrowserTabs } from "../../state/preview";
 import { usePreparedConnection } from "../../state/session";
@@ -42,10 +44,10 @@ export function BrowserPreviewRouteScreen({ route }: BrowserPreviewRouteScreenPr
     <View collapsable={false} className="flex-1 bg-sheet">
       <BrowserPreviewStack.Navigator
         screenOptions={{
+          ...GLASS_HEADER_OPTIONS,
           headerShown: Platform.OS === "ios",
           headerBackVisible: false,
           headerShadowVisible: false,
-          headerTransparent: false,
           headerTitleStyle: { fontSize: 17, fontWeight: "600" },
         }}
       >
@@ -76,6 +78,7 @@ function BrowserPreviewScreen({
   readonly onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { themeVariables } = useAppearancePreferences();
   const prepared = usePreparedConnection(environmentId);
   const httpBaseUrl = Option.isSome(prepared) ? prepared.value.httpBaseUrl : null;
@@ -110,7 +113,14 @@ function BrowserPreviewScreen({
   const live = (focused && foreground) || pictureInPicture.active;
 
   return (
-    <View className="flex-1 bg-sheet" style={{ paddingBottom: insets.bottom }}>
+    <View
+      className="flex-1 bg-sheet"
+      style={{
+        paddingTop:
+          Platform.OS === "ios" && GLASS_HEADER_OPTIONS.headerTransparent ? headerHeight : 0,
+        paddingBottom: insets.bottom,
+      }}
+    >
       <AppBar
         title={tab ? browserTabTitle(tab) : "Browser"}
         onBack={onClose}

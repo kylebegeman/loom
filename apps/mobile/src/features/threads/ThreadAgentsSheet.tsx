@@ -25,6 +25,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { environmentThreadDetails } from "../../state/threads";
 import { NativeStackScreenOptions, nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useEnvironments } from "../../state/environments";
 import { SubagentRow } from "./SubagentRow";
 import { useVisibleSecondClock } from "./use-visible-second-clock";
@@ -148,7 +149,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
               backgroundColor="rgba(0,0,0,0)"
               tintColorClassName="accent-foreground"
               hideBackButton
-              hideShadow={false}
+              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED}
               title="Agents"
               titleColorClassName="accent-foreground"
               titleFontSize={18}

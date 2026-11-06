@@ -10,6 +10,7 @@ import { isDuoDevice } from "../lib/device-type";
 import { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
 import { useDeviceType, useNativeLayoutMetrics } from "../native/native-layout-metrics";
 import { HeaderItemsWidthContext } from "./header-items-width";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native-glass";
 import {
   SearchBar,
   Stack,
@@ -332,12 +333,18 @@ export function V5StackHeader(props: {
     );
   const titleStyle = StyleSheet.flatten(options.headerTitleStyle);
   const headerStyle = StyleSheet.flatten(options.headerStyle);
+  const transparent = options.headerTransparent ?? NATIVE_LIQUID_GLASS_SUPPORTED;
   const appearance = {
-    // Clear colors remove UIKit material; let translucent bars supply their own blur background.
-    backgroundColor: options.headerTransparent
-      ? undefined
-      : (headerStyle?.backgroundColor ?? theme.colors.card),
-    shadowColor: options.headerShadowVisible === false ? "transparent" : undefined,
+    // UIKit's scroll view owns the soft edge effect; a default bar appearance adds a hard band above it.
+    backgroundColor: NATIVE_LIQUID_GLASS_SUPPORTED
+      ? "transparent"
+      : transparent
+        ? undefined
+        : (headerStyle?.backgroundColor ?? theme.colors.card),
+    shadowColor:
+      NATIVE_LIQUID_GLASS_SUPPORTED || options.headerShadowVisible === false
+        ? "transparent"
+        : undefined,
     titleFontSize: titleStyle?.fontSize,
     titleFontFamily: titleStyle?.fontFamily,
     titleFontWeight: titleStyle?.fontWeight,
@@ -349,7 +356,7 @@ export function V5StackHeader(props: {
     <HeaderItemsWidthContext value={itemsWidth}>
       <Stack.HeaderConfig
         hidden={options.headerShown === false}
-        transparent={options.headerTransparent}
+        transparent={transparent}
         title={title}
         subtitle={options.unstable_headerSubtitle ?? options.headerSubtitle}
         backButtonHidden={options.headerBackVisible === false}

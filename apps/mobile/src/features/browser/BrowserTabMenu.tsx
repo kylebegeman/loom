@@ -162,6 +162,11 @@ export function BrowserTabMenu({
       accessible
       accessibilityLabel="Browser tab options"
       accessibilityRole="button"
+      nativeTrigger={{
+        icon: "ellipsis",
+        accessibilityLabel: "Browser tab options",
+        size: "default",
+      }}
       actions={streaming ? actions : [closeAction]}
       onPressAction={({ nativeEvent }) => onAction(nativeEvent.event)}
     >

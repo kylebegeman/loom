@@ -168,6 +168,12 @@ export function T3ConnectProfilePage() {
                 />
               ) : (
                 <Menu
+                  nativeTrigger={{
+                    icon: "ellipsis",
+                    accessibilityLabel: `Actions for ${environment.label}`,
+                    disabled: deregisteringEnvironmentId !== null,
+                    size: "compact",
+                  }}
                   actions={ENVIRONMENT_MENU_ACTIONS}
                   isAnchoredToRight
                   onPressAction={() =>

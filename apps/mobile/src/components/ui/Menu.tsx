@@ -12,6 +12,7 @@ import { withUniwind } from "uniwind";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 import { withMenuActionIconColors } from "../../lib/menu-action-colors";
 import type { MenuProps } from "./Menu.types";
+import { NativeMenuButton } from "./NativeMenuButton";
 
 const ThemedMenuView = withUniwind(
   function NativeMenuView({
@@ -42,12 +43,20 @@ const ThemedMenuView = withUniwind(
 );
 
 export function Menu(props: MenuProps) {
+  return props.nativeTrigger && !props.shouldOpenOnLongPress ? (
+    <NativeMenuButton {...props} trigger={props.nativeTrigger} />
+  ) : (
+    <ContextualMenu {...props} />
+  );
+}
+
+function ContextualMenu(props: MenuProps) {
   const { themeAppearance } = useAppearancePreferences();
   const isDarkMode = themeAppearance === "dark";
   const menuPress = useRef({ isPreparing: false, isOpen: false, suppressPress: false });
   const pendingPress = useRef<(() => void) | null>(null);
 
-  const { className: _className, ...menuProps } = props;
+  const { className: _className, nativeTrigger: _nativeTrigger, ...menuProps } = props;
   let children = menuProps.children;
   if (props.shouldOpenOnLongPress && isValidElement(children)) {
     const child = children as ReactElement<Pick<PressableProps, "onTouchStart" | "onPress">>;

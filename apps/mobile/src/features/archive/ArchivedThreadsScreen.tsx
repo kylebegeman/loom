@@ -245,6 +245,10 @@ function ArchivedThreadRow(props: {
       {Platform.OS === "ios" && canOperateThread ? (
         <Menu
           title={props.thread.title}
+          nativeTrigger={{
+            icon: "ellipsis",
+            accessibilityLabel: `Actions for ${props.thread.title}`,
+          }}
           actions={[
             { id: "restore", title: "Restore to threads", image: "arrow.uturn.backward" },
             { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },

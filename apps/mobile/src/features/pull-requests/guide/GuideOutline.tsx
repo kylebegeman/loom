@@ -30,6 +30,7 @@ export function GuideOutline({
           </Text>
         </View>
         <Menu
+          nativeTrigger={{ icon: "ellipsis", accessibilityLabel: "Guide options" }}
           title="Guide options"
           actions={[
             {

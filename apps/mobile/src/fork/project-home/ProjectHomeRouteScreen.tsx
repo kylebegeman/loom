@@ -681,6 +681,10 @@ function ProjectHomeContent(props: {
           </Pressable>
           {actions.length > 0 ? (
             <Menu
+              nativeTrigger={{
+                icon: "ellipsis",
+                accessibilityLabel: `Actions for ${thread.title}`,
+              }}
               actions={[...actions]}
               onPressAction={({ nativeEvent }) => {
                 if (nativeEvent.event === "settle") void settleThread(thread);

@@ -17,6 +17,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { NativeStackScreenOptions, nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { environmentThreadShells } from "../../state/threads";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 
@@ -82,7 +83,7 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
               backgroundColor="rgba(0,0,0,0)"
               tintColorClassName="accent-foreground"
               hideBackButton
-              hideShadow={false}
+              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED}
               title="Background work"
               titleColorClassName="accent-foreground"
               titleFontSize={18}

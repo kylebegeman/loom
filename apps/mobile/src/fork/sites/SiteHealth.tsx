@@ -125,6 +125,7 @@ export function SiteServiceGroup({
         </View>
         {canManage ? (
           <Menu
+            nativeTrigger={{ icon: "ellipsis", accessibilityLabel: `Actions for ${service.name}` }}
             title={service.name}
             actions={[
               { id: "edit", title: "Edit service", image: "pencil" },
@@ -267,6 +268,7 @@ function SiteCheckRow({
       </View>
       {canManage ? (
         <Menu
+          nativeTrigger={{ icon: "ellipsis", accessibilityLabel: `Actions for ${check.name}` }}
           title={check.name}
           actions={[{ id: "edit", title: "Edit check", image: "pencil" }]}
           onPressAction={onEdit}

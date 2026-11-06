@@ -567,6 +567,10 @@ export function SiteBrowserScreen() {
             {computers.length > 1 ? (
               <Menu
                 title="Preview computer"
+                nativeTrigger={{
+                  label: computer?.label ?? "Choose computer",
+                  accessibilityLabel: `Preview computer: ${computer?.label ?? "Choose computer"}`,
+                }}
                 actions={computers.map((entry) => ({
                   id: entry.environmentId,
                   title: entry.label,

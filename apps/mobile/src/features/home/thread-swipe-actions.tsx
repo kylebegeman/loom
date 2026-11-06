@@ -21,7 +21,7 @@ import type {
   StyleProp,
   ViewStyle,
 } from "react-native";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -613,6 +613,18 @@ function SwipeActionButton(props: {
     };
   });
 
+  const label = (
+    <Animated.View
+      style={[
+        { height: 14, justifyContent: "center", paddingTop: props.compact ? 0 : 2 },
+        labelStyle,
+      ]}
+    >
+      <Text className="text-3xs font-t3-medium text-foreground-muted" numberOfLines={1}>
+        {props.label}
+      </Text>
+    </Animated.View>
+  );
   const button = (
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
@@ -674,16 +686,7 @@ function SwipeActionButton(props: {
           />
         </Animated.View>
       </View>
-      <Animated.View
-        style={[
-          { height: 14, justifyContent: "center", paddingTop: props.compact ? 0 : 2 },
-          labelStyle,
-        ]}
-      >
-        <Text className="text-3xs font-t3-medium text-foreground-muted" numberOfLines={1}>
-          {props.label}
-        </Text>
-      </Animated.View>
+      {label}
     </Pressable>
   );
 
@@ -703,14 +706,23 @@ function SwipeActionButton(props: {
       {props.menu === undefined ? (
         button
       ) : (
-        <Menu
-          actions={props.menu.actions}
-          onPressAction={props.menu.onPressAction}
-          title={props.menu.title}
-          style={{ height: "100%", width: "100%" }}
-        >
-          {button}
-        </Menu>
+        <>
+          <Menu
+            nativeTrigger={{
+              icon: props.icon,
+              accessibilityLabel: props.accessibilityLabel,
+            }}
+            actions={props.menu.actions}
+            onPressAction={props.menu.onPressAction}
+            title={props.menu.title}
+            style={
+              Platform.OS === "ios" ? { alignSelf: "center" } : { height: "100%", width: "100%" }
+            }
+          >
+            {button}
+          </Menu>
+          {Platform.OS === "ios" ? label : null}
+        </>
       )}
     </Animated.View>
   );

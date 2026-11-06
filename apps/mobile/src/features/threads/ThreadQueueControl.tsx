@@ -28,6 +28,7 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { NativeStackScreenOptions, nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useAssetUrl } from "../../state/assets";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -381,7 +382,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                 backgroundColor="rgba(0,0,0,0)"
                 color={theme["--color-foreground"]}
                 hideBackButton
-                hideShadow={false}
+                hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED}
                 title="Queued"
                 titleColor={theme["--color-foreground"]}
                 titleFontSize={18}

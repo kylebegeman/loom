@@ -18,6 +18,14 @@ export function MediaActionsMenu(props: {
   const MediaMenu = nativeAndroidMenu ? MenuView : Menu;
   return (
     <MediaMenu
+      {...(Platform.OS === "ios" && props.children === undefined
+        ? {
+            nativeTrigger: {
+              icon: "ellipsis" as const,
+              accessibilityLabel: "Media actions",
+            },
+          }
+        : {})}
       title={props.media.title}
       style={props.style}
       shouldOpenOnLongPress={props.children !== undefined}

@@ -15,7 +15,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { use, useEffect, useRef, useState, type ComponentRef } from "react";
+import { use, useEffect, useRef, useState, type ComponentRef, type ReactNode } from "react";
 import { Keyboard, Linking, Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -25,6 +25,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
+import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { openSettings } from "../../features/settings/settings-navigation";
 import { useAtomValueWhileVisible } from "../../features/home/home-route-visibility";
 import { requestThreadMessageJump } from "../../features/threads/threadMessageJump";
@@ -78,6 +79,8 @@ const CATEGORIES: readonly {
   { id: "bots", title: "Bots", icon: "bolt.circle" },
   { id: "settings", title: "Settings", icon: "gearshape" },
 ];
+
+const RECENT_THREAD_LIMIT = 3;
 
 function searchSourceData<A, E>(result: AsyncResult.AsyncResult<A, E> | null): A | null {
   return result === null ? null : AsyncResult.getOrElse(result, () => null);
@@ -341,7 +344,7 @@ export function GlobalSearchScreen() {
       ? rankGlobalSearchItems(
           items.filter((item) => item.category === "threads"),
           "",
-        ).slice(0, GLOBAL_SEARCH_PAGE_SIZE)
+        ).slice(0, RECENT_THREAD_LIMIT)
       : [];
   const insets = useSafeAreaInsets();
   const bottomSafe = useNativeColumnLayoutMetrics()?.safeArea.bottom ?? insets.bottom;
@@ -461,49 +464,99 @@ export function GlobalSearchScreen() {
       ) : null}
       {query === "" ? (
         <>
-          <Text textRole="footnote" className="text-foreground-muted">
-            Find work across your computers and Library.
-          </Text>
-          {recents.length ? (
-            <SearchSection
-              title="Recent threads"
-              icon="text.bubble"
-              items={recents}
-              pending={pending}
-              onOpen={open}
-            />
-          ) : (
-            <EmptyState
-              variant="plain"
-              title="Search Loom"
-              detail={
-                isReady
-                  ? "Search across your connected computers and shared Library."
-                  : "Loading your computers…"
-              }
-            />
-          )}
-          <View>
-            <Text accessibilityRole="header" textRole="headline" className="pb-2 pt-2 font-t3-bold">
-              Browse
+          <View className="gap-2 pb-1 pt-1">
+            <Text accessibilityRole="header" textRole="largeTitle" className="font-t3-bold">
+              Find your work
             </Text>
-            <SearchBrowseRow
+            <Text textRole="body" className="text-foreground-muted">
+              Search a message, a project, or a website.
+            </Text>
+          </View>
+          <View>
+            <SearchDestinationRow
               icon="briefcase"
               label="Projects"
+              description="Projects and saved conversation history"
               onPress={() => navigation.navigate("Library")}
             />
-            <SearchBrowseRow icon="globe" label="Sites" onPress={() => selectTab("sites")} />
-            <SearchBrowseRow
-              icon="bolt.circle"
-              label="Bots"
-              onPress={() => navigation.navigate("Bots")}
+            <SearchDestinationRow
+              icon="globe"
+              label="Sites"
+              description="Monitored websites and live previews"
+              onPress={() => selectTab("sites")}
             />
-            <SearchBrowseRow
-              icon="gearshape"
-              label="Settings"
-              onPress={() => navigation.navigate("Settings")}
-            />
+            <View className="flex-row flex-wrap gap-x-5 pt-2">
+              <SearchUtilityButton
+                icon="bolt.circle"
+                label="Bots"
+                onPress={() => navigation.navigate("Bots")}
+              />
+              <SearchUtilityButton
+                icon="gearshape"
+                label="Settings"
+                onPress={() => navigation.navigate("Settings")}
+              />
+            </View>
           </View>
+          {recents.length ? (
+            <View>
+              <View className="flex-row flex-wrap items-center justify-between gap-x-3">
+                <Text accessibilityRole="header" textRole="headline" className="font-t3-bold">
+                  Continue a thread
+                </Text>
+                <Button
+                  tone="text"
+                  size="compact"
+                  label="All threads"
+                  onPress={() => selectTab("threads")}
+                />
+              </View>
+              {recents.map((item) => {
+                const thread =
+                  item.destination.kind === "thread"
+                    ? localThreads.get(
+                        scopedThreadKey(item.destination.environmentId, item.destination.threadId),
+                      )
+                    : undefined;
+                const project = thread
+                  ? localProjects.get(`${thread.environmentId}:${thread.projectId}`)
+                  : undefined;
+                return (
+                  <SearchRecentThread
+                    key={item.key}
+                    item={item}
+                    pending={pending}
+                    onOpen={open}
+                    identity={
+                      project ? (
+                        <ProjectFavicon
+                          environmentId={project.environmentId}
+                          projectTitle={project.title}
+                          workspaceRoot={project.workspaceRoot}
+                          faviconPath={project.faviconPath}
+                          projectIcon={project.projectIcon}
+                          size={24}
+                        />
+                      ) : (
+                        <SymbolView name="text.bubble" size={20} tintColorClassName="accent-icon" />
+                      )
+                    }
+                  />
+                );
+              })}
+            </View>
+          ) : (
+            <View className="gap-2 py-4">
+              <Text textRole="headline" className="font-t3-bold">
+                {isReady ? "No recent threads" : "Loading your threads…"}
+              </Text>
+              <Text textRole="body" className="text-foreground-muted">
+                {isReady
+                  ? "Open a project or use Search to find something to continue."
+                  : "Your connected work will appear here."}
+              </Text>
+            </View>
+          )}
         </>
       ) : (
         <>
@@ -577,6 +630,92 @@ export function GlobalSearchScreen() {
         </>
       )}
     </ScreenScrollView>
+  );
+}
+
+function SearchDestinationRow(props: {
+  readonly icon: AppSymbolName;
+  readonly label: string;
+  readonly description: string;
+  readonly onPress: () => void;
+}) {
+  return (
+    <RowPressable
+      accessibilityRole="button"
+      onPress={props.onPress}
+      className="min-h-20 flex-row items-center gap-3 border-b border-border-subtle py-3"
+    >
+      <View className="size-11 items-center justify-center rounded-full bg-secondary">
+        <SymbolView name={props.icon} size={23} tintColorClassName="accent-primary-text" />
+      </View>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text textRole="headline" className="font-t3-bold">
+          {props.label}
+        </Text>
+        <Text textRole="footnote" className="text-foreground-muted">
+          {props.description}
+        </Text>
+      </View>
+      <SymbolView name="chevron.right" size={14} tintColorClassName="accent-chevron" />
+    </RowPressable>
+  );
+}
+
+function SearchUtilityButton(props: {
+  readonly icon: AppSymbolName;
+  readonly label: string;
+  readonly onPress: () => void;
+}) {
+  return (
+    <RowPressable
+      accessibilityRole="button"
+      onPress={props.onPress}
+      className="min-h-11 flex-row items-center gap-2 py-2"
+    >
+      <SymbolView name={props.icon} size={18} tintColorClassName="accent-primary-text" />
+      <Text textRole="footnote" className="font-t3-medium text-primary-text">
+        {props.label}
+      </Text>
+    </RowPressable>
+  );
+}
+
+function SearchRecentThread(props: {
+  readonly item: GlobalSearchItem;
+  readonly pending: string | null;
+  readonly identity: ReactNode;
+  readonly onOpen: (item: GlobalSearchItem) => Promise<void>;
+}) {
+  const { item } = props;
+  const opening = props.pending === item.key;
+  return (
+    <RowPressable
+      accessibilityRole="button"
+      accessibilityLabel={[item.title, item.description].filter(Boolean).join(". ")}
+      accessibilityState={{ disabled: props.pending !== null || item.disabled, busy: opening }}
+      disabled={props.pending !== null || item.disabled}
+      onPress={() => void props.onOpen(item)}
+      className="min-h-20 flex-row items-start gap-3 border-b border-border-subtle py-3.5"
+    >
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="size-9 items-center justify-center rounded-full bg-secondary"
+      >
+        {props.identity}
+      </View>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text textRole="body" className="font-t3-bold" numberOfLines={2}>
+          {item.title}
+        </Text>
+        <Text textRole="footnote" className="text-foreground-muted" numberOfLines={2}>
+          {opening ? "Opening…" : item.description}
+        </Text>
+      </View>
+      <View className="min-h-9 justify-center">
+        <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+      </View>
+    </RowPressable>
   );
 }
 

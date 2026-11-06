@@ -4,7 +4,11 @@ import { createRoot } from "react-dom/client";
 import type { StackHeaderConfigProps } from "react-native-screens";
 import { expect, it, vi } from "vite-plus/test";
 
-const bridge = vi.hoisted(() => ({ ios: undefined as StackHeaderConfigProps["ios"] }));
+const bridge = vi.hoisted(() => ({
+  ios: undefined as StackHeaderConfigProps["ios"],
+  transparent: undefined as StackHeaderConfigProps["transparent"],
+  nativeGlass: true,
+}));
 
 vi.mock("react-native", () => ({ StyleSheet: { flatten: (style: unknown) => style } }));
 vi.mock("react-native-keyboard-controller", () => ({
@@ -18,16 +22,56 @@ vi.mock("./native-layout-metrics", () => ({
   useDeviceType: () => "phone",
   useNativeLayoutMetrics: () => null,
 }));
+vi.mock("./native-glass", () => ({
+  get NATIVE_LIQUID_GLASS_SUPPORTED() {
+    return bridge.nativeGlass;
+  },
+}));
 vi.mock("react-native-screens", () => ({
   Stack: {
-    HeaderConfig: ({ ios }: StackHeaderConfigProps) => {
+    HeaderConfig: ({ ios, transparent }: StackHeaderConfigProps) => {
       bridge.ios = ios;
+      bridge.transparent = transparent;
       return null;
     },
   },
 }));
 
 import { V5StackHeader } from "./V5StackHeader.ios";
+
+it("leaves native glass headers clear for the scroll view's edge effect", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  try {
+    for (const nativeGlass of [true, false]) {
+      bridge.nativeGlass = nativeGlass;
+      act(() =>
+        root.render(
+          <V5StackHeader
+            canGoBack={false}
+            options={{
+              headerTransparent: false,
+              headerShadowVisible: true,
+              headerStyle: { backgroundColor: "#f0f0f0" },
+              headerTitleStyle: { fontSize: 18, color: "#202020" },
+            }}
+          />,
+        ),
+      );
+      expect(bridge.transparent).toBe(false);
+      for (const appearance of [bridge.ios?.standardAppearance, bridge.ios?.scrollEdgeAppearance]) {
+        expect(appearance?.backgroundColor).toBe(nativeGlass ? "transparent" : "#f0f0f0");
+        expect(appearance?.shadowColor).toBe(nativeGlass ? "transparent" : undefined);
+        expect(appearance?.titleFontSize).toBe(18);
+        expect(appearance?.titleFontColor).toBe("#202020");
+      }
+    }
+  } finally {
+    bridge.nativeGlass = true;
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
 
 it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
   "updates native enabled state after permissions change in %s",

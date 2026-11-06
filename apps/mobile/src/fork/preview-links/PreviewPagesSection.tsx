@@ -196,6 +196,13 @@ function PreviewPageRow(props: {
         row
       ) : (
         <Menu
+          nativeTrigger={{
+            label: page.title,
+            subtitle: summary,
+            icon: "doc.text",
+            accessibilityLabel: `${page.title}, ${summary}`,
+            fullWidth: true,
+          }}
           title={page.title}
           actions={menuActions}
           onPressAction={({ nativeEvent }) => {

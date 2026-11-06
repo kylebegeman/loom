@@ -16,6 +16,12 @@ export function ListFilterMenu(props: {
   return (
     <Menu
       title={props.accessibilityLabel}
+      nativeTrigger={{
+        label: props.label,
+        accessibilityLabel: props.accessibilityLabel,
+        icon: props.icon ? "line.3.horizontal.decrease" : undefined,
+        selected: props.active,
+      }}
       actions={props.actions}
       onPressAction={({ nativeEvent }) => props.onSelect(nativeEvent.event)}
     >

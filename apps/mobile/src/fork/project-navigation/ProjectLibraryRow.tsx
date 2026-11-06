@@ -147,6 +147,10 @@ export function ProjectLibraryRow(props: {
           </View>
         </Pressable>
         <Menu
+          nativeTrigger={{
+            icon: "ellipsis",
+            accessibilityLabel: `Actions for ${entry.title}`,
+          }}
           actions={[
             {
               id: "new-task",
