@@ -632,7 +632,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
       ),
     );
     // fork: server-weight -- signed out with no fallback fails without starting the CLI.
-    if (primaryState === "signed out, fallback failed") {
+    if ((primaryState as string) === "signed out, fallback failed") {
       const failure = yield* Effect.flip(
         service.generateThreadTitle({
           cwd: "/tmp",
