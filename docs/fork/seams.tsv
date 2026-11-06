@@ -967,9 +967,6 @@ packages/contracts/src/clientRpcPermissions.ts	project-lifecycle	1
 packages/contracts/src/orchestrationV2.ts	project-lifecycle	1
 packages/contracts/src/orchestrationV2.ts	workspace-handoff	1
 packages/contracts/src/rpc.ts	project-lifecycle	5
-patches/vitest@5.0.1.patch	project-lifecycle	1
-patches/vitest@5.0.1.patch	nightly	1
-pnpm-workspace.yaml	project-lifecycle	2
 pnpm-workspace.yaml	library-semantic-search	1
 docs/user/composer.md	project-lifecycle	1
 docs/internals/effect-services.md	source-control-cockpit	1

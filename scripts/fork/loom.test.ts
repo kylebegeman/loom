@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - Exercises maintenance checks and database backups against isolated fixtures.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
+import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
@@ -2319,6 +2321,62 @@ it("parses every shell script in the Loom workflows", () => {
       expect({ file, stderr: parsed.stderr.trim() }).toEqual({ file, stderr: "" });
     }
   }
+});
+
+it("keeps Vitest compatible with Vite+ and its browser providers", () => {
+  const require = NodeModule.createRequire(import.meta.resolve("vite-plus/package.json"));
+  const vitePlus = require("./package.json");
+  const vitest = require("vitest/package.json");
+  expect(vitest.version).toBe(vitePlus.dependencies.vitest);
+});
+
+it("fails the gateway check when Retry-After exceeds its retry budget", async ({
+  onTestFinished,
+}) => {
+  let requests = 0;
+  let child: NodeChildProcess.ChildProcess | undefined;
+  const server = NodeHttp.createServer((request, response) => {
+    requests++;
+    request.resume();
+    response.writeHead(429, { "Retry-After": "21600" });
+    response.end("Rate limited");
+  });
+  onTestFinished(async () => {
+    child?.kill();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("No probe address");
+  const probe = workflowScripts(
+    NodePath.join(import.meta.dirname, "../../.github/workflows/loom-upstream.yml"),
+  ).find((script) => script.includes("/v1/messages/count_tokens"));
+  if (!probe) throw new Error("Missing gateway check");
+  child = NodeChildProcess.spawn("bash", ["-euo", "pipefail", "-c", probe], {
+    env: {
+      ...hostEnv,
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
+      ANTHROPIC_AUTH_TOKEN: "fixture-token",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout?.on("data", (data: Buffer) => {
+    output += data.toString();
+  });
+  child.stderr?.on("data", (data: Buffer) => {
+    output += data.toString();
+  });
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child?.on("error", reject);
+    child?.on("close", resolve);
+  });
+  expect(code, output).toBe(1);
+  expect(requests).toBe(1);
+  expect(output).toContain("did not accept a token count");
 });
 
 it("can spy on task-reservation Set additions without recursing in the mock registry", () => {
