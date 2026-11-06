@@ -1,11 +1,15 @@
 import { assert, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { setSwitchboardEnvironment, setSwitchboardEnabled } from "./switchboard.ts";
 import {
   makeSwitchboardTierReader,
+  makeSwitchboardCodexCatalog,
   switchboardTierSelection,
   withSwitchboardServiceTiers,
 } from "./serviceTier.ts";
@@ -101,6 +105,14 @@ it.effect(
           "https://hub.example.test/api/v1/service-tier?session=native-thread&since=999",
         ]);
         decision = {
+          model: selection.model,
+          requested: "ultrafast",
+          effective: "priority",
+          observed: "default",
+          at: 1000,
+        };
+        assert.equal(yield* reader("native-thread", 999, selection), null);
+        decision = {
           model: "gpt-6-astra",
           requested: "ultrafast",
           effective: "priority",
@@ -125,4 +137,48 @@ it.effect(
         setSwitchboardEnvironment({}, "darwin");
       }
     }),
+);
+
+it.effect("prepares a pooled Codex catalog without changing native account metadata", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const home = yield* fs.makeTempDirectoryScoped();
+      assert.equal(yield* makeSwitchboardCodexCatalog(home), undefined);
+      const models = [
+        {
+          slug: "gpt-6.1-sol",
+          base_instructions: "Keep native instructions",
+          service_tiers: [{ id: "priority", name: "Fast", description: "Fast processing" }],
+          context_window: 500000,
+        },
+        { slug: "gpt-6-astra", base_instructions: "Astra", service_tiers: [] },
+        { slug: "gpt-6-luna", service_tiers: [] },
+      ];
+      const source = JSON.stringify({ models, identity: { account: "native-account" } });
+      yield* fs.writeFileString(path.join(home, "models_cache.json"), source);
+      const file = yield* makeSwitchboardCodexCatalog(home);
+      assert.isDefined(file);
+      const catalog = JSON.parse(yield* fs.readFileString(file!));
+      assert.deepEqual(catalog.models[0], {
+        ...models[0],
+        service_tiers: [
+          models[0]!.service_tiers[0],
+          {
+            id: "ultrafast",
+            name: "Ultrafast",
+            description: "Switchboard routes to an eligible account or falls back to Fast",
+          },
+        ],
+      });
+      assert.deepEqual(
+        catalog.models[1].service_tiers.map((tier: { id: string }) => tier.id),
+        ["priority", "ultrafast"],
+      );
+      assert.deepEqual(catalog.models[2], models[2]);
+      assert.equal(catalog.identity, undefined);
+      assert.equal(yield* fs.readFileString(path.join(home, "models_cache.json")), source);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
 );
