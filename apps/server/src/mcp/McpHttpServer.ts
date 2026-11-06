@@ -255,7 +255,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, admitted),
       Effect.map(normalizeMcpHttpResponse),
-      Effect.map((response) => hideUnusableTools(response, refreshed)), // fork: agent-catalog
+      Effect.map((response) => hideUnusableTools(response, admitted)), // fork: agent-catalog
     );
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
