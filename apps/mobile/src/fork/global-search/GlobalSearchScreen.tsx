@@ -700,7 +700,7 @@ function SearchRecentThread(props: {
       <View
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        className="size-9 items-center justify-center rounded-full bg-secondary"
+        className="size-9 items-center justify-center"
       >
         {props.identity}
       </View>

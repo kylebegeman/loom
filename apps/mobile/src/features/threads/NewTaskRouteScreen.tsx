@@ -401,7 +401,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     !canStartScratch && "opacity-45",
                   )}
                 >
-                  <View className="size-11 items-center justify-center rounded-full bg-subtle">
+                  <View className="size-11 items-center justify-center">
                     <SymbolView
                       name="text.bubble"
                       size={22}
@@ -555,7 +555,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       onPress={() => void selectProject(selectionTarget)}
                       className="min-h-20 flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
                     >
-                      <View className="size-11 items-center justify-center rounded-full bg-subtle">
+                      <View className="size-11 items-center justify-center">
                         <ProjectFavicon
                           environmentId={scope.representative.environmentId}
                           faviconPath={scope.representative.faviconPath}

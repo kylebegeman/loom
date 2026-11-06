@@ -41,7 +41,7 @@ export function LibraryProjectTile({
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      className={`${prominent ? "size-16" : "size-11"} items-center justify-center rounded-full`}
+      className={`${prominent ? "size-16 rounded-2xl" : "size-11 rounded-xl"} items-center justify-center`}
       style={{ backgroundColor: `${color}${TILE_ALPHA}` }}
     >
       <Text textRole={prominent ? "title" : "body"} className="font-t3-semibold" style={{ color }}>
