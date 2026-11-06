@@ -86,7 +86,7 @@ export function LibraryPage(props: {
                 automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 contentInsetAdjustmentBehavior="automatic"
-                contentContainerClassName="gap-6 px-5 pt-4"
+                contentContainerClassName="gap-7 px-5 pt-5"
                 contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
               >
                 {props.children}

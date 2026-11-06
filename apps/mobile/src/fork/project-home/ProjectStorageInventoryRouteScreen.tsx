@@ -105,21 +105,22 @@ export function ProjectStorageInventoryRouteScreen() {
         }}
         style={{ flex: 1 }}
         ListHeaderComponent={
-          <View className="gap-5 pt-4 pb-2">
-            <Text className="px-2 text-xs leading-normal text-foreground-muted">
+          <View className="gap-6 pt-5 pb-3">
+            <Text textRole="footnote" className="text-foreground-muted">
               Projects and threads stay in Loom. These are known working-file locations on your
               computers. Choose to keep files there, or safely free space after settling and restore
               them when you resume work.
             </Text>
             <ProjectStorageRolloutQueue controller={controller} snapshot={snapshot} />
-            <View className="flex-row items-center justify-between gap-3 px-2 pt-1">
+            <View className="flex-row items-center justify-between gap-3 pt-1">
               <Text
                 accessibilityRole="header"
-                className="text-sm font-t3-medium text-foreground-muted"
+                textRole="body"
+                className="font-t3-semibold text-foreground"
               >
-                Projects and working files
+                Known locations
               </Text>
-              <Text className="text-xs tabular-nums text-foreground-muted">
+              <Text textRole="footnote" className="tabular-nums text-foreground-muted">
                 {records.length} {query.trim() ? "matching locations" : "locations"}
               </Text>
             </View>
@@ -183,7 +184,7 @@ export function ProjectStorageInventoryRouteScreen() {
                       projectId: project.id,
                     })
                   }
-                  className="min-h-[44px] flex-row items-center gap-2.5 px-2 pt-5 pb-2 active:opacity-70"
+                  className="min-h-14 flex-row items-center gap-3 pt-6 pb-3 active:opacity-70"
                 >
                   <ProjectFavicon
                     environmentId={project.environmentId}
@@ -191,9 +192,9 @@ export function ProjectStorageInventoryRouteScreen() {
                     workspaceRoot={project.workspaceRoot}
                     faviconPath={project.faviconPath}
                     projectIcon={project.projectIcon}
-                    size={20}
+                    size={32}
                   />
-                  <Text className="min-w-0 flex-1 text-sm font-t3-medium text-foreground">
+                  <Text textRole="body" className="min-w-0 flex-1 font-t3-semibold text-foreground">
                     {groupTitle}
                   </Text>
                   <SymbolView
@@ -226,8 +227,8 @@ export function ProjectStorageInventoryRouteScreen() {
                   onPress={() => controller.setSelected(key, !selected)}
                   className={
                     firstInProject
-                      ? "min-h-[80px] flex-row items-center gap-3 px-4 py-3 active:opacity-70"
-                      : "min-h-[80px] flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
+                      ? "min-h-24 flex-row items-center gap-3 px-5 py-4 active:opacity-70"
+                      : "min-h-24 flex-row items-center gap-3 border-t border-border-subtle px-5 py-4 active:opacity-70"
                   }
                 >
                   <SymbolView
@@ -238,28 +239,37 @@ export function ProjectStorageInventoryRouteScreen() {
                     }
                   />
                   <View className="min-w-0 flex-1 gap-0.5">
-                    <Text className="text-sm font-t3-medium text-foreground" numberOfLines={2}>
+                    <Text
+                      textRole="body"
+                      className="font-t3-medium text-foreground"
+                      numberOfLines={2}
+                    >
                       Working files on {computerLabel}
                     </Text>
                     {recordLabel ? (
-                      <Text className="text-xs text-foreground-muted">{recordLabel}</Text>
+                      <Text textRole="footnote" className="text-foreground-muted">
+                        {recordLabel}
+                      </Text>
                     ) : null}
                     <View className="min-w-0 flex-row gap-1">
-                      <Text className="text-xs text-foreground-muted">Location</Text>
+                      <Text textRole="footnote" className="text-foreground-muted">
+                        Location
+                      </Text>
                       <Text
-                        className="min-w-0 flex-1 text-xs text-foreground-muted"
+                        textRole="footnote"
+                        className="min-w-0 flex-1 text-foreground-muted"
                         numberOfLines={1}
                         ellipsizeMode="middle"
                       >
                         {project.workspaceRoot}
                       </Text>
                     </View>
-                    <Text className="text-xs text-foreground-muted">
+                    <Text textRole="footnote" className="text-foreground-muted">
                       {saved ? "Saved" : accessLabel}
                     </Text>
                   </View>
                 </Pressable>
-                <View className="px-4 pb-3">
+                <View className="px-5 pb-4">
                   <ProjectFolderLocation
                     project={project}
                     computerLabel={computerLabel}

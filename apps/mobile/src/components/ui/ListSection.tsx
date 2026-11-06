@@ -12,7 +12,7 @@ export function ListSection(props: {
   readonly footer?: string;
 }) {
   return (
-    <View className="gap-2">
+    <View className="gap-3">
       {props.title ? (
         <View className="flex-row items-center justify-between gap-3">
           <View
@@ -23,7 +23,7 @@ export function ListSection(props: {
             }
           >
             {props.titleIcon}
-            <Text textRole="footnote" className="shrink font-t3-medium text-foreground-muted">
+            <Text textRole="body" className="shrink font-t3-semibold text-foreground">
               {props.title}
             </Text>
           </View>

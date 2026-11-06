@@ -28,21 +28,23 @@ export function useLibraryProjectColorValue() {
   return (color: LibraryProjectColor) => LIBRARY_PROJECT_COLOR_VALUES[color][themeAppearance];
 }
 
-/** A rounded-square monogram tinted with the project's saved or automatic color. */
+/** A monogram in the project's saved or automatic color. */
 export function LibraryProjectTile({
   project,
+  prominent = false,
 }: {
   project: Pick<LibraryProject, "id" | "title" | "color">;
+  prominent?: boolean;
 }) {
   const color = useLibraryProjectColorValue()(libraryProjectColor(project));
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      className="size-9 items-center justify-center rounded-lg"
+      className={`${prominent ? "size-16" : "size-11"} items-center justify-center rounded-full`}
       style={{ backgroundColor: `${color}${TILE_ALPHA}` }}
     >
-      <Text className="text-sm font-t3-medium" style={{ color }}>
+      <Text textRole={prominent ? "title" : "body"} className="font-t3-semibold" style={{ color }}>
         {libraryProjectInitials(project.title)}
       </Text>
     </View>

@@ -46,6 +46,7 @@ export interface GlobalSearchItem {
   readonly category: GlobalSearchCategory;
   readonly title: string;
   readonly description?: string;
+  readonly snippet?: string;
   readonly terms?: readonly string[];
   readonly updatedAt?: string;
   readonly serverQuality?: number;
@@ -80,6 +81,7 @@ export function rankGlobalSearchItems(items: readonly GlobalSearchItem[], query:
         description: preferred.serverQuality
           ? preferred.description
           : (item.description ?? previous.description),
+        snippet: preferred.serverQuality ? preferred.snippet : (item.snippet ?? previous.snippet),
         terms: [...(previous.terms ?? []), ...(item.terms ?? [])],
         destination: preferred.destination,
         serverQuality: Math.max(previous.serverQuality ?? 0, item.serverQuality ?? 0) || undefined,
@@ -97,6 +99,7 @@ export function rankGlobalSearchItems(items: readonly GlobalSearchItem[], query:
                 item.title,
                 ...(item.terms ?? []),
                 item.description ?? "",
+                item.snippet ?? "",
               ])?.score ?? 0,
               item.serverQuality ?? 0,
             ),

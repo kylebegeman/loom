@@ -2,7 +2,7 @@ import { useBotBadgeCount } from "./useBotBadgeCount";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
-import { FlatList, Platform, Pressable, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_FEATURE,
@@ -17,13 +17,12 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
-import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { RowPressable } from "../../components/ui/RowPressable";
 import * as Dialog from "../../components/ui/Dialog";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
-import { MOBILE_SHAPE } from "../../lib/designTokens";
 import { cn } from "../../lib/cn";
 import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { useEnvironments } from "../../state/environments";
@@ -93,8 +92,6 @@ export function BotsRouteScreen({
     />
   );
 }
-
-const groupRadius = Platform.OS === "android" ? MOBILE_SHAPE.group.android : MOBILE_SHAPE.group.ios;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -238,55 +235,11 @@ function BotsCatalog({
         }
       />
     ) : null;
-  const shortcuts: ReadonlyArray<{
-    readonly label: string;
-    readonly icon: AppSymbolName;
-    readonly show: boolean;
-    readonly open: () => void;
-  }> = environmentId
-    ? [
-        {
-          label: attention > 0 ? `Needs you (${attention})` : "Needs you",
-          icon: "person.badge.clock",
-          show: capabilities.inboxSupported,
-          open: () => navigation.navigate("BotsInbox", { environmentId }),
-        },
-        {
-          label: "Runs",
-          icon: "clock",
-          show: true,
-          open: () => navigation.navigate("BotsRuns", { environmentId }),
-        },
-        {
-          label: "Pipelines",
-          icon: "arrow.triangle.branch",
-          show: capabilities.pipelinesSupported,
-          open: () => navigation.navigate("BotsPipelines", { environmentId }),
-        },
-        {
-          label: "Triggers",
-          icon: "bolt.circle",
-          show: capabilities.triggersSupported,
-          open: () => navigation.navigate("BotsTriggers", { environmentId }),
-        },
-        {
-          label: "Grok companion",
-          icon: "bubble.left.and.bubble.right",
-          show: capabilities.completionsSupported,
-          open: () => navigation.navigate("BotsCompletions", { environmentId }),
-        },
-      ]
-    : [];
   const header = (
     <View className="gap-4 pb-4">
       {showList ? (
         <View className="flex-row items-center justify-between gap-3">
           <View className="min-w-0 flex-1 gap-1">
-            <Text accessibilityRole="header" className="text-2xl font-t3-semibold">
-              {collection.query.isPending && !collection.bots.length
-                ? "Saved bots"
-                : plural(activeCount, "bot")}
-            </Text>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Computer: ${capabilities.label}`}
@@ -294,9 +247,14 @@ function BotsCatalog({
               disabled={computers.length < 2}
               hitSlop={8}
               onPress={() => setComputerOpen(!computerOpen)}
-              className="min-h-8 flex-row items-center gap-1.5 self-start active:opacity-70"
+              className="min-h-11 flex-row items-center gap-2 self-start active:opacity-70"
             >
-              <Text numberOfLines={1} className="shrink text-sm text-foreground-muted">
+              <SymbolView name="desktopcomputer" size={18} tintColorClassName="accent-icon-muted" />
+              <Text
+                textRole="body"
+                numberOfLines={1}
+                className="shrink font-t3-medium text-foreground"
+              >
                 {capabilities.label}
               </Text>
               {computers.length > 1 ? (
@@ -307,6 +265,11 @@ function BotsCatalog({
                 />
               ) : null}
             </Pressable>
+            {collection.bots.length ? (
+              <Text textRole="footnote" className="text-foreground-muted">
+                {plural(activeCount, "bot")}
+              </Text>
+            ) : null}
           </View>
           {collection.bots.length ? newBot : null}
         </View>
@@ -322,23 +285,30 @@ function BotsCatalog({
       {environmentId && capabilities.operationsSupported ? (
         <BotOperationsControls environmentId={environmentId} />
       ) : null}
-      {showList && shortcuts.some((shortcut) => shortcut.show) ? (
-        <View className="flex-row flex-wrap gap-2">
-          {shortcuts
-            .filter((shortcut) => shortcut.show)
-            .map((shortcut) => (
-              <RowPressable
-                key={shortcut.label}
-                accessibilityRole="button"
-                accessibilityLabel={shortcut.label}
-                onPress={shortcut.open}
-                className="min-h-11 flex-row items-center gap-2 rounded-full bg-subtle px-3.5 py-2"
-              >
-                <SymbolView name={shortcut.icon} size={15} tintColorClassName="accent-icon-muted" />
-                <Text className="text-sm font-t3-medium">{shortcut.label}</Text>
-              </RowPressable>
-            ))}
-        </View>
+      {showList && environmentId && capabilities.inboxSupported && attention > 0 ? (
+        <RowPressable
+          accessibilityRole="button"
+          accessibilityLabel={`Needs you (${attention})`}
+          onPress={() => navigation.navigate("BotsInbox", { environmentId })}
+          className="min-h-14 flex-row items-center gap-3 rounded-2xl bg-secondary px-4 py-3"
+        >
+          <SymbolView
+            name="person.badge.clock"
+            size={20}
+            tintColorClassName="accent-secondary-foreground"
+          />
+          <Text
+            textRole="body"
+            className="min-w-0 flex-1 font-t3-semibold text-secondary-foreground"
+          >
+            Needs you ({attention})
+          </Text>
+          <SymbolView
+            name="chevron.right"
+            size={14}
+            tintColorClassName="accent-secondary-foreground"
+          />
+        </RowPressable>
       ) : null}
       {!environmentId ? (
         <EmptyState
@@ -444,15 +414,7 @@ function BotsCatalog({
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 48 }}
         ListHeaderComponent={header}
         renderItem={({ item: bot, index }) => (
-          <View
-            className="overflow-hidden border-continuous bg-grouped-card"
-            style={{
-              borderTopLeftRadius: index === 0 ? groupRadius : 0,
-              borderTopRightRadius: index === 0 ? groupRadius : 0,
-              borderBottomLeftRadius: index === filtered.length - 1 ? groupRadius : 0,
-              borderBottomRightRadius: index === filtered.length - 1 ? groupRadius : 0,
-            }}
-          >
+          <View>
             {index > 0 ? <View className="ms-16 h-px bg-border-subtle" /> : null}
             <RowPressable
               accessibilityRole="button"
@@ -466,16 +428,20 @@ function BotsCatalog({
                   });
               }}
               className={cn(
-                "min-h-16 flex-row items-center gap-3 px-4 py-3 active:opacity-70",
+                "min-h-20 flex-row items-center gap-4 py-4 active:opacity-70",
                 bot.archivedAt && "opacity-70",
               )}
             >
               <BotTile botId={bot.id} />
               <View className="min-w-0 flex-1 gap-0.5">
-                <Text numberOfLines={1} className="text-base font-t3-medium text-foreground">
+                <Text
+                  textRole="body"
+                  numberOfLines={2}
+                  className="font-t3-semibold text-foreground"
+                >
                   {bot.name}
                 </Text>
-                <Text numberOfLines={1} className="text-xs text-foreground-muted">
+                <Text textRole="footnote" numberOfLines={2} className="text-foreground-muted">
                   {botDetail(bot)}
                 </Text>
               </View>
@@ -688,87 +654,88 @@ function BotDetail({
         )
       ) : (
         <>
-          <BotsOutline>
-            <View className="gap-4 p-5">
-              <View className="flex-row items-start gap-4">
-                <BotTile botId={bot.id} size="xl" />
-                <View className="min-w-0 flex-1 gap-1.5">
-                  <Text
-                    accessibilityRole="header"
-                    className="text-2xl font-t3-semibold text-foreground"
-                  >
-                    {bot.name}
+          <View className="gap-5">
+            <View className="flex-row items-start gap-4">
+              <BotTile botId={bot.id} size="xl" />
+              <View className="min-w-0 flex-1 gap-1.5">
+                <Text
+                  accessibilityRole="header"
+                  textRole="largeTitle"
+                  className="font-t3-semibold text-foreground"
+                >
+                  {bot.name}
+                </Text>
+                <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
+                  {bot.archivedAt ? <LibraryStateBadge tone="neutral" label="Archived" /> : null}
+                  {bot.origin?.kind === "starter" ? (
+                    <LibraryStateBadge tone="neutral" label="Starter" />
+                  ) : null}
+                  {bot.library == null ? null : (
+                    <LibraryStateBadge tone="neutral" label="From the Library" />
+                  )}
+                  <Text className="text-xs tabular-nums text-foreground-muted">
+                    {botVersionLabel(bot)} · {capabilities.label}
                   </Text>
-                  <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1.5">
-                    {bot.archivedAt ? <LibraryStateBadge tone="neutral" label="Archived" /> : null}
-                    {bot.origin?.kind === "starter" ? (
-                      <LibraryStateBadge tone="neutral" label="Starter" />
-                    ) : null}
-                    {bot.library == null ? null : (
-                      <LibraryStateBadge tone="neutral" label="From the Library" />
-                    )}
-                    <Text className="text-xs tabular-nums text-foreground-muted">
-                      {botVersionLabel(bot)} · {capabilities.label}
-                    </Text>
-                  </View>
                 </View>
               </View>
-              {bot.description ? (
-                <Text className="text-sm text-foreground-muted">{bot.description}</Text>
-              ) : null}
-              <View className="flex-row flex-wrap gap-2">
-                <Button
-                  label="Run bot"
-                  tone="primary"
-                  icon="play"
-                  disabled={runDisabled}
-                  onPress={() =>
-                    navigation.navigate("BotsRun", {
-                      environmentId,
-                      botId,
-                      ...(callerThreadId ? { callerThreadId } : {}),
-                    })
-                  }
-                />
-                {capabilities.batchesSupported ? (
-                  <Button
-                    label="Run on many"
-                    icon="square.on.square"
-                    disabled={runDisabled}
-                    onPress={() => navigation.navigate("BotsBatches", { environmentId, botId })}
-                  />
-                ) : null}
-                <Button
-                  label="Edit bot"
-                  icon="pencil"
-                  disabled={disabled || !canEdit}
-                  onPress={() => navigation.navigate("BotsEdit", { environmentId, botId })}
-                />
-              </View>
-              <View className="border-t border-border-subtle pt-4">
-                <BotSpecGrid
-                  rows={[
-                    ["Model", bot.modelSelection.model],
-                    ["Permissions", RUNTIME_MODE_LABELS[bot.runtimeMode]],
-                    ["Mode", bot.interactionMode === "plan" ? "Plan only" : "Do the work"],
-                    ["Runs in", workspaceLabel(bot.workspace)],
-                    ["Time limit", `${bot.timeoutMinutes} minutes`],
-                    ["Runs at once", String(bot.maxConcurrentRuns)],
-                    ["Output", bot.output === "verdict" ? "Structured verdict" : "Text"],
-                    [
-                      "Inputs",
-                      bot.parameters
-                        .map(
-                          (parameter) =>
-                            `${parameter.label}${parameter.required ? "" : " (optional)"}`,
-                        )
-                        .join(", ") || "None",
-                    ],
-                  ]}
-                />
-              </View>
             </View>
-          </BotsOutline>
+            {bot.description ? (
+              <Text textRole="body" className="text-foreground-muted">
+                {bot.description}
+              </Text>
+            ) : null}
+            <View className="flex-row flex-wrap gap-2">
+              <Button
+                label="Run bot"
+                tone="primary"
+                icon="play"
+                disabled={runDisabled}
+                onPress={() =>
+                  navigation.navigate("BotsRun", {
+                    environmentId,
+                    botId,
+                    ...(callerThreadId ? { callerThreadId } : {}),
+                  })
+                }
+              />
+              {capabilities.batchesSupported ? (
+                <Button
+                  label="Run on many"
+                  icon="square.on.square"
+                  disabled={runDisabled}
+                  onPress={() => navigation.navigate("BotsBatches", { environmentId, botId })}
+                />
+              ) : null}
+              <Button
+                label="Edit bot"
+                icon="pencil"
+                disabled={disabled || !canEdit}
+                onPress={() => navigation.navigate("BotsEdit", { environmentId, botId })}
+              />
+            </View>
+            <View className="border-t border-border-subtle pt-4">
+              <BotSpecGrid
+                rows={[
+                  ["Model", bot.modelSelection.model],
+                  ["Permissions", RUNTIME_MODE_LABELS[bot.runtimeMode]],
+                  ["Mode", bot.interactionMode === "plan" ? "Plan only" : "Do the work"],
+                  ["Runs in", workspaceLabel(bot.workspace)],
+                  ["Time limit", `${bot.timeoutMinutes} minutes`],
+                  ["Runs at once", String(bot.maxConcurrentRuns)],
+                  ["Output", bot.output === "verdict" ? "Structured verdict" : "Text"],
+                  [
+                    "Inputs",
+                    bot.parameters
+                      .map(
+                        (parameter) =>
+                          `${parameter.label}${parameter.required ? "" : " (optional)"}`,
+                      )
+                      .join(", ") || "None",
+                  ],
+                ]}
+              />
+            </View>
+          </View>
           <BotInstructions instructions={bot.instructions} />
           {manage.length ? (
             <BotsSection title="Manage">
@@ -784,7 +751,9 @@ function BotDetail({
                       index > 0 && "border-t border-border-subtle",
                     )}
                   >
-                    <Text className="min-w-0 flex-1 text-sm text-foreground">{entry.label}</Text>
+                    <Text textRole="body" className="min-w-0 flex-1 text-foreground">
+                      {entry.label}
+                    </Text>
                     <SymbolView
                       name="chevron.right"
                       size={14}
@@ -819,7 +788,9 @@ function BotInstructions({ instructions }: { readonly instructions: string }) {
         className="min-h-12 flex-row items-center gap-3 px-4 py-3 active:opacity-70"
       >
         <View className="min-w-0 flex-1">
-          <Text className="text-sm font-t3-semibold text-foreground">Instructions</Text>
+          <Text textRole="body" className="font-t3-semibold text-foreground">
+            Instructions
+          </Text>
           <Text className="text-xs text-foreground-muted">
             The brief every run receives · {plural(lines, "line")}
           </Text>
@@ -833,7 +804,8 @@ function BotInstructions({ instructions }: { readonly instructions: string }) {
       <Text
         selectable
         numberOfLines={open ? undefined : INSTRUCTION_PREVIEW_LINES}
-        className="border-t border-border-subtle px-4 py-3 text-sm leading-relaxed text-foreground"
+        textRole="body"
+        className="border-t border-border-subtle px-5 py-4 text-foreground"
       >
         {instructions}
       </Text>

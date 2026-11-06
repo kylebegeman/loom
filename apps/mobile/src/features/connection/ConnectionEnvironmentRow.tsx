@@ -98,9 +98,9 @@ export function ConnectionEnvironmentRow(props: {
 
   return (
     <Animated.View layout={LinearTransition.duration(250)} className="bg-grouped-card">
-      <View className="flex-row items-center gap-3 px-4 py-3.5">
+      <View className="flex-row items-center gap-2 ps-4 pe-2 py-4">
         <Pressable
-          className="min-w-0 flex-1 gap-0.5 active:opacity-70"
+          className="min-h-14 min-w-0 flex-1 flex-row items-center gap-3 active:opacity-70"
           accessibilityRole="button"
           accessibilityLabel={
             props.opensDetails
@@ -110,67 +110,78 @@ export function ConnectionEnvironmentRow(props: {
           accessibilityState={props.opensDetails ? undefined : { expanded: props.expanded }} // fork: fleet-connections
           onPress={props.onToggle}
         >
-          <View className="flex-row items-center gap-1.5">
-            <ConnectionStatusDot
-              state={enabled || unsupported ? props.environment.connectionState : "available"}
-              pulse={isRetrying}
-              size={8}
-            />
+          <View
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            className="size-11 items-center justify-center rounded-full bg-secondary"
+          >
             <EnvironmentMachineSymbol
               kind={resolveEnvironmentMachineKind(serverConfig)}
-              size={14}
-              tintColorClassName="accent-foreground-muted"
+              size={22}
+              tintColorClassName="accent-secondary-foreground"
             />
-            <Text
-              className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
-              numberOfLines={1}
-            >
-              {props.environment.environmentLabel}
-            </Text>
           </View>
-          {!props.environment.isRelayManaged && props.environment.displayUrl.trim() ? (
-            <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-              {props.environment.displayUrl}
-            </Text>
-          ) : null}
-          {diagnosis ? (
-            <>
-              <Text className="text-xs text-danger-foreground">{diagnosis.headline}</Text>
-              {connectionState.attempt > 0 ? (
-                <Text className="text-xs text-foreground-muted">
-                  {`Retrying · attempt ${connectionState.attempt}`}
+          <View className="min-w-0 flex-1 gap-1.5">
+            <View className="flex-row items-center gap-2">
+              <ConnectionStatusDot
+                state={enabled || unsupported ? props.environment.connectionState : "available"}
+                pulse={isRetrying}
+                size={8}
+              />
+              <Text
+                textRole="body"
+                className="min-w-0 flex-shrink font-t3-semibold text-foreground"
+                numberOfLines={1}
+              >
+                {props.environment.environmentLabel}
+              </Text>
+            </View>
+            {!props.environment.isRelayManaged && props.environment.displayUrl.trim() ? (
+              <Text textRole="footnote" className="text-foreground-muted" numberOfLines={1}>
+                {props.environment.displayUrl}
+              </Text>
+            ) : null}
+            {diagnosis ? (
+              <>
+                <Text textRole="footnote" className="text-danger-foreground">
+                  {diagnosis.headline}
                 </Text>
-              ) : null}
-            </>
-          ) : statusLabel ? (
-            <Text
-              className={cn(
-                "text-xs",
-                hasConnectionFailure ? "text-danger-foreground" : "text-foreground-muted",
-              )}
-              numberOfLines={props.expanded ? undefined : 1}
-              selectable={props.expanded}
-            >
-              {statusLabel}
-              {statusTraceId ? (
-                <ConnectionTraceId
-                  traceId={statusTraceId}
-                  tone={hasConnectionFailure ? "danger" : "muted"}
-                  activation="longPress"
-                />
-              ) : null}
-            </Text>
-          ) : null}
-          {/* fork: directory-computers */}
-          <ComputerHealthSummary environmentId={props.environment.environmentId} />
-          {freeze ? (
-            <Text
-              className="text-xs text-warning-foreground"
-              numberOfLines={props.expanded ? undefined : 1}
-            >
-              {`${freeze.title}. ${freeze.description}`}
-            </Text>
-          ) : null}
+                {connectionState.attempt > 0 ? (
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {`Retrying · attempt ${connectionState.attempt}`}
+                  </Text>
+                ) : null}
+              </>
+            ) : statusLabel ? (
+              <Text
+                className={cn(
+                  "text-sm",
+                  hasConnectionFailure ? "text-danger-foreground" : "text-foreground-muted",
+                )}
+                numberOfLines={props.expanded ? undefined : 1}
+                selectable={props.expanded}
+              >
+                {statusLabel}
+                {statusTraceId ? (
+                  <ConnectionTraceId
+                    traceId={statusTraceId}
+                    tone={hasConnectionFailure ? "danger" : "muted"}
+                    activation="longPress"
+                  />
+                ) : null}
+              </Text>
+            ) : null}
+            {/* fork: directory-computers */}
+            <ComputerHealthSummary environmentId={props.environment.environmentId} />
+            {freeze ? (
+              <Text
+                className="text-xs text-warning-foreground"
+                numberOfLines={props.expanded ? undefined : 1}
+              >
+                {`${freeze.title}. ${freeze.description}`}
+              </Text>
+            ) : null}
+          </View>
         </Pressable>
 
         <ThemedSwitch

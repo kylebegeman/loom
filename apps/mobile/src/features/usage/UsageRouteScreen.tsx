@@ -3,7 +3,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
-import { type RouteProp, useIsFocused, useRoute } from "@react-navigation/native";
+import { type RouteProp, useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import { cursorKeychainAccessEnvironments } from "@t3tools/client-runtime/state/usage";
 import {
   updatingProvidersLabel,
@@ -37,6 +37,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { useReduceMotionEnabled } from "../../lib/appState";
 import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
@@ -86,6 +87,7 @@ function UsageScreen(props: {
   readonly tabParam: string | undefined;
 }) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const [selection, setSelection] = useState(() => ({
     params: props.tabParam,
     view: (props.tabParam === "usage" ? "cost" : "limits") as UsageView,
@@ -361,26 +363,41 @@ function UsageScreen(props: {
                   </Text>
                 ) : null}
                 {isPending ? (
-                  <Text className="py-16 text-center text-base text-foreground-muted">
-                    Scanning provider transcripts…
-                  </Text>
+                  <UsageLoading />
                 ) : selectedEnvironments.length === 0 ? (
-                  <Text className="py-16 text-center text-base text-foreground-muted">
-                    {environments.length === 0
-                      ? "Connect an environment to see usage."
-                      : "Select an environment to see usage."}
-                  </Text>
+                  <EmptyState
+                    variant="plain"
+                    title={environments.length === 0 ? "Connect a computer" : "Choose a computer"}
+                    detail={
+                      environments.length === 0
+                        ? "See provider usage from the computers you connect to Loom."
+                        : "Use the filter to choose which computers to include."
+                    }
+                    {...(environments.length === 0
+                      ? {
+                          actionLabel: "Connect computer",
+                          onAction: () => navigation.navigate("Connections"),
+                        }
+                      : {})}
+                  />
                 ) : !canReadDiagnostics ? (
-                  <View className="gap-2 py-16">
+                  <View className="gap-3 rounded-[24px] bg-grouped-card p-5">
+                    <Text textRole="headline" className="font-t3-bold text-foreground">
+                      Usage unavailable
+                    </Text>
                     {selectedEnvironments.map((environment) => (
                       <Text
                         key={environment.environmentId}
-                        className="text-center text-base text-foreground-muted"
+                        textRole="footnote"
+                        className="text-foreground-muted"
                       >
                         {selectedEnvironments.length > 1 ? `${environment.label}: ` : null}
-                        {environment.error}
+                        {environment.error ?? "No usage data is available from this computer."}
                       </Text>
                     ))}
+                    <View className="self-start">
+                      <Button label="Try again" onPress={refreshWindow} />
+                    </View>
                   </View>
                 ) : (
                   <>
@@ -429,6 +446,33 @@ function UsageScreen(props: {
         </View>
       </ScrollView>
     </SettingsScreen>
+  );
+}
+
+function UsageLoading() {
+  return (
+    <View
+      accessible
+      accessibilityLabel="Scanning provider transcripts"
+      accessibilityState={{ busy: true }}
+      className="gap-5 rounded-[24px] bg-grouped-card p-5"
+    >
+      <View className="flex-row items-center gap-2">
+        <AppActivityIndicator size="small" />
+        <Text textRole="footnote" className="text-foreground-muted">
+          Scanning provider transcripts…
+        </Text>
+      </View>
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        className="gap-4"
+      >
+        <View className="h-8 w-32 rounded-lg bg-subtle" />
+        <View className="h-28 rounded-xl bg-subtle" />
+        <View className="h-4 w-2/3 rounded-md bg-subtle" />
+      </View>
+    </View>
   );
 }
 
@@ -549,12 +593,18 @@ function CursorEnableLimits({
 }) {
   return (
     <View className="gap-3">
-      <View className="flex-row items-center gap-2 px-1">
-        <ProviderIcon provider="cursor" size={18} />
-        <Text className="text-base font-t3-medium text-foreground">Cursor</Text>
+      <View className="flex-row items-center gap-3 px-1">
+        <View className="size-10 items-center justify-center rounded-full bg-subtle">
+          <ProviderIcon provider="cursor" size={23} />
+        </View>
+        <Text textRole="title" className="font-t3-bold text-foreground">
+          Cursor
+        </Text>
       </View>
       <View className="items-start gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
-        <Text className="text-xs text-foreground-muted">{CURSOR_KEYCHAIN_COPY}</Text>
+        <Text textRole="footnote" className="text-foreground-muted">
+          {CURSOR_KEYCHAIN_COPY}
+        </Text>
         <View className="flex-row flex-wrap gap-2">
           {environments.map((environment) => (
             <CursorEnableAction
@@ -595,7 +645,14 @@ function ChartCard(props: {
     <UsageDailyChart days={props.days} daily={props.daily} metric={metric} height={height} />
   ) : (
     <View style={{ height }} className="items-center justify-center">
-      <Text className="text-base text-foreground-muted">No activity in this window.</Text>
+      <View className="items-center gap-1 px-4">
+        <Text textRole="headline" className="font-t3-medium text-foreground">
+          No activity in this range
+        </Text>
+        <Text textRole="footnote" className="text-center text-foreground-muted">
+          Choose another time range to check for earlier usage.
+        </Text>
+      </View>
     </View>
   );
 
@@ -656,11 +713,11 @@ function ChartCard(props: {
 function UsageSummary(props: { readonly merged: MergedUsage; readonly metric: UsageChartMetric }) {
   const { merged, metric } = props;
   return (
-    <View className="gap-0.5">
-      <Text className="text-sm text-foreground-muted">
+    <View className="gap-1">
+      <Text textRole="footnote" className="font-t3-medium text-foreground-muted">
         {metric === "cost" ? "Raw token cost" : "Processed tokens"}
       </Text>
-      <Text className="text-4xl font-t3-bold tabular-nums text-foreground">
+      <Text textRole="display" className="font-t3-bold tabular-nums text-foreground">
         {metric === "cost" ? `${formatUsd(merged.costUsd)}*` : formatTokens(merged.totalTokens)}
       </Text>
       <Text className="text-sm text-foreground-muted">
@@ -732,15 +789,16 @@ function ProviderSection(props: {
               index > 0 && "border-t border-border-subtle",
             )}
           >
-            <View className="flex-row items-baseline justify-between gap-3">
-              <View className="flex-row items-center gap-2">
-                <View
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: colors[provider.provider] }}
-                />
+            <View className="flex-row flex-wrap items-center justify-between gap-3">
+              <View className="flex-row items-center gap-3">
+                <View className="size-9 items-center justify-center rounded-full bg-subtle">
+                  <ProviderIcon provider={provider.provider} size={21} />
+                </View>
                 <Text
                   className={
-                    props.compact ? "text-base text-foreground" : "text-lg text-foreground"
+                    props.compact
+                      ? "text-base font-t3-medium text-foreground"
+                      : "text-lg font-t3-medium text-foreground"
                   }
                 >
                   {PROVIDER_LABEL[provider.provider]}
@@ -749,8 +807,8 @@ function ProviderSection(props: {
               <Text
                 className={
                   props.compact
-                    ? "text-base tabular-nums text-foreground"
-                    : "text-lg tabular-nums text-foreground"
+                    ? "text-base font-t3-bold tabular-nums text-foreground"
+                    : "text-lg font-t3-bold tabular-nums text-foreground"
                 }
               >
                 {metric === "cost"
@@ -936,8 +994,12 @@ function MetricCell(props: {
   return (
     <View className="gap-0.5 p-4" style={{ width: `${100 / props.columns}%` }}>
       <Text className="text-sm text-foreground-muted">{props.label}</Text>
-      <Text className="text-xl font-t3-medium tabular-nums text-foreground">{props.value}</Text>
-      <Text className="text-xs text-foreground-tertiary">{props.detail}</Text>
+      <Text textRole="title" className="font-t3-bold tabular-nums text-foreground">
+        {props.value}
+      </Text>
+      <Text textRole="footnote" className="text-foreground-muted">
+        {props.detail}
+      </Text>
     </View>
   );
 }

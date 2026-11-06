@@ -23,8 +23,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
+import { cn } from "../../lib/cn";
 import { environmentPresentations } from "../../state/presentation";
 import { ResetCredits } from "./UsageLimitsSection";
 import { usageProviderKind, useProviderColors } from "./usageProviders";
@@ -198,28 +200,62 @@ function PoolWindowCard({
     });
   const summary = (
     <>
-      <View className={wide ? "gap-1" : "flex-row items-start justify-between gap-3"}>
-        <View className="gap-1">
-          <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
+      <View
+        className={
+          wide ? "items-start gap-2" : "flex-row flex-wrap items-start justify-between gap-3"
+        }
+      >
+        <View className="min-w-0 gap-1">
+          <Text textRole="footnote" className="font-t3-medium text-foreground-muted">
+            {label ?? pool.label}
+          </Text>
           <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+            <Text textRole="display" className="font-t3-bold tabular-nums text-foreground">
               {pool.remainingPercent}%
             </Text>
-            <Text className="text-sm text-foreground-muted">left</Text>
+            <Text textRole="footnote" className="text-foreground-muted">
+              left
+            </Text>
           </View>
         </View>
         {pool.pace ? (
-          <Text className="text-xs text-foreground-tertiary">{PACE_LABEL[pool.pace]}</Text>
+          <View
+            className={cn(
+              "rounded-full px-2.5 py-1",
+              pool.pace === "ahead" ? "bg-warning" : "bg-subtle",
+            )}
+          >
+            <Text
+              textRole="caption"
+              className={cn(
+                "font-t3-medium",
+                pool.pace === "ahead" ? "text-warning-foreground" : "text-foreground-muted",
+              )}
+            >
+              {PACE_LABEL[pool.pace]}
+            </Text>
+          </View>
         ) : null}
       </View>
-      {description ? <Text className="text-xs text-foreground-muted">{description}</Text> : null}
-      {nextRefill ? (
-        <Text className="text-xs tabular-nums text-foreground-muted">
-          ↻ +{nextRefill.restoresPercent}%{" "}
-          {formatResetsIn(nextRefill.member.window, now)
-            ?.replace("resets in ", "in ")
-            .replace("resets now", "now")}
+      {description ? (
+        <Text textRole="footnote" className="text-foreground-muted">
+          {description}
         </Text>
+      ) : null}
+      {nextRefill ? (
+        <View className="flex-row items-start gap-1.5">
+          <SymbolView
+            name="arrow.clockwise"
+            size={13}
+            tintColorClassName="accent-foreground-muted"
+          />
+          <Text textRole="footnote" className="min-w-0 flex-1 tabular-nums text-foreground-muted">
+            +{nextRefill.restoresPercent}%{" "}
+            {formatResetsIn(nextRefill.member.window, now)
+              ?.replace("resets in ", "in ")
+              .replace("resets now", "now")}
+          </Text>
+        </View>
       ) : null}
     </>
   );
@@ -230,12 +266,7 @@ function PoolWindowCard({
     >
       {pool.columns.map((member, index) => {
         if (!member.window)
-          return (
-            <View
-              key={member.account.key}
-              className={wide ? "h-9 min-w-0 flex-1" : "h-7 min-w-0 flex-1"}
-            />
-          );
+          return <View key={member.account.key} className="h-11 min-w-0 flex-1" />;
         const { account, window } = member;
         const timeLeft = paceRemainingPercent(window, now);
         const credits = account.limits.resetCredits?.availableCount ?? 0;
@@ -247,18 +278,20 @@ function PoolWindowCard({
             accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${timeLeft === null ? "" : `, ${timeLeft}% of the window left`}`}
             accessibilityHint="Show account details"
             onPress={() => openAccount(account)}
-            className={wide ? "h-9 min-w-0 flex-1 rounded-md" : "h-7 min-w-0 flex-1 rounded-md"}
+            className="h-11 min-w-0 flex-1 rounded-lg"
           >
-            <PaceGap timeLeft={timeLeft}>
-              <View className="absolute inset-0 rounded-md bg-subtle" />
-              <View className="absolute inset-0 overflow-hidden rounded-md">
-                <AccountSegment
-                  remaining={remainingPercent(window)}
-                  color={normalizeProviderAccentColor(account.accentColor) ?? color}
-                  refillPercent={window.resetsAt ? member.refillPercent : 0}
-                />
-              </View>
-            </PaceGap>
+            <View pointerEvents="none" className="absolute inset-x-0 inset-y-1 rounded-lg">
+              <PaceGap timeLeft={timeLeft}>
+                <View className="absolute inset-0 rounded-lg bg-subtle" />
+                <View className="absolute inset-0 overflow-hidden rounded-lg">
+                  <AccountSegment
+                    remaining={remainingPercent(window)}
+                    color={normalizeProviderAccentColor(account.accentColor) ?? color}
+                    refillPercent={window.resetsAt ? member.refillPercent : 0}
+                  />
+                </View>
+              </PaceGap>
+            </View>
             {inlineLabels ? (
               <View
                 pointerEvents="none"
@@ -335,7 +368,10 @@ function PoolWindowCard({
             accessibilityLabel={`Segment ${index + 1}, ${accountName(account)}, ${remainingPercent(window)}% left${resetsIn ? `, ${resetsIn}` : ""}${credits ? `, ${credits} reset credits banked` : ""}`}
             accessibilityHint="Show account details"
             onPress={() => openAccount(account)}
-            className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
+            className={cn(
+              "min-h-11 flex-row items-center gap-2 py-2 active:opacity-60",
+              index > 0 && "border-t border-border-subtle",
+            )}
           >
             <View className="relative size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
               <View
@@ -353,7 +389,7 @@ function PoolWindowCard({
             >
               {accountName(account)}
             </Text>
-            <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+            <Text textRole="footnote" className="font-t3-bold tabular-nums text-foreground">
               {remainingPercent(window)}%
             </Text>
             <View className="flex-row items-center gap-1">
@@ -386,9 +422,9 @@ function PoolWindowCard({
   );
   if (wide) {
     return (
-      <View className="flex-row items-center gap-6 rounded-[24px] border-continuous bg-grouped-card p-4">
-        <View className="w-44 gap-1">{summary}</View>
-        <View className="min-w-0 flex-1 gap-1">
+      <View className="flex-row items-center gap-6 p-5">
+        <View className="w-44 gap-2">{summary}</View>
+        <View className="min-w-0 flex-1">
           {bar}
           {inlineLabels ? null : legend}
         </View>
@@ -396,7 +432,7 @@ function PoolWindowCard({
     );
   }
   return (
-    <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
+    <View className="gap-2 p-5">
       {summary}
       {bar}
       {legend}
@@ -418,6 +454,7 @@ export function UsageLimitsSection({
   readonly wide?: boolean;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
+  const navigation = useNavigation();
   const selected =
     selectedEnvironmentIds === null
       ? presentations
@@ -438,11 +475,29 @@ export function UsageLimitsSection({
       failedLabels.length === 0 &&
       !cursorPrompt &&
       externalLinks.length === 0 ? (
-        <Text className="py-12 text-center text-base text-foreground-muted">
-          {selected.size === 0
-            ? "Select an environment to see limits."
-            : "No provider on the selected environments reports subscription limits."}
-        </Text>
+        <EmptyState
+          variant="plain"
+          title={
+            presentations.size === 0
+              ? "Connect a computer"
+              : selected.size === 0
+                ? "Choose a computer"
+                : "No limits reported"
+          }
+          detail={
+            presentations.size === 0
+              ? "Connect a computer to see its providers and subscription limits."
+              : selected.size === 0
+                ? "Use the filter to select a computer."
+                : "No provider on the selected computers reports subscription limits."
+          }
+          {...(presentations.size === 0
+            ? {
+                actionLabel: "Connect computer",
+                onAction: () => navigation.navigate("Connections"),
+              }
+            : {})}
+        />
       ) : null}
       {pools.map((pool, index) => {
         const windows = displayLimitWindows(pool);
@@ -450,48 +505,72 @@ export function UsageLimitsSection({
           <Fragment key={pool.driver}>
             {index === cursorPromptAt ? cursorPrompt : null}
             <View className="gap-3">
-              <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
-                  {DRIVER_LABEL[pool.driver] ?? pool.driver}
-                </Text>
+              <View className="flex-row items-center gap-3 px-1">
+                <View className="size-10 items-center justify-center rounded-full bg-subtle">
+                  <ProviderIcon provider={pool.driver} size={23} />
+                </View>
+                <View className="min-w-0 flex-1 gap-0.5">
+                  <Text textRole="title" className="font-t3-bold text-foreground">
+                    {DRIVER_LABEL[pool.driver] ?? pool.driver}
+                  </Text>
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {pool.accounts.length} {pool.accounts.length === 1 ? "account" : "accounts"}
+                  </Text>
+                </View>
               </View>
-              {windows.map((window) => {
-                const details =
-                  pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
-                return (
-                  <PoolWindowCard
-                    key={`${window.kind}:${window.id}`}
-                    pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
-                    now={now}
-                    environmentIds={
-                      selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
-                    }
-                    label={details?.label}
-                    description={details?.description}
-                    wide={wide}
-                  />
-                );
-              })}
+              <View className="overflow-hidden rounded-[24px] border-continuous bg-grouped-card">
+                {windows.map((window, windowIndex) => {
+                  const details =
+                    pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
+                  return (
+                    <View
+                      key={`${window.kind}:${window.id}`}
+                      className={windowIndex > 0 ? "border-t border-border-subtle" : undefined}
+                    >
+                      <PoolWindowCard
+                        pool={window}
+                        color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                        now={now}
+                        environmentIds={
+                          selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                        }
+                        label={details?.label}
+                        description={details?.description}
+                        wide={wide}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           </Fragment>
         );
       })}
       {cursorPromptAt === pools.length ? cursorPrompt : null}
       {externalLinks.map((link) => (
-        <View key={link.url} className="gap-3 rounded-xl border border-border-subtle p-4">
-          <Text className="text-base font-t3-medium text-foreground">{link.label}</Text>
-          <Text className="text-xs text-foreground-muted">{link.accounts.join(", ")}</Text>
+        <View key={link.url} className="gap-2 rounded-[24px] bg-grouped-card p-5">
+          <Text textRole="headline" className="font-t3-bold text-foreground">
+            {link.label}
+          </Text>
+          <Text textRole="footnote" className="text-foreground-muted">
+            {link.accounts.join(", ")}
+          </Text>
           {link.message ? (
-            <Text className="text-sm text-foreground-muted">{link.message}</Text>
+            <Text textRole="footnote" className="text-foreground-muted">
+              {link.message}
+            </Text>
           ) : null}
           <Pressable
             accessibilityRole="link"
             className="min-h-11 justify-center"
             onPress={() => void Linking.openURL(link.url).catch(() => undefined)}
           >
-            <Text className="text-sm font-t3-medium text-primary">Manage usage</Text>
+            <View className="flex-row items-center gap-2">
+              <Text textRole="footnote" className="font-t3-medium text-primary">
+                Manage usage
+              </Text>
+              <SymbolView name="arrow.up.right" size={13} tintColorClassName="accent-primary" />
+            </View>
           </Pressable>
         </View>
       ))}
@@ -560,15 +639,19 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
       >
         {!account || !window ? (
-          <Text className="text-base text-foreground-muted">
-            This account is no longer reporting limits on the selected environments.
-          </Text>
+          <EmptyState
+            variant="plain"
+            title="Account limits unavailable"
+            detail="This account is no longer reporting limits on the selected computers. Go back to choose another account."
+          />
         ) : (
           <>
             <View className="gap-2">
-              <View className="flex-row items-center gap-2">
-                <ProviderIcon provider={account.driver} size={24} />
-                <Text className="flex-1 text-xl font-t3-bold text-foreground">
+              <View className="flex-row items-center gap-3">
+                <View className="size-12 items-center justify-center rounded-full bg-subtle">
+                  <ProviderIcon provider={account.driver} size={28} />
+                </View>
+                <Text textRole="title" className="flex-1 font-t3-bold text-foreground">
                   {account.displayName ?? DRIVER_LABEL[account.driver] ?? account.driver}
                 </Text>
               </View>
@@ -592,7 +675,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
             </View>
             <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
               <Text className="text-sm font-t3-medium text-foreground">{window.label}</Text>
-              <Text className="text-3xl font-t3-bold tabular-nums text-foreground">
+              <Text textRole="display" className="font-t3-bold tabular-nums text-foreground">
                 {remainingPercent(window)}% left
               </Text>
               {window.resetsAt ? (

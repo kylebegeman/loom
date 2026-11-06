@@ -431,7 +431,10 @@ function LibraryProjectForm({
           key={resource.id}
           title={resource.kind === "repository" ? "Repository" : "Reference link"}
         >
-          <View className="gap-3 p-4">
+          <View className="gap-4 p-5">
+            <Text textRole="body" className="font-t3-medium">
+              Name
+            </Text>
             <TextInput
               accessibilityLabel="Resource name"
               placeholder={resource.kind === "repository" ? "iOS" : "Onboarding design"}
@@ -439,8 +442,10 @@ function LibraryProjectForm({
               onChangeText={(value) => patch(resource.id, { title: value })}
               maxLength={160}
               editable={!pending && !awaitingResult}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
             />
+            <Text textRole="body" className="font-t3-medium">
+              {resource.kind === "repository" ? "Repository URL" : "Reference URL"}
+            </Text>
             <TextInput
               accessibilityLabel={
                 resource.kind === "repository" ? "Repository URL" : "Reference URL"
@@ -454,10 +459,12 @@ function LibraryProjectForm({
               autoCapitalize="none"
               autoCorrect={false}
               editable={!pending && !awaitingResult}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
             />
             {resource.kind === "repository" ? (
               <>
+                <Text textRole="body" className="font-t3-medium">
+                  Folder inside project
+                </Text>
                 <TextInput
                   accessibilityLabel="Component folder inside project"
                   placeholder="ios"
@@ -467,9 +474,8 @@ function LibraryProjectForm({
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!pending && !awaitingResult}
-                  className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
                 />
-                <Text className="text-xs font-medium text-muted-foreground">
+                <Text textRole="body" className="font-t3-medium text-foreground">
                   Branch override (optional)
                 </Text>
                 <TextInput
@@ -479,9 +485,8 @@ function LibraryProjectForm({
                   onChangeText={(value) => patch(resource.id, { defaultBranch: value })}
                   autoCapitalize="none"
                   editable={!pending && !awaitingResult}
-                  className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
                 />
-                <Text className="text-xs text-muted-foreground">
+                <Text textRole="footnote" className="text-foreground-muted">
                   Leave empty to follow the repository default. Existing working copies keep their
                   branches.
                 </Text>
@@ -504,7 +509,7 @@ function LibraryProjectForm({
       ))}
       {resources.length < 64 ? (
         <SettingsSection title="Add a repository or link">
-          <View className="gap-2 p-4">
+          <View className="gap-4 p-5">
             <TextInput
               accessibilityLabel="Repository or link URL"
               placeholder="Paste a GitHub URL or any link"
@@ -521,7 +526,6 @@ function LibraryProjectForm({
               autoCorrect={false}
               keyboardType="url"
               editable={!pending && !awaitingResult}
-              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
             />
             {pasteProblem ? (
               <Text className="text-sm text-danger-foreground">{pasteProblem}</Text>
@@ -638,7 +642,7 @@ function LibraryProjectForm({
       {lead === "folder" ? folderSection : null}
       {!initial && !lead && supportsBlueprint ? (
         <SettingsSection title="Start from a blueprint">
-          <View className="gap-3 p-4">
+          <View className="gap-4 p-5">
             <Button
               label="Import blueprint"
               tone="text"
@@ -654,7 +658,7 @@ function LibraryProjectForm({
                   multiline
                   maxLength={131072}
                   editable={!pending && !awaitingResult}
-                  className="min-h-28 rounded-xl border border-input-border bg-input p-3 text-sm text-foreground"
+                  className="min-h-32"
                 />
                 <Text className="text-sm text-foreground-muted">
                   {blueprint
@@ -703,17 +707,22 @@ function LibraryProjectForm({
           </View>
         </SettingsSection>
       ) : null}
-      <SettingsSection title="Project">
-        <View className="gap-3 p-4">
+      <SettingsSection title="Project details">
+        <View className="gap-4 p-5">
+          <Text textRole="body" className="font-t3-medium">
+            Name
+          </Text>
           <TextInput
             accessibilityLabel="Project name"
-            placeholder="AspectAvy"
+            placeholder="Project name"
             value={title}
             onChangeText={setTitle}
             maxLength={160}
             editable={!pending && !awaitingResult}
-            className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-base text-foreground"
           />
+          <Text textRole="body" className="font-t3-medium">
+            Shared brief
+          </Text>
           <TextInput
             accessibilityLabel="Shared project brief"
             placeholder="What are we building?"
@@ -723,11 +732,11 @@ function LibraryProjectForm({
             textAlignVertical="top"
             maxLength={65536}
             editable={!pending && !awaitingResult}
-            className="min-h-28 rounded-xl border border-input-border bg-input p-3 text-sm text-foreground"
+            className="min-h-32"
           />
         </View>
       </SettingsSection>
-      <SettingsSection title="Color">
+      <SettingsSection title="Project color">
         <LibraryColorPicker
           value={color}
           onChange={setColor}
@@ -744,7 +753,7 @@ function LibraryProjectForm({
             disabled={pending || awaitingResult}
             onPress={() => setShowSetup((value) => !value)}
           />
-          <Text className="text-xs text-foreground-muted">
+          <Text textRole="footnote" className="text-foreground-muted">
             Save defaults, tools and scripts when they are useful. They are not required to start
             work.
           </Text>
@@ -812,7 +821,7 @@ function LibraryColorPicker(props: {
 }) {
   const colorValue = useLibraryProjectColorValue();
   return (
-    <View accessibilityRole="radiogroup" className="flex-row flex-wrap items-center gap-2 p-4">
+    <View accessibilityRole="radiogroup" className="flex-row flex-wrap items-center gap-2 p-5">
       <Pressable
         accessibilityRole="radio"
         accessibilityLabel="Automatic color"
@@ -820,11 +829,13 @@ function LibraryColorPicker(props: {
         disabled={props.disabled}
         onPress={() => props.onChange(null)}
         className={cn(
-          "h-9 justify-center rounded-full border-2 px-3 active:opacity-70",
+          "min-h-11 justify-center rounded-full border-2 px-4 active:opacity-70",
           props.value === null ? "border-foreground" : "border-border",
         )}
       >
-        <Text className="text-sm text-foreground">Automatic</Text>
+        <Text textRole="body" className="text-foreground">
+          Automatic
+        </Text>
       </Pressable>
       {LIBRARY_PROJECT_COLORS.map((option) => {
         const value = colorValue(option);
@@ -837,7 +848,7 @@ function LibraryColorPicker(props: {
             accessibilityState={{ checked: selected, disabled: props.disabled }}
             disabled={props.disabled}
             onPress={() => props.onChange(option)}
-            className="size-9 items-center justify-center rounded-full border-2 active:opacity-70"
+            className="size-11 items-center justify-center rounded-full border-2 active:opacity-70"
             style={{ borderColor: selected ? value : "transparent" }}
           >
             <View className="size-6 rounded-full" style={{ backgroundColor: value }} />

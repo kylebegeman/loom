@@ -186,6 +186,9 @@ function PullRequestIdentity(props: {
   const status = pullRequestStatus(pr);
   return (
     <View className="gap-3">
+      <Text selectable textRole="title" className="font-t3-bold">
+        {pr.title}
+      </Text>
       <View className="flex-row flex-wrap items-center gap-2">
         {"capabilities" in pr ? (
           <PullRequestStatusMenu pr={pr} params={props.params} />
@@ -197,46 +200,45 @@ function PullRequestIdentity(props: {
         )}
         <PullRequestDiffStats additions={pr.additions} deletions={pr.deletions} compact />
         {"changedFiles" in pr ? (
-          <Text className="text-2xs text-foreground-muted">
+          <Text className="text-xs text-foreground-muted">
             {pr.changedFiles} {pr.changedFiles === 1 ? "file" : "files"}
           </Text>
         ) : (
           <View className="h-3 w-12 rounded bg-subtle-strong" />
         )}
       </View>
-      <Text selectable className="text-xl font-t3-bold leading-7">
-        {pr.title}
-      </Text>
       <View className="flex-row items-center gap-2">
-        <PullRequestAvatar actor={pr.author} size={20} />
-        <Text className="min-w-0 flex-1 text-xs font-t3-medium" numberOfLines={1}>
+        <PullRequestAvatar actor={pr.author} size={24} />
+        <Text className="min-w-0 flex-1 text-sm font-t3-medium" numberOfLines={1}>
           {pr.author?.login ?? "Unknown author"}
         </Text>
-        <Text className="shrink text-right text-2xs text-foreground-muted" numberOfLines={1}>
+        <Text className="shrink text-right text-xs text-foreground-muted" numberOfLines={2}>
           Updated <RelativeTime timestamp={pr.updatedAt} /> ago
         </Text>
       </View>
-      <View className="flex-row items-start gap-1.5">
+      <View className="flex-row items-center gap-2">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Copy base branch ${pr.baseBranch}`}
           onPress={() => void Clipboard.setStringAsync(pr.baseBranch)}
-          className="min-w-0 shrink active:opacity-70"
-          hitSlop={8}
+          className="min-h-11 min-w-0 shrink justify-center active:opacity-70"
+          hitSlop={4}
         >
-          <Text className="font-mono text-2xs text-foreground-muted">{pr.baseBranch}</Text>
+          <Text className="font-mono text-xs text-foreground-muted" numberOfLines={2}>
+            {pr.baseBranch}
+          </Text>
         </Pressable>
-        <View className="pt-0.5">
-          <SymbolView name="arrow.left" size={11} tintColorClassName="accent-icon-muted" />
-        </View>
+        <SymbolView name="arrow.left" size={12} tintColorClassName="accent-icon-muted" />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Copy head branch ${pr.headBranch}`}
           onPress={() => void Clipboard.setStringAsync(pr.headBranch)}
-          className="min-w-0 shrink active:opacity-70"
-          hitSlop={8}
+          className="min-h-11 min-w-0 shrink justify-center active:opacity-70"
+          hitSlop={4}
         >
-          <Text className="font-mono text-2xs text-foreground-muted">{pr.headBranch}</Text>
+          <Text className="font-mono text-xs text-foreground-muted" numberOfLines={2}>
+            {pr.headBranch}
+          </Text>
         </Pressable>
       </View>
     </View>

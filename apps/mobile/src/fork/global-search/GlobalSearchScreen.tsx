@@ -22,10 +22,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { ListRow } from "../../components/ui/ListRow";
-import { ListSection } from "../../components/ui/ListSection";
+import { RowPressable } from "../../components/ui/RowPressable";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
-import type { AppSymbolName } from "../../components/ui/AppSymbol";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { openSettings } from "../../features/settings/settings-navigation";
 import { useAtomValueWhileVisible } from "../../features/home/home-route-visibility";
 import { requestThreadMessageJump } from "../../features/threads/threadMessageJump";
@@ -198,7 +197,8 @@ export function GlobalSearchScreen() {
         key: `thread:${key}`,
         category: "threads",
         title: thread?.title ?? "Conversation",
-        description: `${labels.get(match.environmentId) ?? "Computer"}: ${match.snippet}`,
+        description: labels.get(match.environmentId) ?? "Computer",
+        snippet: match.snippet,
         serverQuality: 0.7,
         liveAvailable: connected.has(match.environmentId) && readable.has(match.environmentId),
         updatedAt: thread?.updatedAt ?? match.messageCreatedAt ?? undefined,
@@ -272,7 +272,8 @@ export function GlobalSearchScreen() {
         key: `thread:${scopedThreadKey(hit.environmentId, hit.threadId)}`,
         category: "threads",
         title: hit.title.trim() || "Conversation",
-        description: `${labels.get(hit.environmentId) ?? "Saved computer"}: ${hit.snippet}`,
+        description: labels.get(hit.environmentId) ?? "Saved computer",
+        snippet: hit.snippet,
         serverQuality: 0.7,
         updatedAt: hit.occurredAt,
         destination: {
@@ -460,8 +461,8 @@ export function GlobalSearchScreen() {
       ) : null}
       {query === "" ? (
         <>
-          <Text textRole="body" className="px-1 text-foreground-muted">
-            Find threads, messages, projects, sites, bots and settings.
+          <Text textRole="footnote" className="text-foreground-muted">
+            Find work across your computers and Library.
           </Text>
           {recents.length ? (
             <SearchSection
@@ -482,20 +483,27 @@ export function GlobalSearchScreen() {
               }
             />
           )}
-          <ListSection title="Browse">
-            <ListRow
+          <View>
+            <Text accessibilityRole="header" textRole="headline" className="pb-2 pt-2 font-t3-bold">
+              Browse
+            </Text>
+            <SearchBrowseRow
               icon="briefcase"
               label="Projects"
               onPress={() => navigation.navigate("Library")}
             />
-            <ListRow icon="globe" label="Sites" onPress={() => selectTab("sites")} />
-            <ListRow icon="bolt.circle" label="Bots" onPress={() => navigation.navigate("Bots")} />
-            <ListRow
+            <SearchBrowseRow icon="globe" label="Sites" onPress={() => selectTab("sites")} />
+            <SearchBrowseRow
+              icon="bolt.circle"
+              label="Bots"
+              onPress={() => navigation.navigate("Bots")}
+            />
+            <SearchBrowseRow
               icon="gearshape"
               label="Settings"
               onPress={() => navigation.navigate("Settings")}
             />
-          </ListSection>
+          </View>
         </>
       ) : (
         <>
@@ -547,7 +555,7 @@ export function GlobalSearchScreen() {
           {history?.nextCursor &&
           historyEnabled &&
           serverResultsMatchQuery(query, historyRequest?.query) ? (
-            <ListRow
+            <SearchBrowseRow
               icon="magnifyingglass"
               label="More saved history"
               description="Search all saved conversations"
@@ -582,25 +590,84 @@ function SearchSection(props: {
   const [count, setCount] = useState(GLOBAL_SEARCH_PAGE_SIZE);
   if (!props.items.length) return null;
   return (
-    <ListSection title={props.title}>
+    <View>
+      <View className="flex-row items-center gap-2 pb-2 pt-2">
+        <SymbolView name={props.icon} size={17} tintColorClassName="accent-icon" />
+        <Text accessibilityRole="header" textRole="headline" className="flex-1 font-t3-bold">
+          {props.title}
+        </Text>
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
+          {props.items.length}
+        </Text>
+      </View>
       {props.items.slice(0, count).map((item) => (
-        <ListRow
+        <RowPressable
           key={item.key}
-          icon={props.icon}
-          label={item.title}
-          description={item.description}
-          detail={props.pending === item.key ? "Opening…" : undefined}
+          accessibilityRole="button"
+          accessibilityLabel={[item.title, item.snippet, item.description]
+            .filter(Boolean)
+            .join(". ")}
+          accessibilityState={{
+            disabled: props.pending !== null || item.disabled,
+            busy: props.pending === item.key,
+          }}
           disabled={props.pending !== null || item.disabled}
           onPress={() => void props.onOpen(item)}
-        />
+          className="min-h-16 flex-row items-center gap-3 border-b border-border-subtle py-3.5"
+        >
+          <View className="min-w-0 flex-1 gap-1">
+            <Text textRole="body" className="font-t3-bold" numberOfLines={2}>
+              {item.title}
+            </Text>
+            {item.snippet ? (
+              <Text textRole="body" className="text-foreground" numberOfLines={2}>
+                {item.snippet}
+              </Text>
+            ) : null}
+            {item.description || props.pending === item.key ? (
+              <Text textRole="footnote" className="text-foreground-muted" numberOfLines={2}>
+                {props.pending === item.key ? "Opening…" : item.description}
+              </Text>
+            ) : null}
+          </View>
+          <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+        </RowPressable>
       ))}
       {props.items.length > count ? (
-        <ListRow
-          icon="chevron.down"
+        <Button
+          tone="text"
           label={`Show more (${props.items.length - count})`}
           onPress={() => setCount((value) => value + GLOBAL_SEARCH_PAGE_SIZE)}
         />
       ) : null}
-    </ListSection>
+    </View>
+  );
+}
+
+function SearchBrowseRow(props: {
+  readonly icon: AppSymbolName;
+  readonly label: string;
+  readonly description?: string;
+  readonly onPress: () => void;
+}) {
+  return (
+    <RowPressable
+      accessibilityRole="button"
+      onPress={props.onPress}
+      className="min-h-14 flex-row items-center gap-3 border-b border-border-subtle py-3"
+    >
+      <SymbolView name={props.icon} size={21} tintColorClassName="accent-icon" />
+      <View className="min-w-0 flex-1 gap-1">
+        <Text textRole="body" className="font-t3-medium">
+          {props.label}
+        </Text>
+        {props.description ? (
+          <Text textRole="footnote" className="text-foreground-muted">
+            {props.description}
+          </Text>
+        ) : null}
+      </View>
+      <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+    </RowPressable>
   );
 }

@@ -29,6 +29,8 @@ export function SettingsRow(props: {
     (props.valuePosition === undefined && Platform.OS === "android");
   const content = {
     icon: props.icon,
+    iconPresentation:
+      inList && !sidebar && Platform.OS === "ios" ? ("well" as const) : ("plain" as const),
     label: props.label,
     description: valueBelow ? props.value : undefined,
     detail: valueBelow ? undefined : props.value,

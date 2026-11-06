@@ -74,6 +74,7 @@ export function SiteServiceGroup({
   now,
   canManage,
   separated = false,
+  inset = true,
   usedBy,
   onEditService,
   onAddCheck,
@@ -86,6 +87,7 @@ export function SiteServiceGroup({
   readonly canManage: boolean;
   /** Divides this service from the one above it in the same group. */
   readonly separated?: boolean;
+  readonly inset?: boolean;
   /** Shown in the shared registry, where a service is read apart from its sites. */
   readonly usedBy?: ReactNode;
   readonly onEditService: () => void;
@@ -99,10 +101,10 @@ export function SiteServiceGroup({
       accessibilityLabel={`${service.name}, ${state.label}`}
       className={cn(separated && "border-t border-border")}
     >
-      <View className="flex-row items-start gap-2 py-4 ps-5 pe-2">
+      <View className={cn("flex-row items-start gap-2 py-4", inset && "ps-5 pe-2")}>
         <View className="min-w-0 flex-1 gap-1.5">
           <View className="flex-row items-baseline gap-2">
-            <Text textRole="headline" className="shrink text-foreground">
+            <Text textRole="headline" className="shrink font-t3-bold text-foreground">
               {service.name}
             </Text>
             <Text textRole="footnote" className="text-foreground-muted">
@@ -149,19 +151,23 @@ export function SiteServiceGroup({
             staleAfterSeconds={staleAfterSeconds}
             now={now}
             canManage={canManage}
+            inset={inset}
             onEdit={() => onEditCheck(check)}
           />
         ))
       ) : (
         <Text
           textRole="body"
-          className="border-t border-border-subtle px-5 py-4 text-foreground-muted"
+          className={cn(
+            "border-t border-border-subtle py-4 text-foreground-muted",
+            inset && "px-5",
+          )}
         >
           Nothing watches this service yet. Add a check to know when it stops answering.
         </Text>
       )}
       {!checks.length && canManage ? (
-        <View className="px-2 pb-2">
+        <View className={cn("pb-2", inset && "px-2")}>
           <Button
             label="Add check"
             icon="plus"
@@ -181,12 +187,14 @@ function SiteCheckRow({
   staleAfterSeconds,
   now,
   canManage,
+  inset,
   onEdit,
 }: {
   readonly check: Check;
   readonly staleAfterSeconds: number;
   readonly now: number;
   readonly canManage: boolean;
+  readonly inset: boolean;
   readonly onEdit: () => void;
 }) {
   const state = siteCheckState(check, staleAfterSeconds, now);
@@ -195,7 +203,12 @@ function SiteCheckRow({
   const tlsDays = siteTlsDaysLeft(last?.tls_expires_at, now);
   const problem = siteCheckProblem(check, state);
   return (
-    <View className="flex-row items-start gap-2 border-t border-border-subtle py-4 ps-5 pe-2">
+    <View
+      className={cn(
+        "flex-row items-start gap-2 border-t border-border-subtle py-4",
+        inset && "ps-5 pe-2",
+      )}
+    >
       <View className="min-w-0 flex-1 gap-2">
         <View className="flex-row items-center gap-2">
           <SiteStateDot tone={presentation.tone} />

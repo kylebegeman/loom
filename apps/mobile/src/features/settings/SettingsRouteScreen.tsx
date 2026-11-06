@@ -236,7 +236,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         className={`flex-1 ${listSurface}`}
-        contentContainerClassName="gap-4 px-5 pt-4"
+        contentContainerClassName="gap-7 px-5 pt-4"
         contentContainerStyle={{
           // The workspace's clearance keeps the last row above its search field and keyboard.
           paddingBottom:

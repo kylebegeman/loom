@@ -32,6 +32,7 @@ function thread(
 it("merges title and message hits without collapsing equal thread IDs on different computers", () => {
   const hit = thread("one", "Release", {
     description: "A matching message",
+    snippet: "The deploy finished successfully.",
     serverQuality: 0.8,
     destination: {
       kind: "thread",
@@ -47,6 +48,9 @@ it("merges title and message hits without collapsing equal thread IDs on differe
   expect(ranked).toHaveLength(2);
   expect(ranked.find((entry) => entry.key === hit.key)?.destination).toEqual(hit.destination);
   expect(ranked.find((entry) => entry.key === hit.key)?.description).toBe("A matching message");
+  expect(ranked.find((entry) => entry.key === hit.key)?.snippet).toBe(
+    "The deploy finished successfully.",
+  );
 });
 
 it("ranks visible titles above keyword matches and finds limits by usage synonyms", () => {

@@ -3,6 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { CHATGPT_USAGE_URL, collectExternalUsageLinks } from "@t3tools/shared/usageLimits";
 import { Linking, Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import { environmentPresentations } from "../../state/presentation";
 
@@ -19,23 +20,30 @@ export function ChatGptUsageSummary({
   const usage = collectExternalUsageLinks(selected).find((link) => link.url === CHATGPT_USAGE_URL);
   if (!usage) return null;
   return (
-    <View className="gap-1">
-      <View className="flex-row items-center justify-between gap-3">
-        <View className="flex-row items-center gap-2">
-          <ProviderIcon provider="codex" size={16} />
-          <Text className="text-sm text-foreground">ChatGPT shared usage</Text>
-        </View>
-        <Pressable
-          accessibilityRole="link"
-          className="min-h-11 justify-center"
-          onPress={() => void Linking.openURL(usage.url).catch(() => undefined)}
-        >
-          <Text className="text-sm font-t3-medium text-primary">Manage usage</Text>
-        </Pressable>
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel="Manage ChatGPT shared usage"
+      accessibilityHint={`Open ChatGPT with ${usage.accounts.join(", ")}`}
+      className="flex-row items-center gap-3 rounded-[24px] bg-grouped-card p-4 active:opacity-70"
+      onPress={() => void Linking.openURL(usage.url).catch(() => undefined)}
+    >
+      <View className="size-11 items-center justify-center rounded-full bg-subtle">
+        <ProviderIcon provider="codex" size={24} />
       </View>
-      <Text className="text-xs text-foreground-muted">
-        {usage.accounts.join(", ")}. Open ChatGPT with the account you connected.
-      </Text>
-    </View>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text textRole="headline" className="font-t3-medium text-foreground">
+          ChatGPT shared usage
+        </Text>
+        <Text textRole="footnote" className="text-foreground-muted">
+          {usage.accounts.join(", ")}. Open ChatGPT with the account you connected.
+        </Text>
+        <View className="flex-row items-center gap-1.5 pt-1">
+          <Text textRole="footnote" className="font-t3-medium text-primary">
+            Manage usage
+          </Text>
+          <SymbolView name="arrow.up.right" size={13} tintColorClassName="accent-primary" />
+        </View>
+      </View>
+    </Pressable>
   );
 }

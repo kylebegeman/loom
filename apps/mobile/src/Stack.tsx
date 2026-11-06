@@ -256,6 +256,7 @@ const SETTINGS_SCREENS = {
             presentation: "formSheet" as const,
             sheetAllowedDetents: [1],
             sheetGrabberVisible: true,
+            nativeStackTopInset: 12,
           }
         : {}),
       title: "Settings",

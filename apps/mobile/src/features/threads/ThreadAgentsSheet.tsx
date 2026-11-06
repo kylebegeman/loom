@@ -101,14 +101,12 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
     >
       {subagents.length === 0 ? (
-        <Text className="pt-6 text-center text-sm text-foreground-muted">
-          No agents in this turn.
-        </Text>
+        <Text className="py-5 text-base text-foreground-muted">No agents in this turn.</Text>
       ) : (
         subagents.map((subagent) => {
           const group = workflowGroups.get(subagent.id);
           return group === undefined ? (
-            <View key={subagent.id} className="border-b border-border">
+            <View key={subagent.id} className="border-b border-border-subtle">
               <AgentRow
                 subagent={subagent}
                 environmentId={target.environmentId}
@@ -185,7 +183,7 @@ function AgentRow(props: {
   );
 
   const row = (
-    <View className="py-3.5">
+    <View className="py-4">
       <SubagentRow
         environmentId={props.environmentId}
         subagent={subagent}

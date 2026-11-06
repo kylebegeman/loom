@@ -66,7 +66,7 @@ export function BotPage({
                 automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 contentInsetAdjustmentBehavior="automatic"
-                contentContainerClassName="gap-6 px-5 pt-4"
+                contentContainerClassName="gap-7 px-5 pt-5"
                 contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
               >
                 {children}
@@ -127,7 +127,7 @@ export function BotSection({
 }) {
   return (
     <SettingsSection title={title} footer={description}>
-      <View className="gap-3 p-4">{children}</View>
+      <View className="gap-4 p-5">{children}</View>
     </SettingsSection>
   );
 }
@@ -143,7 +143,9 @@ export function BotField({
 }) {
   return (
     <View className="gap-2">
-      <Text className="text-sm font-t3-medium text-foreground">{label}</Text>
+      <Text textRole="body" className="font-t3-medium text-foreground">
+        {label}
+      </Text>
       {children}
       {hint ? <Text className="text-xs text-foreground-muted">{hint}</Text> : null}
     </View>

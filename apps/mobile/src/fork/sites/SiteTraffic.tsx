@@ -10,7 +10,6 @@ import {
   siteTrafficRatios,
 } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
-import { cn } from "../../lib/cn";
 import { ago, siteHost } from "./SiteHealth";
 
 const CHART_HEIGHT = 128;
@@ -47,19 +46,23 @@ export function SiteTraffic({
   const quiet = !analytics.pageviews && !analytics.events;
   const ratios = siteTrafficRatios(analytics);
   return (
-    <View className="gap-5 p-5">
-      <View className="flex-row">
+    <View className="gap-5">
+      <View className="flex-row flex-wrap items-end gap-4">
         <Figure label="Page views" value={analytics.pageviews} first />
         <Figure label="Daily visitors" value={analytics.visitors} />
         <Figure label="Events" value={analytics.events} />
       </View>
       {quiet || !days.length ? (
-        <View className="items-center justify-center gap-1 px-4" style={{ height: CHART_HEIGHT }}>
-          <Text className="text-sm font-t3-medium text-foreground">
-            No visits in the last {analytics.days} days
+        <View className="gap-1 py-2">
+          <Text textRole="body" className="font-t3-medium text-foreground">
+            {quiet
+              ? `No visits in the last ${analytics.days} days`
+              : "Daily traffic is unavailable"}
           </Text>
-          <Text className="text-center text-xs text-foreground-muted">
-            Visits from this site's analytics origins appear here as they arrive.
+          <Text textRole="footnote" className="text-foreground-muted">
+            {quiet
+              ? "Visits from this site's analytics origins appear here as they arrive."
+              : "Totals are available above; this source has not supplied a daily breakdown."}
           </Text>
         </View>
       ) : (
@@ -164,16 +167,15 @@ function Figure({
   readonly first?: boolean;
 }) {
   return (
-    <View
-      accessible
-      accessibilityLabel={`${label}: ${value}`}
-      className={cn("min-w-0 flex-1 gap-0.5", !first && "border-l border-border-subtle ps-3")}
-    >
-      <Text numberOfLines={1} className="text-2xs text-foreground-muted">
-        {label}
-      </Text>
-      <Text numberOfLines={1} className="text-xl font-t3-semibold tabular-nums text-foreground">
+    <View accessible accessibilityLabel={`${label}: ${value}`} className="min-w-20 flex-1 gap-1">
+      <Text
+        textRole={first ? "largeTitle" : "title"}
+        className="font-t3-bold tabular-nums text-foreground"
+      >
         {formatCount(value)}
+      </Text>
+      <Text textRole="footnote" className="text-foreground-muted">
+        {label}
       </Text>
     </View>
   );
@@ -197,9 +199,11 @@ function DailyChart({
       accessibilityLabel={`Daily page views for the last ${analytics.days} days. ${plural(analytics.pageviews, "page view")} and ${plural(analytics.visitors, "visitor")} in total. Busiest day ${dayLabel(busiest.day)} with ${plural(busiest.pageviews, "page view")}.`}
       className="gap-1.5"
     >
-      <View className="flex-row items-baseline justify-between gap-3">
-        <Text className="text-2xs text-foreground-muted">Daily page views</Text>
-        <Text className="text-2xs tabular-nums text-foreground-muted">
+      <View className="flex-row flex-wrap items-baseline justify-between gap-3">
+        <Text textRole="footnote" className="text-foreground-muted">
+          Daily page views
+        </Text>
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
           Busiest {dayLabel(busiest.day)}, {formatCount(busiest.pageviews)}
         </Text>
       </View>
@@ -221,10 +225,10 @@ function DailyChart({
         ))}
       </View>
       <View className="flex-row justify-between">
-        <Text className="text-2xs tabular-nums text-foreground-muted">
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
           {dayLabel(days[0]!.day)}
         </Text>
-        <Text className="text-2xs tabular-nums text-foreground-muted">
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
           {dayLabel(days[days.length - 1]!.day)}
         </Text>
       </View>
@@ -293,16 +297,10 @@ function RankedList({
   );
 }
 
-/** Column heights for the loading shape, varied so it reads as a chart rather than a block. */
-const SKELETON_COLUMNS = Array.from({ length: 30 }, (_, index) => ({
-  id: `column-${index}`,
-  height: Math.round(35 + 25 * Math.sin(index / 3) + index),
-}));
-
 /** The traffic group's shape while its numbers load, so nothing jumps when they arrive. */
 export function SiteTrafficSkeleton() {
   return (
-    <View accessible accessibilityLabel="Loading traffic" className="gap-5 p-4">
+    <View accessible accessibilityLabel="Loading traffic" className="gap-5">
       <View className="flex-row gap-3">
         {[0, 1, 2].map((index) => (
           <View key={index} className="flex-1 gap-2">
@@ -311,20 +309,9 @@ export function SiteTrafficSkeleton() {
           </View>
         ))}
       </View>
-      <View className="flex-row items-end gap-0.5" style={{ height: CHART_HEIGHT }}>
-        {SKELETON_COLUMNS.map((column) => (
-          <View
-            key={column.id}
-            className="flex-1 rounded-sm bg-row-hover"
-            style={{ height: `${column.height}%` }}
-          />
-        ))}
-      </View>
-      <View className="gap-2">
-        <View className="h-3 w-24 rounded-md bg-row-hover" />
-        <View className="h-7 w-full rounded-md bg-row-hover" />
-        <View className="h-7 w-3/4 rounded-md bg-row-hover" />
-      </View>
+      <Text textRole="footnote" className="text-foreground-muted">
+        Loading traffic…
+      </Text>
     </View>
   );
 }

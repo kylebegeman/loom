@@ -12,8 +12,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { ListRow } from "../../components/ui/ListRow";
-import { ListSection } from "../../components/ui/ListSection";
 import { Menu } from "../../components/ui/Menu";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
@@ -21,7 +19,6 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { useWorkspaceTabs } from "../../features/workspace/WorkspaceTabsContext";
 import { useAppActive } from "../../lib/appState";
-import { cn } from "../../lib/cn";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import {
   NativePrimaryColumnContext,
@@ -34,11 +31,10 @@ import { useEnvironmentQuery, type EnvironmentQueryView } from "../../state/quer
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useLibraryAuthority } from "../library/libraryState";
-import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { previewLinks } from "../preview-links/state";
 import { previewLinkSummary, visiblePreviewLinks } from "../preview-links/previewLinksLogic";
 import { sites } from "../sites/state";
-import { siteHost } from "../sites/SiteHealth";
+import { ago, SiteStateDot, siteHost } from "../sites/SiteHealth";
 import {
   SITE_PREVIEW_LIMIT,
   previewUnavailableReason,
@@ -85,7 +81,7 @@ function BrowseNotice(props: {
   readonly action?: ReactNode;
 }) {
   return (
-    <View className="gap-3 rounded-3xl bg-grouped-card p-5">
+    <View className="gap-3 py-3">
       <Text
         textRole="body"
         accessibilityRole={props.error ? "alert" : undefined}
@@ -99,23 +95,14 @@ function BrowseNotice(props: {
   );
 }
 
-function SiteIdentity(props: {
-  readonly name: string;
-  readonly url: string;
-  readonly featured: boolean;
-}) {
+function SiteIdentity(props: { readonly name: string; readonly url: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const uri = siteFaviconUrl(props.url);
   return (
-    <View
-      className={cn(
-        "items-center justify-center rounded-full bg-secondary",
-        props.featured ? "size-14" : "size-11",
-      )}
-    >
+    <View className="size-9 items-center justify-center rounded-full bg-secondary">
       <Text
-        textRole={props.featured ? "title" : "headline"}
+        textRole="headline"
         className="font-t3-semibold text-secondary-foreground"
         style={{ opacity: loaded && !failed ? 0 : 1 }}
       >
@@ -124,7 +111,7 @@ function SiteIdentity(props: {
       {uri && !failed ? (
         <Image
           source={{ uri }}
-          style={{ position: "absolute", width: 28, height: 28, borderRadius: 6 }}
+          style={{ position: "absolute", width: 24, height: 24, borderRadius: 5 }}
           contentFit="contain"
           cachePolicy="memory"
           accessibilityElementsHidden
@@ -136,7 +123,7 @@ function SiteIdentity(props: {
   );
 }
 
-function SiteCard(props: {
+function SiteRow(props: {
   readonly site: SitesSnapshot["sites"][number];
   readonly snapshot: SitesSnapshot;
   readonly now: number;
@@ -145,7 +132,9 @@ function SiteCard(props: {
   readonly onPin: () => void;
   readonly onDetails: () => void;
 }) {
-  const state = SITE_HEALTH_STATES[siteHealth(props.site, props.snapshot, props.now).state];
+  const health = siteHealth(props.site, props.snapshot, props.now);
+  const state = SITE_HEALTH_STATES[health.state];
+  const freshness = props.snapshot.observedAt ? `Checked ${ago(props.snapshot.observedAt)}` : null;
   return (
     <Menu
       title={props.site.name}
@@ -162,25 +151,40 @@ function SiteCard(props: {
     >
       <RowPressable
         accessibilityRole="button"
-        accessibilityLabel={`${props.site.name}, ${state.label}${props.pinned ? ", pinned" : ""}`}
+        accessibilityLabel={`${props.site.name}, ${state.label}${health.total ? `, ${health.passing} of ${health.total} checks passing` : ""}${freshness ? `, ${freshness}` : ""}${props.pinned ? ", pinned" : ""}`}
         accessibilityHint="View website details"
         onPress={props.onDetails}
-        className="min-w-0 flex-row items-center gap-4 rounded-3xl bg-grouped-card p-5"
+        className="min-h-22 min-w-0 flex-row items-start gap-3 border-b border-border-subtle py-4"
       >
-        <SiteIdentity key={props.site.url} name={props.site.name} url={props.site.url} featured />
-        <View className="min-w-0 flex-1 gap-1.5">
-          <Text textRole="headline" className="font-t3-semibold" numberOfLines={2}>
-            {props.site.name}
-          </Text>
+        <SiteIdentity key={props.site.url} name={props.site.name} url={props.site.url} />
+        <View className="min-w-0 flex-1 gap-1">
+          <View className="flex-row items-center gap-2">
+            <Text textRole="body" className="min-w-0 flex-1 font-t3-bold" numberOfLines={2}>
+              {props.site.name}
+            </Text>
+            {props.pinned ? (
+              <SymbolView name="pin" size={12} tintColorClassName="accent-icon-muted" />
+            ) : null}
+          </View>
           <Text textRole="footnote" className="text-foreground-muted" numberOfLines={1}>
             {siteHost(props.site.url)}
           </Text>
-          <LibraryStateBadge tone={state.tone} label={state.label} />
+          <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1 pt-1">
+            <SiteStateDot tone={state.tone} />
+            <Text textRole="footnote" className="text-foreground">
+              {state.label}
+              {health.total ? ` · ${health.passing}/${health.total} checks` : ""}
+            </Text>
+            {freshness ? (
+              <Text textRole="footnote" className="text-foreground-muted">
+                {freshness}
+              </Text>
+            ) : null}
+          </View>
         </View>
-        {props.pinned ? (
-          <SymbolView name="pin" size={13} tintColorClassName="accent-icon-muted" />
-        ) : null}
-        <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+        <View className="pt-1.5">
+          <SymbolView name="chevron.right" size={13} tintColorClassName="accent-chevron" />
+        </View>
       </RowPressable>
     </Menu>
   );
@@ -217,9 +221,9 @@ function MonitoredSites(props: {
     }).catch(() => setError("Could not save pinned websites. Try again."));
     setPinPending(false);
   };
-  const card = (site: SitesSnapshot["sites"][number], pinned: boolean) =>
+  const row = (site: SitesSnapshot["sites"][number], pinned: boolean) =>
     snapshot ? (
-      <SiteCard
+      <SiteRow
         key={site.id}
         site={site}
         snapshot={snapshot}
@@ -291,21 +295,21 @@ function MonitoredSites(props: {
           ) : (
             <>
               {sections.pinned.length ? (
-                <View className="gap-3">
-                  <Text textRole="footnote" className="px-1 font-t3-medium text-foreground-muted">
+                <View>
+                  <Text textRole="headline" className="pb-1 font-t3-bold">
                     Pinned
                   </Text>
-                  {sections.pinned.map((site) => card(site, true))}
+                  {sections.pinned.map((site) => row(site, true))}
                 </View>
               ) : null}
               {sections.other.length ? (
-                <View className="gap-3">
+                <View>
                   {sections.pinned.length ? (
-                    <Text textRole="footnote" className="px-1 font-t3-medium text-foreground-muted">
+                    <Text textRole="headline" className="pb-1 pt-4 font-t3-bold">
                       All websites
                     </Text>
                   ) : null}
-                  {sections.other.slice(0, visibleCount).map((site) => card(site, false))}
+                  {sections.other.slice(0, visibleCount).map((site) => row(site, false))}
                   {sections.other.length > visibleCount ? (
                     <Button
                       label={`Show more (${sections.other.length - visibleCount})`}
@@ -400,26 +404,42 @@ function LivePreviews(props: {
               This connection can view preview information but cannot open private links.
             </BrowseNotice>
           ) : null}
-          <ListSection>
+          <View>
             {links.slice(0, visibleCount).map((link) => (
-              <ListRow
+              <RowPressable
                 key={link.id}
-                icon="safari"
-                label={link.host}
-                description={previewLinkSummary(link, props.now)}
-                detail={pending === link.id ? "Opening…" : undefined}
+                accessibilityRole="button"
+                accessibilityLabel={`${link.host}, ${previewLinkSummary(link, props.now)}`}
+                accessibilityState={{
+                  disabled: !canOpen || pending !== null,
+                  busy: pending === link.id,
+                }}
                 disabled={!canOpen || pending !== null}
                 onPress={() => void open(link.id)}
-              />
+                className="min-h-16 flex-row items-center gap-3 border-b border-border-subtle py-4"
+              >
+                <View className="size-9 items-center justify-center">
+                  <SymbolView name="safari" size={22} tintColorClassName="accent-icon" />
+                </View>
+                <View className="min-w-0 flex-1 gap-1">
+                  <Text textRole="body" className="font-t3-bold" numberOfLines={2}>
+                    {link.host}
+                  </Text>
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {pending === link.id ? "Opening…" : previewLinkSummary(link, props.now)}
+                  </Text>
+                </View>
+                <SymbolView name="arrow.up.right" size={14} tintColorClassName="accent-chevron" />
+              </RowPressable>
             ))}
             {links.length > visibleCount ? (
-              <ListRow
-                icon="chevron.down"
+              <Button
+                tone="text"
                 label={`Show more (${links.length - visibleCount})`}
                 onPress={() => setVisibleCount((count) => count + SITE_PREVIEW_LIMIT)}
               />
             ) : null}
-          </ListSection>
+          </View>
         </>
       )}
     </View>

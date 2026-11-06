@@ -95,11 +95,13 @@ function CloudEnvironmentRowsContent(
   const showHeader = props.showHeader ?? true;
 
   return (
-    <View collapsable={false} className={cn("gap-3", showHeader && "mt-5")}>
+    <View collapsable={false} className="gap-3">
       {showHeader ? (
         <View className="px-1">
           {/* fork: brand */}
-          <Text className="text-sm font-t3-medium text-foreground-muted">Loom Connect</Text>
+          <Text textRole="body" className="font-t3-semibold text-foreground">
+            Loom Connect
+          </Text>
         </View>
       ) : null}
 
@@ -135,7 +137,7 @@ function CloudEnvironmentRowsContent(
           ))}
         </View>
       ) : controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
+        <View collapsable={false} className="items-start gap-3 py-3">
           <AppActivityIndicator colorClassName={"accent-icon"} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             {/* fork: fleet-connections */}
@@ -143,7 +145,7 @@ function CloudEnvironmentRowsContent(
           </Text>
         </View>
       ) : controller.relayDiscovery.error ? null : (
-        <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
+        <View collapsable={false} className="py-3">
           <Text className="text-sm leading-normal text-foreground-muted">
             {/* fork: fleet-connections */}
             No additional computers found. Open Connections settings on your computer and sign in to
@@ -155,7 +157,7 @@ function CloudEnvironmentRowsContent(
       {discoveryAvailable &&
       controller.relayDiscovery.error &&
       !controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="gap-3 rounded-[24px] bg-grouped-card p-5">
+        <View collapsable={false} className="gap-3 py-3">
           <Text className="text-base font-t3-bold text-foreground">
             {/* fork: brand */}
             Could not find Loom Connect computers
@@ -323,9 +325,12 @@ function CloudEnvironmentRowShell(props: {
     );
   };
   return (
-    <View collapsable={false} className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5">
+    <View
+      collapsable={false}
+      className="flex-row items-center gap-2 bg-grouped-card ps-4 pe-2 py-4"
+    >
       <ContentContainer
-        className="min-w-0 flex-1 gap-0.5"
+        className="min-h-14 min-w-0 flex-1 flex-row items-center gap-3"
         accessibilityHint={props.onRemove ? "Long press to remove from this device" : undefined}
         accessibilityRole={props.onOpen ? "button" : undefined}
         accessibilityLabel={
@@ -338,65 +343,74 @@ function CloudEnvironmentRowShell(props: {
         onPress={props.onOpen}
         onLongPress={props.onRemove}
       >
-        <View className="min-w-0 flex-row items-center gap-2">
-          <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
+        <View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="size-11 items-center justify-center rounded-full bg-secondary"
+        >
           <EnvironmentMachineSymbol
             kind={props.machine}
-            size={14}
-            tintColorClassName="accent-foreground-muted"
+            size={22}
+            tintColorClassName="accent-secondary-foreground"
           />
-          <Text
-            className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
-            numberOfLines={1}
-          >
-            {props.label}
-          </Text>
         </View>
-        {props.connectionError ? (
-          <Text
-            aria-hidden
-            onTextLayout={onMeasuredErrorTextLayout}
-            className={cn("absolute inset-x-0 -z-[1] text-xs opacity-0", statusClassName)}
+        <View className="min-w-0 flex-1 gap-1.5">
+          <View className="min-w-0 flex-row items-center gap-2">
+            <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
+            <Text
+              textRole="body"
+              className="min-w-0 flex-shrink font-t3-semibold text-foreground"
+              numberOfLines={1}
+            >
+              {props.label}
+            </Text>
+          </View>
+          {props.connectionError ? (
+            <Text
+              aria-hidden
+              onTextLayout={onMeasuredErrorTextLayout}
+              className={cn("absolute inset-x-0 -z-[1] text-sm opacity-0", statusClassName)}
+            >
+              {measuredErrorText}
+            </Text>
+          ) : null}
+          <StatusContainer
+            {...(errorCanExpand
+              ? { accessibilityRole: "button" as const, onPress: props.onToggleError }
+              : {})}
+            className="min-w-0 flex-row items-start gap-1"
           >
-            {measuredErrorText}
-          </Text>
-        ) : null}
-        <StatusContainer
-          {...(errorCanExpand
-            ? { accessibilityRole: "button" as const, onPress: props.onToggleError }
-            : {})}
-          className="min-w-0 flex-row items-start gap-1"
-        >
-          <Text
-            className={cn("min-w-0 flex-1 text-xs", statusClassName)}
-            numberOfLines={isErrorExpanded ? undefined : 1}
-          >
-            {statusText}
-            {errorTraceId ? (
-              <ConnectionTraceId
-                traceId={errorTraceId}
-                tone={
-                  props.connectionError && props.connectionState !== "unsupported"
-                    ? "danger"
-                    : "muted"
-                }
-                activation="longPress"
+            <Text
+              className={cn("min-w-0 flex-1 text-sm", statusClassName)}
+              numberOfLines={isErrorExpanded ? undefined : 1}
+            >
+              {statusText}
+              {errorTraceId ? (
+                <ConnectionTraceId
+                  traceId={errorTraceId}
+                  tone={
+                    props.connectionError && props.connectionState !== "unsupported"
+                      ? "danger"
+                      : "muted"
+                  }
+                  activation="longPress"
+                />
+              ) : null}
+            </Text>
+            {errorCanExpand ? (
+              <SymbolView
+                name="chevron.down"
+                size={10}
+                tintColorClassName={"accent-chevron"}
+                type="monochrome"
+                style={{
+                  marginTop: 3,
+                  transform: [{ rotate: isErrorExpanded ? "180deg" : "0deg" }],
+                }}
               />
             ) : null}
-          </Text>
-          {errorCanExpand ? (
-            <SymbolView
-              name="chevron.down"
-              size={10}
-              tintColorClassName={"accent-chevron"}
-              type="monochrome"
-              style={{
-                marginTop: 3,
-                transform: [{ rotate: isErrorExpanded ? "180deg" : "0deg" }],
-              }}
-            />
-          ) : null}
-        </StatusContainer>
+          </StatusContainer>
+        </View>
       </ContentContainer>
       <ThemedSwitch
         accessibilityLabel={`Enable ${props.label}`}
