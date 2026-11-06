@@ -8,8 +8,9 @@ To replace it, commit the fork changes, run `yarn install --immutable` and `yarn
 
 The Screens archive comes from the T3 fork and records its exact source in
 `t3-fork.json`. Loom exposes UIKit's `hidesBottomBarWhenPushed` on `Stack.Screen`
-through the repository's `patchedDependencies`. Compact workspace detail cards
-use native tab-bar transitions so Back restores the tab-hosted Search field.
+and `Stack.Host.managesTabBarVisibility` through the repository's
+`patchedDependencies`. Compact workspace stacks explicitly own native tab-bar
+transitions so fresh tabs and Back restore the tab-hosted Search field.
 The patch is applied during `vp i` and requires a native client rebuild.
 Archive replacement and patch removal checks are documented in
 [the Screens maintenance guide](../../../docs/operations/mobile-screens-fork.md).

@@ -153,7 +153,7 @@ export function V5CardStackView(
   };
   return (
     <View className="flex-1 bg-screen">
-      <Stack.Host>
+      <Stack.Host managesTabBarVisibility={props.hideBottomBarOnPush === true}>
         {screens.routes.map((route, index) => {
           const descriptor = props.descriptors[route.key] ?? screens.descriptors[route.key];
           if (!descriptor) return null;

@@ -80,8 +80,10 @@ The [react-native-screens fork](../operations/mobile-screens-fork.md)
 preserves behavior that is easy to break when changing native headers:
 
 - Compact workspace detail cards hide the bottom bar through
-  `Stack.Screen.hidesBottomBarWhenPushed`. The native navigation controller
-  forwards this policy only for an opted-in stack in the selected tab, before
+  `Stack.Screen.hidesBottomBarWhenPushed`. Their `Stack.Host` explicitly enables
+  `managesTabBarVisibility`, including on a fresh root that has never pushed a
+  detail. The native navigation controller forwards this policy only for an
+  opted-in stack in the selected tab, before
   root layout, and restores the actual top screen after a cancelled interactive
   Back. Its appearance callback also covers returning to a retained detail tab.
   Toggling `Tabs.Host.tabBarHidden` from JavaScript for a

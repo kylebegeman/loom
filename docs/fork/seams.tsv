@@ -1270,6 +1270,7 @@ apps/web/src/hooks/useHandleNewThread.ts	file-placement	1
 # Marked when every fork edit in upstream files gained a marker (upstream base v0.1.3-nightly.20261026.3740)
 .agents/skills/test-t3-mobile/SKILL.md	brand	2
 .agents/skills/test-t3-mobile/SKILL.md	mobile-identity	1
+.agents/skills/test-t3-mobile/SKILL.md	mobile-navigation	1
 .agents/skills/test-t3-mobile/scripts/pair-client.sh	mobile-identity	3
 .gitignore	dev-fixtures	1
 AGENTS.md	update-signing	1

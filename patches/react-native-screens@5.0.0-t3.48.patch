@@ -1,3 +1,20 @@
+diff --git a/android/src/main/java/com/swmansion/rnscreens/stack/host/StackHostViewManager.kt b/android/src/main/java/com/swmansion/rnscreens/stack/host/StackHostViewManager.kt
+index 69f1171..156f261 100644
+--- a/android/src/main/java/com/swmansion/rnscreens/stack/host/StackHostViewManager.kt
++++ b/android/src/main/java/com/swmansion/rnscreens/stack/host/StackHostViewManager.kt
+@@ -84,6 +84,12 @@ class StackHostViewManager :
+         }
+     }
+
++    // UIKit owns tab-bar visibility during a navigation transition.
++    override fun setManagesTabBarVisibility(
++        view: StackHost,
++        value: Boolean,
++    ) = Unit
++
+     companion object {
+         const val REACT_CLASS = "RNSStackHost"
+     }
 diff --git a/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt b/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt
 index 60f1280..60b2e4a 100644
 --- a/android/src/main/java/com/swmansion/rnscreens/stack/screen/StackScreenViewManager.kt
@@ -5,7 +22,7 @@ index 60f1280..60b2e4a 100644
 @@ -145,6 +145,12 @@ class StackScreenViewManager :
          view.isPreventNativeDismissEnabled = value
      }
- 
+
 +    // UIKit owns tab-bar visibility during a navigation transition.
 +    override fun setHidesBottomBarWhenPushed(
 +        view: StackScreen,
@@ -15,28 +32,34 @@ index 60f1280..60b2e4a 100644
      companion object {
          const val REACT_CLASS = "RNSStackScreen"
      }
+diff --git a/ios/helpers/stack/RNSStackNavigationController.h b/ios/helpers/stack/RNSStackNavigationController.h
+index 964f7db..87828d7 100644
+--- a/ios/helpers/stack/RNSStackNavigationController.h
++++ b/ios/helpers/stack/RNSStackNavigationController.h
+@@ -18,6 +18,9 @@
+ @property (nonatomic, readonly, getter=isStackEmpty) BOOL stackEmpty;
+
+ #if !TARGET_OS_TV
++/** Coordinates the enclosing tab bar with each screen's hidesBottomBarWhenPushed value. */
++@property (nonatomic) BOOL managesTabBarVisibility;
++
+ - (nonnull UIBarButtonItem *)toolbarIconButtonForIdentifier:(nonnull NSString *)identifier;
+ #endif
+
 diff --git a/ios/helpers/stack/RNSStackNavigationController.mm b/ios/helpers/stack/RNSStackNavigationController.mm
-index c1c8325..41b8122 100644
+index c1c8325..a785beb 100644
 --- a/ios/helpers/stack/RNSStackNavigationController.mm
 +++ b/ios/helpers/stack/RNSStackNavigationController.mm
 @@ -14,7 +14,7 @@
  #import "RNSStackScreenComponentView.h"
  #import "RNSViewFrameChangeDelegate.h"
- 
+
 -@interface RNSStackNavigationController ()
 +@interface RNSStackNavigationController () <UINavigationControllerDelegate>
  - (BOOL)shouldPreventNativePopToController:(UIViewController *)controller;
  @end
- 
-@@ -60,6 +60,7 @@ @implementation RNSStackNavigationController {
- #if !TARGET_OS_TV
-   RNSStackPopGestureDelegate *_edgePopDelegate;
-   NSMutableDictionary<NSString *, UIBarButtonItem *> *_toolbarIconButtons;
-+  BOOL _managesTabBarVisibility;
- #if RNS_IPHONE_OS_VERSION_AVAILABLE(26_0)
-   RNSStackPopGestureDelegate *_contentPopDelegate;
- #endif
-@@ -77,6 +78,9 @@ - (instancetype)init
+
+@@ -77,6 +77,9 @@ - (instancetype)init
      _navigationBarCoordinator = [RNSStackNavigationBarCoordinator new];
      [_navigationBarCoordinator initializeNavigationBarOfNavigationController:self];
      [self initState];
@@ -46,13 +69,12 @@ index c1c8325..41b8122 100644
    }
    return self;
  }
-@@ -103,6 +107,59 @@ - (void)viewDidLoad
+@@ -103,6 +106,58 @@ - (void)viewDidLoad
  }
- 
+
  #if !TARGET_OS_TV
 +- (void)applyTabBarVisibilityForController:(UIViewController *)controller animated:(BOOL)animated
 +{
-+  _managesTabBarVisibility = _managesTabBarVisibility || controller.hidesBottomBarWhenPushed;
 +  UITabBarController *tabBarController = self.tabBarController;
 +  UIViewController *selectedController = tabBarController.selectedViewController;
 +#if RNS_UITAB_API_SDK_AVAILABLE
@@ -106,18 +128,39 @@ index c1c8325..41b8122 100644
  - (void)cancelReactTouchesForPopGesture:(UIGestureRecognizer *)gestureRecognizer
  {
    if (gestureRecognizer.state != UIGestureRecognizerStateBegan)
+diff --git a/ios/stack/host/RNSStackHostComponentView.mm b/ios/stack/host/RNSStackHostComponentView.mm
+index d5a1b37..717aa4b 100644
+--- a/ios/stack/host/RNSStackHostComponentView.mm
++++ b/ios/stack/host/RNSStackHostComponentView.mm
+@@ -98,6 +98,16 @@ - (void)stackScreenChangedActivityMode:(nonnull RNSStackScreenComponentView *)st
+
+ #pragma mark - RCTComponentViewProtocol
+
++- (void)updateProps:(const facebook::react::Props::Shared &)props
++          oldProps:(const facebook::react::Props::Shared &)oldProps
++{
++#if !TARGET_OS_TV
++  const auto &newComponentProps = *std::static_pointer_cast<const react::RNSStackHostProps>(props);
++  _stackNavigationController.managesTabBarVisibility = newComponentProps.managesTabBarVisibility;
++#endif
++  [super updateProps:props oldProps:oldProps];
++}
++
+ - (void)mountChildComponentView:(UIView<RCTComponentViewProtocol> *)childComponentView index:(NSInteger)index
+ {
+   RCTAssert([childComponentView isKindOfClass:RNSStackScreenComponentView.class],
 diff --git a/ios/stack/screen/RNSStackScreenComponentView.mm b/ios/stack/screen/RNSStackScreenComponentView.mm
 index 8cf2e51..ee545b5 100644
 --- a/ios/stack/screen/RNSStackScreenComponentView.mm
 +++ b/ios/stack/screen/RNSStackScreenComponentView.mm
 @@ -153,6 +153,9 @@ - (void)updateProps:(const facebook::react::Props::Shared &)props
    }
- 
+
    _preventNativeDismiss = newComponentProps.preventNativeDismiss;
 +#if !TARGET_OS_TV
 +  _controller.hidesBottomBarWhenPushed = newComponentProps.hidesBottomBarWhenPushed;
 +#endif
- 
+
    if (oldComponentProps.screenKey != newComponentProps.screenKey) {
      RCTAssert(_screenKey == nil, @"[RNScreens] ScreenController cannot change its screenKey");
 diff --git a/lib/commonjs/components/stack/screen/StackScreen.js b/lib/commonjs/components/stack/screen/StackScreen.js
@@ -168,6 +211,23 @@ index 7e35371..2ca5c65 100644
    }, children);
  }
  export default StackScreen;
+diff --git a/lib/typescript/components/stack/host/StackHost.types.d.ts b/lib/typescript/components/stack/host/StackHost.types.d.ts
+index aeb6b84..5eb05a0 100644
+--- a/lib/typescript/components/stack/host/StackHost.types.d.ts
++++ b/lib/typescript/components/stack/host/StackHost.types.d.ts
+@@ -5,6 +5,12 @@ import type { ColorScheme, Direction } from '../../shared/types';
+ export type StackHostColorScheme = ColorScheme | 'inherit';
+ export type StackHostDirection = Direction | 'inherit';
+ export type StackHostProps = {
++    /**
++     * Coordinates the enclosing tab bar with each screen's hidesBottomBarWhenPushed value.
++     * @default false
++     * @platform ios
++     */
++    managesTabBarVisibility?: boolean | undefined;
+     children: NonNullable<ViewProps['children']>;
+     ref?: React.RefObject<(React.Component<NativeProps> & HostInstance) | null> | undefined;
+     /**
 diff --git a/lib/typescript/components/stack/screen/StackScreen.types.d.ts b/lib/typescript/components/stack/screen/StackScreen.types.d.ts
 index 4bb4a81..d8d4c78 100644
 --- a/lib/typescript/components/stack/screen/StackScreen.types.d.ts
@@ -185,6 +245,18 @@ index 4bb4a81..d8d4c78 100644
  };
  //# sourceMappingURL=StackScreen.types.d.ts.map
 \ No newline at end of file
+diff --git a/lib/typescript/fabric/stack/StackHostNativeComponent.d.ts b/lib/typescript/fabric/stack/StackHostNativeComponent.d.ts
+index c719793..67822b6 100644
+--- a/lib/typescript/fabric/stack/StackHostNativeComponent.d.ts
++++ b/lib/typescript/fabric/stack/StackHostNativeComponent.d.ts
+@@ -1,6 +1,7 @@
+ import type { HostComponent, ViewProps, CodegenTypes as CT } from 'react-native';
+ type StackHostColorScheme = 'inherit' | 'light' | 'dark';
+ export interface NativeProps extends ViewProps {
++    managesTabBarVisibility?: CT.WithDefault<boolean, false>;
+     colorScheme?: CT.WithDefault<StackHostColorScheme, 'inherit'>;
+ }
+ declare const _default: HostComponent<NativeProps>;
 diff --git a/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts b/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts
 index a77889a..fef4bf4 100644
 --- a/lib/typescript/fabric/stack/StackScreenNativeComponent.d.ts
@@ -197,6 +269,24 @@ index a77889a..fef4bf4 100644
  }
  declare const _default: HostComponent<NativeProps>;
  export default _default;
+diff --git a/src/components/stack/host/StackHost.types.ts b/src/components/stack/host/StackHost.types.ts
+index fa0432b..6634ebd 100644
+--- a/src/components/stack/host/StackHost.types.ts
++++ b/src/components/stack/host/StackHost.types.ts
+@@ -8,6 +8,13 @@ export type StackHostColorScheme = ColorScheme | 'inherit';
+ export type StackHostDirection = Direction | 'inherit';
+
+ export type StackHostProps = {
++  /**
++   * Coordinates the enclosing tab bar with each screen's hidesBottomBarWhenPushed value.
++   * @default false
++   * @platform ios
++   */
++  managesTabBarVisibility?: boolean | undefined;
++
+   // General
+   children: NonNullable<ViewProps['children']>;
+   // TODO: Work on these types
 diff --git a/src/components/stack/screen/StackScreen.tsx b/src/components/stack/screen/StackScreen.tsx
 index e72e96c..47c7ab0 100644
 --- a/src/components/stack/screen/StackScreen.tsx
@@ -224,7 +314,7 @@ index 8deb6c8..3b72f98 100644
 --- a/src/components/stack/screen/StackScreen.types.ts
 +++ b/src/components/stack/screen/StackScreen.types.ts
 @@ -33,4 +33,10 @@ export type StackScreenProps = {
- 
+
    // Configuration
    preventNativeDismiss?: boolean | undefined;
 +  /**
@@ -234,15 +324,28 @@ index 8deb6c8..3b72f98 100644
 +   */
 +  hidesBottomBarWhenPushed?: boolean | undefined;
  };
+diff --git a/src/fabric/stack/StackHostNativeComponent.ts b/src/fabric/stack/StackHostNativeComponent.ts
+index 9af60d0..f69db51 100644
+--- a/src/fabric/stack/StackHostNativeComponent.ts
++++ b/src/fabric/stack/StackHostNativeComponent.ts
+@@ -10,6 +10,8 @@ import { codegenNativeComponent } from 'react-native';
+ type StackHostColorScheme = 'inherit' | 'light' | 'dark';
+
+ export interface NativeProps extends ViewProps {
++  managesTabBarVisibility?: CT.WithDefault<boolean, false>;
++
+   // General
+   colorScheme?: CT.WithDefault<StackHostColorScheme, 'inherit'>;
+ }
 diff --git a/src/fabric/stack/StackScreenNativeComponent.ts b/src/fabric/stack/StackScreenNativeComponent.ts
 index 554c17e..55b7eef 100644
 --- a/src/fabric/stack/StackScreenNativeComponent.ts
 +++ b/src/fabric/stack/StackScreenNativeComponent.ts
 @@ -39,6 +39,7 @@ export interface NativeProps extends ViewProps {
    // Configuration
- 
+
    preventNativeDismiss?: CT.WithDefault<boolean, false>;
 +  hidesBottomBarWhenPushed?: CT.WithDefault<boolean, false>;
  }
- 
+
  export default codegenNativeComponent<NativeProps>('RNSStackScreen', {
