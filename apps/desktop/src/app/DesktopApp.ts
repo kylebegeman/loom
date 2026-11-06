@@ -1,6 +1,5 @@
 import * as DesktopCloudflareAccess from "../fork/cloudflare-access/DesktopCloudflareAccess.ts"; // fork: cloudflare-access
 import * as Cause from "effect/Cause";
-// fork: restart-continuity -- BACKEND_STOP_TIMEOUT replaced the Duration import
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -166,7 +165,7 @@ export const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances"
     const instances = yield* pool.list;
     yield* Effect.forEach(
       instances,
-      (instance) => instance.stop({ timeout: DesktopBackendManager.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
+      (instance) => instance.stop({ timeout: DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT }),
       { concurrency: "unbounded" },
     );
   },

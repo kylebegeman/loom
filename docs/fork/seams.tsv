@@ -1136,7 +1136,7 @@ apps/web/src/components/settings/ArchivedThreadsPanel.tsx	attention-status	14
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	attention-status	9
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	library-projects	10
 apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
-apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
+apps/desktop/src/app/DesktopApp.ts	restart-continuity	1
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
 apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
@@ -1161,12 +1161,10 @@ apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-continuity	3
 apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	14
 apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	22
 apps/desktop/src/backend/DesktopBackendPool.test.ts	restart-compaction	1
-apps/desktop/src/backend/DesktopBackendPool.ts	restart-continuity	1
 apps/desktop/src/ipc/DesktopIpc.test.ts	server-weight	4
 apps/desktop/src/ipc/DesktopIpc.ts	server-weight	5
 apps/desktop/src/ipc/methods/localEnvironment.ts	server-weight	1
 apps/desktop/src/ipc/methods/window.ts	server-weight	1
-apps/desktop/src/updates/DesktopUpdates.ts	restart-continuity	1
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	restart-compaction	1
 apps/desktop/src/window/DesktopWindow.test.ts	restart-continuity	6
 apps/desktop/src/window/DesktopWindow.ts	restart-compaction	7

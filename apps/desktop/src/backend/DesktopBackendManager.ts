@@ -53,8 +53,6 @@ export const BACKEND_QUIT_STOP_TIMEOUT = Duration.sum(
   // exits, within their own bound, so a stop that returns has ended them too.
   Duration.sum(Duration.seconds(2), OrphanedProviders.CLEANUP_TIMEOUT),
 );
-// fork: restart-continuity: updates stop backends with the same budget as quit.
-export const BACKEND_STOP_TIMEOUT = BACKEND_QUIT_STOP_TIMEOUT;
 const DEFAULT_BACKEND_OUTPUT_DRAIN_TIMEOUT = Duration.seconds(5);
 const BACKEND_READINESS_PATH = "/.well-known/t3/environment";
 // Three restarts without readiness is about 2 s of backoff: past a blip, early enough to help.

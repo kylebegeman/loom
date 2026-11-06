@@ -852,7 +852,8 @@ export const make = Effect.gen(function* () {
           yield* Ref.set(installRunningBackendsRef, runningInstances);
           yield* Effect.forEach(
             instances,
-            (instance) => instance.stop({ timeout: DesktopBackendManager.BACKEND_STOP_TIMEOUT }), // fork: restart-continuity
+            (instance) =>
+              instance.stop({ timeout: DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT }),
             { concurrency: "unbounded" },
           );
           yield* saveRollbackSnapshot; // fork: rollback-snapshot
