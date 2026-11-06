@@ -53,8 +53,8 @@ Start `vp run dev:client` from `apps/mobile`, or reuse a healthy Metro belonging
 to this checkout. After `vp i` changes a native dependency or package patch,
 stop your Metro process and restart with `vp run dev:client --clear`.
 Metro can retain the previous package path and native view schema after pnpm
-replaces it. A native rebuild or app relaunch does not refresh that dependency
-graph. <!-- fork: mobile-navigation -->
+replaces it. Restarting Metro refreshes the dependency graph used by the rebuilt
+client. <!-- fork: mobile-navigation -->
 
 Open its printed development-client URL with AgentDevice
 `open com.kylebegeman.loom.dev <url>` on iOS (the Android package remains <!-- fork: mobile-identity -->

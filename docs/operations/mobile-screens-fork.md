@@ -23,7 +23,8 @@ Run `vp i` after changing the patch, then rebuild the native client. Stop and
 restart Metro with `vp run dev:client --clear` from `apps/mobile` before
 loading that client. A running Metro resolver can retain the previous package
 path and serve its old wrapper and native view schema after pnpm replaces the
-dependency. Relaunching the native app does not clear Metro's dependency graph.
+dependency. Restarting Metro refreshes the dependency graph used by the rebuilt
+client.
 
 When upgrading Screens during an upstream merge, rebase this patch onto the
 new package or remove it once the package carries the equivalent fix. Verify
