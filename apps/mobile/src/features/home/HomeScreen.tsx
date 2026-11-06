@@ -881,13 +881,15 @@ export function HomeScreen(props: HomeScreenProps) {
         onSelect={props.onSelectThread}
       />
       {/* fork: project-navigation */}
-      <ProjectNavigationControl
-        view={navigationView}
-        onChange={(view) => {
-          openSwipeableRef.current?.close();
-          setNavigationView(view);
-        }}
-      />
+      {Platform.OS !== "ios" ? (
+        <ProjectNavigationControl
+          view={navigationView}
+          onChange={(view) => {
+            openSwipeableRef.current?.close();
+            setNavigationView(view);
+          }}
+        />
+      ) : null}
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           gutter={sidebarSurface ? 8 : 0}

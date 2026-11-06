@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { restoreSettingsLinkState } from "../settings/settings-navigation";
+import { restoreSettingsLinkState, settingsNavigationState } from "../settings/settings-navigation";
 import {
   workspaceSelectionsIn,
   workspaceTabColumns,
   workspaceTabNavigationState,
 } from "./workspace-tab-navigation";
+import { workspacePrimaryTab } from "./workspace-primary-navigation";
 
 const home = { key: "home", name: "Home" };
 const thread = {
@@ -195,9 +196,69 @@ describe("opening a workspace tab", () => {
     expect(names(next)).toEqual(["Home", "Thread", "ConnectOnboarding"]);
     expect(next.index).toBe(2);
   });
+
+  it("restores a tab's full route chain, including its contextual conversation", () => {
+    const site = { key: "site", name: "Sites", params: { siteId: "s" } };
+    const history = { results: [home, site, thread] };
+    const next = workspaceTabNavigationState(
+      { routes: [home, pullRequest] },
+      "results",
+      {},
+      { columns: false, check: available, history },
+    );
+    expect(next.routes).toEqual(history.results);
+    expect(next.index).toBe(2);
+  });
+
+  it("returns to the surviving parent when a remembered conversation is unavailable", () => {
+    const project = { key: "project", name: "ProjectHome", params: { projectId: "p" } };
+    const next = workspaceTabNavigationState(
+      { routes: [home] },
+      "threads",
+      {},
+      {
+        columns: false,
+        check: { thread: () => false, pullRequest: () => true },
+        history: { threads: [home, project, thread, { key: "files", name: "ThreadFiles" }] },
+      },
+    );
+    expect(next.routes).toEqual([home, project]);
+  });
+
+  it("records the destination primary tab without changing the root route key", () => {
+    const options = { columns: false, check: available, primaryTabs: true };
+    const results = workspaceTabNavigationState({ routes: [home] }, "results", {}, options);
+    expect(workspacePrimaryTab(results.routes)).toBe("results");
+    expect(results.routes[0]?.key).toBe(home.key);
+    const restored = workspaceTabNavigationState(
+      results,
+      "threads",
+      {},
+      {
+        ...options,
+        history: { threads: results.routes },
+      },
+    );
+    expect(workspacePrimaryTab(restored.routes)).toBe("threads");
+    expect(restored.routes[0]?.key).toBe(home.key);
+  });
 });
 
 describe("Settings links", () => {
+  it("preserves the originating page when opening and changing a secondary Settings page", () => {
+    const state = { routes: [home, thread], index: 1 };
+    const opened = settingsNavigationState(state, "SettingsAppearance", undefined, undefined, {
+      preserveOrigin: true,
+    });
+    expect(names(opened)).toEqual(["Home", "Thread", "Settings", "SettingsAppearance"]);
+    const next = settingsNavigationState(opened, "SettingsKeyboard", undefined, undefined, {
+      preserveOrigin: true,
+    });
+    expect(names(next)).toEqual(["Home", "Thread", "Settings", "SettingsKeyboard"]);
+    expect(next.routes[1]).toBe(thread);
+    expect(next.routes[2]).toBe(opened.routes[2]);
+  });
+
   it("puts the Settings list under a linked page, and a page beside a bare link with columns", () => {
     const linked = restoreSettingsLinkState(
       { routes: [{ name: "Home" }, { name: "SettingsKeyboard" }] },

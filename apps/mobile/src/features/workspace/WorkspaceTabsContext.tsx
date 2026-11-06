@@ -1,10 +1,20 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { createContext, use, useState, type Dispatch, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+} from "react";
+import { Platform } from "react-native";
 
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   navigationCustomizationAvailable,
+  navigationTabsForPlatform,
   resolveHiddenNavigationTabs,
   resolveSelectedNavigationTab,
 } from "./navigation-tab-order";
@@ -40,11 +50,19 @@ function resolveWorkspaceTabsSelection(
   preferences: MobilePreferencesResult,
 ): WorkspaceTabsState {
   const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
-  const order = resolveWorkspaceTabOrder(saved?.navigationTabOrder);
+  const order = navigationTabsForPlatform(
+    Platform.OS,
+    resolveWorkspaceTabOrder(saved?.navigationTabOrder),
+  );
   const hidden = navigationCustomizationAvailable()
     ? resolveHiddenNavigationTabs(saved?.hiddenNavigationTabs)
     : [];
-  const selected = resolveSelectedNavigationTab(order, hidden, state.selectedTab);
+  const selected =
+    Platform.OS === "ios"
+      ? order.includes(state.selectedTab)
+        ? state.selectedTab
+        : "threads"
+      : resolveSelectedNavigationTab(order, hidden, state.selectedTab);
   return selected && selected !== state.selectedTab
     ? workspaceTabsReducer(state, { type: "select", tab: selected })
     : state;
@@ -56,6 +74,7 @@ function createWorkspaceTabsModel() {
   const stored = Atom.make(initialWorkspaceTabsState());
   const scrollOffsets: Record<WorkspaceSearchTab, number> = {
     threads: 0,
+    results: 0,
     pullRequests: 0,
     usage: 0,
     settings: 0,
@@ -75,15 +94,33 @@ function createWorkspaceTabsModel() {
 export function WorkspaceTabsProvider(props: {
   readonly children: ReactNode;
   readonly settingsOpen?: boolean;
+  readonly selectedTab?: WorkspaceTab;
 }) {
   const registry = use(RegistryContext);
   const [model] = useState(createWorkspaceTabsModel);
-  const state = useAtomValue(model.resolved);
+  const selection = useRef(props.selectedTab);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- frozen native screens need the committed route selection when their event handlers run
+  useLayoutEffect(() => {
+    selection.current = props.selectedTab;
+  }, [props.selectedTab]);
+  const resolveSelection = (state: WorkspaceTabsState) =>
+    selection.current === undefined
+      ? state
+      : workspaceTabsReducer(state, { type: "select", tab: selection.current });
+  const storedState = useAtomValue(model.resolved);
+  const state =
+    props.selectedTab === undefined
+      ? storedState
+      : workspaceTabsReducer(storedState, { type: "select", tab: props.selectedTab });
   const context = {
     state,
     dispatch: (action: WorkspaceTabsAction) =>
-      registry.set(model.stored, workspaceTabsReducer(registry.get(model.resolved), action)),
-    isTabActive: (tab: WorkspaceTab) => registry.get(model.resolved).selectedTab === tab,
+      registry.set(
+        model.stored,
+        workspaceTabsReducer(resolveSelection(registry.get(model.resolved)), action),
+      ),
+    isTabActive: (tab: WorkspaceTab) =>
+      resolveSelection(registry.get(model.resolved)).selectedTab === tab,
     bottomClearance: 0,
     settingsOpen: props.settingsOpen ?? false,
     getScrollOffset: model.getScrollOffset,

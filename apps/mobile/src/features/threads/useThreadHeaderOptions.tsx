@@ -30,7 +30,7 @@ export function useThreadHeaderOptions(props: {
   const deviceType = useDeviceType();
   const usesDuoHeader = usesNativeWorkspaceColumns && isDuoDevice(deviceType);
   const navigation = useNavigation();
-  const { layout, startNewTask } = useAdaptiveWorkspaceLayout();
+  const { layout, panes, startNewTask } = useAdaptiveWorkspaceLayout();
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
@@ -55,14 +55,15 @@ export function useThreadHeaderOptions(props: {
         ]
       : []),
     ...(sidebarHeaderItem ? [sidebarHeaderItem] : []),
-    ...(!usesDuoHeader && !props.draft
+    ...(!usesDuoHeader && !panes.primarySidebarVisible && !props.draft
       ? [
           withNativeGlassHeaderItem({
-            accessibilityLabel: "New task",
+            accessibilityLabel: "New chat",
             icon: { name: "square.and.pencil", type: "sfSymbol" as const },
             identifier: "thread-left-new-task",
-            label: "New task",
+            label: "New chat",
             onPress: startNewTask,
+            sharesBackground: false,
             type: "button" as const,
           }),
         ]
@@ -90,7 +91,6 @@ export function useThreadHeaderOptions(props: {
   const hasDetails = props.onOpenDetails !== undefined;
   const rightHeaderItems = useMemo<NativeHeaderItems>(
     () => [
-      // The workspace navigator adds compose to the Duo detail column's bar.
       ...(usesDuoHeader || layout.usesSplitView
         ? threadCenterHeaderItems
         : compactRightHeaderItems),

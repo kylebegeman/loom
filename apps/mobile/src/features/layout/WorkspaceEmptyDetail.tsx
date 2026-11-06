@@ -15,6 +15,7 @@ export function WorkspaceEmptyDetail(props: {
 }) {
   const pullRequests = props.tab === "pullRequests";
   const settings = props.tab === "settings";
+  const results = props.tab === "results";
   if (props.tab === "usage") return <View className="flex-1 bg-screen" />;
   return (
     <ScreenContent surface="screen">
@@ -55,18 +56,22 @@ export function WorkspaceEmptyDetail(props: {
                 ? "Select a setting"
                 : pullRequests
                   ? "Select a pull request"
-                  : "Select a thread"}
+                  : results
+                    ? "Open a result"
+                    : "Select a thread"}
             </Text>
             <Text className="text-center text-base text-foreground-muted">
               {settings
                 ? "Choose a page from the sidebar."
                 : pullRequests
                   ? "Choose a pull request from the sidebar to review it."
-                  : Platform.OS === "android"
-                    ? "Choose a thread from the sidebar or start a new thread."
-                    : "Choose a thread from the sidebar or start a new task."}
+                  : results
+                    ? "Choose a site, preview, page, or file from Results."
+                    : Platform.OS === "android"
+                      ? "Choose a thread from the sidebar or start a new thread."
+                      : "Choose a thread from the sidebar or start a new task."}
             </Text>
-            {props.onStartNewTask && !pullRequests && !settings ? (
+            {props.onStartNewTask && !pullRequests && !settings && !results ? (
               Platform.OS === "android" ? (
                 <NewThreadButton extended className="mt-2" onPress={props.onStartNewTask} />
               ) : (

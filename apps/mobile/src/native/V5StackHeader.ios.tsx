@@ -99,8 +99,27 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
   return { id, type: "menu", title: menu.title, children };
 }
 
+function groupSeparator(
+  previous: ToolbarItem | undefined,
+  item: ToolbarItem,
+  id: string,
+): HeaderItem[] {
+  if (
+    !previous ||
+    previous.type === "spacing" ||
+    item.type === "spacing" ||
+    !(
+      ("sharesBackground" in previous && previous.sharesBackground === false) ||
+      ("sharesBackground" in item && item.sharesBackground === false)
+    )
+  )
+    return [];
+  // V5 uses explicit spacers to split Liquid Glass groups instead of sharesBackground.
+  return [{ type: "spacer", id: `group:${id}`, sizing: "fixed", width: 8 }];
+}
+
 function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderItem[] {
-  return items.map((item, index): HeaderItem => {
+  const converted = items.map((item, index): HeaderItem => {
     const id =
       item.type === "spacing" ? `${prefix}:${index}` : (item.identifier ?? `${prefix}:${index}`);
     switch (item.type) {
@@ -147,6 +166,10 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
         };
     }
   });
+  return converted.flatMap((item, index) => [
+    ...groupSeparator(items[index - 1], items[index]!, item.id),
+    item,
+  ]);
 }
 
 export function V5StackHeader(props: {
@@ -179,12 +202,18 @@ export function V5StackHeader(props: {
   const bottomSearch = Boolean(mailSearch) && deviceType !== "pad";
   // A vertical bar keeps fixed spaces at full length and separates items itself.
   const spacesSearch = bottomSearch && (nativeMetrics?.verticalBarEdge ?? "none") === "none";
-  const bottom = toolbar.flatMap<HeaderItem>((item, index) => {
-    if (item.type === "mailSearchToolbar") return [];
-    if (item.type === "searchBarPlacement")
-      return [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }];
-    return convertItems([item], `toolbar:${index}`);
-  });
+  let previousToolbarItem: ToolbarItem | undefined;
+  const bottom: HeaderItem[] = [];
+  for (const [index, item] of toolbar.entries()) {
+    if (item.type === "mailSearchToolbar") continue;
+    const converted: HeaderItem[] =
+      item.type === "searchBarPlacement"
+        ? [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }]
+        : convertItems([item], `toolbar:${index}`);
+    const separated = groupSeparator(previousToolbarItem, item, converted[0]!.id);
+    previousToolbarItem = item;
+    bottom.push(...separated, ...converted);
+  }
   if (mailSearch) {
     if (mailSearch.filterMenu)
       bottom.push({

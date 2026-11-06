@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import {
   NAVIGATION_TAB_LABELS,
   navigationCustomizationAvailable,
+  navigationTabsForPlatform,
   enabledNavigationTabs,
   type NavigationTab,
 } from "./navigation-tab-order";
@@ -22,6 +23,7 @@ export const NAVIGATION_TAB_ICONS = {
   threads: "text.bubble",
   pullRequests: PullRequestGlyph.pullRequest,
   usage: "chart.bar.xaxis",
+  results: "square.grid.2x2",
 } as const satisfies Readonly<Record<NavigationTab, AppSymbolName>>;
 
 export function useNavigationTabOrder() {
@@ -29,7 +31,7 @@ export function useNavigationTabOrder() {
   const saved = AsyncResult.isSuccess(preferences)
     ? preferences.value.navigationTabOrder
     : undefined;
-  return resolveWorkspaceTabOrder(saved);
+  return navigationTabsForPlatform(Platform.OS, resolveWorkspaceTabOrder(saved));
 }
 
 export function useHiddenNavigationTabs() {
@@ -47,5 +49,5 @@ export function useHiddenNavigationTabs() {
 export function useEnabledNavigationTabs() {
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
-  return enabledNavigationTabs(order, hidden);
+  return Platform.OS === "ios" ? order : enabledNavigationTabs(order, hidden);
 }

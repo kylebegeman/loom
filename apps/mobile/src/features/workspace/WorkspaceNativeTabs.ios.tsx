@@ -29,8 +29,6 @@ import { WorkspaceSidebarTabs } from "./WorkspaceSidebarTabs";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 
-const PULL_REQUEST_ICON = require("../../../assets/icons/pull-request.png");
-
 /** Retain each native controller tree; removing its root can leave RNS's stack empty. */
 function RetainedWorkspaceTab(props: {
   readonly tab: WorkspaceTab;
@@ -78,8 +76,7 @@ export function WorkspaceNativeTabs(props: {
 }) {
   const workspace = useWorkspaceTabs()!;
   const order = useEnabledNavigationTabs();
-  const primaryTabs = order.slice(0, 4);
-  const overflow = order[4];
+  const primaryTabs = order;
   const selectTab = useSelectWorkspaceTab();
   const [provenance, setProvenance] = useState(0);
   const systemTabBar = useSystemWorkspaceTabBar();
@@ -96,9 +93,9 @@ export function WorkspaceNativeTabs(props: {
   const { width } = useWindowDimensions();
   const { colors } = useControlTheme();
   const selectedTab = workspace.state.selectedTab;
-  const selectedSlot = workspace.settingsOpen ? -1 : primaryTabs.indexOf(selectedTab);
+  const selectedSlot = Math.max(0, primaryTabs.indexOf(selectedTab));
   const request = {
-    selectedScreenKey: selectedSlot === -1 ? "settings" : NATIVE_WORKSPACE_TAB_SLOTS[selectedSlot]!,
+    selectedScreenKey: NATIVE_WORKSPACE_TAB_SLOTS[selectedSlot]!,
     baseProvenance: provenance,
   };
   return (
@@ -123,34 +120,26 @@ export function WorkspaceNativeTabs(props: {
           if (tab) selectTab(tab);
         }}
       >
-        {NATIVE_WORKSPACE_TAB_SLOTS.map((slot, index) => {
-          const settings = slot === "settings";
-          const tab = settings ? (overflow ?? selectedTab) : primaryTabs[index];
-          if (!tab) return null;
+        {primaryTabs.map((tab, index) => {
+          const slot = NATIVE_WORKSPACE_TAB_SLOTS[index]!;
           return (
             <Tabs.Screen
-              // Stable slot controllers keep UIKit's stacks attached when a section moves into Settings.
               key={slot}
               screenKey={slot}
-              title=""
-              tabBarItemAccessibilityLabel={settings ? "Settings" : WORKSPACE_TAB_LABELS[tab]}
+              title={WORKSPACE_TAB_LABELS[tab]}
+              tabBarItemAccessibilityLabel={WORKSPACE_TAB_LABELS[tab]}
               ios={{
-                icon: settings
-                  ? { type: "sfSymbol", name: "gearshape" }
-                  : tab === "pullRequests"
-                    ? { type: "templateSource", templateSource: PULL_REQUEST_ICON }
-                    : { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
+                icon: { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
                 selectedIcon:
-                  !settings && tab === "threads"
+                  tab === "threads"
                     ? { type: "sfSymbol", name: "text.bubble.fill" }
-                    : undefined,
+                    : tab === "results"
+                      ? { type: "sfSymbol", name: "square.grid.2x2.fill" }
+                      : undefined,
                 overrideScrollViewContentInsetAdjustmentBehavior: false,
               }}
             >
-              <RetainedWorkspaceTab
-                tab={tab}
-                active={settings ? selectedSlot === -1 : selectedSlot === index}
-              >
+              <RetainedWorkspaceTab tab={tab} active={selectedSlot === index}>
                 {props.children}
               </RetainedWorkspaceTab>
             </Tabs.Screen>
@@ -187,18 +176,6 @@ export function WorkspaceNativeTabs(props: {
 
 /** The workspace tabs at the foot of the sidebar. */
 export function WorkspaceSidebarTabsFooter() {
-  const workspace = useWorkspaceTabs()!;
-  const { startNewTask } = useAdaptiveWorkspaceLayout();
   const compact = useFloatingWorkspaceTabs();
-  return (
-    <WorkspaceSidebarTabs
-      compact={compact}
-      reserveComposeSpace={compact}
-      onNewTask={
-        compact && !workspace.settingsOpen && workspace.state.selectedTab === "threads"
-          ? startNewTask
-          : undefined
-      }
-    />
-  );
+  return <WorkspaceSidebarTabs compact={compact} />;
 }

@@ -11,9 +11,17 @@ The app opens with your threads. Use the existing project filter above the threa
 to narrow it to one project, or choose **All projects** to see every thread. Filtering
 does not move conversations or change the computer they run on.
 
-**Projects** in the sidebar utility row opens the projects page, which lists every project
-and its conversations across your computers. Use **Settings → Projects** for project
-settings. Returning from either restores the conversation you left.
+On web and desktop, **Projects** in the sidebar utility row opens the projects page,
+which lists every project and its conversations across your computers. On iOS, open
+**Projects** from the navigation menu in the toolbar. Use **Settings → Projects** for
+project settings. Returning from either restores the conversation you left.
+
+## Browse results on iOS
+
+Open **Results** to find published pages, Sites, private previews and project files.
+Choose a computer for its pages and previews; Sites come from your shared Library.
+Search narrows the results, and opening a project folder lets you browse its files.
+Use the toolbar's navigation menu for Bots, connections and Settings, including limits.
 
 <!-- fork: attention-status -->
 

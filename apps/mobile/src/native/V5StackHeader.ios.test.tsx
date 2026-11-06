@@ -74,3 +74,55 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
     }
   },
 );
+
+it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
+  "separates independent native controls without changing item IDs in %s",
+  (placement) => {
+    bridge.ios = undefined;
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const root = createRoot(document.createElement("div"));
+    try {
+      for (const sharesBackground of [false, true]) {
+        const onPress = () => undefined;
+        const items: NativeStackHeaderItem[] = [
+          { type: "button", identifier: "first", label: "First", onPress },
+          {
+            type: "menu",
+            identifier: "menu",
+            label: "Menu",
+            sharesBackground,
+            menu: { items: [] },
+          },
+          { type: "button", identifier: "next", label: "Next", onPress },
+          { type: "spacing", spacing: 12 },
+          { type: "button", identifier: "done", label: "Done", sharesBackground: false, onPress },
+          { type: "button", identifier: "last", label: "Last", onPress },
+        ];
+        act(() =>
+          root.render(
+            <V5StackHeader
+              canGoBack={false}
+              options={{
+                unstable_headerLeftItems: () => (placement === "leadingItems" ? items : []),
+                unstable_headerRightItems: () => (placement === "trailingItems" ? items : []),
+                unstable_headerToolbarItems: () => (placement === "toolbarItems" ? items : []),
+              }}
+            />,
+          ),
+        );
+        const nativeItems = (bridge.ios as StackHeaderConfigProps["ios"])?.[placement] ?? [];
+        expect(nativeItems.map((item) => (item.type === "spacer" ? "space" : item.id))).toEqual(
+          sharesBackground
+            ? ["first", "menu", "next", "space", "done", "space", "last"]
+            : ["first", "space", "menu", "space", "next", "space", "done", "space", "last"],
+        );
+        expect(nativeItems.filter((item) => item.type === "spacer").map((item) => item.id)).toEqual(
+          expect.arrayContaining(["group:last"]),
+        );
+      }
+    } finally {
+      act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);

@@ -46,6 +46,8 @@ import {
 } from "./useSystemWorkspaceTabBar";
 import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
+import { ResultsScreen } from "../../fork/results/ResultsScreen";
+import { WorkspaceAppMenu } from "../../fork/mobile-navigation/WorkspaceAppMenu";
 
 const TAB_TITLES = WORKSPACE_TAB_LABELS;
 
@@ -157,10 +159,7 @@ function WorkspaceRootContent() {
               unstable_headerLeftItems: () => [],
               // Beside a detail column the tab bar names the tab and the detail header the page,
               // so the sidebar keeps the brand.
-              headerTitle:
-                sidebarNavigation || (!settingsOpen && state.selectedTab !== "usage")
-                  ? renderHeaderTitle
-                  : undefined,
+              headerTitle: sidebarNavigation ? renderHeaderTitle : undefined,
             }}
           />
         ) : (
@@ -189,6 +188,7 @@ function WorkspaceRootContent() {
             ]}
           />
         )}
+        {Platform.OS === "ios" && !settingsOpen ? <WorkspaceAppMenu /> : null}
         <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>
           {settingsOpen ? (
             <SettingsRouteScreen />
@@ -198,6 +198,8 @@ function WorkspaceRootContent() {
             <HomeRouteScreen />
           ) : state.selectedTab === "pullRequests" ? (
             <PullRequestsScreen />
+          ) : state.selectedTab === "results" ? (
+            <ResultsScreen />
           ) : (
             <WorkspaceExtraTab tab={state.selectedTab} />
           )}
@@ -209,7 +211,9 @@ function WorkspaceRootContent() {
         {enabled.length === 0 && !settingsOpen ? null : (
             settingsOpen
               ? Platform.OS === "ios"
-              : state.selectedTab === "threads" || state.selectedTab === "pullRequests"
+              : state.selectedTab === "threads" ||
+                state.selectedTab === "pullRequests" ||
+                state.selectedTab === "results"
           ) ? (
           <WorkspaceToolbar sidebar={sidebarNavigation} onNewTask={startNewTask} />
         ) : (

@@ -3,10 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   selectWorkspaceDetail,
   setNativelyPoppingWorkspaceRoute,
+  shouldPreserveWorkspaceDetailOrigin,
   workspaceDetailLinkAction,
   workspaceDetailRouter,
   type WorkspaceDetail,
 } from "./workspace-detail-selection";
+import { workspacePrimaryTab } from "./workspace-primary-navigation";
 
 const require = NodeModule.createRequire(import.meta.url);
 const requireFromNative = NodeModule.createRequire(
@@ -22,16 +24,21 @@ const { StackActions, StackRouter } = requireFromCore("@react-navigation/routers
 
 const base = StackRouter({});
 const router = { ...base, ...workspaceDetailRouter(base) };
+const primaryRouter = { ...base, ...workspaceDetailRouter(base, { primaryTabs: true }) };
 const options = {
   routeNames: [
     "Home",
     "Thread",
     "ThreadFiles",
     "PullRequest",
+    "PullRequests",
     "PullRequestReviewers",
     "Settings",
     "SettingsAppearance",
     "GitOverview",
+    "Library",
+    "LibraryProject",
+    "ProjectHome",
   ],
   routeParamList: {},
   routeGetIdList: {},
@@ -46,8 +53,12 @@ const pullRequest = {
   params: { environmentId: "env", projectId: "p", repository: "o/r", number: 1, host: "h" },
 } as const;
 
-function apply(state: State, action: Parameters<typeof base.getStateForAction>[1]) {
-  const next = router.getStateForAction(state, action, options);
+function apply(
+  state: State,
+  action: Parameters<typeof base.getStateForAction>[1],
+  primaryTabs = false,
+) {
+  const next = (primaryTabs ? primaryRouter : router).getStateForAction(state, action, options);
   if (!next) throw new Error(`Router rejected ${action.type}`);
   // React Navigation rehydrates every state a router returns, as a stale RESET needs.
   return base.getRehydratedState(next as State, options);
@@ -57,8 +68,9 @@ function select(
   state: State,
   detail: WorkspaceDetail,
   sheet?: Parameters<typeof selectWorkspaceDetail>[1],
+  options?: Parameters<typeof selectWorkspaceDetail>[2],
 ) {
-  return apply(state, selectWorkspaceDetail(detail, sheet) as unknown as RouterAction);
+  return apply(state, selectWorkspaceDetail(detail, sheet, options) as unknown as RouterAction);
 }
 
 function push(state: State, name: string, params?: object) {
@@ -121,6 +133,100 @@ describe("selectWorkspaceDetail", () => {
     } finally {
       setNativelyPoppingWorkspaceRoute(null);
     }
+  });
+
+  it("keeps a project's route chain when selecting its conversation", () => {
+    const project = push(push(home(), "Library"), "LibraryProject", { projectId: "project" });
+    const first = select(project, threadA, undefined, { preserveOrigin: true });
+    expect(page(first)).toEqual({
+      names: ["Home", "Library", "LibraryProject", "Thread"],
+      index: 3,
+    });
+    expect(first.routes.slice(0, 3)).toEqual(project.routes);
+    const second = select(push(first, "ThreadFiles"), threadB, undefined, { preserveOrigin: true });
+    expect(page(second)).toEqual({
+      names: ["Home", "Library", "LibraryProject", "Thread"],
+      index: 3,
+    });
+    expect(second.routes[3]?.key).toBe(first.routes[3]?.key);
+    expect(page(apply(second, StackActions.pop()))).toEqual({
+      names: ["Home", "Library", "LibraryProject"],
+      index: 2,
+    });
+    const coldProject = apply(home(), {
+      type: "RESET",
+      payload: { index: 0, routes: [{ name: "ProjectHome", params: { projectId: "p" } }] },
+    });
+    expect(page(select(coldProject, threadA, undefined, { preserveOrigin: true }))).toEqual({
+      names: ["Home", "ProjectHome", "Thread"],
+      index: 2,
+    });
+  });
+
+  it("keeps root selection and deep links independent of a contextual detail", () => {
+    const project = push(home(), "ProjectHome", { environmentId: "env", projectId: "p" });
+    const contextual = select(project, threadA, undefined, { preserveOrigin: true });
+    expect(page(select(contextual, threadB))).toEqual({ names: ["Home", "Thread"], index: 1 });
+    const selected = apply(
+      contextual,
+      workspaceDetailLinkAction({ routes: [threadB] }) as unknown as RouterAction,
+    );
+    expect(page(selected)).toEqual({ names: ["Home", "Thread"], index: 1 });
+  });
+
+  it("returns to a project opened over an existing chat without reusing that chat's key", () => {
+    const existing = select(home(), threadA);
+    const project = push(push(existing, "Library"), "LibraryProject", { projectId: "p" });
+    expect(shouldPreserveWorkspaceDetailOrigin("ios", project.routes)).toBe(true);
+    const opened = select(project, threadB, undefined, { preserveOrigin: true });
+    expect(page(opened)).toEqual({
+      names: ["Home", "Thread", "Library", "LibraryProject", "Thread"],
+      index: 4,
+    });
+    expect(opened.routes[1]?.key).toBe(existing.routes[1]?.key);
+    expect(opened.routes[4]?.key).not.toBe(existing.routes[1]?.key);
+    const replaced = select(push(opened, "ThreadFiles"), threadA, undefined, {
+      preserveOrigin: true,
+    });
+    expect(page(replaced)).toEqual(page(opened));
+    expect(replaced.routes[4]?.key).toBe(opened.routes[4]?.key);
+    expect(page(apply(replaced, StackActions.pop()))).toEqual(page(project));
+  });
+
+  it("returns to a pull request list opened over an existing chat", () => {
+    const list = push(select(home(), threadA), "PullRequests");
+    const opened = select(list, pullRequest, undefined, { preserveOrigin: true });
+    expect(page(opened)).toEqual({
+      names: ["Home", "Thread", "PullRequests", "PullRequest"],
+      index: 3,
+    });
+    expect(page(apply(opened, StackActions.pop()))).toEqual(page(list));
+  });
+
+  it("keeps contextual Results selections there, but opens external links in Chats", () => {
+    const results = apply(home(), {
+      type: "RESET",
+      payload: { index: 0, routes: [{ name: "Home", params: { workspaceTab: "results" } }] },
+    });
+    expect(shouldPreserveWorkspaceDetailOrigin("ios", results.routes)).toBe(true);
+    expect(shouldPreserveWorkspaceDetailOrigin("android", results.routes)).toBe(false);
+    expect(shouldPreserveWorkspaceDetailOrigin("ios", home().routes)).toBe(false);
+    const contextual = apply(
+      results,
+      selectWorkspaceDetail(threadA, undefined, {
+        preserveOrigin: true,
+      }) as unknown as RouterAction,
+      true,
+    );
+    expect(workspacePrimaryTab(contextual.routes)).toBe("results");
+    const linked = apply(
+      contextual,
+      workspaceDetailLinkAction({ routes: [threadB] }) as unknown as RouterAction,
+      true,
+    );
+    expect(workspacePrimaryTab(linked.routes)).toBe("threads");
+    expect(linked.routes[0]?.key).toBe(results.routes[0]?.key);
+    expect(workspacePrimaryTab([])).toBe("threads");
   });
 });
 

@@ -10,9 +10,17 @@ import {
   resolveNavigationTabOrder,
   selectedNavigationTab,
   visibleNavigationTabs,
+  navigationTabsForPlatform,
 } from "./navigation-tab-order";
 
 describe("navigation tab order", () => {
+  it("uses Chats and Results on iOS regardless of legacy navigation preferences", () => {
+    expect(navigationTabsForPlatform("ios", ["usage", "pullRequests", "threads"])).toEqual([
+      "threads",
+      "results",
+    ]);
+    expect(navigationTabsForPlatform("android")).toEqual(NAVIGATION_TAB_ORDER);
+  });
   it("enables customization only above four registered sections, excluding Settings", () => {
     expect(navigationCustomizationAvailable()).toBe(false);
     expect(navigationCustomizationAvailable(3)).toBe(false);

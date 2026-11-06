@@ -18,6 +18,7 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
+import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
 import { use, type ComponentProps, type ReactNode } from "react"; // fork: fleet-connections
 import { Platform, View } from "react-native";
 import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
@@ -42,7 +43,11 @@ import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
 import { useLibrarySignInStatus } from "../../fork/library/LibrarySignInStatus"; // fork: library-sign-in
 
-export function SettingsRouteScreen() {
+export function SettingsRouteScreen(
+  props: {
+    readonly trailingHeaderItems?: readonly NativeStackHeaderItem[];
+  } = {},
+) {
   const { layout } = useAdaptiveWorkspaceLayout();
   const inSidebar = use(NativePrimaryColumnContext) !== null && layout.usesSplitView;
   // The page open beside the list: the route right above the Settings tab's route. While
@@ -54,12 +59,19 @@ export function SettingsRouteScreen() {
       ? rememberedSettingsPage(currentWorkspaceSelections())
       : (state.routes[list + 1]?.name ?? null);
   });
-  return <SettingsListScreen sidebar={inSidebar} selected={selected} />;
+  return (
+    <SettingsListScreen
+      sidebar={inSidebar}
+      selected={selected}
+      trailingHeaderItems={props.trailingHeaderItems}
+    />
+  );
 }
 
 export function SettingsListScreen(props: {
   readonly sidebar: boolean;
   readonly selected: string | null;
+  readonly trailingHeaderItems?: readonly NativeStackHeaderItem[];
 }) {
   const workspace = useWorkspaceTabs();
   const environmentMenu = useSettingsEnvironmentMenu();
@@ -75,7 +87,7 @@ export function SettingsListScreen(props: {
   return (
     <SettingsSidebarContext value={sidebar}>
       <View className="flex-1 bg-screen">
-        <SettingsEnvironmentFilterHeader />
+        <SettingsEnvironmentFilterHeader trailingItems={props.trailingHeaderItems} />
         {Platform.OS === "android" ? (
           <SettingsScreen
             title="Settings"

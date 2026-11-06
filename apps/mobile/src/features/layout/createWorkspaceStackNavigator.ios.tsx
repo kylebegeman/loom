@@ -40,6 +40,7 @@ import {
   WorkspaceSidebarTabsFooter,
 } from "../workspace/WorkspaceNativeTabs.ios";
 import { workspaceUsesColumns } from "../workspace/workspace-tabs-state";
+import { workspacePrimaryTab } from "../workspace/workspace-primary-navigation";
 import { isSettingsRoute, settingsOpenIn } from "../settings/settings-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { setNativelyPoppingWorkspaceRoute } from "../workspace/workspace-detail-selection";
@@ -256,7 +257,10 @@ function WorkspaceColumns(
   // The cover detail rail needs room for thread tools above the fixed tabs.
   // The unfolded Duo keeps compose in its detail bar.
   const detailCompose =
-    deviceType === "duo-unfolded" && selectedTab !== "pullRequests" && !settingsOpen
+    deviceType === "duo-unfolded" &&
+    selectedTab === "threads" &&
+    !settingsOpen &&
+    !panes.primarySidebarVisible
       ? openNewTask
       : undefined;
   const inspector = use(NativeWorkspaceInspectorContext);
@@ -358,7 +362,7 @@ function WorkspaceColumns(
         if (workspace.some((route) => route.name !== "Home" && route.name !== "Settings")) return;
         const tab = workspace.some((route) => route.name === "Settings")
           ? "settings"
-          : (["threads", "pullRequests", "usage"] as const).find((candidate) =>
+          : (["threads", "results"] as const).find((candidate) =>
               workspaceTabs?.isTabActive(candidate),
             );
         openWorkspaceTab(tab ?? "threads", { columns: true });
@@ -652,7 +656,10 @@ function WorkspaceStackNavigator({
   return (
     <NativeWorkspaceModeContext value={usesNativeWorkspaceColumns}>
       <NavigationContent>
-        <WorkspaceTabsProvider settingsOpen={settingsOpen}>
+        <WorkspaceTabsProvider
+          settingsOpen={settingsOpen}
+          selectedTab={workspacePrimaryTab(state.routes)}
+        >
           <WorkspaceStackView
             nativeColumns={usesNativeWorkspaceColumns}
             {...rest}

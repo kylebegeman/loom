@@ -53,6 +53,10 @@ keeps using the older copy if the download fails.
 Setup is in the web and desktop apps. The mobile app shows each computer's status under
 **Settings > Previews**.
 
+On iOS, open **Results** and choose a computer to find its published pages and live
+previews. Open a preview there to authorize your browser and view it. **Manage previews**
+opens the existing links and settings for your computers.
+
 To open links by signing in to your Library, and to publish pages, the computer needs a
 Library connection (see [Library projects](../../user/project-settings.md#library-projects-and-working-copies)).
 

@@ -776,13 +776,15 @@ function ThreadNavigationSidebarPane(
   };
   const navigationControl = (
     <>
-      <ProjectNavigationControl
-        view={navigationView}
-        onChange={(view) => {
-          openSwipeableRef.current?.close();
-          setNavigationView(view);
-        }}
-      />
+      {Platform.OS !== "ios" ? (
+        <ProjectNavigationControl
+          view={navigationView}
+          onChange={(view) => {
+            openSwipeableRef.current?.close();
+            setNavigationView(view);
+          }}
+        />
+      ) : null}
       {navigationView === "threads" && threadSearch.failedEnvironmentIds.length > 0 ? (
         <ThreadSearchNotice pending={threadSearch.isPending} onRetry={threadSearch.retry} />
       ) : null}
