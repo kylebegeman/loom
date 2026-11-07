@@ -598,7 +598,6 @@ apps/server/src/preview/PreviewBrowser.ts	brand	5
 apps/server/src/preview/PreviewBrowserHost.ts	brand	4
 apps/server/src/preview/PreviewBrowserHost.test.ts	brand	1
 apps/server/src/project/ManagedProjectFolders.ts	brand	1
-apps/server/src/provider/acp/AntigravityAcpSupport.ts	brand	1
 apps/server/src/provider/AntigravityProvider.ts	brand	1
 apps/server/src/provider/ClaudeProvider.ts	brand	2
 apps/server/src/provider/CodexDeveloperInstructions.test.ts	brand	1

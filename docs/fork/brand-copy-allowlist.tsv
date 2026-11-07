@@ -37,6 +37,7 @@ apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	`Forget ${link.l
 apps/server/src/device/EasDeviceHost.ts	const name = `T3 Code · ${config.label} · ${(yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0")}`;
 apps/server/src/provider/CodexChatGptAuth.ts	: { agent_name_hint: "T3 Code" }),
 apps/server/src/provider/CodexProvider.ts	const CODEX_CLIENT_NAME = "T3 Code";
+apps/server/src/provider/acp/AntigravityAcpSupport.ts	? { name: "t3-code", title: "T3 Code", version: packageJson.version }
 apps/server/src/vcs/GitVcsDriver.ts	GIT_AUTHOR_NAME: "T3 Code",
 apps/server/src/vcs/GitVcsDriver.ts	GIT_COMMITTER_NAME: "T3 Code",
 packages/provider-cursor/src/server/adapter.ts	name: `T3 Code ${input.threadId}`,
