@@ -26,6 +26,7 @@ vi.mock("../../state/threads", () => ({
     startTurn: {},
     forkSideChat: { label: "fork side chat" },
     delete: { label: "delete" },
+    setRuntimeMode: { label: "set runtime mode" },
   },
   useThreadFamily: () => {},
 }));
