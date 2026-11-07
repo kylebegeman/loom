@@ -295,6 +295,7 @@ export const make = Effect.gen(function* () {
       scheduledTaskThreadModes: true,
       npmReleaseLookup: true,
       voiceTranscription: isSpeechPlatformSupported(hostPlatform, hostArchitecture, hostLibc),
+      cloudVoiceTranscription: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
       ...(serverInstallation === null ? {} : { serverInstallation }),
       ...(selfUpdateEnabled ? {} : { serverRuntimeOwner: OS_RUNTIME_OWNER }), // fork: runtime-owner
