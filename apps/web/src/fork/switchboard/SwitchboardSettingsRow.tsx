@@ -18,7 +18,7 @@ export function SwitchboardSettingsRow({
   const status = useSwitchboardStatus(enabled, environmentId);
   const statusNote =
     status.availability === "unconfigured"
-      ? " This server has no Switchboard controller configured, so model availability is unknown and every model stays selectable. Set LOOM_SWITCHBOARD_CONTROLLER_URL on the server to show it."
+      ? " No Switchboard controller is configured, so every model stays selectable. Set LOOM_SWITCHBOARD_CONTROLLER_URL on the server to show availability."
       : isSwitchboardAvailabilityUnknown(status)
         ? " Switchboard cannot report model availability right now, so every model stays selectable."
         : "";
@@ -26,7 +26,7 @@ export function SwitchboardSettingsRow({
     <SettingsRow
       id="switchboard"
       title="Route through Switchboard"
-      description={`Send Claude and Codex through this environment’s Switchboard hub, which picks the account for each request. The model picker shows one Claude and one Codex. New sessions use the change; running ones keep their route.${statusNote}`}
+      description={`Send Claude and Codex through this environment’s Switchboard hub, which picks the account per request. The picker shows one Claude and one Codex. Running sessions keep their route.${statusNote}`}
       control={
         <Switch
           aria-label="Route through Switchboard"

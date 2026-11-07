@@ -695,7 +695,7 @@ export function WorktreeCleanupSection() {
             <SettingsRow
               title="Release settled worktrees once pushed"
               status={ruleStatus("worktreeOnSettle")}
-              description="Release a worktree as soon as every thread using it settles and its branch is pushed. Unlike Delete settled worktrees, it never waits and keeps any worktree with local files. Continuing the conversation restores it and runs setup."
+              description="Release a worktree as soon as every thread using it settles and its branch is pushed, without waiting. Worktrees with local files are kept. Continuing the conversation restores it and runs setup."
               serverScoped={!isProjectScope}
               control={
                 <Switch
@@ -715,7 +715,7 @@ export function WorktreeCleanupSection() {
                 <SettingsRow
                   title="Delete landed worktrees and branches"
                   status={ruleStatus("worktreeOnLand")}
-                  description="Remove a worktree and its local branch once its commits are on the default branch, with or without a pull request, and every thread using it is settled or archived. Worktrees with local changes are kept."
+                  description="Remove a worktree and its local branch once its commits are on the default branch, with or without a pull request, and every thread using it is settled or archived. Local changes are kept."
                   serverScoped={!isProjectScope}
                   control={
                     <Switch
@@ -943,7 +943,7 @@ export function StorageCleanupSections() {
           <SettingsRow
             title="Release settled project checkouts"
             status={ruleStatus("projectOnSettle")}
-            description="Release published project folders managed by Loom after all conversations settle. Folders without reviewed ownership, per-project Keep choices, pinned conversations, active work, local files and linked worktrees are protected."
+            description="Release published Loom-managed project folders once all conversations settle. Unreviewed folders, Keep choices, pinned conversations, active work, local files and linked worktrees are protected."
             control={
               <Switch
                 aria-label="Release settled project checkouts"
@@ -955,7 +955,7 @@ export function StorageCleanupSections() {
           <SettingsRow
             title="Release inactive project checkouts"
             status={ruleStatus("projectAfterDays")}
-            description="Release safe published project folders managed by Loom after this many inactive days, unless a project has its own storage choice. Projects and conversations stay available; using a released project restores its saved revision and reruns setup."
+            description="Release safe Loom-managed project folders after this many inactive days, unless a project sets its own. Projects and conversations stay; using one restores its saved revision and reruns setup."
             control={
               <RetentionControl
                 label="Release inactive project checkouts"
@@ -969,7 +969,7 @@ export function StorageCleanupSections() {
             <SettingsRow
               title="Release unused Library files"
               status={ruleStatus("unusedCopiesAfterDays")}
-              description="Release Library files prepared on a computer that no conversation used, this many days after they were prepared or updated. Files used in a conversation are released once their conversations settle, whatever this is set to. Files you chose to keep, existing checkouts Loom reused and unpublished work stay."
+              description="Release Library files no conversation used, this many days after they were prepared or updated. Used files go once their conversations settle. Kept files, reused checkouts and unpublished work stay."
               serverScoped
               control={
                 <RetentionControl

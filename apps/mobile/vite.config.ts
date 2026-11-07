@@ -47,6 +47,7 @@ const reactTests = [
   "src/features/layout/workspace/WorkspaceToolbar.ios.test.tsx",
   "src/features/connection/ConnectionsNewRouteScreen.test.tsx",
   "src/features/devices/device-stream.browser.test.ts",
+  "src/features/keyboard/keyboardControllerState.test.tsx",
 ];
 
 const sourceRoot = `${normalizePath(NodeURL.fileURLToPath(new URL("./src", import.meta.url)))}/`;

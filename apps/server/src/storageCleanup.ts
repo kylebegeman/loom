@@ -2665,15 +2665,21 @@ const make = Effect.gen(function* () {
           )
             return Effect.void;
         }
-        return settlementCleanupEnabled() ||
-          lastSettings.storageCleanup.projectAfterDays !== null ||
+        if (
+          !settlementCleanupEnabled() &&
+          lastSettings.storageCleanup.projectAfterDays === null &&
           // fork: project-lifecycle -- the default-on landing rule waits for the startup,
           // settings and hourly sweeps, so ordinary thread events do not each start a sweep.
-          anyWorktreePolicy(lastSettings, (rules) =>
+          !anyWorktreePolicy(lastSettings, (rules) =>
             worktreeCleanupEnabled({ ...rules, worktreeOnLand: false }),
           )
-          ? worker.requestSweep
-          : Effect.void;
+        )
+          return Effect.void;
+        return event.type === "provider-session.updated" && event.payload.status === "error"
+          ? providerSessions
+              .isLive(event.payload.id)
+              .pipe(Effect.flatMap((live) => (live ? Effect.void : worker.requestSweep)))
+          : worker.requestSweep;
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Storage cleanup event stream failed", { cause }),

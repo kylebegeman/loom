@@ -70,6 +70,11 @@ one space, cut to 200 characters. Work started with `forkParked` gets its own tr
 joining the startup trace, and so does each scheduler pass. Other background work, such as
 terminal output drains, still joins the trace of the span that set it up.
 
+An MCP request over HTTP has a `McpHttpServer.authenticateRequest` span that covers only admitting
+it: the credential check, the mode limit, and the Linked environments gate. The request runs after
+it, under the `McpServer.…/<method>` span, and each tool call has its own `mcp.tool.<name>` span
+that times it. That span's attributes name the tool, never its arguments.
+
 DPoP proof failures include the safe `environment.dpop.failure_code` span
 attribute. A `time_window` failure means that a signed proof was too old or too
 far in the future for the environment server's allowed window. It can point to

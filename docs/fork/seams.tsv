@@ -167,7 +167,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
-apps/server/src/storageCleanup.test.ts	project-lifecycle	34
+apps/server/src/storageCleanup.test.ts	project-lifecycle	38
 packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
 packages/contracts/src/settings.ts	project-lifecycle	14
@@ -560,7 +560,7 @@ apps/server/src/cli/update.ts	brand	5
 apps/server/src/cli/update.test.ts	fleet-connect	1
 apps/server/src/cli/updateProgress.ts	brand	1
 apps/server/src/cli/up.ts	brand	7
-apps/server/src/cli/up.test.ts	brand	1
+apps/server/src/cli/up.test.ts	brand	2
 apps/server/src/cloud/ConnectReachability.ts	brand	1
 apps/server/src/cloud/bootService.ts	brand	3
 apps/server/src/cloud/selfUpdate.ts	brand	2
@@ -851,6 +851,7 @@ apps/server/src/orchestration-v2/ThreadManagementService.test.ts	server-weight	2
 apps/server/src/orchestration-v2/ThreadManagementService.ts	server-weight	3
 apps/server/src/process/agentScope.ts	server-weight	2
 apps/server/src/serverRuntimeStartup.ts	server-weight	6
+apps/server/src/textGeneration/CodexTextGeneration.test.ts	server-weight	1
 apps/server/src/textGeneration/TextGeneration.test.ts	server-weight	3
 apps/server/src/textGeneration/TextGeneration.ts	server-weight	2
 apps/web/src/lib/backgroundActivityReporter.test.ts	server-weight	4
@@ -988,7 +989,7 @@ apps/server/src/git/GitWorkflowService.ts	project-lifecycle	5
 apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
-apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	13
+apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
 apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	22
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
@@ -1020,7 +1021,7 @@ packages/shared/src/git.ts	source-control-cockpit	2
 packages/shared/src/git.ts	checkpoint-capable	1
 packages/shared/src/git.ts	project-checkout-management	3
 apps/server/src/ws.test.ts	project-lifecycle	2
-apps/server/src/ws.test.ts	file-placement	3
+apps/server/src/ws.test.ts	file-placement	5
 apps/web/src/components/chat/useTimelineRewind.ts	project-lifecycle	22
 docs/user/source-control.md	source-control-cockpit	1
 docs/user/remote-access.md	preview-popups	1
@@ -1134,7 +1135,7 @@ apps/web/src/components/settings/ArchivedThreadsPanel.tsx	attention-status	14
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	attention-status	9
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	library-projects	10
 apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
-apps/desktop/src/app/DesktopApp.ts	restart-continuity	3
+apps/desktop/src/app/DesktopApp.ts	restart-continuity	1
 apps/desktop/src/app/DesktopConnectionCatalogStore.ts	restart-continuity	3
 apps/desktop/src/app/DesktopLifecycle.test.ts	restart-compaction	1
 apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts	test-case-folding	3
@@ -1159,12 +1160,10 @@ apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-continuity	3
 apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	14
 apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	22
 apps/desktop/src/backend/DesktopBackendPool.test.ts	restart-compaction	1
-apps/desktop/src/backend/DesktopBackendPool.ts	restart-continuity	1
 apps/desktop/src/ipc/DesktopIpc.test.ts	server-weight	4
 apps/desktop/src/ipc/DesktopIpc.ts	server-weight	5
 apps/desktop/src/ipc/methods/localEnvironment.ts	server-weight	1
 apps/desktop/src/ipc/methods/window.ts	server-weight	1
-apps/desktop/src/updates/DesktopUpdates.ts	restart-continuity	1
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	restart-compaction	1
 apps/desktop/src/window/DesktopWindow.test.ts	restart-continuity	6
 apps/desktop/src/window/DesktopWindow.ts	restart-compaction	7
@@ -1337,7 +1336,7 @@ apps/server/src/assets/AssetAccess.test.ts	project-lifecycle	2
 apps/server/src/auth/EnvironmentAuth.ts	library-sign-in	5
 apps/server/src/auth/EnvironmentAuthPolicy.test.ts	directory-computers	1
 apps/server/src/auth/EnvironmentAuthPolicy.ts	directory-computers	1
-apps/server/src/bin.ts	mini-native-retention	1
+apps/server/src/binMain.ts	mini-native-retention	1
 apps/server/src/provider/AgentContextBudget.test.ts	mini-native-retention	2
 apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1

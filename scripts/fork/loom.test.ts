@@ -468,7 +468,7 @@ it("runs lint after installation, then builds, boots and typechecks, and the tes
     ["exec", "vp", "build"],
     ["web-boot"],
     ["exec", "vp", "run", "typecheck"],
-    ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
+    ["exec", "effect-tsgo", "tsrs", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     ["electron-runtime"],
     [
       "exec",
@@ -525,7 +525,7 @@ it("runs every check after formatting, unused-code and lint failures and reports
     "vp",
     "web-boot",
     "vp",
-    "tsc",
+    "effect-tsgo",
     "electron-runtime",
     "vp",
     "vp",
@@ -572,7 +572,7 @@ it("boots no stale web client when the build fails, and still runs the rest", ()
   expect(calls.slice(calls.indexOf("vp build"))).toEqual([
     "vp build",
     "vp run",
-    "tsc --noEmit",
+    "effect-tsgo tsrs",
     "electron-runtime",
     "vp test",
     "vp test",

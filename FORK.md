@@ -824,8 +824,9 @@ backend, stop the agents a killed backend leaves behind, and make a slow or fata
 itself. `DesktopBackendManager.ts` (19 marker lines) raises the backend's SIGTERM grace from 5 s
 to 15 s, because three of four measured install stops hit the old cap while still stopping
 provider sessions. Its stop budget adds 2 s so a stop that returns has really ended the process,
-and 2 s more for the provider cleanup below. `DesktopBackendPool.ts` (1) re-exports that budget
-for the quit in `DesktopApp.ts` (1) and the update install in `DesktopUpdates.ts` (1).
+and 2 s more for the provider cleanup below. That budget is upstream's `BACKEND_QUIT_STOP_TIMEOUT`,
+which the quit in `DesktopApp.ts` and the update install in `DesktopUpdates.ts` use unchanged;
+`DesktopApp.ts` (1) only exports its pool stop for the fork's bounded quit test.
 `serviceLauncher.ts` (1) uses the same 15 s grace, and `ProviderSessionManager.ts` (1) corrects
 a comment that names it. Keep the graces equal and the budget longer than the grace plus the
 cleanup. Provider CLIs lead their own process groups, so they outlive a backend that is

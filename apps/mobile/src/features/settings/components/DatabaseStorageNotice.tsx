@@ -86,7 +86,7 @@ export function DatabaseStorageNotice({
               <Text className="text-sm text-foreground-muted">
                 {status.incrementalVacuumEnabled
                   ? "Freed pages return to disk automatically."
-                  : "Run the repair command on this computer. It pauses and restarts the background service; quit the desktop app first if it hosts the environment."}
+                  : "Run the repair command on this computer. It restarts the background service. Quit the desktop app first if it hosts the environment."}
               </Text>
             </View>
             {!status.incrementalVacuumEnabled ? (
