@@ -562,7 +562,7 @@ apps/server/src/cli/updateProgress.ts	brand	1
 apps/server/src/cli/up.ts	brand	7
 apps/server/src/cli/up.test.ts	brand	2
 apps/server/src/cloud/ConnectReachability.ts	brand	1
-apps/server/src/cloud/bootService.ts	brand	3
+apps/server/src/cloud/bootService.ts	brand	4
 apps/server/src/cloud/selfUpdate.ts	brand	2
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	brand	4
 apps/server/src/diagnostics/ProcessDiagnostics.test.ts	brand	1
