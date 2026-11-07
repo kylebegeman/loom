@@ -687,13 +687,10 @@ evals/mcp-tool-use/devices.test.ts	brand	1
 evals/mcp-tool-use/run.test.ts	brand	1
 packages/provider-core/src/server/runtimeInstructions.ts	brand	1
 packages/provider-core/src/server/textGenerationPrompts.ts	brand	2
-packages/provider-cursor/src/server/accountUsage.test.ts	brand	1
-packages/provider-cursor/src/server/accountUsage.ts	brand	1
 packages/provider-cursor/src/server/adapter.test.ts	brand	2
 packages/provider-cursor/src/server/status.test.ts	brand	3
 packages/provider-cursor/src/server/status.ts	brand	4
 packages/provider-cursor/src/server/textGeneration.ts	brand	1
-packages/provider-cursor/src/server/usageLimits.ts	brand	1
 packages/provider-grok/src/server/status.ts	brand	2
 packages/provider-muse/src/server/adapter.ts	brand	2
 packages/provider-muse/src/server/status.ts	brand	5
@@ -1131,7 +1128,7 @@ apps/web/src/components/settings/ScheduledTasksSettings.tsx	scheduled-task-alert
 packages/contracts/src/scheduledTask.ts	scheduled-task-alerts	1
 apps/mobile/src/features/threads/ThreadComposer.tsx	attention-status	1
 apps/mobile/src/features/threads/ThreadComposer.tsx	everyday-workflows	4
-apps/web/src/components/settings/ArchivedThreadsPanel.tsx	attention-status	14
+apps/web/src/components/settings/ArchivedThreadsPanel.tsx	attention-status	10
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	attention-status	9
 apps/web/src/components/sidebar/SidebarThreadRow.tsx	library-projects	10
 apps/desktop/src/app/DesktopApp.ts	restart-compaction	2
@@ -1640,7 +1637,7 @@ apps/server/src/auth/RpcAuthorization.test.ts	vault-provider-credentials	2
 apps/server/src/auth/RpcAuthorization.ts	vault-provider-credentials	3
 apps/server/src/provider/ProviderInstanceRegistryHydration.ts	vault-provider-credentials	4
 apps/web/src/components/settings/ProviderInstanceCard.tsx	vault-provider-credentials	9
-packages/client-runtime/src/state/commandPermissions.test.ts	vault-provider-credentials	5
+packages/client-runtime/src/state/commandPermissions.test.ts	vault-provider-credentials	4
 packages/contracts/src/clientRpcPermissions.ts	vault-provider-credentials	5
 apps/server/src/provider/ProviderInstanceRegistry.ts	vault-provider-credentials	6
 apps/server/src/provider/ProviderInstanceRegistry.test.ts	vault-provider-credentials	1
