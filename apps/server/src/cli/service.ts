@@ -93,6 +93,13 @@ export const reconcileService = Effect.fn("cli.service.reconcile")(function* (op
   const { baseDir } = yield* ServerConfig.ServerConfig;
   const service = yield* BootService.BootService;
   const status = yield* service.status;
+  // Before the downgrade check, which reads this home's state, not the service's.
+  if (status.otherBaseDir !== undefined) {
+    return yield* new BootService.BootServiceOtherBaseDirError({
+      installedBaseDir: status.otherBaseDir,
+      baseDir,
+    });
+  }
   if (status.installed && status.current) {
     return { changed: false, status } satisfies ServiceReconcileResult;
   }
@@ -154,6 +161,14 @@ function formatServiceStatus(
   if (!status.installed) {
     // fork: brand
     return "Loom service\n  Status: not installed\n  Next: Run `t3 service install`.";
+  }
+  if (status.otherBaseDir !== undefined) {
+    return [
+      "Loom service", // fork: brand
+      "  Status: installed for another T3 home",
+      `  Base dir: ${status.otherBaseDir}`,
+      `  Next: Pass \`${BootService.formatBootServiceBaseDirOption(status.otherBaseDir)}\` to manage it.`,
+    ].join("\n");
   }
   const installedVersion = status.installedVersion ?? cliVersion;
   const problems = (status.problems ?? []).map(
@@ -279,7 +294,10 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
             : outcome === "queued"
               ? // fork: brand
                 `Queued a restart of the Loom service${onVersion}. This session runs inside the service and disconnects when it goes down.\nLogs: ${status.logPath}`
-              : "Loom service is not installed.", // fork: brand
+              : status.otherBaseDir !== undefined
+                ? // fork: brand
+                  `The Loom service serves ${status.otherBaseDir}, so it was not restarted. Pass \`${BootService.formatBootServiceBaseDirOption(status.otherBaseDir)}\` to restart it.`
+                : "Loom service is not installed.", // fork: brand
         );
       }),
     ),
@@ -305,7 +323,8 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
           path.resolve(installedBaseDir) !== path.resolve(baseDir)
         ) {
           yield* Console.log(
-            "The installed service runs another T3 home, so it was not removed. Pass its --base-dir.",
+            // fork: brand
+            `The Loom service serves ${installedBaseDir}, so it was not removed. Pass \`${BootService.formatBootServiceBaseDirOption(installedBaseDir)}\` to remove it.`,
           );
           return;
         }
