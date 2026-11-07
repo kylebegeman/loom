@@ -87,7 +87,11 @@ vi.mock("../../state/session", () => ({
 }));
 // fork: provider-auth-retry
 vi.mock("../../state/server", () => ({
-  serverEnvironment: { updateSettings: {}, providerAuthState: () => "auth" },
+  serverEnvironment: {
+    updateSettings: {},
+    providerAuthState: () => "auth",
+    removeProviderAuthMethod: { permissionAtom: () => "removeProviderAuthMethodPermission" },
+  },
 }));
 vi.mock("../../state/presentation", () => ({
   environmentPresentations: { providersByEnvironmentAtom: "providers" },
