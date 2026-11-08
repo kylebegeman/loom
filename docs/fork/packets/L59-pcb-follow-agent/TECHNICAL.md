@@ -125,7 +125,7 @@ export const makeTurnFiles = Effect.gen(function* () {
   (`apps/server/src/vcs/GitVcsDriver.ts:1214`, per L41) while design ids are relative to the
   thread's workspace root, which can be a subdirectory.
 - `turnCheckpoints(threadId, runId, limit)`: `queries.getThreadRecords(threadId,
-["checkpoints"])` (`apps/server/src/orchestration-v2/ProjectionStore.ts:364-368`). Keep
+  ["checkpoints"])` (`apps/server/src/orchestration-v2/ProjectionStore.ts:364-368`). Keep
   checkpoints with `runId !== null`, `appRunOrdinal !== null`, `status === "ready"` and
   non-empty `files` (baselines have both fields null, per L41). With a `runId`, return that
   run's checkpoint; with `null`, the newest `limit` by `appRunOrdinal`.
@@ -210,8 +210,10 @@ excluded from discovery (`discovery.ts:61`) and reported through the root design
 4. `designsForFiles(root, workspaceFiles(prefix, checkpoint.files))`.
 
 `turnDesignEvents(threadId)` begins with `workspace(threadId)` so an unknown thread fails like
-`watch`, then maps `turnCheckpointEvents(threadId)` through steps 2 and 4 and keeps results
-with designs. `discover` runs `entries.search` (`:441-447`); `listDesigns` refreshes the entry
+`watch`. A `workspace-missing` failure does not end it, because each event resolves the
+workspace again and skips a checkpoint whose workspace cannot be resolved. It maps
+`turnCheckpointEvents(threadId)` through steps 2 and 4 and keeps results with designs.
+`discover` runs `entries.search` (`:441-447`); `listDesigns` refreshes the entry
 index first (`:473`). Call `entries.refresh(root)` before `discover` in the event path, since
 the turn just wrote files the index may not have.
 
@@ -300,7 +302,7 @@ In `packages/client-runtime/src/fork/pcb-preview.ts`, beside `designs` and `watc
   `usePcbPreview.logic.ts` and titles the agent-opened and hardware-import tabs with it; import
   it from there rather than adding a copy.
 - `pcbSurface(designId)`: `{ ...forkPanelSurface("pcb-preview", designId), title:
-pcbDesignName(designId) }`. `forkPanelSurface` sets no title
+  pcbDesignName(designId) }`. `forkPanelSurface` sets no title
   (`apps/web/src/fork/panels/registry.ts:20-25`), so every PCB tab reads "PCB preview" today
   (`apps/web/src/fork/panels/surface.tsx:19-20`, `panel.tsx:7`). Use it in
   `commands.tsx:47` (agent `open`) too.

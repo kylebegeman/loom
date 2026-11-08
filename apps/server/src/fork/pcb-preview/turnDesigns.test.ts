@@ -142,7 +142,8 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
 );
 it.effect("design events discover in the workspace the thread has when each checkpoint lands", () =>
   Effect.gen(function* () {
-    let root: string | null = "/repo/main";
+    const threadId = ThreadId.make("thread");
+    let root: string | null = null;
     const checkpoint = (turn: number) => ({
       runId: RunId.make(`run-${turn}`),
       checkpointId: CheckpointId.make(`checkpoint-${turn}`),
@@ -151,11 +152,13 @@ it.effect("design events discover in the workspace the thread has when each chec
       files: ["board.kicad_pcb"],
     });
     const methods = makeTurnDesigns({
-      workspace: () =>
+      workspace: (id) =>
         Effect.suspend(() =>
-          root === null
-            ? Effect.fail(new PcbPreviewError({ reason: "workspace-missing", message: "gone" }))
-            : Effect.succeed({ root }),
+          id !== threadId
+            ? Effect.fail(new PcbPreviewError({ reason: "thread-not-found", message: "unknown" }))
+            : root === null
+              ? Effect.fail(new PcbPreviewError({ reason: "workspace-missing", message: "gone" }))
+              : Effect.succeed({ root }),
         ),
       discover: (at) => Effect.succeed(at === "/repo/worktree" ? [board] : []),
       snapshotFiles: () => Effect.succeed([]),
@@ -163,7 +166,8 @@ it.effect("design events discover in the workspace the thread has when each chec
         repoPrefix: () => Effect.succeed(""),
         workspaceFiles,
         turnCheckpoints: () => Effect.succeed({ generation: null, checkpoints: [] }),
-        // Turn 2 lands while the workspace cannot be resolved; turn 3 lands in the new worktree.
+        // The stream subscribes and turn 2 lands while the workspace is missing; turn 3 lands in
+        // the new worktree.
         turnCheckpointEvents: () =>
           Stream.make(checkpoint(2), checkpoint(3)).pipe(
             Stream.tap((next) =>
@@ -174,11 +178,13 @@ it.effect("design events discover in the workspace the thread has when each chec
           ),
       },
     });
-    const events = yield* methods
-      .turnDesignEvents({ threadId: ThreadId.make("thread") })
-      .pipe(Stream.runCollect);
+    const events = yield* methods.turnDesignEvents({ threadId }).pipe(Stream.runCollect);
     expect(
       events.map((event) => [event.turn, event.designs.map((design) => design.designId)]),
     ).toEqual([[3, [board.id]]]);
+    const unknown = methods.turnDesignEvents({ threadId: ThreadId.make("unknown") });
+    expect(yield* Effect.flip(Stream.runCollect(unknown))).toMatchObject({
+      reason: "thread-not-found",
+    });
   }),
 );

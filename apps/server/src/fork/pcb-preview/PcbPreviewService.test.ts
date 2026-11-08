@@ -186,11 +186,9 @@ const setup = Effect.gen(function* () {
       Effect.succeedSome(partial<ProjectStore.ProjectRow>({ projectId, workspaceRoot: root })),
   });
   let refreshes = 0;
+  let duringRefresh: (call: number) => Effect.Effect<void> = () => Effect.void;
   const entries = partial<WorkspaceEntries["Service"]>({
-    refresh: () =>
-      Effect.sync(() => {
-        refreshes++;
-      }),
+    refresh: () => Effect.suspend(() => duringRefresh(refreshes++)),
     search: ({ query }) =>
       Effect.succeed({
         entries: names
@@ -268,6 +266,9 @@ const setup = Effect.gen(function* () {
     },
     runner,
     getRefreshes: () => refreshes,
+    setDuringRefresh: (effect: (call: number) => Effect.Effect<void>) => {
+      duringRefresh = effect;
+    },
     capturedRefs,
     deletedRefs,
     requestGit: (enabled: boolean, fail = false) => {
@@ -1654,6 +1655,60 @@ it.effect(
         ).toEqual([]);
       }),
     ),
+);
+it.effect("a turn design lookup after a newer capture discovers again instead of joining", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        native = yield* NativeProcesses.make().pipe(Effect.provide(NodeServices.layer));
+      expect(
+        (yield* native.run({ command: "git", args: ["init", "--quiet"], cwd: t.root })).code,
+      ).toBe(0);
+      const checkpoint = (turn: number) =>
+        partial<OrchestrationV2Checkpoint>({
+          id: CheckpointId.make(`checkpoint-${turn}`),
+          runId: RunId.make(`run-${turn}`),
+          appRunOrdinal: turn,
+          status: "ready",
+          files: [partial<OrchestrationV2Checkpoint["files"][number]>({ path: "board.kicad_sch" })],
+        });
+      const first = checkpoint(1);
+      t.setCheckpoints([first]);
+      const refreshed = yield* Deferred.make<void>();
+      const gate = yield* Deferred.make<void>();
+      t.setDuringRefresh((call) =>
+        call === 0
+          ? Deferred.succeed(refreshed, undefined).pipe(Effect.andThen(Deferred.await(gate)))
+          : Effect.void,
+      );
+      // Immediate path lookups let startImmediately carry the newer lookup to discovery before
+      // the gate opens.
+      const service = yield* t.create(
+        { ...t.fs, realPath: (path: string) => Effect.succeed(path) },
+        ProcessRunner.of({ run: (i) => (i.command === "git" ? native.run(i) : t.runner.run(i)) }),
+      );
+      const older = yield* service
+        .turnDesigns({ threadId: t.input.threadId, runId: null })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(refreshed);
+      t.setCheckpoints([first, checkpoint(2)]);
+      // A chip for the older run must not reuse the discovery that started before turn 2.
+      const newer = yield* service
+        .turnDesigns({ threadId: t.input.threadId, runId: first.runId })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.succeed(gate, undefined);
+      const written = {
+        designId: "board.kicad_pro",
+        kind: "kicad",
+        name: "board",
+        reason: "written",
+        via: null,
+      };
+      expect((yield* Fiber.join(older)).designs).toEqual([written]);
+      expect((yield* Fiber.join(newer)).designs).toEqual([written]);
+      expect(t.getRefreshes()).toBe(2);
+    }),
+  ),
 );
 
 it.effect(

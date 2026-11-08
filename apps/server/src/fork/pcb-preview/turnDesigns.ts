@@ -140,10 +140,15 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
   const turnDesignEvents = (input: { threadId: ThreadId }) =>
     Stream.unwrap(
       Effect.gen(function* () {
-        // Fail a bad subscription now. Each checkpoint resolves again because a worktree handoff
-        // or a late worktree binding can re-point the thread while the stream stays open. One
-        // that fails to resolve is skipped rather than ending the stream.
-        yield* deps.workspace(input.threadId);
+        // Only an unknown thread fails the subscription. Turn start can restore a missing checkout
+        // and a handoff or late worktree binding can re-point the thread, so each checkpoint
+        // resolves the workspace again and one that fails to resolve is skipped.
+        yield* deps.workspace(input.threadId).pipe(
+          Effect.catchIf(
+            (cause) => cause.reason === "workspace-missing",
+            () => Effect.void,
+          ),
+        );
         return deps.turnFiles.turnCheckpointEvents(input.threadId).pipe(
           Stream.mapEffect((checkpoint) =>
             Effect.gen(function* () {

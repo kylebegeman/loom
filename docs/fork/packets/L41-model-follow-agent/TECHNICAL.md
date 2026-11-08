@@ -261,7 +261,10 @@ Add to `ModelPreviewService` (`make`, `:103`) a `turnModels(threadId, runId)` me
 `threads.streamDomainEvents` (`ThreadManagementService.ts:382`) filtered to
 `checkpoint.captured` events for this thread whose payload is a ready turn checkpoint with
 non-empty `files`, mapped with the same helpers, and filtered to results with models. It begins
-with `resolveWorkspace` so an unknown thread fails like `watch` does. Checkpoint selection, repository-prefix caching and the filtered event stream live in
+with a thread lookup so an unknown thread fails like `watch` does. A checkout folder missing at
+subscribe time does not end it: each event resolves the workspace again and skips a checkpoint
+whose workspace cannot be resolved. Checkpoint selection, repository-prefix caching and the
+filtered event stream live in
 `apps/server/src/fork/turnFiles.ts`, shared with L59. `makeTurnFiles` reads the projection store,
 thread management service and process runner from the existing fork layer, so `ForkLayer.ts`
 needs no new provider. The model service owns format mapping and bounded SCAD dependency

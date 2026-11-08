@@ -370,10 +370,10 @@ export const make = Effect.gen(function* () {
   const turnModelEvents = (threadId: ModelFileRef["threadId"], include?: readonly "build123d"[]) =>
     Stream.unwrap(
       Effect.gen(function* () {
-        // Fail a bad subscription now. Each checkpoint resolves again because a worktree handoff
-        // or a late worktree binding can re-point the thread while the stream stays open. One
-        // that fails to resolve is skipped rather than ending the stream.
-        yield* resolveWorkspace({ threadId, path: "." });
+        // Only an unknown thread fails the subscription. Turn start can restore a missing checkout
+        // and a handoff or late worktree binding can re-point the thread, so each checkpoint
+        // resolves the workspace again and one that fails to resolve is skipped.
+        yield* queries.getThread(threadId);
         return turnFiles.turnCheckpointEvents(threadId).pipe(
           Stream.mapEffect((checkpoint) =>
             Effect.gen(function* () {

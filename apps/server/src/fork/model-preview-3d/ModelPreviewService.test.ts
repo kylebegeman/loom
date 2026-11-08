@@ -253,11 +253,13 @@ const setup = Effect.gen(function* () {
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
     getThreadRecords: () =>
       Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
-    getThread: () =>
-      Effect.sync(() => {
-        threadReads++;
-        return partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath });
-      }),
+    getThread: (id) =>
+      id === threadId
+        ? Effect.sync(() => {
+            threadReads++;
+            return partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath });
+          })
+        : Effect.fail(new ProjectionStore.ProjectionStoreThreadNotFoundError({ threadId: id })),
   });
   const project = partial<ProjectStore.ProjectRow>({ projectId, workspaceRoot: root });
   const projectStore = partial<ProjectStore.ProjectStoreV2["Service"]>({
@@ -1207,9 +1209,11 @@ it.effect("streamed models are checked in the workspace the thread has when each
     yield* t.fs.makeDirectory(t.path.join(worktree, "models"));
     yield* t.fs.writeFileString(t.path.join(worktree, "models", "new.stl"), "stl");
     yield* t.initGit(worktree);
-    // Turn 2 lands while the workspace cannot be resolved; turn 3 lands in the new worktree.
+    // The stream subscribes and turn 2 lands while the thread's folder is missing; turn 3 lands
+    // in the new worktree.
     const unresolved = checkpointEvent(checkpoint(t.file.threadId, 2, ["models/new.stl"]));
     const landed = checkpointEvent(checkpoint(t.file.threadId, 3, ["models/new.stl"]));
+    t.setWorkspace(t.path.join(worktree, "missing"));
     t.setEvents(
       Stream.make(unresolved, landed).pipe(
         Stream.tap((event) =>
@@ -1224,6 +1228,8 @@ it.effect("streamed models are checked in the workspace the thread has when each
     expect(result.map((turn) => [turn.turn, turn.models.map((model) => model.path)])).toEqual([
       [3, ["models/new.stl"]],
     ]);
+    const unknown = service.turnModelEvents(ThreadId.make("unknown"));
+    expect((yield* Effect.flip(Stream.runCollect(unknown))).reason).toBe("command-failed");
   }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 it.effect(
@@ -1404,6 +1410,39 @@ it.effect("a turn lookup after a newer capture scans again instead of joining th
     yield* Deferred.succeed(gate, undefined);
     expect((yield* Fiber.join(older)).models).toHaveLength(2);
     expect((yield* Fiber.join(newer)).models).toHaveLength(2);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("a stream event for the newest capture joins the turn lookup's scan in flight", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    t.setEntries(["models/part.scad", "models/shape.scad"]);
+    const newest = checkpoint(t.file.threadId, 1, ["models/shape.scad"]);
+    t.setCheckpoints([newest]);
+    t.setEvents(Stream.make(checkpointEvent(newest)));
+    const listed = yield* Deferred.make<void>();
+    const gate = yield* Deferred.make<void>();
+    t.setDuringList((call) =>
+      call === 0
+        ? Deferred.succeed(listed, undefined).pipe(Effect.andThen(Deferred.await(gate)))
+        : Effect.void,
+    );
+    // Immediate path lookups let startImmediately carry the event to the shared scan before the
+    // gate opens.
+    const service = yield* t.create({ ...t.fs, realPath: (path: string) => Effect.succeed(path) });
+    const lookup = yield* service.turnModels(t.file.threadId, null).pipe(Effect.forkChild);
+    yield* Deferred.await(listed);
+    const streamed = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId)).pipe(
+      Effect.forkChild({ startImmediately: true }),
+    );
+    yield* Deferred.succeed(gate, undefined);
+    const looked = yield* Fiber.join(lookup);
+    expect(looked.models.map((model) => model.path)).toEqual([
+      "models/shape.scad",
+      "models/part.scad",
+    ]);
+    expect(yield* Fiber.join(streamed)).toEqual([looked]);
+    expect(t.getListCalls()).toBe(1);
   }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 
