@@ -842,6 +842,58 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect.each(["turn start", "discard"] as const)(
+    "runs a lane change queued during startup before the next lane attaches (%s)",
+    (change) =>
+      Effect.gen(function* () {
+        const attaching = yield* Deferred.make<string>();
+        const proceed = yield* Deferred.make<void>();
+        const order: Array<string> = [];
+        const t = yield* setupWith({
+          wrapSpaces: (spaces) => ({
+            ...spaces,
+            folder: {
+              ...spaces.folder,
+              attach: (paths, capBytes, volumeName) =>
+                Effect.suspend(() => {
+                  order.push(paths.laneDir);
+                  return Deferred.succeed(attaching, paths.laneDir);
+                }).pipe(
+                  Effect.flatMap((first) => (first ? Deferred.await(proceed) : Effect.void)),
+                  Effect.andThen(spaces.folder.attach(paths, capBytes, volumeName)),
+                ),
+            },
+          }),
+        });
+        t.threads.push(thread("root"), thread("feature", { worktreePath: t.worktree }));
+        const lanes = [
+          yield* t.service.ensureForThread(ThreadId.make("root")),
+          yield* t.service.ensureForThread(ThreadId.make("feature")),
+        ];
+        const restarted = yield* t.create;
+        const startup = yield* Effect.forkChild(restarted.reconcile());
+        const first = yield* Deferred.await(attaching);
+        const next = lanes.find((lane) => lane.laneDir !== first)!;
+        // Starting at once queues it on the lane lock while the first lane is still attaching.
+        const waiting = yield* (
+          change === "turn start"
+            ? restarted.ensureForThread(ThreadId.make("root")).pipe(Effect.asVoid)
+            : restarted.discard(next.id)
+        ).pipe(
+          Effect.andThen(Effect.sync(() => order.push(change))),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.succeed(proceed, undefined);
+        yield* Fiber.join(startup);
+        yield* Fiber.join(waiting);
+        // A lane discarded while startup waited is not attached, which would recreate its folder.
+        expect(order).toEqual(
+          change === "turn start" ? [first, change, next.laneDir] : [first, change],
+        );
+        expect(NodeFS.existsSync(next.laneDir)).toBe(change === "turn start");
+      }).pipe(Effect.scoped),
+  );
+
   it.live("claims lane ports against every other server on the computer", () =>
     Effect.gen(function* () {
       const t = yield* setup;

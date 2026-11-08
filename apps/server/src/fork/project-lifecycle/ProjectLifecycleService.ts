@@ -2097,12 +2097,19 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   const reconcile = Effect.fn("ProjectLifecycle.reconcile")(function* () {
     yield* refreshShellInstalled;
     yield* reclaimFree();
-    yield* mutate.withPermits(1)(
-      Effect.forEach(
-        [...lanes.values()],
-        (lane) => attach(lane).pipe(Effect.ignore({ log: true })),
-        { discard: true },
-      ),
+    // Turn starts and lane changes wait on `mutate`, so each lane takes it separately. A lane
+    // they removed or replaced in the meantime is skipped.
+    yield* Effect.forEach(
+      [...lanes.values()],
+      (lane) =>
+        mutate.withPermits(1)(
+          Effect.suspend(() =>
+            lanes.get(lane.id) === lane
+              ? attach(lane).pipe(Effect.ignore({ log: true }))
+              : Effect.void,
+          ),
+        ),
+      { discard: true },
     );
     if (lanes.size > 0) yield* writeShellFiles;
     yield* mutate.withPermits(1)(scanUnrecorded());
