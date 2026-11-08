@@ -16,7 +16,7 @@ const error = (reason: PcbPreviewError["reason"], message: string) =>
   new PcbPreviewError({ reason, message });
 export const makePinMap = Effect.fn("PcbPreview.makePinMap")(function* (deps: {
   inspect: (input: PcbPinMapInput) => Effect.Effect<PcbInspection, PcbPreviewError>;
-  root: (input: PcbPinMapInput) => Effect.Effect<string, PcbPreviewError>;
+  writableRoot: (input: PcbPinMapInput) => Effect.Effect<string, PcbPreviewError>;
   hash: (input: PcbPinMapInput) => Effect.Effect<string, PcbPreviewError>;
   refresh: (root: string) => Effect.Effect<void>;
 }) {
@@ -69,7 +69,7 @@ export const makePinMap = Effect.fn("PcbPreview.makePinMap")(function* (deps: {
         save.path.split("/").some((part) => part === ".." || part.startsWith("."))
       )
         return yield* error("path-outside-workspace", "Choose a file inside the workspace.");
-      const root = yield* deps.root(input);
+      const root = yield* deps.writableRoot(input);
       const parent = yield* fs
         .realPath(path.join(root, path.dirname(save.path)))
         .pipe(

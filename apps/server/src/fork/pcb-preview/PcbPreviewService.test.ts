@@ -31,6 +31,7 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
+import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import { ProcessRunner, type ProcessRunInput, type ProcessRunOutput } from "../../processRunner.ts";
 import * as NativeProcesses from "../../processRunner.ts";
 
@@ -202,7 +203,7 @@ const setup = Effect.gen(function* () {
     deletedRefs: string[] = [];
   let gitRequests = false,
     failedCapture = false;
-  const create = (filesystem = fs, processRunner = runner) =>
+  const create = (filesystem = fs, processRunner = runner, workspacePaths = paths) =>
     PcbPreview.make.pipe(
       Effect.provide(context),
       Effect.provideService(
@@ -227,7 +228,7 @@ const setup = Effect.gen(function* () {
             }),
         }),
       ),
-      Effect.provideService(WorkspacePaths.WorkspacePaths, paths),
+      Effect.provideService(WorkspacePaths.WorkspacePaths, workspacePaths),
       Effect.provideService(ProjectionStore.ProjectionStoreV2, queries),
       Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
       Effect.provideService(WorkspaceEntries, entries),
@@ -250,6 +251,7 @@ const setup = Effect.gen(function* () {
     fs,
     path,
     root,
+    paths,
     stateDir: (yield* Config.ServerConfig.pipe(Effect.provide(context))).stateDir,
     create,
     calls,
@@ -688,31 +690,37 @@ it.effect("serializes workspace saves, streams updates, and rejects stale versio
     }),
   ),
 );
+type Setup = Effect.Success<typeof setup>;
+const resistanceCircuit = (t: Setup) =>
+  Effect.gen(function* () {
+    const input = { threadId: t.input.threadId, designId: "blink.circuit.tsx" };
+    const file = t.path.join(t.root, input.designId),
+      source = "const resistance = /* loom:param resistance */ 1000;";
+    yield* t.fs.writeFileString(file, source);
+    yield* t.fs.writeFileString(
+      file + ".parameters.json",
+      JSON.stringify({
+        parameters: [
+          {
+            key: "resistance",
+            label: "Resistance",
+            description: "",
+            type: "number",
+            default: 1000,
+            min: 1,
+            max: 10000,
+          },
+        ],
+      }),
+    );
+    return { input, file, source };
+  });
 it.effect("previews explicit parameters and rejects applying to newer source", () =>
   test(
     Effect.gen(function* () {
       const t = yield* setup,
-        service = yield* t.create(),
-        input = { threadId: t.input.threadId, designId: "blink.circuit.tsx" };
-      const file = t.path.join(t.root, input.designId),
-        source = "const resistance = /* loom:param resistance */ 1000;";
-      yield* t.fs.writeFileString(file, source);
-      yield* t.fs.writeFileString(
-        file + ".parameters.json",
-        JSON.stringify({
-          parameters: [
-            {
-              key: "resistance",
-              label: "Resistance",
-              description: "",
-              type: "number",
-              default: 1000,
-              min: 1,
-              max: 10000,
-            },
-          ],
-        }),
-      );
+        service = yield* t.create();
+      const { input, file, source } = yield* resistanceCircuit(t);
       const current = yield* service.parameters(input);
       const preview = yield* service.applyParameters({
         ...input,
@@ -733,6 +741,135 @@ it.effect("previews explicit parameters and rejects applying to newer source", (
           })
           .pipe(Effect.flip)).reason,
       ).toBe("conflict");
+    }),
+  ),
+);
+// Each row reaches the checkout another way: a direct restore, the pin map's writable root, and a
+// folder created for the write. The release in progress changes what the write would replace.
+const writesDuringRelease: ReadonlyArray<{
+  readonly name: string;
+  readonly arrange: (
+    t: Setup,
+    service: Effect.Success<ReturnType<Setup["create"]>>,
+  ) => Effect.Effect<
+    {
+      readonly write: Effect.Effect<unknown, { readonly reason: string }>;
+      readonly release: Effect.Effect<void, unknown>;
+    },
+    unknown
+  >;
+}> = [
+  {
+    name: "applying parameters",
+    arrange: (t, service) =>
+      Effect.gen(function* () {
+        const { input, file, source } = yield* resistanceCircuit(t);
+        const current = yield* service.parameters(input);
+        return {
+          write: service.applyParameters({
+            ...input,
+            expectedSourceHash: current.sourceHash,
+            values: { resistance: 2200 },
+            preview: false,
+          }),
+          release: t.fs.writeFileString(file, source + "\n"),
+        };
+      }),
+  },
+  {
+    name: "saving a pin map",
+    arrange: (t, service) =>
+      Effect.gen(function* () {
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pcb"),
+          '(kicad_pcb (footprint "QFN" (property "Reference" "U1") (property "Value" "RP2040") (pad "27" smd rect (pinfunction "GPIO25") (net 1 "LED"))))',
+        );
+        const input = {
+          threadId: t.input.threadId,
+          designId: t.input.designId,
+          reference: "U1",
+          format: "c" as const,
+          includePower: false,
+          includeNoConnect: false,
+        };
+        const first = yield* service.pinMap(input);
+        return {
+          write: service.pinMap({
+            ...input,
+            expectedSourceHash: first.sourceHash,
+            save: { path: "pins.h", overwrite: false },
+          }),
+          release: t.fs.writeFileString(t.path.join(t.root, "pins.h"), "// kept\n"),
+        };
+      }),
+  },
+  {
+    name: "reusing hardware",
+    arrange: (t, service) =>
+      Effect.gen(function* () {
+        const library = yield* service.library();
+        const item = {
+          ...library.items[0]!,
+          id: "test-hardware",
+          assets: [{ kind: "3d" as const, path: "reference.glb", workspaceRoot: t.root }],
+        };
+        yield* t.fs.writeFileString(t.path.join(t.root, "reference.glb"), "glTFtest");
+        yield* service.updateLibrary({
+          expectedVersion: library.version,
+          library: { ...library, items: [item] },
+        });
+        const input = { threadId: t.input.threadId, itemId: item.id },
+          reused = yield* service.reuseHardware(input);
+        return {
+          write: service.reuseHardware(input),
+          release: t.fs.writeFileString(t.path.join(t.root, reused.files[0]!.path), "changed"),
+        };
+      }),
+  },
+];
+it.effect.each(writesDuringRelease)("$name waits for a checkout release in progress", (row) =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const leased = yield* Deferred.make<void>();
+      let watching = false;
+      const service = yield* t.create(t.fs, t.runner, {
+        ...t.paths,
+        normalizeWorkspaceRoot: (root, options) =>
+          Effect.suspend(() =>
+            watching && options?.restoreManagedCheckout && !options.readOnly
+              ? Deferred.succeed(leased, undefined)
+              : Effect.void,
+          ).pipe(Effect.andThen(t.paths.normalizeWorkspaceRoot(root, options))),
+      });
+      const { write, release } = yield* row.arrange(t, service);
+      watching = true;
+      const holding = yield* Deferred.make<void>(),
+        proceed = yield* Deferred.make<void>();
+      const releasing = yield* withWorkspaceLease(
+        t.root,
+        Deferred.succeed(holding, undefined).pipe(
+          Effect.andThen(Deferred.await(proceed)),
+          Effect.andThen(release),
+        ),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(holding);
+      const finished = yield* Deferred.make<void>();
+      const writing = yield* write.pipe(
+        Effect.ensuring(Deferred.succeed(finished, undefined)),
+        Effect.flip,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      expect(
+        yield* Effect.raceFirst(
+          Deferred.await(leased).pipe(Effect.as("waiting")),
+          Deferred.await(finished).pipe(Effect.as("finished")),
+        ),
+      ).toBe("waiting");
+      yield* Deferred.succeed(proceed, undefined);
+      yield* Fiber.join(releasing);
+      expect((yield* Fiber.join(writing)).reason).toBe("conflict");
     }),
   ),
 );

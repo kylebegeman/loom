@@ -3,7 +3,9 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { FileFinder } from "@ff-labs/fff-node";
 import { it, afterEach, describe, expect } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -15,6 +17,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -454,6 +457,26 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(result.entries[0]?.kind).toBe("file");
         expect(["src/index.ts", "src/internal.ts"]).toContain(result.entries[0]?.path);
         expect(result.truncated).toBe(true);
+      }),
+    );
+
+    it.effect("answers while another caller holds the workspace lease", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-lease-" });
+        yield* writeTextFile(cwd, "src/index.ts");
+        const entered = yield* Deferred.make<void>();
+        const unlock = yield* Deferred.make<void>();
+        const held = yield* withWorkspaceLease(
+          cwd,
+          Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(unlock))),
+        ).pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(entered);
+
+        const result = yield* searchWorkspaceEntries({ cwd, query: "index", limit: 10 });
+
+        expect(result.entries.map((entry) => entry.path)).toContain("src/index.ts");
+        yield* Deferred.succeed(unlock, undefined);
+        yield* Fiber.join(held);
       }),
     );
 
