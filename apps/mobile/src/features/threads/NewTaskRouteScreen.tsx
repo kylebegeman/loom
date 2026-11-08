@@ -446,30 +446,34 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               {!projectEmptyState.loading /* fork: fleet-connections */ ? (
                 <>
                   {/* fork: fleet-connections */}
-                  <Button
-                    // fork: fleet-connections
-                    label={
-                      catalogState.hasReadyEnvironment
-                        ? "Add project"
-                        : catalogState.hasConnections
-                          ? "Manage computers"
-                          : "Add computer"
-                    }
-                    tone="primary"
-                    onPress={() =>
-                      catalogState.hasReadyEnvironment
-                        ? navigation.navigate("LibraryCreate") // fork: library - Same choice as the header's Add project.
-                        : navigation.navigate(
-                            catalogState.hasConnections ? "Connections" : "ConnectionsNew", // fork: fleet-connections
-                          )
-                    }
-                  />
-                  {canStartScratch ? (
+                  <View>
                     <Button
-                      label="Start without a project"
-                      tone="secondary"
-                      onPress={() => void startScratch()}
+                      // fork: fleet-connections
+                      label={
+                        catalogState.hasReadyEnvironment
+                          ? "Add project"
+                          : catalogState.hasConnections
+                            ? "Manage computers"
+                            : "Add computer"
+                      }
+                      tone="primary"
+                      onPress={() =>
+                        catalogState.hasReadyEnvironment
+                          ? navigation.navigate("LibraryCreate") // fork: library - Same choice as the header's Add project.
+                          : navigation.navigate(
+                              catalogState.hasConnections ? "Connections" : "ConnectionsNew", // fork: fleet-connections
+                            )
+                      }
                     />
+                  </View>
+                  {canStartScratch ? (
+                    <View>
+                      <Button
+                        label="Start without a project"
+                        tone="secondary"
+                        onPress={() => void startScratch()}
+                      />
+                    </View>
                   ) : null}
                 </>
               ) : // fork: fleet-connections -- the buttons above cover every ready state
