@@ -23,6 +23,8 @@ import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
+import type { PcbPreviewError } from "@t3tools/contracts/fork";
+import type { PlatformError } from "effect/PlatformError";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as PcbPreview from "./PcbPreviewService.ts";
@@ -754,10 +756,10 @@ const writesDuringRelease: ReadonlyArray<{
     service: Effect.Success<ReturnType<Setup["create"]>>,
   ) => Effect.Effect<
     {
-      readonly write: Effect.Effect<unknown, { readonly reason: string }>;
-      readonly release: Effect.Effect<void, unknown>;
+      readonly write: Effect.Effect<void, PcbPreviewError>;
+      readonly release: Effect.Effect<void, PlatformError>;
     },
-    unknown
+    PcbPreviewError | PlatformError
   >;
 }> = [
   {
@@ -767,12 +769,14 @@ const writesDuringRelease: ReadonlyArray<{
         const { input, file, source } = yield* resistanceCircuit(t);
         const current = yield* service.parameters(input);
         return {
-          write: service.applyParameters({
-            ...input,
-            expectedSourceHash: current.sourceHash,
-            values: { resistance: 2200 },
-            preview: false,
-          }),
+          write: service
+            .applyParameters({
+              ...input,
+              expectedSourceHash: current.sourceHash,
+              values: { resistance: 2200 },
+              preview: false,
+            })
+            .pipe(Effect.asVoid),
           release: t.fs.writeFileString(file, source + "\n"),
         };
       }),
@@ -796,11 +800,13 @@ const writesDuringRelease: ReadonlyArray<{
         };
         const first = yield* service.pinMap(input);
         return {
-          write: service.pinMap({
-            ...input,
-            expectedSourceHash: first.sourceHash,
-            save: { path: "pins.h", overwrite: false },
-          }),
+          write: service
+            .pinMap({
+              ...input,
+              expectedSourceHash: first.sourceHash,
+              save: { path: "pins.h", overwrite: false },
+            })
+            .pipe(Effect.asVoid),
           release: t.fs.writeFileString(t.path.join(t.root, "pins.h"), "// kept\n"),
         };
       }),
@@ -823,7 +829,7 @@ const writesDuringRelease: ReadonlyArray<{
         const input = { threadId: t.input.threadId, itemId: item.id },
           reused = yield* service.reuseHardware(input);
         return {
-          write: service.reuseHardware(input),
+          write: service.reuseHardware(input).pipe(Effect.asVoid),
           release: t.fs.writeFileString(t.path.join(t.root, reused.files[0]!.path), "changed"),
         };
       }),
