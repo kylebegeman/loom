@@ -9,9 +9,16 @@ export interface TurnCheckpoint {
   readonly runId: RunId;
   readonly checkpointId: CheckpointId;
   readonly turn: number;
+  readonly status: "ready";
   /** Checkpoint paths are relative to the repository, not the workspace. */
   readonly files: ReadonlyArray<string>;
 }
+
+/** Shared-job key. A rollback re-marks newer rows stale, so the status is part of it. */
+export const turnGeneration = (checkpoint: {
+  readonly checkpointId: CheckpointId;
+  readonly status: OrchestrationV2Checkpoint["status"];
+}) => `${checkpoint.checkpointId}:${checkpoint.status}`;
 
 const asTurnCheckpoint = (checkpoint: OrchestrationV2Checkpoint): TurnCheckpoint | null =>
   checkpoint.status === "ready" &&
@@ -22,6 +29,7 @@ const asTurnCheckpoint = (checkpoint: OrchestrationV2Checkpoint): TurnCheckpoint
         runId: checkpoint.runId,
         checkpointId: checkpoint.id,
         turn: checkpoint.appRunOrdinal,
+        status: checkpoint.status,
         files: checkpoint.files.map((file) => file.path),
       }
     : null;
@@ -69,6 +77,16 @@ export const makeTurnFiles = Effect.gen(function* () {
     limit: number,
   ) {
     const records = yield* queries.getThreadRecords(threadId, ["checkpoints"]);
+    // Any turn row counts: an empty or failed capture still ends a turn that may have edited files.
+    const newest = records.checkpoints.reduce<OrchestrationV2Checkpoint | null>(
+      (latest, checkpoint) =>
+        checkpoint.runId !== null &&
+        checkpoint.appRunOrdinal !== null &&
+        checkpoint.appRunOrdinal > (latest?.appRunOrdinal ?? 0)
+          ? checkpoint
+          : latest,
+      null,
+    );
     const turns = records.checkpoints
       .flatMap((checkpoint) => {
         const turn = asTurnCheckpoint(checkpoint);
@@ -76,7 +94,8 @@ export const makeTurnFiles = Effect.gen(function* () {
       })
       .toSorted((a, b) => b.turn - a.turn);
     return {
-      newest: turns[0]?.checkpointId ?? null,
+      generation:
+        newest === null ? null : turnGeneration({ checkpointId: newest.id, status: newest.status }),
       checkpoints:
         runId === null
           ? turns.slice(0, limit)

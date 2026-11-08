@@ -96,6 +96,7 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
         runId,
         checkpointId: CheckpointId.make(`checkpoint-${number}`),
         turn: number,
+        status: "ready" as const,
         files,
       }),
       checkpoint = turn(2, ["hw/board.kicad_pcb", "other/board.kicad_sch"]);
@@ -118,7 +119,7 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
         workspaceFiles,
         turnCheckpoints: () =>
           Effect.succeed({
-            newest: CheckpointId.make("checkpoint-5"),
+            generation: "checkpoint-5:ready",
             checkpoints: [
               turn(5, ["hw/lib/part.ts"]),
               turn(4, ["hw/lib/pins.ts"]),
@@ -130,13 +131,13 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
       },
     });
     expect((yield* methods.turnDesigns({ threadId, runId: null })).turn).toBe(2);
-    expect(generations).toEqual(["checkpoint-5"]);
+    expect(generations).toEqual(["checkpoint-5:ready"]);
     expect(snapshots).toBe(1);
     expect(
       (yield* methods.turnDesignEvents({ threadId }).pipe(Stream.runCollect))[0]?.designs[0]
         ?.designId,
     ).toBe(board.id);
-    expect(generations).toEqual(["checkpoint-5", "checkpoint-2"]);
+    expect(generations).toEqual(["checkpoint-5:ready", "checkpoint-2:ready"]);
   }),
 );
 it.effect("design events discover in the workspace the thread has when each checkpoint lands", () =>
@@ -146,6 +147,7 @@ it.effect("design events discover in the workspace the thread has when each chec
       runId: RunId.make("run"),
       checkpointId: CheckpointId.make("checkpoint-2"),
       turn: 2,
+      status: "ready" as const,
       files: ["board.kicad_pcb"],
     };
     const methods = makeTurnDesigns({
@@ -155,7 +157,7 @@ it.effect("design events discover in the workspace the thread has when each chec
       turnFiles: {
         repoPrefix: () => Effect.succeed(""),
         workspaceFiles,
-        turnCheckpoints: () => Effect.succeed({ newest: null, checkpoints: [] }),
+        turnCheckpoints: () => Effect.succeed({ generation: null, checkpoints: [] }),
         turnCheckpointEvents: () =>
           Stream.make(checkpoint).pipe(
             Stream.tap(() =>

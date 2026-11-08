@@ -125,6 +125,7 @@ const setup = Effect.gen(function* () {
   let gitCalls = 0;
   let refreshCalls = 0;
   let listCalls = 0;
+  let duringList: (call: number) => Effect.Effect<void> = () => Effect.void;
   let threadReads = 0;
   let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
   let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
@@ -275,8 +276,8 @@ const setup = Effect.gen(function* () {
         refreshCalls++;
       }),
     list: () =>
-      Effect.sync(() => {
-        listCalls++;
+      Effect.gen(function* () {
+        yield* duringList(listCalls++);
         return {
           entries: entryPaths.map((name) => ({
             path: name,
@@ -316,6 +317,9 @@ const setup = Effect.gen(function* () {
     getThreadReads: () => threadReads,
     setEntries: (names: string[]) => {
       entryPaths = names;
+    },
+    setDuringList: (effect: (call: number) => Effect.Effect<void>) => {
+      duringList = effect;
     },
     setCheckpoints: (checkpoints: readonly OrchestrationV2Checkpoint[]) => {
       checkpointRecords = checkpoints;
@@ -1368,6 +1372,32 @@ it.effect(
         "models/height.txt",
       );
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("a turn lookup after a newer capture scans again instead of joining the older scan", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    t.setEntries(["models/part.scad", "models/shape.scad"]);
+    const first = checkpoint(t.file.threadId, 1, ["models/shape.scad"]);
+    t.setCheckpoints([first]);
+    const listed = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
+    const gate = yield* Deferred.make<void>();
+    t.setDuringList((call) =>
+      Deferred.succeed(listed[call]!, undefined).pipe(
+        Effect.andThen(call === 0 ? Deferred.await(gate) : Effect.void),
+      ),
+    );
+    const service = yield* t.create();
+    const older = yield* service.turnModels(t.file.threadId, null).pipe(Effect.forkChild);
+    yield* Deferred.await(listed[0]!);
+    t.setCheckpoints([first, checkpoint(t.file.threadId, 2, ["models/shape.scad"])]);
+    // A chip for the older run must not reuse the scan that started before turn 2.
+    const newer = yield* service.turnModels(t.file.threadId, first.runId).pipe(Effect.forkChild);
+    yield* Deferred.await(listed[1]!);
+    yield* Deferred.succeed(gate, undefined);
+    expect((yield* Fiber.join(older)).models).toHaveLength(2);
+    expect((yield* Fiber.join(newer)).models).toHaveLength(2);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 
 it.effect("print checks render an isolated SCAD variant without saving last-used parameters", () =>

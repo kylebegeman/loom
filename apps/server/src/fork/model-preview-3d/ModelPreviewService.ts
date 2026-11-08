@@ -45,7 +45,7 @@ import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import type { RunId } from "@t3tools/contracts";
 import { makeSharedJobs } from "../sharedJobs.ts";
-import { makeTurnFiles, type TurnCheckpoint } from "../turnFiles.ts";
+import { makeTurnFiles, turnGeneration, type TurnCheckpoint } from "../turnFiles.ts";
 import { SCAD_INPUT_EXTENSIONS } from "./formats.ts";
 import { scadReferences, resolveScadReference } from "./scadIncludes.ts";
 import { dependentModels, modelCandidates, capTurnModels } from "./turnModels.ts";
@@ -358,9 +358,9 @@ export const make = Effect.gen(function* () {
     const { root } = yield* resolveWorkspace({ threadId, path: "." });
     const prefix = yield* turnFiles.repoPrefix(root);
     if (prefix === null) return emptyTurnModels(threadId);
-    const { newest, checkpoints } = yield* turnFiles.turnCheckpoints(threadId, runId, 20);
-    if (newest === null) return emptyTurnModels(threadId);
-    const scan = yield* Effect.cached(scanJobs.run(`${root}\0${newest}`, scadScan(root)));
+    const { generation, checkpoints } = yield* turnFiles.turnCheckpoints(threadId, runId, 20);
+    if (generation === null) return emptyTurnModels(threadId);
+    const scan = yield* Effect.cached(scanJobs.run(`${root}\0${generation}`, scadScan(root)));
     for (const checkpoint of checkpoints) {
       const models = yield* modelsForCheckpoint(threadId, root, prefix, checkpoint, scan, include);
       if (runId !== null || models.models.length) return models;
@@ -384,7 +384,7 @@ export const make = Effect.gen(function* () {
                 root,
                 prefix,
                 checkpoint,
-                scanJobs.run(`${root}\0${checkpoint.checkpointId}`, scadScan(root)),
+                scanJobs.run(`${root}\0${turnGeneration(checkpoint)}`, scadScan(root)),
                 include,
               );
             }),

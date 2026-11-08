@@ -1,13 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import type { CheckpointId, ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
 import type {
   PcbPreviewError,
   PcbTurnDesign,
   PcbTurnDesigns,
   PcbTurnDesignsInput,
 } from "@t3tools/contracts/fork";
-import type { makeTurnFiles, TurnCheckpoint } from "../turnFiles.ts";
+import { turnGeneration, type makeTurnFiles, type TurnCheckpoint } from "../turnFiles.ts";
 import { isPcbSource } from "./sourceFiles.ts";
 type Design = {
   id: string;
@@ -87,10 +87,7 @@ export const designsForFiles = Effect.fn("PcbPreview.designsForFiles")(function*
 });
 export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
   workspace: (threadId: ThreadId) => Effect.Effect<Ws, PcbPreviewError>;
-  discover: (
-    root: string,
-    generation: CheckpointId,
-  ) => Effect.Effect<readonly Design[], PcbPreviewError>;
+  discover: (root: string, generation: string) => Effect.Effect<readonly Design[], PcbPreviewError>;
   snapshotFiles: (
     workspace: Ws,
     design: Design,
@@ -116,11 +113,11 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
     const ws = yield* deps.workspace(input.threadId),
       base = yield* prefix(ws.root);
     if (base === null) return empty();
-    const { newest, checkpoints } = yield* deps.turnFiles
+    const { generation, checkpoints } = yield* deps.turnFiles
       .turnCheckpoints(input.threadId, input.runId, 20)
-      .pipe(Effect.orElseSucceed(() => ({ newest: null, checkpoints: [] })));
-    if (newest === null) return empty();
-    const discover = yield* Effect.cached(deps.discover(ws.root, newest));
+      .pipe(Effect.orElseSucceed(() => ({ generation: null, checkpoints: [] })));
+    if (generation === null) return empty();
+    const discover = yield* Effect.cached(deps.discover(ws.root, generation));
     const snapshots = new Map<string, Effect.Effect<readonly string[], PcbPreviewError>>();
     // Untraced: a memo lookup per checkpoint; the source walk it wraps has its own span.
     const snapshotFiles = Effect.fnUntraced(function* (design: Design) {
@@ -153,7 +150,7 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
                 base = yield* prefix(ws.root);
               if (base === null) return empty();
               return yield* fromCheckpoint(base, checkpoint, {
-                discover: () => deps.discover(ws.root, checkpoint.checkpointId),
+                discover: () => deps.discover(ws.root, turnGeneration(checkpoint)),
                 snapshotFiles: (design) => deps.snapshotFiles(ws, design),
               });
             }),
