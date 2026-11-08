@@ -783,7 +783,7 @@ it.effect("checks a task's destination thread only when the destination changes"
             consume: () => Ref.update(consumed, (count) => count + 1).pipe(Effect.as("secret")),
           }),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
+            // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,
