@@ -3451,6 +3451,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     "goal",
     "process",
     "process-unknown",
+    "late-unbound",
+    "late-unbound-at-release",
   ] as const)("automatic cleanup respects %s work", (scenario) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -3661,17 +3663,28 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
           Option.some("ready"),
         );
       const snapshotReads = yield* Ref.make(0);
+      // Read 1 is the pass's shared snapshot and read 2 the fresh pre-check; status() and the
+      // release re-checks read after them. An idle unbound conversation appears from this read on.
+      const lateFromRead =
+        scenario === "late-unbound" ? 2 : scenario === "late-unbound-at-release" ? 3 : Infinity;
+      const lateThread = {
+        ...thread,
+        id: ThreadId.make("late-cleanup-thread"),
+        settledOverride: null,
+      };
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(ProjectionStore.ProjectionStoreV2, {
           ...(yield* ProjectionStore.ProjectionStoreV2),
           getShellSnapshot: () =>
-            Ref.get(threads).pipe(
-              Effect.tap(() => Ref.update(snapshotReads, (reads) => reads + 1)),
-              Effect.map((current) => ({
+            Effect.all([
+              Ref.updateAndGet(snapshotReads, (reads) => reads + 1),
+              Ref.get(threads),
+            ]).pipe(
+              Effect.map(([reads, current]) => ({
                 schemaVersion: 1,
                 snapshotSequence: 0,
-                threads: current,
+                threads: reads >= lateFromRead ? [...current, lateThread] : current,
                 archivedThreads: [],
               })),
             ),
@@ -3705,7 +3718,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(yield* fs.exists(rootPath)).toBe(!shouldRemove);
       expect((yield* store.get(copy.id)).copy.state).toBe(shouldRemove ? "released" : "ready");
       if (unused !== undefined) expect((yield* store.get(unused.id)).copy.state).toBe("ready");
-      if (!shouldRemove) expect(yield* Ref.get(snapshotReads)).toBe(openOrRunning ? 0 : 1);
+      if (!shouldRemove && scenario !== "late-unbound-at-release")
+        expect(yield* Ref.get(snapshotReads)).toBe(
+          openOrRunning ? 0 : scenario === "late-unbound" ? 2 : 1,
+        );
       if (shouldRemove) {
         expect((yield* store.get(copy.id)).copy.recovery?.sha256).toMatch(/^[a-f0-9]{64}$/);
         const reopened = yield* cleaner.reopenCopy({

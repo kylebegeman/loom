@@ -3761,8 +3761,8 @@ const make = Effect.gen(function* () {
           reason: isLibraryError(result.failure) ? result.failure.reason : "io",
         });
     }
-    // One read serves the whole pass. A release checks again with a fresh one before it moves
-    // or removes files, so a stale read only delays a copy to the next pass.
+    // One read serves the pass. It can be stale, so a copy that passes on it checks again with a
+    // fresh read before it is hashed or released.
     const shellSnapshot = yield* Effect.cached(projections.getShellSnapshot());
     for (const candidate of candidates.temporary) {
       const result = yield* Effect.result(
@@ -3770,7 +3770,11 @@ const make = Effect.gen(function* () {
           copyKey(candidate.copy.id),
           Effect.gen(function* () {
             const receipt = yield* store.get(candidate.copy.id);
-            if (!(yield* canCleanUp(receipt, isHistoryAcknowledged, shellSnapshot))) return;
+            if (
+              !(yield* canCleanUp(receipt, isHistoryAcknowledged, shellSnapshot)) ||
+              !(yield* canCleanUp(receipt, isHistoryAcknowledged))
+            )
+              return;
             const review =
               receipt.removalPath !== null && receipt.releaseReviewToken !== null
                 ? { reviewToken: receipt.releaseReviewToken, blockers: [], releaseBlockers: [] }
