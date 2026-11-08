@@ -45,7 +45,7 @@ import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import type { RunId } from "@t3tools/contracts";
 import { makeSharedJobs } from "../sharedJobs.ts";
-import { makeTurnFiles, turnGeneration, type TurnCheckpoint } from "../turnFiles.ts";
+import { makeTurnFiles, type TurnCheckpoint } from "../turnFiles.ts";
 import { SCAD_INPUT_EXTENSIONS } from "./formats.ts";
 import { scadReferences, resolveScadReference } from "./scadIncludes.ts";
 import { dependentModels, modelCandidates, capTurnModels } from "./turnModels.ts";
@@ -263,7 +263,7 @@ export const make = Effect.gen(function* () {
         scanned.some((item) => Option.isNone(item) || item.value === null),
     };
   });
-  // Keys carry the checkpoint id so a lookup after a newer capture never joins an older scan.
+  // Keys carry the turn generation so a lookup after a turn or restore never joins an older scan.
   const scanJobs = yield* makeSharedJobs<
     Effect.Success<ReturnType<typeof scadScan>>,
     Effect.Error<ReturnType<typeof scadScan>>
@@ -375,7 +375,7 @@ export const make = Effect.gen(function* () {
         // resolves the workspace again and one that fails to resolve is skipped.
         yield* queries.getThread(threadId);
         return turnFiles.turnCheckpointEvents(threadId).pipe(
-          Stream.mapEffect((checkpoint) =>
+          Stream.mapEffect(({ checkpoint, generation }) =>
             Effect.gen(function* () {
               const root = yield* resolveWorkspace({ threadId, path: "." }).pipe(
                 Effect.map((workspace) => workspace.root),
@@ -391,7 +391,9 @@ export const make = Effect.gen(function* () {
                 root,
                 prefix,
                 checkpoint,
-                scanJobs.run(`${root}\0${turnGeneration(checkpoint)}`, scadScan(root)),
+                generation.pipe(
+                  Effect.flatMap((key) => scanJobs.run(`${root}\0${key}`, scadScan(root))),
+                ),
                 include,
               );
             }),

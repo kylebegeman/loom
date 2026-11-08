@@ -7,7 +7,7 @@ import type {
   PcbTurnDesigns,
   PcbTurnDesignsInput,
 } from "@t3tools/contracts/fork";
-import { turnGeneration, type makeTurnFiles, type TurnCheckpoint } from "../turnFiles.ts";
+import type { makeTurnFiles, TurnCheckpoint } from "../turnFiles.ts";
 import { isPcbSource } from "./sourceFiles.ts";
 type Design = {
   id: string;
@@ -150,7 +150,7 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
           ),
         );
         return deps.turnFiles.turnCheckpointEvents(input.threadId).pipe(
-          Stream.mapEffect((checkpoint) =>
+          Stream.mapEffect(({ checkpoint, generation }) =>
             Effect.gen(function* () {
               const ws = yield* deps
                 .workspace(input.threadId)
@@ -158,7 +158,8 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
               const base = ws === null ? null : yield* prefix(ws.root);
               if (ws === null || base === null) return empty();
               return yield* fromCheckpoint(base, checkpoint, {
-                discover: () => deps.discover(ws.root, turnGeneration(checkpoint)),
+                discover: () =>
+                  generation.pipe(Effect.flatMap((key) => deps.discover(ws.root, key))),
                 snapshotFiles: (design) => deps.snapshotFiles(ws, design),
               });
             }),

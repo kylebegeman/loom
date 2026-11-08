@@ -16,7 +16,7 @@ import {
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import { ProcessRunner } from "../processRunner.ts";
-import { makeTurnFiles, turnGeneration } from "./turnFiles.ts";
+import { makeTurnFiles } from "./turnFiles.ts";
 
 const threadId = ThreadId.make("thread");
 const row = (
@@ -45,7 +45,8 @@ it.effect("generations follow the thread's newest turn row of any status or file
       Effect.provide(
         Layer.mergeAll(
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
-            getThreadRecords: () => Effect.sync(() => ({ checkpoints: rows }) as never),
+            getThreadRecords: () =>
+              Effect.sync(() => ({ thread: {}, checkpoints: rows, runs: [] }) as never),
           }),
           Layer.mock(ThreadManagementService)({
             streamDomainEvents: Stream.suspend(() =>
@@ -67,19 +68,24 @@ it.effect("generations follow the thread's newest turn row of any status or file
         .pipe(Effect.map((result) => result.generation));
     const baseline = row(0, { runId: null, appRunOrdinal: null, files: [] });
 
+    rows = [baseline, row(1)];
+    const first = yield* generation();
     rows = [baseline, row(1), row(2)];
+    const second = yield* generation();
     const olderRun = yield* turnFiles.turnCheckpoints(threadId, RunId.make("run-1"), 20);
     expect(olderRun.checkpoints.map((turn) => turn.checkpointId)).toEqual(["checkpoint-1"]);
-    expect(olderRun.generation).toBe("checkpoint-2:ready");
+    expect(olderRun.generation).toBe(second);
+    // Events key by the thread's current generation so they join a lookup's scan.
     const events = yield* Stream.runCollect(turnFiles.turnCheckpointEvents(threadId));
-    expect(events.map(turnGeneration)).toEqual(["checkpoint-1:ready", olderRun.generation]);
+    expect(yield* Effect.forEach(events, (event) => event.generation)).toEqual([second, second]);
 
     rows = [baseline, row(1), row(2, { status: "error", files: [] })];
-    expect(yield* generation()).toBe("checkpoint-2:error");
+    const error = yield* generation();
     rows = [baseline, row(1), row(2, { status: "stale" })];
-    expect(yield* generation()).toBe("checkpoint-2:stale");
+    const stale = yield* generation();
+    expect(new Set([first, second, error, stale]).size).toBe(4);
     rows = [baseline, row(1), row(2, { files: [] })];
-    expect(yield* generation()).toBe("checkpoint-2:ready");
+    expect(yield* generation()).toBe(second);
     rows = [baseline];
     expect(yield* generation()).toBeNull();
   }),

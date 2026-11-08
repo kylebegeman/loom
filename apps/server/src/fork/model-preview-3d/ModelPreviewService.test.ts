@@ -252,7 +252,16 @@ const setup = Effect.gen(function* () {
   });
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
     getThreadRecords: () =>
-      Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
+      Effect.succeed(
+        partial<OrchestrationV2ThreadProjection>({
+          thread: partial<OrchestrationV2AppThread>({
+            rollbackCompletedRequestId: undefined,
+            rollbackFailure: null,
+          }),
+          checkpoints: checkpointRecords,
+          runs: [],
+        }),
+      ),
     getThread: (id) =>
       id === threadId
         ? Effect.sync(() => {

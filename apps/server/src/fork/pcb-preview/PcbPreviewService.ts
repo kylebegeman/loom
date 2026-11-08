@@ -3434,7 +3434,7 @@ export const make = Effect.gen(function* () {
   const turnFiles = yield* makeTurnFiles;
   const turnDesignMethods = makeTurnDesigns({
     workspace: (threadId) => checked(workspace(threadId)),
-    // Keyed by checkpoint so a lookup after a newer capture never joins an older refresh.
+    // Keyed by turn generation so a lookup after a turn or restore never joins an older refresh.
     discover: (root, generation) =>
       discoverJobs.run(
         `${root}\0${generation}`,

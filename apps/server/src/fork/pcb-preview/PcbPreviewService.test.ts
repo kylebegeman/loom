@@ -8,8 +8,9 @@ import type {
   OrchestrationV2ThreadProjection,
   OrchestrationV2Checkpoint,
   OrchestrationV2CheckpointScope,
+  OrchestrationV2Run,
 } from "@t3tools/contracts";
-import { RunId, CheckpointId } from "@t3tools/contracts";
+import { RunId, CheckpointId, CommandId } from "@t3tools/contracts";
 import { expect, it, describe } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -171,13 +172,17 @@ const setup = Effect.gen(function* () {
   );
   let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
   let checkpointScopes: readonly OrchestrationV2CheckpointScope[] = [];
+  let runRecords: readonly OrchestrationV2Run[] = [];
+  let rollbacks: Pick<OrchestrationV2AppThread, "rollbackCompletedRequestId" | "rollbackFailure"> =
+    { rollbackCompletedRequestId: undefined, rollbackFailure: null };
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
     getThreadRecords: () =>
       Effect.succeed(
         partial<OrchestrationV2ThreadProjection>({
+          thread: partial<OrchestrationV2AppThread>(rollbacks),
           checkpoints: checkpointRecords,
           checkpointScopes,
-          runs: [],
+          runs: runRecords,
         }),
       ),
     getThread: () =>
@@ -291,6 +296,12 @@ const setup = Effect.gen(function* () {
     },
     setCheckpoints: (values: readonly OrchestrationV2Checkpoint[]) => {
       checkpointRecords = values;
+    },
+    setRuns: (values: readonly OrchestrationV2Run[]) => {
+      runRecords = values;
+    },
+    setRollbacks: (values: Partial<typeof rollbacks>) => {
+      rollbacks = { ...rollbacks, ...values };
     },
     setWorktree: (p: string) => {
       worktree = p;
@@ -1662,7 +1673,58 @@ it.effect(
       }),
     ),
 );
-it.effect("a turn design lookup after a newer capture discovers again instead of joining", () =>
+const turnCheckpoint = (turn: number) =>
+  partial<OrchestrationV2Checkpoint>({
+    id: CheckpointId.make(`checkpoint-${turn}`),
+    runId: RunId.make(`run-${turn}`),
+    appRunOrdinal: turn,
+    status: "ready",
+    files: [partial<OrchestrationV2Checkpoint["files"][number]>({ path: "board.kicad_sch" })],
+  });
+const turnRun = (turn: number, status: OrchestrationV2Run["status"]) =>
+  partial<OrchestrationV2Run>({
+    id: RunId.make(`run-${turn}`),
+    ordinal: turn,
+    status,
+    startedAt: DateTime.makeUnsafe(`2026-11-0${turn}T00:00:00Z`),
+    completedAt: DateTime.makeUnsafe(`2026-11-0${turn}T01:00:00Z`),
+  });
+const threadChanges: ReadonlyArray<
+  readonly [string, string, (t: Effect.Success<typeof setup>) => void, number]
+> = [
+  [
+    "a newer capture",
+    "discovers again",
+    (t) => {
+      t.setCheckpoints([turnCheckpoint(1), turnCheckpoint(2)]);
+      t.setRuns([turnRun(1, "completed"), turnRun(2, "completed")]);
+    },
+    2,
+  ],
+  [
+    "a failed run with no new checkpoint",
+    "discovers again",
+    (t) => t.setRuns([turnRun(1, "completed"), turnRun(2, "failed")]),
+    2,
+  ],
+  [
+    "a repeated rollback",
+    "discovers again",
+    (t) => t.setRollbacks({ rollbackCompletedRequestId: CommandId.make("rollback-2") }),
+    2,
+  ],
+  [
+    "a failed restore",
+    "discovers again",
+    (t) =>
+      t.setRollbacks({
+        rollbackFailure: { requestId: CommandId.make("rollback-2"), message: "Restore failed." },
+      }),
+    2,
+  ],
+  ["no thread change", "joins the discovery in flight", () => {}, 1],
+];
+it.effect.each(threadChanges)("a turn design lookup after %s %s", ([, , change, refreshes]) =>
   test(
     Effect.gen(function* () {
       const t = yield* setup,
@@ -1670,16 +1732,11 @@ it.effect("a turn design lookup after a newer capture discovers again instead of
       expect(
         (yield* native.run({ command: "git", args: ["init", "--quiet"], cwd: t.root })).code,
       ).toBe(0);
-      const checkpoint = (turn: number) =>
-        partial<OrchestrationV2Checkpoint>({
-          id: CheckpointId.make(`checkpoint-${turn}`),
-          runId: RunId.make(`run-${turn}`),
-          appRunOrdinal: turn,
-          status: "ready",
-          files: [partial<OrchestrationV2Checkpoint["files"][number]>({ path: "board.kicad_sch" })],
-        });
-      const first = checkpoint(1);
+      const first = turnCheckpoint(1);
       t.setCheckpoints([first]);
+      t.setRuns([turnRun(1, "completed")]);
+      // Restoring the latest turn re-marks nothing, so a repeat changes only the request id.
+      t.setRollbacks({ rollbackCompletedRequestId: CommandId.make("rollback-1") });
       const refreshed = yield* Deferred.make<void>();
       const gate = yield* Deferred.make<void>();
       t.setDuringRefresh((call) =>
@@ -1697,8 +1754,8 @@ it.effect("a turn design lookup after a newer capture discovers again instead of
         .turnDesigns({ threadId: t.input.threadId, runId: null })
         .pipe(Effect.forkChild);
       yield* Deferred.await(refreshed);
-      t.setCheckpoints([first, checkpoint(2)]);
-      // A chip for the older run must not reuse the discovery that started before turn 2.
+      change(t);
+      // A chip for the older run must not reuse a discovery that started before the change.
       const newer = yield* service
         .turnDesigns({ threadId: t.input.threadId, runId: first.runId })
         .pipe(Effect.forkChild({ startImmediately: true }));
@@ -1712,7 +1769,7 @@ it.effect("a turn design lookup after a newer capture discovers again instead of
       };
       expect((yield* Fiber.join(older)).designs).toEqual([written]);
       expect((yield* Fiber.join(newer)).designs).toEqual([written]);
-      expect(t.getRefreshes()).toBe(2);
+      expect(t.getRefreshes()).toBe(refreshes);
     }),
   ),
 );

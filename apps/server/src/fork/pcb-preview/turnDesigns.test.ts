@@ -127,7 +127,8 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
               checkpoint,
             ],
           }),
-        turnCheckpointEvents: () => Stream.succeed(checkpoint),
+        turnCheckpointEvents: () =>
+          Stream.succeed({ checkpoint, generation: Effect.succeed("checkpoint-2:ready") }),
       },
     });
     expect((yield* methods.turnDesigns({ threadId, runId: null })).turn).toBe(2);
@@ -175,6 +176,7 @@ it.effect("design events discover in the workspace the thread has when each chec
                 root = next.turn === 2 ? null : "/repo/worktree";
               }),
             ),
+            Stream.map((next) => ({ checkpoint: next, generation: Effect.succeed("generation") })),
           ),
       },
     });

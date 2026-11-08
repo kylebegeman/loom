@@ -3,7 +3,7 @@
 ## Overview
 
 Every root turn in a Git workspace ends with a checkpoint whose `files` list names the paths the
-turn's own work touched (`apps/server/src/orchestration-v2/CheckpointService.ts:443-486`). The
+turn's own work touched (`apps/server/src/orchestration-v2/CheckpointService.ts:444-481`). The
 diff panel and the changed files card already read that list. L41 adds one server method that
 turns a checkpoint's file list into the models it affects, one stream that does the same for
 each new checkpoint of a thread, and three client consumers: the turn chip on the changed files
@@ -27,7 +27,7 @@ workspace's `.scad` files whose parse results are cached.
 ## Contracts
 
 All additions go in `packages/contracts/src/fork/model-preview-3d.ts`. Import `RunId`,
-`CheckpointId` and `PositiveInt` from `../baseSchemas.ts` beside `ThreadId` (`:7`).
+`CheckpointId` and `PositiveInt` from `../baseSchemas.ts` beside `ThreadId` (`:24`).
 
 ### Setting
 
@@ -37,21 +37,20 @@ export const AgentModelsMode = Schema.Literals(["offer", "open", "off"]);
 export type AgentModelsMode = typeof AgentModelsMode.Type;
 ```
 
-Append to `ModelPreviewSettings` (`:240-262`), after `agentToolEnabled`:
+Append to `ModelPreviewSettings` (`:210-252`), after `agentToolEnabled`:
 
 ```ts
   agentModels: AgentModelsMode.pipe(Schema.withDecodingDefault(Effect.succeed("offer" as const))),
 ```
 
-and to `DEFAULT_MODEL_PREVIEW_SETTINGS` (`:297-306`): `agentModels: "offer"`. The decoding
+and to `DEFAULT_MODEL_PREVIEW_SETTINGS` (`:308-333`): `agentModels: "offer"`. The decoding
 default means settings saved before L41 load as "offer", the same way `buildPlate.pattern` does
-(`:237`).
+(`packages/contracts/src/fork/model-beds.ts:208`).
 
-`updateSettings` replaces the whole settings record (`ModelPreviewService.ts:973-983`). A client
-built before L41 decodes the stored record without `agentModels` and sends it back, so saving
-any setting from an old client resets the mode to "offer". That is acceptable for a default-on
-offer, and it is the same caveat every new settings field carries; do not add a merge just for
-this packet.
+`saveSettings` merges an update into the stored record (`ModelPreviewService.ts:1234-1251`), and
+`agentModels` is optional in `ModelPreviewSettingsUpdate` (`model-preview-3d.ts:267`). A client
+built before L41 sends no `agentModels`, so saving any setting from an old client keeps the
+stored mode.
 
 ### Turn models
 
@@ -83,14 +82,14 @@ export type TurnModels = typeof TurnModels.Type;
 
 ### Methods
 
-Add to `MODEL_PREVIEW_3D_WS_METHODS` (`:10-28`):
+Add to `MODEL_PREVIEW_3D_WS_METHODS` (`:27-69`):
 
 ```ts
   turnModels: "loom.model-preview-3d.turnModels",
   turnModelEvents: "loom.model-preview-3d.turnModelEvents",
 ```
 
-Add to `ModelPreview3dRpcGroup` (`:317-392`):
+Add to `ModelPreview3dRpcGroup` (`:344-548`):
 
 ```ts
   rpc(
@@ -109,20 +108,20 @@ Add to `ModelPreview3dRpcGroup` (`:317-392`):
 
 Both are reads. Add `[M.turnModels]: AuthOrchestrationReadScope` and
 `[M.turnModelEvents]: AuthOrchestrationReadScope` to the exhaustive table in
-`apps/server/src/fork/rpcAuthorization.ts:49-65`. Nothing goes in
+`apps/server/src/fork/rpcAuthorization.ts:78-577` (they landed at `:362-363`). Nothing goes in
 `packages/contracts/src/fork/clientRpcPermissions.ts` (it lists guarded writes only). Add
 `typeof MODEL_PREVIEW_3D_WS_METHODS.turnModelEvents` to `ForkSubscriptionRpcTag`
-(`packages/contracts/src/fork/rpc.ts:55-68`); a stream missing there is typed as unary.
+(`packages/contracts/src/fork/rpc.ts:158-188`); a stream missing there is typed as unary.
 
 ## Server
 
 ### Formats in one place
 
-`ModelPreviewService.ts:71-80` maps extensions to formats, including STEP, which cannot be
-previewed, and the web panel has no shared copy. The extension map is a shared definition owned
-by L50 (`L50-model-python-cad/TECHNICAL.md`, "Format"): `MODEL_EXTENSIONS` and
-`modelFormatOf(path): ModelFormat | null` in `packages/contracts/src/fork/model-preview-3d.ts`,
-next to `ModelFormat`, called by the server, web, MCP and L41. If L50 has not landed, L41 adds
+Before L41, `ModelPreviewService.ts` mapped extensions to formats, including STEP, which cannot
+be previewed, and the web panel had no shared copy. The extension map is a shared definition
+owned by L50 (`L50-model-python-cad/TECHNICAL.md`, "Format"): `MODEL_EXTENSIONS` and
+`modelFormatOf(path): ModelFormat | null` in `packages/contracts/src/fork/model-preview-3d.ts`
+(`:92-111`), next to `ModelFormat`, called by the server, web, MCP and L41. If L50 has not landed, L41 adds
 them there exactly as L50 specifies, minus the `.b3d.py` line and the `build123d` literal:
 
 ```ts
@@ -144,8 +143,8 @@ export const modelFormatOf = (path: string): ModelFormat | null => {
 };
 ```
 
-The service drops its local `formats` map and calls `modelFormatOf` at its six uses (`:219`,
-`:589`, `:990`, `:998`, `:1014`, `:1122`). L41 does not create a second map. A new pure module
+The service drops its local `formats` map and imports `modelFormatOf` (`ModelPreviewService.ts:27`)
+for every format check. L41 does not create a second map. A new pure module
 `apps/server/src/fork/model-preview-3d/formats.ts` keeps only the two server-side sets:
 
 ```ts
@@ -212,22 +211,23 @@ Implementation notes:
 
 ### Turn models
 
-Add to `ModelPreviewService` (`make`, `:103`) a `turnModels(threadId, runId)` method and a
+Add to `ModelPreviewService` (`make`, `:124`) a `turnModels(threadId, runId)` method and a
 `turnModelEvents(threadId)` stream. Both reuse private helpers:
 
-1. **Workspace and prefix.** `resolveWorkspace({ threadId, path: "." })` (`:142-167`) gives
+1. **Workspace and prefix.** `resolveWorkspace({ threadId, path: "." })` (`:181-196`) gives
    `root`. Checkpoint file paths are relative to the repository top
-   (`apps/server/src/vcs/GitVcsDriver.ts:1214`), while model paths are relative to `root`, which
+   (`apps/server/src/vcs/GitVcsDriver.ts:1476-1478`), while model paths are relative to `root`, which
    can be a subdirectory of the repository. Read the prefix once per root with
    `git -C <root> rev-parse --show-prefix` through the existing `runner` (`ProcessRunner`,
    `timeout: "10 seconds"`), and cache it in a `Map<string, string | null>`; `null` means "not a
    Git repository" and the methods return no models. Use the same `git` invocation style as the
-   PCB service (`apps/server/src/fork/pcb-preview/PcbPreviewService.ts:1860-1880`).
-2. **Checkpoint.** `queries.getThreadRecords(threadId, ["checkpoints"])`
-   (`apps/server/src/orchestration-v2/ProjectionStore.ts:364`). A turn checkpoint has
+   PCB service (`apps/server/src/fork/pcb-preview/PcbPreviewService.ts:2533-2554`).
+2. **Checkpoint.** `queries.getThreadRecords(threadId, ["checkpoints", "runs"])`
+   (`apps/server/src/orchestration-v2/ProjectionStore.ts:486-490`). Runs and the thread's restore
+   request ids only feed the shared scan key in `turnFiles.ts`. A turn checkpoint has
    `runId !== null`, `appRunOrdinal !== null` and `status === "ready"`; the production capture path writes
-   those for root runs (`CheckpointCaptureService.ts:63-135`), and baselines have both fields
-   null (`CheckpointService.ts:340`). This uses the capture path's `appRunOrdinal` invariant;
+   those for root runs (`CheckpointCaptureService.ts:63-131`), and baselines have both fields
+   null (`CheckpointService.ts:329-333`). This uses the capture path's `appRunOrdinal` invariant;
    it does not separately validate a scope-kind field. With a `runId`, pick that run's checkpoint. With `null`,
    walk the 20 newest turn checkpoints by `appRunOrdinal` and return the first with models.
 3. **Map files.** `modelsForCheckpoint(threadId, root, prefix, checkpoint)`:
@@ -236,20 +236,20 @@ Add to `ModelPreviewService` (`make`, `:103`) a `turnModels(threadId, runId)` me
    - If any kept path has an extension in `SCAD_INPUT_EXTENSIONS`, find its dependents (below)
      and add each as `{ reason: "dependency", via: <first changed path> }`, unless the SCAD
      itself is already "written".
-   - Stat each candidate through `resolveFile` (`:168-178`), which also rejects symlinks out of
+   - Stat each candidate through `fileIn` (`:197-207`), which also rejects symlinks out of
      the workspace. Drop failures: the file was deleted after, or by, the turn.
    - Order "written" first in checkpoint order, then dependencies by path. Cap at 50 and set
      `truncated`.
 4. **Dependents.** Reverse edges from two sources, merged:
-   - The in-memory `dependencies` map (`:126`), which OpenSCAD's own `-d` output fills for files
-     rendered since the server started (`readDeps`, `:386-402`). It is exact, including library
-     paths, but only covers rendered files. The on-disk records (`dependencyRecordPath`, `:357`)
+   - The in-memory `dependencies` map (`:153`), which OpenSCAD's own `-d` output fills for files
+     rendered since the server started (`readDeps`, `:622-638`). It is exact, including library
+     paths, but only covers rendered files. The on-disk records (`dependencyRecordPath`, `:593`)
      are keyed by a hash of the SCAD path and cannot be reverse-looked-up, so they are not used.
    - A static scan: list the workspace with `entries.list({ cwd: root })` as `listModels` does
-     (`:984-1009`), keep `.scad` files, take at most 500, read each (skip files over 256 KiB),
+     (`:1522-1566`), keep `.scad` files, take at most 500, read each (skip files over 256 KiB),
      parse with `scadReferences` and resolve with `resolveScadReference`. Cache parsed
      references in a `Map<absolute, { revision, refs }>` keyed by `metadata(info).revision`
-     (`:88-102`), capped at 2000 entries. Most turns hit the cache for every file.
+     (`:109-123`), capped at 2000 entries. Most turns hit the cache for every file.
    - Close transitively: if `b.scad` includes `c.scad` and `a.scad` includes `b.scad`, a change
      to `c.scad` adds both. Stop at 200 dependents.
      The scan only runs when a changed file has a SCAD input extension, so a turn that edited only
@@ -258,7 +258,7 @@ Add to `ModelPreviewService` (`make`, `:103`) a `turnModels(threadId, runId)` me
      stream event. Code-only events do not refresh the index.
 
 `turnModelEvents(threadId)` is
-`threads.streamDomainEvents` (`ThreadManagementService.ts:382`) filtered to
+`threads.streamDomainEvents` (`ThreadManagementService.ts:501`) filtered to
 `checkpoint.captured` events for this thread whose payload is a ready turn checkpoint with
 non-empty `files`, mapped with the same helpers, and filtered to results with models. It begins
 with a thread lookup so an unknown thread fails like `watch` does. A checkout folder missing at
@@ -273,7 +273,7 @@ forcing an index refresh for code-only turns.
 
 ### RPC handlers
 
-In `apps/server/src/fork/model-preview-3d/rpc.ts`, beside `listModels` (`:29-31`):
+In `apps/server/src/fork/model-preview-3d/rpc.ts`, beside `listModels` (`:41-44`):
 
 ```ts
 [M.turnModels]: (input) =>
@@ -296,7 +296,7 @@ nothing.
 
 ### Atoms
 
-In `packages/client-runtime/src/fork/model-preview-3d.ts:23-92` add:
+In `packages/client-runtime/src/fork/model-preview-3d.ts:23-186` add:
 
 ```ts
     turnModels: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -314,16 +314,16 @@ In `packages/client-runtime/src/fork/model-preview-3d.ts:23-92` add:
     }),
 ```
 
-A query and a command on one tag already exist for `status` and `detect` (`:63-66`, `:91`).
+A query and a command on one tag already exist for `status` and `detect` (`:149-152`, `:185`).
 
 ### Opening helpers
 
 New `agentModels.ts`:
 
 - `modelSurface(path)`: `{ ...forkPanelSurface("model-preview-3d", path), title: basename }`.
-  The picker (`ModelPicker.tsx:123-126`) and palette (`palette.tsx:44-47`) already set the title
-  inline; switch them and `Shortcuts.tsx:38` to this helper. Today `Shortcuts.tsx` opens
-  agent-requested tabs without a title, so they read "3D model" (`surface.tsx:19-20`).
+  The picker (`ModelPicker.tsx:271`, `:358`), palette (`palette.tsx:45`) and `Shortcuts.tsx:41`
+  use this helper. Before it, `Shortcuts.tsx` opened agent-requested tabs without a title, so
+  they read "3D model" (`surface.tsx:19-20`).
 - `openModels(threadRef, paths, mode)`: focus is for a chip click, palette or picker and calls
   `openSurface` for the first path as a user choice, then adds the rest in the background.
   Automatic opening and background additions use the store's public `setState`, preserving
@@ -334,11 +334,11 @@ New `agentModels.ts`:
 
 ### Background tabs
 
-`useRightPanelStore` exposes `openSurface` (always activates, `rightPanelStore.ts:624-626`) and
-`openProactive`, which only takes diff and pull request surfaces (`:146-150`). `upsertSurface`
-can add without activating but is private (`:306-317`). Background tabs only happen when the
+`useRightPanelStore` exposes `openSurface` (always activates, `rightPanelStore.ts:665-668`) and
+`openProactive`, which only takes diff and pull request surfaces (`:121-127`). `upsertSurface`
+can add without activating but is private (`:307-318`). Background tabs only happen when the
 panel is already open, so `isOpen` does not change and none of `updateThread`'s visibility
-bookkeeping (`:366-394`) applies. Use the store's public `setState` from fork code:
+bookkeeping (`:363-391`) applies. Use the store's public `setState` from fork code:
 
 ```ts
 useRightPanelStore.setState((state) => {
@@ -353,15 +353,17 @@ useRightPanelStore.setState((state) => {
 ```
 
 This does not advance `userActionRevisionByThreadKey`, matching the store's rule that automatic
-changes are not user choices (`:396-398`), so it never blocks upstream's proactive diff. The
-store persists `byThreadKey` (`:608`), so background tabs survive a reload like any other tab.
+changes are not user choices (`automaticUpdate`, `:393-399`), so it never blocks upstream's
+proactive diff. The store persists `byThreadKey` (`partialize`, `:1184-1189`), so background tabs
+survive a reload like any other tab.
 Put this in `agentModels.ts` with a comment naming the invariant (only while open). If upstream
 ever adds a public non-activating open, switch to it.
 
 ### Proactive diff
 
 When a turn edits at least 3 files or 50 lines, upstream opens and activates the diff
-(`ChatView.tsx:5797-5835`, `ChatView.logic.ts:183-205`), even over a 3D tab. L41 does not change
+(`apps/web/src/hooks/useProactivePanels.ts:147-189`, called from `ChatView.tsx:2052`, and
+`ChatView.logic.ts:208-241`), even over a 3D tab. L41 does not change
 that. Automatic model opening must preserve `userActionRevisionByThreadKey`; `openSurface`
 increments it and would incorrectly suppress the turn's proactive diff. The fork's automatic
 path uses public `setState` to open and activate the first model without recording a user
@@ -370,9 +372,11 @@ as a background tab. Explicit chip, picker and palette actions still use `openSu
 
 ### Turn chip (packet seam)
 
-`ChangedFilesCard` (`apps/web/src/components/chat/ChangedFilesTree.tsx:24-115`) has `runId` and
-`files` and a header action group (`:67`) holding "Expand all folders" and "Open diff". The
-packet seam renders the fork component as the group's first child:
+`ChangedFilesCard` (`apps/web/src/components/chat/ChangedFilesTree.tsx:30-152`) has `runId` and
+`files` and a header action group (`:77`) holding "Expand all folders" and "Open diff". Its first
+child is now the `ext-changed-files` seam, `ForkChangedFilesActions` (`:78-79`), and
+`ModelTurnChip` registers in `apps/web/src/fork/changedFiles/registry.ts:17`. Before that seam,
+the packet rendered the chip directly:
 
 ```diff
  import { MorphIcon } from "~/components/MorphIcon";
@@ -399,7 +403,7 @@ packet seam renders the fork component as the group's first child:
 - One model: `Button size="xs" variant="ghost-muted"` with `BoxIcon` and the label
   "Open bracket.scad"; two to 8: "Open 3 models"; more: "Show 12 models", which opens the panel
   on the picker with the turn filter (below). The label span uses the same
-  `hidden @[24rem]/changed-files:inline` class as "Open diff" (`:107`), so narrow cards show the
+  `hidden @[24rem]/changed-files:inline` class as "Open diff" (`:122`), so narrow cards show the
   icon only. Tooltip: the model paths, one per line. `truncated` can mean incomplete dependency
   discovery, not merely more than 50 models, so the chip never invents an extra count; the
   tooltip and filtered picker say that some models may be omitted.
@@ -411,12 +415,12 @@ Use existing `components/ui` variants only; no `className` restyling (`shadcn/no
 
 ### Agent models host
 
-New `AgentModelsHost.tsx`, rendered from `ModelPreview3dShortcuts` (`Shortcuts.tsx:15-83`),
+New `AgentModelsHost.tsx`, rendered from `ModelPreview3dShortcuts` (`Shortcuts.tsx:17-87`),
 which `ForkRoot` already mounts, so no new root seam. It subscribes to
 `models.turnModelEvents({ environmentId, input: { threadId } })` for the route thread when the
 feature is present and the mode is not "off". It keeps a `Set` of handled checkpoint ids for the
 session, so a re-render never repeats an event. `streamDomainEvents` starts after the latest
-stored event (`apps/server/src/orchestration-v2/Orchestrator.ts:11195-11198`), so only turns
+stored event (`apps/server/src/orchestration-v2/Orchestrator.ts:14600-14604`), so only turns
 that finish while the thread is open produce background tabs.
 For each new `TurnModels`:
 
@@ -435,18 +439,18 @@ offers it.
 New `agentModelMarks.ts`: a small zustand store
 `Record<threadKey, Record<path, { turn: number }>>` with `mark`, `clear(threadKey, path)` and a
 selector hook. Add an optional field to `ForkPanelDefinition`
-(`apps/web/src/fork/panels/types.ts:26-38`):
+(`apps/web/src/fork/panels/types.ts:26-40`):
 
 ```ts
   /** Optional tab icon for one surface; defaults to `icon`. */
   readonly TabIcon?: ComponentType<{ surface: ForkRightPanelSurface; threadRef: ScopedThreadRef; className?: string }>;
 ```
 
-and use it in `ForkSurfaceIcon` (`apps/web/src/fork/panels/surface.tsx:22-25`) when present.
+and use it in `ForkSurfaceIcon` (`apps/web/src/fork/panels/surface.tsx:22-27`) when present.
 Both files are fork-owned (`ext-panels`). The 3D panel's `TabIcon` renders `BoxIcon` and, when
 the surface's path is marked, a small dot in the theme's primary colour inside the icon box with
 an `aria-label` "Changed by the agent in turn 6". `ModelFile` clears the mark when it becomes
-visible (`ModelPanel.tsx`, the `visible` prop at `:90-100`).
+visible (`ModelPanel.tsx`, the `visible` prop at `:186-201`).
 
 ### Picker section and palette
 
@@ -455,7 +459,7 @@ visible (`ModelPanel.tsx`, the `visible` prop at `:90-100`).
   latest record for the thread while one fresh `loadTurnModels` call with `runId: null` runs
   on each opening and refresh. This remains current when Do nothing has stopped the stream;
   a late older lookup cannot replace a newer remembered turn. A picker surface has no resource
-  id (`ModelPanel.tsx:1170`), so "Show 12 models" passes the run through a session-only `pickerTurn` entry in `agentModelMarks.ts`
+  id (`ModelPanel.tsx:2677`), so "Show 12 models" passes the run through a session-only `pickerTurn` entry in `agentModelMarks.ts`
   (`Record<threadKey, RunId>`), set before `openSurface` and cleared when the picker unmounts.
   The section and file grid then show that run instead of the latest; Show all model files
   clears the filter. The explicit picker section remains available in Do nothing mode.
@@ -465,10 +469,10 @@ visible (`ModelPanel.tsx`, the `visible` prop at `:90-100`).
 
 ### Settings row
 
-In `SettingsSection.tsx`, after the agent tools row (`:281-291`), a `SettingsRow` titled
-"When an agent writes a model" with a native `select` (matching the section's other controls):
+In `SettingsSection.tsx`, after the agent tools row (`:443-453`), a `SettingsRow` titled
+"When an agent writes a model" with a `Select`:
 "Offer to open" (`offer`), "Open automatically" (`open`), "Do nothing" (`off`). Description:
-"Offer models a turn wrote or changed, or open them in the 3D panel." Uses `set` (`:56`), so
+"Offer models a turn wrote or changed, or open them in the 3D panel." Uses `set` (`:135`), so
 the existing save flow and `permissionAtom` apply.
 
 ## Agent-facing tools
@@ -487,7 +491,7 @@ An agent that wants a model on screen already calls `loom_model_preview_3d_edito
 - Wire: `TurnModels` is at most 50 short paths. The chip queries only cards whose files include
   a candidate extension. Query atoms dedupe repeated renders of the same card.
 - Client: no animation, no polling. The dot is static. At most 8 background tabs per turn, and
-  a hidden model tab releases its mesh 60 s after it is hidden (`ModelPanel.tsx:470-478`).
+  a hidden model tab releases its mesh 60 s after it is hidden (`ModelPanel.tsx:1145-1156`).
   The right panel mounts only the active surface, so newly added background tabs download
   nothing until selected.
 - Remote: mesh bytes still go through signed URLs; nothing new crosses the WebSocket besides the
@@ -498,7 +502,7 @@ An agent that wants a model on screen already calls `loom_model_preview_3d_edito
 - **Filesystem watching.** Rejected by the brief and by cost: it would need a recursive watcher
   per workspace and would also fire for the user's own edits.
 - **Parse the turn diff patch on the client.** `orchestration.getTurnDiff` returns a raw patch
-  (`apps/server/src/orchestration-v2/checkpointDiff.ts:7-48`); the client already has the file
+  (`apps/server/src/checkpointing/CheckpointDiffQuery.ts:89-265`); the client already has the file
   list without it. SCAD dependents need workspace reads, which belong on the server.
 - **Client-only mapping without an RPC.** Direct matches could be computed in the browser from
   `files`, but repository prefixes, deleted files and SCAD dependents cannot. One RPC keeps a
@@ -508,6 +512,7 @@ An agent that wants a model on screen already calls `loom_model_preview_3d_edito
 - **A shared `ext-turn-files` extension point.** Declined for now: EXTENSION-POINTS.md promotes
   a spot only when a second packet needs it. If one does, move the line into a registry like
   `apps/web/src/fork/diffHeader/registry.ts`.
-- **Putting the chip in the assistant message meta row** (`MessagesTimeline.tsx:2868-2917`).
+- **Putting the chip in the assistant message meta row** (`AssistantMessageMeta`,
+  `apps/web/src/components/chat/TimelineAssistantRows.tsx:152-204`).
   That row exists on every message, not only turns with changes, and the changed files card is
   where "Open diff" already lives.

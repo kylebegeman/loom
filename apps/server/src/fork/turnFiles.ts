@@ -1,4 +1,5 @@
 import type { CheckpointId, OrchestrationV2Checkpoint, RunId, ThreadId } from "@t3tools/contracts";
+import { latestExecutedRun } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -15,14 +16,36 @@ export interface TurnCheckpoint {
 }
 
 /**
- * Shared-job key. A capture or a first rollback (newer ready rows turn stale) moves it. A failed
- * run writes no row and a repeat rollback re-marks nothing, so a lookup after either can still
- * join a scan already in flight.
+ * Shared-job key. A capture or a first rollback changes the newest turn row, a run that ends
+ * without one changes the latest executed run, and every finished or failed restore records its
+ * request on the thread.
  */
-export const turnGeneration = (checkpoint: {
-  readonly checkpointId: CheckpointId;
-  readonly status: OrchestrationV2Checkpoint["status"];
-}) => `${checkpoint.checkpointId}:${checkpoint.status}`;
+const turnGeneration = ({
+  thread,
+  checkpoints,
+  runs,
+}: ProjectionStore.ProjectionRecords<"checkpoints" | "runs">) => {
+  // Any turn row counts: an empty or failed capture still ends a turn that may have edited files.
+  const newest = checkpoints.reduce<OrchestrationV2Checkpoint | null>(
+    (latest, checkpoint) =>
+      checkpoint.runId !== null &&
+      checkpoint.appRunOrdinal !== null &&
+      checkpoint.appRunOrdinal > (latest?.appRunOrdinal ?? 0)
+        ? checkpoint
+        : latest,
+    null,
+  );
+  if (newest === null) return null;
+  const run = latestExecutedRun(runs);
+  return JSON.stringify([
+    newest.id,
+    newest.status,
+    run?.id ?? null,
+    run?.status ?? null,
+    thread.rollbackCompletedRequestId ?? null,
+    thread.rollbackFailure?.requestId ?? null,
+  ]);
+};
 
 const asTurnCheckpoint = (checkpoint: OrchestrationV2Checkpoint): TurnCheckpoint | null =>
   checkpoint.status === "ready" &&
@@ -75,31 +98,22 @@ export const makeTurnFiles = Effect.gen(function* () {
     prefixes.set(root, prefix);
     return prefix;
   });
+  const records = (threadId: ThreadId) =>
+    queries.getThreadRecords(threadId, ["checkpoints", "runs"]);
   const turnCheckpoints = Effect.fn("TurnFiles.turnCheckpoints")(function* (
     threadId: ThreadId,
     runId: RunId | null,
     limit: number,
   ) {
-    const records = yield* queries.getThreadRecords(threadId, ["checkpoints"]);
-    // Any turn row counts: an empty or failed capture still ends a turn that may have edited files.
-    const newest = records.checkpoints.reduce<OrchestrationV2Checkpoint | null>(
-      (latest, checkpoint) =>
-        checkpoint.runId !== null &&
-        checkpoint.appRunOrdinal !== null &&
-        checkpoint.appRunOrdinal > (latest?.appRunOrdinal ?? 0)
-          ? checkpoint
-          : latest,
-      null,
-    );
-    const turns = records.checkpoints
+    const current = yield* records(threadId);
+    const turns = current.checkpoints
       .flatMap((checkpoint) => {
         const turn = asTurnCheckpoint(checkpoint);
         return turn ? [turn] : [];
       })
       .toSorted((a, b) => b.turn - a.turn);
     return {
-      generation:
-        newest === null ? null : turnGeneration({ checkpointId: newest.id, status: newest.status }),
+      generation: turnGeneration(current),
       checkpoints:
         runId === null
           ? turns.slice(0, limit)
@@ -116,6 +130,14 @@ export const makeTurnFiles = Effect.gen(function* () {
         return checkpoint;
       }),
       Stream.filter((checkpoint): checkpoint is TurnCheckpoint => checkpoint !== null),
+      Stream.map((checkpoint) => ({
+        checkpoint,
+        // Read only when a scan runs: most captures touch no model or PCB file.
+        generation: Effect.suspend(() => records(threadId)).pipe(
+          Effect.map((current) => turnGeneration(current) ?? checkpoint.checkpointId),
+          Effect.orElseSucceed(() => checkpoint.checkpointId),
+        ),
+      })),
     );
   return { repoPrefix, turnCheckpoints, workspaceFiles, turnCheckpointEvents };
 });
