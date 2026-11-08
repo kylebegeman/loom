@@ -478,6 +478,16 @@ const agentCaller = loadCaller().pipe(
     projectId: caller?.projectId ?? null,
     runtimeMode: limits.runtimeMode,
     requestScope: scope.requestNamespace,
+    ...(scope.thread !== undefined
+      ? {
+          libraryCaller: {
+            threadId: scope.thread.threadId,
+            providerInstanceId: scope.thread.providerInstanceId,
+          },
+        }
+      : scope.client !== undefined
+        ? { libraryCaller: { sessionId: scope.client.sessionId } }
+        : {}),
   })),
 );
 

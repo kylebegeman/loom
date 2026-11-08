@@ -22,6 +22,7 @@ import {
   BOTS_RESULT_MAX_BYTES,
   BOTS_USAGE_MAX_DAYS,
   BotsError,
+  LibraryError,
   botRunThreadId,
   isBotInboxRun,
   isBotRunThreadId,
@@ -71,6 +72,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import type { SqlError } from "effect/sql/SqlError";
 import * as Stream from "effect/Stream";
@@ -100,6 +102,8 @@ export interface BotCaller {
   readonly projectId: ProjectId | null;
   /** An agent's own runtime mode; a bot may not run with a broader one. Null for people. */
   readonly runtimeMode: RuntimeMode | null;
+  /** What a live caller proves to start Library conversations; never rebuilt from storage. */
+  readonly libraryCaller?: NonNullable<ThreadLaunch.ThreadLaunchInput["libraryCaller"]>;
 }
 
 export const USER_CALLER: BotCaller = {
@@ -236,6 +240,15 @@ export const capReply = (text: string): { readonly text: string; readonly trunca
 
 const errorMessage = (error: unknown) =>
   error instanceof Error && error.message !== "" ? error.message : String(error);
+
+const isThreadLaunchError = Schema.is(ThreadLaunch.ThreadLaunchError);
+const isLibraryError = Schema.is(LibraryError);
+
+// A Library refusal already says why the launch stopped and what to do instead.
+const runFailureMessage = (error: unknown) =>
+  isThreadLaunchError(error) && isLibraryError(error.cause) && error.cause.reason === "blocked"
+    ? error.cause.message
+    : errorMessage(error);
 
 const FAILURE_LEADS: Record<OrchestrationV2ProviderFailureClass, string> = {
   usage_limit: "Usage limit reached",
@@ -992,7 +1005,7 @@ export const make = Effect.gen(function* () {
   });
 
   const recordFailure = (entry: LiveRun) => (error: unknown) =>
-    finish(entry, { status: "failed", error: errorMessage(error) });
+    finish(entry, { status: "failed", error: runFailureMessage(error) });
 
   /** `permitBot` is the stored definition, whose limit holds even for a run of an older version. */
   const execute = Effect.fn("BotsService.execute")(
@@ -1482,6 +1495,9 @@ export const make = Effect.gen(function* () {
               },
               createdBy: caller.actor,
               creationSource: "server",
+              ...(caller.libraryCaller === undefined
+                ? {}
+                : { libraryCaller: caller.libraryCaller }),
             },
             permitBot,
           ).pipe(restore, Effect.forkIn(serviceScope));

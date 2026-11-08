@@ -276,7 +276,7 @@ export const makeForkRpcLayer = (
     VaultReferenceRpcGroup.toLayer(
       withForkRuntime(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session))),
     ),
-    BotsRpcGroup.toLayer(withForkRuntime(makeBotsRpcHandlers(makeForkRpcAuth(session)))),
+    BotsRpcGroup.toLayer(withForkRuntime(makeBotsRpcHandlers(makeForkRpcAuth(session), session))),
     BotBatchesRpcGroup.toLayer(
       withForkRuntime(makeBotBatchesRpcHandlers(makeForkRpcAuth(session))),
     ),

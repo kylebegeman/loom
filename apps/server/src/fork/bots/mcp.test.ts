@@ -200,6 +200,67 @@ it.effect(
     ),
 );
 
+it.effect("bot runs launch as the calling agent's thread or the hosted client's session", () =>
+  withHarness((harness) =>
+    Effect.gen(function* () {
+      const bots = yield* harness.service;
+      yield* bots.save(reviewer(), USER_CALLER);
+      harness.state.autoOutcome = { status: "completed", reply: "Done." };
+      const toolkit = yield* BotsToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(botsHandlers).pipe(
+            Layer.provide(
+              Layer.succeed(
+                ForkRuntime,
+                Context.make(BotsService, bots) as Context.Context<ForkServices>,
+              ),
+            ),
+          ),
+        ),
+      );
+      const projectId = ProjectId.make("project:first");
+      const agent = {
+        threadId: ThreadId.make("thread:caller"),
+        providerSessionId: "provider",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        subagent: false,
+      };
+      for (const testCase of [
+        {
+          thread: agent,
+          client: undefined,
+          libraryCaller: { threadId: agent.threadId, providerInstanceId: agent.providerInstanceId },
+        },
+        {
+          thread: undefined,
+          client: { sessionId: "hosted", label: "Hosted Bot", access: "full-access" as const },
+          libraryCaller: { sessionId: "hosted" },
+        },
+      ]) {
+        yield* toolkit
+          .handle("loom_bots_run", { botId: "reviewer", inputs: { file: "a.ts" }, projectId })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provideService(McpInvocationContext, {
+              environmentId: EnvironmentId.make("environment:test"),
+              capabilities: new Set(["orchestration"] as const),
+              issuedAt: 0,
+              requestNamespace: "client:library",
+              thread: testCase.thread,
+              client: testCase.client,
+            }),
+            Effect.provide(
+              Layer.mock(ThreadManagementService)({
+                getThreadShell: (id) => Effect.succeed({ ...liveThreadShell(id), projectId }),
+              }),
+            ),
+          );
+        expect((yield* harness.nextLaunch).libraryCaller).toEqual(testCase.libraryCaller);
+      }
+    }),
+  ),
+);
+
 it.effect("bot operation tools preserve connector permissions and the leaf-job boundary", () =>
   Effect.gen(function* () {
     let mode: BotOperationMode = "manual";
