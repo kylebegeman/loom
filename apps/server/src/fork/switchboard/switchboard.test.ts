@@ -7,7 +7,10 @@ import * as Layer from "effect/Layer";
 
 import * as ServerSettings from "../../serverSettings.ts";
 
-import { codexThreadRuntimeParams } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import {
+  CODEX_THREAD_CONFIG,
+  codexThreadRuntimeParams,
+} from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { makeClaudeQueryOptions } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { codexAppServerArgs, codexExecLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import {
@@ -58,7 +61,7 @@ describe("Switchboard routing", () => {
     expect(codexAppServerArgs("--enable foo")).toEqual(["app-server", "--enable", "foo"]);
     expect(switchboardClaudeSettings()).toEqual({});
     expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
-      config: { "tools.update_plan.enabled": true, mcp_optional_startup_grace_ms: 10_000 },
+      config: CODEX_THREAD_CONFIG,
     });
     expect(claudeSessionOptions().settings).toEqual({ showThinkingSummaries: true });
   });
@@ -177,11 +180,11 @@ describe("Switchboard routing", () => {
     setSwitchboardEnabled(true);
     expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
       modelProvider: "loom_switchboard_new_process",
-      config: { "tools.update_plan.enabled": true, mcp_optional_startup_grace_ms: 10_000 },
+      config: CODEX_THREAD_CONFIG,
     });
     setSwitchboardEnabled(false);
     expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
-      config: { "tools.update_plan.enabled": true, mcp_optional_startup_grace_ms: 10_000 },
+      config: CODEX_THREAD_CONFIG,
     });
   });
 
