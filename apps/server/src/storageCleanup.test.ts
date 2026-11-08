@@ -3746,6 +3746,21 @@ const libraryBinding = (
   localProjectId,
   repositoryPaths: [cwd],
 });
+const acknowledgedLibraryHistory = (threadIds: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const context = yield* Layer.build(NodeSqliteClient.layer({ filename: ":memory:" }));
+    const history = Context.get(context, SqlClient.SqlClient);
+    yield* history`CREATE TABLE fork_library_source_state (key TEXT, environment_id TEXT)`;
+    yield* history`CREATE TABLE fork_library_source_threads (thread_id TEXT, queued_sequence INTEGER, acknowledged_sequence INTEGER)`;
+    yield* history`CREATE TABLE fork_library_source_outbox (thread_id TEXT)`;
+    yield* history`CREATE TABLE orchestration_events (sequence INTEGER, application_event_version INTEGER, aggregate_kind TEXT, stream_id TEXT, event_type TEXT)`;
+    yield* history`INSERT INTO fork_library_source_state VALUES ('host', 'library-computer')`;
+    for (const threadId of threadIds) {
+      yield* history`INSERT INTO fork_library_source_threads VALUES (${threadId}, 10, 10)`;
+      yield* history`INSERT INTO orchestration_events VALUES (10, 2, 'thread', ${threadId}, 'thread.settled')`;
+    }
+    return history;
+  });
 const libraryPrimaryFixture = Effect.gen(function* () {
   const f = yield* primaryFixture;
   yield* f.adopt;
@@ -3755,15 +3770,7 @@ const libraryPrimaryFixture = Effect.gen(function* () {
   const bind = (threadId: ThreadId, localProjectId = ProjectId.make("project-1")) =>
     store.bind(threadId, libraryBinding(receipt, f.cwd, localProjectId));
   yield* bind(ThreadId.make("thread-1"));
-  const context = yield* Layer.build(NodeSqliteClient.layer({ filename: ":memory:" }));
-  const history = Context.get(context, SqlClient.SqlClient);
-  yield* history`CREATE TABLE fork_library_source_state (key TEXT, environment_id TEXT)`;
-  yield* history`CREATE TABLE fork_library_source_threads (thread_id TEXT, queued_sequence INTEGER, acknowledged_sequence INTEGER)`;
-  yield* history`CREATE TABLE fork_library_source_outbox (thread_id TEXT)`;
-  yield* history`CREATE TABLE orchestration_events (sequence INTEGER, application_event_version INTEGER, aggregate_kind TEXT, stream_id TEXT, event_type TEXT)`;
-  yield* history`INSERT INTO fork_library_source_state VALUES ('host', 'library-computer')`;
-  yield* history`INSERT INTO fork_library_source_threads VALUES ('thread-1', 10, 10)`;
-  yield* history`INSERT INTO orchestration_events VALUES (10, 2, 'thread', 'thread-1', 'thread.settled')`;
+  const history = yield* acknowledgedLibraryHistory(["thread-1"]);
   f.useLibraryHistory(history);
   f.setThreads([shell({ settledOverride: "settled" })]);
   return { ...f, receipt, bind, history };
@@ -3793,18 +3800,18 @@ describe("primary project storage cleanup", () => {
   it.live.each([
     ["management", "The Library manages these files"],
     ["activity", "A Library conversation is active or has pending work"],
+    ["activity during measurement", "A Library conversation is active or has pending work"],
   ] as const)("Library %s also excludes native linked-worktree cleanup", ([protection, reason]) =>
     runCleanupTest(
       Effect.gen(function* () {
-        const f = yield* cleanupFixture();
+        const f = yield* pausedMeasurementFixture();
         const receipt = libraryReceipt(f.worktree);
         const ownership = protection === "management" ? "managed" : "borrowed";
         yield* f.libraryStore.put({ ...receipt, copy: { ...receipt.copy, ownership } });
+        const bind = (threadId: string) =>
+          f.libraryStore.bind(ThreadId.make(threadId), libraryBinding(receipt, f.worktree));
         if (protection === "activity") {
-          yield* f.libraryStore.bind(
-            ThreadId.make("thread-1"),
-            libraryBinding(receipt, f.worktree),
-          );
+          yield* bind("thread-1");
           f.setThreads([
             shell({
               branch: "feature",
@@ -3813,9 +3820,27 @@ describe("primary project storage cleanup", () => {
             }),
           ]);
         }
+        // thread-2 has no worktree, so only the Library recheck's own read sees it become active.
+        const copyThreads = (second: "settled" | null) => [
+          shell({ branch: "feature", worktreePath: f.worktree, settledOverride: "settled" }),
+          shell({ id: ThreadId.make("thread-2"), settledOverride: second }),
+        ];
+        const late = protection === "activity during measurement";
+        if (late) {
+          f.useLibraryHistory(yield* acknowledgedLibraryHistory(["thread-1", "thread-2"]));
+          yield* bind("thread-1");
+          yield* bind("thread-2");
+          f.setThreads(copyThreads("settled"));
+        }
+        const run = yield* f.service.runNow.pipe(Effect.forkChild);
+        if (late) {
+          yield* Deferred.await(f.measuring);
+          f.setThreads(copyThreads(null));
+        }
+        yield* Deferred.succeed(f.resume, undefined);
         expect(
-          (yield* f.service.runNow).entries.find((entry) => entry.kind === "worktree")?.reason,
-        ).toBe(reason);
+          (yield* Fiber.join(run)).entries.find((entry) => entry.kind === "worktree"),
+        ).toMatchObject({ outcome: "kept", reason });
         expect(yield* f.fs.exists(f.worktree)).toBe(true);
       }),
     ),
