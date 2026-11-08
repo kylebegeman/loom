@@ -3730,6 +3730,22 @@ const libraryReceipt = (rootPath: string): LibraryWorkspaceStore.WorkspaceReceip
     archiveDigest: null,
   };
 };
+const libraryBinding = (
+  receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+  cwd: string,
+  localProjectId = ProjectId.make("project-1"),
+) => ({
+  binding: {
+    projectId: receipt.project.id,
+    projectRevision: 1,
+    environmentId: receipt.copy.environmentId,
+    workingCopyId: receipt.copy.id,
+    resourceIds: ["repo"],
+  },
+  cwd,
+  localProjectId,
+  repositoryPaths: [cwd],
+});
 const libraryPrimaryFixture = Effect.gen(function* () {
   const f = yield* primaryFixture;
   yield* f.adopt;
@@ -3737,18 +3753,7 @@ const libraryPrimaryFixture = Effect.gen(function* () {
   const receipt = libraryReceipt(f.cwd);
   yield* store.put(receipt);
   const bind = (threadId: ThreadId, localProjectId = ProjectId.make("project-1")) =>
-    store.bind(threadId, {
-      binding: {
-        projectId: receipt.project.id,
-        projectRevision: 1,
-        environmentId: receipt.copy.environmentId,
-        workingCopyId: receipt.copy.id,
-        resourceIds: ["repo"],
-      },
-      cwd: f.cwd,
-      localProjectId,
-      repositoryPaths: [f.cwd],
-    });
+    store.bind(threadId, libraryBinding(receipt, f.cwd, localProjectId));
   yield* bind(ThreadId.make("thread-1"));
   const context = yield* Layer.build(NodeSqliteClient.layer({ filename: ":memory:" }));
   const history = Context.get(context, SqlClient.SqlClient);
@@ -3785,15 +3790,32 @@ describe("primary project storage cleanup", () => {
     ),
   );
 
-  it.live("Library management also excludes native linked-worktree cleanup", () =>
+  it.live.each([
+    ["management", "The Library manages these files"],
+    ["activity", "A Library conversation is active or has pending work"],
+  ] as const)("Library %s also excludes native linked-worktree cleanup", ([protection, reason]) =>
     runCleanupTest(
       Effect.gen(function* () {
         const f = yield* cleanupFixture();
         const receipt = libraryReceipt(f.worktree);
-        yield* f.libraryStore.put({ ...receipt, copy: { ...receipt.copy, ownership: "managed" } });
+        const ownership = protection === "management" ? "managed" : "borrowed";
+        yield* f.libraryStore.put({ ...receipt, copy: { ...receipt.copy, ownership } });
+        if (protection === "activity") {
+          yield* f.libraryStore.bind(
+            ThreadId.make("thread-1"),
+            libraryBinding(receipt, f.worktree),
+          );
+          f.setThreads([
+            shell({
+              branch: "feature",
+              worktreePath: f.worktree,
+              activeRunId: RunId.make("run-1"),
+            }),
+          ]);
+        }
         expect(
           (yield* f.service.runNow).entries.find((entry) => entry.kind === "worktree")?.reason,
-        ).toBe("The Library manages these files");
+        ).toBe(reason);
         expect(yield* f.fs.exists(f.worktree)).toBe(true);
       }),
     ),
@@ -3846,14 +3868,30 @@ describe("primary project storage cleanup", () => {
       }),
     ),
   );
-  it.live.each(["unbound", "missing", "unregistered"] as const)(
+  it.live.each(["unbound", "missing", "unregistered", "aliased"] as const)(
     "protects %s Library bindings",
     (state) =>
       runCleanupTest(
         Effect.gen(function* () {
           const f = yield* libraryPrimaryFixture;
           if (state === "missing") yield* f.bind(ThreadId.make("missing-thread"));
-          else
+          else if (state === "aliased") {
+            yield* f.fs.symlink(f.cwd, `${f.cwd}-alias`);
+            const elsewhere = (id: string, worktreePath: string) =>
+              shell({
+                id: ThreadId.make(id),
+                projectId: ProjectId.make("other-project"),
+                worktreePath,
+                settledOverride: "settled",
+              });
+            f.setThreads([
+              shell({ settledOverride: "settled" }),
+              // A same-project thread outside the copy comes first and must not hide the aliases.
+              elsewhere("outside-thread", `${f.cwd}-outside`),
+              elsewhere("alias-thread-1", `${f.cwd}-alias`),
+              elsewhere("alias-thread-2", `${f.cwd}-alias`),
+            ]);
+          } else
             f.setThreads([
               shell({ settledOverride: "settled" }),
               shell({ id: ThreadId.make("unbound-thread"), settledOverride: "settled" }),

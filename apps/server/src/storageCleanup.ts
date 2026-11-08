@@ -599,13 +599,16 @@ const make = Effect.gen(function* () {
   const libraryCleanupBlocker = Effect.fn("StorageCleanup.libraryCleanupBlocker")(function* (
     cwd: string,
     now: number,
+    // Pass only where the result can keep files; checks that precede removal must read fresh.
+    sweepSnapshot?: Effect.Success<ReturnType<typeof readThreads>>,
   ) {
     const owners = yield* libraryCheckoutOwners(cwd);
     if (owners.some((receipt) => receipt.copy.ownership === "managed"))
       return "the Library manages these files";
     if (owners.length === 0) return null;
-    const snapshot = yield* readThreads();
+    const snapshot = sweepSnapshot ?? (yield* readThreads());
     const allBindings = yield* libraryWorkspaces.bindings;
+    const canonicalLocations = new Map<string, string>();
     for (const receipt of owners) {
       // Borrowed folders opt into native retention through reviewed adoption. Library retention
       // intentionally cannot release them, but the whole copy's conversations still protect them.
@@ -636,7 +639,11 @@ const make = Effect.gen(function* () {
           thread.worktreePath ??
           snapshot.projects.find((project) => project.id === thread.projectId)?.workspaceRoot;
         if (location === undefined) continue;
-        const canonical = yield* fs.realPath(location).pipe(Effect.orElseSucceed(() => location));
+        let canonical = canonicalLocations.get(location);
+        if (canonical === undefined) {
+          canonical = yield* fs.realPath(location).pipe(Effect.orElseSucceed(() => location));
+          canonicalLocations.set(location, canonical);
+        }
         if (
           locations.some((root) => pathKey(root) === pathKey(canonical) || inside(root, canonical))
         )
@@ -1585,7 +1592,8 @@ const make = Effect.gen(function* () {
         // and cannot apply yet.
         if (!landing && !worktreeCleanupEnabled({ ...settings, worktreeOnLand: false }))
           return keep(unfinishedReason);
-        const libraryReason = yield* libraryCleanupBlocker(worktreePath, now);
+        // fork: library-projects
+        const libraryReason = yield* libraryCleanupBlocker(worktreePath, now, snapshot);
         if (libraryReason !== null) return keep(libraryReason);
         if (deleted && !settings.worktreeOnDelete && !landing) return keep("no rules apply"); // fork: project-lifecycle
         // fork: project-lifecycle -- owners all settled on this branch release a shared worktree.
