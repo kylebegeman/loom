@@ -2,7 +2,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "../config.ts";
@@ -31,6 +33,7 @@ import {
   setManagedProjectRetention,
 } from "./ManagedProjectCheckout.ts";
 import * as SetupMarker from "./setupMarker.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
 
 const projectId = ProjectId.make("managed-project-test");
 const fixture = Effect.gen(function* () {
@@ -181,6 +184,27 @@ describe("Managed primary project checkouts", () => {
         expect(results.toSorted()).toEqual([false, true]);
       }),
     ),
+  );
+  it.live(
+    "answers restore checks that need nothing while another caller holds the workspace lease",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const f = yield* fixture;
+          const entered = yield* Deferred.make<void>();
+          const unlock = yield* Deferred.make<void>();
+          const held = yield* withWorkspaceLease(
+            f.cwd,
+            Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(unlock))),
+          ).pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(entered);
+          expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(false);
+          yield* f.mark;
+          expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(false);
+          yield* Deferred.succeed(unlock, undefined);
+          yield* Fiber.join(held);
+        }),
+      ),
   );
   it.live("keeps a file written between the last archive check and recursive removal", () =>
     run(
