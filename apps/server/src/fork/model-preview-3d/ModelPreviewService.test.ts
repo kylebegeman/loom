@@ -124,6 +124,8 @@ const setup = Effect.gen(function* () {
   const liveRunner = yield* ProcessRunner;
   let gitCalls = 0;
   let refreshCalls = 0;
+  let listCalls = 0;
+  let threadReads = 0;
   let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
   let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
   let entryPaths = ["models/part.scad", "models/part.stl", "models/part.step", "models/ignore.txt"];
@@ -251,7 +253,10 @@ const setup = Effect.gen(function* () {
     getThreadRecords: () =>
       Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
     getThread: () =>
-      Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath })),
+      Effect.sync(() => {
+        threadReads++;
+        return partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath });
+      }),
   });
   const project = partial<ProjectStore.ProjectRow>({ projectId, workspaceRoot: root });
   const projectStore = partial<ProjectStore.ProjectStoreV2["Service"]>({
@@ -270,12 +275,15 @@ const setup = Effect.gen(function* () {
         refreshCalls++;
       }),
     list: () =>
-      Effect.succeed({
-        entries: entryPaths.map((name) => ({
-          path: name,
-          kind: "file" as const,
-        })),
-        truncated: false,
+      Effect.sync(() => {
+        listCalls++;
+        return {
+          entries: entryPaths.map((name) => ({
+            path: name,
+            kind: "file" as const,
+          })),
+          truncated: false,
+        };
       }),
   });
   const secret = partial<ServerSecretStore["Service"]>({
@@ -304,6 +312,8 @@ const setup = Effect.gen(function* () {
     initGit: () => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd: root }),
     getGitCalls: () => gitCalls,
     getRefreshCalls: () => refreshCalls,
+    getListCalls: () => listCalls,
+    getThreadReads: () => threadReads,
     setEntries: (names: string[]) => {
       entryPaths = names;
     },
@@ -1211,6 +1221,7 @@ it.effect(
       ]);
       t.setCheckpoints([checkpoint(t.file.threadId, 1, ["models/shape.scad"])]);
       const service = yield* t.create();
+      const reads = t.getThreadReads();
       const result = yield* service.turnModels(t.file.threadId, null);
       expect(result.models.map((model) => model.path)).toEqual([
         "models/shape.scad",
@@ -1218,6 +1229,7 @@ it.effect(
         "models/top.scad",
       ]);
       expect(result.truncated).toBe(true);
+      expect(t.getThreadReads() - reads).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 
@@ -1314,10 +1326,12 @@ it.effect(
       t.setCheckpoints([
         checkpoint(t.file.threadId, 1, ["models/linked.dat", "models/height.txt"]),
         checkpoint(t.file.threadId, 2, ["source.ts"]),
+        checkpoint(t.file.threadId, 3, ["models/unused.dat"]),
       ]);
       const service = yield* t.create();
       expect((yield* service.turnModels(t.file.threadId, RunId.make("run-2"))).models).toEqual([]);
       expect(t.getRefreshCalls()).toBe(0);
+      const lists = t.getListCalls();
       const result = yield* service.turnModels(t.file.threadId, null);
       expect(result.models).toEqual([
         {
@@ -1328,7 +1342,8 @@ it.effect(
         },
       ]);
       expect(t.getRefreshCalls()).toBe(1);
-      t.setCheckpoints([checkpoint(t.file.threadId, 3, ["models/height.txt"])]);
+      expect(t.getListCalls() - lists).toBe(1);
+      t.setCheckpoints([checkpoint(t.file.threadId, 4, ["models/height.txt"])]);
       expect((yield* service.turnModels(t.file.threadId, null)).models[0]?.via).toBe(
         "models/height.txt",
       );

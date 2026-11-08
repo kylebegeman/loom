@@ -341,6 +341,10 @@ export const make = Effect.gen(function* () {
     tsciLock = yield* Semaphore.make(1);
   const renderJobs = yield* makeSharedJobs<PcbRenderResult, PcbPreviewError>();
   const assetJobs = yield* makeSharedJobs<W.PcbAsset, PcbPreviewError>();
+  const discoverJobs = yield* makeSharedJobs<
+    Effect.Success<ReturnType<typeof discover>>["designs"],
+    PcbPreviewError
+  >();
   const circuitVersions = new Map<string, { at: number; version: string }>();
   let detection: { at: number; value: PcbPreviewStatus } | null = null;
   const timestamp = Effect.map(DateTime.now, DateTime.formatIso);
@@ -3412,11 +3416,15 @@ export const make = Effect.gen(function* () {
   const turnFiles = yield* makeTurnFiles;
   const turnDesignMethods = makeTurnDesigns({
     workspace: (threadId) => checked(workspace(threadId)),
-    discover: (root) =>
-      checked(
-        entries.refresh(root).pipe(
-          Effect.andThen(discover(root)),
-          Effect.map((d) => d.designs),
+    // Keyed by checkpoint so a lookup after a newer capture never joins an older refresh.
+    discover: (root, generation) =>
+      discoverJobs.run(
+        `${root}\0${generation}`,
+        checked(
+          entries.refresh(root).pipe(
+            Effect.andThen(discover(root)),
+            Effect.map((d) => d.designs),
+          ),
         ),
       ),
     snapshotFiles: (ws, design) =>

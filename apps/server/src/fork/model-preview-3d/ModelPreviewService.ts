@@ -44,6 +44,7 @@ import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import type { RunId } from "@t3tools/contracts";
+import { makeSharedJobs } from "../sharedJobs.ts";
 import { makeTurnFiles, type TurnCheckpoint } from "../turnFiles.ts";
 import { SCAD_INPUT_EXTENSIONS } from "./formats.ts";
 import { scadReferences, resolveScadReference } from "./scadIncludes.ts";
@@ -167,6 +168,16 @@ export const make = Effect.gen(function* () {
     );
   let detection: { at: number; value: ReturnType<typeof detectedInfo> } | null = null;
   const now = Effect.map(DateTime.now, DateTime.toEpochMillis);
+  const workspacePath = (root: string, relative: string) => {
+    const absolute = path.resolve(root, relative);
+    return path.isAbsolute(relative) ||
+      relative.includes("\\") ||
+      relative.includes("\0") ||
+      relative.split("/").includes("..") ||
+      !isContained(root, absolute)
+      ? Effect.fail(error("invalid-path", "Choose a file inside the workspace."))
+      : Effect.succeed(absolute);
+  };
   const resolveWorkspace = Effect.fn("ModelPreview.resolveWorkspace")(function* (
     file: ModelFileRef,
   ) {
@@ -176,33 +187,27 @@ export const make = Effect.gen(function* () {
       return yield* error("workspace-not-found", "This thread has no workspace.");
     const cwd = thread.worktreePath ?? project.value.workspaceRoot;
     const root = yield* fs.realPath(cwd);
-    if (
-      path.isAbsolute(file.path) ||
-      file.path.includes("\\") ||
-      file.path.includes("\0") ||
-      file.path.split("/").includes("..")
-    )
-      return yield* error("invalid-path", "Choose a file inside the workspace.");
-    const absolute = path.resolve(root, file.path);
-    if (!isContained(root, absolute))
-      return yield* error("invalid-path", "Choose a file inside the workspace.");
     return {
       root,
-      absolute,
+      absolute: yield* workspacePath(root, file.path),
       projectId: thread.projectId,
       legacyParamsPath: thread.worktreePath ? null : file.path,
     };
   });
-  const resolveFile = Effect.fn("ModelPreview.resolveFile")(function* (file: ModelFileRef) {
-    const workspace = yield* resolveWorkspace(file);
+  const fileIn = Effect.fn("ModelPreview.fileIn")(function* (root: string, relative: string) {
+    const absolute = yield* workspacePath(root, relative);
     const real = yield* fs
-      .realPath(workspace.absolute)
+      .realPath(absolute)
       .pipe(Effect.mapError(() => error("not-found", "The file was deleted or moved.")));
-    if (!isContained(workspace.root, real))
+    if (!isContained(root, real))
       return yield* error("invalid-path", "The file points outside the workspace.");
     const info = yield* fs.stat(real);
     if (info.type !== "File") return yield* error("not-found", "Choose a model file.");
-    return { ...workspace, absolute: real, info };
+    return { absolute: real, info };
+  });
+  const resolveFile = Effect.fn("ModelPreview.resolveFile")(function* (file: ModelFileRef) {
+    const workspace = yield* resolveWorkspace(file);
+    return { ...workspace, ...(yield* fileIn(workspace.root, file.path)) };
   });
   const containedReference = Effect.fn("ModelPreview.containedReference")(function* (
     root: string,
@@ -213,20 +218,9 @@ export const make = Effect.gen(function* () {
     const canonical = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute));
     return isContained(root, canonical) ? canonical : null;
   });
-  const scadDependents = Effect.fn("ModelPreview.scadDependents")(function* (
-    threadId: ModelFileRef["threadId"],
-    root: string,
-    changed: readonly string[],
-  ) {
-    const reverse = new Map<string, Set<string>>();
-    const add = (dependency: string, model: string) => {
-      if (!isContained(root, dependency) || !isContained(root, model)) return;
-      const parents = reverse.get(dependency) ?? new Set<string>();
-      parents.add(model);
-      reverse.set(dependency, parents);
-    };
-    for (const [model, inputs] of dependencies)
-      if (isSourceFormat(modelFormatOf(model))) for (const input of inputs) add(input, model);
+  const scadScan = Effect.fn("ModelPreview.scadScan")(function* (root: string) {
+    // checkpoint.captured commits before the post-capture rescan, so each scan refreshes first.
+    yield* entries.refresh(root);
     const listing = yield* entries.list({ cwd: root });
     const sources = listing.entries.filter(
       (entry) => entry.kind === "file" && modelFormatOf(entry.path) === "scad",
@@ -235,7 +229,7 @@ export const make = Effect.gen(function* () {
       sources.slice(0, 500),
       (entry) =>
         Effect.gen(function* () {
-          const resolved = yield* resolveFile({ threadId, path: entry.path });
+          const resolved = yield* fileIn(root, entry.path);
           if (Number(resolved.info.size) > 256 * 1024) return null;
           const revision = metadata(resolved.info).revision;
           let parsed = scadParseCache.get(resolved.absolute);
@@ -252,16 +246,49 @@ export const make = Effect.gen(function* () {
               scadParseCache.delete(scadParseCache.keys().next().value!);
             scadParseCache.set(resolved.absolute, parsed);
           }
+          const inputs: string[] = [];
           for (const input of parsed.refs) {
             const contained = yield* containedReference(root, input);
-            if (contained) add(contained, resolved.absolute);
+            if (contained) inputs.push(contained);
           }
-          return resolved.absolute;
+          return { model: resolved.absolute, inputs };
         }).pipe(Effect.option),
       { concurrency: 8 },
     );
-    const changedAbsolute = yield* Effect.forEach(changed, (file) =>
-      containedReference(root, path.resolve(root, file)),
+    return {
+      sources: scanned.flatMap(Option.toArray).filter((source) => source !== null),
+      truncated:
+        listing.truncated ||
+        sources.length > 500 ||
+        scanned.some((item) => Option.isNone(item) || item.value === null),
+    };
+  });
+  // Keys carry the checkpoint id so a lookup after a newer capture never joins an older scan.
+  const scanJobs = yield* makeSharedJobs<
+    Effect.Success<ReturnType<typeof scadScan>>,
+    Effect.Error<ReturnType<typeof scadScan>>
+  >();
+  const scadDependents = Effect.fn("ModelPreview.scadDependents")(function* (
+    root: string,
+    changed: readonly string[],
+    scan: ReturnType<typeof scadScan>,
+  ) {
+    const reverse = new Map<string, Set<string>>();
+    const add = (dependency: string, model: string) => {
+      if (!isContained(root, dependency) || !isContained(root, model)) return;
+      const parents = reverse.get(dependency) ?? new Set<string>();
+      parents.add(model);
+      reverse.set(dependency, parents);
+    };
+    for (const [model, inputs] of dependencies)
+      if (isSourceFormat(modelFormatOf(model))) for (const input of inputs) add(input, model);
+    const scanned = yield* scan;
+    for (const source of scanned.sources)
+      for (const input of source.inputs) add(input, source.model);
+    const changedAbsolute = yield* Effect.forEach(
+      changed,
+      (file) => containedReference(root, path.resolve(root, file)),
+      { concurrency: 8 },
     );
     const changedPaths = new Map<string, string>();
     for (let index = 0; index < changedAbsolute.length; index++) {
@@ -275,20 +302,14 @@ export const make = Effect.gen(function* () {
         changedPaths.get(via)!,
       ]),
     );
-    return {
-      models: relative,
-      truncated:
-        result.truncated ||
-        listing.truncated ||
-        sources.length > 500 ||
-        scanned.some((item) => Option.isNone(item) || item.value === null),
-    };
+    return { models: relative, truncated: result.truncated || scanned.truncated };
   });
   const modelsForCheckpoint = Effect.fn("ModelPreview.modelsForCheckpoint")(function* (
     threadId: ModelFileRef["threadId"],
     root: string,
     prefix: string,
     checkpoint: TurnCheckpoint,
+    scan: ReturnType<typeof scadScan>,
     include?: readonly "build123d"[],
   ) {
     const changed = turnFiles.workspaceFiles(prefix, checkpoint.files);
@@ -298,7 +319,7 @@ export const make = Effect.gen(function* () {
         path.extname(file).toLowerCase() === ".py",
     );
     const dependent = inputs.length
-      ? yield* scadDependents(threadId, root, inputs)
+      ? yield* scadDependents(root, inputs, scan)
       : {
           models: new Map<string, string>(),
           truncated: false,
@@ -308,8 +329,7 @@ export const make = Effect.gen(function* () {
     );
     const valid = yield* Effect.forEach(
       candidates,
-      (candidate) =>
-        resolveFile({ threadId, path: candidate.path }).pipe(Effect.as(candidate), Effect.option),
+      (candidate) => fileIn(root, candidate.path).pipe(Effect.as(candidate), Effect.option),
       { concurrency: 16 },
     );
     const capped = capTurnModels(valid.flatMap(Option.toArray));
@@ -338,22 +358,11 @@ export const make = Effect.gen(function* () {
     const { root } = yield* resolveWorkspace({ threadId, path: "." });
     const prefix = yield* turnFiles.repoPrefix(root);
     if (prefix === null) return emptyTurnModels(threadId);
-    const checkpoints = yield* turnFiles.turnCheckpoints(threadId, runId, 20);
-    // The workspace index is cached. Refresh once per lookup only when SCAD dependencies matter.
-    if (
-      checkpoints.some((checkpoint) =>
-        turnFiles
-          .workspaceFiles(prefix, checkpoint.files)
-          .some(
-            (file) =>
-              SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
-              path.extname(file).toLowerCase() === ".py",
-          ),
-      )
-    )
-      yield* entries.refresh(root);
+    const { newest, checkpoints } = yield* turnFiles.turnCheckpoints(threadId, runId, 20);
+    if (newest === null) return emptyTurnModels(threadId);
+    const scan = yield* Effect.cached(scanJobs.run(`${root}\0${newest}`, scadScan(root)));
     for (const checkpoint of checkpoints) {
-      const models = yield* modelsForCheckpoint(threadId, root, prefix, checkpoint, include);
+      const models = yield* modelsForCheckpoint(threadId, root, prefix, checkpoint, scan, include);
       if (runId !== null || models.models.length) return models;
     }
     return emptyTurnModels(threadId);
@@ -366,18 +375,14 @@ export const make = Effect.gen(function* () {
         if (prefix === null) return Stream.empty;
         return turnFiles.turnCheckpointEvents(threadId).pipe(
           Stream.mapEffect((checkpoint) =>
-            Effect.gen(function* () {
-              const changed = turnFiles.workspaceFiles(prefix, checkpoint.files);
-              if (
-                changed.some(
-                  (file) =>
-                    SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
-                    path.extname(file).toLowerCase() === ".py",
-                )
-              )
-                yield* entries.refresh(root);
-              return yield* modelsForCheckpoint(threadId, root, prefix, checkpoint, include);
-            }),
+            modelsForCheckpoint(
+              threadId,
+              root,
+              prefix,
+              checkpoint,
+              scanJobs.run(`${root}\0${checkpoint.checkpointId}`, scadScan(root)),
+              include,
+            ),
           ),
           Stream.filter((result) => result.models.length > 0),
         );
@@ -1514,7 +1519,7 @@ export const make = Effect.gen(function* () {
           const models = yield* Effect.forEach(
             names.slice(0, 2000),
             (e) =>
-              resolveFile({ threadId, path: e.path }).pipe(
+              fileIn(root, e.path).pipe(
                 Effect.map((file) => ({
                   path: e.path,
                   format: modelFormatOf(e.path)!,
@@ -1530,7 +1535,7 @@ export const make = Effect.gen(function* () {
           const assemblyEntries = yield* Effect.forEach(
             assemblyNames.slice(0, 2000),
             (e) =>
-              resolveFile({ threadId, path: e.path }).pipe(
+              fileIn(root, e.path).pipe(
                 Effect.map((file) => ({ path: e.path, ...metadata(file.info) })),
                 Effect.option,
               ),

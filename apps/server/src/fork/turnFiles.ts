@@ -69,13 +69,19 @@ export const makeTurnFiles = Effect.gen(function* () {
     limit: number,
   ) {
     const records = yield* queries.getThreadRecords(threadId, ["checkpoints"]);
-    const checkpoints = records.checkpoints
+    const turns = records.checkpoints
       .flatMap((checkpoint) => {
         const turn = asTurnCheckpoint(checkpoint);
-        return turn && (runId === null || turn.runId === runId) ? [turn] : [];
+        return turn ? [turn] : [];
       })
       .toSorted((a, b) => b.turn - a.turn);
-    return checkpoints.slice(0, runId === null ? limit : 1);
+    return {
+      newest: turns[0]?.checkpointId ?? null,
+      checkpoints:
+        runId === null
+          ? turns.slice(0, limit)
+          : turns.filter((turn) => turn.runId === runId).slice(0, 1),
+    };
   });
   const turnCheckpointEvents = (threadId: ThreadId) =>
     threads.streamDomainEvents.pipe(

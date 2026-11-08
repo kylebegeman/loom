@@ -92,28 +92,50 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread"),
       runId = RunId.make("run"),
-      checkpoint = {
+      turn = (number: number, files: string[]) => ({
         runId,
-        checkpointId: CheckpointId.make("checkpoint"),
-        turn: 2,
-        files: ["hw/board.kicad_pcb", "other/board.kicad_sch"],
-      };
+        checkpointId: CheckpointId.make(`checkpoint-${number}`),
+        turn: number,
+        files,
+      }),
+      checkpoint = turn(2, ["hw/board.kicad_pcb", "other/board.kicad_sch"]);
+    const generations: string[] = [];
+    let snapshots = 0;
     const methods = makeTurnDesigns({
       workspace: () => Effect.succeed({ root: "/repo/hw" }),
-      discover: () => Effect.succeed([board]),
-      snapshotFiles: () => Effect.succeed([]),
+      discover: (_root, generation) =>
+        Effect.sync(() => {
+          generations.push(generation);
+          return [board, circuit];
+        }),
+      snapshotFiles: () =>
+        Effect.sync(() => {
+          snapshots++;
+          return [];
+        }),
       turnFiles: {
         repoPrefix: () => Effect.succeed("hw/"),
         workspaceFiles,
         turnCheckpoints: () =>
-          Effect.succeed([{ ...checkpoint, turn: 3, files: ["hw/README.md"] }, checkpoint]),
+          Effect.succeed({
+            newest: CheckpointId.make("checkpoint-5"),
+            checkpoints: [
+              turn(5, ["hw/lib/part.ts"]),
+              turn(4, ["hw/lib/pins.ts"]),
+              turn(3, ["hw/README.md"]),
+              checkpoint,
+            ],
+          }),
         turnCheckpointEvents: () => Stream.succeed(checkpoint),
       },
     });
     expect((yield* methods.turnDesigns({ threadId, runId: null })).turn).toBe(2);
+    expect(generations).toEqual(["checkpoint-5"]);
+    expect(snapshots).toBe(1);
     expect(
       (yield* methods.turnDesignEvents({ threadId }).pipe(Stream.runCollect))[0]?.designs[0]
         ?.designId,
     ).toBe(board.id);
+    expect(generations).toEqual(["checkpoint-5", "checkpoint-2"]);
   }),
 );

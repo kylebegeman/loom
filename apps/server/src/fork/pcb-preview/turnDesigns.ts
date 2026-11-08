@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import type { ThreadId } from "@t3tools/contracts";
+import type { CheckpointId, ThreadId } from "@t3tools/contracts";
 import type {
   PcbPreviewError,
   PcbTurnDesign,
@@ -87,7 +87,10 @@ export const designsForFiles = Effect.fn("PcbPreview.designsForFiles")(function*
 });
 export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
   workspace: (threadId: ThreadId) => Effect.Effect<Ws, PcbPreviewError>;
-  discover: (root: string) => Effect.Effect<readonly Design[], PcbPreviewError>;
+  discover: (
+    root: string,
+    generation: CheckpointId,
+  ) => Effect.Effect<readonly Design[], PcbPreviewError>;
   snapshotFiles: (
     workspace: Ws,
     design: Design,
@@ -96,11 +99,12 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
 }) => {
   const prefix = (root: string) =>
     deps.turnFiles.repoPrefix(root).pipe(Effect.orElseSucceed(() => null));
-  const fromCheckpoint = (ws: Ws, prefix: string, checkpoint: TurnCheckpoint) =>
-    designsForFiles(deps.turnFiles.workspaceFiles(prefix, checkpoint.files), {
-      discover: () => deps.discover(ws.root),
-      snapshotFiles: (design) => deps.snapshotFiles(ws, design),
-    }).pipe(
+  const fromCheckpoint = (
+    prefix: string,
+    checkpoint: TurnCheckpoint,
+    lookup: Parameters<typeof designsForFiles>[1],
+  ) =>
+    designsForFiles(deps.turnFiles.workspaceFiles(prefix, checkpoint.files), lookup).pipe(
       Effect.map((result) => ({
         ...result,
         runId: checkpoint.runId,
@@ -112,11 +116,26 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
     const ws = yield* deps.workspace(input.threadId),
       base = yield* prefix(ws.root);
     if (base === null) return empty();
-    const checkpoints = yield* deps.turnFiles
+    const { newest, checkpoints } = yield* deps.turnFiles
       .turnCheckpoints(input.threadId, input.runId, 20)
-      .pipe(Effect.orElseSucceed(() => []));
+      .pipe(Effect.orElseSucceed(() => ({ newest: null, checkpoints: [] })));
+    if (newest === null) return empty();
+    const discover = yield* Effect.cached(deps.discover(ws.root, newest));
+    const snapshots = new Map<string, Effect.Effect<readonly string[], PcbPreviewError>>();
+    // Untraced: a memo lookup per checkpoint; the source walk it wraps has its own span.
+    const snapshotFiles = Effect.fnUntraced(function* (design: Design) {
+      let snapshot = snapshots.get(design.id);
+      if (!snapshot) {
+        snapshot = yield* Effect.cached(deps.snapshotFiles(ws, design));
+        snapshots.set(design.id, snapshot);
+      }
+      return yield* snapshot;
+    });
     for (const checkpoint of checkpoints) {
-      const result = yield* fromCheckpoint(ws, base, checkpoint);
+      const result = yield* fromCheckpoint(base, checkpoint, {
+        discover: () => discover,
+        snapshotFiles,
+      });
       if (result.designs.length || input.runId !== null) return result;
     }
     return empty();
@@ -128,7 +147,12 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
           base = yield* prefix(ws.root);
         if (base === null) return Stream.empty;
         return deps.turnFiles.turnCheckpointEvents(input.threadId).pipe(
-          Stream.mapEffect((checkpoint) => fromCheckpoint(ws, base, checkpoint)),
+          Stream.mapEffect((checkpoint) =>
+            fromCheckpoint(base, checkpoint, {
+              discover: () => deps.discover(ws.root, checkpoint.checkpointId),
+              snapshotFiles: (design) => deps.snapshotFiles(ws, design),
+            }),
+          ),
           Stream.filter((result) => !!result.designs.length),
         );
       }),
