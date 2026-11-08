@@ -134,6 +134,7 @@ const projectLayer = Layer.unwrap(
 const projections = Layer.mock(ProjectionStore.ProjectionStoreV2)({
   getShellSnapshot: () =>
     Effect.succeed({ schemaVersion: 1, snapshotSequence: 0, threads: [], archivedThreads: [] }),
+  getThreadShell: () => Effect.succeed(null),
 });
 const cloneSources = new Map<string, string>();
 const publicationFetchEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
@@ -3467,6 +3468,21 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         strategy: scenario === "borrowed" ? "reuse" : "clone",
       });
       expect(copy.keepOnComputer).toBe(scenario === "borrowed");
+      const openOrRunning = [
+        "active",
+        "unsettled",
+        "pending",
+        "goal",
+        "another-unsettled",
+      ].includes(scenario);
+      const unused = openOrRunning
+        ? undefined
+        : yield* service.prepareCopy({
+            requestId: `cleanup-${scenario}-unused`,
+            project,
+            rootPath: path.join(parent, "unused"),
+            strategy: "clone",
+          });
       const archived = yield* archiveFor(project);
       const thread: OrchestrationV2ThreadShell = {
         ...archived.projection.thread,
@@ -3644,12 +3660,14 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         expect(yield* child.stdout.pipe(Stream.decodeText(), Stream.runHead)).toEqual(
           Option.some("ready"),
         );
+      const snapshotReads = yield* Ref.make(0);
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(ProjectionStore.ProjectionStoreV2, {
           ...(yield* ProjectionStore.ProjectionStoreV2),
           getShellSnapshot: () =>
             Ref.get(threads).pipe(
+              Effect.tap(() => Ref.update(snapshotReads, (reads) => reads + 1)),
               Effect.map((current) => ({
                 schemaVersion: 1,
                 snapshotSequence: 0,
@@ -3657,6 +3675,19 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
                 archivedThreads: [],
               })),
             ),
+          getThreadShell: (threadId) =>
+            Ref.get(threads).pipe(
+              Effect.map((current) => current.find((shell) => shell.id === threadId) ?? null),
+            ),
+        }),
+        // Earlier tests leave copies in this shared store; the pass sees only this scenario's.
+        Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
+          ...store,
+          receipts: store.receipts.pipe(
+            Effect.map((receipts) =>
+              receipts.filter((receipt) => path.dirname(receipt.copy.rootPath) === parent),
+            ),
+          ),
         }),
         Effect.provideService(
           HostProcess.Platform,
@@ -3673,6 +3704,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const shouldRemove = scenario === "settled" || scenario === "archived";
       expect(yield* fs.exists(rootPath)).toBe(!shouldRemove);
       expect((yield* store.get(copy.id)).copy.state).toBe(shouldRemove ? "released" : "ready");
+      if (unused !== undefined) expect((yield* store.get(unused.id)).copy.state).toBe("ready");
+      if (!shouldRemove) expect(yield* Ref.get(snapshotReads)).toBe(openOrRunning ? 0 : 1);
       if (shouldRemove) {
         expect((yield* store.get(copy.id)).copy.recovery?.sha256).toMatch(/^[a-f0-9]{64}$/);
         const reopened = yield* cleaner.reopenCopy({

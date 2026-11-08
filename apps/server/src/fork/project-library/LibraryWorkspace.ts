@@ -1,7 +1,13 @@
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { libraryCloneFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
-import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type OrchestrationV2ThreadShell,
+  type OrchestrationV2ThreadShellSnapshot,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   type LibraryApplyProfileRequest,
   LibraryError,
@@ -2172,21 +2178,37 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const openOrRunning = (thread: OrchestrationV2ThreadShell) =>
+    thread.activeRunId !== null ||
+    thread.pendingRuntimeRequest !== null ||
+    (thread.pendingBackgroundTasks?.length ?? 0) > 0 ||
+    thread.goal?.status === "active" ||
+    (thread.archivedAt === null && thread.settledOverride !== "settled");
+
   const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
     receipt: LibraryWorkspaceStore.WorkspaceReceipt,
     isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+    shellSnapshot: Effect.Effect<
+      OrchestrationV2ThreadShellSnapshot,
+      ProjectionStore.ProjectionStoreV2Error
+    > = projections.getShellSnapshot(),
   ) {
     const copy = receipt.copy;
     if (!isReclaimableCopy(copy)) return false;
     const bindings = (yield* store.bindings).filter(
       (row) => row.resolved.binding.workingCopyId === copy.id,
     );
+    // Each bound conversation is a small read; the full snapshot below is not.
+    for (const binding of bindings) {
+      const thread = yield* projections.getThreadShell(binding.threadId);
+      if (thread !== null && openOrRunning(thread)) return false;
+    }
     const projectIds = new Set([
       receipt.rootLocalProjectId,
       copy.rootLocalProjectId,
       ...copy.repositories.map((repository) => repository.localProjectId),
     ]);
-    const snapshot = yield* projections.getShellSnapshot();
+    const snapshot = yield* shellSnapshot;
     const related = [...snapshot.threads, ...snapshot.archivedThreads].filter(
       (thread) =>
         projectIds.has(thread.projectId) ||
@@ -2210,17 +2232,7 @@ const make = Effect.gen(function* () {
       related.some((thread) => !bindings.some((binding) => binding.threadId === thread.id))
     )
       return false;
-    if (
-      related.some(
-        (thread) =>
-          thread.activeRunId !== null ||
-          thread.pendingRuntimeRequest !== null ||
-          (thread.pendingBackgroundTasks?.length ?? 0) > 0 ||
-          thread.goal?.status === "active" ||
-          (thread.archivedAt === null && thread.settledOverride !== "settled"),
-      )
-    )
-      return false;
+    if (related.some(openOrRunning)) return false;
     for (const thread of related) if (!(yield* isHistoryAcknowledged(thread.id))) return false;
     const rootExists = yield* fs.exists(copy.rootPath);
     const processPath = rootExists ? copy.rootPath : receipt.removalPath;
@@ -3749,13 +3761,16 @@ const make = Effect.gen(function* () {
           reason: isLibraryError(result.failure) ? result.failure.reason : "io",
         });
     }
+    // One read serves the whole pass. A release checks again with a fresh one before it moves
+    // or removes files, so a stale read only delays a copy to the next pass.
+    const shellSnapshot = yield* Effect.cached(projections.getShellSnapshot());
     for (const candidate of candidates.temporary) {
       const result = yield* Effect.result(
         locks.withLock(
           copyKey(candidate.copy.id),
           Effect.gen(function* () {
             const receipt = yield* store.get(candidate.copy.id);
-            if (!(yield* canCleanUp(receipt, isHistoryAcknowledged))) return;
+            if (!(yield* canCleanUp(receipt, isHistoryAcknowledged, shellSnapshot))) return;
             const review =
               receipt.removalPath !== null && receipt.releaseReviewToken !== null
                 ? { reviewToken: receipt.releaseReviewToken, blockers: [], releaseBlockers: [] }
