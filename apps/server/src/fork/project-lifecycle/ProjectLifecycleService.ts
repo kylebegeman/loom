@@ -121,6 +121,8 @@ const STATUS_ROUNDING_BYTES = 100_000_000;
 /** Simulators, Docker and port listeners are listed this often; processes every tick. */
 const LEASE_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const BUSY_PORT_LOOKUP_TIMEOUT = "5 seconds";
+/** Checkouts registered after a sweep's read stay unprotected until it rereads a full snapshot. */
+export const REGISTERED_CHECKOUTS_MAX_AGE_MS = 2_000;
 
 type Thread = OrchestrationV2ThreadShell;
 
@@ -1693,9 +1695,15 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
 
     yield* mutate.withPermits(1)(
       Effect.gen(function* () {
-        const registered = sweepTmp
-          ? yield* registeredCheckouts().pipe(Effect.orElseSucceed(() => undefined))
-          : undefined;
+        let registered: ReadonlySet<string> | undefined;
+        let registeredAt = Number.NEGATIVE_INFINITY;
+        const sweepRegistered = Effect.gen(function* () {
+          if ((yield* Clock.currentTimeMillis) - registeredAt > REGISTERED_CHECKOUTS_MAX_AGE_MS) {
+            registered = yield* registeredCheckouts().pipe(Effect.orElseSucceed(() => undefined));
+            registeredAt = yield* Clock.currentTimeMillis;
+          }
+          return registered;
+        });
         yield* Effect.forEach(
           [...lanes.values()],
           (lane) =>
@@ -1714,7 +1722,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
               if (sweepTmp && entry.mounted) {
                 yield* pruneLaneTmp({
                   spacePath: lanePaths(lane).spacePath,
-                  protectedPaths: yield* checkoutPathsWithin(lane.laneDir, registered),
+                  protectedPaths: yield* checkoutPathsWithin(lane.laneDir, yield* sweepRegistered),
                   lsofPath: options.lsofPath ?? "lsof",
                 }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
               }

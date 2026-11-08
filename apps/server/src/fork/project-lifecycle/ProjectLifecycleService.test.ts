@@ -27,6 +27,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as Config from "../../config.ts";
 import { DeviceService } from "../../device/DeviceService.ts";
+import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -45,7 +46,11 @@ import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ledgerLine, normalizeStart } from "./leases.ts";
 import { ProjectLifecycleMigrations } from "./migrations.ts";
 import { GB } from "./policy.ts";
-import { makeWith, type ProjectLifecycleOptions } from "./ProjectLifecycleService.ts";
+import {
+  makeWith,
+  REGISTERED_CHECKOUTS_MAX_AGE_MS,
+  type ProjectLifecycleOptions,
+} from "./ProjectLifecycleService.ts";
 import { makeStore } from "./store.ts";
 
 /** Unused service methods fail immediately instead of silently returning a fake value. */
@@ -150,6 +155,7 @@ const setupWith = (
     readonly restoreBranchMissing?: boolean;
     readonly wrapSpaces?: ProjectLifecycleOptions["wrapSpaces"];
     readonly prepareForCleanup?: (threadId: ThreadId) => Effect.Effect<boolean>;
+    readonly failFullSnapshot?: boolean;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -169,16 +175,23 @@ const setupWith = (
     const sent: Array<ThreadManagementSendInput> = [];
     const events = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
     const threadManagement = partial<ThreadManagementService["Service"]>({
-      // Like the projection: the active location leaves archived threads out.
-      getShellSnapshot: (options) =>
-        Effect.succeed({
-          schemaVersion: 1,
-          snapshotSequence: 0,
-          threads: threads.filter(
-            (entry) => options?.location !== "active" || entry.archivedAt === null,
-          ),
-          archivedThreads: [],
-        }),
+      // Like the projection: the active location leaves archived threads out. Only full reads
+      // fail, so the active view the watchdog loads still works.
+      getShellSnapshot: (input) =>
+        options.failFullSnapshot && input?.location !== "active"
+          ? Effect.fail(
+              new Orchestrator.OrchestratorProjectionError({
+                threadId: ThreadId.make("thread:shell"),
+              }),
+            )
+          : Effect.succeed({
+              schemaVersion: 1,
+              snapshotSequence: 0,
+              threads: threads.filter(
+                (entry) => input?.location !== "active" || entry.archivedAt === null,
+              ),
+              archivedThreads: [],
+            }),
       sendToThread: (input) =>
         Effect.sync(() => {
           sent.push(input);
@@ -1041,11 +1054,26 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect(
-    "removes day-old tmp files from active lanes while keeping nested registered checkouts",
-    () =>
+  it.effect.each(["registered first", "registered mid-sweep", "registrations unreadable"] as const)(
+    "sweeps day-old tmp files from active lanes but keeps nested checkouts (%s)",
+    (registration) =>
       Effect.gen(function* () {
-        const t = yield* setup;
+        const beforeMeasure = new Map<string, Effect.Effect<void>>();
+        const t = yield* setupWith({
+          failFullSnapshot: registration === "registrations unreadable",
+          wrapSpaces: (spaces) => ({
+            ...spaces,
+            folder: {
+              ...spaces.folder,
+              isMounted: (paths) =>
+                Effect.suspend(() => {
+                  const hook = beforeMeasure.get(`${paths.spacePath}/tmp`) ?? Effect.void;
+                  beforeMeasure.delete(`${paths.spacePath}/tmp`);
+                  return hook;
+                }).pipe(Effect.andThen(spaces.folder.isMounted(paths))),
+            },
+          }),
+        });
         t.threads.push(
           thread("root", { activeRunId: RunId.make("root-run") }),
           thread("feature", { worktreePath: t.worktree, activeRunId: RunId.make("feature-run") }),
@@ -1060,25 +1088,40 @@ describe("ProjectLifecycleService", () => {
           NodeFS.mkdirSync(nested);
           NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
           NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
-          t.threads.push(
-            thread(`nested-${index}`, {
-              worktreePath: nested,
-              activeRunId: RunId.make(`nested-run-${index}`),
-            }),
+          const register = Effect.sync(() =>
+            t.threads.push(
+              thread(`nested-${index}`, {
+                worktreePath: nested,
+                activeRunId: RunId.make(`nested-run-${index}`),
+              }),
+            ),
           );
+          // The sweep checks each lane's mount just before pruning it; the clock step leaves
+          // an earlier lane's read stale.
+          if (registration === "registered mid-sweep")
+            beforeMeasure.set(
+              tmp,
+              register.pipe(Effect.andThen(TestClock.adjust(REGISTERED_CHECKOUTS_MAX_AGE_MS + 1))),
+            );
+          else yield* register;
         }
 
         yield* TestClock.setTime(
           Math.max(...tmps.map((tmp) => NodeFS.statSync(`${tmp}/scratch`).ctimeMs)) +
             25 * 60 * 60 * 1000,
         );
-        yield* service.tick();
+        const status = yield* service.tick();
+        const verified = registration !== "registrations unreadable";
         for (const tmp of tmps) {
           expect(NodeFS.readFileSync(`${tmp}/feature/keep.txt`, "utf8")).toBe(
             "active thread files",
           );
-          expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
+          expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(!verified);
         }
+        for (const checkout of [t.checkout, t.worktree])
+          expect(laneOf(status, checkout)?.message).toBe(
+            verified ? null : "Could not verify project working files before cleaning this lane.",
+          );
       }).pipe(Effect.scoped),
   );
 
