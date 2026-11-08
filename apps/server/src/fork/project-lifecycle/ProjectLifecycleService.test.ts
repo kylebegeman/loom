@@ -1046,22 +1046,39 @@ describe("ProjectLifecycleService", () => {
     () =>
       Effect.gen(function* () {
         const t = yield* setup;
-        t.threads.push(thread("root", { activeRunId: RunId.make("root-run") }));
-        const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
-        const service = yield* t.create;
-        const tmp = `${parent.laneDir}/space/tmp`;
-        const nested = `${tmp}/feature`;
-        NodeFS.mkdirSync(nested);
-        NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
-        NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
         t.threads.push(
-          thread("nested", { worktreePath: nested, activeRunId: RunId.make("nested-run") }),
+          thread("root", { activeRunId: RunId.make("root-run") }),
+          thread("feature", { worktreePath: t.worktree, activeRunId: RunId.make("feature-run") }),
         );
+        const tmps = [
+          yield* t.service.ensureForThread(ThreadId.make("root")),
+          yield* t.service.ensureForThread(ThreadId.make("feature")),
+        ].map((lane) => `${lane.laneDir}/space/tmp`);
+        const service = yield* t.create;
+        for (const [index, tmp] of tmps.entries()) {
+          const nested = `${tmp}/feature`;
+          NodeFS.mkdirSync(nested);
+          NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
+          NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
+          t.threads.push(
+            thread(`nested-${index}`, {
+              worktreePath: nested,
+              activeRunId: RunId.make(`nested-run-${index}`),
+            }),
+          );
+        }
 
-        yield* TestClock.setTime(NodeFS.statSync(`${tmp}/scratch`).ctimeMs + 25 * 60 * 60 * 1000);
+        yield* TestClock.setTime(
+          Math.max(...tmps.map((tmp) => NodeFS.statSync(`${tmp}/scratch`).ctimeMs)) +
+            25 * 60 * 60 * 1000,
+        );
         yield* service.tick();
-        expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("active thread files");
-        expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
+        for (const tmp of tmps) {
+          expect(NodeFS.readFileSync(`${tmp}/feature/keep.txt`, "utf8")).toBe(
+            "active thread files",
+          );
+          expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
+        }
       }).pipe(Effect.scoped),
   );
 
