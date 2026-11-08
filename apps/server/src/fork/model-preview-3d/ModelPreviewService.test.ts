@@ -309,7 +309,7 @@ const setup = Effect.gen(function* () {
     create,
     getRenders: () => renders,
     getPythonRenders: () => pythonRenders,
-    initGit: () => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd: root }),
+    initGit: (cwd = root) => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd }),
     getGitCalls: () => gitCalls,
     getRefreshCalls: () => refreshCalls,
     getListCalls: () => listCalls,
@@ -1194,6 +1194,26 @@ it.effect(
       expect(result[0]?.models[0]?.path).toBe("models/part.stl");
       expect(t.getRefreshCalls()).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("streamed models are checked in the workspace the thread has when each one lands", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    const worktree = yield* t.fs.makeTempDirectoryScoped({ prefix: "loom-model-worktree-" });
+    yield* t.fs.makeDirectory(t.path.join(worktree, "models"));
+    yield* t.fs.writeFileString(t.path.join(worktree, "models", "new.stl"), "stl");
+    yield* t.initGit(worktree);
+    t.setEvents(
+      Stream.make(checkpointEvent(checkpoint(t.file.threadId, 2, ["models/new.stl"]))).pipe(
+        Stream.tap(() => Effect.sync(() => t.setWorkspace(worktree))),
+      ),
+    );
+    const service = yield* t.create();
+    const result = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId));
+    expect(result.map((turn) => turn.models.map((model) => model.path))).toEqual([
+      ["models/new.stl"],
+    ]);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 it.effect(
   "finds transitive uncached includes, rejects escaped symlinks and bounds source reads",

@@ -370,19 +370,24 @@ export const make = Effect.gen(function* () {
   const turnModelEvents = (threadId: ModelFileRef["threadId"], include?: readonly "build123d"[]) =>
     Stream.unwrap(
       Effect.gen(function* () {
-        const { root } = yield* resolveWorkspace({ threadId, path: "." });
-        const prefix = yield* turnFiles.repoPrefix(root);
-        if (prefix === null) return Stream.empty;
+        // Fail a bad subscription now. Each checkpoint resolves again because a worktree handoff
+        // or a late worktree binding can re-point the thread while the stream stays open.
+        yield* resolveWorkspace({ threadId, path: "." });
         return turnFiles.turnCheckpointEvents(threadId).pipe(
           Stream.mapEffect((checkpoint) =>
-            modelsForCheckpoint(
-              threadId,
-              root,
-              prefix,
-              checkpoint,
-              scanJobs.run(`${root}\0${checkpoint.checkpointId}`, scadScan(root)),
-              include,
-            ),
+            Effect.gen(function* () {
+              const { root } = yield* resolveWorkspace({ threadId, path: "." });
+              const prefix = yield* turnFiles.repoPrefix(root);
+              if (prefix === null) return emptyTurnModels(threadId);
+              return yield* modelsForCheckpoint(
+                threadId,
+                root,
+                prefix,
+                checkpoint,
+                scanJobs.run(`${root}\0${checkpoint.checkpointId}`, scadScan(root)),
+                include,
+              );
+            }),
           ),
           Stream.filter((result) => result.models.length > 0),
         );

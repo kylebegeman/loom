@@ -139,3 +139,38 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
     expect(generations).toEqual(["checkpoint-5", "checkpoint-2"]);
   }),
 );
+it.effect("design events discover in the workspace the thread has when each checkpoint lands", () =>
+  Effect.gen(function* () {
+    let root = "/repo/main";
+    const checkpoint = {
+      runId: RunId.make("run"),
+      checkpointId: CheckpointId.make("checkpoint-2"),
+      turn: 2,
+      files: ["board.kicad_pcb"],
+    };
+    const methods = makeTurnDesigns({
+      workspace: () => Effect.sync(() => ({ root })),
+      discover: (at) => Effect.succeed(at === "/repo/worktree" ? [board] : []),
+      snapshotFiles: () => Effect.succeed([]),
+      turnFiles: {
+        repoPrefix: () => Effect.succeed(""),
+        workspaceFiles,
+        turnCheckpoints: () => Effect.succeed({ newest: null, checkpoints: [] }),
+        turnCheckpointEvents: () =>
+          Stream.make(checkpoint).pipe(
+            Stream.tap(() =>
+              Effect.sync(() => {
+                root = "/repo/worktree";
+              }),
+            ),
+          ),
+      },
+    });
+    const events = yield* methods
+      .turnDesignEvents({ threadId: ThreadId.make("thread") })
+      .pipe(Stream.runCollect);
+    expect(events.map((event) => event.designs.map((design) => design.designId))).toEqual([
+      [board.id],
+    ]);
+  }),
+);
