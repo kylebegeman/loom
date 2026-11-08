@@ -2185,7 +2185,7 @@ const make = Effect.gen(function* () {
     thread.goal?.status === "active" ||
     (thread.archivedAt === null && thread.settledOverride !== "settled");
 
-  const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
+  const threadsAllowCleanUp = Effect.fn("LibraryWorkspace.threadsAllowCleanUp")(function* (
     receipt: LibraryWorkspaceStore.WorkspaceReceipt,
     isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
     shellSnapshot: Effect.Effect<
@@ -2234,6 +2234,13 @@ const make = Effect.gen(function* () {
       return false;
     if (related.some(openOrRunning)) return false;
     for (const thread of related) if (!(yield* isHistoryAcknowledged(thread.id))) return false;
+    return true;
+  });
+
+  const filesAllowCleanUp = Effect.fn("LibraryWorkspace.filesAllowCleanUp")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+  ) {
+    const copy = receipt.copy;
     const rootExists = yield* fs.exists(copy.rootPath);
     const processPath = rootExists ? copy.rootPath : receipt.removalPath;
     if (processPath === null) return false;
@@ -2260,6 +2267,16 @@ const make = Effect.gen(function* () {
     )
       return false;
     return true;
+  });
+
+  const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+  ) {
+    return (
+      (yield* threadsAllowCleanUp(receipt, isHistoryAcknowledged)) &&
+      (yield* filesAllowCleanUp(receipt))
+    );
   });
 
   const removeArchiveCache = Effect.fn("LibraryWorkspace.removeArchiveCache")(function* (
@@ -3761,8 +3778,8 @@ const make = Effect.gen(function* () {
           reason: isLibraryError(result.failure) ? result.failure.reason : "io",
         });
     }
-    // One read serves the pass. It can be stale, so a copy that passes on it checks again with a
-    // fresh read before it is hashed or released.
+    // One read serves the pass. It can be stale, so a copy that passes on it checks its
+    // conversations again with a fresh read, after the slower file checks and before it is hashed.
     const shellSnapshot = yield* Effect.cached(projections.getShellSnapshot());
     for (const candidate of candidates.temporary) {
       const result = yield* Effect.result(
@@ -3771,8 +3788,9 @@ const make = Effect.gen(function* () {
           Effect.gen(function* () {
             const receipt = yield* store.get(candidate.copy.id);
             if (
-              !(yield* canCleanUp(receipt, isHistoryAcknowledged, shellSnapshot)) ||
-              !(yield* canCleanUp(receipt, isHistoryAcknowledged))
+              !(yield* threadsAllowCleanUp(receipt, isHistoryAcknowledged, shellSnapshot)) ||
+              !(yield* filesAllowCleanUp(receipt)) ||
+              !(yield* threadsAllowCleanUp(receipt, isHistoryAcknowledged))
             )
               return;
             const review =
