@@ -767,8 +767,10 @@ apps/server/src/scheduling/Scheduler.ts	server-weight	2
 apps/server/src/scheduling/Scheduler.test.ts	server-weight	3
 apps/server/src/orchestration-v2/ProjectionMaintenance.ts	server-weight	10
 apps/server/src/orchestration-v2/FoundationPersistence.test.ts	server-weight	13
-apps/server/src/orchestration-v2/ThreadSettlementService.ts	server-weight	15
-apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	3
+apps/server/src/orchestration-v2/ThreadSettlementService.ts	server-weight	20
+apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	10
+apps/server/src/orchestration-v2/ThreadPullRequestService.ts	server-weight	2
+apps/server/src/orchestration-v2/ThreadPullRequestService.test.ts	server-weight	8
 apps/server/src/persistence/DatabaseStorage.ts	server-weight	7
 apps/server/src/persistence/DatabaseStorage.test.ts	server-weight	4
 apps/server/src/persistence/Sqlite.ts	server-weight	1
