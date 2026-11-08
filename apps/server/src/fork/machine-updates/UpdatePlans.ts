@@ -1,4 +1,5 @@
 import { UpdatePlanError, type UpdatePlan, type UpdatePlanStatus } from "@t3tools/contracts/fork";
+import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -17,6 +18,12 @@ const UPDATE_QUIET_MS = 30_000;
 const active = (plan: UpdatePlan | null): plan is UpdatePlan =>
   plan !== null &&
   (plan.state === "armed" || plan.state === "waiting" || plan.state === "installing");
+// Another updater can carry this computer past a plan that failed or was cancelled.
+const superseded = (plan: UpdatePlan, currentVersion: string) =>
+  (plan.state === "failed" || plan.state === "cancelled") &&
+  parseSemver(plan.targetVersion) !== null &&
+  parseSemver(currentVersion) !== null &&
+  compareSemverVersions(plan.targetVersion, currentVersion) <= 0;
 
 export class UpdatePlans extends Context.Service<
   UpdatePlans,
@@ -43,7 +50,8 @@ const make = Effect.gen(function* () {
   const wake = yield* Queue.dropping<void>(1);
   const status = Effect.gen(function* () {
     if (loaded.error !== null) return yield* loaded.error;
-    const plan = yield* Ref.get(current);
+    const saved = yield* Ref.get(current);
+    const plan = saved !== null && superseded(saved, runtime.currentVersion) ? null : saved;
     const reported = active(plan) ? yield* handoff.waiting(plan.id) : undefined;
     const waitingAgents = active(plan)
       ? reported !== undefined
