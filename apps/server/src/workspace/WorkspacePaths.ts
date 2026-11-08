@@ -92,6 +92,7 @@ export class WorkspacePaths extends Context.Service<
         readonly createIfMissing?: boolean;
         readonly restoreManagedCheckout?: boolean;
         readonly workspaceLeaseHeld?: boolean;
+        readonly readOnly?: boolean;
       },
     ) => Effect.Effect<
       string,
@@ -152,6 +153,7 @@ const make = Effect.gen(function* () {
       yield* restoreManagedProjectCheckout(
         normalizedWorkspaceRoot,
         options.workspaceLeaseHeld,
+        options.readOnly,
       ).pipe(
         Effect.provide(restorationServices),
         Effect.mapError(

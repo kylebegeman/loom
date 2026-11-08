@@ -214,7 +214,10 @@ export const make = Effect.gen(function* () {
     restoreManagedCheckout = true, // fork: project-lifecycle
   ): Effect.fn.Return<string, WorkspaceEntriesError> {
     // fork: project-lifecycle
-    return yield* workspacePaths.normalizeWorkspaceRoot(cwd, { restoreManagedCheckout });
+    return yield* workspacePaths.normalizeWorkspaceRoot(cwd, {
+      restoreManagedCheckout,
+      readOnly: true,
+    });
   });
 
   const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(

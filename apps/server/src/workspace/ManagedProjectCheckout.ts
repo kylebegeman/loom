@@ -449,6 +449,7 @@ export const relocateManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.
 export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.restore")(function* (
   workspaceRoot: string,
   workspaceLeaseHeld = false,
+  readOnly = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -501,14 +502,18 @@ export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
     return true;
   });
   if (workspaceLeaseHeld) return yield* restore;
-  // Release marks its receipt before it moves the folder, so a present folder whose receipt reads
-  // unreleased needs no lease. Anything else, including a failed read, re-checks under the lease.
-  const nothingToRestore = yield* Effect.gen(function* () {
-    if (!(yield* fs.exists(cwd))) return false;
-    const found = yield* readReceipt(cwd);
-    return found === null || (!found.legacy && !found.receipt.released);
-  }).pipe(Effect.orElseSucceed(() => false));
-  return nothingToRestore ? false : yield* withWorkspaceLease(cwd, restore);
+  // Read-only callers accept a present, unreleased checkout without waiting; any other state,
+  // including a failed read, re-checks under the lease. Callers that act on the checkout always
+  // wait for the lease so an in-flight release finishes first.
+  if (readOnly) {
+    const nothingToRestore = yield* Effect.gen(function* () {
+      if (!(yield* fs.exists(cwd))) return false;
+      const found = yield* readReceipt(cwd);
+      return found === null || (!found.legacy && !found.receipt.released);
+    }).pipe(Effect.orElseSucceed(() => false));
+    if (nothingToRestore) return false;
+  }
+  return yield* withWorkspaceLease(cwd, restore);
 }, mapFailure);
 
 const capabilities = (status: string, set: "CapEff" | "CapPrm") => {
