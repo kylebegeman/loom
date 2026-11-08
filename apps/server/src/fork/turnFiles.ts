@@ -14,7 +14,11 @@ export interface TurnCheckpoint {
   readonly files: ReadonlyArray<string>;
 }
 
-/** Shared-job key. A rollback re-marks newer rows stale, so the status is part of it. */
+/**
+ * Shared-job key. A capture or a first rollback (newer ready rows turn stale) moves it. A failed
+ * run writes no row and a repeat rollback re-marks nothing, so a lookup after either can still
+ * join a scan already in flight.
+ */
 export const turnGeneration = (checkpoint: {
   readonly checkpointId: CheckpointId;
   readonly status: OrchestrationV2Checkpoint["status"];

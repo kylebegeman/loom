@@ -1696,11 +1696,16 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     yield* mutate.withPermits(1)(
       Effect.gen(function* () {
         let registered: ReadonlySet<string> | undefined;
-        let registeredAt = Number.NEGATIVE_INFINITY;
+        let registeredAt: bigint | undefined;
         const sweepRegistered = Effect.gen(function* () {
-          if ((yield* Clock.currentTimeMillis) - registeredAt > REGISTERED_CHECKOUTS_MAX_AGE_MS) {
+          // Monotonic, so a wall-clock correction during the sweep cannot stretch a read's life.
+          const age =
+            registeredAt === undefined
+              ? undefined
+              : (yield* Clock.monotonicTimeNanos) - registeredAt;
+          if (age === undefined || age > BigInt(REGISTERED_CHECKOUTS_MAX_AGE_MS) * 1_000_000n) {
             registered = yield* registeredCheckouts().pipe(Effect.orElseSucceed(() => undefined));
-            registeredAt = yield* Clock.currentTimeMillis;
+            registeredAt = yield* Clock.monotonicTimeNanos;
           }
           return registered;
         });

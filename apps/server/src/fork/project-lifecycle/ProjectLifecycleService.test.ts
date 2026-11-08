@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics nodeBuiltinImport:off - Lanes are real folders the test inspects directly.
 import * as NodeChildProcess from "node:child_process";
@@ -1054,7 +1055,12 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect.each(["registered first", "registered mid-sweep", "registrations unreadable"] as const)(
+  it.effect.each([
+    "registered first",
+    "registered mid-sweep",
+    "registered after a clock correction",
+    "registrations unreadable",
+  ] as const)(
     "sweeps day-old tmp files from active lanes but keeps nested checkouts (%s)",
     (registration) =>
       Effect.gen(function* () {
@@ -1097,13 +1103,23 @@ describe("ProjectLifecycleService", () => {
             ),
           );
           // The sweep checks each lane's mount just before pruning it; the clock step leaves
-          // an earlier lane's read stale.
-          if (registration === "registered mid-sweep")
+          // an earlier lane's read stale, even after the wall clock is corrected backward.
+          if (registration === "registered first" || registration === "registrations unreadable")
+            yield* register;
+          else
             beforeMeasure.set(
               tmp,
-              register.pipe(Effect.andThen(TestClock.adjust(REGISTERED_CHECKOUTS_MAX_AGE_MS + 1))),
+              register.pipe(
+                Effect.andThen(
+                  registration === "registered after a clock correction"
+                    ? Clock.currentTimeMillis.pipe(
+                        Effect.flatMap((now) => TestClock.setTime(now - 60_000)),
+                      )
+                    : Effect.void,
+                ),
+                Effect.andThen(TestClock.adjust(REGISTERED_CHECKOUTS_MAX_AGE_MS + 1)),
+              ),
             );
-          else yield* register;
         }
 
         yield* TestClock.setTime(
