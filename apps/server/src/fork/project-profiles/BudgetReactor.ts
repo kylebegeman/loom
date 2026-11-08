@@ -99,10 +99,15 @@ export const startBudgetReactor = Effect.gen(function* () {
   });
   yield* forkParked(run.pipe(Effect.retry(Schedule.spaced("5 seconds"))));
   yield* forkParked(
-    sink.stream({ eventType: "thread.deleted", bounded: false }).pipe(
-      Stream.runForEach(() => store.cleanup()),
-      Effect.retry(Schedule.spaced("5 seconds")),
-    ),
+    Effect.gen(function* () {
+      // cleanup is a global sweep that never reads the event, so one pass covers all prior deletions and each chunk.
+      const afterSequence = yield* sink.latestSequence();
+      yield* store.cleanup();
+      yield* Stream.runForEachArray(
+        sink.stream({ afterSequence, eventType: "thread.deleted", bounded: false }),
+        () => store.cleanup(),
+      );
+    }).pipe(Effect.retry(Schedule.spaced("5 seconds"))),
   );
   yield* forkParked(
     store.cleanup().pipe(Effect.repeat(Schedule.spaced("1 hour")), Effect.ignore({ log: true })),
