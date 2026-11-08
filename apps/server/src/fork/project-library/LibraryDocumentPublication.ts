@@ -43,6 +43,11 @@ const decodeBatch = Schema.decodeUnknownEffect(
 const invalid = () => new LibraryError({ reason: "invalid" });
 const io = (cause: unknown) => new LibraryError({ reason: "io", cause });
 
+type DocumentSnapshot = {
+  readonly commit: string;
+  readonly documents: ReadonlyArray<LibraryDocument>;
+};
+
 export class LibraryDocumentSource extends Context.Service<
   LibraryDocumentSource,
   {
@@ -50,10 +55,9 @@ export class LibraryDocumentSource extends Context.Service<
       readonly projectId: string;
       readonly resource: LibraryResource;
       readonly cwd: string;
-    }) => Effect.Effect<
-      { readonly commit: string; readonly documents: ReadonlyArray<LibraryDocument> },
-      LibraryError
-    >;
+      /** This resource's last snapshot, reused while the resource resolves to the same commit. */
+      readonly previous?: DocumentSnapshot | undefined;
+    }) => Effect.Effect<DocumentSnapshot, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryDocumentPublication/LibraryDocumentSource") {}
 
@@ -111,6 +115,7 @@ export const layerSource = Layer.effect(
       readonly projectId: string;
       readonly resource: LibraryResource;
       readonly cwd: string;
+      readonly previous?: DocumentSnapshot | undefined;
     }) {
       const branch = input.resource.defaultBranch;
       let commit: string;
@@ -161,6 +166,7 @@ export const layerSource = Layer.effect(
         ).trim();
       }
       if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(commit)) return yield* invalid();
+      if (input.previous?.commit === commit) return input.previous;
       const tree = yield* git(input.cwd, [
         "ls-tree",
         "-z",
@@ -258,6 +264,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
   }) {
     const sql = yield* SqlClient.SqlClient;
     const lock = yield* Semaphore.make(1);
+    const snapshots = new Map<string, DocumentSnapshot>();
     const deliver = Effect.fn("LibraryDocumentPublication.deliver")(function* (
       request: LibraryDocumentsPublishRequest,
       payload: string,
@@ -279,6 +286,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
       const info = yield* input.publisher.info;
       if (!info.features?.includes(LIBRARY_DECISIONS_FEATURE)) return;
       const seen = new Set<string>();
+      const live = new Set<string>();
       const projects = new Map<string, LibraryProject>();
       let failure: LibraryError | null = null;
       for (const receipt of yield* input.workspaces.receipts) {
@@ -306,6 +314,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
             );
             if (!resource) continue;
             const key = encodeJson([project.id, resource.id]);
+            live.add(key);
             if (seen.has(key)) continue;
             const resourceResult = yield* Effect.gen(function* () {
               // A response can be lost after acceptance. Replay the immutable request before
@@ -331,7 +340,9 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
                 projectId: project.id,
                 resource,
                 cwd: repository.path,
+                previous: snapshots.get(key),
               });
+              snapshots.set(key, snapshot);
               const saved = yield* sql<{
                 path: string;
                 anchor: string;
@@ -380,13 +391,15 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
         }).pipe(Effect.result);
         if (result._tag === "Failure") failure ??= result.failure;
       }
+      for (const key of snapshots.keys()) if (!live.has(key)) snapshots.delete(key);
       if (failure) return yield* failure;
     }, lock.withPermit);
     const run = Effect.all(
       [
         report().pipe(Effect.ignore, Effect.repeat(Schedule.spaced(DOCUMENT_REPORT_INTERVAL))),
+        // Registrations buffered while a report runs arrive as one pull and share one report.
         input.publisher.copyRegistrations.pipe(
-          Stream.runForEach(() => report().pipe(Effect.ignore)),
+          Stream.runForEachArray(() => report().pipe(Effect.ignore)),
         ),
       ],
       { concurrency: "unbounded", discard: true },

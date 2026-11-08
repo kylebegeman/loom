@@ -245,19 +245,23 @@ describe("document publication", () => {
     ),
   );
 
-  it.effect("only reads this computer's registered copies and current repository resources", () =>
+  it.effect("only reads and keeps snapshots for this computer's registered copies' resources", () =>
     run(({ publication, options, copies }) =>
       Effect.gen(function* () {
-        let reads = 0;
+        const snapshot = { commit: "a".repeat(40), documents: [] };
+        const previous: unknown[] = [];
         const publisher = yield* Publication.makeDocumentPublication({
           ...options,
           source: {
-            read: () => {
-              reads++;
-              return Effect.succeed({ commit: "a".repeat(40), documents: [] });
+            read: (input) => {
+              previous.push(input.previous);
+              return Effect.succeed(snapshot);
             },
           },
         });
+        yield* publisher.report;
+        yield* publisher.report;
+        expect(previous).toEqual([undefined, snapshot]);
         yield* Ref.set(copies, [
           { ...receipt, copy: { ...copy, environmentId: EnvironmentId.make("other") } },
           { ...receipt, copy: { ...copy, registered: false } },
@@ -271,7 +275,10 @@ describe("document publication", () => {
         ]);
         yield* publication.report;
         yield* publisher.report;
-        expect(reads).toBe(0);
+        expect(previous).toHaveLength(2);
+        yield* Ref.set(copies, [receipt]);
+        yield* publisher.report;
+        expect(previous).toEqual([undefined, snapshot, undefined]);
       }),
     ),
   );
@@ -412,8 +419,8 @@ describe("document publication", () => {
     ),
   );
 
-  it.effect("runs every 15 minutes and after copy registration", () =>
-    run(({ publication, rows, registrations, published, observed }) =>
+  it.effect("runs every 15 minutes and once per burst of copy registrations", () =>
+    run(({ publication, options, rows, registrations, published, observed }) =>
       Effect.gen(function* () {
         yield* Effect.forkChild(publication.run);
         yield* Deferred.await(observed);
@@ -424,6 +431,31 @@ describe("document publication", () => {
         yield* Ref.set(rows, [yield* document(3)]);
         yield* TestClock.adjust(Publication.DOCUMENT_REPORT_INTERVAL);
         yield* Queue.take(published);
+        const reads = yield* Ref.make(0);
+        const go = yield* Deferred.make<void>();
+        const drained = yield* Deferred.make<void>();
+        const burst = yield* Publication.makeDocumentPublication({
+          ...options,
+          publisher: {
+            ...options.publisher,
+            copyRegistrations: Stream.fromEffectDrain(Deferred.await(go)).pipe(
+              Stream.concat(Stream.fromArray([copy, copy, copy, copy, copy])),
+              Stream.concat(Stream.fromEffectDrain(Deferred.succeed(drained, undefined))),
+            ),
+          },
+          source: {
+            read: (input) =>
+              Ref.update(reads, (count) => count + 1).pipe(
+                Effect.andThen(options.source.read(input)),
+              ),
+          },
+        });
+        yield* Ref.set(rows, [yield* document(4)]);
+        yield* Effect.forkChild(burst.run);
+        yield* Queue.take(published);
+        yield* Deferred.succeed(go, undefined);
+        yield* Deferred.await(drained);
+        expect(yield* Ref.get(reads)).toBe(2);
       }),
     ),
   );
@@ -506,10 +538,12 @@ describe("committed document source", () => {
         yield* git(["commit", "-m", "partial directory glob"]);
         const runner = yield* ProcessRunner.ProcessRunner;
         const listings: ReadonlyArray<string>[] = [];
+        let shows = 0;
         const reader = yield* Publication.LibraryDocumentSource.pipe(
           Effect.provide(Publication.layerSource),
           Effect.provideService(ProcessRunner.ProcessRunner, {
             run: (input) => {
+              if (input.args.includes("show")) shows++;
               if (input.args.includes("ls-tree")) {
                 listings.push(input.args.slice(input.args.indexOf("--") + 1));
                 if (!input.args.includes("--"))
@@ -533,13 +567,21 @@ describe("committed document source", () => {
           "docs/decisions/0001-recovery.md",
         ]);
         expect(listings).toEqual([["loom-documents.json"], ["docs/"]]);
+        expect(shows).toBe(2);
+        listings.length = 0;
+        shows = 0;
+        expect(
+          yield* reader.read({ projectId: project.id, resource, cwd, previous: snapshot }),
+        ).toEqual(snapshot);
+        expect(listings).toEqual([]);
+        expect(shows).toBe(0);
         yield* fs.writeFileString(`${cwd}/loom-documents.json`, '{"version":1,"sources":[]}');
         yield* git(["add", "."]);
         yield* git(["commit", "-m", "no sources"]);
-        listings.length = 0;
-        expect((yield* reader.read({ projectId: project.id, resource, cwd })).documents).toEqual(
-          [],
-        );
+        expect(
+          (yield* reader.read({ projectId: project.id, resource, cwd, previous: snapshot }))
+            .documents,
+        ).toEqual([]);
         expect(listings).toEqual([["loom-documents.json"]]);
       }),
     ),
