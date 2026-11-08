@@ -141,14 +141,17 @@ export const makeTurnDesigns = <Ws extends { root: string }>(deps: {
     Stream.unwrap(
       Effect.gen(function* () {
         // Fail a bad subscription now. Each checkpoint resolves again because a worktree handoff
-        // or a late worktree binding can re-point the thread while the stream stays open.
+        // or a late worktree binding can re-point the thread while the stream stays open. One
+        // that fails to resolve is skipped rather than ending the stream.
         yield* deps.workspace(input.threadId);
         return deps.turnFiles.turnCheckpointEvents(input.threadId).pipe(
           Stream.mapEffect((checkpoint) =>
             Effect.gen(function* () {
-              const ws = yield* deps.workspace(input.threadId),
-                base = yield* prefix(ws.root);
-              if (base === null) return empty();
+              const ws = yield* deps
+                .workspace(input.threadId)
+                .pipe(Effect.orElseSucceed(() => null));
+              const base = ws === null ? null : yield* prefix(ws.root);
+              if (ws === null || base === null) return empty();
               return yield* fromCheckpoint(base, checkpoint, {
                 discover: () => deps.discover(ws.root, turnGeneration(checkpoint)),
                 snapshotFiles: (design) => deps.snapshotFiles(ws, design),

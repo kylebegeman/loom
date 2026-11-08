@@ -1207,15 +1207,22 @@ it.effect("streamed models are checked in the workspace the thread has when each
     yield* t.fs.makeDirectory(t.path.join(worktree, "models"));
     yield* t.fs.writeFileString(t.path.join(worktree, "models", "new.stl"), "stl");
     yield* t.initGit(worktree);
+    // Turn 2 lands while the workspace cannot be resolved; turn 3 lands in the new worktree.
+    const unresolved = checkpointEvent(checkpoint(t.file.threadId, 2, ["models/new.stl"]));
+    const landed = checkpointEvent(checkpoint(t.file.threadId, 3, ["models/new.stl"]));
     t.setEvents(
-      Stream.make(checkpointEvent(checkpoint(t.file.threadId, 2, ["models/new.stl"]))).pipe(
-        Stream.tap(() => Effect.sync(() => t.setWorkspace(worktree))),
+      Stream.make(unresolved, landed).pipe(
+        Stream.tap((event) =>
+          Effect.sync(() =>
+            t.setWorkspace(event === unresolved ? t.path.join(worktree, "missing") : worktree),
+          ),
+        ),
       ),
     );
     const service = yield* t.create();
     const result = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId));
-    expect(result.map((turn) => turn.models.map((model) => model.path))).toEqual([
-      ["models/new.stl"],
+    expect(result.map((turn) => [turn.turn, turn.models.map((model) => model.path)])).toEqual([
+      [3, ["models/new.stl"]],
     ]);
   }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );

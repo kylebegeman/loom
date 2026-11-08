@@ -371,14 +371,21 @@ export const make = Effect.gen(function* () {
     Stream.unwrap(
       Effect.gen(function* () {
         // Fail a bad subscription now. Each checkpoint resolves again because a worktree handoff
-        // or a late worktree binding can re-point the thread while the stream stays open.
+        // or a late worktree binding can re-point the thread while the stream stays open. One
+        // that fails to resolve is skipped rather than ending the stream.
         yield* resolveWorkspace({ threadId, path: "." });
         return turnFiles.turnCheckpointEvents(threadId).pipe(
           Stream.mapEffect((checkpoint) =>
             Effect.gen(function* () {
-              const { root } = yield* resolveWorkspace({ threadId, path: "." });
-              const prefix = yield* turnFiles.repoPrefix(root);
-              if (prefix === null) return emptyTurnModels(threadId);
+              const root = yield* resolveWorkspace({ threadId, path: "." }).pipe(
+                Effect.map((workspace) => workspace.root),
+                Effect.orElseSucceed(() => null),
+              );
+              const prefix =
+                root === null
+                  ? null
+                  : yield* turnFiles.repoPrefix(root).pipe(Effect.orElseSucceed(() => null));
+              if (root === null || prefix === null) return emptyTurnModels(threadId);
               return yield* modelsForCheckpoint(
                 threadId,
                 root,

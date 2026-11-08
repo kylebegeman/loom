@@ -142,27 +142,33 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
 );
 it.effect("design events discover in the workspace the thread has when each checkpoint lands", () =>
   Effect.gen(function* () {
-    let root = "/repo/main";
-    const checkpoint = {
-      runId: RunId.make("run"),
-      checkpointId: CheckpointId.make("checkpoint-2"),
-      turn: 2,
+    let root: string | null = "/repo/main";
+    const checkpoint = (turn: number) => ({
+      runId: RunId.make(`run-${turn}`),
+      checkpointId: CheckpointId.make(`checkpoint-${turn}`),
+      turn,
       status: "ready" as const,
       files: ["board.kicad_pcb"],
-    };
+    });
     const methods = makeTurnDesigns({
-      workspace: () => Effect.sync(() => ({ root })),
+      workspace: () =>
+        Effect.suspend(() =>
+          root === null
+            ? Effect.fail(new PcbPreviewError({ reason: "workspace-missing", message: "gone" }))
+            : Effect.succeed({ root }),
+        ),
       discover: (at) => Effect.succeed(at === "/repo/worktree" ? [board] : []),
       snapshotFiles: () => Effect.succeed([]),
       turnFiles: {
         repoPrefix: () => Effect.succeed(""),
         workspaceFiles,
         turnCheckpoints: () => Effect.succeed({ generation: null, checkpoints: [] }),
+        // Turn 2 lands while the workspace cannot be resolved; turn 3 lands in the new worktree.
         turnCheckpointEvents: () =>
-          Stream.make(checkpoint).pipe(
-            Stream.tap(() =>
+          Stream.make(checkpoint(2), checkpoint(3)).pipe(
+            Stream.tap((next) =>
               Effect.sync(() => {
-                root = "/repo/worktree";
+                root = next.turn === 2 ? null : "/repo/worktree";
               }),
             ),
           ),
@@ -171,8 +177,8 @@ it.effect("design events discover in the workspace the thread has when each chec
     const events = yield* methods
       .turnDesignEvents({ threadId: ThreadId.make("thread") })
       .pipe(Stream.runCollect);
-    expect(events.map((event) => event.designs.map((design) => design.designId))).toEqual([
-      [board.id],
-    ]);
+    expect(
+      events.map((event) => [event.turn, event.designs.map((design) => design.designId)]),
+    ).toEqual([[3, [board.id]]]);
   }),
 );

@@ -121,7 +121,7 @@ const STATUS_ROUNDING_BYTES = 100_000_000;
 /** Simulators, Docker and port listeners are listed this often; processes every tick. */
 const LEASE_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const BUSY_PORT_LOOKUP_TIMEOUT = "5 seconds";
-/** Checkouts registered after a sweep's read stay unprotected until it rereads a full snapshot. */
+/** The tmp sweep rereads registered checkouts for a lane once its last read is this old. */
 export const REGISTERED_CHECKOUTS_MAX_AGE_MS = 2_000;
 
 type Thread = OrchestrationV2ThreadShell;
