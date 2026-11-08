@@ -87,6 +87,10 @@ describe("ThreadPullRequestServiceV2 reads", () => {
       deletedAt: null,
     };
   };
+  // fork: server-weight -- branch lookups run only in a project inside a repository.
+  const projectRepositoryFileSystem = FileSystem.layerNoop({
+    exists: (path) => Effect.succeed(path === "/workspace/project/.git"),
+  });
 
   it.effect("does not sweep branch pull requests while no client is connected", () =>
     Effect.scoped(
@@ -155,7 +159,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             SecureRandom.SecureRandom,
             SecureRandom.make((size) => new Uint8Array(size).fill(1)),
           ),
-          FileSystem.layerNoop({}),
+          projectRepositoryFileSystem, // fork: server-weight
           Path.layer,
         );
         yield* Effect.gen(function* () {
@@ -191,7 +195,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
     // A folder that outlived its .git makes git fail with not_a_repository.
     {
       worktree: "a folder without .git",
-      existingPaths: ["/workspace/worktree"],
+      existingPaths: ["/workspace/worktree", "/workspace/project/.git"], // fork: server-weight
       unreadablePaths: [],
       cwd: "/workspace/project",
     },
@@ -203,9 +207,16 @@ describe("ThreadPullRequestServiceV2 reads", () => {
     },
     {
       worktree: "a missing folder",
-      existingPaths: [],
+      existingPaths: ["/workspace/project/.git"], // fork: server-weight
       unreadablePaths: [],
       cwd: "/workspace/project",
+    },
+    // fork: server-weight -- a released checkout keeps its identity, not its repository.
+    {
+      worktree: "a missing folder outside any repository",
+      existingPaths: [],
+      unreadablePaths: [],
+      cwd: null,
     },
   ] as const)(
     "looks up a branch whose worktree is $worktree in $cwd",
@@ -299,7 +310,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             yield* service.drain;
           }).pipe(Effect.provide(dependencies));
 
-          expect(lookupCwds).toEqual([cwd]);
+          expect(lookupCwds).toEqual(cwd === null ? [] : [cwd]); // fork: server-weight
         }),
       ),
   );
@@ -390,7 +401,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
             SecureRandom.SecureRandom,
             SecureRandom.make((size) => new Uint8Array(size).fill(1)),
           ),
-          FileSystem.layerNoop({}),
+          projectRepositoryFileSystem, // fork: server-weight
           Path.layer,
         );
         yield* Effect.gen(function* () {
@@ -537,7 +548,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
               SecureRandom.SecureRandom,
               SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
-            FileSystem.layerNoop({}),
+            projectRepositoryFileSystem, // fork: server-weight
             Path.layer,
           );
           yield* Effect.gen(function* () {

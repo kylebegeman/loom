@@ -87,6 +87,25 @@ export function projectWorkspaceMatchesSnapshot(
   );
 }
 
+// fork: server-weight -- git outside a repository fails with not_a_repository. Walk the physical
+// path as git does; an unreadable .git counts, so git still runs there and reports it. Untraced:
+// it runs per project root inside each sweep's span.
+export const insideRepository = Effect.fnUntraced(function* (
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  folder: string,
+) {
+  let current = yield* fileSystem.realPath(folder).pipe(Effect.orElseSucceed(() => folder));
+  while (
+    !(yield* fileSystem.exists(path.join(current, ".git")).pipe(Effect.orElseSucceed(() => true)))
+  ) {
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+  return true;
+});
+
 const BACKFILL_ATTEMPTS = 5;
 
 interface RefreshRequest {
@@ -189,6 +208,14 @@ export const make = Effect.gen(function* () {
               .pipe(Effect.orElseSucceed(() => true)))
               ? first.worktreePath
               : project.workspaceRoot;
+          // fork: server-weight -- a released checkout keeps its identity, not its repository.
+          if (
+            first.branch !== null &&
+            cwd === project.workspaceRoot &&
+            !(yield* insideRepository(fileSystem, path, cwd))
+          ) {
+            return finishBackfill(group);
+          }
           const detected =
             first.branch === null
               ? null

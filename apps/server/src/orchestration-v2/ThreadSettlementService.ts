@@ -11,6 +11,7 @@ import {
   type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import * as Cache from "effect/Cache"; // fork: server-weight
 import * as Cause from "effect/Cause";
 // fork: project-lifecycle -- settle cleanup holds the workspace lease and requests a storage sweep.
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
@@ -40,6 +41,7 @@ import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { insideRepository } from "./ThreadPullRequestService.ts"; // fork: server-weight
 
 export interface SettlementPullRequest {
   readonly state: "open" | "closed" | "merged";
@@ -400,6 +402,11 @@ export const make = Effect.gen(function* () {
           thread.branchPullRequest != null,
       );
     const lookupCwdByThreadId = new Map<string, string>();
+    // fork: server-weight
+    const rootsInRepository = yield* Cache.make({
+      capacity: projects.size,
+      lookup: (root: string) => insideRepository(fileSystem, path, root),
+    });
     yield* Effect.forEach(
       lookupCandidates,
       (thread) =>
@@ -408,15 +415,16 @@ export const make = Effect.gen(function* () {
           if (project === undefined || thread.branch === null) return;
           // A worktree folder can outlive its .git, and git there fails with not_a_repository.
           // An unreadable .git keeps the worktree, so git fails there and the thread is skipped.
-          lookupCwdByThreadId.set(
-            thread.id,
+          const cwd =
             thread.worktreePath !== null &&
-              (yield* fileSystem
-                .exists(path.join(thread.worktreePath, ".git"))
-                .pipe(Effect.orElseSucceed(() => true)))
+            (yield* fileSystem
+              .exists(path.join(thread.worktreePath, ".git"))
+              .pipe(Effect.orElseSucceed(() => true)))
               ? thread.worktreePath
-              : project.workspaceRoot,
-          );
+              : project.workspaceRoot;
+          // fork: server-weight -- git fails outside a repository, so such a thread gets no cwd.
+          if (cwd === project.workspaceRoot && !(yield* Cache.get(rootsInRepository, cwd))) return;
+          lookupCwdByThreadId.set(thread.id, cwd);
         }),
       { concurrency: 8, discard: true },
     );
@@ -525,6 +533,7 @@ export const make = Effect.gen(function* () {
       if (thread.branch === null) return null;
       const cwd = lookupCwdByThreadId.get(thread.id);
       if (cwd === undefined) {
+        if (projects.has(thread.projectId)) return undefined; // fork: server-weight
         return yield* Effect.die(new Error("thread project not found"));
       }
       const refresh = group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
