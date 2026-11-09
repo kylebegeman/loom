@@ -65,20 +65,10 @@ const grant = (allowed: boolean): AuthSessionState => ({
   },
   // fork: pcb-preview
   scopes: allowed
-    ? [
-        AuthOrchestrationReadScope,
-        AuthOrchestrationOperateScope,
-        AuthTerminalOperateScope,
-        AuthEnvironmentMaintainScope,
-      ]
+    ? [AuthOrchestrationReadScope, AuthOrchestrationOperateScope, AuthTerminalOperateScope]
     : [],
   permissions: allowed
-    ? [
-        AuthOrchestrationReadScope,
-        AuthOrchestrationOperateScope,
-        AuthTerminalOperateScope,
-        AuthEnvironmentMaintainScope,
-      ]
+    ? [AuthOrchestrationReadScope, AuthOrchestrationOperateScope, AuthTerminalOperateScope]
     : [],
 });
 const runtime = Atom.runtime(
