@@ -5177,6 +5177,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
   it.effect("forgets a cancelled release only while its files are still in place", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const service = yield* LibraryWorkspace.LibraryWorkspace;
       const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
       const { copy, removalPath } = yield* interruptedRelease("release-cancelled");
@@ -5186,6 +5187,15 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(yield* service.cancelRelease({ ...request, requestId: "another-release" })).toBe(
         "none",
       );
+      const parent = path.dirname(copy.rootPath);
+      yield* fs.rename(parent, `${parent}-unplugged`);
+      const unplugged = yield* service
+        .cancelRelease(request)
+        .pipe(
+          Effect.flip,
+          Effect.ensuring(fs.rename(`${parent}-unplugged`, parent).pipe(Effect.orDie)),
+        );
+      expect(unplugged.message).toContain("Connect the disk");
       expect(yield* service.cancelRelease(request)).toBe("cleared");
       expect(yield* store.get(copy.id)).toMatchObject({
         removalPath: null,
@@ -5194,7 +5204,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
-  it.effect("keeps both a Cancel's clear and a launch that picks the copy at the same time", () =>
+  it.effect("keeps a launch's registration through a Cancel or a write from an earlier read", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const service = yield* LibraryWorkspace.LibraryWorkspace;
@@ -5232,6 +5242,15 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(saved.registrationRequests?.map((request) => request.requestId)).toContain(
         "launch-raced",
       );
+      // Archive, removal and retention writes commit the receipt they read before a long step.
+      const beforeArchive = yield* store.get(copy.id);
+      expect(
+        (yield* service.prepareCopy({ requestId: "launch-later", project, strategy: "clone" })).id,
+      ).toBe(copy.id);
+      yield* store.put(beforeArchive);
+      expect(
+        (yield* store.get(copy.id)).registrationRequests?.map((request) => request.requestId),
+      ).toEqual(expect.arrayContaining(["launch-raced", "launch-later"]));
     }),
   );
 

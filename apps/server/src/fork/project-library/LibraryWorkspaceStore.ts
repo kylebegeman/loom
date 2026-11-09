@@ -496,11 +496,23 @@ const make = Effect.gen(function* () {
         mapIo(
           Effect.gen(function* () {
             const database = yield* read;
+            const stored = database.receipts.find((row) => row.copy.id === receipt.copy.id);
+            // Launches register on a copy without its lock, so a write from an earlier read keeps
+            // the registrations added since. They are only ever added.
+            const added = (stored?.registrationRequests ?? []).filter(
+              (request) =>
+                !receipt.registrationRequests?.some((kept) => kept.requestId === request.requestId),
+            );
             yield* write({
               ...database,
               receipts: [
                 ...database.receipts.filter((row) => row.copy.id !== receipt.copy.id),
-                receipt,
+                added.length === 0
+                  ? receipt
+                  : {
+                      ...receipt,
+                      registrationRequests: [...(receipt.registrationRequests ?? []), ...added],
+                    },
               ],
             });
           }),

@@ -75,6 +75,8 @@ const denied = (reason: "session" | "access" | "outside" | "turn" | "workload" =
               ? "This device's access level doesn't allow this kind of file work. Use a device with a higher access level."
               : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   });
+const SET_ASIDE =
+  "Loom already moved these files aside to remove them. Resume this operation to finish removing them.";
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 // In-app agents act as their conversation; every outside agent's MCP session shares one subject.
 const isAgent = (subject: string) => subject.startsWith("workload:") || subject === "mcp-client";
@@ -1023,11 +1025,7 @@ const make = Effect.gen(function* () {
         request.kind === "release" &&
         (yield* workspace.cancelRelease(request.input)) === "set-aside"
       )
-        return yield* new LibraryError({
-          reason: "blocked",
-          detail:
-            "Loom already moved these files aside to remove them. Resume this operation to finish removing them.",
-        });
+        return yield* new LibraryError({ reason: "blocked", detail: SET_ASIDE });
       return yield* save({
         ...row.operation,
         state: "cancelled",
@@ -1219,17 +1217,36 @@ const make = Effect.gen(function* () {
         id: string;
       }>`SELECT id FROM fork_library_operations WHERE state IN ('queued','running')`;
       for (const row of rows) yield* start(row.id);
-      // Cancels before cancelRelease existed left their removal recorded, blocking a new Remove.
+      // Cancels before cancelRelease existed left removals recorded. Files still in place are
+      // forgotten; files already set aside wait for a Resume to finish removing them.
       const cancelled = yield* sql<{
+        id: string;
         request_json: string;
-      }>`SELECT request_json FROM fork_library_operations WHERE state='cancelled'`;
+      }>`SELECT id,request_json FROM fork_library_operations WHERE state='cancelled'`;
       for (const row of cancelled)
-        yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
-          Effect.flatMap((request) =>
-            request.kind === "release" ? workspace.cancelRelease(request.input) : Effect.void,
-          ),
-          Effect.ignore,
-        );
+        yield* lock
+          .withLock(
+            row.id,
+            Effect.gen(function* () {
+              const request = yield* Schema.decodeEffect(requestCodec)(row.request_json);
+              if (
+                request.kind !== "release" ||
+                (yield* workspace.cancelRelease(request.input)) !== "set-aside"
+              )
+                return;
+              const current = yield* read(row.id);
+              if (current?.operation.state !== "cancelled") return;
+              yield* save({
+                ...current.operation,
+                state: "needs-input",
+                phase: "Waiting to finish removing files",
+                error: SET_ASIDE,
+                failureReason: "blocked",
+                updatedAt: yield* now,
+              });
+            }),
+          )
+          .pipe(Effect.ignore);
     }).pipe(Effect.ignoreCause),
   );
   return {

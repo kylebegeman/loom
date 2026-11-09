@@ -1080,7 +1080,7 @@ describe("Project operations", () => {
       }),
     ),
   );
-  it.effect("forgets the removal an earlier build's cancel left recorded when it restarts", () =>
+  it.effect("lets Resume finish a removal an earlier build's cancel left set aside", () =>
     run((state) =>
       Effect.gen(function* () {
         const request = yield* encodeRequest({
@@ -1102,16 +1102,21 @@ describe("Project operations", () => {
         });
         const sql = yield* SqlClient.SqlClient;
         yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES ('stranded',${actor.subject},${actor.sessionId},${request},${operation},'cancelled',NULL,${project.createdAt})`;
+        yield* Ref.set(state.releaseCancel, "set-aside");
         const gate = {
           entered: yield* Deferred.make<string>(),
           open: yield* Deferred.make<void>(),
         };
-        yield* Deferred.succeed(gate.open, undefined);
         yield* Ref.set(state.cancelGate, gate);
-        const forgotten = yield* Effect.flatMap(ProjectOperations.ProjectOperations, () =>
-          Deferred.await(gate.entered),
+        yield* Effect.flatMap(ProjectOperations.ProjectOperations, (restarted) =>
+          Effect.gen(function* () {
+            expect(yield* Deferred.await(gate.entered)).toBe("stranded");
+            // Waits behind the startup check, which holds the operation while it looks.
+            const resuming = yield* restarted.resume("stranded", actor).pipe(Effect.forkChild);
+            yield* Deferred.succeed(gate.open, undefined);
+            expect((yield* Fiber.join(resuming)).state).toBe("queued");
+          }),
         ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
-        expect(forgotten).toBe("stranded");
       }),
     ),
   );

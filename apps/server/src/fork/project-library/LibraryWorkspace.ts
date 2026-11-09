@@ -2182,6 +2182,11 @@ const make = Effect.gen(function* () {
       !(yield* fs.exists(path.dirname(receipt.copy.rootPath)))
     );
   });
+  const unreachable = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+    new LibraryError({
+      reason: "blocked",
+      detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
+    });
 
   const openOrRunning = (thread: OrchestrationV2ThreadShell) =>
     thread.activeRunId !== null ||
@@ -2675,10 +2680,7 @@ const make = Effect.gen(function* () {
       }
     }
     if (!(yield* fs.exists(receipt.copy.rootPath)) && (yield* folderUnavailable(receipt)))
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
-      });
+      return yield* unreachable(receipt);
     const released = {
       ...receipt,
       releaseRequestId: input.requestId,
@@ -2776,6 +2778,8 @@ const make = Effect.gen(function* () {
       receipt.removalPath === null
     )
       return "none" as const;
+    // A disk that is not connected is not files set aside.
+    if (yield* folderUnavailable(receipt)) return yield* unreachable(receipt);
     // Only this request can finish files it already moved aside.
     if (!(yield* fs.exists(receipt.copy.rootPath)) || (yield* fs.exists(receipt.removalPath)))
       return "set-aside" as const;
