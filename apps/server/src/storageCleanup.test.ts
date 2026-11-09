@@ -2853,6 +2853,7 @@ describe("storage cleanup reports and local file policies", () => {
           ...DEFAULT_SERVER_SETTINGS.storageCleanup,
           worktreeAfterDays: days,
           worktreeOnDelete: true,
+          worktreeOnLand: false, // fork: project-lifecycle
         });
         fixture.setThreads([
           shell({
