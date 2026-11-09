@@ -238,7 +238,7 @@ const make = Effect.gen(function* () {
   const requestReclaim = Effect.gen(function* () {
     if (restart === null || !doctorTargetsThisDatabase) {
       return yield* new DatabaseReclaimError({
-        reason: `Stop T3 Code on this machine, then run: ${compactCommand}`,
+        reason: `Stop Loom on this machine, then run: ${compactCommand}`, // fork: brand
       });
     }
     // Only databases without automatic shrinking need it; a stale dialog can ask after another client's repair.

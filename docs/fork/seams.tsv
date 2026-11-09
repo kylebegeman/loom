@@ -592,7 +592,9 @@ apps/server/src/orchestration-v2/pullRequestWatch.ts	brand	3
 apps/server/src/orchestration-v2/runtimeLayer.test.ts	brand	2
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.test.ts	brand	1
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts	brand	1
-apps/server/src/persistence/DatabaseMaintenance.ts	brand	2
+apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
+apps/server/src/persistence/DatabaseStorage.ts	brand	1
+apps/web/src/components/settings/DatabaseStorageNotice.tsx	brand	3
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
 apps/server/src/preview/PreviewBrowserHost.ts	brand	4
