@@ -48,6 +48,7 @@ function SitesScreen({
       : null,
   );
   const snapshot = query.data?.snapshot;
+  const ownerAdmin = snapshot?.ownerAdmin;
   const now = useSiteCheckClock(snapshot);
   const selected = snapshot?.sites.find((site) => site.id === route.params?.siteId);
   const analytics = useEnvironmentQuery(
@@ -224,6 +225,20 @@ function SitesScreen({
                 {query.error}
               </Text>
               <Button label="Try again" tone="text" onPress={query.refresh} />
+            </View>
+          ) : null}
+          {ownerAdmin ? (
+            <View className="gap-2">
+              <Text className="text-sm text-foreground-muted">
+                Use Sites for daily management across projects. Open {ownerAdmin.name} admin for
+                short links, inbox, bookings and résumé publishing.
+              </Text>
+              <Button
+                label={`Open ${ownerAdmin.name} admin`}
+                icon="arrow.up.right"
+                size="compact"
+                onPress={() => open(ownerAdmin.url)}
+              />
             </View>
           ) : null}
           {snapshot ? (

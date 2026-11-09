@@ -1,0 +1,251 @@
+{
+  "formatVersion": 1,
+  "responses": {
+    "sites-list": {
+      "method": "GET",
+      "path": "/v1/integrations/sites",
+      "status": 200,
+      "body": {
+        "schemaVersion": 1,
+        "primarySiteId": "kylebegeman-com",
+        "observedAt": "2026-10-17T21:00:00.000Z",
+        "staleAfterSeconds": 900,
+        "sites": [
+          {
+            "id": "helios",
+            "name": "Helios",
+            "url": "https://helios.kylebegeman.test",
+            "active": 1,
+            "projectIds": ["helios"],
+            "origins": ["https://helios.kylebegeman.test"],
+            "serviceIds": ["helios-web"],
+            "etag": "\"GO2XnTW49mLZUStZFdeJQhsRgt5hJG5XYB75AHHuU4w\""
+          },
+          {
+            "id": "kylebegeman-com",
+            "name": "kylebegeman.test",
+            "url": "https://kylebegeman.test",
+            "active": 1,
+            "projectIds": [],
+            "origins": ["https://kylebegeman.test", "https://www.kylebegeman.test"],
+            "serviceIds": ["begamin-api", "begamin-links", "portfolio-web"],
+            "etag": "\"S_wxnOFfri9jQADNY-51rdScmf31BSUQtHr00KQrJB8\""
+          }
+        ],
+        "services": [
+          {
+            "id": "helios-web",
+            "name": "Helios",
+            "url": "https://helios.kylebegeman.test",
+            "kind": "website",
+            "active": 1,
+            "etag": "\"XChYuejimezRelepgIFncNrgKizF3e65h5vIFScuBlU\""
+          },
+          {
+            "id": "begamin-api",
+            "name": "Personal APIs",
+            "url": "https://api.begam.test",
+            "kind": "api",
+            "active": 1,
+            "etag": "\"7zRkwMEifycFlA_di-Mbkf1q1hLeX9tlvcwXBjvZlOQ\""
+          },
+          {
+            "id": "portfolio-web",
+            "name": "Portfolio",
+            "url": "https://kylebegeman.test",
+            "kind": "website",
+            "active": 1,
+            "etag": "\"0Smbl1j5473tBsizQc_UekswdgQHRirxkMEG6yaQL2k\""
+          },
+          {
+            "id": "begamin-links",
+            "name": "Short links",
+            "url": "https://go.begam.test",
+            "kind": "redirect",
+            "active": 1,
+            "etag": "\"RUgEFxL5boAOvVWbLNasduARBKl48QmI6vy-SXFOhnI\""
+          }
+        ],
+        "checks": [
+          {
+            "id": "api-booking",
+            "service_id": "begamin-api",
+            "name": "Booking availability",
+            "url": "https://api.begam.test/v1/public/booking/slots",
+            "expected_status": 200,
+            "active": 1,
+            "content": "\"slots\"",
+            "updated_at": "2026-10-17T21:00:00.000Z",
+            "revision": "<uuid-1>",
+            "etag": "\"<normalized>\"",
+            "state": "healthy",
+            "last": {
+              "checked_at": "2026-10-17T21:00:00.000Z",
+              "ok": 1,
+              "status": 200,
+              "duration_ms": 42,
+              "tls_expires_at": "2027-01-15T00:00:00.000Z",
+              "error": null
+            }
+          },
+          {
+            "id": "api-page",
+            "service_id": "begamin-api",
+            "name": "Page data",
+            "url": "https://api.begam.test/v1/public/page",
+            "expected_status": 200,
+            "active": 1,
+            "content": "\"profile\"",
+            "updated_at": "2026-10-17T21:00:00.000Z",
+            "revision": "<uuid-2>",
+            "etag": "\"<normalized>\"",
+            "state": "healthy",
+            "last": {
+              "checked_at": "2026-10-17T21:00:00.000Z",
+              "ok": 1,
+              "status": 200,
+              "duration_ms": 42,
+              "tls_expires_at": "2027-01-15T00:00:00.000Z",
+              "error": null
+            }
+          },
+          {
+            "id": "helios-home",
+            "service_id": "helios-web",
+            "name": "Home page",
+            "url": "https://helios.kylebegeman.test/",
+            "expected_status": 200,
+            "active": 1,
+            "content": "Helios",
+            "updated_at": "2026-10-17T21:00:00.000Z",
+            "revision": "<uuid-3>",
+            "etag": "\"<normalized>\"",
+            "state": "healthy",
+            "last": {
+              "checked_at": "2026-10-17T21:00:00.000Z",
+              "ok": 1,
+              "status": 200,
+              "duration_ms": 42,
+              "tls_expires_at": "2027-01-15T00:00:00.000Z",
+              "error": null
+            }
+          },
+          {
+            "id": "portfolio-home",
+            "service_id": "portfolio-web",
+            "name": "Home page",
+            "url": "https://kylebegeman.test/",
+            "expected_status": 200,
+            "active": 1,
+            "content": "Kyle",
+            "updated_at": "2026-10-17T21:00:00.000Z",
+            "revision": "<uuid-4>",
+            "etag": "\"<normalized>\"",
+            "state": "healthy",
+            "last": {
+              "checked_at": "2026-10-17T21:00:00.000Z",
+              "ok": 1,
+              "status": 200,
+              "duration_ms": 42,
+              "tls_expires_at": "2027-01-15T00:00:00.000Z",
+              "error": null
+            }
+          },
+          {
+            "id": "portfolio-links",
+            "service_id": "portfolio-web",
+            "name": "Links page",
+            "url": "https://kylebegeman.test/links/",
+            "expected_status": 200,
+            "active": 1,
+            "content": "Kyle",
+            "updated_at": "2026-10-17T21:00:00.000Z",
+            "revision": "<uuid-5>",
+            "etag": "\"<normalized>\"",
+            "state": "healthy",
+            "last": {
+              "checked_at": "2026-10-17T21:00:00.000Z",
+              "ok": 1,
+              "status": 200,
+              "duration_ms": 42,
+              "tls_expires_at": "2027-01-15T00:00:00.000Z",
+              "error": null
+            }
+          }
+        ],
+        "ownerAdmin": {
+          "name": "begam.in",
+          "url": "https://api.begam.test/admin"
+        }
+      }
+    },
+    "site-analytics": {
+      "method": "GET",
+      "path": "/v1/integrations/sites/kylebegeman-com/analytics",
+      "status": 200,
+      "body": {
+        "siteId": "kylebegeman-com",
+        "lastEventAt": "2026-10-17T21:00:00.000Z",
+        "days": 30,
+        "since": "2026-09-18",
+        "pageviews": 1,
+        "visitors": 1,
+        "events": 1,
+        "byDay": [
+          {
+            "day": "2026-10-17",
+            "pageviews": 1,
+            "visitors": 1
+          }
+        ],
+        "pages": [
+          {
+            "path": "/links",
+            "pageviews": 1,
+            "visitors": 1
+          }
+        ],
+        "referrers": [
+          {
+            "referrer_host": "example.com",
+            "pageviews": 1
+          }
+        ],
+        "sources": [
+          {
+            "source": "fixture",
+            "medium": "social",
+            "campaign": "launch",
+            "pageviews": 1
+          }
+        ],
+        "countries": [
+          {
+            "country": "US",
+            "pageviews": 1
+          }
+        ],
+        "devices": [
+          {
+            "device": "mobile",
+            "pageviews": 1
+          }
+        ],
+        "browsers": [
+          {
+            "browser": "safari",
+            "pageviews": 1
+          }
+        ],
+        "named": [
+          {
+            "name": "contact",
+            "label": "Get in touch",
+            "target": "/contact/",
+            "count": 1
+          }
+        ]
+      }
+    }
+  }
+}

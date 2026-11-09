@@ -734,8 +734,10 @@ show live front pages on the Sites cards, turn on **Display** > **Live
 previews**. It is off by default because every card's load counts as a visit
 too.
 
-Loom Sites is the primary reporting and management interface. The older Begam.in
-admin uses the same backend data and remains available for diagnostics and recovery.
+Use Loom Sites for daily reporting and management across projects. When the connected
+service provides an admin link, choose **Open [service name] admin** in Sites for
+specialist workflows such as short links, inbox, bookings and résumé publishing.
+The service's admin uses the same backend data and may require its own sign-in.
 For Corbelo, **Traffic → Developer usage** shows optional anonymous command counts,
 outcomes, average durations, versions, platforms and feature groups. Daily installation
 counts reset each UTC day; they do not identify people or measure individual retention.

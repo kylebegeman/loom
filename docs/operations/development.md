@@ -274,6 +274,28 @@ Use `vp run lint:mobile` for native mobile changes. CI owns the full suite; see
 The [manual Windows lane](../../.github/workflows/windows-tests.yml) is available for focused
 Windows investigation while that suite is not a required gate.
 
+### Sites consumer contract
+
+The begam.in backend exports a synthetic `contracts/sites-consumer.json` bundle with
+`formatVersion: 1` and named `sites-list` and `site-analytics` responses. After changing
+that integration, generate the bundle in the backend repository, then sync it here:
+
+```sh
+vp run sites:contract:sync --source /path/to/begam.in/contracts/sites-consumer.json
+vp test run packages/contracts/src/fork/sites.test.ts
+vp run sites:contract:sync --source /path/to/begam.in/contracts/sites-consumer.json --check
+```
+
+`--source` is required. Sync formats the fixture with the repository formatter. `--check`
+compares normalized JSON without modifying the fixture. Ordinary
+tests read the checked-in [consumer fixture](../../packages/contracts/src/fork/fixtures/begamin-sites.json)
+and need no backend checkout or running service. Sync preserves response bodies rather
+than decoding them through Loom's schemas, so the contract tests detect fields that the
+client would silently discard. The Sites test explicitly excludes backend write metadata
+(`etag` on sites and services; `etag`, `revision` and `updated_at` on checks). Analytics
+bodies are compared in full. Keep fixture data synthetic, without credentials or
+production records.
+
 ### Unused code
 
 `vp run knip:check` checks unused files and dependencies across the repo and, at the same time,
