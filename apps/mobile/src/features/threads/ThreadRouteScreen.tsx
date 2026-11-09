@@ -558,7 +558,6 @@ function ThreadRouteContent(
                 selectedThreadWithDraftSettings.id,
               ),
               selection,
-              routeEnvironmentRuntime?.serverConfig?.providers ?? [],
             ),
           onUpdateRuntimeMode: (runtimeMode) =>
             updateComposerDraftSettings(
