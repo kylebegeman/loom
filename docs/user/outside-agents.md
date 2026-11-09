@@ -130,11 +130,12 @@ starting work. Library copies do not support separate worktree launches. Pass a
 `clientRequestId` and reuse it when retrying after a lost response to recover the same
 conversation and first turn.
 
-An interrupted operation an agent started stays with that agent. Ask the agent to resume it with
-`loom_library_operation_control`; an agent in a conversation needs a new full-access turn for
-that. You can cancel its remaining steps yourself from the project's file activity, even after its
-conversation is deleted. Once Loom has moved files aside to remove them, only resuming the
-operation finishes the removal. Signing in again from another client does not transfer ownership.
+An agent can resume an interrupted operation it started with `loom_library_operation_control`; an
+agent in a conversation needs a new full-access turn for that. You can also resume or cancel it
+yourself from the project's file activity, even after its conversation is deleted, and resuming it
+makes it yours. Once Loom has moved files aside to remove them, resume the operation to finish the
+removal instead of cancelling it. Operations you start stay with your sign-in; signing in again
+from another client does not take them over.
 
 ## Remove an agent
 

@@ -105,9 +105,7 @@ const fixture = Effect.gen(function* () {
   const dispatched = yield* Ref.make<string[]>([]);
   const retentionSaves = yield* Ref.make(0);
   const placedBorrowed = yield* Ref.make(false);
-  const recordedRelease = yield* Ref.make<{ requestId: string; filesInPlace: boolean } | null>(
-    null,
-  );
+  const releaseCancel = yield* Ref.make<"none" | "cleared" | "set-aside">("none");
   const failBind = yield* Ref.make(false);
   const threadDeleted = yield* Ref.make(false);
   const revokeAtResolve = yield* Ref.make(false);
@@ -221,28 +219,25 @@ const fixture = Effect.gen(function* () {
     }),
     Layer.mock(LibraryWorkspaceStore)({
       get: () =>
-        Ref.get(recordedRelease).pipe(
-          Effect.map((recorded) => ({
-            requestId: "copy",
-            fingerprint: "copy",
-            project,
-            copy: recorded?.filesInPlace
-              ? { ...copyFor(project), rootPath: process.cwd() }
-              : copyFor(project),
-            rootLocalProjectId: null,
-            rootCheckpointRepository: false,
-            legacyThreadIds: [],
-            rootIdentity: null,
-            releaseRequestId: recorded?.requestId ?? null,
-            releaseReviewToken: null,
-            removalPath: recorded ? "/work/project.loom-released-test" : null,
-            archivePath: null,
-            archiveDigest: null,
-          })),
-        ),
+        Effect.succeed({
+          requestId: "copy",
+          fingerprint: "copy",
+          project,
+          copy: copyFor(project),
+          rootLocalProjectId: null,
+          rootCheckpointRepository: false,
+          legacyThreadIds: [],
+          rootIdentity: null,
+          releaseRequestId: null,
+          releaseReviewToken: null,
+          removalPath: null,
+          archivePath: null,
+          archiveDigest: null,
+        }),
     }),
     Layer.mock(LibraryWorkspace)({
       inspectFolder: () => Ref.get(inspected),
+      cancelRelease: () => Ref.get(releaseCancel),
       setCopyRetention: (input) =>
         Effect.gen(function* () {
           if ((yield* Ref.get(placedBorrowed)) && !input.keepOnComputer)
@@ -418,7 +413,7 @@ const fixture = Effect.gen(function* () {
     boundIn,
     retentionSaves,
     placedBorrowed,
-    recordedRelease,
+    releaseCancel,
     dispatched,
     failBind,
     threadDeleted,
@@ -862,11 +857,11 @@ describe("Project operations", () => {
         const error = yield* state.service.execute("release", request, actor).pipe(Effect.flip);
         expect(error.reason).toBe("blocked");
         expect(error.message).toBe("The reviewed files changed.");
-        yield* Ref.set(state.recordedRelease, { requestId: "release", filesInPlace: false });
+        yield* Ref.set(state.releaseCancel, "set-aside");
         expect((yield* state.service.cancel("release", actor).pipe(Effect.flip)).message).toContain(
           "Resume this operation to finish removing them",
         );
-        yield* Ref.set(state.recordedRelease, { requestId: "release", filesInPlace: true });
+        yield* Ref.set(state.releaseCancel, "cleared");
         const cancelled = yield* state.service.cancel("release", actor);
         expect(cancelled.state).toBe("cancelled");
         expect((yield* state.service.resume("release", actor)).state).toBe("cancelled");
@@ -921,7 +916,7 @@ describe("Project operations", () => {
         }),
       ),
   );
-  it.effect("lets a signed-in person cancel, but not resume, an operation an agent started", () =>
+  it.effect("lets a signed-in person take over an operation an agent started", () =>
     run((state) =>
       Effect.gen(function* () {
         yield* Ref.set(state.failure, true);
@@ -931,16 +926,6 @@ describe("Project operations", () => {
           yield* state.service.execute(id, create, actor).pipe(Effect.flip);
           yield* sql`UPDATE fork_library_operations SET subject=${owner} WHERE id=${id}`;
         }
-        const resumed = yield* state.service
-          .controlClient("agent-owned", "resume", actor.sessionId)
-          .pipe(Effect.flip);
-        expect(resumed.message).toContain("agent in conversation owning-thread");
-        expect(resumed.message).toContain("cancel it here");
-        expect(
-          (yield* state.service
-            .controlClient("outside-owned", "resume", actor.sessionId)
-            .pipe(Effect.flip)).message,
-        ).toContain("Ask that agent to resume it, or cancel it here");
         const otherAgent = { subject: "workload:other-thread", sessionId: "workload:other" };
         const outsideAgent = { subject: "mcp-client", sessionId: "outside" };
         for (const agent of [otherAgent, outsideAgent])
@@ -951,13 +936,21 @@ describe("Project operations", () => {
         expect(
           (yield* state.service
             .controlClient("agent-owned", "cancel", actor.sessionId)
-            .pipe(Effect.flip)).reason,
-        ).toBe("blocked");
+            .pipe(Effect.flip)).message,
+        ).toContain("access level");
         yield* Ref.set(state.active, [session()]);
-        for (const id of Object.keys(owners))
-          expect((yield* state.service.controlClient(id, "cancel", actor.sessionId)).state).toBe(
-            "cancelled",
-          );
+        yield* Ref.set(state.failure, false);
+        yield* state.service.controlClient("agent-owned", "resume", actor.sessionId);
+        expect((yield* state.service.execute("agent-owned", create, actor)).state).toBe(
+          "succeeded",
+        );
+        const owningAgent = { subject: "workload:owning-thread", sessionId: "workload:owning" };
+        expect(
+          (yield* state.service.cancel("agent-owned", owningAgent).pipe(Effect.flip)).message,
+        ).toContain("another signed-in session");
+        expect(
+          (yield* state.service.controlClient("outside-owned", "cancel", actor.sessionId)).state,
+        ).toBe("cancelled");
       }),
     ),
   );

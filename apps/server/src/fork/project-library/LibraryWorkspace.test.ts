@@ -5174,6 +5174,26 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
+  it.effect("forgets a cancelled release only while its files are still in place", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-cancelled");
+      const request = { workingCopyId: copy.id, requestId: "release-cancelled" };
+      expect(yield* service.cancelRelease(request)).toBe("set-aside");
+      yield* fs.rename(removalPath, copy.rootPath);
+      expect(yield* service.cancelRelease({ ...request, requestId: "another-release" })).toBe(
+        "none",
+      );
+      expect(yield* service.cancelRelease(request)).toBe("cleared");
+      expect(yield* store.get(copy.id)).toMatchObject({
+        removalPath: null,
+        releaseRequestId: null,
+      });
+    }),
+  );
+
   it.effect("downloads into a new folder when the copy here has another remote", () =>
     Effect.gen(function* () {
       const service = yield* LibraryWorkspace.LibraryWorkspace;

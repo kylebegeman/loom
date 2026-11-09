@@ -62,7 +62,7 @@ import * as SetupMarker from "../../workspace/setupMarker.ts";
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" });
-const denied = (reason: "session" | "turn" | "workload" = "session") =>
+const denied = (reason: "session" | "access" | "turn" | "workload" = "session") =>
   new LibraryError({
     reason: "blocked",
     detail:
@@ -70,22 +70,23 @@ const denied = (reason: "session" | "turn" | "workload" = "session") =>
         ? "The conversation that started this operation is no longer running a turn. Resume it from that conversation with loom_library_operation_control."
         : reason === "workload"
           ? "This operation's agent authorization is no longer current. Resume it from its original conversation during a full-access/default turn with loom_library_operation_control."
-          : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
+          : reason === "access"
+            ? "This device's access level doesn't allow this kind of file work. Use a device with a higher access level."
+            : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   });
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 // In-app agents act as their conversation; every outside agent's MCP session shares one subject.
 const isAgent = (subject: string) => subject.startsWith("workload:") || subject === "mcp-client";
-const ownedElsewhere = (owner: string, actor: OperationActor) =>
+// A signed-in person may take over what any agent started; otherwise only the owner may.
+const mayControl = (owner: string, actor: OperationActor) =>
+  owner === actor.subject || (isAgent(owner) && !isAgent(actor.subject));
+const ownedElsewhere = (owner: string) =>
   new LibraryError({
     reason: "blocked",
     detail: owner.startsWith("workload:")
-      ? isAgent(actor.subject)
-        ? `This operation was started by an agent in conversation ${owner.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
-        : `This operation was started by an agent in conversation ${owner.slice(9)}. Resume it from that conversation, or cancel it here.`
+      ? `This operation was started by an agent in conversation ${owner.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
       : owner === "mcp-client"
-        ? isAgent(actor.subject)
-          ? "This operation was started by an agent connected over MCP. Resume or cancel it from that agent."
-          : "This operation was started by an agent connected over MCP. Ask that agent to resume it, or cancel it here."
+        ? "This operation was started by an agent connected over MCP. Resume or cancel it from that agent."
         : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel.",
   });
 const Workload = Schema.Struct({
@@ -286,12 +287,10 @@ const make = Effect.gen(function* () {
       return;
     }
     const active = yield* currentSession(sessionId);
+    if (active?.subject !== subject) return yield* denied();
     const required = operationScopes(request.kind);
-    if (
-      active?.subject !== subject ||
-      !required.every((permission) => (active.permissions ?? active.scopes).includes(permission))
-    )
-      return yield* denied();
+    if (!required.every((permission) => (active.permissions ?? active.scopes).includes(permission)))
+      return yield* denied("access");
   }, Effect.mapError(io));
   /**
    * A launch's own worktree, made once so a retry never gives the conversation a second checkout.
@@ -919,7 +918,7 @@ const make = Effect.gen(function* () {
       Effect.mapError(io),
     );
     const existing = yield* read(id);
-    if (existing && (existing.subject !== actor.subject || existing.request_json !== encoded))
+    if (existing && (!mayControl(existing.subject, actor) || existing.request_json !== encoded))
       return yield* new LibraryError({ reason: "request-conflict" });
     if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
       return existing.operation;
@@ -945,7 +944,7 @@ const make = Effect.gen(function* () {
       updatedAt: timestamp,
     };
     const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
-    yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
+    yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
       Effect.mapError(io),
     );
     yield* workflows.changed;
@@ -1003,11 +1002,7 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* new LibraryError({ reason: "not-found" });
-    // A person who could start this work may stop what an agent started, even after that
-    // conversation is gone. Resuming stays with the agent, since it runs as that agent.
-    const owns = row.subject === actor.subject;
-    if (!owns && !(isAgent(row.subject) && !isAgent(actor.subject)))
-      return yield* ownedElsewhere(row.subject, actor);
+    if (!mayControl(row.subject, actor)) return yield* ownedElsewhere(row.subject);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
@@ -1018,33 +1013,15 @@ const make = Effect.gen(function* () {
         detail: "The current step is already running. Let it finish before changing these files.",
       });
     if (row.operation.state === "succeeded") return row.operation;
-    if (request.kind === "release") {
-      // Files this request already set aside can only be removed by it: a new removal conflicts
-      // with it, and Keep files on this computer no longer applies.
-      const receipt = yield* workspaceStore.get(request.input.workingCopyId).pipe(
-        Effect.catchIf(
-          (error) => error.reason === "not-found",
-          () => Effect.undefined,
-        ),
-      );
-      const exists = (target: string) => fs.exists(target).pipe(Effect.mapError(io));
-      if (
-        receipt?.releaseRequestId === request.input.requestId &&
-        receipt.copy.state !== "released" &&
-        receipt.removalPath !== null &&
-        (!(yield* exists(receipt.copy.rootPath)) || (yield* exists(receipt.removalPath)))
-      )
-        return yield* new LibraryError({
-          reason: "blocked",
-          detail: `Loom already started removing these files. ${
-            owns
-              ? "Resume this operation"
-              : row.subject.startsWith("workload:")
-                ? `Resume it from conversation ${row.subject.slice(9)}`
-                : "Have the agent that started this operation resume it"
-          } to finish removing them.`,
-        });
-    }
+    if (
+      request.kind === "release" &&
+      (yield* workspace.cancelRelease(request.input)) === "set-aside"
+    )
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Loom already moved these files aside to remove them. Resume this operation to finish removing them.",
+      });
     return yield* save({
       ...row.operation,
       state: "cancelled",
@@ -1189,7 +1166,7 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* denied();
-    if (row.subject !== actor.subject) return yield* ownedElsewhere(row.subject, actor);
+    if (!mayControl(row.subject, actor)) return yield* ownedElsewhere(row.subject);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );

@@ -151,6 +151,11 @@ export class LibraryWorkspace extends Context.Service<
     readonly setCopyRetention: (
       input: LibrarySetCopyRetentionRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /** Forgets the removal a release request recorded while its files are still in place. */
+    readonly cancelRelease: (input: {
+      readonly workingCopyId: string;
+      readonly requestId: string;
+    }) => Effect.Effect<"none" | "cleared" | "set-aside", LibraryError>;
     readonly reopenCopy: (
       input: LibraryReopenCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -2754,6 +2759,36 @@ const make = Effect.gen(function* () {
     return copy;
   });
 
+  const cancelRelease = Effect.fn("LibraryWorkspace.cancelRelease")(function* (input: {
+    readonly workingCopyId: string;
+    readonly requestId: string;
+  }) {
+    const receipt = yield* store.get(input.workingCopyId).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "not-found",
+        () => Effect.undefined,
+      ),
+    );
+    if (
+      receipt === undefined ||
+      receipt.releaseRequestId !== input.requestId ||
+      receipt.copy.state === "released" ||
+      receipt.removalPath === null
+    )
+      return "none" as const;
+    // Only this request can finish files it already moved aside.
+    if (!(yield* fs.exists(receipt.copy.rootPath)) || (yield* fs.exists(receipt.removalPath)))
+      return "set-aside" as const;
+    yield* store.put({
+      ...receipt,
+      publishedRelease: undefined,
+      releaseRequestId: null,
+      releaseReviewToken: null,
+      removalPath: null,
+    });
+    return "cleared" as const;
+  });
+
   const validatePortableRepository = Effect.fn("LibraryWorkspace.validatePortableRepository")(
     function* (cwd: string, gitDirectory = path.join(cwd, ".git")) {
       if (
@@ -4482,6 +4517,9 @@ const make = Effect.gen(function* () {
     }),
     unregister: Effect.fnUntraced(function* (input) {
       return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(unregister(input)));
+    }),
+    cancelRelease: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(cancelRelease(input)));
     }),
     release: Effect.fnUntraced(function* (input) {
       return yield* locks.withLock(
