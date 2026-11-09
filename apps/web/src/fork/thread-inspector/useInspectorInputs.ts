@@ -22,7 +22,6 @@ import { deriveProviderInstanceEntries } from "~/providerInstances";
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
-  findLatestProposedPlan,
   isLatestRunSettled,
 } from "~/session-logic";
 import {
@@ -43,6 +42,7 @@ import {
   type InspectorInputs,
   type InspectorProvider,
 } from "./model";
+import { findLatestProposedPlan } from "./latestProposedPlan";
 
 /**
  * Gathers the inspector inputs from the same atoms and derivations ChatView uses, so the
