@@ -30,11 +30,9 @@ import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
 import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import { resolveWorkingStartedAt } from "~/components/Sidebar.logic";
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
-import {
-  derivePhase,
-  hasActionableProposedPlan,
-  type LatestProposedPlanState,
-} from "~/session-logic";
+import { derivePhase } from "~/session-logic";
+
+import { hasActionableProposedPlan, type LatestProposedPlanState } from "./latestProposedPlan";
 
 export type InspectorGitState =
   /** No workspace to ask about (no project yet). */
