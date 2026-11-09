@@ -622,8 +622,6 @@ const layerOrchestrationApplication = Layer.merge(
 
 // fork: project-lifecycle -- settlement and the runtime share one storage cleanup service.
 const layerStorageCleanup = RuntimeLayer.layerStorageCleanup;
-// fork: project-lifecycle
-const layerDatabaseStorage = DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer));
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
   // fork: project-lifecycle
@@ -676,6 +674,26 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
       Effect.forkScoped,
     );
   }),
+);
+
+// The desktop app and the background service start the server again after it exits.
+const layerServerRestart = Layer.effect(
+  DatabaseStorage.ServerRestart,
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const launcher = yield* ServiceLauncherClient.ServiceLauncherClient;
+    // As in runServerCommand, only the desktop app passes a bootstrap token; `serve --mode desktop` by hand has no supervisor.
+    const desktopLaunched = config.mode === "desktop" && config.desktopBootstrapToken !== undefined;
+    if (!desktopLaunched && !launcher.managed) return null;
+    // Stop as a SIGTERM would: runMain's listener interrupts the server, so its shutdown path runs.
+    return Effect.sync(() => void process.emit("SIGTERM"));
+  }),
+);
+
+// fork: project-lifecycle
+const layerDatabaseStorage = DatabaseStorage.layer.pipe(
+  Layer.provide(ProjectionMaintenance.layer),
+  Layer.provide(layerServerRestart),
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(

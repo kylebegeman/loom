@@ -2841,6 +2841,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           BRAND_NAME +
           " connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         // fork: brand
+        NSCalendarsUsageDescription:
+          "Commands you run in " + BRAND_NAME + " may need access to your calendars.",
+        // fork: brand
+        NSCalendarsFullAccessUsageDescription:
+          "Commands you run in " + BRAND_NAME + " may need to read and write your calendar events.",
+        // fork: brand
+        NSCalendarsWriteOnlyAccessUsageDescription:
+          "Commands you run in " + BRAND_NAME + " may need to add events to your calendars.",
+        // fork: brand
         NSScreenCaptureUsageDescription:
           BRAND_NAME + " captures the active window when you use the window capture shortcut.",
         // fork: brand

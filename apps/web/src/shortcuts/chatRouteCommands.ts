@@ -103,13 +103,11 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     const groups = readProjectGroups();
     void start(command, {
       ...readThreadContext(),
-      showProjectPicker:
-        !getClientSettings().legacySidebarEnabled &&
-        !shouldCreateNewThreadInCurrentProject(
-          false,
-          groups.filter((group) => !group.archived).length,
-          groups.length,
-        ),
+      showProjectPicker: !shouldCreateNewThreadInCurrentProject(
+        false,
+        groups.filter((group) => !group.archived).length,
+        groups.length,
+      ),
     });
     return true;
   };
@@ -145,10 +143,8 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       },
       "chat.new": (event) => {
         if (startLoomConversation(event, "chat.new")) return; // fork: library-projects
-        const { legacySidebarEnabled } = getClientSettings();
         const groups = readProjectGroups();
         if (
-          !legacySidebarEnabled &&
           !shouldCreateNewThreadInCurrentProject(
             false,
             groups.filter((group) => !group.archived).length,

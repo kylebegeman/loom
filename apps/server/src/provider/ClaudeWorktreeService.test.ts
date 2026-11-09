@@ -126,7 +126,11 @@ it.live(
                         ),
                       ),
                       Effect.as({
-                        exitCode: input.worktreePath.includes("failed-setup") ? 1 : 0,
+                        exitCode: path
+                          .basename(input.worktreePath)
+                          .startsWith("loom-claude-failed-")
+                          ? 1
+                          : 0,
                         durationMs: 0,
                       }),
                       Effect.orDie,
@@ -365,7 +369,7 @@ it.live(
       });
       yield* invoke("SessionEnd", { ...baseInput, hook_event_name: "SessionEnd", reason: "clear" });
       const failedSetup = yield* service
-        .create({ ...owner, cwd: source, name: "failed-setup" })
+        .create({ ...owner, cwd: source, name: "failed" })
         .pipe(Effect.flip);
       expect(failedSetup._tag).toBe("ClaudeWorktreeError");
       expect((yield* git.listWorktreePaths(source)).length).toBe(2);
