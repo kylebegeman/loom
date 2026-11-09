@@ -5,6 +5,8 @@ import {
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
   CommandId,
+  OrchestrationV2DelegatedFrom,
+  OrchestrationV2LinkOrigin,
   ThreadId,
   ProviderInstanceId,
   RunId,
@@ -77,6 +79,8 @@ const denied = (reason: "session" | "access" | "outside" | "turn" | "workload" =
   });
 const SET_ASIDE =
   "Loom already moved these files aside to remove them. Resume this operation to finish removing them.";
+const OUTSIDE_CREATE =
+  "No project in the Library matches this folder, and outside agents cannot create shared projects. Add this folder to the Library from Loom, or import it with the projectId of the project it belongs to.";
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 // In-app agents act as their conversation; every outside agent's MCP session shares one subject.
 const isAgent = (subject: string) => subject.startsWith("workload:") || subject === "mcp-client";
@@ -114,6 +118,13 @@ const requireOneRepository = (resolved: LibraryResolvedBinding) =>
 const worktreeCodec = Schema.fromJsonString(
   Schema.Struct({ path: Schema.String, branch: Schema.String }),
 );
+/** Where a launch came from. Only the server sets it, so it is kept apart from the request. */
+const LaunchOrigin = Schema.Struct({
+  linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
+  delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+});
+type LaunchOrigin = typeof LaunchOrigin.Type;
+const originCodec = Schema.fromJsonString(LaunchOrigin);
 const creationCodec = Schema.fromJsonString(LibraryCreateProjectRequest);
 const updateCodec = Schema.fromJsonString(LibraryUpdateProjectRequest);
 const registrationCodec = Schema.fromJsonString(LibraryRegisterCopyRequest);
@@ -158,11 +169,13 @@ export class ProjectOperations extends Context.Service<
       id: string,
       request: LibraryOperationInput,
       sessionId: string,
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly executeAgent: (
       id: string,
       request: LibraryOperationInput,
       caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly controlClient: (
       id: string,
@@ -182,11 +195,13 @@ export class ProjectOperations extends Context.Service<
       id: string,
       request: LibraryOperationInput,
       actor: OperationActor,
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly execute: (
       id: string,
       request: LibraryOperationInput,
       actor: OperationActor,
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly resume: (
       id: string,
@@ -518,6 +533,9 @@ const make = Effect.gen(function* () {
                       "Files created for another project still hold this folder. Review that project's Files before reusing it.",
                   });
                 if (!selected) {
+                  // Creating a shared project needs a person's Library sign-in.
+                  if (row.subject === "mcp-client")
+                    return yield* new LibraryError({ reason: "blocked", detail: OUTSIDE_CREATE });
                   const receiptId = yield* operationId(id, "create");
                   const saved = yield* sql<{
                     request_json: string;
@@ -746,6 +764,16 @@ const make = Effect.gen(function* () {
           if (worktreeFirst) yield* phase("Creating worktree");
           const worktree = worktreeFirst ? yield* launchWorktree(id, resolved) : null;
           yield* phase("Creating conversation");
+          const origin = yield* sql<{
+            result_json: string;
+          }>`SELECT result_json FROM fork_library_workflow_receipts WHERE id=${`${id}:origin`}`.pipe(
+            Effect.flatMap(([saved]) =>
+              saved
+                ? Schema.decodeEffect(originCodec)(saved.result_json)
+                : Effect.succeed<LaunchOrigin>({}),
+            ),
+            Effect.mapError(io),
+          );
           yield* threads
             .dispatch({
               type: "thread.create",
@@ -758,8 +786,9 @@ const make = Effect.gen(function* () {
               interactionMode: input.interactionMode,
               branch: worktree?.branch ?? null,
               worktreePath: worktree?.path ?? resolved.cwd,
-              createdBy: row.session_id.startsWith("workload:") ? "agent" : "user",
-              creationSource: row.session_id.startsWith("workload:") ? "mcp" : "web",
+              ...origin,
+              createdBy: isAgent(row.subject) ? "agent" : "user",
+              creationSource: isAgent(row.subject) ? "mcp" : "web",
             })
             .pipe(Effect.mapError(io));
           // A retry reuses the first try's create, which does nothing for a conversation deleted
@@ -903,7 +932,12 @@ const make = Effect.gen(function* () {
     );
   });
   const run = Effect.fn("ProjectOperations.run")(
-    function* (id: string, request: LibraryOperationInput, actor: OperationActor) {
+    function* (
+      id: string,
+      request: LibraryOperationInput,
+      actor: OperationActor,
+      origin?: LaunchOrigin,
+    ) {
       yield* authorize(actor.sessionId, actor.subject, request);
       const durableRequest =
         request.kind === "restore"
@@ -931,6 +965,13 @@ const make = Effect.gen(function* () {
       if (existing && !mayControl(existing.subject, actor))
         return yield* ownedElsewhere(existing.subject);
       if (existing && pending.has(id)) return existing.operation;
+      // The first try's origin stays, so a person resuming the launch keeps it nested.
+      if (request.kind === "launch" && (origin?.linkOrigin || origin?.delegatedFrom)) {
+        const saved = yield* Schema.encodeEffect(originCodec)(origin).pipe(Effect.mapError(io));
+        yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${`${id}:origin`},${"origin"},${saved}) ON CONFLICT(id) DO NOTHING`.pipe(
+          Effect.mapError(io),
+        );
+      }
       const timestamp = yield* now;
       const projectId =
         request.kind === "create" || request.kind === "import"
@@ -966,8 +1007,9 @@ const make = Effect.gen(function* () {
     id: string,
     request: LibraryOperationInput,
     actor: OperationActor,
+    origin?: LaunchOrigin,
   ) {
-    const initial = yield* run(id, request, actor);
+    const initial = yield* run(id, request, actor, origin);
     if (initial.state === "succeeded") return initial;
     if (initial.state === "cancelled")
       return yield* new LibraryError({
@@ -1039,15 +1081,17 @@ const make = Effect.gen(function* () {
     id: string,
     request: LibraryOperationInput,
     sessionId: string,
+    origin?: LaunchOrigin,
   ) {
     const actor = yield* currentSession(sessionId).pipe(Effect.mapError(io));
     if (!actor) return yield* denied();
-    return yield* execute(id, request, actor);
+    return yield* execute(id, request, actor, origin);
   });
   const executeAgent = Effect.fn("ProjectOperations.executeAgent")(function* (
     id: string,
     request: LibraryOperationInput,
     caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+    origin?: LaunchOrigin,
   ) {
     const thread = yield* threads
       .getThreadShell(caller.threadId)
@@ -1057,10 +1101,12 @@ const make = Effect.gen(function* () {
       ...caller,
       runId: thread.activeRunId,
     }).pipe(Effect.mapError(io));
-    return yield* execute(id, request, {
-      subject: `workload:${caller.threadId}`,
-      sessionId: `workload:${claims}`,
-    });
+    return yield* execute(
+      id,
+      request,
+      { subject: `workload:${caller.threadId}`, sessionId: `workload:${claims}` },
+      origin,
+    );
   });
   const shareCreated = Effect.fn("ProjectOperations.shareCreated")(function* (
     project: CreatedProject,

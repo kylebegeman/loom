@@ -121,6 +121,7 @@ const fixture = Effect.gen(function* () {
   const createdIn = yield* Ref.make<
     readonly { branch: string | null; worktreePath: string | null }[]
   >([]);
+  const creators = yield* Ref.make<readonly unknown[]>([]);
   const boundIn = yield* Ref.make<readonly (string | undefined)[]>([]);
   const boundCopies = yield* Ref.make<readonly string[]>([]);
   const conversations = yield* Ref.make<
@@ -340,6 +341,15 @@ const fixture = Effect.gen(function* () {
               ...list,
               { branch: command.branch, worktreePath: command.worktreePath },
             ]);
+            yield* Ref.update(creators, (list) => [
+              ...list,
+              {
+                createdBy: command.createdBy,
+                creationSource: command.creationSource,
+                linkOrigin: command.linkOrigin,
+                delegatedFrom: command.delegatedFrom,
+              },
+            ]);
             // A repeated create does nothing, as the orchestrator's command receipt makes it.
             yield* Ref.update(conversations, (map) =>
               map.has(command.threadId)
@@ -423,6 +433,7 @@ const fixture = Effect.gen(function* () {
     worktreePath,
     worktreesMade,
     createdIn,
+    creators,
     boundIn,
     retentionSaves,
     placedBorrowed,
@@ -881,6 +892,21 @@ describe("Project operations", () => {
         expect((yield* state.service.execute("outside", prepare, outsideAgent)).state).toBe(
           "succeeded",
         );
+        const unmatched: LibraryOperationInput = {
+          kind: "import",
+          input: { requestId: "outside-import", rootPath: "/work/project" },
+        };
+        expect(
+          (yield* state.service
+            .execute("outside-import", unmatched, outsideAgent)
+            .pipe(Effect.flip)).message,
+        ).toContain("outside agents cannot create shared projects");
+        expect(yield* Ref.get(state.creationInputs)).toEqual([]);
+        yield* Ref.update(state.active, (sessions) => [...sessions, session()]);
+        expect((yield* state.service.execute("outside-import", unmatched, actor)).state).toBe(
+          "succeeded",
+        );
+        expect(yield* Ref.get(state.creationInputs)).toHaveLength(1);
       }),
     ),
   );
@@ -1313,6 +1339,57 @@ describe("Project operations", () => {
         expect((yield* state.service.list({}))[0]?.state).toBe("needs-input");
       }),
     ),
+  );
+  it.effect(
+    "keeps a delegated launch nested under its parent, also when a person finishes it",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const outsideAgent = { subject: "mcp-client", sessionId: AuthSessionId.make("outside") };
+          yield* Ref.set(state.active, [
+            { ...session(mcpClientScopes("full-access")), ...outsideAgent },
+          ]);
+          const origin = {
+            linkOrigin: { sessionId: "link", label: "Laptop", access: "full-access" as const },
+            delegatedFrom: {
+              environmentId: EnvironmentId.make("laptop"),
+              threadId: ThreadId.make("parent"),
+              title: "Parent",
+            },
+          };
+          const launch = (threadId: string): LibraryOperationInput => ({
+            kind: "launch",
+            input: {
+              project,
+              binding: {
+                projectId: project.id,
+                projectRevision: 1,
+                environmentId,
+                workingCopyId: "copy",
+                resourceIds: [],
+              },
+              threadId: ThreadId.make(threadId),
+              title: "Review",
+              modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+              runtimeMode: "approval-required",
+              interactionMode: "plan",
+            },
+          });
+          yield* state.service.execute("delegated", launch("delegated"), outsideAgent, origin);
+          // The agent's access ends before its conversation exists; a person resumes without it.
+          yield* Ref.set(state.revokeAtResolve, true);
+          yield* state.service
+            .execute("finished", launch("finished"), outsideAgent, origin)
+            .pipe(Effect.flip);
+          yield* Ref.set(state.revokeAtResolve, false);
+          yield* Ref.set(state.active, [session()]);
+          yield* state.service.execute("finished", launch("finished"), actor);
+          expect(yield* Ref.get(state.creators)).toEqual([
+            { createdBy: "agent", creationSource: "mcp", ...origin },
+            { createdBy: "user", creationSource: "web", ...origin },
+          ]);
+        }),
+      ),
   );
   it.effect("opens a launch's conversation in its reserved files before they download", () =>
     run((state) =>

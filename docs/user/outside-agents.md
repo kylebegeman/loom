@@ -129,8 +129,9 @@ copy's local project id. The root workspace strategy works in the copy's folder,
 strategy gives the conversation its own worktree; in a project with more than one repository, set
 that strategy's `repositoryPath`. Loom binds the conversation before starting work. This and
 other Library file work, such as preparing or importing a copy, needs an agent approved with
-**Full access**. Pass a `clientRequestId` and reuse it when retrying after a lost response to
-recover the same conversation and first turn.
+**Full access**. An outside agent can import a folder only into a project already in the Library;
+add a folder that needs a new shared project from Loom. Pass a `clientRequestId` and reuse it
+when retrying after a lost response to recover the same conversation and first turn.
 
 An agent can resume an interrupted operation it started with `loom_library_operation_control`; an
 agent in a conversation needs a new full-access turn for that. You can also resume or cancel it

@@ -167,7 +167,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
   ...shared,
   description:
     // fork: library-projects
-    "Create one new top-level thread, bound to its workspace before the agent starts. Task in `message`. Omit `projectId`, model and modes to inherit yours (outside a thread, pass `projectId` or `scratch`); modes cannot exceed yours. After an error or lost reply, retry with the same `clientRequestId`. Library copies bind automatically for root launches; worktree strategies are refused before creation. Follow it with `t3_thread_read` or `t3_thread_wait`. Mention it with its `link`.",
+    "Create one new top-level thread, bound to its workspace before the agent starts. Task in `message`. Omit `projectId`, model and modes to inherit yours (outside a thread, pass `projectId` or `scratch`); modes cannot exceed yours. After an error or lost reply, retry with the same `clientRequestId`. Library copies bind before the agent starts, at the root or in a worktree (in a multi-repository copy, set `repositoryPath`). Follow it with `t3_thread_read` or `t3_thread_wait`. Mention it with its `link`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: Schema.optional(ProjectId),
