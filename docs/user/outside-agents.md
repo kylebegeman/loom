@@ -125,10 +125,12 @@ and Library both need a version that supports these reads. Ask the agent to use
 `loom_library_projects`, `loom_library_search` or `loom_library_conversations`.
 
 To start a conversation in a registered local Library copy, use `t3_thread_launch` with that
-copy's local project id and the root workspace strategy. Loom binds the conversation before
-starting work. Library copies do not support separate worktree launches. Pass a
-`clientRequestId` and reuse it when retrying after a lost response to recover the same
-conversation and first turn.
+copy's local project id. The root workspace strategy works in the copy's folder, and the worktree
+strategy gives the conversation its own worktree; in a project with more than one repository, set
+that strategy's `repositoryPath`. Loom binds the conversation before starting work. This and
+other Library file work, such as preparing or importing a copy, needs an agent approved with
+**Full access**. Pass a `clientRequestId` and reuse it when retrying after a lost response to
+recover the same conversation and first turn.
 
 An agent can resume an interrupted operation it started with `loom_library_operation_control`; an
 agent in a conversation needs a new full-access turn for that. You can also resume or cancel it

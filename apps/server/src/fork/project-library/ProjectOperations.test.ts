@@ -853,7 +853,7 @@ describe("Project operations", () => {
       }),
     ),
   );
-  it.effect("refuses revoked or under-scoped sessions before dispatch", () =>
+  it.effect("refuses revoked or under-scoped sessions, and outside agents below Full access", () =>
     run((state) =>
       Effect.gen(function* () {
         yield* Ref.set(state.active, [session([AuthTerminalOperateScope])]);
@@ -864,6 +864,22 @@ describe("Project operations", () => {
         yield* Ref.set(state.active, []);
         expect((yield* state.service.run("revoked", create, actor).pipe(Effect.flip)).reason).toBe(
           "blocked",
+        );
+        const outsideAgent = { subject: "mcp-client", sessionId: AuthSessionId.make("outside") };
+        const prepare: LibraryOperationInput = {
+          kind: "prepare",
+          input: { requestId: "outside", project, rootPath: "/test/outside", strategy: "clone" },
+        };
+        yield* Ref.set(state.active, [{ ...session(mcpClientScopes("auto")), ...outsideAgent }]);
+        expect(
+          (yield* state.service.execute("outside", prepare, outsideAgent).pipe(Effect.flip))
+            .message,
+        ).toContain("needs Full access");
+        yield* Ref.set(state.active, [
+          { ...session(mcpClientScopes("full-access")), ...outsideAgent },
+        ]);
+        expect((yield* state.service.execute("outside", prepare, outsideAgent)).state).toBe(
+          "succeeded",
         );
       }),
     ),

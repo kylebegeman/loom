@@ -61,7 +61,7 @@ import * as SetupMarker from "../../workspace/setupMarker.ts";
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" });
-const denied = (reason: "session" | "access" | "turn" | "workload" = "session") =>
+const denied = (reason: "session" | "access" | "outside" | "turn" | "workload" = "session") =>
   new LibraryError({
     reason: "blocked",
     detail:
@@ -69,9 +69,11 @@ const denied = (reason: "session" | "access" | "turn" | "workload" = "session") 
         ? "The conversation that started this operation is no longer running a turn. Resume it from that conversation with loom_library_operation_control."
         : reason === "workload"
           ? "This operation's agent authorization is no longer current. Resume it from its original conversation during a full-access/default turn with loom_library_operation_control."
-          : reason === "access"
-            ? "This device's access level doesn't allow this kind of file work. Use a device with a higher access level."
-            : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
+          : reason === "outside"
+            ? "This agent needs Full access for this file work. Revoke it under Settings → Sharing & access, then approve its next sign-in with Full access."
+            : reason === "access"
+              ? "This device's access level doesn't allow this kind of file work. Use a device with a higher access level."
+              : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   });
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 // In-app agents act as their conversation; every outside agent's MCP session shares one subject.
@@ -288,9 +290,13 @@ const make = Effect.gen(function* () {
     }
     const active = yield* currentSession(sessionId);
     if (active?.subject !== subject) return yield* denied();
-    const required = operationScopes(request.kind);
+    const outside = subject === "mcp-client";
+    // Outside agents never get terminal:operate; settings:write marks their Full access grant.
+    const required = operationScopes(request.kind).map((permission) =>
+      outside && permission === AuthTerminalOperateScope ? AuthSettingsWriteScope : permission,
+    );
     if (!required.every((permission) => (active.permissions ?? active.scopes).includes(permission)))
-      return yield* denied("access");
+      return yield* denied(outside ? "outside" : "access");
   }, Effect.mapError(io));
   /**
    * A launch's own worktree, made once so a retry never gives the conversation a second checkout.
