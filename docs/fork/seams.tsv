@@ -1174,12 +1174,12 @@ apps/server/src/config.ts	restart-compaction	1
 apps/server/src/orchestration-v2/ProviderSessionManager.ts	restart-continuity	1
 apps/server/src/orchestration-v2/ProviderSessionManager.ts	detached-session-recovery	3
 apps/server/src/orchestration-v2/ProviderSessionManager.ts	mini-native-retention	12
-apps/server/src/persistence/DatabaseStorage.test.ts	restart-compaction	8
+apps/server/src/persistence/DatabaseStorage.test.ts	restart-compaction	6
 apps/server/src/persistence/DatabaseStorage.ts	restart-compaction	9
 apps/server/src/serviceLauncher.ts	restart-continuity	1
 apps/server/src/ws.ts	restart-compaction	2
 apps/server/src/ws.ts	project-home	2
-apps/web/src/components/settings/DatabaseStorageNotice.tsx	restart-compaction	14
+apps/web/src/components/settings/DatabaseStorageNotice.tsx	restart-compaction	11
 packages/contracts/src/desktopBootstrap.ts	restart-compaction	1
 packages/contracts/src/settings.ts	restart-compaction	2
 apps/mobile/src/features/threads/ThreadRouteScreen.test.tsx	library	1
