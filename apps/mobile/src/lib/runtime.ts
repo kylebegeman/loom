@@ -9,6 +9,7 @@ import * as Dpop from "../features/cloud/dpop";
 import * as ManagedRelayLayer from "../features/cloud/managedRelayLayer";
 import { resolveCloudPublicConfig } from "../features/cloud/publicConfig";
 import * as Tracing from "../features/observability/tracing";
+import * as NativeWebSocket from "../native/nativeWebSocket";
 import * as Persistence from "../persistence/layer";
 import { disposeOnFoundationReplace, type FoundationHotModule } from "./foundation-fast-refresh";
 import { whenProtectedDataAvailable } from "./protectedData";
@@ -23,6 +24,7 @@ const layerHttpClient = layerRemoteHttpClient(CloudflareAccess.mobileAccess.fetc
 
 type RuntimeLayerSource =
   | ReturnType<typeof ManagedRelayLayer.layer>
+  | typeof NativeWebSocket.layer
   | typeof CloudflareAccess.layer
   | typeof Dpop.layer
   | typeof layerHttpClient
@@ -31,7 +33,7 @@ type RuntimeLayerSource =
 
 const layerRuntime = Layer.merge(
   ManagedRelayLayer.layer(configuredRelayUrl()),
-  CloudflareAccess.layer,
+  CloudflareAccess.layer.pipe(Layer.provide(NativeWebSocket.layer)),
 ).pipe(
   Layer.provideMerge(Dpop.layer),
   Layer.provideMerge(layerHttpClient),

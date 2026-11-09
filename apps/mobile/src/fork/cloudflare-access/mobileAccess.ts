@@ -46,9 +46,16 @@ const NativeWebSocket: new (
   protocols?: string | string[],
   options?: { headers: Record<string, string> },
 ) => WebSocket = globalThis.WebSocket;
-const socket = Layer.succeed(Socket.WebSocketConstructor, (url, options) => {
-  if (options === undefined || typeof options === "string" || Array.isArray(options))
-    return new WebSocket(url, options);
-  return new NativeWebSocket(url, options.protocols, { headers: { ...options.headers } });
-});
+// Headerless handshakes keep upstream's constructor (compressed on iOS); its native module cannot send headers.
+const socket = Layer.effect(
+  Socket.WebSocketConstructor,
+  Effect.gen(function* () {
+    const base = yield* Socket.WebSocketConstructor;
+    return Socket.WebSocketConstructor.of((url, options) => {
+      if (options === undefined || typeof options === "string" || Array.isArray(options))
+        return base(url, options);
+      return new NativeWebSocket(url, options.protocols, { headers: { ...options.headers } });
+    });
+  }),
+);
 export const layer = Layer.merge(auth, socket);
