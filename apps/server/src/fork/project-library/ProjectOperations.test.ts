@@ -13,6 +13,7 @@ import {
   AuthTerminalOperateScope,
   AuthOrchestrationOperateScope,
   EnvironmentId,
+  mcpClientScopes,
   type AuthClientSession,
   type OrchestrationV2ThreadShell,
   type VcsCreateWorktreeInput,
@@ -106,6 +107,10 @@ const fixture = Effect.gen(function* () {
   const retentionSaves = yield* Ref.make(0);
   const placedBorrowed = yield* Ref.make(false);
   const releaseCancel = yield* Ref.make<"none" | "cleared" | "set-aside">("none");
+  const cancelGate = yield* Ref.make<{
+    readonly entered: Deferred.Deferred<string>;
+    readonly open: Deferred.Deferred<void>;
+  } | null>(null);
   const failBind = yield* Ref.make(false);
   const threadDeleted = yield* Ref.make(false);
   const revokeAtResolve = yield* Ref.make(false);
@@ -237,7 +242,15 @@ const fixture = Effect.gen(function* () {
     }),
     Layer.mock(LibraryWorkspace)({
       inspectFolder: () => Ref.get(inspected),
-      cancelRelease: () => Ref.get(releaseCancel),
+      cancelRelease: (input) =>
+        Effect.gen(function* () {
+          const gate = yield* Ref.get(cancelGate);
+          if (gate !== null) {
+            yield* Deferred.succeed(gate.entered, input.requestId);
+            yield* Deferred.await(gate.open);
+          }
+          return yield* Ref.get(releaseCancel);
+        }),
       setCopyRetention: (input) =>
         Effect.gen(function* () {
           if ((yield* Ref.get(placedBorrowed)) && !input.keepOnComputer)
@@ -414,6 +427,7 @@ const fixture = Effect.gen(function* () {
     retentionSaves,
     placedBorrowed,
     releaseCancel,
+    cancelGate,
     dispatched,
     failBind,
     threadDeleted,
@@ -703,7 +717,7 @@ describe("Project operations", () => {
         }),
       ),
   );
-  it.effect("deduplicates accepted operations and rejects changed inputs or another subject", () =>
+  it.effect("deduplicates accepted operations and rejects changed inputs from any subject", () =>
     run((state) =>
       Effect.gen(function* () {
         const first = yield* state.service.execute("operation", create, actor);
@@ -722,11 +736,18 @@ describe("Project operations", () => {
         yield* Ref.set(state.active, [
           { ...session(), sessionId: AuthSessionId.make("other"), subject: "other-owner" },
         ]);
+        const other = { sessionId: "other", subject: "other-owner" };
+        expect(yield* state.service.execute("operation", create, other)).toEqual(first);
         expect(
           (yield* state.service
-            .execute("operation", create, { sessionId: "other", subject: "other-owner" })
+            .execute(
+              "operation",
+              { kind: "create", input: { ...create.input, title: "Changed" } },
+              other,
+            )
             .pipe(Effect.flip)).reason,
         ).toBe("request-conflict");
+        expect(yield* Ref.get(state.calls)).toBe(1);
       }),
     ),
   );
@@ -847,26 +868,38 @@ describe("Project operations", () => {
       }),
     ),
   );
-  it.effect("preserves file review blockers and keeps files set aside for removal resumable", () =>
-    run((state) =>
-      Effect.gen(function* () {
-        const request: LibraryOperationInput = {
-          kind: "release",
-          input: { requestId: "release", workingCopyId: "copy", reviewToken: "old-review" },
-        };
-        const error = yield* state.service.execute("release", request, actor).pipe(Effect.flip);
-        expect(error.reason).toBe("blocked");
-        expect(error.message).toBe("The reviewed files changed.");
-        yield* Ref.set(state.releaseCancel, "set-aside");
-        expect((yield* state.service.cancel("release", actor).pipe(Effect.flip)).message).toContain(
-          "Resume this operation to finish removing them",
-        );
-        yield* Ref.set(state.releaseCancel, "cleared");
-        const cancelled = yield* state.service.cancel("release", actor);
-        expect(cancelled.state).toBe("cancelled");
-        expect((yield* state.service.resume("release", actor)).state).toBe("cancelled");
-      }),
-    ),
+  it.effect(
+    "preserves file review blockers, keeps files set aside resumable and cancels without holding up other work",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const request: LibraryOperationInput = {
+            kind: "release",
+            input: { requestId: "release", workingCopyId: "copy", reviewToken: "old-review" },
+          };
+          const error = yield* state.service.execute("release", request, actor).pipe(Effect.flip);
+          expect(error.reason).toBe("blocked");
+          expect(error.message).toBe("The reviewed files changed.");
+          yield* Ref.set(state.releaseCancel, "set-aside");
+          expect(
+            (yield* state.service.cancel("release", actor).pipe(Effect.flip)).message,
+          ).toContain("Resume this operation to finish removing them");
+          yield* Ref.set(state.releaseCancel, "cleared");
+          const gate = {
+            entered: yield* Deferred.make<string>(),
+            open: yield* Deferred.make<void>(),
+          };
+          yield* Ref.set(state.cancelGate, gate);
+          const cancelling = yield* state.service.cancel("release", actor).pipe(Effect.forkChild);
+          yield* Deferred.await(gate.entered);
+          expect((yield* state.service.execute("meanwhile", create, actor)).state).toBe(
+            "succeeded",
+          );
+          yield* Deferred.succeed(gate.open, undefined);
+          expect((yield* Fiber.join(cancelling)).state).toBe("cancelled");
+          expect((yield* state.service.resume("release", actor)).state).toBe("cancelled");
+        }),
+      ),
   );
   it.effect(
     "does not persist recovery bearer tokens and requires fresh authorization to resume",
@@ -921,7 +954,11 @@ describe("Project operations", () => {
       Effect.gen(function* () {
         yield* Ref.set(state.failure, true);
         const sql = yield* SqlClient.SqlClient;
-        const owners = { "agent-owned": "workload:owning-thread", "outside-owned": "mcp-client" };
+        const owners = {
+          "agent-owned": "workload:owning-thread",
+          "outside-owned": "mcp-client",
+          "outside-retried": "mcp-client",
+        };
         for (const [id, owner] of Object.entries(owners)) {
           yield* state.service.execute(id, create, actor).pipe(Effect.flip);
           yield* sql`UPDATE fork_library_operations SET subject=${owner} WHERE id=${id}`;
@@ -951,6 +988,21 @@ describe("Project operations", () => {
         expect(
           (yield* state.service.controlClient("outside-owned", "cancel", actor.sessionId)).state,
         ).toBe("cancelled");
+        yield* state.service.controlClient("outside-retried", "resume", actor.sessionId);
+        expect((yield* state.service.execute("outside-retried", create, actor)).state).toBe(
+          "succeeded",
+        );
+        yield* Ref.set(state.active, [
+          session(),
+          {
+            ...session(mcpClientScopes("full-access")),
+            sessionId: AuthSessionId.make(outsideAgent.sessionId),
+            subject: outsideAgent.subject,
+          },
+        ]);
+        expect((yield* state.service.execute("outside-retried", create, outsideAgent)).state).toBe(
+          "succeeded",
+        );
       }),
     ),
   );
@@ -1009,6 +1061,41 @@ describe("Project operations", () => {
             expect(yield* Ref.get(state.calls)).toBe(1);
           }),
         ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
+      }),
+    ),
+  );
+  it.effect("forgets the removal an earlier build's cancel left recorded when it restarts", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const request = yield* encodeRequest({
+          kind: "release",
+          input: { requestId: "stranded", workingCopyId: "copy", reviewToken: "old-review" },
+        });
+        const operation = yield* encodeOperation({
+          id: "stranded",
+          kind: "release",
+          projectId: null,
+          environmentId,
+          state: "cancelled",
+          phase: "Cancelled; completed steps were kept",
+          attempt: 1,
+          error: null,
+          result: null,
+          createdAt: project.createdAt,
+          updatedAt: project.createdAt,
+        });
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES ('stranded',${actor.subject},${actor.sessionId},${request},${operation},'cancelled',NULL,${project.createdAt})`;
+        const gate = {
+          entered: yield* Deferred.make<string>(),
+          open: yield* Deferred.make<void>(),
+        };
+        yield* Deferred.succeed(gate.open, undefined);
+        yield* Ref.set(state.cancelGate, gate);
+        const forgotten = yield* Effect.flatMap(ProjectOperations.ProjectOperations, () =>
+          Deferred.await(gate.entered),
+        ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
+        expect(forgotten).toBe("stranded");
       }),
     ),
   );

@@ -2779,13 +2779,13 @@ const make = Effect.gen(function* () {
     // Only this request can finish files it already moved aside.
     if (!(yield* fs.exists(receipt.copy.rootPath)) || (yield* fs.exists(receipt.removalPath)))
       return "set-aside" as const;
-    yield* store.put({
-      ...receipt,
+    yield* store.update(input.workingCopyId, (current) => ({
+      ...current,
       publishedRelease: undefined,
       releaseRequestId: null,
       releaseReviewToken: null,
       removalPath: null,
-    });
+    }));
     return "cleared" as const;
   });
 
@@ -4226,17 +4226,15 @@ const make = Effect.gen(function* () {
               ),
             )
           : found.receipt.copy;
-      const saved = yield* store.get(copy.id);
-      yield* store.put({
+      const fingerprint = yield* preparationFingerprint(request, request.rootPath);
+      // Without the copy's lock, so a long archive of this copy never holds up other launches.
+      yield* store.update(copy.id, (saved) => ({
         ...saved,
         registrationRequests: [
           ...(saved.registrationRequests ?? []),
-          {
-            requestId: input.requestId,
-            fingerprint: yield* preparationFingerprint(request, request.rootPath),
-          },
+          { requestId: input.requestId, fingerprint },
         ],
-      });
+      }));
       return { copy, request };
     }
     if (placement.action !== "clone") return { request, claimed: false };

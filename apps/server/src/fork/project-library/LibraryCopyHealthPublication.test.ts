@@ -73,6 +73,7 @@ const fixture = Effect.gen(function* () {
     getBinding: () => Effect.die("unused"),
     getBoundProject: () => Effect.succeed(project),
     put: () => Effect.void,
+    update: () => Effect.void,
     followArchived: () => Effect.void,
     importBindings: () => Effect.void,
     bind: () => Effect.void,

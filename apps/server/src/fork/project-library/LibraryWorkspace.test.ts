@@ -5194,6 +5194,47 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
+  it.effect("keeps both a Cancel's clear and a launch that picks the copy at the same time", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-raced");
+      yield* fs.rename(removalPath, copy.rootPath);
+      const { project } = yield* store.get(copy.id);
+      let cancelled = false;
+      // The Cancel lands after the launch picked this copy and before it records itself there.
+      const cancelFirst = (workingCopyId: string) =>
+        Effect.suspend(() => {
+          if (workingCopyId !== copy.id || cancelled) return Effect.void;
+          cancelled = true;
+          return service.cancelRelease({ workingCopyId, requestId: "release-raced" });
+        });
+      const launching = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
+          ...store,
+          get: (workingCopyId) =>
+            store.get(workingCopyId).pipe(Effect.tap(() => cancelFirst(workingCopyId))),
+          update: (workingCopyId, change) =>
+            cancelFirst(workingCopyId).pipe(Effect.andThen(store.update(workingCopyId, change))),
+        }),
+      );
+      const launched = yield* launching.prepareCopy({
+        requestId: "launch-raced",
+        project,
+        strategy: "clone",
+      });
+      expect(launched.id).toBe(copy.id);
+      expect(cancelled).toBe(true);
+      const saved = yield* store.get(copy.id);
+      expect(saved).toMatchObject({ removalPath: null, releaseRequestId: null });
+      expect(saved.registrationRequests?.map((request) => request.requestId)).toContain(
+        "launch-raced",
+      );
+    }),
+  );
+
   it.effect("downloads into a new folder when the copy here has another remote", () =>
     Effect.gen(function* () {
       const service = yield* LibraryWorkspace.LibraryWorkspace;

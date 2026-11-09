@@ -44,7 +44,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
@@ -225,7 +224,8 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const scope = yield* Effect.scope;
-  const lock = yield* Semaphore.make(1);
+  // Per operation: a cancel waiting on its copy must not hold up every other operation.
+  const lock = yield* KeyedLock.make<string>();
   const folderImports = yield* KeyedLock.make<string>();
   const restoreGrants = new Map<string, LibraryRecoveryGrant>();
   const pending = new Map<string, Deferred.Deferred<LibraryOperation, LibraryError>>();
@@ -894,64 +894,66 @@ const make = Effect.gen(function* () {
       Effect.forkIn(scope),
     );
   });
-  const run = Effect.fn("ProjectOperations.run")(function* (
-    id: string,
-    request: LibraryOperationInput,
-    actor: OperationActor,
-  ) {
-    yield* authorize(actor.sessionId, actor.subject, request);
-    const durableRequest =
-      request.kind === "restore"
-        ? {
-            ...request,
-            input: {
-              ...request.input,
-              grant: {
-                ...request.input.grant,
-                accessToken: "credential-required",
-                expiresAt: "1970-01-01T00:00:00.000Z",
+  const run = Effect.fn("ProjectOperations.run")(
+    function* (id: string, request: LibraryOperationInput, actor: OperationActor) {
+      yield* authorize(actor.sessionId, actor.subject, request);
+      const durableRequest =
+        request.kind === "restore"
+          ? {
+              ...request,
+              input: {
+                ...request.input,
+                grant: {
+                  ...request.input.grant,
+                  accessToken: "credential-required",
+                  expiresAt: "1970-01-01T00:00:00.000Z",
+                },
               },
-            },
-          }
-        : request;
-    const encoded = yield* Schema.encodeEffect(requestCodec)(durableRequest).pipe(
-      Effect.mapError(io),
-    );
-    const existing = yield* read(id);
-    if (existing && (!mayControl(existing.subject, actor) || existing.request_json !== encoded))
-      return yield* new LibraryError({ reason: "request-conflict" });
-    if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
-      return existing.operation;
-    if (existing && pending.has(id)) return existing.operation;
-    const timestamp = yield* now;
-    const projectId =
-      request.kind === "create" || request.kind === "import"
-        ? (existing?.operation.projectId ?? null)
-        : request.kind === "launch" || request.kind === "prepare" || request.kind === "restore"
-          ? request.input.project.id
-          : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
-    const value: LibraryOperation = {
-      id,
-      kind: request.kind,
-      projectId,
-      environmentId,
-      state: "queued",
-      phase: "Waiting to start",
-      attempt: (existing?.operation.attempt ?? 0) + 1,
-      error: null,
-      result: request.kind === "import" ? (existing?.operation.result ?? null) : null,
-      createdAt: existing?.operation.createdAt ?? timestamp,
-      updatedAt: timestamp,
-    };
-    const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
-    yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
-      Effect.mapError(io),
-    );
-    yield* workflows.changed;
-    if (request.kind === "restore") restoreGrants.set(id, request.input.grant);
-    yield* start(id);
-    return value;
-  }, lock.withPermit);
+            }
+          : request;
+      const encoded = yield* Schema.encodeEffect(requestCodec)(durableRequest).pipe(
+        Effect.mapError(io),
+      );
+      const existing = yield* read(id);
+      if (existing && existing.request_json !== encoded)
+        return yield* new LibraryError({ reason: "request-conflict" });
+      // A retry after a person took the operation over still gets its outcome.
+      if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
+        return existing.operation;
+      if (existing && !mayControl(existing.subject, actor))
+        return yield* ownedElsewhere(existing.subject);
+      if (existing && pending.has(id)) return existing.operation;
+      const timestamp = yield* now;
+      const projectId =
+        request.kind === "create" || request.kind === "import"
+          ? (existing?.operation.projectId ?? null)
+          : request.kind === "launch" || request.kind === "prepare" || request.kind === "restore"
+            ? request.input.project.id
+            : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
+      const value: LibraryOperation = {
+        id,
+        kind: request.kind,
+        projectId,
+        environmentId,
+        state: "queued",
+        phase: "Waiting to start",
+        attempt: (existing?.operation.attempt ?? 0) + 1,
+        error: null,
+        result: request.kind === "import" ? (existing?.operation.result ?? null) : null,
+        createdAt: existing?.operation.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
+      yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
+        Effect.mapError(io),
+      );
+      yield* workflows.changed;
+      if (request.kind === "restore") restoreGrants.set(id, request.input.grant);
+      yield* start(id);
+      return value;
+    },
+    (effect, id) => lock.withLock(id, effect),
+  );
   const execute = Effect.fn("ProjectOperations.execute")(function* (
     id: string,
     request: LibraryOperationInput,
@@ -996,39 +998,39 @@ const make = Effect.gen(function* () {
       ? operations
       : operations.filter((operation) => operation.kind !== "import");
   }, Effect.mapError(io));
-  const cancel = Effect.fn("ProjectOperations.cancel")(function* (
-    id: string,
-    actor: OperationActor,
-  ) {
-    const row = yield* read(id);
-    if (!row) return yield* new LibraryError({ reason: "not-found" });
-    if (!mayControl(row.subject, actor)) return yield* ownedElsewhere(row.subject);
-    const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
-      Effect.mapError(io),
-    );
-    yield* authorize(actor.sessionId, actor.subject, request);
-    if (row.operation.state === "running" || pending.has(id))
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: "The current step is already running. Let it finish before changing these files.",
+  const cancel = Effect.fn("ProjectOperations.cancel")(
+    function* (id: string, actor: OperationActor) {
+      const row = yield* read(id);
+      if (!row) return yield* new LibraryError({ reason: "not-found" });
+      if (!mayControl(row.subject, actor)) return yield* ownedElsewhere(row.subject);
+      const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
+        Effect.mapError(io),
+      );
+      yield* authorize(actor.sessionId, actor.subject, request);
+      if (row.operation.state === "running" || pending.has(id))
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: "The current step is already running. Let it finish before changing these files.",
+        });
+      if (row.operation.state === "succeeded") return row.operation;
+      if (
+        request.kind === "release" &&
+        (yield* workspace.cancelRelease(request.input)) === "set-aside"
+      )
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail:
+            "Loom already moved these files aside to remove them. Resume this operation to finish removing them.",
+        });
+      return yield* save({
+        ...row.operation,
+        state: "cancelled",
+        phase: "Cancelled; completed steps were kept",
+        updatedAt: yield* now,
       });
-    if (row.operation.state === "succeeded") return row.operation;
-    if (
-      request.kind === "release" &&
-      (yield* workspace.cancelRelease(request.input)) === "set-aside"
-    )
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail:
-          "Loom already moved these files aside to remove them. Resume this operation to finish removing them.",
-      });
-    return yield* save({
-      ...row.operation,
-      state: "cancelled",
-      phase: "Cancelled; completed steps were kept",
-      updatedAt: yield* now,
-    });
-  }, lock.withPermit);
+    },
+    (effect, id) => lock.withLock(id, effect),
+  );
   const executeClient = Effect.fn("ProjectOperations.executeClient")(function* (
     id: string,
     request: LibraryOperationInput,
@@ -1211,6 +1213,17 @@ const make = Effect.gen(function* () {
         id: string;
       }>`SELECT id FROM fork_library_operations WHERE state IN ('queued','running')`;
       for (const row of rows) yield* start(row.id);
+      // Cancels before cancelRelease existed left their removal recorded, blocking a new Remove.
+      const cancelled = yield* sql<{
+        request_json: string;
+      }>`SELECT request_json FROM fork_library_operations WHERE state='cancelled'`;
+      for (const row of cancelled)
+        yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
+          Effect.flatMap((request) =>
+            request.kind === "release" ? workspace.cancelRelease(request.input) : Effect.void,
+          ),
+          Effect.ignore,
+        );
     }).pipe(Effect.ignoreCause),
   );
   return {
