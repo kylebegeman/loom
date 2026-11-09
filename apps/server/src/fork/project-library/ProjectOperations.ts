@@ -62,13 +62,7 @@ import * as SetupMarker from "../../workspace/setupMarker.ts";
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" });
-type OperationActor = { readonly subject: string; readonly sessionId: string };
-const isAgentActor = (actor: OperationActor) => actor.sessionId.startsWith("workload:");
-const denied = (
-  reason: "session" | "turn" | "workload" | "owner" = "session",
-  threadId?: string,
-  actor?: OperationActor,
-) =>
+const denied = (reason: "session" | "turn" | "workload" = "session") =>
   new LibraryError({
     reason: "blocked",
     detail:
@@ -76,13 +70,23 @@ const denied = (
         ? "The conversation that started this operation is no longer running a turn. Resume it from that conversation with loom_library_operation_control."
         : reason === "workload"
           ? "This operation's agent authorization is no longer current. Resume it from its original conversation during a full-access/default turn with loom_library_operation_control."
-          : reason === "owner"
-            ? threadId?.startsWith("workload:")
-              ? actor && !isAgentActor(actor)
-                ? `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume it from that conversation, or cancel it here.`
-                : `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
-              : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel."
-            : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
+          : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
+  });
+type OperationActor = { readonly subject: string; readonly sessionId: string };
+// In-app agents act as their conversation; every outside agent's MCP session shares one subject.
+const isAgent = (subject: string) => subject.startsWith("workload:") || subject === "mcp-client";
+const ownedElsewhere = (owner: string, actor: OperationActor) =>
+  new LibraryError({
+    reason: "blocked",
+    detail: owner.startsWith("workload:")
+      ? isAgent(actor.subject)
+        ? `This operation was started by an agent in conversation ${owner.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
+        : `This operation was started by an agent in conversation ${owner.slice(9)}. Resume it from that conversation, or cancel it here.`
+      : owner === "mcp-client"
+        ? isAgent(actor.subject)
+          ? "This operation was started by an agent connected over MCP. Resume or cancel it from that agent."
+          : "This operation was started by an agent connected over MCP. Ask that agent to resume it, or cancel it here."
+        : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel.",
   });
 const Workload = Schema.Struct({
   threadId: ThreadId,
@@ -1000,10 +1004,10 @@ const make = Effect.gen(function* () {
     const row = yield* read(id);
     if (!row) return yield* new LibraryError({ reason: "not-found" });
     // A person who could start this work may stop what an agent started, even after that
-    // conversation is gone. Resuming stays with the conversation, since it runs as that agent.
-    const personStopsAgentWork = row.subject.startsWith("workload:") && !isAgentActor(actor);
-    if (row.subject !== actor.subject && !personStopsAgentWork)
-      return yield* denied("owner", row.subject, actor);
+    // conversation is gone. Resuming stays with the agent, since it runs as that agent.
+    const owns = row.subject === actor.subject;
+    if (!owns && !(isAgent(row.subject) && !isAgent(actor.subject)))
+      return yield* ownedElsewhere(row.subject, actor);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
@@ -1014,6 +1018,33 @@ const make = Effect.gen(function* () {
         detail: "The current step is already running. Let it finish before changing these files.",
       });
     if (row.operation.state === "succeeded") return row.operation;
+    if (request.kind === "release") {
+      // Files this request already set aside can only be removed by it: a new removal conflicts
+      // with it, and Keep files on this computer no longer applies.
+      const receipt = yield* workspaceStore.get(request.input.workingCopyId).pipe(
+        Effect.catchIf(
+          (error) => error.reason === "not-found",
+          () => Effect.undefined,
+        ),
+      );
+      const exists = (target: string) => fs.exists(target).pipe(Effect.mapError(io));
+      if (
+        receipt?.releaseRequestId === request.input.requestId &&
+        receipt.copy.state !== "released" &&
+        receipt.removalPath !== null &&
+        (!(yield* exists(receipt.copy.rootPath)) || (yield* exists(receipt.removalPath)))
+      )
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: `Loom already started removing these files. ${
+            owns
+              ? "Resume this operation"
+              : row.subject.startsWith("workload:")
+                ? `Resume it from conversation ${row.subject.slice(9)}`
+                : "Have the agent that started this operation resume it"
+          } to finish removing them.`,
+        });
+    }
     return yield* save({
       ...row.operation,
       state: "cancelled",
@@ -1158,7 +1189,7 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* denied();
-    if (row.subject !== actor.subject) return yield* denied("owner", row.subject, actor);
+    if (row.subject !== actor.subject) return yield* ownedElsewhere(row.subject, actor);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
