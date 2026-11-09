@@ -21,7 +21,6 @@ import {
   AuthPreviewOperateScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
-  AuthEnvironmentMaintainScope,
   AuthTerminalOperateScope, // fork: pcb-preview
   AuthSourceControlWriteScope,
   ThreadId,
