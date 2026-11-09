@@ -70,9 +70,8 @@ export function DatabaseStorageNotice({
   const visible = recommendations.map((recommendation) => ({
     ...recommendation,
     label:
-      environments.find(
-        (environment) => environment.environmentId === recommendation.environmentId,
-      )?.label ?? recommendation.environmentId,
+      environments.find((environment) => environment.environmentId === recommendation.environmentId)
+        ?.label ?? recommendation.environmentId,
     reclaimable:
       recommendation.status.canReclaim === true &&
       permissions[environmentIds.indexOf(recommendation.environmentId)] === true &&
