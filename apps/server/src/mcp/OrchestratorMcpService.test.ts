@@ -1982,12 +1982,13 @@ describe("OrchestratorMcpService provider resolution", () => {
 
   // fork: library-projects
   it.effect(
-    "binds shared and isolated Library children before preparation and carries the component source",
+    "binds Library children before preparation, carries the component source and prepares a child whose bind failed",
     () =>
       Effect.gen(function* () {
         const stages: string[] = [];
         let delegated = false;
         let parentPath: string | null = null;
+        let bindFailure: LibraryError | null = null;
         const task = {
           id: taskId,
           threadId: parentThreadId,
@@ -2183,6 +2184,18 @@ describe("OrchestratorMcpService provider resolution", () => {
               repositoryPath: "/copy/web",
             },
           });
+          bindFailure = new LibraryError({
+            reason: "blocked",
+            detail:
+              "This conversation already has work, so it can no longer be linked to Library files.",
+          });
+          yield* service.delegateTask(scope, {
+            task: "Summarize the diff again.",
+            mode: "async",
+            clientRequestId: "library-bind-failed",
+            target: { providerInstanceId: antigravityInstanceId, model: "ant-model" },
+          });
+          assert.deepEqual(stages.slice(-3), ["dispatch", "bind", "prepare"]);
         }).pipe(
           Effect.provide(
             OrchestratorMcpService.layer.pipe(
@@ -2247,7 +2260,9 @@ describe("OrchestratorMcpService provider resolution", () => {
                     Effect.sync(() => {
                       assert.equal(threadId, childThreadId);
                       stages.push("bind");
-                    }),
+                    }).pipe(
+                      Effect.andThen(bindFailure === null ? Effect.void : Effect.fail(bindFailure)),
+                    ),
                   prepareRun: () =>
                     Effect.sync(() => {
                       stages.push("prepare");

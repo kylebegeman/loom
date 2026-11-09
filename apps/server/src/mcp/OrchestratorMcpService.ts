@@ -2645,11 +2645,17 @@ const make = Effect.gen(function* () {
       const childRunEvent = result.storedEvents.find(
         (stored) => stored.event.type === "run.created" && stored.event.threadId === childThreadId,
       );
-      // fork: library-projects -- a failed bind leaves the child held, never running unbound.
+      // fork: library-projects -- prepareRun binds a child this misses or fails its run, so a
+      // child never runs unbound and is never left held.
       if (childThreadId !== null && libraryBinding !== null)
-        yield* threadLaunch
-          .bindLibraryThread(childThreadId, libraryBinding)
-          .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
+        yield* threadLaunch.bindLibraryThread(childThreadId, libraryBinding).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("orchestrator-mcp.delegate-task.library-bind-failed", {
+              taskId,
+              error,
+            }),
+          ),
+        );
       if (
         childThreadId !== null &&
         childRunEvent?.event.type === "run.created" &&
