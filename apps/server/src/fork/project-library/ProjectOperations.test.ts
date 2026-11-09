@@ -908,19 +908,32 @@ describe("Project operations", () => {
         }),
       ),
   );
-  it.effect("tells a signed-in client which conversation owns an agent operation", () =>
+  it.effect("lets a signed-in person cancel, but not resume, an operation an agent started", () =>
     run((state) =>
       Effect.gen(function* () {
-        yield* state.service.execute("agent-owned", create, actor);
+        yield* Ref.set(state.failure, true);
+        yield* state.service.execute("agent-owned", create, actor).pipe(Effect.flip);
         const sql = yield* SqlClient.SqlClient;
         yield* sql`UPDATE fork_library_operations SET subject=${"workload:owning-thread"} WHERE id=${"agent-owned"}`;
-        for (const action of ["resume", "cancel"] as const) {
-          const error = yield* state.service
-            .controlClient("agent-owned", action, actor.sessionId)
-            .pipe(Effect.flip);
-          expect(error.message).toContain("agent in conversation owning-thread");
-          expect(error.message).not.toContain("Sign in");
-        }
+        const resumed = yield* state.service
+          .controlClient("agent-owned", "resume", actor.sessionId)
+          .pipe(Effect.flip);
+        expect(resumed.message).toContain("agent in conversation owning-thread");
+        expect(resumed.message).toContain("cancel it here");
+        const otherAgent = { subject: "workload:other-thread", sessionId: "workload:other" };
+        expect(
+          (yield* state.service.cancel("agent-owned", otherAgent).pipe(Effect.flip)).message,
+        ).toContain("from that conversation with loom_library_operation_control");
+        yield* Ref.set(state.active, [session([AuthTerminalOperateScope])]);
+        expect(
+          (yield* state.service
+            .controlClient("agent-owned", "cancel", actor.sessionId)
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        yield* Ref.set(state.active, [session()]);
+        expect(
+          (yield* state.service.controlClient("agent-owned", "cancel", actor.sessionId)).state,
+        ).toBe("cancelled");
       }),
     ),
   );

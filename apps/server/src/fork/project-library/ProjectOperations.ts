@@ -62,7 +62,13 @@ import * as SetupMarker from "../../workspace/setupMarker.ts";
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" });
-const denied = (reason: "session" | "turn" | "workload" | "owner" = "session", threadId?: string) =>
+type OperationActor = { readonly subject: string; readonly sessionId: string };
+const isAgentActor = (actor: OperationActor) => actor.sessionId.startsWith("workload:");
+const denied = (
+  reason: "session" | "turn" | "workload" | "owner" = "session",
+  threadId?: string,
+  actor?: OperationActor,
+) =>
   new LibraryError({
     reason: "blocked",
     detail:
@@ -72,11 +78,12 @@ const denied = (reason: "session" | "turn" | "workload" | "owner" = "session", t
           ? "This operation's agent authorization is no longer current. Resume it from its original conversation during a full-access/default turn with loom_library_operation_control."
           : reason === "owner"
             ? threadId?.startsWith("workload:")
-              ? `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
+              ? actor && !isAgentActor(actor)
+                ? `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume it from that conversation, or cancel it here.`
+                : `This operation was started by an agent in conversation ${threadId.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
               : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel."
             : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   });
-type OperationActor = { readonly subject: string; readonly sessionId: string };
 const Workload = Schema.Struct({
   threadId: ThreadId,
   providerInstanceId: ProviderInstanceId,
@@ -992,7 +999,11 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* new LibraryError({ reason: "not-found" });
-    if (row.subject !== actor.subject) return yield* denied("owner", row.subject);
+    // A person who could start this work may stop what an agent started, even after that
+    // conversation is gone. Resuming stays with the conversation, since it runs as that agent.
+    const personStopsAgentWork = row.subject.startsWith("workload:") && !isAgentActor(actor);
+    if (row.subject !== actor.subject && !personStopsAgentWork)
+      return yield* denied("owner", row.subject, actor);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
@@ -1147,7 +1158,7 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* denied();
-    if (row.subject !== actor.subject) return yield* denied("owner", row.subject);
+    if (row.subject !== actor.subject) return yield* denied("owner", row.subject, actor);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
