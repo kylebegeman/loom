@@ -1526,3 +1526,9 @@ run controls. See [L11](docs/fork/packets/L11-browser-dev-tools/).
 | ------------------------------------------------------- | ------------------- | ---------------------------------------------------- |
 | `apps/server/src/preview/ServerBrowser.ts`              | `browser-dev-tools` | Register read access to the existing tab captures.   |
 | `apps/web/src/components/preview/PreviewEmptyState.tsx` | `browser-dev-tools` | Open development controls beside discovered servers. |
+
+### Native dependency integrity
+
+`.pnpmfile.cjs` (`native-tab-bar`) permits only the reviewed Screens archive and
+patch bytes documented in [the maintenance guide](docs/operations/mobile-screens-fork.md).
+Every other patch on a mobile fork tarball retains upstream’s install-time rejection.
