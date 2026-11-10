@@ -1,4 +1,5 @@
 import type { CheckpointId, OrchestrationV2Checkpoint, RunId, ThreadId } from "@t3tools/contracts";
+import { latestExecutedRun } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -9,9 +10,42 @@ export interface TurnCheckpoint {
   readonly runId: RunId;
   readonly checkpointId: CheckpointId;
   readonly turn: number;
+  readonly status: "ready";
   /** Checkpoint paths are relative to the repository, not the workspace. */
   readonly files: ReadonlyArray<string>;
 }
+
+/**
+ * Shared-job key. A capture or a first rollback changes the newest turn row, a run that ends
+ * without one changes the latest executed run, and every finished or failed restore records its
+ * request on the thread.
+ */
+const turnGeneration = ({
+  thread,
+  checkpoints,
+  runs,
+}: ProjectionStore.ProjectionRecords<"checkpoints" | "runs">) => {
+  // Any turn row counts: an empty or failed capture still ends a turn that may have edited files.
+  const newest = checkpoints.reduce<OrchestrationV2Checkpoint | null>(
+    (latest, checkpoint) =>
+      checkpoint.runId !== null &&
+      checkpoint.appRunOrdinal !== null &&
+      checkpoint.appRunOrdinal > (latest?.appRunOrdinal ?? 0)
+        ? checkpoint
+        : latest,
+    null,
+  );
+  if (newest === null) return null;
+  const run = latestExecutedRun(runs);
+  return JSON.stringify([
+    newest.id,
+    newest.status,
+    run?.id ?? null,
+    run?.status ?? null,
+    thread.rollbackCompletedRequestId ?? null,
+    thread.rollbackFailure?.requestId ?? null,
+  ]);
+};
 
 const asTurnCheckpoint = (checkpoint: OrchestrationV2Checkpoint): TurnCheckpoint | null =>
   checkpoint.status === "ready" &&
@@ -22,6 +56,7 @@ const asTurnCheckpoint = (checkpoint: OrchestrationV2Checkpoint): TurnCheckpoint
         runId: checkpoint.runId,
         checkpointId: checkpoint.id,
         turn: checkpoint.appRunOrdinal,
+        status: checkpoint.status,
         files: checkpoint.files.map((file) => file.path),
       }
     : null;
@@ -63,19 +98,27 @@ export const makeTurnFiles = Effect.gen(function* () {
     prefixes.set(root, prefix);
     return prefix;
   });
+  const records = (threadId: ThreadId) =>
+    queries.getThreadRecords(threadId, ["checkpoints", "runs"]);
   const turnCheckpoints = Effect.fn("TurnFiles.turnCheckpoints")(function* (
     threadId: ThreadId,
     runId: RunId | null,
     limit: number,
   ) {
-    const records = yield* queries.getThreadRecords(threadId, ["checkpoints"]);
-    const checkpoints = records.checkpoints
+    const current = yield* records(threadId);
+    const turns = current.checkpoints
       .flatMap((checkpoint) => {
         const turn = asTurnCheckpoint(checkpoint);
-        return turn && (runId === null || turn.runId === runId) ? [turn] : [];
+        return turn ? [turn] : [];
       })
       .toSorted((a, b) => b.turn - a.turn);
-    return checkpoints.slice(0, runId === null ? limit : 1);
+    return {
+      generation: turnGeneration(current),
+      checkpoints:
+        runId === null
+          ? turns.slice(0, limit)
+          : turns.filter((turn) => turn.runId === runId).slice(0, 1),
+    };
   });
   const turnCheckpointEvents = (threadId: ThreadId) =>
     threads.streamDomainEvents.pipe(
@@ -87,6 +130,14 @@ export const makeTurnFiles = Effect.gen(function* () {
         return checkpoint;
       }),
       Stream.filter((checkpoint): checkpoint is TurnCheckpoint => checkpoint !== null),
+      Stream.map((checkpoint) => ({
+        checkpoint,
+        // Read only when a scan runs: most captures touch no model or PCB file.
+        generation: Effect.suspend(() => records(threadId)).pipe(
+          Effect.map((current) => turnGeneration(current) ?? checkpoint.checkpointId),
+          Effect.orElseSucceed(() => checkpoint.checkpointId),
+        ),
+      })),
     );
   return { repoPrefix, turnCheckpoints, workspaceFiles, turnCheckpointEvents };
 });

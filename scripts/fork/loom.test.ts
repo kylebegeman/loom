@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off - Exercises maintenance checks and database backups against isolated fixtures.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
+import * as NodeModule from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
@@ -466,7 +468,7 @@ it("runs lint after installation, then builds, boots and typechecks, and the tes
     ["exec", "vp", "build"],
     ["web-boot"],
     ["exec", "vp", "run", "typecheck"],
-    ["exec", "tsc", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
+    ["exec", "effect-tsgo", "tsrs", "--noEmit", "-p", "benchmarks/loom/tsconfig.json"],
     ["electron-runtime"],
     [
       "exec",
@@ -523,7 +525,7 @@ it("runs every check after formatting, unused-code and lint failures and reports
     "vp",
     "web-boot",
     "vp",
-    "tsc",
+    "effect-tsgo",
     "electron-runtime",
     "vp",
     "vp",
@@ -570,7 +572,7 @@ it("boots no stale web client when the build fails, and still runs the rest", ()
   expect(calls.slice(calls.indexOf("vp build"))).toEqual([
     "vp build",
     "vp run",
-    "tsc --noEmit",
+    "effect-tsgo tsrs",
     "electron-runtime",
     "vp test",
     "vp test",
@@ -1290,6 +1292,56 @@ function runSync(root: string, command: string, extraEnv: Record<string, string>
     },
   );
 }
+
+it("runs Codex through Switchboard with sandboxed edits and read-only reviews", () => {
+  const f = repositoryFixture();
+  const bin = NodePath.join(f.root, "bin");
+  NodeFS.mkdirSync(bin);
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "switchboard"),
+    `#!/bin/bash
+printf '%s\\n' "$@" > "$LOOM_TEST_ARGS"
+cat > "$LOOM_TEST_PROMPT"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --output-last-message ]; then shift; printf 'VERDICT: pass\\n' > "$1"; fi
+  shift
+done
+echo 'diagnostics' >&2
+exit "\${LOOM_TEST_EXIT:-0}"
+`,
+    { mode: 0o755 },
+  );
+  const args = NodePath.join(f.root, "args");
+  const prompt = NodePath.join(f.root, "prompt");
+  const env = {
+    PATH: `${bin}:${process.env.PATH}`,
+    LOOM_AGENT_PROVIDER: "codex",
+    LOOM_TEST_ARGS: args,
+    LOOM_TEST_PROMPT: prompt,
+  };
+  for (const [mode, sandbox] of [
+    ["acceptEdits", "workspace-write"],
+    ["default", "read-only"],
+  ]) {
+    const result = runSync(f.root, `printf 'Review this' | run_agent 80 ${mode} Read`, env);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("VERDICT: pass\n");
+    expect(NodeFS.readFileSync(prompt, "utf8")).toBe("Review this");
+    const argv = NodeFS.readFileSync(args, "utf8").trim().split("\n");
+    expect(argv.slice(0, 2)).toEqual(["run", "codex"]);
+    expect(argv.indexOf("-c")).toBeLessThan(argv.indexOf("exec"));
+    expect(argv.slice(argv.indexOf("exec"))).not.toContain("-c");
+    expect(argv).toContain(sandbox);
+    expect(argv).toContain("--ephemeral");
+    expect(argv).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+  }
+  const failed = runSync(f.root, "printf 'Review' | run_agent 80 default Read", {
+    ...env,
+    LOOM_TEST_EXIT: "42",
+  });
+  expect(failed.status).toBe(42);
+  expect(failed.stdout).not.toContain("VERDICT: pass");
+});
 
 function commitAt(root: string, date: string, message: string) {
   NodeChildProcess.execFileSync("git", ["commit", "--quiet", "--allow-empty", "-m", message], {
@@ -2319,6 +2371,62 @@ it("parses every shell script in the Loom workflows", () => {
       expect({ file, stderr: parsed.stderr.trim() }).toEqual({ file, stderr: "" });
     }
   }
+});
+
+it("keeps Vitest compatible with Vite+ and its browser providers", () => {
+  const require = NodeModule.createRequire(import.meta.resolve("vite-plus/package.json"));
+  const vitePlus = require("./package.json");
+  const vitest = require("vitest/package.json");
+  expect(vitest.version).toBe(vitePlus.dependencies.vitest);
+});
+
+it("fails the gateway check when Retry-After exceeds its retry budget", async ({
+  onTestFinished,
+}) => {
+  let requests = 0;
+  let child: NodeChildProcess.ChildProcess | undefined;
+  const server = NodeHttp.createServer((request, response) => {
+    requests++;
+    request.resume();
+    response.writeHead(429, { "Retry-After": "21600" });
+    response.end("Rate limited");
+  });
+  onTestFinished(async () => {
+    child?.kill();
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("No probe address");
+  const probe = workflowScripts(
+    NodePath.join(import.meta.dirname, "../../.github/workflows/loom-upstream.yml"),
+  ).find((script) => script.includes("/v1/messages/count_tokens"));
+  if (!probe) throw new Error("Missing gateway check");
+  child = NodeChildProcess.spawn("bash", ["-euo", "pipefail", "-c", probe], {
+    env: {
+      ...hostEnv,
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${address.port}`,
+      ANTHROPIC_AUTH_TOKEN: "fixture-token",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout?.on("data", (data: Buffer) => {
+    output += data.toString();
+  });
+  child.stderr?.on("data", (data: Buffer) => {
+    output += data.toString();
+  });
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child?.on("error", reject);
+    child?.on("close", resolve);
+  });
+  expect(code, output).toBe(1);
+  expect(requests).toBe(1);
+  expect(output).toContain("did not accept a token count");
 });
 
 it("can spy on task-reservation Set additions without recursing in the mock registry", () => {

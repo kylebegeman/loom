@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import {
   AuthSessionId,
   AuthSettingsWriteScope,
@@ -7,6 +8,10 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_MANAGEMENT_FEATURE,
+  LIBRARY_SITES_FEATURE,
+  type LibrarySitesMutation,
+  SitesSnapshot,
+  SitesError,
   LibraryError,
   LibraryApiCatalog,
   type LibraryApiRequest,
@@ -28,7 +33,8 @@ import {
   directoryPublicKeyFromPem,
   keyFingerprint,
 } from "@t3tools/shared/fork/directory";
-import { signRelayJwt, verifyRelayJwt } from "@t3tools/shared/relayJwt";
+import { signRelayJwt as signRelayJwtEffect } from "@t3tools/shared/relayJwt";
+import { verifyRelayJwt as verifyRelayJwtEffect } from "@t3tools/shared/fork/relayJwt";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -42,7 +48,7 @@ import { SessionStore } from "../../auth/SessionStore.ts";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import { isCurrentIdentitySession, identitySessionPrefix } from "../../auth/identityPolicy.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
+import { getOrCreateEnvironmentKeyPairFromSecretStore as getOrCreateEnvironmentKeyPairFromSecretStoreEffect } from "../../cloud/environmentKeys.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { DirectoryService } from "../directory/DirectoryService.ts";
@@ -52,6 +58,7 @@ import * as LibraryApis from "./LibraryApiWorkspaces.ts";
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryPublisher } from "./LibraryPublisher.ts";
 import { LibraryService } from "./LibraryService.ts";
+import * as SitesService from "../sites/SitesService.ts";
 
 const DELEGATION_TYP = "loom-project-management-delegation+jwt";
 const REQUEST_TYP = "loom-project-management-request+jwt";
@@ -65,6 +72,7 @@ const decodeDelegation = Schema.decodeEffect(delegationCodec);
 const decodeInvocation = Schema.decodeUnknownEffect(LibraryManagementInvocation);
 const decodeWorkstream = Schema.decodeUnknownEffect(LibraryWorkstream);
 const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
+const decodeSitesSnapshot = Schema.decodeUnknownEffect(SitesSnapshot);
 const DelegationClaims = Schema.Struct({
   sessionId: AuthSessionId,
   subject: Schema.String,
@@ -137,6 +145,16 @@ export class LibraryManagement extends Context.Service<
       input: LibraryApiRequest,
       caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
     ) => Effect.Effect<LibraryApiCatalog, LibraryError>;
+    readonly sites: (
+      input: LibrarySitesMutation,
+      actor: LibraryManagementActor,
+      authorize?: Effect.Effect<void, LibraryError>,
+    ) => Effect.Effect<SitesSnapshot, LibraryError>;
+    readonly sitesAgent: (
+      input: LibrarySitesMutation,
+      caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+      authorize?: Effect.Effect<void, LibraryError>,
+    ) => Effect.Effect<SitesSnapshot, LibraryError>;
     readonly saveWorkstream: (
       input: LibrarySaveWorkstream,
       actor: LibraryManagementActor,
@@ -148,12 +166,27 @@ export class LibraryManagement extends Context.Service<
     readonly accept: (
       input: LibraryManagementInvocation,
       source: EnvironmentId,
-    ) => Effect.Effect<LibraryProject | LibraryWorkstream | LibraryApiCatalog, LibraryError>;
+    ) => Effect.Effect<
+      LibraryProject | LibraryWorkstream | LibraryApiCatalog | SitesSnapshot,
+      LibraryError
+    >;
   }
 >()("t3/fork/project-library/LibraryManagement") {}
 
 const make = Effect.gen(function* () {
+  const signature = yield* Signature.Signature;
+  const signRelayJwt = (...args: Parameters<typeof signRelayJwtEffect>) =>
+    signRelayJwtEffect(...args).pipe(Effect.provideService(Signature.Signature, signature));
+  const verifyRelayJwt = (...args: Parameters<typeof verifyRelayJwtEffect>) =>
+    verifyRelayJwtEffect(...args).pipe(Effect.provideService(Signature.Signature, signature));
+  const getOrCreateEnvironmentKeyPairFromSecretStore = (
+    ...args: Parameters<typeof getOrCreateEnvironmentKeyPairFromSecretStoreEffect>
+  ) =>
+    getOrCreateEnvironmentKeyPairFromSecretStoreEffect(...args).pipe(
+      Effect.provideService(Signature.Signature, signature),
+    );
   const library = yield* LibraryService;
+  const sites = yield* SitesService.SitesService;
   const apis = yield* Effect.serviceOption(LibraryApis.LibraryApiWorkspaces);
   const workflows = yield* ProjectWorkflows;
   const publisher = yield* LibraryPublisher;
@@ -220,6 +253,7 @@ const make = Effect.gen(function* () {
   );
   const dispatch = Effect.fn("LibraryManagement.dispatch")(function* (
     request: LibraryManagementRequest,
+    authorize: Effect.Effect<void, LibraryError> = Effect.void,
   ) {
     switch (request.kind) {
       case "create":
@@ -239,6 +273,35 @@ const make = Effect.gen(function* () {
         return yield* apis.value.execute(request.input);
       case "save-workstream":
         return yield* workflows.saveWorkstream(request.input);
+      case "sites": {
+        const check = authorize.pipe(
+          Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
+        );
+        const input = request.input;
+        const write =
+          input.action === "runChecks"
+            ? sites.runChecks(check)
+            : input.action === "saveSite"
+              ? sites.saveSite(input.input, check)
+              : input.action === "saveService"
+                ? sites.saveService(input.input, check)
+                : sites.saveCheck(input.input, check);
+        return yield* write.pipe(
+          Effect.mapError(
+            (cause) =>
+              new LibraryError({
+                reason:
+                  cause.stage === "validation"
+                    ? "invalid"
+                    : cause.stage === "project"
+                      ? "not-found"
+                      : "io",
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        );
+      }
     }
   });
   const authorizeActor = Effect.fn("LibraryManagement.authorizeActor")(function* (
@@ -393,17 +456,28 @@ const make = Effect.gen(function* () {
       proof.delegationDigest !== (yield* digest(input.delegation))
     )
       return yield* deny();
-    return yield* dispatch(input.request);
+    return yield* dispatch(input.request, managementSession(grant.sessionId).pipe(Effect.asVoid));
   });
   const send = Effect.fn("LibraryManagement.send")(function* <A>(
     request: LibraryManagementRequest,
     actor: LibraryManagementActor,
     decode: (value: unknown) => Effect.Effect<A, Schema.SchemaError>,
+    authorize: Effect.Effect<void, LibraryError> = Effect.void,
   ) {
     yield* authorizeActor(actor);
+    yield* authorize;
+    const responseUnconfirmed =
+      request.kind === "sites"
+        ? () =>
+            new LibraryError({
+              reason: "io",
+              detail:
+                "Loom could not confirm the Sites change. Refresh Sites before trying again; it may already have applied.",
+            })
+        : unconfirmed;
     const destination = yield* connection.current;
     if (destination.kind === "authority")
-      return yield* dispatch(request).pipe(
+      return yield* dispatch(request, authorizeActor(actor).pipe(Effect.andThen(authorize))).pipe(
         Effect.flatMap(decode),
         Effect.mapError((error) => (isLibraryError(error) ? error : unavailable())),
       );
@@ -424,6 +498,10 @@ const make = Effect.gen(function* () {
     if (request.kind === "api-workspace" && !info.features?.includes(LIBRARY_API_FEATURE))
       return yield* deny(
         "Update Loom on the Library to share API workspaces. The existing connection can stay enrolled.",
+      );
+    if (request.kind === "sites" && !info.features?.includes(LIBRARY_SITES_FEATURE))
+      return yield* deny(
+        "Update Loom on the Library to manage Sites from agents. Keep this computer enrolled.",
       );
     const delegation = yield* readDelegation;
     if (delegation === null || delegation.expiresAt <= (yield* Clock.currentTimeMillis))
@@ -455,6 +533,7 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.mapError(unavailable));
     // Recheck after preparing the signed request so a changed turn cannot send its proof.
     yield* authorizeActor(actor);
+    yield* authorize;
     const response = yield* connection
       .send(
         HttpClientRequest.post(destination.endpoint("/api/loom/library/projects/manage")).pipe(
@@ -469,9 +548,9 @@ const make = Effect.gen(function* () {
         ),
       )
       .pipe(
-        Effect.timeout("30 seconds"),
+        Effect.timeout(request.kind === "sites" ? "120 seconds" : "30 seconds"),
         Effect.mapError((error) =>
-          error._tag === "LibraryError" && error.reason !== "io" ? error : unconfirmed(),
+          error._tag === "LibraryError" && error.reason !== "io" ? error : responseUnconfirmed(),
         ),
       );
     if (response.status === 401)
@@ -486,8 +565,8 @@ const make = Effect.gen(function* () {
     )
       return yield* deny(UNSUPPORTED);
     if (!response.headers["content-type"]?.includes("application/json"))
-      return yield* unconfirmed();
-    const body = yield* response.json.pipe(Effect.mapError(unconfirmed));
+      return yield* responseUnconfirmed();
+    const body = yield* response.json.pipe(Effect.mapError(responseUnconfirmed));
     if (response.status !== 200) {
       const error = yield* decodeErrorResponse(body).pipe(Effect.mapError(unavailable));
       return yield* new LibraryError(error);
@@ -535,6 +614,26 @@ const make = Effect.gen(function* () {
   ) {
     return yield* apiWorkspace(input, yield* agentActor(caller));
   });
+  const manageSites = Effect.fn("LibraryManagement.sites")(function* (
+    input: LibrarySitesMutation,
+    actor: LibraryManagementActor,
+    authorize?: Effect.Effect<void, LibraryError>,
+  ) {
+    const destination = yield* connection.current;
+    if (destination.kind === "authority" || destination.kind === "none")
+      return yield* dispatch({ kind: "sites", input }, authorize ?? authorizeActor(actor)).pipe(
+        Effect.flatMap(decodeSitesSnapshot),
+        Effect.mapError((cause) => (isLibraryError(cause) ? cause : unavailable())),
+      );
+    return yield* send({ kind: "sites", input }, actor, decodeSitesSnapshot, authorize);
+  });
+  const sitesAgent = Effect.fn("LibraryManagement.sitesAgent")(function* (
+    input: LibrarySitesMutation,
+    caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+    authorize?: Effect.Effect<void, LibraryError>,
+  ) {
+    return yield* manageSites(input, yield* agentActor(caller), authorize);
+  });
   const status = Effect.gen(function* () {
     const destination = yield* connection.current;
     const base = { environmentId, keyFingerprint: yield* fingerprint, expiresAt: null };
@@ -565,6 +664,8 @@ const make = Effect.gen(function* () {
     executeAgent,
     apiWorkspace,
     apiWorkspaceAgent,
+    sites: manageSites,
+    sitesAgent,
     saveWorkstream,
     saveWorkstreamAgent,
     accept,

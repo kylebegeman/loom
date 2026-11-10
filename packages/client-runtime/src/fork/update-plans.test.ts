@@ -32,7 +32,7 @@ const status = (
   },
 });
 
-it("shows waiting counts and only allows cancellation before installation", () => {
+it("describes current plans and only allows cancellation before installation", () => {
   expect(updatePlanText(status("waiting"))).toBe("Waiting for 2 agents");
   expect(updatePlanText(status("waiting", 1))).toBe("Waiting for 1 agent");
   expect(updatePlanText(status("waiting", null))).toBe("Waiting to check agents");
@@ -41,6 +41,23 @@ it("shows waiting counts and only allows cancellation before installation", () =
   expect(updatePlanCanCancel(status("installing"))).toBe(false);
   expect(updatePlanText(status("done"))).toBe("Updated to 0.0.2");
   expect(updatePlanText(status("cancelled"))).toBe("Update cancelled");
+  const ended = (
+    state: "failed" | "cancelled",
+    currentVersion: string,
+    targetVersion: string,
+  ): UpdatePlanStatus => ({
+    ...status(state),
+    currentVersion,
+    plan: { ...status(state).plan!, targetVersion, error: state === "failed" ? "Lost" : null },
+  });
+  expect(
+    [
+      ended("failed", "0.0.190-nightly.20261107.4300", "0.0.190-nightly.20261108.4353"),
+      ended("failed", "dev", "0.0.2"),
+      ended("failed", "0.0.190-nightly.20261108.4353", "0.0.184-nightly.20261106.4247"),
+      ended("cancelled", "0.0.2", "0.0.2"),
+    ].map((value) => updatePlanText(value)),
+  ).toEqual(["Update failed: Lost", "Update failed: Lost", null, null]);
 });
 
 it("preserves every outcome when a fleet arm partly fails and never dispatches unavailable computers", async () => {

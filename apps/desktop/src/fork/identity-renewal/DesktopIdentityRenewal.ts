@@ -24,6 +24,8 @@ import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopIdentityGrantStore from "./DesktopIdentityGrantStore.ts";
 
+const isIdentityGrantTransientErrorValue = Schema.is(IdentityGrantTransientError);
+
 /** A transient failure: the renderer keeps the current session and retries later. */
 export class DesktopIdentityRenewalError extends Schema.TaggedError<DesktopIdentityRenewalError>()(
   "DesktopIdentityRenewalError",
@@ -134,10 +136,9 @@ export const make = Effect.fn("DesktopIdentityRenewal.make")(function* (options:
         }),
       catch: (cause) =>
         new DesktopIdentityRenewalError({
-          detail:
-            cause instanceof IdentityGrantTransientError
-              ? cause.message
-              : "Could not renew Loom access. Try again.",
+          detail: isIdentityGrantTransientErrorValue(cause)
+            ? cause.message
+            : "Could not renew Loom access. Try again.",
         }),
     });
     if (renewed._tag === "SignInRequired") {

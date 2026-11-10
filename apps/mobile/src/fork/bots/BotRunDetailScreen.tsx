@@ -4,7 +4,7 @@ import { BOT_RUN_ATTENTION_STATES } from "@t3tools/client-runtime/fork";
 import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import { Pressable, ScrollView, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import type { EnvironmentId, ModelSelection } from "@t3tools/contracts";

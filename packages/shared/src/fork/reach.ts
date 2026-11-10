@@ -1,8 +1,9 @@
 import { type ReachAction, ReachRequestClaims } from "@t3tools/contracts/fork";
+import type * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
+import { verifyRelayJwt } from "./relayJwt.ts";
 import * as Schema from "effect/Schema";
-import { RelayJwtError, signRelayJwt, verifyRelayJwt } from "../relayJwt.ts";
+import { RelayJwtError, signRelayJwt } from "../relayJwt.ts";
 import { decodeEd25519PublicKey, isDirectoryRouteUrl } from "./directory.ts";
 
 /** Distinct from the directory report and every relay typ, so no proof replays as another. */
@@ -63,7 +64,7 @@ export const signReachRequest = Effect.fn("ReachRequest.sign")(function* (input:
   readonly audience: string;
   readonly claims: ReachRequestClaims;
   readonly nowEpochSeconds: number;
-}): Effect.fn.Return<string, ReachRequestError> {
+}): Effect.fn.Return<string, ReachRequestError, Signature.Signature> {
   const audience = reachAudience(input.audience);
   if (audience === null) {
     return yield* new ReachRequestError({ operation: "sign", reason: "invalid-audience" });
@@ -102,9 +103,7 @@ export const signReachRequest = Effect.fn("ReachRequest.sign")(function* (input:
 });
 
 const isIssuerClaimFailure = (error: RelayJwtError) =>
-  Predicate.isObject(error.cause) &&
-  Predicate.hasProperty(error.cause, "claim") &&
-  error.cause.claim === "iss";
+  RelayJwtError.diagnosticCode(error).startsWith("ClaimValidationFailed.iss.");
 
 /**
  * Verifies a request against the environment's pinned public key (base64 DER SPKI), the
@@ -118,7 +117,7 @@ export function verifyReachRequest(input: {
   readonly audience: string;
   readonly action: ReachAction;
   readonly nowEpochSeconds: number;
-}): Effect.Effect<ReachRequestClaims, ReachRequestError> {
+}): Effect.Effect<ReachRequestClaims, ReachRequestError, Signature.Signature> {
   const fail = (reason: ReachRequestError["reason"], diagnostic?: string) =>
     new ReachRequestError({ operation: "verify", reason, diagnostic });
   return Effect.gen(function* () {

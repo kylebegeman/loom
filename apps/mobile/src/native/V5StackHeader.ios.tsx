@@ -8,8 +8,9 @@ import { StyleSheet } from "react-native";
 import { KeyboardController, useKeyboardState } from "react-native-keyboard-controller";
 import { isDuoDevice } from "../lib/device-type";
 import { useMobileNavigationTheme } from "../lib/useMobileNavigationTheme";
-import { useDeviceType, useNativeLayoutMetrics } from "../native/native-layout-metrics";
+import { useDeviceType, useNativeLayoutMetrics } from "./native-layout-metrics";
 import { HeaderItemsWidthContext } from "./header-items-width";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native-glass";
 import {
   SearchBar,
   Stack,
@@ -45,7 +46,12 @@ type Options = NativeStackNavigationOptions & {
 type MenuElementInput =
   | NativeStackHeaderItemMenu["menu"]["items"][number]
   | HeaderBarButtonItemWithMenu["menu"]["items"][number];
-type MenuInput = { readonly title?: string; readonly items: readonly MenuElementInput[] };
+type MenuInput = {
+  readonly title?: string;
+  readonly items: readonly MenuElementInput[];
+  readonly layout?: "default" | "palette";
+  readonly displayAsPalette?: boolean;
+};
 
 function convertIcon(
   icon:
@@ -60,6 +66,7 @@ function convertIcon(
   return icon;
 }
 
+// fork: native-menus
 function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
   const children = menu.items.flatMap<StackHeaderMenuElementIOS>((item, index) => {
     if ("hidden" in item && item.hidden) return [];
@@ -67,8 +74,9 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
     if (item.type === "submenu") {
       return [
         {
-          ...convertMenu({ items: item.items }, childId),
+          ...convertMenu(item, childId),
           title: "label" in item ? item.label : item.title,
+          icon: convertIcon(item.icon),
           displayInline:
             "inline" in item
               ? item.inline
@@ -96,11 +104,37 @@ function convertMenu(menu: MenuInput, id: string): StackHeaderMenuIOS {
       },
     ];
   });
-  return { id, type: "menu", title: menu.title, children };
+  return {
+    id,
+    type: "menu",
+    title: menu.title,
+    displayAsPalette: menu.layout === "palette" || menu.displayAsPalette,
+    children,
+  };
+}
+
+// fork: native-menus
+function groupSeparator(
+  previous: ToolbarItem | undefined,
+  item: ToolbarItem,
+  id: string,
+): HeaderItem[] {
+  if (
+    !previous ||
+    previous.type === "spacing" ||
+    item.type === "spacing" ||
+    !(
+      ("sharesBackground" in previous && previous.sharesBackground === false) ||
+      ("sharesBackground" in item && item.sharesBackground === false)
+    )
+  )
+    return [];
+  // V5 uses explicit spacers to split Liquid Glass groups instead of sharesBackground.
+  return [{ type: "spacer", id: `group:${id}`, sizing: "fixed", width: 8 }];
 }
 
 function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderItem[] {
-  return items.map((item, index): HeaderItem => {
+  const converted = items.map((item, index): HeaderItem => {
     const id =
       item.type === "spacing" ? `${prefix}:${index}` : (item.identifier ?? `${prefix}:${index}`);
     switch (item.type) {
@@ -147,6 +181,10 @@ function convertItems(items: NativeStackHeaderItem[], prefix: string): HeaderIte
         };
     }
   });
+  return converted.flatMap((item, index) => [
+    ...groupSeparator(items[index - 1], items[index]!, item.id),
+    item,
+  ]);
 }
 
 export function V5StackHeader(props: {
@@ -179,12 +217,18 @@ export function V5StackHeader(props: {
   const bottomSearch = Boolean(mailSearch) && deviceType !== "pad";
   // A vertical bar keeps fixed spaces at full length and separates items itself.
   const spacesSearch = bottomSearch && (nativeMetrics?.verticalBarEdge ?? "none") === "none";
-  const bottom = toolbar.flatMap<HeaderItem>((item, index) => {
-    if (item.type === "mailSearchToolbar") return [];
-    if (item.type === "searchBarPlacement")
-      return [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }];
-    return convertItems([item], `toolbar:${index}`);
-  });
+  let previousToolbarItem: ToolbarItem | undefined;
+  const bottom: HeaderItem[] = [];
+  for (const [index, item] of toolbar.entries()) {
+    if (item.type === "mailSearchToolbar") continue;
+    const converted: HeaderItem[] =
+      item.type === "searchBarPlacement"
+        ? [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }]
+        : convertItems([item], `toolbar:${index}`);
+    const separated = groupSeparator(previousToolbarItem, item, converted[0]!.id);
+    previousToolbarItem = item;
+    bottom.push(...separated, ...converted);
+  }
   if (mailSearch) {
     if (mailSearch.filterMenu)
       bottom.push({
@@ -303,12 +347,19 @@ export function V5StackHeader(props: {
     );
   const titleStyle = StyleSheet.flatten(options.headerTitleStyle);
   const headerStyle = StyleSheet.flatten(options.headerStyle);
+  // fork: native-scroll-edge
+  const transparent = options.headerTransparent ?? NATIVE_LIQUID_GLASS_SUPPORTED;
   const appearance = {
-    // Clear colors remove UIKit material; let translucent bars supply their own blur background.
-    backgroundColor: options.headerTransparent
-      ? undefined
-      : (headerStyle?.backgroundColor ?? theme.colors.card),
-    shadowColor: options.headerShadowVisible === false ? "transparent" : undefined,
+    // UIKit's scroll view owns the soft edge effect; a default bar appearance adds a hard band above it.
+    backgroundColor: NATIVE_LIQUID_GLASS_SUPPORTED
+      ? "transparent"
+      : transparent
+        ? undefined
+        : (headerStyle?.backgroundColor ?? theme.colors.card),
+    shadowColor:
+      NATIVE_LIQUID_GLASS_SUPPORTED || options.headerShadowVisible === false
+        ? "transparent"
+        : undefined,
     titleFontSize: titleStyle?.fontSize,
     titleFontFamily: titleStyle?.fontFamily,
     titleFontWeight: titleStyle?.fontWeight,
@@ -320,7 +371,7 @@ export function V5StackHeader(props: {
     <HeaderItemsWidthContext value={itemsWidth}>
       <Stack.HeaderConfig
         hidden={options.headerShown === false}
-        transparent={options.headerTransparent}
+        transparent={transparent}
         title={title}
         subtitle={options.unstable_headerSubtitle ?? options.headerSubtitle}
         backButtonHidden={options.headerBackVisible === false}

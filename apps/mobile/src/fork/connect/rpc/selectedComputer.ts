@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
 import { ManagedRelay } from "@t3tools/client-runtime/relay";
 import { makeEnvironmentHttpApiClient, request, runStream } from "@t3tools/client-runtime/rpc";
@@ -6,7 +7,6 @@ import {
   type EnvironmentCloudLinkStateResult,
   WS_METHODS,
 } from "@t3tools/contracts";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -14,10 +14,13 @@ import * as Stream from "effect/Stream";
 import { linkEnvironmentToCloud } from "../../../features/cloud/linkEnvironment";
 import type { SavedRemoteConnection } from "../../../lib/connection";
 
-export class SelectedComputerConnectError extends Data.TaggedError("SelectedComputerConnectError")<{
-  readonly message: string;
-  readonly reason?: "previous-link";
-}> {}
+export class SelectedComputerConnectError extends Schema.TaggedError<SelectedComputerConnectError>()(
+  "SelectedComputerConnectError",
+  {
+    message: Schema.String,
+    reason: Schema.optional(Schema.Literal("previous-link")),
+  },
+) {}
 
 export interface SelectedComputerTarget {
   readonly environmentId: EnvironmentId;

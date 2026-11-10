@@ -364,6 +364,14 @@ environment's time zone, which may differ from your phone's. Choose **Once**
 to run a task a single time at a date and time in your own time zone. If the
 environment is offline then, the task runs when it is back.
 
+Under **Destination**, choose where runs go. **New thread each run** keeps every
+run separate. The two one-thread choices start a thread on the first run and post
+later runs there: one continues the same conversation, the other starts each run
+in a fresh session that doesn't see earlier runs, so the thread stays readable
+without the agent's context growing. To move a one-thread task, pick another
+thread in its project under **Destination**. Moving such a task to another
+project starts a new thread there on its next run.
+
 Deleting a thread also deletes tasks that post into that thread. Tasks that start
 a new thread on each run survive deletion of their previous threads.
 
@@ -481,6 +489,19 @@ chosen computer, which reuses a checkout of the same repository it already has t
 **Choose** to pick the folder in that computer's folder browser, or type a path in its search and
 select **Use new folder** for one that does not exist yet; Loom creates it when it first places
 something there. When Settings covers several computers, select one first.
+
+## Fast worktree checkout on macOS
+
+Fast worktree checkout is a beta. Turn it on for each Mac in **Settings → Labs → Fast worktree
+checkout**. T3 Code then keeps a few recent checkouts of each repository in the `caches` folder of
+the T3 home directory. A new worktree is cloned from one of them with APFS copy-on-write, which is
+about twice as fast as writing every file and makes the first `git status` in it fast as well.
+Turning it off deletes the cache.
+
+The first worktree of a repository uses Git's normal checkout and fills the cache. It needs Git 2.42
+or newer. Git's normal checkout is also used for worktrees on a different drive from the T3 home
+directory, sparse checkouts, repositories whose attributes use filters such as Git LFS, and
+repositories whose checkout settings changed.
 
 ## Storage cleanup
 
@@ -713,6 +734,16 @@ show live front pages on the Sites cards, turn on **Display** > **Live
 previews**. It is off by default because every card's load counts as a visit
 too.
 
+Use Loom Sites for daily reporting and management across projects. When the connected
+service provides an admin link, choose **Open [service name] admin** in Sites for
+specialist workflows such as short links, inbox, bookings and résumé publishing.
+The service's admin uses the same backend data and may require its own sign-in.
+For Corbelo, **Traffic → Developer usage** shows optional anonymous command counts,
+outcomes, average durations, versions, platforms and feature groups. Daily installation
+counts reset each UTC day; they do not identify people or measure individual retention.
+Purchases and license totals remain in Corbelo's protected operator view, linked there.
+An older collector or Library shows usage as unavailable until it is updated.
+
 Register and edit sites directly in Loom. Each site belongs to at least one
 Library project; project pages link back to their sites. Register shared
 services on the **Services** tab, link them to sites, and add HTTPS endpoint
@@ -727,6 +758,11 @@ Agents use `loom_sites`, `loom_site_analytics`, `loom_site_save`,
 `loom_site_service_save`, `loom_site_check_save`, and `loom_site_checks_run`.
 The same operations are available from a configured terminal through
 `t3 sites list`, `analytics`, `save`, `save-service`, `save-check`, and `run-checks`.
+Agents and the CLI use this computer's enrolled Library, including its Sites
+connection. The work computer does not need its own Sites credentials. Both
+computers must run a Loom version that supports Library Sites requests. If Sites
+works on your Library but an agent reports it unconfigured, update Loom on the
+work computer. Keep the existing Library connection and Sites credentials.
 Pass a JSON object matching the corresponding MCP tool. Saves replace the entry's
 settings, so include its project, origin, and service selections.
 Use the agent terminal's MCP connection or set `LOOM_MCP_ENDPOINT` and

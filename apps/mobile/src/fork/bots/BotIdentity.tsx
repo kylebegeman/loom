@@ -21,9 +21,9 @@ const BOT_GLYPH: AppSymbolName = { ios: "bolt.fill", android: "bolt" };
 const TILE_ALPHA = "24";
 
 const TILE_SIZES = {
-  sm: { box: "size-8 rounded-lg", icon: 15 },
-  md: { box: "size-10 rounded-xl", icon: 18 },
-  xl: { box: "size-14 rounded-2xl", icon: 26 },
+  sm: { box: "size-8 rounded-full", icon: 15 },
+  md: { box: "size-11 rounded-full", icon: 20 },
+  xl: { box: "size-16 rounded-full", icon: 28 },
 } as const;
 
 const DOT_FILL: Record<LibraryWorkflowTone, string> = {
@@ -96,8 +96,8 @@ export function BotsSection({
       <View className="flex-row items-center justify-between gap-3">
         <Text
           accessibilityRole="header"
-          textRole="footnote"
-          className={cn("min-w-0 shrink font-t3-medium text-foreground-muted", inset)}
+          textRole="body"
+          className={cn("min-w-0 shrink font-t3-semibold text-foreground", inset)}
         >
           {title}
         </Text>
@@ -180,8 +180,10 @@ export function BotSpecGrid({
     <View className="flex-row flex-wrap gap-y-4">
       {rows.map(([label, value]) => (
         <View key={label} className="w-1/2 min-w-0 gap-0.5 pe-3">
-          <Text className="text-xs text-foreground-muted">{label}</Text>
-          <Text selectable className="text-sm font-t3-medium text-foreground">
+          <Text textRole="footnote" className="text-foreground-muted">
+            {label}
+          </Text>
+          <Text selectable textRole="body" className="font-t3-medium text-foreground">
             {value}
           </Text>
         </View>

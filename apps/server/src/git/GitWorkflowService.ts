@@ -365,7 +365,7 @@ export const make = Effect.gen(function* () {
     "GitWorkflowService.detectGitRepositoryForCommand",
   )(function* (operation: string, cwd: string) {
     // fork: project-lifecycle
-    yield* restoreManagedProjectCheckout(cwd).pipe(
+    yield* restoreManagedProjectCheckout(cwd, false, true).pipe(
       Effect.provide(restorationServices),
       Effect.mapError(
         (cause) =>

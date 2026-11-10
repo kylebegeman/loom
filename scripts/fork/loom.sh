@@ -32,7 +32,7 @@
 # install. With none open it brings this Mac up to main, which is how merges
 # the workflow made itself and fork changes on main get released.
 #
-# --resolve gives each conflicted file its own Claude session instead of
+# --resolve gives each conflicted file its own agent session instead of
 # stopping, so a merge that piled up over several days never exhausts one
 # session, then gives each failing check its own repair session and commit.
 # --pr continues an open integration pull request (a needs-Kyle draft, or one
@@ -106,7 +106,9 @@ UPSTREAM_STALE="main has waited over ${UPSTREAM_GRACE_HOURS}h for an upstream ni
 LOOM_RESOLVE_JOBS=${LOOM_RESOLVE_JOBS:-4}
 # After a resolved merge, each failing check gets at most this many repair sessions.
 LOOM_REPAIR_ATTEMPTS=${LOOM_REPAIR_ATTEMPTS:-3}
+LOOM_AGENT_PROVIDER=${LOOM_AGENT_PROVIDER:-claude}
 LOOM_CLAUDE_MODEL=${LOOM_CLAUDE_MODEL:-claude-opus-5-5}
+LOOM_CODEX_MODEL=${LOOM_CODEX_MODEL:-gpt-6.1-sol}
 # Read-only git for the sessions; they edit with Claude's own tools.
 CLAUDE_GIT_TOOLS=('Bash(git show:*)' 'Bash(git log:*)' 'Bash(git diff:*)' 'Bash(git blame:*)')
 
@@ -432,7 +434,7 @@ run_checks() {
     else
       FAILED_CHECKS+="Listing the packages to typecheck"$'\n'
     fi
-    run_check "Typechecking Loom benchmarks" pnpm exec tsc --noEmit -p benchmarks/loom/tsconfig.json
+    run_check "Typechecking Loom benchmarks" pnpm exec effect-tsgo tsrs --noEmit -p benchmarks/loom/tsconfig.json
     # Electron's lazy installer cannot unpack concurrently from multiple test workers.
     run_check "Preparing the Electron test runtime" in_dir apps/desktop node scripts/ensure-electron-runtime.mjs
     if packages=$(fork_tests | test_package | sort -u) && [ -n "$packages" ]; then
@@ -1356,7 +1358,7 @@ cmd_upstream_overlap() {
   [ "$found" -eq 1 ] || echo "No upstream work main lacks touches these. Open pull requests: https://github.com/$UPSTREAM_REPO/pulls"
 }
 
-# Runs Claude headless on the prompt from stdin: run_agent <max turns> <permission mode> <tools...>.
+# Runs the selected agent headless on the prompt from stdin: run_agent <max turns> <permission mode> <tools...>.
 # LOOM_AGENT replaces it with any executable that reads the prompt from stdin.
 run_agent() {
   local turns=$1 mode=$2
@@ -1365,9 +1367,30 @@ run_agent() {
     "$LOOM_AGENT"
     return
   fi
+  case "$LOOM_AGENT_PROVIDER" in
+    codex)
+      run_codex_agent "$mode"
+      return
+      ;;
+    claude) ;;
+    *) die "unsupported agent provider: $LOOM_AGENT_PROVIDER" ;;
+  esac
   claude -p --model "$LOOM_CLAUDE_MODEL" --effort high --max-turns "$turns" --no-session-persistence \
     --permission-mode "$mode" --allowedTools "$@"
 }
+
+# Switchboard keeps credentials on Dorothy; never export the personal key to CI.
+run_codex_agent() (
+  local sandbox=read-only reply
+  [ "$1" != acceptEdits ] || sandbox=workspace-write
+  reply=$(mktemp)
+  trap 'rm -f "$reply"' EXIT
+  # Exec-level -c replaces root overrides, including Switchboard's provider.
+  switchboard run codex -c 'approval_policy="never"' -c 'model_reasoning_effort="high"' \
+    exec --ignore-user-config --model "$LOOM_CODEX_MODEL" --ephemeral --color never --sandbox "$sandbox" \
+    --output-last-message "$reply" - >&2 || return $?
+  cat "$reply"
+)
 
 # The last non-empty line of a session's reply, without Markdown emphasis.
 final_line() { sed '/^[[:space:]]*$/d' "$1" | tail -n 1 | tr -d '*`' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
@@ -1480,7 +1503,7 @@ resolve_conflicts() {
   fi
   summary="$logs/summary.md"
   {
-    echo "Merging upstream $tag conflicted in $(printf '%s\n' "$conflicted" | grep -c .) files; one Claude session took each."
+    echo "Merging upstream $tag conflicted in $(printf '%s\n' "$conflicted" | grep -c .) files; one agent session took each."
     if [ -n "$replayed" ]; then
       printf '\nAn earlier attempt resolved these, and git rerere reused its resolution:\n\n'
       printf '%s' "$replayed" | sed 's/^/- `/; s/$/`/'

@@ -121,6 +121,8 @@ const STATUS_ROUNDING_BYTES = 100_000_000;
 /** Simulators, Docker and port listeners are listed this often; processes every tick. */
 const LEASE_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 const BUSY_PORT_LOOKUP_TIMEOUT = "5 seconds";
+/** The tmp sweep rereads registered checkouts for a lane once its last read is this old. */
+export const REGISTERED_CHECKOUTS_MAX_AGE_MS = 2_000;
 
 type Thread = OrchestrationV2ThreadShell;
 
@@ -1359,10 +1361,7 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     );
   };
 
-  /** Registered checkouts are working files, even when a caller placed them in auxiliary space. */
-  const checkoutPathsWithin = Effect.fn("ProjectLifecycle.checkoutPathsWithin")(function* (
-    directory: string,
-  ) {
+  const registeredCheckouts = Effect.fn("ProjectLifecycle.registeredCheckouts")(function* () {
     const [snapshot, projectShells] = yield* Effect.all([
       threads.getShellSnapshot(),
       projects.listShells(),
@@ -1374,12 +1373,20 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
         ),
       ),
     );
-    const candidates = new Set([
+    return new Set([
       ...projectShells.map((project) => project.workspaceRoot),
       ...[...snapshot.threads, ...snapshot.archivedThreads].flatMap((thread) =>
         thread.worktreePath === null ? [] : [thread.worktreePath],
       ),
     ]);
+  });
+
+  /** Registered checkouts are working files, even when a caller placed them in auxiliary space. */
+  const checkoutPathsWithin = Effect.fn("ProjectLifecycle.checkoutPathsWithin")(function* (
+    directory: string,
+    registered?: ReadonlySet<string>,
+  ) {
+    const candidates = registered ?? (yield* registeredCheckouts());
     const resolveExistingPath = (target: string) =>
       node("inspect registered checkout", async () => {
         try {
@@ -1507,8 +1514,8 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   });
 
   /** Settle actions can still use lane files after their thread becomes settled. */
-  const reclaimFree = Effect.fn("ProjectLifecycle.reclaimFree")(function* () {
-    const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
+  const reclaimFree = Effect.fn("ProjectLifecycle.reclaimFree")(function* (loaded?: Threads) {
+    const view = loaded ?? (yield* loadThreads.pipe(Effect.orElseSucceed(() => null)));
     if (view === null) return;
     for (const laneId of readyLanes.keys()) if (!lanes.has(laneId)) readyLanes.delete(laneId);
     const now = yield* Clock.currentTimeMillis;
@@ -1678,94 +1685,110 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
     const settings = yield* getSettings;
     if (!settings.enabled) return yield* publish();
     yield* measureHost();
-    yield* reclaimFree();
     const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
     if (view === null) return yield* publish();
+    yield* reclaimFree(view);
     const reserveBytes = settings.reserveGb * GB;
     const now = yield* Clock.currentTimeMillis;
     const sweepTmp = now - lastTmpSweep >= 60 * 60 * 1000;
     if (sweepTmp) lastTmpSweep = now;
 
     yield* mutate.withPermits(1)(
-      Effect.forEach(
-        [...lanes.values()],
-        (lane) =>
-          Effect.gen(function* () {
-            const holders = holdersOf(lane, view);
-            if (holders.length === 0) return;
-            const held = liveOf(lane.id);
-            held.portsReleased = false;
-            // Its next release starts afresh.
-            if (held.detachBlocked?.removing) held.detachBlocked = null;
-            let entry = yield* measure(lane);
-            if (!entry.mounted && lane.backend === "image") {
-              yield* attach(lane);
-              entry = yield* measure(lane, true);
-            }
-            if (sweepTmp && entry.mounted) {
-              yield* pruneLaneTmp({
-                spacePath: lanePaths(lane).spacePath,
-                protectedPaths: yield* checkoutPathsWithin(lane.laneDir),
-                lsofPath: options.lsofPath ?? "lsof",
-              }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
-            }
-            const running = holders.filter(threadRunning);
-            const wasSteered = entry.steered;
-            const next = laneActions(
-              {
-                capBytes: lane.capBytes,
-                usedBytes: entry.usedBytes,
-                imageBytes: entry.imageBytes,
-                running: running.length > 0,
-                mounted: entry.mounted,
-              },
-              entry.steered,
-            );
-            entry.steered = next.steered;
-            if (next.steered && !wasSteered) entry.crossingAt = yield* Clock.currentTimeMillis;
-            for (const action of next.actions) {
-              if (action.type === "steer" && entry.usedBytes !== null) {
-                const text = laneSteerText({
-                  usedBytes: entry.usedBytes,
-                  capBytes: lane.capBytes,
-                  tmpPath: `${lanePaths(lane).spacePath}/tmp`,
-                });
-                yield* Effect.forEach(
-                  running,
-                  (thread) => steer(thread, `${lane.id}:${entry.crossingAt}`, text),
-                  { discard: true },
-                );
-              } else if (action.type === "clear-tmp") {
-                // Automatic pressure relief follows the same age and open-file checks as the hourly sweep.
-                if (!sweepTmp)
-                  yield* pruneLaneTmp({
-                    spacePath: lanePaths(lane).spacePath,
-                    protectedPaths: yield* checkoutPathsWithin(lane.laneDir),
-                    lsofPath: options.lsofPath ?? "lsof",
-                  }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
-                entry = yield* measure(lanes.get(lane.id) ?? lane, true);
-                const current = lanes.get(lane.id) ?? lane;
-                if (
-                  entry.usedBytes !== null &&
-                  shouldGrow(entry.usedBytes, current.capBytes) &&
-                  host.free !== null &&
-                  host.free >= reserveBytes &&
-                  !detachWaiting(current, false, now)
-                )
-                  yield* grow(current);
-              } else if (action.type === "remount" && !detachWaiting(lane, false, now)) {
-                yield* remount(lane);
+      Effect.gen(function* () {
+        let registered: ReadonlySet<string> | undefined;
+        let registeredAt: bigint | undefined;
+        const sweepRegistered = Effect.gen(function* () {
+          // Monotonic, so a wall-clock correction during the sweep cannot stretch a read's life.
+          const age =
+            registeredAt === undefined
+              ? undefined
+              : (yield* Clock.monotonicTimeNanos) - registeredAt;
+          if (age === undefined || age > BigInt(REGISTERED_CHECKOUTS_MAX_AGE_MS) * 1_000_000n) {
+            registered = yield* registeredCheckouts().pipe(Effect.orElseSucceed(() => undefined));
+            registeredAt = yield* Clock.monotonicTimeNanos;
+          }
+          return registered;
+        });
+        yield* Effect.forEach(
+          [...lanes.values()],
+          (lane) =>
+            Effect.gen(function* () {
+              const holders = holdersOf(lane, view);
+              if (holders.length === 0) return;
+              const held = liveOf(lane.id);
+              held.portsReleased = false;
+              // Its next release starts afresh.
+              if (held.detachBlocked?.removing) held.detachBlocked = null;
+              let entry = yield* measure(lane);
+              if (!entry.mounted && lane.backend === "image") {
+                yield* attach(lane);
+                entry = yield* measure(lane, true);
               }
-            }
-          }).pipe(
-            Effect.catch((cause) =>
-              Effect.sync(() => {
-                liveOf(lane.id).message = cause.message;
-              }),
+              if (sweepTmp && entry.mounted) {
+                yield* pruneLaneTmp({
+                  spacePath: lanePaths(lane).spacePath,
+                  protectedPaths: yield* checkoutPathsWithin(lane.laneDir, yield* sweepRegistered),
+                  lsofPath: options.lsofPath ?? "lsof",
+                }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
+              }
+              const running = holders.filter(threadRunning);
+              const wasSteered = entry.steered;
+              const next = laneActions(
+                {
+                  capBytes: lane.capBytes,
+                  usedBytes: entry.usedBytes,
+                  imageBytes: entry.imageBytes,
+                  running: running.length > 0,
+                  mounted: entry.mounted,
+                },
+                entry.steered,
+              );
+              entry.steered = next.steered;
+              if (next.steered && !wasSteered) entry.crossingAt = yield* Clock.currentTimeMillis;
+              for (const action of next.actions) {
+                if (action.type === "steer" && entry.usedBytes !== null) {
+                  const text = laneSteerText({
+                    usedBytes: entry.usedBytes,
+                    capBytes: lane.capBytes,
+                    tmpPath: `${lanePaths(lane).spacePath}/tmp`,
+                  });
+                  yield* Effect.forEach(
+                    running,
+                    (thread) => steer(thread, `${lane.id}:${entry.crossingAt}`, text),
+                    { discard: true },
+                  );
+                } else if (action.type === "clear-tmp") {
+                  // Automatic pressure relief follows the same age and open-file checks as the hourly sweep.
+                  if (!sweepTmp)
+                    yield* pruneLaneTmp({
+                      spacePath: lanePaths(lane).spacePath,
+                      protectedPaths: yield* checkoutPathsWithin(lane.laneDir),
+                      lsofPath: options.lsofPath ?? "lsof",
+                    }).pipe(Effect.provideService(ProcessRunner.ProcessRunner, runner));
+                  entry = yield* measure(lanes.get(lane.id) ?? lane, true);
+                  const current = lanes.get(lane.id) ?? lane;
+                  if (
+                    entry.usedBytes !== null &&
+                    shouldGrow(entry.usedBytes, current.capBytes) &&
+                    host.free !== null &&
+                    host.free >= reserveBytes &&
+                    !detachWaiting(current, false, now)
+                  )
+                    yield* grow(current);
+                } else if (action.type === "remount" && !detachWaiting(lane, false, now)) {
+                  yield* remount(lane);
+                }
+              }
+            }).pipe(
+              Effect.catch((cause) =>
+                Effect.sync(() => {
+                  liveOf(lane.id).message = cause.message;
+                }),
+              ),
             ),
-          ),
-        { discard: true },
-      ),
+          { discard: true },
+        );
+      }),
     );
 
     yield* scanLeases(false).pipe(Effect.ignore({ log: true }));
@@ -2074,12 +2097,19 @@ export const makeWith = Effect.fn("ProjectLifecycle.makeWith")(function* (
   const reconcile = Effect.fn("ProjectLifecycle.reconcile")(function* () {
     yield* refreshShellInstalled;
     yield* reclaimFree();
-    yield* mutate.withPermits(1)(
-      Effect.forEach(
-        [...lanes.values()],
-        (lane) => attach(lane).pipe(Effect.ignore({ log: true })),
-        { discard: true },
-      ),
+    // Turn starts and lane changes wait on `mutate`, so each lane takes it separately. A lane
+    // they removed or replaced in the meantime is skipped.
+    yield* Effect.forEach(
+      [...lanes.values()],
+      (lane) =>
+        mutate.withPermits(1)(
+          Effect.suspend(() =>
+            lanes.get(lane.id) === lane
+              ? attach(lane).pipe(Effect.ignore({ log: true }))
+              : Effect.void,
+          ),
+        ),
+      { discard: true },
     );
     if (lanes.size > 0) yield* writeShellFiles;
     yield* mutate.withPermits(1)(scanUnrecorded());

@@ -182,6 +182,11 @@ export class LibraryWorkspaceStore extends Context.Service<
   {
     readonly receipts: Effect.Effect<ReadonlyArray<WorkspaceReceipt>, LibraryError>;
     readonly put: (receipt: WorkspaceReceipt) => Effect.Effect<void, LibraryError>;
+    /** Changes a receipt as stored now, so it can't undo a write made since another read. */
+    readonly update: (
+      workingCopyId: string,
+      change: (receipt: WorkspaceReceipt) => WorkspaceReceipt,
+    ) => Effect.Effect<void, LibraryError>;
     /**
      * Takes the Library's archived flag onto every receipt of this project. The rest of each
      * receipt's project stays the revision its copy was laid out from.
@@ -491,12 +496,40 @@ const make = Effect.gen(function* () {
         mapIo(
           Effect.gen(function* () {
             const database = yield* read;
+            const stored = database.receipts.find((row) => row.copy.id === receipt.copy.id);
+            // Launches register on a copy without its lock, so a write from an earlier read keeps
+            // the registrations added since. They are only ever added.
+            const added = (stored?.registrationRequests ?? []).filter(
+              (request) =>
+                !receipt.registrationRequests?.some((kept) => kept.requestId === request.requestId),
+            );
             yield* write({
               ...database,
               receipts: [
                 ...database.receipts.filter((row) => row.copy.id !== receipt.copy.id),
-                receipt,
+                added.length === 0
+                  ? receipt
+                  : {
+                      ...receipt,
+                      registrationRequests: [...(receipt.registrationRequests ?? []), ...added],
+                    },
               ],
+            });
+          }),
+        ),
+      );
+    }),
+    update: Effect.fn("LibraryWorkspaceStore.update")(function (workingCopyId, change) {
+      return locks.withLock(
+        databasePath,
+        mapIo(
+          Effect.gen(function* () {
+            const database = yield* read;
+            const receipt = database.receipts.find((row) => row.copy.id === workingCopyId);
+            if (receipt === undefined) return yield* new LibraryError({ reason: "not-found" });
+            yield* write({
+              ...database,
+              receipts: database.receipts.map((row) => (row === receipt ? change(row) : row)),
             });
           }),
         ),

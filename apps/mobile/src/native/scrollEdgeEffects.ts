@@ -8,16 +8,12 @@ export type NativeHeaderScrollEdgeEffects = {
   readonly right: "hidden";
 };
 
+// fork: native-scroll-edge
 function nativeTopScrollEdgeEffect(
   os: string,
   _version: number | string,
 ): NativeTopScrollEdgeEffect {
-  if (os !== "ios") {
-    return "automatic";
-  }
-
-  // On iOS 27, soft uses a local overlay rather than sampling edge-to-edge app content.
-  return "automatic";
+  return os === "ios" ? "soft" : "automatic";
 }
 
 export function nativeHeaderScrollEdgeEffects(

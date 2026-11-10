@@ -24,6 +24,9 @@ vi.mock("../../state/threads", () => ({
     loadEarlierHistory: {},
     mergeBack: {},
     startTurn: {},
+    forkSideChat: { label: "fork side chat" },
+    delete: { label: "delete" },
+    setRuntimeMode: { label: "set runtime mode" },
   },
   useThreadFamily: () => {},
 }));
@@ -140,7 +143,7 @@ vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
 vi.mock("../layout/workspace-inspector-sheet", async () => ({
   InspectorSheetContext: (await import("react")).createContext(null),
 }));
-vi.mock("../workspace/useAndroidWorkspaceNavigation", () => ({
+vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
   useAndroidWorkspaceBack: () => {},
   useWorkspaceBackNavigation: () => {},
 }));

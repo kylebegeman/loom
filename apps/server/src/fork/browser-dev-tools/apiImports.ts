@@ -23,7 +23,7 @@ export function blankRequest(name: string, endpoint = "") {
 export function blankCollection(name: string) {
   return { v: 12, name, folders: [] as NativeObject[], requests: [] as NativeObject[] };
 }
-const invalid = () => new HoppscotchInputError("invalid-format");
+const invalid = () => HoppscotchInputError.new("invalid-format");
 function curlWords(text: string) {
   const words: string[] = [];
   let word = "",
@@ -147,7 +147,7 @@ export function importOpenApi(text: string) {
   if (document.errors.length) throw invalid();
   const root = nativeObject(document.toJS({ maxAliasCount: 50 }));
   if (typeof root.openapi !== "string" || !/^3\.[01]\./.test(root.openapi))
-    throw new HoppscotchInputError("unsupported-version");
+    throw HoppscotchInputError.new("unsupported-version");
   const dereference = (input: unknown): NativeObject => {
     let value = nativeObject(input);
     const seen = new Set<string>();

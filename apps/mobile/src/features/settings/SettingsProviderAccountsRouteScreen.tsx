@@ -30,12 +30,11 @@ import { useEnvironmentsWithScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsComputerNotice } from "./components/SettingsComputerNotice"; // fork: everyday-workflows
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { AddClaudeAccount, ClaudeAccount } from "./ClaudeAccounts";
+import { CLAUDE_DRIVER } from "./claude-accounts";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 
 export function SettingsProviderAccountsRouteScreen() {
@@ -45,61 +44,82 @@ export function SettingsProviderAccountsRouteScreen() {
   const providersByEnvironment = useAtomValue(environmentPresentations.providersByEnvironmentAtom);
   const insets = useSafeAreaInsets();
   return (
-    <>
-      <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Providers" menus={[environmentMenu]}>
-        <ScreenScrollView
-          className="flex-1"
-          contentInsetAdjustmentBehavior="automatic"
-          contentContainerClassName="gap-6 px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
-        >
-          {selectedTargets.length === 0 ? (
-            // fork: everyday-workflows
-            <SettingsComputerNotice />
-          ) : (
-            selectedTargets.map((environment) => (
-              <SettingsSection key={environment.environmentId} title={environment.label}>
-                {!permittedEnvironments.has(environment.environmentId) ? (
-                  <View className="gap-1 p-4">
-                    <Text className="text-base text-foreground">Limited permissions</Text>
-                    <Text className="text-sm text-foreground-muted">
-                      {`This session can view ${environment.label}'s providers but can't change their settings.`}
-                    </Text>
-                  </View>
-                ) : (
-                  <>
-                    {managedProviders(environment, providersByEnvironment)
-                      .filter(canManageProvider)
-                      .map((provider, index) => (
-                        <ProviderAccount
-                          key={provider.instanceId}
-                          environment={environment}
-                          provider={provider}
-                          divider={index > 0}
-                        />
-                      ))}
-                    {!managedProviders(environment, providersByEnvironment).some(
-                      canManageProvider,
-                    ) ? (
-                      <Text className="p-4 text-foreground-muted">
-                        {/* fork: everyday-workflows */}
-                        Add an agent in Loom Settings on your computer, then return here to sign in.
-                      </Text>
-                    ) : null}
-                  </>
-                )}
-                {/* fork: vault-provider-credentials */}
-                <VaultProviderCredentials
-                  environmentId={environment.environmentId}
-                  connected={environment.connection.phase === "connected"}
-                  computerName={environment.label}
+    <SettingsScreen title="Providers" menus={[environmentMenu]}>
+      <ScreenScrollView
+        className="flex-1"
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerClassName="gap-6 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
+        {selectedTargets.length === 0 ? (
+          // fork: everyday-workflows
+          <SettingsComputerNotice />
+        ) : (
+          selectedTargets.map((environment) => (
+            <SettingsSection key={environment.environmentId} title={environment.label}>
+              {!permittedEnvironments.has(environment.environmentId) ? (
+                <View className="gap-1 p-4">
+                  <Text className="text-base text-foreground">Limited permissions</Text>
+                  <Text className="text-sm text-foreground-muted">
+                    {`This session can view ${environment.label}'s providers but can't change their settings.`}
+                  </Text>
+                </View>
+              ) : (
+                <EnvironmentProviders
+                  environment={environment}
+                  providers={managedProviders(environment, providersByEnvironment)}
                 />
-              </SettingsSection>
-            ))
-          )}
-        </ScreenScrollView>
-      </SettingsScreen>
+              )}
+              {/* fork: vault-provider-credentials */}
+              <VaultProviderCredentials
+                environmentId={environment.environmentId}
+                connected={environment.connection.phase === "connected"}
+                computerName={environment.label}
+              />
+            </SettingsSection>
+          ))
+        )}
+      </ScreenScrollView>
+    </SettingsScreen>
+  );
+}
+
+function EnvironmentProviders({
+  environment,
+  providers,
+}: {
+  readonly environment: SettingsTarget;
+  readonly providers: ReadonlyArray<ServerProvider>;
+}) {
+  const accounts = providers.filter(canManageProvider);
+  // Claude has no in-app sign-in; each account is its own instance on a signed-in config folder.
+  const claudeAccounts = providers.filter(
+    (provider) => provider.driver === CLAUDE_DRIVER && !canManageProvider(provider),
+  );
+  const canAddClaude = isManagedDriverAllowed(
+    environment.serverConfig.managedPolicy,
+    CLAUDE_DRIVER,
+  );
+  return (
+    <>
+      {accounts.map((provider, index) => (
+        <ProviderAccount
+          key={provider.instanceId}
+          environment={environment}
+          provider={provider}
+          divider={index > 0}
+        />
+      ))}
+      {accounts.length === 0 ? (
+        <Text className="p-4 text-foreground-muted">
+          {/* fork: everyday-workflows */}
+          Add an agent in Loom Settings on your computer, then return here to sign in.
+        </Text>
+      ) : null}
+      {claudeAccounts.map((provider) => (
+        <ClaudeAccount key={provider.instanceId} environment={environment} provider={provider} />
+      ))}
+      {canAddClaude ? <AddClaudeAccount environment={environment} /> : null}
     </>
   );
 }
@@ -139,6 +159,10 @@ function ProviderAccount({
   const complete = useAtomCommand(serverEnvironment.completeProviderAuth, options);
   const cancel = useAtomCommand(serverEnvironment.cancelProviderAuth, options);
   const logout = useAtomCommand(serverEnvironment.logoutProviderAuth, options);
+  const removeMethod = useAtomCommand(serverEnvironment.removeProviderAuthMethod, options);
+  const canRemoveMethod = useAtomValue(
+    serverEnvironment.removeProviderAuthMethod.permissionAtom(environmentId),
+  );
   // Matches ListRowLayout: large text stacks the action below instead of squeezing the status.
   const stacked = useWindowDimensions().fontScale >= 1.5;
   const [pending, setPending] = useState(false);
@@ -251,6 +275,21 @@ function ProviderAccount({
     id: `method:${method.id}`,
     title: method.name,
   }));
+  const removableMethods = methods.filter((method) => method.canRemove);
+  const removeActions: MenuAction[] = removableMethods.length
+    ? [
+        {
+          id: "remove",
+          title: "Remove incomplete connection",
+          attributes: { disabled: disabled || active || !canRemoveMethod },
+          subactions: removableMethods.map((method) => ({
+            id: `remove:${method.id}`,
+            title: method.name,
+            attributes: { destructive: true, disabled: disabled || active || !canRemoveMethod },
+          })),
+        },
+      ]
+    : [];
   function startSignIn(methodId?: string) {
     void run(() => start(methodId ? { environmentId, input: { instanceId, methodId } } : target));
   }
@@ -275,10 +314,16 @@ function ProviderAccount({
     if (id === "signOut") signOut();
     // iOS keeps a disabled submenu's children selectable, so sign-in guards here too.
     else if (signInDisabled) return;
-    else if (id.startsWith("method:")) startSignIn(id.slice("method:".length));
+    else if (id.startsWith("remove:")) {
+      if (active || !canRemoveMethod) return;
+      const methodId = id.slice("remove:".length);
+      if (!removableMethods.some((method) => method.id === methodId)) return;
+      void run(() => removeMethod({ environmentId, input: { instanceId, methodId } }));
+    } else if (id.startsWith("method:")) startSignIn(id.slice("method:".length));
     else if (id === "change") startSignIn();
   }
   const accountActions: MenuAction[] = [
+    ...removeActions,
     ...(canSignIn
       ? [
           {
@@ -337,6 +382,12 @@ function ProviderAccount({
       accessible
       accessibilityRole="button"
       accessibilityLabel={`${name} account options`}
+      nativeTrigger={{
+        // fork: native-menus
+        icon: "ellipsis",
+        accessibilityLabel: `${name} account options`,
+        size: "default",
+      }}
       title={name}
       actions={accountActions}
       onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
@@ -348,8 +399,13 @@ function ProviderAccount({
       accessible
       accessibilityRole="button"
       accessibilityLabel={`Sign in to ${name}`}
+      nativeTrigger={{
+        // fork: native-menus
+        label: "Sign in",
+        accessibilityLabel: `Sign in to ${name}`,
+      }}
       title="Sign in with"
-      actions={methodActions}
+      actions={[...methodActions, ...removeActions]}
       onPressAction={({ nativeEvent }) => onMenuAction(nativeEvent.event)}
     >
       <ControlPill variant="primary" label="Sign in" accessibilityLabel={`Sign in to ${name}`} />

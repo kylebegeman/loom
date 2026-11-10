@@ -58,6 +58,7 @@ import type { ThreadListFilters } from "../../persistence/mobile-preferences";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useProjects } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";
+import { withKnownPullRequestSummary } from "../../state/use-thread-pr";
 import { mobilePreferencesAtom } from "../../state/preferences";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
@@ -68,20 +69,21 @@ import {
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
-import { useEnabledNavigationTabs } from "../workspace/navigation-tabs";
-import { FLOATING_TABS, floatingTabsMetrics } from "../workspace/floating-workspace-tabs";
+import { useEnabledNavigationTabs } from "./workspace/navigation-tabs";
+import { FLOATING_TABS, floatingTabsMetrics } from "./workspace/floating-workspace-tabs";
 import {
   AndroidWorkspaceNavigation,
   FloatingWorkspaceTabs,
   ANDROID_WORKSPACE_RAIL_WIDTH,
-} from "../workspace/AndroidWorkspaceNavigation";
+} from "./workspace/AndroidWorkspaceNavigation";
 import {
+  shouldPreserveWorkspaceDetailOrigin,
   selectWorkspaceDetail,
   type WorkspaceDetail,
   type WorkspaceDetailSheet,
-} from "../workspace/workspace-detail-selection";
-import { startOpeningDetail } from "../workspace/useSelectWorkspaceDetail";
-import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+} from "./workspace/workspace-detail-selection";
+import { startOpeningDetail } from "./workspace/useSelectWorkspaceDetail";
+import { useWorkspaceTabs } from "./workspace/WorkspaceTabsContext";
 import { HomeListOptionsProvider } from "../home/home-list-options";
 import { newTaskDestination } from "../threads/new-task-project-selection";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
@@ -102,20 +104,23 @@ import {
 import { useNativeLayoutMetrics } from "../../native/native-layout-metrics";
 import { AndroidHingeObserver } from "../../native/AndroidHingeObserver";
 import { WindowHingeContext } from "../../native/window-hinge-context";
-import { useAndroidWorkspaceRoot } from "../workspace/AndroidWorkspaceTabsProvider";
+import { useAndroidWorkspaceRoot } from "./workspace/AndroidWorkspaceTabsProvider";
 import { dispatchRootStackReset, rootStackState } from "../../lib/root-stack-reset";
 import {
   currentWorkspaceSelections,
   workspaceSelectionCheck,
-} from "../workspace/workspace-selection-store";
+} from "./workspace/workspace-selection-store";
 import {
   workspaceTabColumns,
   workspaceTabNavigationState,
-} from "../workspace/workspace-tab-navigation";
-import type { WorkspaceTab } from "../workspace/workspace-tabs-state";
+  type WorkspaceTabHistory,
+} from "./workspace/workspace-tab-navigation";
+import { settingsNavigationState } from "../settings/settings-navigation";
+import type { WorkspaceTab } from "./workspace/workspace-tabs-state";
+import { workspacePrimaryTab } from "./workspace/workspace-primary-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { SettingsWorkspaceLayout } from "../settings/SettingsWorkspaceLayout";
-import { WorkspaceThreadSidebar } from "../workspace/WorkspaceThreadSidebar";
+import { WorkspaceThreadSidebar } from "./workspace/WorkspaceThreadSidebar";
 
 export { useAdaptiveWorkspaceLayout };
 
@@ -235,19 +240,37 @@ function AdaptiveWorkspaceLayoutContent(
   const { width: viewportWidth, height } = nativeMetrics ?? windowDimensions;
   const pathname = props.pathname;
   const workspace = useWorkspaceTabs();
+  // fork: mobile-navigation
+  const tabHistory = useRef<WorkspaceTabHistory>({});
   // Settings and Usage occupy the workspace rather than a list/detail pair.
   const androidSettingsOpen = useAndroidWorkspaceRoot()?.settingsOpen ?? false;
   const safeAreaInsets = useSafeAreaInsets();
   const workspacePage =
     Platform.OS === "android" && (androidSettingsOpen || workspace?.state.selectedTab === "usage");
   const navigation = useNavigation();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records root navigation events so external links preserve the tab they interrupt
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const record = () => {
+      const state = rootStackState(navigation);
+      if (!state) return;
+      const { workspace: routes } = workspaceRoutesOf(state.routes.slice(0, state.index + 1));
+      tabHistory.current[workspacePrimaryTab(routes)] = routes;
+    };
+    record();
+    return navigation.addListener("state", record);
+  }, [navigation]);
   const [primarySidebarPreferredVisible, setPrimarySidebarPreferredVisible] = useState(true);
   const [fileInspectorPreferredVisible, setFileInspectorPreferredVisible] = useState(true);
   const [nativeInspectorWidthFraction, setNativeInspectorWidthFraction] = useState(0.4);
-  const nativeInspectorWidth = nativeInspectorColumnWidth(
-    viewportWidth,
-    nativeInspectorWidthFraction,
-  );
+  const inspectorWidthFor = (fraction: number) =>
+    nativeInspectorColumnWidth({
+      viewportWidth,
+      horizontalSafeArea:
+        (nativeMetrics?.safeArea.left ?? 0) + (nativeMetrics?.safeArea.right ?? 0),
+      fraction,
+    });
+  const nativeInspectorWidth = inspectorWidthFor(nativeInspectorWidthFraction);
   const [fileInspectorPreferredWidth, setFileInspectorPreferredWidth] = useState<number | null>(
     null,
   );
@@ -565,26 +588,42 @@ function AdaptiveWorkspaceLayoutContent(
     } else if (inspectorSheetOpen) dismissInspectorSheet();
     else showInspector();
   };
-  /**
-   * The one way to open a workspace tab: replaces the workspace with the tab's list and, when the
-   * window has columns, the page it last showed, keeping any sheet on top. An overlay sidebar
-   * stays open over that page.
-   */
+  /** Restores each iOS tab's route chain; Android reopens its list and remembered detail. */
+  // fork: mobile-navigation
   const openWorkspaceTab = (
     tab: WorkspaceTab | "settings",
     options?: { readonly columns?: boolean },
   ) => {
     const state = rootStackState(navigation);
     if (!state) return;
-    const { workspace, overlays } = workspaceRoutesOf(state.routes.slice(0, state.index + 1));
+    if (Platform.OS === "ios" && tab === "settings") {
+      dispatchRootStackReset(
+        navigation,
+        state,
+        settingsNavigationState(state, undefined, undefined, undefined, {
+          preserveOrigin: true,
+        }),
+      );
+      return;
+    }
+    const { workspace: routes, overlays } = workspaceRoutesOf(
+      state.routes.slice(0, state.index + 1),
+    );
+    if (Platform.OS === "ios") {
+      const currentTab = workspacePrimaryTab(routes);
+      tabHistory.current[currentTab] = routes;
+    }
     const next = workspaceTabNavigationState(
-      { ...state, routes: workspace },
+      { ...state, routes },
       tab,
       currentWorkspaceSelections(),
       {
         columns: workspaceTabColumns(Platform.OS, tab, options?.columns ?? layout.usesSplitView),
         check: workspaceSelectionCheck,
         overlays,
+        ...(Platform.OS === "ios" ? { history: tabHistory.current } : {}),
+        primaryTabs: Platform.OS === "ios",
+        seedPullRequest: withKnownPullRequestSummary,
       },
     );
     if (layout.variant === "medium") {
@@ -602,12 +641,17 @@ function AdaptiveWorkspaceLayoutContent(
       setFileInspectorPreferredVisible(false);
       setInspectorSheetRoute(null);
       if (layout.variant === "medium") setPrimarySidebarVisible(false);
-      workspace?.dispatch({
-        type: "select",
-        tab: detail.name === "Thread" ? "threads" : "pullRequests",
-      });
+      const state = rootStackState(navigation);
+      const origin = workspaceRoutesOf(state?.routes.slice(0, state.index + 1) ?? []).workspace;
+      const preserveOrigin = shouldPreserveWorkspaceDetailOrigin(Platform.OS, origin);
+      if (!preserveOrigin) {
+        workspace?.dispatch({
+          type: "select",
+          tab: Platform.OS === "ios" || detail.name === "Thread" ? "threads" : "pullRequests",
+        });
+      }
       startOpeningDetail(detail);
-      navigation.dispatch(selectWorkspaceDetail(detail, sheet));
+      navigation.dispatch(selectWorkspaceDetail(detail, sheet, { preserveOrigin }));
     });
   }
   const handleSelectThreadRoute = (params: ReactNavigation.RootParamList["Thread"]) =>
@@ -1008,9 +1052,7 @@ function AdaptiveWorkspaceLayoutContent(
     setAuxiliaryPaneWidth: setFileInspectorPreferredWidth,
     nativeInspectorWidth,
     setNativeInspectorWidth: (width: number) =>
-      setNativeInspectorWidthFraction(
-        nativeInspectorColumnWidth(viewportWidth, width / viewportWidth) / viewportWidth,
-      ),
+      setNativeInspectorWidthFraction(inspectorWidthFor(width / viewportWidth) / viewportWidth),
     composerKeyboardActive,
     keyboardHoldsSidebar,
     setComposerEditing,

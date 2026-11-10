@@ -9,6 +9,7 @@ import {
   ProjectId,
   EventId,
   ProviderInstanceId,
+  RuntimeRequestId,
   RunId,
   ThreadId,
   TurnItemId,
@@ -699,7 +700,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       dispatch,
     }),
     Layer.mock(TerminalManager.TerminalManager)({
-      closeIdle: (input) =>
+      closeOnSettle: (input) =>
         Queue.offer(closedIdle, input).pipe(Effect.andThen(options.onCloseIdle?.() ?? Effect.void)),
     }),
     // fork: project-lifecycle
@@ -739,7 +740,11 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
                 pathOrDescriptor: path,
               }),
             )
-          : Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
+          : Effect.succeed(
+              // fork: server-weight -- the default project is a repository.
+              path === "/workspace/project/.git" ||
+                (options.existingWorktreePaths?.includes(path) ?? false),
+            ),
     }),
     Path.layer,
   );
@@ -935,29 +940,69 @@ describe("ThreadSettlementServiceV2 worker", () => {
     ),
   );
 
-  it.effect("looks up a branch in its worktree only while the worktree has .git", () =>
+  it.effect("looks up a branch in its worktree while it has .git, else only in a repository", () =>
     Effect.scoped(
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
+        // fork: server-weight -- git fails with not_a_repository outside a repository.
+        const scratch = makeProject(ProjectId.make("scratch"), "/scratch");
+        const nested = makeProject(ProjectId.make("nested"), "/repositories/mono/app");
         const fixture = yield* makeHarness({
-          snapshot: makeSnapshot([
-            makeThread("linked-worktree", {
-              branch: "linked",
-              worktreePath: "/worktrees/linked",
-              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
-            }),
-            // A folder that outlived its .git makes git fail with not_a_repository.
-            makeThread("emptied-worktree", {
-              branch: "emptied",
-              worktreePath: "/worktrees/emptied",
-              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
-            }),
-          ]),
+          snapshot: makeSnapshot(
+            [
+              makeThread("linked-worktree", {
+                branch: "linked",
+                worktreePath: "/worktrees/linked",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+              }),
+              // A folder that outlived its .git makes git fail with not_a_repository.
+              makeThread("emptied-worktree", {
+                branch: "emptied",
+                worktreePath: "/worktrees/emptied",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+              }),
+              // fork: server-weight
+              makeThread("nested-project", {
+                projectId: nested.id,
+                branch: "nested",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+              }),
+              makeThread("scratch-branch", {
+                projectId: scratch.id,
+                branch: "scratch",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+              }),
+              // A merged linked pull request still settles, without the branch recheck.
+              makeThread("scratch-linked", {
+                projectId: scratch.id,
+                branch: "feature",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+                linkedPullRequest: {
+                  projectId: scratch.id,
+                  repository: "owner/repository",
+                  number: 41,
+                  url: "https://example.test/owner/repository/pull/41",
+                },
+              }),
+            ],
+            [makeProject(), scratch, nested],
+          ),
           existingWorktreePaths: [
             "/worktrees/linked",
             "/worktrees/linked/.git",
             "/worktrees/emptied",
+            "/repositories/mono/.git", // fork: server-weight
           ],
+          // fork: server-weight
+          pullRequestSummary: (input) =>
+            Effect.succeed({
+              ...makePullRequestSummary({ ...input, state: "merged" }),
+              mergedAt: NOW,
+            }),
+          branchPullRequest: (input) =>
+            input.cwd.startsWith("/scratch")
+              ? Effect.die(new Error("git: not a git repository"))
+              : Effect.succeed(null),
         });
 
         yield* Effect.gen(function* () {
@@ -969,7 +1014,12 @@ describe("ThreadSettlementServiceV2 worker", () => {
           expect(cwdByBranch).toEqual({
             linked: "/worktrees/linked",
             emptied: "/workspace/project",
+            nested: "/repositories/mono/app", // fork: server-weight
           });
+          // fork: server-weight
+          expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+            ThreadId.make("scratch-linked"),
+          ]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
@@ -1883,6 +1933,37 @@ describe("ThreadSettlementServiceV2 terminals", () => {
 
 describe("isSnoozed", () => {
   const snoozed = { snoozedAt: at(-2 * DAY_MS), snoozedUntil: at(DAY_MS) };
+  it("defers existing input while new questions and approvals wake the thread", () => {
+    const request = {
+      id: RuntimeRequestId.make("question"),
+      kind: "user_input" as const,
+      createdAt: snoozed.snoozedAt,
+    };
+    expect(
+      ThreadSettlementService.isSnoozed(
+        shell({ ...snoozed, pendingRuntimeRequest: request }),
+        NOW_MS,
+      ),
+    ).toBe(true);
+    expect(
+      ThreadSettlementService.isSnoozed(
+        shell({ ...snoozed, pendingRuntimeRequest: { ...request, createdAt: at(-DAY_MS) } }),
+        NOW_MS,
+      ),
+    ).toBe(false);
+    expect(
+      ThreadSettlementService.isSnoozed(
+        shell({ ...snoozed, pendingRuntimeRequest: { ...request, kind: "command" } }),
+        NOW_MS,
+      ),
+    ).toBe(false);
+    expect(
+      ThreadSettlementService.isSnoozed(
+        shell({ ...snoozed, snoozedAt: null, pendingRuntimeRequest: request }),
+        NOW_MS,
+      ),
+    ).toBe(false);
+  });
   it("keeps a run requested and completed after snoozing parked until the timer", () => {
     const thread = shell({
       ...snoozed,

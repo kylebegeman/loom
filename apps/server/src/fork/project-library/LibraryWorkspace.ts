@@ -1,7 +1,13 @@
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { libraryCloneFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
-import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  type OrchestrationV2ThreadShell,
+  type OrchestrationV2ThreadShellSnapshot,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   type LibraryApplyProfileRequest,
   LibraryError,
@@ -145,6 +151,11 @@ export class LibraryWorkspace extends Context.Service<
     readonly setCopyRetention: (
       input: LibrarySetCopyRetentionRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /** Forgets the removal a release request recorded while its files are still in place. */
+    readonly cancelRelease: (input: {
+      readonly workingCopyId: string;
+      readonly requestId: string;
+    }) => Effect.Effect<"none" | "cleared" | "set-aside", LibraryError>;
     readonly reopenCopy: (
       input: LibraryReopenCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -2171,22 +2182,43 @@ const make = Effect.gen(function* () {
       !(yield* fs.exists(path.dirname(receipt.copy.rootPath)))
     );
   });
+  const unreachable = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+    new LibraryError({
+      reason: "blocked",
+      detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
+    });
 
-  const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
+  const openOrRunning = (thread: OrchestrationV2ThreadShell) =>
+    thread.activeRunId !== null ||
+    thread.pendingRuntimeRequest !== null ||
+    (thread.pendingBackgroundTasks?.length ?? 0) > 0 ||
+    thread.goal?.status === "active" ||
+    (thread.archivedAt === null && thread.settledOverride !== "settled");
+
+  const threadsAllowCleanUp = Effect.fn("LibraryWorkspace.threadsAllowCleanUp")(function* (
     receipt: LibraryWorkspaceStore.WorkspaceReceipt,
     isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+    shellSnapshot: Effect.Effect<
+      OrchestrationV2ThreadShellSnapshot,
+      ProjectionStore.ProjectionStoreV2Error
+    > = projections.getShellSnapshot(),
   ) {
     const copy = receipt.copy;
     if (!isReclaimableCopy(copy)) return false;
     const bindings = (yield* store.bindings).filter(
       (row) => row.resolved.binding.workingCopyId === copy.id,
     );
+    // Each bound conversation is a small read; the full snapshot below is not.
+    for (const binding of bindings) {
+      const thread = yield* projections.getThreadShell(binding.threadId);
+      if (thread !== null && openOrRunning(thread)) return false;
+    }
     const projectIds = new Set([
       receipt.rootLocalProjectId,
       copy.rootLocalProjectId,
       ...copy.repositories.map((repository) => repository.localProjectId),
     ]);
-    const snapshot = yield* projections.getShellSnapshot();
+    const snapshot = yield* shellSnapshot;
     const related = [...snapshot.threads, ...snapshot.archivedThreads].filter(
       (thread) =>
         projectIds.has(thread.projectId) ||
@@ -2210,18 +2242,15 @@ const make = Effect.gen(function* () {
       related.some((thread) => !bindings.some((binding) => binding.threadId === thread.id))
     )
       return false;
-    if (
-      related.some(
-        (thread) =>
-          thread.activeRunId !== null ||
-          thread.pendingRuntimeRequest !== null ||
-          (thread.pendingBackgroundTasks?.length ?? 0) > 0 ||
-          thread.goal?.status === "active" ||
-          (thread.archivedAt === null && thread.settledOverride !== "settled"),
-      )
-    )
-      return false;
+    if (related.some(openOrRunning)) return false;
     for (const thread of related) if (!(yield* isHistoryAcknowledged(thread.id))) return false;
+    return true;
+  });
+
+  const filesAllowCleanUp = Effect.fn("LibraryWorkspace.filesAllowCleanUp")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+  ) {
+    const copy = receipt.copy;
     const rootExists = yield* fs.exists(copy.rootPath);
     const processPath = rootExists ? copy.rootPath : receipt.removalPath;
     if (processPath === null) return false;
@@ -2248,6 +2277,16 @@ const make = Effect.gen(function* () {
     )
       return false;
     return true;
+  });
+
+  const canCleanUp = Effect.fn("LibraryWorkspace.canCleanUp")(function* (
+    receipt: LibraryWorkspaceStore.WorkspaceReceipt,
+    isHistoryAcknowledged: (threadId: ThreadId) => Effect.Effect<boolean, LibraryError>,
+  ) {
+    return (
+      (yield* threadsAllowCleanUp(receipt, isHistoryAcknowledged)) &&
+      (yield* filesAllowCleanUp(receipt))
+    );
   });
 
   const removeArchiveCache = Effect.fn("LibraryWorkspace.removeArchiveCache")(function* (
@@ -2641,10 +2680,7 @@ const make = Effect.gen(function* () {
       }
     }
     if (!(yield* fs.exists(receipt.copy.rootPath)) && (yield* folderUnavailable(receipt)))
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
-      });
+      return yield* unreachable(receipt);
     const released = {
       ...receipt,
       releaseRequestId: input.requestId,
@@ -2723,6 +2759,38 @@ const make = Effect.gen(function* () {
     const copy = { ...receipt.copy, keepOnComputer: input.keepOnComputer, updatedAt: yield* now };
     yield* store.put({ ...receipt, copy });
     return copy;
+  });
+
+  const cancelRelease = Effect.fn("LibraryWorkspace.cancelRelease")(function* (input: {
+    readonly workingCopyId: string;
+    readonly requestId: string;
+  }) {
+    const receipt = yield* store.get(input.workingCopyId).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "not-found",
+        () => Effect.undefined,
+      ),
+    );
+    if (
+      receipt === undefined ||
+      receipt.releaseRequestId !== input.requestId ||
+      receipt.copy.state === "released" ||
+      receipt.removalPath === null
+    )
+      return "none" as const;
+    // A disk that is not connected is not files set aside.
+    if (yield* folderUnavailable(receipt)) return yield* unreachable(receipt);
+    // Only this request can finish files it already moved aside.
+    if (!(yield* fs.exists(receipt.copy.rootPath)) || (yield* fs.exists(receipt.removalPath)))
+      return "set-aside" as const;
+    yield* store.update(input.workingCopyId, (current) => ({
+      ...current,
+      publishedRelease: undefined,
+      releaseRequestId: null,
+      releaseReviewToken: null,
+      removalPath: null,
+    }));
+    return "cleared" as const;
   });
 
   const validatePortableRepository = Effect.fn("LibraryWorkspace.validatePortableRepository")(
@@ -3749,13 +3817,21 @@ const make = Effect.gen(function* () {
           reason: isLibraryError(result.failure) ? result.failure.reason : "io",
         });
     }
+    // One read serves the pass. It can be stale, so a copy that passes on it checks its
+    // conversations again with a fresh read, after the slower file checks and before it is hashed.
+    const shellSnapshot = yield* Effect.cached(projections.getShellSnapshot());
     for (const candidate of candidates.temporary) {
       const result = yield* Effect.result(
         locks.withLock(
           copyKey(candidate.copy.id),
           Effect.gen(function* () {
             const receipt = yield* store.get(candidate.copy.id);
-            if (!(yield* canCleanUp(receipt, isHistoryAcknowledged))) return;
+            if (
+              !(yield* threadsAllowCleanUp(receipt, isHistoryAcknowledged, shellSnapshot)) ||
+              !(yield* filesAllowCleanUp(receipt)) ||
+              !(yield* threadsAllowCleanUp(receipt, isHistoryAcknowledged))
+            )
+              return;
             const review =
               receipt.removalPath !== null && receipt.releaseReviewToken !== null
                 ? { reviewToken: receipt.releaseReviewToken, blockers: [], releaseBlockers: [] }
@@ -4154,17 +4230,15 @@ const make = Effect.gen(function* () {
               ),
             )
           : found.receipt.copy;
-      const saved = yield* store.get(copy.id);
-      yield* store.put({
+      const fingerprint = yield* preparationFingerprint(request, request.rootPath);
+      // Without the copy's lock, so a long archive of this copy never holds up other launches.
+      yield* store.update(copy.id, (saved) => ({
         ...saved,
         registrationRequests: [
           ...(saved.registrationRequests ?? []),
-          {
-            requestId: input.requestId,
-            fingerprint: yield* preparationFingerprint(request, request.rootPath),
-          },
+          { requestId: input.requestId, fingerprint },
         ],
-      });
+      }));
       return { copy, request };
     }
     if (placement.action !== "clone") return { request, claimed: false };
@@ -4445,6 +4519,9 @@ const make = Effect.gen(function* () {
     }),
     unregister: Effect.fnUntraced(function* (input) {
       return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(unregister(input)));
+    }),
+    cancelRelease: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(cancelRelease(input)));
     }),
     release: Effect.fnUntraced(function* (input) {
       return yield* locks.withLock(

@@ -33,9 +33,9 @@ const state = vi.hoisted(() => {
 vi.mock("@effect/atom-react", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
-    useAtomValue: () => {
+    useAtomValue: (atom: unknown) => {
       useSyncExternalStore(state.subscribe, () => state.revision);
-      return state.allowed;
+      return atom === "config" ? null : state.allowed;
     },
   };
 });
@@ -83,13 +83,22 @@ vi.mock("../../state/query", async () => {
 });
 vi.mock("../../state/queries", () => ({ useDebouncedValue: (value: string) => value }));
 vi.mock("./SavedSecretAnswer", () => ({ SavedSecretAnswer: () => null }));
-vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
+vi.mock("../../lib/uuid", () => {
+  let next = 0;
+  return { uuidv4: () => `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}` };
+});
 vi.mock("../../connection/runtime", () => ({ connectionAtomRuntime: {} }));
-vi.mock("../../state/server", () => ({ serverEnvironment: { answerSecretRequest: "answer" } }));
+vi.mock("../../state/server", () => ({
+  serverEnvironment: { answerSecretRequest: "answer", configValueAtom: () => "config" },
+}));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => (command === "answer" ? state.answer : state.save),
 }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/Chip", () => ({
+  Chip: ({ label }: { label: string }) => <span>{label}</span>,
+}));
+vi.mock("expo-glass-effect", () => ({ isLiquidGlassAvailable: () => false }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: ({

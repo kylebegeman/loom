@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as TestClock from "effect/testing/TestClock";
 // @effect-diagnostics nodeBuiltinImport:off - Lanes are real folders the test inspects directly.
 import * as NodeChildProcess from "node:child_process";
@@ -27,6 +28,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as Config from "../../config.ts";
 import { DeviceService } from "../../device/DeviceService.ts";
+import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -45,7 +47,11 @@ import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ledgerLine, normalizeStart } from "./leases.ts";
 import { ProjectLifecycleMigrations } from "./migrations.ts";
 import { GB } from "./policy.ts";
-import { makeWith, type ProjectLifecycleOptions } from "./ProjectLifecycleService.ts";
+import {
+  makeWith,
+  REGISTERED_CHECKOUTS_MAX_AGE_MS,
+  type ProjectLifecycleOptions,
+} from "./ProjectLifecycleService.ts";
 import { makeStore } from "./store.ts";
 
 /** Unused service methods fail immediately instead of silently returning a fake value. */
@@ -150,6 +156,7 @@ const setupWith = (
     readonly restoreBranchMissing?: boolean;
     readonly wrapSpaces?: ProjectLifecycleOptions["wrapSpaces"];
     readonly prepareForCleanup?: (threadId: ThreadId) => Effect.Effect<boolean>;
+    readonly failFullSnapshot?: boolean;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -169,16 +176,23 @@ const setupWith = (
     const sent: Array<ThreadManagementSendInput> = [];
     const events = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
     const threadManagement = partial<ThreadManagementService["Service"]>({
-      // Like the projection: the active location leaves archived threads out.
-      getShellSnapshot: (options) =>
-        Effect.succeed({
-          schemaVersion: 1,
-          snapshotSequence: 0,
-          threads: threads.filter(
-            (entry) => options?.location !== "active" || entry.archivedAt === null,
-          ),
-          archivedThreads: [],
-        }),
+      // Like the projection: the active location leaves archived threads out. Only full reads
+      // fail, so the active view the watchdog loads still works.
+      getShellSnapshot: (input) =>
+        options.failFullSnapshot && input?.location !== "active"
+          ? Effect.fail(
+              new Orchestrator.OrchestratorProjectionError({
+                threadId: ThreadId.make("thread:shell"),
+              }),
+            )
+          : Effect.succeed({
+              schemaVersion: 1,
+              snapshotSequence: 0,
+              threads: threads.filter(
+                (entry) => input?.location !== "active" || entry.archivedAt === null,
+              ),
+              archivedThreads: [],
+            }),
       sendToThread: (input) =>
         Effect.sync(() => {
           sent.push(input);
@@ -828,6 +842,58 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect.each(["turn start", "discard"] as const)(
+    "runs a lane change queued during startup before the next lane attaches (%s)",
+    (change) =>
+      Effect.gen(function* () {
+        const attaching = yield* Deferred.make<string>();
+        const proceed = yield* Deferred.make<void>();
+        const order: Array<string> = [];
+        const t = yield* setupWith({
+          wrapSpaces: (spaces) => ({
+            ...spaces,
+            folder: {
+              ...spaces.folder,
+              attach: (paths, capBytes, volumeName) =>
+                Effect.suspend(() => {
+                  order.push(paths.laneDir);
+                  return Deferred.succeed(attaching, paths.laneDir);
+                }).pipe(
+                  Effect.flatMap((first) => (first ? Deferred.await(proceed) : Effect.void)),
+                  Effect.andThen(spaces.folder.attach(paths, capBytes, volumeName)),
+                ),
+            },
+          }),
+        });
+        t.threads.push(thread("root"), thread("feature", { worktreePath: t.worktree }));
+        const lanes = [
+          yield* t.service.ensureForThread(ThreadId.make("root")),
+          yield* t.service.ensureForThread(ThreadId.make("feature")),
+        ];
+        const restarted = yield* t.create;
+        const startup = yield* Effect.forkChild(restarted.reconcile());
+        const first = yield* Deferred.await(attaching);
+        const next = lanes.find((lane) => lane.laneDir !== first)!;
+        // Starting at once queues it on the lane lock while the first lane is still attaching.
+        const waiting = yield* (
+          change === "turn start"
+            ? restarted.ensureForThread(ThreadId.make("root")).pipe(Effect.asVoid)
+            : restarted.discard(next.id)
+        ).pipe(
+          Effect.andThen(Effect.sync(() => order.push(change))),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.succeed(proceed, undefined);
+        yield* Fiber.join(startup);
+        yield* Fiber.join(waiting);
+        // A lane discarded while startup waited is not attached, which would recreate its folder.
+        expect(order).toEqual(
+          change === "turn start" ? [first, change, next.laneDir] : [first, change],
+        );
+        expect(NodeFS.existsSync(next.laneDir)).toBe(change === "turn start");
+      }).pipe(Effect.scoped),
+  );
+
   it.live("claims lane ports against every other server on the computer", () =>
     Effect.gen(function* () {
       const t = yield* setup;
@@ -1041,27 +1107,89 @@ describe("ProjectLifecycleService", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect(
-    "removes day-old tmp files from active lanes while keeping nested registered checkouts",
-    () =>
+  it.effect.each([
+    "registered first",
+    "registered mid-sweep",
+    "registered after a clock correction",
+    "registrations unreadable",
+  ] as const)(
+    "sweeps day-old tmp files from active lanes but keeps nested checkouts (%s)",
+    (registration) =>
       Effect.gen(function* () {
-        const t = yield* setup;
-        t.threads.push(thread("root", { activeRunId: RunId.make("root-run") }));
-        const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
-        const service = yield* t.create;
-        const tmp = `${parent.laneDir}/space/tmp`;
-        const nested = `${tmp}/feature`;
-        NodeFS.mkdirSync(nested);
-        NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
-        NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
+        const beforeMeasure = new Map<string, Effect.Effect<void>>();
+        const t = yield* setupWith({
+          failFullSnapshot: registration === "registrations unreadable",
+          wrapSpaces: (spaces) => ({
+            ...spaces,
+            folder: {
+              ...spaces.folder,
+              isMounted: (paths) =>
+                Effect.suspend(() => {
+                  const hook = beforeMeasure.get(`${paths.spacePath}/tmp`) ?? Effect.void;
+                  beforeMeasure.delete(`${paths.spacePath}/tmp`);
+                  return hook;
+                }).pipe(Effect.andThen(spaces.folder.isMounted(paths))),
+            },
+          }),
+        });
         t.threads.push(
-          thread("nested", { worktreePath: nested, activeRunId: RunId.make("nested-run") }),
+          thread("root", { activeRunId: RunId.make("root-run") }),
+          thread("feature", { worktreePath: t.worktree, activeRunId: RunId.make("feature-run") }),
         );
+        const tmps = [
+          yield* t.service.ensureForThread(ThreadId.make("root")),
+          yield* t.service.ensureForThread(ThreadId.make("feature")),
+        ].map((lane) => `${lane.laneDir}/space/tmp`);
+        const service = yield* t.create;
+        for (const [index, tmp] of tmps.entries()) {
+          const nested = `${tmp}/feature`;
+          NodeFS.mkdirSync(nested);
+          NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
+          NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
+          const register = Effect.sync(() =>
+            t.threads.push(
+              thread(`nested-${index}`, {
+                worktreePath: nested,
+                activeRunId: RunId.make(`nested-run-${index}`),
+              }),
+            ),
+          );
+          // The sweep checks each lane's mount just before pruning it; the clock step leaves
+          // an earlier lane's read stale, even after the wall clock is corrected backward.
+          if (registration === "registered first" || registration === "registrations unreadable")
+            yield* register;
+          else
+            beforeMeasure.set(
+              tmp,
+              register.pipe(
+                Effect.andThen(
+                  registration === "registered after a clock correction"
+                    ? Clock.currentTimeMillis.pipe(
+                        Effect.flatMap((now) => TestClock.setTime(now - 60_000)),
+                      )
+                    : Effect.void,
+                ),
+                Effect.andThen(TestClock.adjust(REGISTERED_CHECKOUTS_MAX_AGE_MS + 1)),
+              ),
+            );
+        }
 
-        yield* TestClock.setTime(NodeFS.statSync(`${tmp}/scratch`).ctimeMs + 25 * 60 * 60 * 1000);
-        yield* service.tick();
-        expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("active thread files");
-        expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
+        yield* TestClock.setTime(
+          Math.max(...tmps.map((tmp) => NodeFS.statSync(`${tmp}/scratch`).ctimeMs)) +
+            25 * 60 * 60 * 1000,
+        );
+        const status = yield* service.tick();
+        const verified = registration !== "registrations unreadable";
+        for (const tmp of tmps) {
+          expect(NodeFS.readFileSync(`${tmp}/feature/keep.txt`, "utf8")).toBe(
+            "active thread files",
+          );
+          expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(!verified);
+        }
+        for (const checkout of [t.checkout, t.worktree])
+          expect(laneOf(status, checkout)?.message).toBe(
+            verified ? null : "Could not verify project working files before cleaning this lane.",
+          );
       }).pipe(Effect.scoped),
   );
 

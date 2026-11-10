@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { useLibraryStartProject, useLibraryStartCopies } from "./libraryState";
 import { GitHubHostSetupSettings } from "../../features/settings/components/GitHubHostSetupSettings";
 import { LibraryError } from "@t3tools/contracts/fork";
@@ -125,6 +126,8 @@ import {
   libraryLaunchPathOverlaps,
   restoreLibraryLaunchCopy,
 } from "./libraryLaunchFiles";
+
+const isLibraryErrorValue = Schema.is(LibraryError);
 
 const sentence = (parts: readonly string[]) => {
   const text = parts.join(", ");
@@ -1223,7 +1226,7 @@ function LibraryStartContent(props: {
       if (!shared) markLibraryConversationStarted(scopedThreadKey(target));
       setLaunchedThread(target);
     } catch (cause) {
-      setCloneRepair(cause instanceof LibraryError ? cause.repair : undefined);
+      setCloneRepair(isLibraryErrorValue(cause) ? cause.repair : undefined);
       setError(
         cause instanceof Error
           ? cause.message

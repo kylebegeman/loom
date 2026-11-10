@@ -7,20 +7,15 @@ import {
 } from "@t3tools/client-runtime/state/thread-execution";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Haptics from "expo-haptics";
-import { Platform, Pressable, ScrollView, View } from "react-native";
-import { ScreenStack } from "react-native-screens";
+import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppBar } from "../../components/ui/AppBar";
+import { SheetHeader } from "../../components/ui/SheetHeader";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
-import { NativeStackScreenOptions, nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
-import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
 import { environmentThreadShells } from "../../state/threads";
-import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 
-const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 const KIND_LABELS = {
   subagent: "Subagent",
   command: "Command",
@@ -31,7 +26,6 @@ const KIND_LABELS = {
 type BackgroundWorkTarget = { readonly environmentId: EnvironmentId; readonly threadId: ThreadId };
 
 export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<BackgroundWorkTarget>) {
-  const { layout } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const target = route.params;
@@ -50,12 +44,12 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
     <ScrollView
       nestedScrollEnabled
       className="flex-1"
-      contentInsetAdjustmentBehavior={Platform.OS === "ios" ? "automatic" : "never"}
+      contentInsetAdjustmentBehavior="automatic"
       contentContainerClassName="px-5 pb-6"
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
     >
       {presentation === null ? (
-        <Text className="pt-6 text-center text-sm text-foreground-muted">
+        <Text className="py-5 text-base text-foreground-muted">
           Nothing running in the background.
         </Text>
       ) : (
@@ -65,40 +59,10 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
       )}
     </ScrollView>
   );
-  if (Platform.OS === "ios") {
-    return (
-      <View collapsable={false} className="flex-1 bg-sheet">
-        <ScreenStack style={{ flex: 1 }}>
-          <NativeScreen
-            activityState={2}
-            enabled
-            isNativeStack
-            screenId="thread-background-work-sheet-native"
-            scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-            className="flex-1 bg-sheet"
-          >
-            {content}
-            <NativeHeader
-              backgroundColor="rgba(0,0,0,0)"
-              tintColorClassName="accent-foreground"
-              hideBackButton
-              hideShadow={false}
-              title="Background work"
-              titleColorClassName="accent-foreground"
-              titleFontSize={18}
-              titleFontWeight="800"
-              translucent
-            />
-          </NativeScreen>
-        </ScreenStack>
-      </View>
-    );
-  }
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
-      <NativeStackScreenOptions options={{ sheetCornerRadius: 28 }} />
-      <AppBar sheet title="Background work" onBack={() => navigation.goBack()} />
-      <ScreenContent insetHorizontal={layout.usesSplitView}>{content}</ScreenContent>
+      <SheetHeader title="Background work" onClose={() => navigation.goBack()} />
+      <ScreenContent>{content}</ScreenContent>
     </View>
   );
 }
@@ -110,17 +74,19 @@ function BackgroundWorkRow(props: {
   const { item } = props;
   const childThreadId = item.childThreadId;
   const row = (
-    <View className="flex-row items-center gap-3 border-b border-border py-3.5">
-      <SymbolView
-        name={
-          item.kind === "subagent" ? "person.2" : item.kind === "monitor" ? "clock" : "terminal"
-        }
-        size={15}
-        tintColorClassName="accent-foreground-muted"
-        type="monochrome"
-      />
-      <View className="min-w-0 flex-1">
-        <Text className="font-t3-medium text-sm text-foreground">{item.label}</Text>
+    <View className="flex-row items-center gap-3 border-b border-border-subtle py-4">
+      <View className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
+        <SymbolView
+          name={
+            item.kind === "subagent" ? "person.2" : item.kind === "monitor" ? "clock" : "terminal"
+          }
+          size={18}
+          tintColorClassName="accent-primary"
+          type="monochrome"
+        />
+      </View>
+      <View className="min-w-0 flex-1 gap-1">
+        <Text className="font-t3-semibold text-base text-foreground">{item.label}</Text>
         <Text className="text-xs text-foreground-muted">{KIND_LABELS[item.kind]}</Text>
       </View>
       {childThreadId === undefined ? null : (

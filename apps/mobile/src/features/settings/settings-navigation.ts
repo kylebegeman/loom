@@ -6,6 +6,7 @@ import {
   rootStackState,
   type RootStackNavigation,
 } from "../../lib/root-stack-reset";
+import { PRESERVE_SETTINGS_ORIGIN } from "./settings-navigation-platform";
 
 type RootParams = ReactNavigation.RootParamList;
 
@@ -64,17 +65,16 @@ type SettingsPageArgs<Name extends SettingsPageName> = undefined extends RootPar
 
 type RouteLike = { readonly name: string; readonly key?: string; readonly params?: object };
 
-/**
- * Settings pages sit on the root stack above Home, under a `Settings` route that keeps the
- * Settings list as the workspace's primary content. Opening a page replaces whatever was above
- * Home, so the tab always starts from its list and Back returns there. Routes already on screen
- * keep their keys, so reopening the open page doesn't rebuild it.
- */
-export function settingsNavigationState<State extends { readonly routes: readonly RouteLike[] }>(
+/** Settings keeps stable route keys, retaining the origin when it opens as a secondary stack. */
+// fork: mobile-navigation
+export function settingsNavigationState<
+  State extends { readonly routes: readonly RouteLike[]; readonly index?: number },
+>(
   state: State,
   page: SettingsPageName | undefined,
   params?: object,
   key?: string,
+  options?: { readonly preserveOrigin?: boolean },
 ) {
   const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
   const list = state.routes.find((route) => route.name === "Settings") ?? { name: "Settings" };
@@ -83,21 +83,32 @@ export function settingsNavigationState<State extends { readonly routes: readonl
         (route) => route.name === page && JSON.stringify(route.params) === JSON.stringify(params),
       )
     : undefined;
+  const active = state.routes.slice(0, (state.index ?? state.routes.length - 1) + 1);
+  const settingsIndex = active.findIndex((route) => route.name === "Settings");
+  const origin = options?.preserveOrigin
+    ? settingsIndex < 0
+      ? active
+      : active.slice(0, settingsIndex)
+    : [];
   const routes = [
-    home,
+    ...(origin.length ? origin : [home]),
     list,
     ...(page ? [current ?? (key ? { key, name: page, params } : { name: page, params })] : []),
   ];
   return { ...state, index: routes.length - 1, routes };
 }
 
-/** Opens one Settings page in the Settings tab, from anywhere outside it. */
+/** Opens a Settings page in its platform's stack, preserving an iOS caller's return path. */
 export function openSettings<Name extends SettingsPageName>(
   navigation: RootStackNavigation,
   page: Name,
   ...[params]: SettingsPageArgs<Name>
 ) {
-  resetRootStack(navigation, (state) => settingsNavigationState(state, page, params));
+  resetRootStack(navigation, (state) =>
+    settingsNavigationState(state, page, params, undefined, {
+      preserveOrigin: PRESERVE_SETTINGS_ORIGIN,
+    }),
+  );
 }
 
 /**
@@ -111,7 +122,7 @@ export function leaveSettingsPage(
 ) {
   const state = rootStackState(navigation);
   const below = state?.routes[state.index - 1];
-  if (state && columns && below?.name === "Settings") {
+  if (!PRESERVE_SETTINGS_ORIGIN && state && columns && below?.name === "Settings") {
     dispatchRootStackReset(navigation, state, settingsNavigationState(state, fallback));
   } else {
     navigation.goBack();

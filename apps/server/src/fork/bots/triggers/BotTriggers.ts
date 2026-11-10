@@ -1,3 +1,5 @@
+import * as Digest from "effect/crypto/Digest";
+import * as Mac from "effect/crypto/Mac";
 import { WORKFLOW_IDS, WORKFLOW_TRIGGER_HINTS } from "@t3tools/contracts/fork";
 import { intakeTriggerProblem, intakeReport } from "../../workflows/intake.ts";
 import { ScheduledTaskWebhookDeliveryId, type RuntimeMode } from "@t3tools/contracts";
@@ -41,8 +43,8 @@ import {
   type WebhookTriggerResult,
 } from "../../../scheduledTasks/ScheduledTaskService.ts";
 import {
-  constantTimeEquals,
-  verifyWebhookSignature,
+  constantTimeEquals as compareTokens,
+  verifyWebhookSignature as verifySignature,
 } from "../../../scheduledTasks/webhookVerification.ts";
 import { BotBatches } from "../BotBatches.ts";
 import { makeBotOperationState } from "../BotOperationState.ts";
@@ -121,6 +123,13 @@ interface Outcome {
 }
 
 export const make = Effect.gen(function* () {
+  const digest = yield* Digest.Digest;
+  const mac = yield* Mac.Mac;
+  const constantTimeEquals = (left: string, right: string) =>
+    compareTokens(left, right).pipe(Effect.provideService(Digest.Digest, digest), Effect.orDie);
+  const verifyWebhookSignature = (input: Parameters<typeof verifySignature>[0]) =>
+    verifySignature(input).pipe(Effect.provideService(Mac.Mac, mac));
+
   const store = yield* makeBotTriggersStore;
   const operation = yield* makeBotOperationState;
   const bots = yield* BotsService;
@@ -772,7 +781,7 @@ export const make = Effect.gen(function* () {
       stored === undefined ||
       stored.webhookToken === null ||
       !usesHook(stored.trigger.event) ||
-      !constantTimeEquals(stored.webhookToken, request.token)
+      !(yield* constantTimeEquals(stored.webhookToken, request.token))
     )
       return { _tag: "not_found" };
     const { trigger } = stored;
@@ -787,12 +796,12 @@ export const make = Effect.gen(function* () {
       trigger.event.kind === "webhook" &&
       trigger.event.signature !== undefined &&
       (stored.webhookSecret === null ||
-        !verifyWebhookSignature({
+        !(yield* verifyWebhookSignature({
           signature: trigger.event.signature,
           secret: stored.webhookSecret,
           headers: request.headers,
           body: request.body,
-        }))
+        })))
     ) {
       yield* recordRefusal(trigger, "rejected_signature");
       return { _tag: "rejected_signature" };

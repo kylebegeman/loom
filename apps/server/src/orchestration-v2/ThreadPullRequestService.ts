@@ -20,6 +20,7 @@ import * as Stream from "effect/Stream";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitManager from "../git/GitManager.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
@@ -85,6 +86,25 @@ export function projectWorkspaceMatchesSnapshot(
     Option.isSome(currentProject) && currentProject.value.workspaceRoot === expectedWorkspaceRoot
   );
 }
+
+// fork: server-weight -- git outside a repository fails with not_a_repository. Walk the physical
+// path as git does; an unreadable .git counts, so git still runs there and reports it. Untraced:
+// it runs per project root inside each sweep's span.
+export const insideRepository = Effect.fnUntraced(function* (
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  folder: string,
+) {
+  let current = yield* fileSystem.realPath(folder).pipe(Effect.orElseSucceed(() => folder));
+  while (
+    !(yield* fileSystem.exists(path.join(current, ".git")).pipe(Effect.orElseSucceed(() => true)))
+  ) {
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+  return true;
+});
 
 const BACKFILL_ATTEMPTS = 5;
 
@@ -188,6 +208,14 @@ export const make = Effect.gen(function* () {
               .pipe(Effect.orElseSucceed(() => true)))
               ? first.worktreePath
               : project.workspaceRoot;
+          // fork: server-weight -- a released checkout keeps its identity, not its repository.
+          if (
+            first.branch !== null &&
+            cwd === project.workspaceRoot &&
+            !(yield* insideRepository(fileSystem, path, cwd))
+          ) {
+            return finishBackfill(group);
+          }
           const detected =
             first.branch === null
               ? null
@@ -347,6 +375,7 @@ export const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker((request: RefreshRequest) =>
     synchronize(request).pipe(
+      Effect.provideService(GitVcsDriver.BackgroundGitWork, true),
       Effect.catchCauseIf(
         (cause) => !Cause.hasInterruptsOnly(cause),
         (cause) =>

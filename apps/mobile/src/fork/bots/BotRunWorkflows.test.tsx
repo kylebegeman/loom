@@ -27,7 +27,7 @@ vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: harness.navigate }),
 }));
-vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+vi.mock("../../features/layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => harness.selectDetail,
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn().mockResolvedValue(undefined) }));

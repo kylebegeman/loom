@@ -17,12 +17,11 @@ import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useMemo } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
-import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { deriveProviderInstanceEntries } from "~/providerInstances";
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
-  findLatestProposedPlan,
   isLatestRunSettled,
 } from "~/session-logic";
 import {
@@ -43,6 +42,7 @@ import {
   type InspectorInputs,
   type InspectorProvider,
 } from "./model";
+import { findLatestProposedPlan } from "./latestProposedPlan";
 
 /**
  * Gathers the inspector inputs from the same atoms and derivations ChatView uses, so the

@@ -9,14 +9,12 @@ import {
   StackActions,
   useIsFocused,
   useNavigation,
-  useRoute,
   type StaticScreenProps,
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react"; // fork: fleet-connections
 import { Linking, Pressable, StyleSheet, View } from "react-native";
-import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
 // fork: fleet-connections -- the Connect button below replaces the header checkmark and its icon color
@@ -34,7 +32,7 @@ import { splitEnvironmentSections } from "./environmentSections";
 // fork: directory-computers
 import { pairingFormChecks } from "../../fork/directory-computers/directoryComputers";
 import { leaveSettingsPage } from "../settings/settings-navigation";
-import { workspaceHasColumns } from "../workspace/workspace-selection-store";
+import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 
 type ConnectionsNewRouteParams = {
   readonly libraryComputer?: EnvironmentId; // fork: directory-computers
@@ -61,6 +59,7 @@ export function ConnectionsNewRouteScreen({
   );
 }
 
+// fork: mobile-design
 function PairingForm({
   routePairingUrl,
   routeFor,
@@ -73,7 +72,6 @@ function PairingForm({
   const { connectionPairingUrl, onChangeConnectionPairingUrl, onConnectPress } =
     useRemoteConnections();
   const navigation = useNavigation();
-  const routeName = useRoute().name;
   const insets = useSafeAreaInsets();
   const [initialPairing] = useState(() => parsePairingUrl(routePairingUrl || connectionPairingUrl));
   const [hostInput, setHostInput] = useState(initialPairing.host);
@@ -208,8 +206,8 @@ function PairingForm({
   // fork: fleet-connections - The title distinguishes a computer from another address for it.
   return (
     <SettingsScreen
-      formSheet={routeName === "ConnectionsNew"}
       title={routeFor ? "Add connection address" : "Connect computer"} // fork: fleet-connections
+      // fork: fleet-connections -- the Connect button stays beside the pairing fields.
     >
       <ScrollView
         nestedScrollEnabled
@@ -220,13 +218,13 @@ function PairingForm({
         className="flex-1"
         contentInset={{ bottom: Math.max(insets.bottom, 18) + 18 }}
         contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 4,
+          paddingHorizontal: 20,
+          paddingTop: 20,
         }}
       >
-        <View collapsable={false} className="gap-6.5">
+        <View collapsable={false} className="gap-6">
           {/* fork: fleet-connections - Pairing guidance follows the selected computer. */}
-          <Text className="px-4 text-sm leading-normal text-foreground-muted">
+          <Text textRole="body" className="text-foreground-muted">
             {routeFor
               ? "Open Connections settings on this same computer to add another way to reach it."
               : "Open Connections settings in Loom on your computer to get a pairing code."}
@@ -253,15 +251,15 @@ function PairingForm({
             <Button label="Stop scanning" tone="text" onPress={() => setScannerRequested(false)} />
           ) : null}
 
-          <View collapsable={false} className="gap-2">
+          <View collapsable={false} className="gap-3">
             {/* fork: fleet-connections */}
-            <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
+            <Text textRole="body" className="font-t3-semibold text-foreground">
               Or enter the address and pairing code
             </Text>
             <View
               collapsable={false}
               className={cn(
-                "overflow-hidden rounded-[26px] border-continuous border bg-grouped-card",
+                "overflow-hidden rounded-3xl border-continuous border bg-grouped-card",
                 pairingConnectionError ? "border-danger-foreground" : "border-transparent",
               )}
             >
@@ -289,7 +287,7 @@ function PairingForm({
             <Text
               accessibilityLiveRegion="polite"
               className={cn(
-                "px-4 text-sm leading-normal",
+                "text-sm leading-normal",
                 pairingConnectionError ? "text-danger-foreground" : "text-foreground-muted",
               )}
             >
@@ -301,8 +299,8 @@ function PairingForm({
 
           {/* fork: directory-computers */}
           {checks.offersIdentity ? (
-            <View className="gap-2 px-4">
-              <Text className="text-sm text-foreground-muted">
+            <View className="gap-3">
+              <Text textRole="footnote" className="text-foreground-muted">
                 If this computer has Identity configured, use its address to sign in without a
                 pairing code.
               </Text>
@@ -353,21 +351,11 @@ function PairingScanCard(props: {
       disabled={props.cameraActive}
       onPress={props.onScanPress}
       className={cn(
-        "overflow-hidden rounded-[26px] border-continuous",
-        light ? "bg-white" : "bg-black",
+        "overflow-hidden rounded-3xl border-continuous",
+        props.cameraActive ? "bg-black" : "bg-secondary",
       )}
       style={{ height: SCAN_CARD_HEIGHT }}
     >
-      <Svg accessibilityElementsHidden height="100%" style={StyleSheet.absoluteFill} width="100%">
-        <Defs>
-          <RadialGradient id="pairing-scan-backdrop" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor={light ? "#f4f4f5" : "#2e2e2e"} />
-            <Stop offset="100%" stopColor={light ? "#d9d9dc" : "#0e0e0e"} />
-          </RadialGradient>
-        </Defs>
-        <Rect fill="url(#pairing-scan-backdrop)" height="100%" width="100%" />
-      </Svg>
-
       {props.cameraActive ? (
         <>
           <CameraView
@@ -393,8 +381,9 @@ function PairingScanCard(props: {
       >
         <View
           className={cn(
-            "items-center justify-center gap-2 border-continuous border-[3px]",
-            light ? "border-black/70" : "border-white/80",
+            "items-center justify-center gap-3 border-continuous",
+            props.cameraActive &&
+              (light ? "border-[3px] border-black/70" : "border-[3px] border-white/80"),
           )}
           style={{
             borderRadius: SCAN_RETICLE_RADIUS,
@@ -406,20 +395,28 @@ function PairingScanCard(props: {
             <>
               <SymbolView
                 name="qrcode.viewfinder"
-                size={44}
-                tintColorClassName={light ? "accent-black/60" : "accent-white/70"}
+                size={48}
+                tintColorClassName="accent-secondary-foreground"
                 type="monochrome"
                 weight="light"
               />
-              <Text
-                className={cn("font-t3-medium text-sm", light ? "text-black/70" : "text-white/80")}
-              >
+              <Text textRole="body" className="font-t3-semibold text-secondary-foreground">
                 Tap to scan
               </Text>
             </>
           )}
         </View>
-        <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
+        <Text
+          textRole="footnote"
+          className={cn(
+            "px-4 text-center",
+            props.cameraActive
+              ? light
+                ? "text-black/70"
+                : "text-white/80"
+              : "text-secondary-foreground",
+          )}
+        >
           {/* fork: brand */}
           Scan the QR code shown on your computer
         </Text>
@@ -439,8 +436,8 @@ function T3ConnectSection() {
   });
 
   return (
-    <View collapsable={false} className="gap-2">
-      <Text className="px-4 text-sm font-t3-medium text-foreground-muted">
+    <View collapsable={false} className="gap-3">
+      <Text textRole="body" className="font-t3-semibold text-foreground">
         {/* fork: fleet-connections */}
         Or find computers with Loom Connect
       </Text>
@@ -471,11 +468,12 @@ function PairingInputRow({
 }) {
   return (
     // fork: fleet-connections
-    <View collapsable={false} className="min-h-13 flex-row items-center gap-3 px-4 py-3">
+    <View collapsable={false} className="gap-1 px-4 py-3">
       <Text
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-        className="w-20 text-base leading-[23px] text-foreground-muted"
+        textRole="footnote"
+        className="font-t3-medium text-foreground-muted"
       >
         {label}
       </Text>
@@ -484,7 +482,7 @@ function PairingInputRow({
         accessibilityLabel={label}
         autoCapitalize="none"
         autoCorrect={false}
-        className="min-h-0 flex-1 rounded-none border-0 bg-transparent p-0 text-base leading-[23px]"
+        className="min-h-11 rounded-none border-0 bg-transparent p-0"
       />
     </View>
   );

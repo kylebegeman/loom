@@ -74,8 +74,7 @@ const layerGit = GitVcsDriver.layer.pipe(
 );
 
 const layerEmptyInstances = Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
-  // @effect-diagnostics-next-line effectSucceedWithVoid:off - Optional instances require undefined rather than void.
-  getInstance: () => Effect.succeed(undefined),
+  getInstance: () => Effect.undefined,
 });
 const makeLayerTest = <E>(
   ingestorEventSink: Layer.Layer<EventSink.EventSinkV2, E>,
@@ -259,6 +258,7 @@ it.effect("refreshes the failing instance snapshot after a committed usage_limit
           generatePrContent: () => Effect.die("unused"),
           generateThreadTitle: () => Effect.die("unused"),
           generateReviewGuide: () => Effect.die("unused"),
+          generateTranscriptionPostProcessing: () => Effect.die("unused"),
         },
         snapshot: {
           refreshUsage: Deferred.succeed(refreshed, undefined).pipe(Effect.asVoid),
@@ -546,8 +546,12 @@ layer("ProviderEventIngestorV2", (it) => {
           event: { type: "node.updated", driver: CODEX_DRIVER, node: sent },
         });
 
-      assert.lengthOf(yield* ingestNode(node), 1);
-      assert.isEmpty(yield* ingestNode({ ...node }));
+      yield* eventSink.withProviderBatch(
+        Effect.gen(function* () {
+          assert.lengthOf(yield* ingestNode(node), 1);
+          assert.isEmpty(yield* ingestNode({ ...node }));
+        }),
+      );
       yield* eventSink.write({
         events: [
           {
@@ -2360,4 +2364,57 @@ it.effect.each([
     );
     assert.isEmpty(persisted);
   }).pipe(Effect.provide(layerFailingWrites(errors))),
+);
+
+it.effect("persists effective speed without overwriting a newer user selection", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const sink = yield* EventSink.EventSinkV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    const allocator = yield* IdAllocator.IdAllocatorV2;
+    const created = yield* threadCreatedEvent(now);
+    if (created.type !== "thread.created") throw new Error("Expected thread fixture");
+    const expected = {
+      ...created.payload.modelSelection,
+      options: [{ id: "serviceTier", value: "ultrafast" }],
+    };
+    const selection = { ...expected, options: [{ id: "serviceTier", value: "priority" }] };
+    yield* sink.write({
+      events: [{ ...created, payload: { ...created.payload, modelSelection: expected } }],
+    });
+    const input = {
+      providerInstanceId: expected.instanceId,
+      providerSessionId: yield* allocator.allocate.providerSession({
+        providerInstanceId: expected.instanceId,
+        threadId: created.threadId,
+      }),
+      threadId: created.threadId,
+      event: {
+        type: "model_selection.updated" as const,
+        driver: CODEX_DRIVER,
+        threadId: created.threadId,
+        expected,
+        selection,
+      },
+    };
+    const stored = yield* ingestor.ingestNormalized(input);
+    assert.deepEqual(
+      stored.map(({ event }) => event.type),
+      ["thread.model-selection-updated"],
+    );
+    assert.deepEqual((yield* projections.getThread(created.threadId)).modelSelection, selection);
+    assert.deepEqual(yield* ingestor.ingestNormalized(input), []);
+    assert.deepEqual(
+      yield* ingestor.ingestNormalized({
+        ...input,
+        event: {
+          ...input.event,
+          expected: selection,
+          selection: { ...selection, model: "unrelated-model" },
+        },
+      }),
+      [],
+    );
+  }).pipe(Effect.provide(layerTest)),
 );

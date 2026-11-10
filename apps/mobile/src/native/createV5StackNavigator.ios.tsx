@@ -29,6 +29,7 @@ import { V5StackHeader } from "./V5StackHeader.ios";
 import type { AppNativeStackNavigationOptions } from "./StackHeader";
 import { NativeColumnContent } from "./NativeColumnContent.ios";
 import {
+  isPresentedRoute,
   nativeStackPopAction,
   partitionStackPresentations,
   reconcileStackScreens,
@@ -51,9 +52,10 @@ export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
 }
 
 /** Keep outgoing screens until UIKit completes its pop, as required by v5. */
+// fork: mobile-navigation
 export function V5CardStackView(
   props: V5StackViewProps & {
-    readonly onRootVisibilityChange?: (visible: boolean) => void;
+    readonly hideBottomBarOnPush?: boolean;
     /** The card native Back is popping, which the router still shows until the pop finishes. */
     readonly onNativePopChange?: (key: string | null) => void;
   },
@@ -152,7 +154,7 @@ export function V5CardStackView(
   };
   return (
     <View className="flex-1 bg-screen">
-      <Stack.Host>
+      <Stack.Host managesTabBarVisibility={props.hideBottomBarOnPush === true}>
         {screens.routes.map((route, index) => {
           const descriptor = props.descriptors[route.key] ?? screens.descriptors[route.key];
           if (!descriptor) return null;
@@ -162,6 +164,7 @@ export function V5CardStackView(
             <Stack.Screen
               key={route.key}
               screenKey={route.key}
+              hidesBottomBarWhenPushed={props.hideBottomBarOnPush === true && index > 0}
               activityMode={
                 attached || screens.nativeCompletingPops.has(route.key) ? "attached" : "detached"
               }
@@ -174,7 +177,6 @@ export function V5CardStackView(
                 if (preventedRoutes[route.key]?.preventRemove) descriptor.navigation.goBack();
               }}
               onWillAppear={() => {
-                if (index === 0) props.onRootVisibilityChange?.(true);
                 props.navigation.emit({
                   type: "transitionStart",
                   target: route.key,
@@ -212,7 +214,6 @@ export function V5CardStackView(
                 });
               }}
               onWillDisappear={() => {
-                if (index === 0) props.onRootVisibilityChange?.(false);
                 const state = props.navigation.getState();
                 // Only native Back leaves the disappearing card active; JS navigation already changed history.
                 if (state.index > 0 && state.routes[state.index]?.key === route.key) {
@@ -264,8 +265,7 @@ export function V5CardStackView(
 
 export function V5StackView(props: V5StackViewProps) {
   const groups = partitionStackPresentations(props.state.routes, (route) => {
-    const presentation = props.descriptors[route.key]?.options.presentation;
-    return presentation !== undefined && presentation !== "card";
+    return isPresentedRoute(props.descriptors[route.key]?.options);
   });
   const routes = groups.map((group) => group[0]!);
   const descriptors = Object.fromEntries(

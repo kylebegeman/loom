@@ -81,6 +81,7 @@ import {
 import { SitePreview, normalizePreviewPath, type PreviewDevice } from "./SitePreview";
 import {
   SiteTraffic,
+  SiteProductUsage,
   SiteTrafficBreakdown,
   SiteTrafficSkeleton,
   SiteTrafficSummary,
@@ -357,6 +358,7 @@ export function SiteDetail({
             {analytics.data ? (
               <>
                 <SiteTraffic analytics={analytics.data} />
+                <SiteProductUsage analytics={analytics.data} />
                 <SiteTrafficBreakdown analytics={analytics.data} onPreview={previewAnalyticsPage} />
               </>
             ) : analytics.isPending ? (

@@ -5,6 +5,8 @@ import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const SITES_FEATURE = "sites";
 export const SITES_MANAGEMENT_FEATURE = "sites-management";
+export const LIBRARY_SITES_FEATURE = "library-sites";
+export const LIBRARY_SITES_READ_ROUTE = "/api/loom/library/sites/read";
 const projectId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
 const text = Schema.String.check(Schema.isMaxLength(2048));
 const count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
@@ -24,6 +26,7 @@ const httpsOrigin = httpsUrl.check(Schema.makeFilter((value) => new URL(value).o
 export const SitesSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   primarySiteId: SiteId,
+  ownerAdmin: Schema.optionalKey(Schema.Struct({ name: text, url: httpsUrl })),
   observedAt: Schema.String,
   staleAfterSeconds: count,
   sites: Schema.Array(
@@ -71,6 +74,30 @@ export const SitesSnapshot = Schema.Struct({
 });
 export type SitesSnapshot = typeof SitesSnapshot.Type;
 export const SiteAnalytics = Schema.Struct({
+  product: Schema.optionalKey(
+    Schema.Struct({
+      events: count,
+      dailyInstallations: count,
+      lastEventAt: Schema.NullOr(Schema.String),
+      since: Schema.String,
+      channel: Schema.String,
+      retentionDays: count,
+      byDay: Schema.Array(
+        Schema.Struct({ day: Schema.String, events: count, installations: count }),
+      ),
+      byEvent: Schema.Array(
+        Schema.Struct({ name: text, outcome: text, count, installations: count }),
+      ),
+      byCommand: Schema.Array(
+        Schema.Struct({ command: text, outcome: text, count, averageDurationMS: count }),
+      ),
+      byPlatform: Schema.Array(Schema.Struct({ platform: text, count })),
+      bySurface: Schema.Array(Schema.Struct({ surface: text, count })),
+      byVersion: Schema.Array(Schema.Struct({ version: text, count })),
+      byFeatureGroup: Schema.Array(Schema.Struct({ featureGroup: text, count })),
+      byStack: Schema.Array(Schema.Struct({ stack: text, count })),
+    }),
+  ),
   siteId: SiteId,
   lastEventAt: Schema.NullOr(Schema.String),
   days: count,
@@ -143,6 +170,14 @@ export const SaveSiteCheckRequest = Schema.Struct({
   content: Schema.String.check(Schema.isMaxLength(120)),
 });
 export type SaveSiteCheckRequest = typeof SaveSiteCheckRequest.Type;
+export const LibrarySitesMutation = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("saveSite"), input: SaveSiteRequest }),
+  Schema.Struct({ action: Schema.Literal("saveService"), input: SaveSiteServiceRequest }),
+  Schema.Struct({ action: Schema.Literal("saveCheck"), input: SaveSiteCheckRequest }),
+  Schema.Struct({ action: Schema.Literal("runChecks") }),
+]);
+export type LibrarySitesMutation = typeof LibrarySitesMutation.Type;
+export const LibrarySitesRead = Schema.Struct({ siteId: Schema.optionalKey(SiteId) });
 export const SitesState = Schema.Struct({
   configured: Schema.Boolean,
   snapshot: Schema.NullOr(SitesSnapshot),
@@ -150,6 +185,8 @@ export const SitesState = Schema.Struct({
 });
 export class SitesError extends Schema.TaggedError<SitesError>()("SitesError", {
   stage: Schema.Literals([
+    "library-connection",
+    "library-update",
     "configuration",
     "authentication",
     "read",
@@ -160,17 +197,21 @@ export class SitesError extends Schema.TaggedError<SitesError>()("SitesError", {
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
-    return this.stage === "configuration"
-      ? "Sites is not configured on this Library server."
-      : this.stage === "authentication"
-        ? "Sites could not sign in to the personal API. Check the Library server's integration."
-        : this.stage === "project"
-          ? "Choose existing projects from this Library before saving the site."
-          : this.stage === "validation"
-            ? "Check the site settings. Use exact HTTPS origins, unique analytics origins, and registered services. Checks must use their service's origin."
-            : this.stage === "write"
-              ? "Sites could not save to the personal API. Refresh before trying again."
-              : "Sites could not load from the personal API. Try refreshing.";
+    return this.stage === "library-connection"
+      ? "Sites cannot use this computer's enrolled Library connection. Check Settings > Connections on this computer. Keep the existing Sites connections on the Library."
+      : this.stage === "library-update"
+        ? "Update Loom on the Library to use Sites from agents. Keep this computer enrolled and keep the existing Sites connections."
+        : this.stage === "configuration"
+          ? "Sites is not configured on this Library server."
+          : this.stage === "authentication"
+            ? "Sites could not sign in to the personal API. Check the Library server's integration."
+            : this.stage === "project"
+              ? "Choose existing projects from this Library before saving the site."
+              : this.stage === "validation"
+                ? "Check the site settings. Use exact HTTPS origins, unique analytics origins, and registered services. Checks must use their service's origin."
+                : this.stage === "write"
+                  ? "Sites could not save to the personal API. Refresh before trying again."
+                  : "Sites could not load from the personal API. Try refreshing.";
   }
 }
 export const SITES_WS_METHODS = {

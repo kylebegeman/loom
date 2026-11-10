@@ -54,13 +54,16 @@ const decode = Schema.decodeEffect(Codec);
 const encode = Schema.encodeEffect(Codec);
 const fail = (message: string) => new ManagedProjectCheckoutError({ message });
 /** Receipts live in T3 home, keyed by the canonical checkout path. */
-export const ownershipReceiptPath = Effect.fnUntraced(function* (cwd: string) {
+const receiptPath = Effect.fnUntraced(function* (canonicalCwd: string) {
   const path = yield* Path.Path;
   return path.join(
     yield* SetupMarker.stateDirectory(),
     "project-ownership",
-    `${SetupMarker.digestPath(yield* SetupMarker.canonicalPath(cwd))}.json`,
+    `${SetupMarker.digestPath(canonicalCwd)}.json`,
   );
+});
+export const ownershipReceiptPath = Effect.fnUntraced(function* (cwd: string) {
+  return yield* receiptPath(yield* SetupMarker.canonicalPath(cwd));
 });
 /** Older versions wrote the receipt beside the checkout; the install that wrote it migrates it on first read. */
 const legacyReceiptPath = (cwd: string) => `${cwd}.t3-project-owned.json`;
@@ -82,7 +85,7 @@ const canonicalPath = SetupMarker.canonicalPath;
 const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckoutReceipt) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const target = yield* ownershipReceiptPath(receipt.workspaceRoot);
+  const target = yield* receiptPath(receipt.workspaceRoot);
   const legacy = legacyReceiptPath(receipt.workspaceRoot);
   const ownsLegacy = yield* SetupMarker.ownsLegacyMetadata();
   if (!ownsLegacy && !(yield* fs.exists(target)) && (yield* fs.exists(legacy)))
@@ -107,10 +110,7 @@ export const hasManagedProjectReceipt = Effect.fn("ManagedProjectCheckout.hasRec
 ) {
   const fs = yield* FileSystem.FileSystem;
   const cwd = yield* canonicalPath(workspaceRoot);
-  return (
-    (yield* fs.exists(yield* ownershipReceiptPath(cwd))) ||
-    (yield* fs.exists(legacyReceiptPath(cwd)))
-  );
+  return (yield* fs.exists(yield* receiptPath(cwd))) || (yield* fs.exists(legacyReceiptPath(cwd)));
 });
 
 /** Clones and explicitly reviewed adoption create ownership proof. Opening a folder does not. */
@@ -119,7 +119,7 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
   repositoryIdentity: RepositoryIdentity,
   options?: {
     readonly ownershipSource: "clone" | "adopted";
-    readonly retention: typeof ProjectCheckoutRetention.Type;
+    readonly retention: ProjectCheckoutRetention;
     readonly projectId: ProjectId;
   },
 ) {
@@ -127,10 +127,7 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
   const path = yield* Path.Path;
   const cwd = yield* canonicalPath(workspaceRoot);
   if ((yield* fs.realPath(cwd)) !== cwd) return yield* fail("The clone is a symbolic link.");
-  if (
-    (yield* fs.exists(yield* ownershipReceiptPath(cwd))) ||
-    (yield* fs.exists(legacyReceiptPath(cwd)))
-  )
+  if ((yield* fs.exists(yield* receiptPath(cwd))) || (yield* fs.exists(legacyReceiptPath(cwd))))
     return yield* fail("A managed project receipt already exists for this folder.");
   const root = yield* fs.stat(cwd);
   const git = yield* fs.stat(path.join(cwd, ".git"));
@@ -168,13 +165,11 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
   });
 }, mapFailure);
 
-/** Metadata remains readable when the checkout is absent, including after a server restart. */
-export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read")(function* (
-  workspaceRoot: string,
-) {
+// Untraced because both callers, read and restore, open their own span.
+const readReceipt = Effect.fnUntraced(function* (workspaceRoot: string) {
   const fs = yield* FileSystem.FileSystem;
   const cwd = yield* canonicalPath(workspaceRoot);
-  const current = yield* ownershipReceiptPath(cwd);
+  const current = yield* receiptPath(cwd);
   const legacy = !(yield* fs.exists(current));
   const target = legacy ? legacyReceiptPath(cwd) : current;
   if (!(yield* fs.exists(target))) return null;
@@ -197,8 +192,17 @@ export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read
     ownershipSource: receipt.version === 2 ? receipt.ownershipSource : "clone",
     retention: receipt.version === 2 ? receipt.retention : "inherit",
   } satisfies ManagedProjectCheckoutReceipt;
-  if (legacy && (yield* SetupMarker.ownsLegacyMetadata())) yield* writeReceipt(read);
-  return read;
+  return { legacy, receipt: read };
+});
+
+/** Metadata remains readable when the checkout is absent, including after a server restart. */
+export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read")(function* (
+  workspaceRoot: string,
+) {
+  const found = yield* readReceipt(workspaceRoot);
+  if (found === null) return null;
+  if (found.legacy && (yield* SetupMarker.ownsLegacyMetadata())) yield* writeReceipt(found.receipt);
+  return found.receipt;
 }, mapFailure);
 
 export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.assertOwned")(function* (
@@ -234,7 +238,7 @@ export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.asser
 export const setManagedProjectRetention = Effect.fn("ManagedProjectCheckout.setRetention")(
   function* (
     workspaceRoot: string,
-    retention: typeof ProjectCheckoutRetention.Type,
+    retention: ProjectCheckoutRetention,
     projectId: ProjectId,
     workspaceLeaseHeld = false,
   ) {
@@ -418,7 +422,7 @@ export const relocateManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.
         return yield* fail(
           "Loom manages this folder's location and recovery. Its location cannot be changed.",
         );
-      const current = yield* ownershipReceiptPath(receipt.workspaceRoot);
+      const current = yield* receiptPath(receipt.workspaceRoot);
       // Another install's legacy sidecar stays as it is; this install never took it over.
       if (!(yield* fs.exists(current))) return;
       const next = yield* canonicalPath(nextRoot);
@@ -445,6 +449,7 @@ export const relocateManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.
 export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.restore")(function* (
   workspaceRoot: string,
   workspaceLeaseHeld = false,
+  readOnly = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -496,7 +501,19 @@ export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
     });
     return true;
   });
-  return yield* workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
+  if (workspaceLeaseHeld) return yield* restore;
+  // Read-only callers accept a present, unreleased checkout without waiting; any other state,
+  // including a failed read, re-checks under the lease. Callers that act on the checkout always
+  // wait for the lease so an in-flight release finishes first.
+  if (readOnly) {
+    const nothingToRestore = yield* Effect.gen(function* () {
+      if (!(yield* fs.exists(cwd))) return false;
+      const found = yield* readReceipt(cwd);
+      return found === null || (!found.legacy && !found.receipt.released);
+    }).pipe(Effect.orElseSucceed(() => false));
+    if (nothingToRestore) return false;
+  }
+  return yield* withWorkspaceLease(cwd, restore);
 }, mapFailure);
 
 const capabilities = (status: string, set: "CapEff" | "CapPrm") => {
@@ -567,7 +584,7 @@ export const managedProjectProcessReason = Effect.fn("ManagedProjectCheckout.pro
 
 /** Explicit project policy takes precedence over environment defaults. */
 export const resolveManagedProjectRetention = (
-  retention: typeof ProjectCheckoutRetention.Type,
+  retention: ProjectCheckoutRetention,
   settings: { readonly projectOnSettle: boolean; readonly projectAfterDays: number | null },
 ) =>
   retention === "keep"

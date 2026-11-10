@@ -3,6 +3,17 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 
+class EnrollmentOperationError extends Schema.TaggedError<EnrollmentOperationError>()(
+  "EnrollmentOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Enrollment operation failed.";
+  }
+}
+
 /** Enrollment lives beside machine configuration, never inside a source's native history database. */
 export function libraryComputerDirectory(homeDirectory: string, environmentId: string) {
   return `${homeDirectory}/.config/loom/computers/computer-${encodeURIComponent(environmentId)}`;
@@ -30,7 +41,10 @@ export const readLibraryDestination = Effect.fnUntraced(function* (input: {
     if ((stat.mode & 0o077) !== 0 || Number(stat.size) > 16 * 1024) return undefined;
     const enrollment = yield* decode(yield* fs.readFileString(file));
     if (enrollment.sourceEnvironmentId !== input.sourceEnvironmentId) return undefined;
-    const url = yield* Effect.try(() => new URL(enrollment.libraryUrl));
+    const url = yield* Effect.try({
+      try: () => new URL(enrollment.libraryUrl),
+      catch: (cause) => new EnrollmentOperationError({ cause }),
+    });
     if (
       url.username ||
       url.password ||

@@ -2,11 +2,14 @@ import { assert, expect, it } from "@effect/vitest"; // fork: checkpoint-capable
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { OrchestrationProjectShell } from "@t3tools/contracts"; // fork: project-root-worktree
+import { ProjectId } from "@t3tools/contracts"; // fork: project-lifecycle
 import { LibraryError } from "@t3tools/contracts/fork"; // fork: checkpoint-capable
 import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: checkpoint-capable
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Deferred from "effect/Deferred"; // fork: project-lifecycle
+import * as Fiber from "effect/Fiber"; // fork: project-lifecycle
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path"; // fork: project-root-worktree
 
@@ -17,6 +20,15 @@ import * as GitWorkflowService from "./GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts"; // fork: project-root-worktree
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts"; // fork: project-lifecycle
+// fork: project-lifecycle
+import {
+  archiveManagedProjectCheckout,
+  markManagedProjectCheckout,
+  readManagedProjectCheckout,
+  releaseManagedProjectCheckout,
+} from "../workspace/ManagedProjectCheckout.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts"; // fork: project-lifecycle
 
 // fork: project-lifecycle
 const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" }).pipe(
@@ -246,4 +258,86 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
     ),
   );
   // fork: project-root-worktree end
+
+  // fork: project-lifecycle
+  const checkoutHandle = ({ cwd }: VcsDriverRegistry.VcsDriverResolveInput) =>
+    Effect.succeed({
+      kind: "git",
+      repository: { rootPath: cwd },
+    } as VcsDriverRegistry.VcsDriverHandle);
+  it.effect("lists refs during a project release while a branch switch waits to restore it", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const base = yield* fileSystem.realPath(
+        yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-managed-refs-" }),
+      );
+      const cwd = path.join(base, "clone");
+      yield* fileSystem.makeDirectory(cwd);
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      for (const args of [
+        ["init", "-b", "main"],
+        ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
+        ["branch", "feature"],
+      ]) {
+        yield* driver.execute({ operation: "test.setupRepo", cwd, args });
+      }
+      const remoteUrl = "https://github.com/example/managed-refs.git";
+      yield* markManagedProjectCheckout(
+        cwd,
+        buildRepositoryIdentity({
+          rootPath: cwd,
+          remoteName: "origin",
+          remoteUrl,
+          originUrl: remoteUrl,
+        }),
+      );
+      const projectId = ProjectId.make("managed-refs");
+      const entered = yield* Deferred.make<void>();
+      const proceed = yield* Deferred.make<void>();
+      const release = yield* withWorkspaceLease(
+        cwd,
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          yield* Deferred.await(proceed);
+          const receipt = yield* readManagedProjectCheckout(cwd);
+          assert.isNotNull(receipt);
+          const recovery = yield* archiveManagedProjectCheckout(receipt, projectId);
+          yield* releaseManagedProjectCheckout(receipt, projectId, recovery.archive);
+        }),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(entered);
+
+      // The release holds the lease until this returns, so waiting for it would deadlock.
+      const listed = yield* workflow.listRefs({ cwd, refKind: "local" });
+      expect(listed.refs.map((ref) => ref.name).toSorted()).toEqual(["feature", "main"]);
+
+      const switched = yield* workflow
+        .switchRef({ cwd, refName: "feature" })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.succeed(proceed, undefined);
+      yield* Fiber.join(release);
+      expect(yield* Fiber.join(switched)).toEqual({ refName: "feature" });
+      expect((yield* readManagedProjectCheckout(cwd))?.released).toBe(false);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        GitWorkflowService.layer.pipe(
+          Layer.provide(
+            Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+              detect: checkoutHandle,
+              resolve: checkoutHandle,
+            }),
+          ),
+          Layer.provide(Layer.mock(GitManager.GitManager)({})),
+          Layer.provideMerge(GitVcsDriver.layer),
+          Layer.provideMerge(VcsProcess.layer),
+          // The service restores from the receipts the test writes, so both share one T3 home.
+          Layer.provideMerge(layerConfig),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
+  );
 });

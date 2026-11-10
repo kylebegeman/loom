@@ -3,12 +3,24 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
 import { resolveBaseDir } from "../os-jank.ts";
+
+class SetupMarkerOperationError extends Schema.TaggedError<SetupMarkerOperationError>()(
+  "SetupMarkerOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Setup Marker operation failed.";
+  }
+}
 
 /** Loom metadata about a checkout lives in T3 home, never beside the checkout in a user folder. */
 export type Services = ServerConfig.ServerConfig | FileSystem.FileSystem | Path.Path;
@@ -20,7 +32,10 @@ export const digestPath = (canonical: string) =>
 
 // Effect's realPath keeps the requested letter case and Unicode form on case-insensitive volumes.
 const onDiskSpelling = (real: string) =>
-  Effect.tryPromise(() => NodeFSP.realpath(real)).pipe(Effect.orElseSucceed(() => real));
+  Effect.tryPromise({
+    try: () => NodeFSP.realpath(real),
+    catch: (cause) => new SetupMarkerOperationError({ cause }),
+  }).pipe(Effect.orElseSucceed(() => real));
 
 /**
  * Resolves links and on-disk spelling through the nearest existing ancestor, so a path keeps its
@@ -31,7 +46,10 @@ export const canonicalPath = Effect.fnUntraced(function* (target: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const resolved = path.resolve(target);
-  const entry = yield* Effect.tryPromise(() => NodeFSP.lstat(resolved)).pipe(Effect.option);
+  const entry = yield* Effect.tryPromise({
+    try: () => NodeFSP.lstat(resolved),
+    catch: (cause) => new SetupMarkerOperationError({ cause }),
+  }).pipe(Effect.option);
   if (Option.isSome(entry) && !entry.value.isSymbolicLink()) {
     const real = yield* fs.realPath(resolved).pipe(Effect.option);
     if (Option.isSome(real)) return yield* onDiskSpelling(real.value);

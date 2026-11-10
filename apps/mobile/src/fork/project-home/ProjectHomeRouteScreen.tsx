@@ -45,7 +45,7 @@ import { Button } from "../../components/ui/Button";
 import { AppBar } from "../../components/ui/AppBar";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { buildHomeProjectScopes, findHomeProjectScope } from "../../features/home/homeThreadList";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import { uuidv4 } from "../../lib/uuid";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { relativeTime } from "../../lib/time";
@@ -337,7 +337,7 @@ function ProjectHomeContent(props: {
   const renderItem = ({ item }: { readonly item: ProjectHomeListItem }) => {
     if (item.type === "overview")
       return (
-        <View className="gap-5 px-4 pt-4 pb-5">
+        <View className="gap-5 px-5 pt-5 pb-6">
           <View className="flex-row items-start gap-3">
             {scope ? (
               <View
@@ -351,15 +351,19 @@ function ProjectHomeContent(props: {
                   workspaceRoot={scope.representative.workspaceRoot}
                   faviconPath={scope.representative.faviconPath}
                   projectIcon={scope.representative.projectIcon}
-                  size={36}
+                  size={48}
                 />
               </View>
             ) : null}
             <View className="min-w-0 flex-1 gap-1">
-              <Text accessibilityRole="header" className="text-xl font-t3-bold text-foreground">
+              <Text
+                accessibilityRole="header"
+                textRole="largeTitle"
+                className="font-t3-semibold text-foreground"
+              >
                 {scope?.title}
               </Text>
-              <Text className="text-xs text-foreground-muted">
+              <Text textRole="footnote" className="text-foreground-muted">
                 {model.counts.total} {model.counts.total === 1 ? "thread" : "threads"} on{" "}
                 {computerCount} {computerCount === 1 ? "computer" : "computers"}
               </Text>
@@ -387,16 +391,18 @@ function ProjectHomeContent(props: {
               <View className="pt-0.5">
                 <SymbolView
                   name="desktopcomputer"
-                  size={17}
+                  size={20}
                   tintColorClassName="accent-icon-muted"
                 />
               </View>
               <View className="min-w-0 flex-1 gap-0.5">
-                <Text className="text-sm font-t3-medium text-foreground">
+                <Text textRole="body" className="font-t3-medium text-foreground">
                   {selectedComputer ?? "Choose a computer"}
                 </Text>
                 {!selectedProject ? (
-                  <Text className="text-2xs text-foreground-muted">Checkout unavailable</Text>
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    Checkout unavailable
+                  </Text>
                 ) : null}
               </View>
               <SymbolView
@@ -407,7 +413,7 @@ function ProjectHomeContent(props: {
             </Pressable>
           </View>
           {destinationExpanded ? (
-            <View className="overflow-hidden rounded-xl bg-card">
+            <View className="overflow-hidden rounded-2xl bg-grouped-card">
               {scope?.projects.map((project, index) => {
                 const connected = connectedEnvironmentIds.has(project.environmentId);
                 const allowed = permittedEnvironmentIds.has(project.environmentId);
@@ -440,7 +446,7 @@ function ProjectHomeContent(props: {
           ) : null}
           {taskProject === null ? (
             <View className="gap-1">
-              <Text className="text-xs text-foreground-muted">
+              <Text textRole="footnote" className="text-foreground-muted">
                 {onlineProject
                   ? "Choose a connected checkout with task access, or review the source to prepare another copy. Existing threads stay on their current computer."
                   : "Reconnect a computer with this project to start work or review its origin before preparing another copy."}
@@ -468,11 +474,15 @@ function ProjectHomeContent(props: {
       );
     if (item.type === "conversations")
       return (
-        <View className="gap-3 px-4 pb-2">
-          <Text accessibilityRole="header" className="text-lg font-t3-medium text-foreground">
+        <View className="gap-3 px-5 pb-2">
+          <Text
+            accessibilityRole="header"
+            textRole="headline"
+            className="font-t3-semibold text-foreground"
+          >
             Threads
           </Text>
-          <View className="min-h-[44px] flex-row items-center gap-2 rounded-xl border border-input-border bg-input pl-3">
+          <View className="min-h-13.5 flex-row items-center gap-2 rounded-2xl border border-input-border bg-input pl-4">
             <SymbolView name="magnifyingglass" size={16} tintColorClassName="accent-icon-muted" />
             <TextInput
               accessibilityLabel="Search all thread titles"
@@ -482,18 +492,18 @@ function ProjectHomeContent(props: {
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
-              className="min-h-[44px] min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-2 text-sm"
+              className="min-h-13.5 min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-3 text-base"
             />
             {query.length > 0 ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Clear thread search"
                 onPress={() => setQuery("")}
-                className="h-[44px] w-[44px] items-center justify-center"
+                className="size-11 items-center justify-center"
               >
                 <SymbolView
                   name="xmark.circle.fill"
-                  size={17}
+                  size={20}
                   tintColorClassName="accent-icon-muted"
                 />
               </Pressable>
@@ -502,7 +512,11 @@ function ProjectHomeContent(props: {
             )}
           </View>
           {conversations.searching ? (
-            <Text accessibilityLiveRegion="polite" className="py-2 text-xs text-foreground-muted">
+            <Text
+              accessibilityLiveRegion="polite"
+              textRole="footnote"
+              className="py-2 text-foreground-muted"
+            >
               {conversations.matchingCount}{" "}
               {conversations.matchingCount === 1 ? "match" : "matches"} across all threads
             </Text>
@@ -516,13 +530,13 @@ function ProjectHomeContent(props: {
                   accessibilityState={{ selected: conversations.view === view.id }}
                   onPress={() => setThreadView(view.id)}
                   className={cn(
-                    "min-h-[44px] flex-row items-center gap-1.5 rounded-lg px-2 py-2 active:opacity-70",
+                    "min-h-11 flex-row items-center gap-2 rounded-xl px-3 py-2 active:opacity-70",
                     conversations.view === view.id && "bg-subtle-strong",
                   )}
                 >
                   <Text
                     className={cn(
-                      "text-xs",
+                      "text-sm",
                       conversations.view === view.id
                         ? "font-t3-medium text-foreground"
                         : "text-foreground-muted",
@@ -530,7 +544,7 @@ function ProjectHomeContent(props: {
                   >
                     {view.label}
                   </Text>
-                  <Text className="text-2xs text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     {conversations.counts[view.id]}
                   </Text>
                 </Pressable>
@@ -541,15 +555,15 @@ function ProjectHomeContent(props: {
       );
     if (item.type === "empty")
       return (
-        <View className="gap-1 px-4 py-6">
-          <Text className="text-sm font-t3-medium text-foreground">
+        <View className="gap-2 px-5 py-6">
+          <Text textRole="body" className="font-t3-medium text-foreground">
             {conversations.searching
               ? "No matching threads"
               : conversations.counts.all === 0
                 ? "No threads yet"
                 : `No ${conversations.view === "all" ? "saved" : conversations.view} threads`}
           </Text>
-          <Text className="text-xs text-foreground-muted">
+          <Text textRole="footnote" className="text-foreground-muted">
             {conversations.searching
               ? "Try another title or clear the search."
               : conversations.counts.all === 0
@@ -560,11 +574,17 @@ function ProjectHomeContent(props: {
       );
     if (item.type === "section")
       return (
-        <View className="flex-row items-center justify-between gap-2 px-4 pt-4 pb-1">
-          <Text accessibilityRole="header" className="text-xs font-t3-medium text-foreground-muted">
+        <View className="flex-row items-center justify-between gap-2 px-5 pt-6 pb-2">
+          <Text
+            accessibilityRole="header"
+            textRole="body"
+            className="font-t3-semibold text-foreground"
+          >
             {item.id === "offline" ? "Offline computers" : item.title}
           </Text>
-          <Text className="text-2xs text-foreground-muted">{item.count}</Text>
+          <Text textRole="footnote" className="text-foreground-muted">
+            {item.count}
+          </Text>
         </View>
       );
     if (item.type === "more")
@@ -609,12 +629,12 @@ function ProjectHomeContent(props: {
             accessibilityRole="button"
             accessibilityLabel={`Open ${thread.title}, ${connected ? ACTIVITY_LABELS[activity] : `Offline, last known ${ACTIVITY_LABELS[activity]}`}, ${environmentLabel(thread.environmentId)}`}
             onPress={() => selectThread(thread)}
-            className="min-h-[56px] min-w-0 flex-1 flex-row items-start gap-3 px-4 py-2.5 active:opacity-70"
+            className="min-h-20 min-w-0 flex-1 flex-row items-start gap-3 ps-5 pe-2 py-4 active:opacity-70"
           >
             <View className="pt-0.5">
               <SymbolView
                 name={connected ? ACTIVITY_ICONS[activity] : "wifi.slash"}
-                size={17}
+                size={20}
                 tintColorClassName={
                   connected && activity === "failed"
                     ? "accent-danger-foreground"
@@ -625,14 +645,18 @@ function ProjectHomeContent(props: {
               />
             </View>
             <View className="min-w-0 flex-1 gap-1">
-              <Text className="text-sm font-t3-medium text-foreground">{thread.title}</Text>
+              <Text textRole="body" className="font-t3-medium text-foreground">
+                {thread.title}
+              </Text>
               {releasedCheckoutIds.has(scopedThreadKey(thread.environmentId, thread.id)) ? (
-                <Text className="text-xs text-foreground-muted">Checkout released</Text>
+                <Text textRole="footnote" className="text-foreground-muted">
+                  Checkout released
+                </Text>
               ) : null}
               <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5">
                 <Text
                   className={cn(
-                    "text-2xs",
+                    "text-sm",
                     connected && activity === "failed"
                       ? "text-danger-foreground"
                       : connected && activity === "attention"
@@ -646,10 +670,10 @@ function ProjectHomeContent(props: {
                     ? ACTIVITY_LABELS[activity]
                     : `Last known: ${ACTIVITY_LABELS[activity]}`}
                 </Text>
-                <Text className="text-2xs text-foreground-muted">
+                <Text textRole="footnote" className="text-foreground-muted">
                   {environmentLabel(thread.environmentId)}
                 </Text>
-                <Text className="text-2xs text-foreground-muted">
+                <Text textRole="footnote" className="text-foreground-muted">
                   {relativeTime(thread.updatedAt)}
                 </Text>
               </View>
@@ -657,6 +681,10 @@ function ProjectHomeContent(props: {
           </Pressable>
           {actions.length > 0 ? (
             <Menu
+              nativeTrigger={{
+                icon: "ellipsis",
+                accessibilityLabel: `Actions for ${thread.title}`,
+              }}
               actions={[...actions]}
               onPressAction={({ nativeEvent }) => {
                 if (nativeEvent.event === "settle") void settleThread(thread);
@@ -677,9 +705,9 @@ function ProjectHomeContent(props: {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Actions for ${thread.title}`}
-                className="h-[44px] w-[44px] items-center justify-center"
+                className="size-11 items-center justify-center"
               >
-                <SymbolView name="ellipsis" size={17} tintColorClassName="accent-icon-muted" />
+                <SymbolView name="ellipsis" size={20} tintColorClassName="accent-icon-muted" />
               </Pressable>
             </Menu>
           ) : null}
@@ -687,7 +715,7 @@ function ProjectHomeContent(props: {
       );
     }
     return (
-      <View className="px-4 pt-5 pb-4">
+      <View className="px-5 pt-7 pb-5">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Working files"
@@ -696,8 +724,10 @@ function ProjectHomeContent(props: {
           className="min-h-[44px] flex-row items-center justify-between gap-3 py-2 active:opacity-70"
         >
           <View className="min-w-0 flex-1 gap-0.5">
-            <Text className="text-sm font-t3-medium text-foreground">Working files</Text>
-            <Text className="text-2xs text-foreground-muted">
+            <Text textRole="body" className="font-t3-medium text-foreground">
+              Working files
+            </Text>
+            <Text textRole="footnote" className="text-foreground-muted">
               {scope?.projects.length ?? 0} working{" "}
               {(scope?.projects.length ?? 0) === 1 ? "copy" : "copies"}
             </Text>
@@ -710,7 +740,7 @@ function ProjectHomeContent(props: {
         </Pressable>
         {detailsExpanded ? (
           <View className="gap-5 pt-3">
-            <Text className="text-xs leading-normal text-foreground-muted">
+            <Text textRole="footnote" className="text-foreground-muted">
               Your project and conversations stay in Loom. These are its working-file locations.
               Loom can free space by removing safe, settled copies, then restore their files when
               you resume work. Checking a location does not restore files.
@@ -737,14 +767,14 @@ function ProjectHomeContent(props: {
               return (
                 <View key={key} className="gap-2">
                   <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
-                    <Text className="text-sm font-t3-medium text-foreground">
+                    <Text textRole="body" className="font-t3-medium text-foreground">
                       {environmentLabel(project.environmentId)}
                     </Text>
-                    <Text className="text-2xs text-foreground-muted">
+                    <Text textRole="footnote" className="text-foreground-muted">
                       {connected ? "Connected" : "Offline"}
                     </Text>
                   </View>
-                  <Text selectable className="text-xs leading-normal text-foreground-muted">
+                  <Text selectable textRole="footnote" className="text-foreground-muted">
                     {project.workspaceRoot}
                   </Text>
                   <ProjectFolderLocation

@@ -1,3 +1,4 @@
+import * as Signature from "effect/crypto/Signature";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
@@ -158,7 +159,7 @@ const withReporter = <A, E>(
     readonly events: Queue.Queue<Event>;
     readonly logs: ReadonlyArray<string>;
     readonly tokens: ReadonlyArray<string>;
-  }) => Effect.Effect<A, E>,
+  }) => Effect.Effect<A, E, Signature.Signature>,
 ) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(NOW);
@@ -182,6 +183,7 @@ const withReporter = <A, E>(
     const providers = yield* Ref.make<ReadonlyArray<ServerProvider>>([providerOf("ready")]);
     const providerChanges = yield* Queue.unbounded<ReadonlyArray<ServerProvider>>();
 
+    const signature = yield* Signature.Signature;
     const http = HttpClient.make((request) =>
       Effect.gen(function* () {
         const authorization = request.headers.authorization;
@@ -203,7 +205,7 @@ const withReporter = <A, E>(
           environmentId: STUDIO,
           audience: LIBRARY,
           nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
-        });
+        }).pipe(Effect.provideService(Signature.Signature, signature));
         tokens.push(posted.token);
         const queued =
           library.pinnedKey !== null && library.pinnedKey !== posted.publicKey

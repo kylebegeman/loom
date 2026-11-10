@@ -1,5 +1,5 @@
 import * as NodeWorkerThreads from "node:worker_threads";
-import { CheckFailure, weld } from "./mesh.ts";
+import { isCheckFailure, weld } from "./mesh.ts";
 import { readStl } from "./readStl.ts";
 import { readObj } from "./readObj.ts";
 import { read3mf } from "./read3mf.ts";
@@ -7,6 +7,7 @@ import { readGltf } from "./readGltf.ts";
 import { runPrintChecks } from "./printChecks.ts";
 import { readPart, runAssemblyChecks } from "./assemblyChecks.ts";
 import type { WorkerReply, WorkerRequest } from "./protocol.ts";
+
 NodeWorkerThreads.parentPort?.once("message", (request: WorkerRequest) => {
   const started = performance.now();
   let reply: WorkerReply;
@@ -50,8 +51,8 @@ NodeWorkerThreads.parentPort?.once("message", (request: WorkerRequest) => {
   } catch (cause) {
     reply = {
       ok: false,
-      reason: cause instanceof CheckFailure ? cause.reason : "command-failed",
-      message: cause instanceof CheckFailure ? cause.message : "Could not analyse this mesh.",
+      reason: isCheckFailure(cause) ? cause.reason : "command-failed",
+      message: isCheckFailure(cause) ? cause.message : "Could not analyse this mesh.",
     };
   }
   // Node worker messages do not use browser origins.

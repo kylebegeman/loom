@@ -46,13 +46,15 @@ function projectFailure(error: Project.ProjectServiceError) {
   if (error._tag === "ProjectOperationError") return unavailable(error); // fork: mcp-refusals
   // fork: file-placement
   const message =
-    error._tag === "ProjectNotFoundError"
-      ? "The project was not found."
-      : error._tag === "ProjectConflictError"
-        ? "The workspace is already registered to a project."
-        : error._tag === "ProjectLocationManagedError"
-          ? error.reason // fork: file-placement
-          : "The project is not empty; force=true is required to delete it.";
+    error._tag === "ProjectInvalidError"
+      ? error.detail
+      : error._tag === "ProjectNotFoundError"
+        ? "The project was not found."
+        : error._tag === "ProjectConflictError"
+          ? "The workspace is already registered to a project."
+          : error._tag === "ProjectLocationManagedError"
+            ? error.reason // fork: file-placement
+            : "The project is not empty; force=true is required to delete it.";
   return new OrchestratorMcpFailure({ code: "invalid_request", message });
 }
 
@@ -82,7 +84,7 @@ const launchCommandId = Effect.fn("mcp.launchCommandId")(function* (
   key: string,
 ) {
   const crypto = yield* Digest.Digest;
-  // @effect-diagnostics-next-line preferSchemaOverJson:off - a JSON pair keeps the caller apart from the key.
+  // @effect-diagnostics-next-line globalJsonInEffect:off - a JSON pair keeps the caller apart from the key.
   const bytes = new TextEncoder().encode(JSON.stringify([namespace, key]));
   const digest = yield* crypto.digest(Digest.sha256, bytes).pipe(Effect.mapError(unavailable));
   return CommandId.make(`mcp:launch:${Hex.encode(digest)}`);

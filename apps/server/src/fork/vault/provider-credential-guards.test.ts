@@ -97,6 +97,7 @@ function setup() {
       openSession: () => action("openSession").pipe(Effect.as(runtime)),
     },
     textGeneration: {
+      generateTranscriptionPostProcessing: generation("generateTranscriptionPostProcessing"),
       generateCommitMessage: generation("generateCommitMessage"),
       generatePrContent: generation("generatePrContent"),
       generateBranchName: generation("generateBranchName"),
@@ -168,6 +169,7 @@ describe("Vault provider credential guards", () => {
         const runtime = yield* instance.orchestrationAdapter.openSession({} as never);
         yield* runtime.startTurn({} as never);
         yield* instance.textGeneration.generateThreadTitle({} as never);
+        yield* instance.textGeneration.generateTranscriptionPostProcessing({} as never);
         yield* instance.snapshot.refresh;
         yield* instance.snapshotForCwd!("/fixture");
         yield* instance.consumeResetCredit!();
@@ -200,6 +202,7 @@ describe("Vault provider credential guards", () => {
           instance.textGeneration.generateBranchName({} as never),
           instance.textGeneration.generateThreadTitle({} as never),
           instance.textGeneration.generateReviewGuide({} as never),
+          instance.textGeneration.generateTranscriptionPostProcessing({} as never),
           instance.snapshotForCwd!("/fixture"),
           instance.consumeResetCredit!(),
           instance.auth!.start("owner"),

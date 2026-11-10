@@ -1,5 +1,9 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { UPDATE_PLAN_WS_METHODS, type UpdatePlanStatus } from "@t3tools/contracts/fork";
+import {
+  UPDATE_PLAN_WS_METHODS,
+  type UpdatePlan,
+  type UpdatePlanStatus,
+} from "@t3tools/contracts/fork";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Effect from "effect/Effect";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -71,9 +75,16 @@ export function createUpdatePlanAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
   };
 }
 
+// Older servers still report a failed or cancelled plan that another updater has since passed.
+const updatePlanSuperseded = (plan: UpdatePlan, currentVersion: string) =>
+  (plan.state === "failed" || plan.state === "cancelled") &&
+  parseSemver(plan.targetVersion) !== null &&
+  parseSemver(currentVersion) !== null &&
+  compareSemverVersions(plan.targetVersion, currentVersion) <= 0;
+
 export function updatePlanText(status: UpdatePlanStatus | null): string | null {
   const plan = status?.plan;
-  if (!plan) return null;
+  if (!plan || updatePlanSuperseded(plan, status.currentVersion)) return null;
   switch (plan.state) {
     case "armed":
       return "Update armed";

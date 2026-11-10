@@ -146,7 +146,7 @@ it.effect("cancels a waiting plan and a plan whose download is still preparing",
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("loads an armed plan after restart and recognizes a completed version", () =>
+it.effect("loads an armed plan after restart and recognizes versions it already reached", () =>
   Effect.gen(function* () {
     const pending = yield* fixture(savedPlan);
     yield* Effect.gen(function* () {
@@ -161,5 +161,16 @@ it.effect("loads an armed plan after restart and recognizes a completed version"
       yield* completed.state("done");
       assert.equal((yield* service.status).plan?.state, "done");
     }).pipe(Effect.provide(completed.layer));
+    for (const [state, currentVersion, reported] of [
+      ["failed", "0.1.0", "failed"],
+      ["failed", "0.1.2", undefined],
+      ["cancelled", "0.1.1", undefined],
+    ] as const) {
+      const ended = yield* fixture({ ...savedPlan, state, error: "Lost" }, currentVersion);
+      yield* Effect.gen(function* () {
+        const service = yield* UpdatePlans.UpdatePlans;
+        assert.equal((yield* service.status).plan?.state, reported, currentVersion);
+      }).pipe(Effect.provide(ended.layer));
+    }
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

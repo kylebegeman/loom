@@ -6,6 +6,7 @@ import { useResolveClassNames } from "uniwind";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
 import { formSheetDetents } from "../../native/sheet-surface";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
 
@@ -18,7 +19,7 @@ export function Sheet(props: SheetProps) {
   const screenId = useId();
   const [isOpen, setIsOpen] = useState(true);
   // fork: sites-editor-dismiss -- Pending forms must retain their input until saving settles.
-  const dismissible = props.dismissible ?? true;
+  const dismissible = (props.dismissible ?? true) && !props.dismissDisabled;
   const close = () => {
     if (dismissible) setIsOpen(false);
   };
@@ -51,7 +52,7 @@ export function Sheet(props: SheetProps) {
               backgroundColor="rgba(0,0,0,0)"
               tintColorClassName="accent-foreground"
               hideBackButton
-              hideShadow={false}
+              hideShadow={NATIVE_LIQUID_GLASS_SUPPORTED /* fork: native-scroll-edge */}
               title={props.title}
               titleColorClassName="accent-foreground"
               titleFontSize={18}

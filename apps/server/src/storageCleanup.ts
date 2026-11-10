@@ -87,6 +87,18 @@ import { normalizeGitRemoteUrl } from "@t3tools/shared/git"; // fork: project-li
 const decodeCleanupThread = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
 );
+
+// fork: project-lifecycle
+class StorageCleanupOperationError extends Schema.TaggedError<StorageCleanupOperationError>()(
+  "StorageCleanupOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Storage Cleanup operation failed.";
+  }
+}
 const decodeCleanupSession = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2ProviderSessionJson),
 );
@@ -587,13 +599,16 @@ const make = Effect.gen(function* () {
   const libraryCleanupBlocker = Effect.fn("StorageCleanup.libraryCleanupBlocker")(function* (
     cwd: string,
     now: number,
+    // Pass only where the result can keep files; checks that precede removal must read fresh.
+    sweepSnapshot?: Effect.Success<ReturnType<typeof readThreads>>,
   ) {
     const owners = yield* libraryCheckoutOwners(cwd);
     if (owners.some((receipt) => receipt.copy.ownership === "managed"))
       return "the Library manages these files";
     if (owners.length === 0) return null;
-    const snapshot = yield* readThreads();
+    const snapshot = sweepSnapshot ?? (yield* readThreads());
     const allBindings = yield* libraryWorkspaces.bindings;
+    const canonicalLocations = new Map<string, string>();
     for (const receipt of owners) {
       // Borrowed folders opt into native retention through reviewed adoption. Library retention
       // intentionally cannot release them, but the whole copy's conversations still protect them.
@@ -624,7 +639,11 @@ const make = Effect.gen(function* () {
           thread.worktreePath ??
           snapshot.projects.find((project) => project.id === thread.projectId)?.workspaceRoot;
         if (location === undefined) continue;
-        const canonical = yield* fs.realPath(location).pipe(Effect.orElseSucceed(() => location));
+        let canonical = canonicalLocations.get(location);
+        if (canonical === undefined) {
+          canonical = yield* fs.realPath(location).pipe(Effect.orElseSucceed(() => location));
+          canonicalLocations.set(location, canonical);
+        }
         if (
           locations.some((root) => pathKey(root) === pathKey(canonical) || inside(root, canonical))
         )
@@ -725,7 +744,10 @@ const make = Effect.gen(function* () {
     if (!roots.some((root) => pathKey(path.dirname(directory)) === pathKey(root))) return;
     if (yield* containsProjectRoot(directory, yield* projectStore.listShells())) return;
     if (pathKey(yield* fs.realPath(directory)) !== pathKey(directory)) return;
-    yield* Effect.tryPromise(() => NodeFSP.rmdir(directory)).pipe(Effect.ignore);
+    yield* Effect.tryPromise({
+      try: () => NodeFSP.rmdir(directory),
+      catch: (cause) => new StorageCleanupOperationError({ cause }),
+    }).pipe(Effect.ignore);
   });
 
   const reportOrphanWorktrees = Effect.fn("StorageCleanup.reportOrphanWorktrees")(function* (
@@ -833,6 +855,26 @@ const make = Effect.gen(function* () {
       },
       Effect.orElseSucceed(() => undefined),
     );
+    // Linked worktrees can sit deeper inside a plain folder, like <repository>/replay/<n>. Ask
+    // the projects' Git for them rather than walking folders that may hold large non-git trees.
+    let registered: ReadonlyArray<string> | undefined;
+    const nestedWorktrees = Effect.fnUntraced(function* (folder: string, managedRoot: string) {
+      if (yield* fs.exists(path.join(folder, ".git"))) return [];
+      registered ??= (yield* Effect.forEach(new Set(projectRoots), (root) =>
+        git.listWorktreePaths(root).pipe(Effect.orElseSucceed((): string[] => [])),
+      )).flat();
+      // Locked registrations outlive their directory, whose path may since hold something else.
+      return yield* Effect.filter(
+        registered.filter(
+          (worktree) => inside(folder, worktree) && !inProject(worktree, managedRoot),
+        ),
+        (worktree) =>
+          Effect.gen(function* () {
+            if (pathKey(yield* fs.realPath(worktree)) !== pathKey(worktree)) return false;
+            return (yield* fs.stat(path.join(worktree, ".git"))).type === "File";
+          }).pipe(Effect.orElseSucceed(() => false)),
+      );
+    });
     for (const root of roots) {
       // Worktrees can be <root>/<repository>/<branch> or explicitly <root>/<name>.
       for (const projectDirectory of yield* directories(root, root)) {
@@ -844,7 +886,8 @@ const make = Effect.gen(function* () {
             return;
           }
           for (const worktreePath of yield* directories(projectDirectory, root)) {
-            yield* report(worktreePath);
+            const nested = yield* nestedWorktrees(worktreePath, root);
+            for (const target of nested.length > 0 ? nested : [worktreePath]) yield* report(target);
           }
           // fork: project-lifecycle -- rmdir cannot remove a folder that acquired new files.
           yield* pruneEmptyProjectFolder(projectDirectory, roots);
@@ -1327,6 +1370,20 @@ const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
+    const worktreePathReason = Effect.fn("StorageCleanup.worktreePathReason")(function* (
+      worktreePath: string,
+    ) {
+      // Allow symlinked parents, never a symlinked worktree directory.
+      const realPath = yield* fs.realPath(worktreePath);
+      const realParent = yield* fs.realPath(path.dirname(worktreePath));
+      if (realPath !== path.join(realParent, path.basename(worktreePath)))
+        return "worktree is a symbolic link";
+      if (!roots.some((root) => inside(root, realPath)))
+        return "outside the managed worktree folder";
+      if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
+        return "not a linked worktree";
+      return null;
+    });
     const deletedRows = yield* sql<{ payload_json: string; workspaceRoot: string }>`
           SELECT t.payload_json, p.workspace_root AS "workspaceRoot"
           FROM orchestration_v2_projection_threads t
@@ -1549,7 +1606,8 @@ const make = Effect.gen(function* () {
         // and cannot apply yet.
         if (!landing && !worktreeCleanupEnabled({ ...settings, worktreeOnLand: false }))
           return keep(unfinishedReason);
-        const libraryReason = yield* libraryCleanupBlocker(worktreePath, now);
+        // fork: library-projects
+        const libraryReason = yield* libraryCleanupBlocker(worktreePath, now, snapshot);
         if (libraryReason !== null) return keep(libraryReason);
         if (deleted && !settings.worktreeOnDelete && !landing) return keep("no rules apply"); // fork: project-lifecycle
         // fork: project-lifecycle -- owners all settled on this branch release a shared worktree.
@@ -1582,22 +1640,62 @@ const make = Effect.gen(function* () {
         if (group.some((member) => member.branch !== thread.branch))
           return keep("a subagent thread's branch differs from this worktree's branch");
         if (hasTerminal(worktreePath)) return keep(waitForStop("open terminal"));
-        // Compare canonical roots while allowing symlinked parents, never symlinked worktree directories.
-        const realPath = yield* fs.realPath(worktreePath);
-        const realParent = yield* fs.realPath(path.dirname(worktreePath));
-        if (realPath !== path.join(realParent, path.basename(worktreePath)))
-          return keep("worktree is a symbolic link");
+        // fork: project-lifecycle -- settle cleanup runs only after the settle script finished.
+        if (
+          !settled && // fork: project-lifecycle
+          [...group, ...settlementChain.slice(1)].some(
+            (member) =>
+              member.settledAt !== null &&
+              now - Math.max(DateTime.toEpochMillis(member.updatedAt), activityAt) <
+                SETTLE_SCRIPT_GRACE_MS,
+          )
+        )
+          return keep(waitForStop("settled moments ago"));
+        const old =
+          !deleted &&
+          settings.worktreeAfterDays !== null &&
+          activityAt < now - settings.worktreeAfterDays * DAY_MS;
+        const settledFor =
+          settledThread?.settledAt == null
+            ? null
+            : now - Math.max(DateTime.toEpochMillis(settledThread.settledAt), activityAt);
+        const settledDays = settledFor === null ? null : Math.floor(settledFor / DAY_MS);
+        const settledElapsed = // fork: project-lifecycle
+          settledFor !== null &&
+          settings.worktreeSettledAfterDays !== null &&
+          settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
+        const notDueReason =
+          !deleted && settings.worktreeAfterDays !== null
+            ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} of ${settings.worktreeAfterDays} days`
+            : settings.worktreeSettledAfterDays !== null
+              ? settledFor === null
+                ? "not settled"
+                : `settled for ${settledDays} of ${settings.worktreeSettledAfterDays} days`
+              : settings.worktreeOnMerge
+                ? "not merged"
+                : settings.worktreeUnchanged
+                  ? "has commits beyond the default branch"
+                  : settings.worktreeOnLand // fork: project-lifecycle
+                    ? unfinishedReason // fork: project-lifecycle
+                    : "no rules apply";
+        // Only Git-based rules can make a not-yet-due worktree eligible, so skip Git otherwise.
+        if (
+          !((deleted && settings.worktreeOnDelete) || old || settled || settledElapsed) && // fork: project-lifecycle
+          !landing && // fork: project-lifecycle -- the landing rule is Git-based too.
+          !settings.worktreeUnchanged &&
+          !settings.worktreeOnMerge
+        )
+          return keep(notDueReason);
+        const pathReason = yield* worktreePathReason(worktreePath);
+        if (pathReason !== null) return keep(pathReason);
         // fork: mini-native-retention
+        const realPath = yield* fs.realPath(worktreePath);
         const owner = yield* HostProcess.UserId;
         if (owner !== undefined && Option.getOrNull((yield* fs.stat(realPath)).uid) !== owner)
           return keep("worktree is owned by another user");
         yield* assertScratchUnmounted(realPath);
-        if (!roots.some((root) => inside(root, realPath)))
-          return keep("outside the managed worktree folder");
         if (yield* containsProjectRoot(worktreePath, [project, ...snapshot.projects]))
           return keep("contains a project checkout");
-        if ((yield* fs.stat(path.join(worktreePath, ".git"))).type !== "File")
-          return keep("not a linked worktree");
         if (yield* branchChanged(worktreePath, thread.branch))
           return keep("repository or branch changed");
         // fork: project-lifecycle -- landing is checked first: its branch deletion wins over rules
@@ -1632,22 +1730,6 @@ const make = Effect.gen(function* () {
             : settings;
         const changes = yield* localChangesReason(worktreePath, fileRules);
         if (changes !== null) return keep(changes);
-        // fork: project-lifecycle -- settle cleanup runs only after the settle script finished.
-        if (
-          !settled && // fork: project-lifecycle
-          [...group, ...settlementChain.slice(1)].some(
-            (member) =>
-              member.settledAt !== null &&
-              now - Math.max(DateTime.toEpochMillis(member.updatedAt), activityAt) <
-                SETTLE_SCRIPT_GRACE_MS,
-          )
-        )
-          return keep(waitForStop("settled moments ago"));
-        // fork: project-lifecycle -- HEAD is resolved before the landing check
-        const old =
-          !deleted &&
-          settings.worktreeAfterDays !== null &&
-          activityAt < now - settings.worktreeAfterDays * DAY_MS;
         // fork: project-lifecycle -- a settled release requires the branch head to be published.
         if (settled && landedOn === null) {
           const upstream = yield* git.execute({
@@ -1675,15 +1757,6 @@ const make = Effect.gen(function* () {
           });
           if (published.exitCode !== 0) return keep("branch has unpublished commits");
         }
-        const settledFor =
-          settledThread?.settledAt == null
-            ? null
-            : now - Math.max(DateTime.toEpochMillis(settledThread.settledAt), activityAt);
-        const settledDays = settledFor === null ? null : Math.floor(settledFor / DAY_MS);
-        const settledElapsed = // fork: project-lifecycle
-          settledFor !== null &&
-          settings.worktreeSettledAfterDays !== null &&
-          settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
         let eligible =
           landedOn !== null ||
           (deleted && settings.worktreeOnDelete) ||
@@ -1700,6 +1773,7 @@ const make = Effect.gen(function* () {
                 : old
                   ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} days`
                   : `settled for ${settledDays} days`;
+        // fork: project-lifecycle -- the landing rule also passes the not-due skip above.
         if (!eligible && (settings.worktreeUnchanged || settings.worktreeOnMerge)) {
           // fork: project-lifecycle -- refreshed, unlike the landing check's local-only result.
           const integration = yield* defaultBranchIntegration(
@@ -1731,21 +1805,7 @@ const make = Effect.gen(function* () {
           }
           if (!eligible && remote === null) return keep("has commits beyond the project branch");
         }
-        if (!eligible)
-          return keep(
-            landingReason ?? // fork: project-lifecycle
-              (!deleted && settings.worktreeAfterDays !== null
-                ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} of ${settings.worktreeAfterDays} days`
-                : settings.worktreeSettledAfterDays !== null
-                  ? settledFor === null
-                    ? "not settled"
-                    : `settled for ${settledDays} of ${settings.worktreeSettledAfterDays} days`
-                  : settings.worktreeOnMerge
-                    ? "not merged"
-                    : settings.worktreeOnLand && !settings.worktreeUnchanged // fork: project-lifecycle
-                      ? unfinishedReason
-                      : "has commits beyond the default branch"),
-          );
+        if (!eligible) return keep(landingReason ?? notDueReason); // fork: project-lifecycle
         // Re-read this path's threads and sessions so new activity cancels removal; full per-worktree snapshots take seconds.
         const blockedSinceCheck = Effect.fnUntraced(function* () {
           // fork: library-projects
@@ -1867,79 +1927,89 @@ const make = Effect.gen(function* () {
         }
         const blocked = yield* blockedSinceCheck();
         if (blocked !== null) return keep(blocked);
+        // Size is an estimate; provider startup must not wait for directory traversal.
         const bytes = yield* measureWorktree(worktreePath);
-        const blockedWhileMeasuring = yield* blockedSinceCheck();
-        if (blockedWhileMeasuring !== null) return keep(blockedWhileMeasuring);
-        if (yield* branchChanged(worktreePath, thread.branch))
-          return keep("repository or branch changed since check");
-        if (
-          (yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" })).commitSha !==
-          head.commitSha
-        )
-          return keep("commit changed since check");
-        const finalChanges = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
-        if (finalChanges !== null) return keep(finalChanges);
-        const currentSettings = yield* settingsService.getSettings;
-        const current = resolveWorktreeCleanup(currentSettings, thread.projectId);
-        if (
-          currentSettings.autoResumeLimitedThreads !== serverSettings.autoResumeLimitedThreads ||
-          currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
-          Object.keys(settings).some(
-            (key) =>
-              current[key as keyof typeof settings] !== settings[key as keyof typeof settings],
-          )
-        )
-          return keep("settings changed since check");
-        // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
-        if (fileRules.worktreeKeepWhen === "tracked-changes")
-          // fork: project-lifecycle
-          yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
-        const submodules = yield* submoduleRemoval(worktreePath, fileRules); // fork: project-lifecycle
-        if (submodules.reason !== null) return keep(submodules.reason);
-        if (submodules.force) {
-          const changes = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
-          if (changes !== null) return keep(changes);
-        }
-        // fork: project-lifecycle -- the default-on landing rule also waits for programs (dev
-        // servers, editors, shells outside Loom) whose working directory is in the worktree.
-        if (landedOn !== null) {
-          const processReason = yield* managedProjectProcessReason(realPath);
-          if (processReason !== null) return keep(processReason);
-        }
-        yield* assertScratchUnmounted(realPath);
-        yield* removeLinkedWorktree({
-          operation: "StorageCleanup.cleanupGit",
-          cwd: project.workspaceRoot,
+        yield* withWorkspaceLease(
           worktreePath,
-          // Git requires force for submodules; recursive checks above cannot make removal atomic.
-          force: submodules.force,
-          execute: git.execute,
-          run: (args) => cleanupGit(project.workspaceRoot, [...args], "git worktree remove"),
-        });
-        // fork: project-lifecycle -- only the landing rule deletes the branch.
-        const branchNote =
-          landedOn === null || thread.branch === null
-            ? null
-            : yield* deleteLandedBranch({
-                repositoryCwd: project.workspaceRoot,
-                worktreePath,
-                branch: thread.branch,
-                defaultBranch: landedOn,
-                verifiedHead: head.commitSha,
-                holders: group.map((holder) => holder.id),
-              });
-        entries.push({
-          ...entry,
-          outcome: "removed",
-          reason: sentence(branchNote === null ? removalReason : `${removalReason}; ${branchNote}`), // fork: project-lifecycle
-          bytes,
-        });
-        yield* gitManager.invalidateStatus(project.workspaceRoot);
-        // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.
-        // fork: project-lifecycle -- a deleted landed branch is recreated from the latest checkpoint.
-        yield* Effect.logInfo("storage cleanup removed worktree", { threadId: thread.id });
+          Effect.gen(function* () {
+            const pathReason = yield* worktreePathReason(worktreePath);
+            if (pathReason !== null) return keep(pathReason);
+            const blockedWhileMeasuring = yield* blockedSinceCheck();
+            if (blockedWhileMeasuring !== null) return keep(blockedWhileMeasuring);
+            if (yield* branchChanged(worktreePath, thread.branch))
+              return keep("repository or branch changed since check");
+            if (
+              (yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" })).commitSha !==
+              head.commitSha
+            )
+              return keep("commit changed since check");
+            const finalChanges = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
+            if (finalChanges !== null) return keep(finalChanges);
+            const currentSettings = yield* settingsService.getSettings;
+            const current = resolveWorktreeCleanup(currentSettings, thread.projectId);
+            if (
+              currentSettings.autoResumeLimitedThreads !==
+                serverSettings.autoResumeLimitedThreads ||
+              currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
+              Object.keys(settings).some(
+                (key) =>
+                  current[key as keyof typeof settings] !== settings[key as keyof typeof settings],
+              )
+            )
+              return keep("settings changed since check");
+            // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
+            if (fileRules.worktreeKeepWhen === "tracked-changes")
+              // fork: project-lifecycle
+              yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
+            const submodules = yield* submoduleRemoval(worktreePath, fileRules); // fork: project-lifecycle
+            if (submodules.reason !== null) return keep(submodules.reason);
+            if (submodules.force) {
+              const changes = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
+              if (changes !== null) return keep(changes);
+            }
+            // fork: project-lifecycle -- the default-on landing rule also waits for programs (dev
+            // servers, editors, shells outside Loom) whose working directory is in the worktree.
+            if (landedOn !== null) {
+              const processReason = yield* managedProjectProcessReason(realPath);
+              if (processReason !== null) return keep(processReason);
+            }
+            yield* assertScratchUnmounted(realPath); // fork: mini-native-retention
+            yield* removeLinkedWorktree({
+              operation: "StorageCleanup.cleanupGit",
+              cwd: project.workspaceRoot,
+              worktreePath,
+              // Git requires force for submodules; recursive checks above cannot make removal atomic.
+              force: submodules.force,
+              execute: git.execute,
+              run: (args) => cleanupGit(project.workspaceRoot, [...args], "git worktree remove"),
+            });
+            // fork: project-lifecycle -- only the landing rule deletes the branch.
+            const branchNote =
+              landedOn === null || thread.branch === null
+                ? null
+                : yield* deleteLandedBranch({
+                    repositoryCwd: project.workspaceRoot,
+                    worktreePath,
+                    branch: thread.branch,
+                    defaultBranch: landedOn,
+                    verifiedHead: head.commitSha,
+                    holders: group.map((holder) => holder.id),
+                  });
+            entries.push({
+              ...entry,
+              outcome: "removed",
+              reason: sentence(
+                branchNote === null ? removalReason : `${removalReason}; ${branchNote}`, // fork: project-lifecycle
+              ),
+              bytes,
+            });
+            yield* gitManager.invalidateStatus(project.workspaceRoot);
+            // Preserve branch/path so ProviderTurnStartService can recreate the checkout on resume.
+            // fork: project-lifecycle -- a deleted landed branch is recreated from the latest checkpoint.
+            yield* Effect.logInfo("storage cleanup removed worktree", { threadId: thread.id });
+          }),
+        );
       }).pipe(
-        (effect) => withWorkspaceLease(worktreePath, effect),
         Effect.catch((error) =>
           Effect.gen(function* () {
             entries.push({
@@ -2650,15 +2720,21 @@ const make = Effect.gen(function* () {
           )
             return Effect.void;
         }
-        return settlementCleanupEnabled() ||
-          lastSettings.storageCleanup.projectAfterDays !== null ||
+        if (
+          !settlementCleanupEnabled() &&
+          lastSettings.storageCleanup.projectAfterDays === null &&
           // fork: project-lifecycle -- the default-on landing rule waits for the startup,
           // settings and hourly sweeps, so ordinary thread events do not each start a sweep.
-          anyWorktreePolicy(lastSettings, (rules) =>
+          !anyWorktreePolicy(lastSettings, (rules) =>
             worktreeCleanupEnabled({ ...rules, worktreeOnLand: false }),
           )
-          ? worker.requestSweep
-          : Effect.void;
+        )
+          return Effect.void;
+        return event.type === "provider-session.updated" && event.payload.status === "error"
+          ? providerSessions
+              .isLive(event.payload.id)
+              .pipe(Effect.flatMap((live) => (live ? Effect.void : worker.requestSweep)))
+          : worker.requestSweep;
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Storage cleanup event stream failed", { cause }),

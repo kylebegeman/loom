@@ -1,6 +1,6 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { useSelectWorkspaceDetail } from "../../features/workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../../features/layout/workspace/useSelectWorkspaceDetail";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   libraryHistoryOffsetForItem,

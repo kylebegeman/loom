@@ -67,6 +67,8 @@ import {
   prepareHoppscotchRequest,
   type NativeRequest,
 } from "./hoppscotch.ts";
+
+const isHoppscotchInputErrorValue = Schema.is(HoppscotchInputError);
 const WORKFLOW_HISTORY_LIMIT = 40;
 const WORKFLOW_RECEIPT_LIMIT = 2000;
 const MAX_ACTIVE_WORKFLOWS = 4;
@@ -352,7 +354,7 @@ export const make = Effect.gen(function* () {
           file.name,
         ),
       catch: (e) =>
-        e instanceof HoppscotchInputError ? new DevApiError({ reason: e.reason }) : storageError(e),
+        isHoppscotchInputErrorValue(e) ? new DevApiError({ reason: e.reason }) : storageError(e),
     });
     const selected =
       parsed.kind === "collections" ? parsed.requests.find((r) => r.id === key) : null;
@@ -569,9 +571,7 @@ export const make = Effect.gen(function* () {
       const parsed = yield* Effect.try({
         try: () => importHoppscotch(file.content, file.name),
         catch: (e) =>
-          e instanceof HoppscotchInputError
-            ? new DevApiError({ reason: e.reason })
-            : storageError(e),
+          isHoppscotchInputErrorValue(e) ? new DevApiError({ reason: e.reason }) : storageError(e),
       });
       files.push({ name: file.name, hash: digest(file.content) });
       if (parsed.kind === "collections")
@@ -666,7 +666,7 @@ export const make = Effect.gen(function* () {
       },
       catch: (e) =>
         new DevApiError({
-          reason: e instanceof HoppscotchInputError ? e.reason : "invalid-format",
+          reason: isHoppscotchInputErrorValue(e) ? e.reason : "invalid-format",
         }),
     });
     const parsed = yield* Effect.try({
@@ -793,7 +793,7 @@ export const make = Effect.gen(function* () {
       },
       catch: (e) =>
         new DevApiError({
-          reason: e instanceof HoppscotchInputError ? e.reason : "invalid-format",
+          reason: isHoppscotchInputErrorValue(e) ? e.reason : "invalid-format",
         }),
     });
     return { details: yield* importWorkspace({ ...input, files }), changes: [] };
@@ -1043,7 +1043,7 @@ export const make = Effect.gen(function* () {
             input.uploads,
           ),
         catch: (e) =>
-          e instanceof HoppscotchInputError
+          isHoppscotchInputErrorValue(e)
             ? new DevApiError({ reason: e.reason })
             : new DevApiError({ reason: "invalid-format" }),
       });

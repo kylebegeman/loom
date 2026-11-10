@@ -324,6 +324,13 @@ function PreviewLinkRow(props: {
         row
       ) : (
         <Menu
+          nativeTrigger={{
+            label: link.host,
+            subtitle: description,
+            icon: "link",
+            accessibilityLabel: `${link.host}, ${backing ? `${summary}, ${backing}` : summary}`,
+            fullWidth: true,
+          }}
           title={link.host}
           actions={menuActions}
           onPressAction={({ nativeEvent }) => {

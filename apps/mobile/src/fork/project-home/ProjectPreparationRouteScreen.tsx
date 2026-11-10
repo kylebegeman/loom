@@ -421,8 +421,8 @@ function ProjectPreparationContent(props: {
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          gap: 24,
-          padding: 16,
+          gap: 28,
+          padding: 20,
           paddingBottom: Math.max(insets.bottom, 24) + 24,
         }}
       >
@@ -434,16 +434,21 @@ function ProjectPreparationContent(props: {
           />
         ) : (
           <>
-            <Text className="text-sm leading-normal text-foreground-muted">
+            <Text textRole="body" className="text-foreground-muted">
               Create a separate checkout using the selected computer's Git credentials. Existing
               conversations stay on their current computer. Move work is a separate reviewed step.
             </Text>
-            <SettingsSection title={`Source · ${sourceComputer?.label ?? "Computer"}`}>
-              <View className="gap-3 p-4">
-                <Text className="text-base font-t3-medium text-foreground">
-                  {sourceProject.title}
-                </Text>
-                <Text className="text-sm text-foreground-muted">
+            <SettingsSection title="Source">
+              <View className="gap-4 p-5">
+                <View className="gap-1">
+                  <Text textRole="headline" className="font-t3-semibold text-foreground">
+                    {sourceProject.title}
+                  </Text>
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {sourceComputer?.label ?? "Computer"}
+                  </Text>
+                </View>
+                <Text textRole="footnote" className="text-foreground-muted">
                   Review the actual origin before preparing another copy. This review leaves
                   released working files released.
                 </Text>
@@ -464,23 +469,29 @@ function ProjectPreparationContent(props: {
                   onPress={() => void verifySource()}
                 />
                 {!sourceConnected ? (
-                  <Text className="text-sm text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     Reconnect the source computer to review its origin.
                   </Text>
                 ) : !sourceSupported ? (
-                  <Text className="text-sm text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     Update Loom on the source computer to review its origin.
                   </Text>
                 ) : null}
                 {source.ready ? (
-                  <Text selectable className="text-sm text-foreground-muted">
+                  <Text selectable textRole="footnote" className="text-foreground-muted">
                     {source.remoteUrl}
                   </Text>
                 ) : (
-                  <Text className="text-sm text-foreground-muted">{source.reason}</Text>
+                  <Text textRole="footnote" className="text-foreground-muted">
+                    {source.reason}
+                  </Text>
                 )}
                 {error ? (
-                  <Text accessibilityLiveRegion="polite" className="text-sm text-danger-foreground">
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    textRole="footnote"
+                    className="text-danger-foreground"
+                  >
                     {error}
                   </Text>
                 ) : null}
@@ -525,7 +536,7 @@ function ProjectPreparationContent(props: {
                 })}
               {environments.length < 2 ? (
                 <View className="p-4">
-                  <Text className="text-sm text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     Connect another computer first.
                   </Text>
                 </View>
@@ -533,17 +544,17 @@ function ProjectPreparationContent(props: {
             </SettingsSection>
             {destinationId ? (
               <View className="gap-3">
-                <Text className="text-base font-t3-medium text-foreground">
+                <Text textRole="body" className="font-t3-semibold text-foreground">
                   Destination · {destination?.label ?? "Saved computer"}
                 </Text>
                 {receiptState.invalid ? (
-                  <Text className="text-sm text-danger-foreground">
+                  <Text textRole="footnote" className="text-danger-foreground">
                     The saved preparation receipt could not be read. Review this computer's known
                     project before retrying.
                   </Text>
                 ) : null}
                 {receipt ? (
-                  <Text className="text-sm text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     A preparation is already saved for this computer. Its source and destination
                     stay fixed.
                   </Text>
@@ -551,10 +562,12 @@ function ProjectPreparationContent(props: {
                 {matchingCopies.map((project) => (
                   <View
                     key={`${project.environmentId}:${project.id}`}
-                    className="gap-2 rounded-xl bg-card p-3"
+                    className="gap-3 border-b border-border-subtle py-4"
                   >
-                    <Text className="text-sm font-t3-medium">{project.title}</Text>
-                    <Text selectable className="text-xs text-foreground-muted">
+                    <Text textRole="body" className="font-t3-medium">
+                      {project.title}
+                    </Text>
+                    <Text selectable textRole="footnote" className="text-foreground-muted">
                       {project.workspaceRoot}
                     </Text>
                     <Button
@@ -570,7 +583,7 @@ function ProjectPreparationContent(props: {
                   </View>
                 ))}
                 {serverChosen ? (
-                  <Text selectable className="text-sm text-foreground-muted">
+                  <Text selectable textRole="footnote" className="text-foreground-muted">
                     {receipt?.destinationPath
                       ? `Files are in ${receipt.destinationPath}`
                       : picked
@@ -578,7 +591,7 @@ function ProjectPreparationContent(props: {
                         : "Loom puts the files in this computer's Projects folder, or uses a checkout it already has."}
                   </Text>
                 ) : proposal ? (
-                  <Text selectable className="text-sm text-foreground-muted">
+                  <Text selectable textRole="footnote" className="text-foreground-muted">
                     {receipt ? "Submitted folder" : "Suggested folder"}:{" "}
                     {receipt?.destinationPath ?? proposal}
                   </Text>
@@ -613,11 +626,11 @@ function ProjectPreparationContent(props: {
                   </View>
                 ) : null}
                 {plan?.kind === "existing" ? (
-                  <Text className="text-sm text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     This computer already has a matching project. Open its existing checkout.
                   </Text>
                 ) : (
-                  <Text className="text-sm text-foreground-muted">
+                  <Text textRole="footnote" className="text-foreground-muted">
                     {plan?.kind === "blocked"
                       ? plan.reason
                       : serverChosen

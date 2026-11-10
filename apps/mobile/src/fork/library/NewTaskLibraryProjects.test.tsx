@@ -31,7 +31,7 @@ vi.mock("@react-navigation/native", () => ({
   }),
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
 }));
-vi.mock("../../features/workspace/useSelectWorkspaceDetail", () => ({
+vi.mock("../../features/layout/workspace/useSelectWorkspaceDetail", () => ({
   useSelectWorkspaceDetail: () => state.selectDetail,
 }));
 vi.mock("./libraryState", () => ({
@@ -90,7 +90,10 @@ vi.mock("../../state/vcs", () => ({
   vcsEnvironment: { readRefs: state.readRefs, switchRef: state.switchRef },
 }));
 vi.mock("../../state/threads", () => ({ threadEnvironment: { create: state.create } }));
-vi.mock("../../lib/uuid", () => ({ uuidv4: () => crypto.randomUUID() }));
+vi.mock("../../lib/uuid", () => {
+  let next = 0;
+  return { uuidv4: () => `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}` };
+});
 vi.mock("../../components/ui/Dialog", () => ({ alert: state.alert }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,

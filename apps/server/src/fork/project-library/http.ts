@@ -7,6 +7,8 @@ import {
 } from "@t3tools/contracts";
 import {
   LibraryManagementInvocation,
+  LibrarySitesRead,
+  LIBRARY_SITES_READ_ROUTE,
   LibraryBriefProposalsRequest,
   LibraryProjectsRead,
   LibraryEraseConversation,
@@ -48,6 +50,7 @@ import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as LibraryService from "./LibraryService.ts";
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import { LibraryManagement } from "./LibraryManagement.ts";
+import * as SitesService from "../sites/SitesService.ts";
 
 // Large established threads retain complete tool history. Clients browse bounded windows.
 
@@ -65,6 +68,7 @@ const decodePreservation = Schema.decodeUnknownEffect(
   Schema.Struct({ projectId: Schema.optional(LibraryId) }),
 );
 const decodeManagement = Schema.decodeUnknownEffect(LibraryManagementInvocation);
+const decodeSitesRead = Schema.decodeUnknownEffect(LibrarySitesRead);
 const decodeProjectRead = Schema.decodeUnknownEffect(Schema.Struct({ projectId: LibraryId }));
 const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefProposal);
 const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
@@ -80,6 +84,7 @@ const decodeLaunchCandidates = Schema.decodeUnknownEffect(LibraryLaunchCandidate
 const encodeHistory = Schema.encodeEffect(Schema.toCodecJson(LibraryThreadArchive));
 const handler = (
   operation:
+    | "sites"
     | "manage"
     | "workstreams"
     | "blueprint"
@@ -152,20 +157,34 @@ const handler = (
         });
       const documentRequest = operation === "documents" || operation === "decisions";
       const maxBytes =
-        operation === "manage"
-          ? 8 * 1024 * 1024
-          : documentRequest
-            ? DOCUMENTS_MAX_REQUEST_BYTES
-            : LIBRARY_HISTORY_MAX_BYTES;
+        operation === "sites"
+          ? 4096
+          : operation === "manage"
+            ? 8 * 1024 * 1024
+            : documentRequest
+              ? DOCUMENTS_MAX_REQUEST_BYTES
+              : LIBRARY_HISTORY_MAX_BYTES;
       const length = request.headers["content-length"];
       if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > maxBytes))
         return HttpServerResponse.text("History request too large", { status: 413 });
-      const body = yield* documentRequest || operation === "manage"
+      const body = yield* documentRequest || operation === "manage" || operation === "sites"
         ? request.json.pipe(
             Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxBytes)),
             Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
           )
         : readLibraryJson(request);
+      if (operation === "sites") {
+        if (!(yield* library.info).isAuthority) return HttpServerResponse.empty({ status: 404 });
+        const input = yield* decodeSitesRead(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        const sites = yield* SitesService.SitesService;
+        const result = yield* Effect.gen(function* () {
+          if (input.siteId === undefined) return yield* sites.snapshot;
+          return yield* sites.analytics({ siteId: input.siteId });
+        }).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
+        return HttpServerResponse.jsonUnsafe(result, { headers: { "cache-control": "no-store" } });
+      }
       if (operation === "manage") {
         const input = yield* decodeManagement(body).pipe(
           Effect.mapError(() => new LibraryError({ reason: "invalid" })),
@@ -407,6 +426,11 @@ export const LibraryHttpRoutes = Layer.unwrap(
   Effect.gen(function* () {
     const runtime = yield* ForkRuntime;
     return Layer.mergeAll(
+      HttpRouter.add(
+        "POST",
+        LIBRARY_SITES_READ_ROUTE,
+        handler("sites").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       HttpRouter.add(
         "POST",
         "/api/loom/library/workstreams/read",

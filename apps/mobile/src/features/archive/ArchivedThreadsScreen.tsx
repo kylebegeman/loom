@@ -107,15 +107,11 @@ function ArchivedThreadsHeader(props: {
                 },
               ],
             },
-            ...(Platform.OS === "android"
-              ? [
-                  {
-                    id: "refresh",
-                    title: "Refresh archived threads",
-                    onPress: props.onRefresh,
-                  },
-                ]
-              : []),
+            {
+              id: "refresh",
+              title: "Refresh archived threads",
+              onPress: props.onRefresh,
+            },
           ],
         },
       ]}
@@ -245,6 +241,11 @@ function ArchivedThreadRow(props: {
       {Platform.OS === "ios" && canOperateThread ? (
         <Menu
           title={props.thread.title}
+          nativeTrigger={{
+            // fork: native-menus
+            icon: "ellipsis",
+            accessibilityLabel: `Actions for ${props.thread.title}`,
+          }}
           actions={[
             { id: "restore", title: "Restore to threads", image: "arrow.uturn.backward" },
             { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
@@ -495,7 +496,7 @@ export function ArchivedThreadsScreen(props: {
       <SettingsScreenContent>
         <GestureDetector gesture={archiveScrollGesture}>
           <LegendList
-            renderScrollComponent={Platform.OS === "ios" ? NativeScrollView : undefined}
+            renderScrollComponent={NativeScrollView}
             className="flex-1"
             contentContainerStyle={{
               paddingBottom: 32,

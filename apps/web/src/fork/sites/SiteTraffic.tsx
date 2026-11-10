@@ -548,3 +548,156 @@ export function SiteTrafficSkeleton() {
     </div>
   );
 }
+
+/** Optional developer usage stays separate from website visitors and conversions. */
+export function SiteProductUsage({ analytics }: { readonly analytics: SiteAnalytics }) {
+  const product = analytics.product;
+  if (!product)
+    return analytics.siteId === "corbelo" ? (
+      <section className={cn(LIBRARY_OUTLINE, "p-4")} aria-label="Developer usage">
+        <h2 className="text-sm font-medium">Developer usage</h2>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Reporting is unavailable on this collector or Library version. Website traffic remains
+          available above.
+        </p>
+      </section>
+    ) : null;
+  const rows = [
+    ...product.byPlatform.map((row) => ({
+      kind: "Platform",
+      label: row.platform,
+      count: row.count,
+    })),
+    ...product.bySurface.map((row) => ({ kind: "Surface", label: row.surface, count: row.count })),
+    ...product.byVersion.map((row) => ({ kind: "Version", label: row.version, count: row.count })),
+    ...product.byFeatureGroup.map((row) => ({
+      kind: "Feature group",
+      label: row.featureGroup,
+      count: row.count,
+    })),
+    ...product.byStack.map((row) => ({ kind: "Stack", label: row.stack, count: row.count })),
+  ];
+  return (
+    <section className={cn(LIBRARY_OUTLINE, "min-w-0 p-4")} aria-label="Developer usage">
+      <h2 className="text-sm font-medium">Developer usage</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Optional anonymous {product.channel} activity, retained for {product.retentionDays} days.
+        Installation counts reset daily and are summed across this window. No account linking,
+        individual journeys or cross-day retention tracking.
+      </p>
+      <dl className="my-4 flex flex-wrap gap-6">
+        <LibraryFigure label="Usage events" value={formatCount(product.events)} />
+        <LibraryFigure
+          label="Daily installations summed"
+          value={formatCount(product.dailyInstallations)}
+        />
+      </dl>
+      {product.byDay.length ? (
+        <Sparkline
+          values={product.byDay.map((day) => day.events)}
+          label="Daily developer usage events"
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">No opted-in usage received in this window.</p>
+      )}
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <caption className="sr-only">Daily developer usage</caption>
+          <thead>
+            <tr>
+              <th className="p-2">Day (UTC)</th>
+              <th className="p-2">Events</th>
+              <th className="p-2">Daily installations</th>
+            </tr>
+          </thead>
+          <tbody>
+            {product.byDay.map((day) => (
+              <tr key={day.day}>
+                <th scope="row" className="p-2 font-normal">
+                  {day.day}
+                </th>
+                <td className="p-2">{formatCount(day.events)}</td>
+                <td className="p-2">{formatCount(day.installations)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <table className="mt-4 w-full text-left text-xs">
+          <caption className="pb-2 text-left font-medium">Operations and outcomes</caption>
+          <thead>
+            <tr>
+              <th className="p-2">Event</th>
+              <th className="p-2">Outcome</th>
+              <th className="p-2">Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {product.byEvent.map((row) => (
+              <tr key={`${row.name}:${row.outcome}`}>
+                <th scope="row" className="p-2 font-normal">
+                  {row.name}
+                </th>
+                <td className="p-2">{row.outcome}</td>
+                <td className="p-2">{formatCount(row.count)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <table className="mt-4 w-full text-left text-xs">
+          <caption className="pb-2 text-left font-medium">Commands and average duration</caption>
+          <thead>
+            <tr>
+              <th className="p-2">Command</th>
+              <th className="p-2">Outcome</th>
+              <th className="p-2">Count</th>
+              <th className="p-2">Average (ms)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {product.byCommand.map((row) => (
+              <tr key={`${row.command}:${row.outcome}`}>
+                <th scope="row" className="p-2 font-normal">
+                  {row.command}
+                </th>
+                <td className="p-2">{row.outcome}</td>
+                <td className="p-2">{formatCount(row.count)}</td>
+                <td className="p-2">{formatCount(row.averageDurationMS)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length ? (
+          <table className="mt-4 w-full text-left text-xs">
+            <caption className="pb-2 text-left font-medium">Usage breakdown</caption>
+            <thead>
+              <tr>
+                <th className="p-2">Dimension</th>
+                <th className="p-2">Value</th>
+                <th className="p-2">Events</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={`${row.kind}:${row.label}`}>
+                  <th scope="row" className="p-2 font-normal">
+                    {row.kind}
+                  </th>
+                  <td className="p-2">{row.label}</td>
+                  <td className="p-2">{formatCount(row.count)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Client-reported operation counts are independent of purchases, licenses and launch
+        reservations. A successful operation is activity evidence, not proof of a distinct developer
+        or project.
+      </p>
+      <a href="https://corbelo.dev/operator/" className="mt-3 inline-block text-xs underline">
+        Open Corbelo account, purchase and license totals
+      </a>
+    </section>
+  );
+}

@@ -134,9 +134,10 @@ const projectLayer = Layer.unwrap(
 const projections = Layer.mock(ProjectionStore.ProjectionStoreV2)({
   getShellSnapshot: () =>
     Effect.succeed({ schemaVersion: 1, snapshotSequence: 0, threads: [], archivedThreads: [] }),
+  getThreadShell: () => Effect.succeed(null),
 });
 const cloneSources = new Map<string, string>();
-const publicationFetchEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+const publicationFetches: Array<Pick<ProcessRunner.ProcessRunInput, "cwd" | "env">> = [];
 const cloneFailures = new Map<string, string>();
 const publisherFailures = new Set<string>();
 const publisherEdits = new Map<string, { path: string; contents: string }>();
@@ -151,7 +152,7 @@ const runnerLayer = Layer.effect(
     return ProcessRunner.ProcessRunner.of({
       run: (input) => {
         if (input.command === "git" && input.args.includes("--no-write-fetch-head")) {
-          publicationFetchEnvs.push(input.env);
+          publicationFetches.push({ cwd: input.cwd, env: input.env });
           // A publication proof fetches the resource's URL, which stands for a local source here.
           const remoteIndex = input.args.indexOf("--") + 1;
           const source = cloneSources.get(input.args[remoteIndex] ?? "");
@@ -3450,6 +3451,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     "goal",
     "process",
     "process-unknown",
+    "late-unbound",
+    "late-unbound-at-release",
   ] as const)("automatic cleanup respects %s work", (scenario) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -3467,6 +3470,21 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         strategy: scenario === "borrowed" ? "reuse" : "clone",
       });
       expect(copy.keepOnComputer).toBe(scenario === "borrowed");
+      const openOrRunning = [
+        "active",
+        "unsettled",
+        "pending",
+        "goal",
+        "another-unsettled",
+      ].includes(scenario);
+      const unused = openOrRunning
+        ? undefined
+        : yield* service.prepareCopy({
+            requestId: `cleanup-${scenario}-unused`,
+            project,
+            rootPath: path.join(parent, "unused"),
+            strategy: "clone",
+          });
       const archived = yield* archiveFor(project);
       const thread: OrchestrationV2ThreadShell = {
         ...archived.projection.thread,
@@ -3644,19 +3662,45 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         expect(yield* child.stdout.pipe(Stream.decodeText(), Stream.runHead)).toEqual(
           Option.some("ready"),
         );
+      const snapshotReads = yield* Ref.make(0);
+      // Read 1 is the pass's shared snapshot and read 2 the fresh pre-check; status() and the
+      // release re-checks read after them. An idle unbound conversation appears from this read on.
+      const lateFromRead =
+        scenario === "late-unbound" ? 2 : scenario === "late-unbound-at-release" ? 3 : Infinity;
+      const lateThread = {
+        ...thread,
+        id: ThreadId.make("late-cleanup-thread"),
+        settledOverride: null,
+      };
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(ProjectionStore.ProjectionStoreV2, {
           ...(yield* ProjectionStore.ProjectionStoreV2),
           getShellSnapshot: () =>
-            Ref.get(threads).pipe(
-              Effect.map((current) => ({
+            Effect.all([
+              Ref.updateAndGet(snapshotReads, (reads) => reads + 1),
+              Ref.get(threads),
+            ]).pipe(
+              Effect.map(([reads, current]) => ({
                 schemaVersion: 1,
                 snapshotSequence: 0,
-                threads: current,
+                threads: reads >= lateFromRead ? [...current, lateThread] : current,
                 archivedThreads: [],
               })),
             ),
+          getThreadShell: (threadId) =>
+            Ref.get(threads).pipe(
+              Effect.map((current) => current.find((shell) => shell.id === threadId) ?? null),
+            ),
+        }),
+        // Earlier tests leave copies in this shared store; the pass sees only this scenario's.
+        Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
+          ...store,
+          receipts: store.receipts.pipe(
+            Effect.map((receipts) =>
+              receipts.filter((receipt) => path.dirname(receipt.copy.rootPath) === parent),
+            ),
+          ),
         }),
         Effect.provideService(
           HostProcess.Platform,
@@ -3673,6 +3717,11 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const shouldRemove = scenario === "settled" || scenario === "archived";
       expect(yield* fs.exists(rootPath)).toBe(!shouldRemove);
       expect((yield* store.get(copy.id)).copy.state).toBe(shouldRemove ? "released" : "ready");
+      if (unused !== undefined) expect((yield* store.get(unused.id)).copy.state).toBe("ready");
+      if (!shouldRemove && scenario !== "late-unbound-at-release")
+        expect(yield* Ref.get(snapshotReads)).toBe(
+          openOrRunning ? 0 : scenario === "late-unbound" ? 2 : 1,
+        );
       if (shouldRemove) {
         expect((yield* store.get(copy.id)).copy.recovery?.sha256).toMatch(/^[a-f0-9]{64}$/);
         const reopened = yield* cleaner.reopenCopy({
@@ -3778,7 +3827,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
-  it.effect.each(["keep", "pending-history"] as const)(
+  it.effect.each(["keep", "pending-history", "new-conversation"] as const)(
     "honors %s while automatic cleanup is publishing recovery",
     (protection) =>
       Effect.gen(function* () {
@@ -3824,18 +3873,21 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         const publishing = yield* Deferred.make<void>();
         const proceed = yield* Deferred.make<void>();
         const acknowledged = yield* Ref.make(true);
+        const threads = yield* Ref.make<readonly OrchestrationV2ThreadShell[]>([thread]);
         const publisher = yield* LibraryRecoveryPublisher.LibraryRecoveryPublisher;
         const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
           Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
           Effect.provideService(ProjectionStore.ProjectionStoreV2, {
             ...(yield* ProjectionStore.ProjectionStoreV2),
             getShellSnapshot: () =>
-              Effect.succeed({
-                schemaVersion: 1,
-                snapshotSequence: 0,
-                threads: [thread],
-                archivedThreads: [],
-              }),
+              Ref.get(threads).pipe(
+                Effect.map((current) => ({
+                  schemaVersion: 1,
+                  snapshotSequence: 0,
+                  threads: current,
+                  archivedThreads: [],
+                })),
+              ),
           }),
           Effect.provideService(LibraryRecoveryPublisher.LibraryRecoveryPublisher, {
             ...publisher,
@@ -3858,13 +3910,18 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
               )
             : undefined;
         if (protection === "pending-history") yield* Ref.set(acknowledged, false);
+        if (protection === "new-conversation")
+          yield* Ref.update(threads, (current) => [
+            ...current,
+            { ...thread, id: ThreadId.make("new-during-cleanup-thread"), settledOverride: null },
+          ]);
         yield* Deferred.succeed(proceed, undefined);
         yield* Fiber.join(cleanup);
         if (keep !== undefined) expect((yield* Fiber.join(keep)).keepOnComputer).toBe(true);
         expect(yield* fs.exists(rootPath)).toBe(true);
         if (protection === "keep") expect((yield* store.get(copy.id)).removalPath).toBeNull();
-        else {
-          expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+        else expect((yield* store.get(copy.id)).copy.state).toBe("ready");
+        if (protection === "pending-history") {
           yield* Ref.set(acknowledged, true);
           yield* cleaner.cleanupTemporaryCopies(() => Ref.get(acknowledged));
           expect(yield* fs.exists(rootPath)).toBe(false);
@@ -4816,7 +4873,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const credentials = path.join(yield* makeTemp, "gitconfig");
       yield* fs.writeFileString(credentials, "[credential]\n\thelper = store\n");
       const copy = yield* unusedPublishedCopy("credentialed-proof");
-      publicationFetchEnvs.length = 0;
+      publicationFetches.length = 0;
       const cleaner = yield* LibraryWorkspace.LibraryWorkspace.pipe(
         Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
         Effect.provideService(HostProcess.Environment, {
@@ -4825,8 +4882,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         }),
       );
       yield* cleaner.cleanupTemporaryCopies(() => Effect.succeed(true));
-      expect(publicationFetchEnvs.length).toBeGreaterThan(0);
-      for (const env of publicationFetchEnvs) {
+      expect(publicationFetches.length).toBeGreaterThan(0);
+      for (const { env } of publicationFetches) {
         expect(env?.GIT_CONFIG_GLOBAL).toBe(credentials);
         expect(env?.GIT_TERMINAL_PROMPT).toBe("0");
       }
@@ -4881,6 +4938,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     "skip-worktree",
     "submodule-history",
     "embedded-repository",
+    "outside-worktree",
   ] as const)("keeps an unused published copy whose %s holds local work", (kind) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -4904,16 +4962,19 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       } else if (kind === "submodule-history") {
         yield* fs.makeDirectory(path.join(root, ".git", "modules", "lib"), { recursive: true });
         yield* fs.writeFileString(path.join(root, ".git", "modules", "lib", "config"), "\n");
-      } else {
+      } else if (kind === "embedded-repository") {
         yield* initRepo(path.join(root, "vendor", "lib"));
         yield* git(root, ["add", "vendor/lib"]);
         yield* gitAs(root, ["commit", "-m", "Pin an embedded repository"]);
         yield* git(root, ["push", "origin", "HEAD:refs/heads/published"]);
-      }
+      } else yield* git(root, ["worktree", "add", "-b", "outside", `${root}-outside-worktree`]);
       expect(yield* git(root, ["status", "--porcelain"])).toBe("");
       yield* service.cleanupTemporaryCopies(() => Effect.succeed(true));
       expect((yield* store.get(copy.id)).copy.state).toBe("ready");
       expect(yield* fs.exists(root)).toBe(true);
+      // Review keeps it after its checks pass; those checks fetch its remote once per pass.
+      if (kind === "outside-worktree")
+        expect(publicationFetches.filter((fetch) => fetch.cwd === root).length).toBe(1);
     }),
   );
 
@@ -5110,6 +5171,86 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       const kept = yield* store.get(copy.id);
       expect(kept).toMatchObject({ removalPath: null, releaseRequestId: null });
       expect(kept.publishedRelease).toBeUndefined();
+    }),
+  );
+
+  it.effect("forgets a cancelled release only while its files are still in place", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-cancelled");
+      const request = { workingCopyId: copy.id, requestId: "release-cancelled" };
+      expect(yield* service.cancelRelease(request)).toBe("set-aside");
+      yield* fs.rename(removalPath, copy.rootPath);
+      expect(yield* service.cancelRelease({ ...request, requestId: "another-release" })).toBe(
+        "none",
+      );
+      const parent = path.dirname(copy.rootPath);
+      yield* fs.rename(parent, `${parent}-unplugged`);
+      const unplugged = yield* service
+        .cancelRelease(request)
+        .pipe(
+          Effect.flip,
+          Effect.ensuring(fs.rename(`${parent}-unplugged`, parent).pipe(Effect.orDie)),
+        );
+      expect(unplugged.message).toContain("Connect the disk");
+      expect(yield* service.cancelRelease(request)).toBe("cleared");
+      expect(yield* store.get(copy.id)).toMatchObject({
+        removalPath: null,
+        releaseRequestId: null,
+      });
+    }),
+  );
+
+  it.effect("keeps a launch's registration through a Cancel or a write from an earlier read", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-raced");
+      yield* fs.rename(removalPath, copy.rootPath);
+      const { project } = yield* store.get(copy.id);
+      let cancelled = false;
+      // The Cancel lands after the launch picked this copy and before it records itself there.
+      const cancelFirst = (workingCopyId: string) =>
+        Effect.suspend(() => {
+          if (workingCopyId !== copy.id || cancelled) return Effect.void;
+          cancelled = true;
+          return service.cancelRelease({ workingCopyId, requestId: "release-raced" });
+        });
+      const launching = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
+          ...store,
+          get: (workingCopyId) =>
+            store.get(workingCopyId).pipe(Effect.tap(() => cancelFirst(workingCopyId))),
+          update: (workingCopyId, change) =>
+            cancelFirst(workingCopyId).pipe(Effect.andThen(store.update(workingCopyId, change))),
+        }),
+      );
+      const launched = yield* launching.prepareCopy({
+        requestId: "launch-raced",
+        project,
+        strategy: "clone",
+      });
+      expect(launched.id).toBe(copy.id);
+      expect(cancelled).toBe(true);
+      const saved = yield* store.get(copy.id);
+      expect(saved).toMatchObject({ removalPath: null, releaseRequestId: null });
+      expect(saved.registrationRequests?.map((request) => request.requestId)).toContain(
+        "launch-raced",
+      );
+      // Archive, removal and retention writes commit the receipt they read before a long step.
+      const beforeArchive = yield* store.get(copy.id);
+      expect(
+        (yield* service.prepareCopy({ requestId: "launch-later", project, strategy: "clone" })).id,
+      ).toBe(copy.id);
+      yield* store.put(beforeArchive);
+      expect(
+        (yield* store.get(copy.id)).registrationRequests?.map((request) => request.requestId),
+      ).toEqual(expect.arrayContaining(["launch-raced", "launch-later"]));
     }),
   );
 

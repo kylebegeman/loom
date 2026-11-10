@@ -124,6 +124,9 @@ const setup = Effect.gen(function* () {
   const liveRunner = yield* ProcessRunner;
   let gitCalls = 0;
   let refreshCalls = 0;
+  let listCalls = 0;
+  let duringList: (call: number) => Effect.Effect<void> = () => Effect.void;
+  let threadReads = 0;
   let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
   let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
   let entryPaths = ["models/part.scad", "models/part.stl", "models/part.step", "models/ignore.txt"];
@@ -249,9 +252,23 @@ const setup = Effect.gen(function* () {
   });
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
     getThreadRecords: () =>
-      Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
-    getThread: () =>
-      Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath })),
+      Effect.succeed(
+        partial<OrchestrationV2ThreadProjection>({
+          thread: partial<OrchestrationV2AppThread>({
+            rollbackCompletedRequestId: undefined,
+            rollbackFailure: null,
+          }),
+          checkpoints: checkpointRecords,
+          runs: [],
+        }),
+      ),
+    getThread: (id) =>
+      id === threadId
+        ? Effect.sync(() => {
+            threadReads++;
+            return partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath });
+          })
+        : Effect.fail(new ProjectionStore.ProjectionStoreThreadNotFoundError({ threadId: id })),
   });
   const project = partial<ProjectStore.ProjectRow>({ projectId, workspaceRoot: root });
   const projectStore = partial<ProjectStore.ProjectStoreV2["Service"]>({
@@ -270,12 +287,15 @@ const setup = Effect.gen(function* () {
         refreshCalls++;
       }),
     list: () =>
-      Effect.succeed({
-        entries: entryPaths.map((name) => ({
-          path: name,
-          kind: "file" as const,
-        })),
-        truncated: false,
+      Effect.gen(function* () {
+        yield* duringList(listCalls++);
+        return {
+          entries: entryPaths.map((name) => ({
+            path: name,
+            kind: "file" as const,
+          })),
+          truncated: false,
+        };
       }),
   });
   const secret = partial<ServerSecretStore["Service"]>({
@@ -301,11 +321,16 @@ const setup = Effect.gen(function* () {
     create,
     getRenders: () => renders,
     getPythonRenders: () => pythonRenders,
-    initGit: () => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd: root }),
+    initGit: (cwd = root) => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd }),
     getGitCalls: () => gitCalls,
     getRefreshCalls: () => refreshCalls,
+    getListCalls: () => listCalls,
+    getThreadReads: () => threadReads,
     setEntries: (names: string[]) => {
       entryPaths = names;
+    },
+    setDuringList: (effect: (call: number) => Effect.Effect<void>) => {
+      duringList = effect;
     },
     setCheckpoints: (checkpoints: readonly OrchestrationV2Checkpoint[]) => {
       checkpointRecords = checkpoints;
@@ -1185,6 +1210,37 @@ it.effect(
       expect(t.getRefreshCalls()).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
+it.effect("streamed models are checked in the workspace the thread has when each one lands", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    const worktree = yield* t.fs.makeTempDirectoryScoped({ prefix: "loom-model-worktree-" });
+    yield* t.fs.makeDirectory(t.path.join(worktree, "models"));
+    yield* t.fs.writeFileString(t.path.join(worktree, "models", "new.stl"), "stl");
+    yield* t.initGit(worktree);
+    // The stream subscribes and turn 2 lands while the thread's folder is missing; turn 3 lands
+    // in the new worktree.
+    const unresolved = checkpointEvent(checkpoint(t.file.threadId, 2, ["models/new.stl"]));
+    const landed = checkpointEvent(checkpoint(t.file.threadId, 3, ["models/new.stl"]));
+    t.setWorkspace(t.path.join(worktree, "missing"));
+    t.setEvents(
+      Stream.make(unresolved, landed).pipe(
+        Stream.tap((event) =>
+          Effect.sync(() =>
+            t.setWorkspace(event === unresolved ? t.path.join(worktree, "missing") : worktree),
+          ),
+        ),
+      ),
+    );
+    const service = yield* t.create();
+    const result = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId));
+    expect(result.map((turn) => [turn.turn, turn.models.map((model) => model.path)])).toEqual([
+      [3, ["models/new.stl"]],
+    ]);
+    const unknown = service.turnModelEvents(ThreadId.make("unknown"));
+    expect((yield* Effect.flip(Stream.runCollect(unknown))).reason).toBe("command-failed");
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
 it.effect(
   "finds transitive uncached includes, rejects escaped symlinks and bounds source reads",
   () =>
@@ -1211,6 +1267,7 @@ it.effect(
       ]);
       t.setCheckpoints([checkpoint(t.file.threadId, 1, ["models/shape.scad"])]);
       const service = yield* t.create();
+      const reads = t.getThreadReads();
       const result = yield* service.turnModels(t.file.threadId, null);
       expect(result.models.map((model) => model.path)).toEqual([
         "models/shape.scad",
@@ -1218,6 +1275,7 @@ it.effect(
         "models/top.scad",
       ]);
       expect(result.truncated).toBe(true);
+      expect(t.getThreadReads() - reads).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 
@@ -1314,10 +1372,12 @@ it.effect(
       t.setCheckpoints([
         checkpoint(t.file.threadId, 1, ["models/linked.dat", "models/height.txt"]),
         checkpoint(t.file.threadId, 2, ["source.ts"]),
+        checkpoint(t.file.threadId, 3, ["models/unused.dat"]),
       ]);
       const service = yield* t.create();
       expect((yield* service.turnModels(t.file.threadId, RunId.make("run-2"))).models).toEqual([]);
       expect(t.getRefreshCalls()).toBe(0);
+      const lists = t.getListCalls();
       const result = yield* service.turnModels(t.file.threadId, null);
       expect(result.models).toEqual([
         {
@@ -1328,11 +1388,71 @@ it.effect(
         },
       ]);
       expect(t.getRefreshCalls()).toBe(1);
-      t.setCheckpoints([checkpoint(t.file.threadId, 3, ["models/height.txt"])]);
+      expect(t.getListCalls() - lists).toBe(1);
+      t.setCheckpoints([checkpoint(t.file.threadId, 4, ["models/height.txt"])]);
       expect((yield* service.turnModels(t.file.threadId, null)).models[0]?.via).toBe(
         "models/height.txt",
       );
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("a turn lookup after a newer capture scans again instead of joining the older scan", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    t.setEntries(["models/part.scad", "models/shape.scad"]);
+    const first = checkpoint(t.file.threadId, 1, ["models/shape.scad"]);
+    t.setCheckpoints([first]);
+    const listed = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
+    const gate = yield* Deferred.make<void>();
+    t.setDuringList((call) =>
+      Deferred.succeed(listed[call]!, undefined).pipe(
+        Effect.andThen(call === 0 ? Deferred.await(gate) : Effect.void),
+      ),
+    );
+    const service = yield* t.create();
+    const older = yield* service.turnModels(t.file.threadId, null).pipe(Effect.forkChild);
+    yield* Deferred.await(listed[0]!);
+    t.setCheckpoints([first, checkpoint(t.file.threadId, 2, ["models/shape.scad"])]);
+    // A chip for the older run must not reuse the scan that started before turn 2.
+    const newer = yield* service.turnModels(t.file.threadId, first.runId).pipe(Effect.forkChild);
+    yield* Deferred.await(listed[1]!);
+    yield* Deferred.succeed(gate, undefined);
+    expect((yield* Fiber.join(older)).models).toHaveLength(2);
+    expect((yield* Fiber.join(newer)).models).toHaveLength(2);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("a stream event for the newest capture joins the turn lookup's scan in flight", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    t.setEntries(["models/part.scad", "models/shape.scad"]);
+    const newest = checkpoint(t.file.threadId, 1, ["models/shape.scad"]);
+    t.setCheckpoints([newest]);
+    t.setEvents(Stream.make(checkpointEvent(newest)));
+    const listed = yield* Deferred.make<void>();
+    const gate = yield* Deferred.make<void>();
+    t.setDuringList((call) =>
+      call === 0
+        ? Deferred.succeed(listed, undefined).pipe(Effect.andThen(Deferred.await(gate)))
+        : Effect.void,
+    );
+    // Immediate path lookups let startImmediately carry the event to the shared scan before the
+    // gate opens.
+    const service = yield* t.create({ ...t.fs, realPath: (path: string) => Effect.succeed(path) });
+    const lookup = yield* service.turnModels(t.file.threadId, null).pipe(Effect.forkChild);
+    yield* Deferred.await(listed);
+    const streamed = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId)).pipe(
+      Effect.forkChild({ startImmediately: true }),
+    );
+    yield* Deferred.succeed(gate, undefined);
+    const looked = yield* Fiber.join(lookup);
+    expect(looked.models.map((model) => model.path)).toEqual([
+      "models/shape.scad",
+      "models/part.scad",
+    ]);
+    expect(yield* Fiber.join(streamed)).toEqual([looked]);
+    expect(t.getListCalls()).toBe(1);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 
 it.effect("print checks render an isolated SCAD variant without saving last-used parameters", () =>

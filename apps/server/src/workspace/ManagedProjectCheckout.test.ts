@@ -2,7 +2,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ProjectId } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as ServerConfig from "../config.ts";
@@ -31,6 +33,7 @@ import {
   setManagedProjectRetention,
 } from "./ManagedProjectCheckout.ts";
 import * as SetupMarker from "./setupMarker.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
 
 const projectId = ProjectId.make("managed-project-test");
 const fixture = Effect.gen(function* () {
@@ -182,6 +185,54 @@ describe("Managed primary project checkouts", () => {
       }),
     ),
   );
+  it.live(
+    "answers read-only restore checks that need nothing while another caller holds the workspace lease",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const f = yield* fixture;
+          const entered = yield* Deferred.make<void>();
+          const unlock = yield* Deferred.make<void>();
+          const held = yield* withWorkspaceLease(
+            f.cwd,
+            Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(unlock))),
+          ).pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(entered);
+          expect(yield* restoreManagedProjectCheckout(f.cwd, false, true)).toBe(false);
+          yield* f.mark;
+          expect(yield* restoreManagedProjectCheckout(f.cwd, false, true)).toBe(false);
+          yield* Deferred.succeed(unlock, undefined);
+          yield* Fiber.join(held);
+        }),
+      ),
+  );
+  it.live("makes a restore that acts on the checkout wait out a release in progress", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        const entered = yield* Deferred.make<void>();
+        const proceed = yield* Deferred.make<void>();
+        const cleanup = yield* withWorkspaceLease(
+          f.cwd,
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(proceed)),
+            Effect.andThen(f.release),
+          ),
+        ).pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(entered);
+        // The restore must arrive while the folder is present and its receipt reads unreleased.
+        const restore = yield* restoreManagedProjectCheckout(f.cwd).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.succeed(proceed, undefined);
+        yield* Fiber.join(cleanup);
+        expect(yield* Fiber.join(restore)).toBe(true);
+        expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("published content\n");
+        expect((yield* readManagedProjectCheckout(f.cwd))?.released).toBe(false);
+      }),
+    ),
+  );
   it.live("keeps a file written between the last archive check and recursive removal", () =>
     run(
       Effect.gen(function* () {
@@ -305,6 +356,34 @@ describe("Managed primary project checkouts", () => {
         expect(yield* f.fs.readFileString(`${receipt.removalPath}/proof.txt`)).toBe(
           "published content\n",
         );
+      }),
+    ),
+  );
+  it.live("a read-only restore check cancels a release whose folder never moved", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        yield* f.mark;
+        const result = yield* f.release.pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...f.fs,
+            rename: (from, to) =>
+              from === f.cwd
+                ? PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "rename",
+                    pathOrDescriptor: from,
+                  })
+                : f.fs.rename(from, to),
+          }),
+          Effect.result,
+        );
+        expect(result._tag).toBe("Failure");
+        expect((yield* readManagedProjectCheckout(f.cwd))?.released).toBe(true);
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        expect(yield* restoreManagedProjectCheckout(f.cwd, false, true)).toBe(true);
+        expect((yield* readManagedProjectCheckout(f.cwd))?.released).toBe(false);
       }),
     ),
   );

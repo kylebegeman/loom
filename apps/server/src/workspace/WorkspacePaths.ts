@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts"; // fork: project-lifecycle
+import * as Tracer from "effect/Tracer"; // fork: project-lifecycle
 
 export class WorkspaceRootNotExistsError extends Schema.TaggedError<WorkspaceRootNotExistsError>()(
   "WorkspaceRootNotExistsError",
@@ -91,6 +92,7 @@ export class WorkspacePaths extends Context.Service<
         readonly createIfMissing?: boolean;
         readonly restoreManagedCheckout?: boolean;
         readonly workspaceLeaseHeld?: boolean;
+        readonly readOnly?: boolean;
       },
     ) => Effect.Effect<
       string,
@@ -113,8 +115,9 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   // fork: project-lifecycle
-  const restorationServices =
-    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
+  const restorationServices = Context.omit(Tracer.ParentSpan)(
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>(),
+  );
 
   const statWorkspaceRoot = Effect.fn("WorkspacePaths.statWorkspaceRoot")(function* (
     workspaceRoot: string,
@@ -150,6 +153,7 @@ const make = Effect.gen(function* () {
       yield* restoreManagedProjectCheckout(
         normalizedWorkspaceRoot,
         options.workspaceLeaseHeld,
+        options.readOnly,
       ).pipe(
         Effect.provide(restorationServices),
         Effect.mapError(

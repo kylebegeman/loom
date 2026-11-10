@@ -1,3 +1,4 @@
+import type * as Signature from "effect/crypto/Signature";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation.
 import * as NodeCrypto from "node:crypto";
 
@@ -181,7 +182,7 @@ const run = <A, E>(
   use: (
     directory: Directory.DirectoryService["Service"],
     logs: ReadonlyArray<string>,
-  ) => Effect.Effect<A, E>,
+  ) => Effect.Effect<A, E, Signature.Signature>,
 ) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(NOW);

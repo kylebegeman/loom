@@ -31,6 +31,18 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
+// fork: path-picker
+class WorkspaceEntriesOperationError extends Schema.TaggedError<WorkspaceEntriesOperationError>()(
+  "WorkspaceEntriesOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Workspace Entries operation failed.";
+  }
+}
+
 export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<WorkspaceEntriesWindowsPathUnsupportedError>()(
   "WorkspaceEntriesWindowsPathUnsupportedError",
   {
@@ -65,6 +77,10 @@ export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedError<Works
     cause: Schema.Defect(),
   },
 ) {
+  get pathMissing(): boolean {
+    return (this.cause as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+  }
+
   override get message(): string {
     const cwd = this.cwd ? ` from '${this.cwd}'` : "";
     return `Failed to read workspace directory '${this.parentPath}' while browsing '${this.partialPath}'${cwd}.`;
@@ -174,7 +190,10 @@ const classifyBrowseEntries = Effect.fn("WorkspaceEntries.classifyBrowseEntries"
   const linked = yield* Effect.forEach(
     dirents.filter((dirent) => dirent.isSymbolicLink()),
     ({ name }) =>
-      Effect.tryPromise(() => NodeFSP.stat(path.join(parentPath, name))).pipe(
+      Effect.tryPromise({
+        try: () => NodeFSP.stat(path.join(parentPath, name)),
+        catch: (cause) => new WorkspaceEntriesOperationError({ cause }),
+      }).pipe(
         Effect.map((stats) => toEntries(name, kindOf(stats))),
         Effect.orElseSucceed(() => []),
       ),
@@ -195,7 +214,10 @@ export const make = Effect.gen(function* () {
     restoreManagedCheckout = true, // fork: project-lifecycle
   ): Effect.fn.Return<string, WorkspaceEntriesError> {
     // fork: project-lifecycle
-    return yield* workspacePaths.normalizeWorkspaceRoot(cwd, { restoreManagedCheckout });
+    return yield* workspacePaths.normalizeWorkspaceRoot(cwd, {
+      restoreManagedCheckout,
+      readOnly: true,
+    });
   });
 
   const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(

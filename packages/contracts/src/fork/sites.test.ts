@@ -1,9 +1,12 @@
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { SaveSiteRequest, SaveSiteServiceRequest, SiteAnalytics } from "./sites.ts";
+import fixture from "./fixtures/begamin-sites.json" with { type: "json" };
+import { SaveSiteRequest, SaveSiteServiceRequest, SiteAnalytics, SitesSnapshot } from "./sites.ts";
 
 const isSite = Schema.is(SaveSiteRequest);
 const isService = Schema.is(SaveSiteServiceRequest);
+const decodeSnapshot = Schema.decodeUnknownSync(SitesSnapshot);
+const decodeAnalytics = Schema.decodeUnknownSync(SiteAnalytics);
 
 const site = {
   id: "portfolio",
@@ -14,6 +17,71 @@ const site = {
   serviceIds: [],
   projectIds: ["project-1"],
 };
+
+const legacySnapshot = {
+  schemaVersion: 1,
+  primarySiteId: "portfolio",
+  observedAt: "2026-11-01T12:00:00Z",
+  staleAfterSeconds: 300,
+  sites: [],
+  services: [],
+  checks: [],
+};
+
+it("preserves the canonical Sites response apart from unused backend write metadata", () => {
+  const body = fixture.responses["sites-list"].body;
+  const decoded = decodeSnapshot(body);
+  expect(decoded).toEqual({
+    ...body,
+    sites: body.sites.map(({ etag: _etag, ...site }) => site),
+    services: body.services.map(({ etag: _etag, ...service }) => service),
+    checks: body.checks.map(
+      ({ etag: _etag, revision: _revision, updated_at: _updatedAt, ...check }) => check,
+    ),
+  });
+  expect(decoded.ownerAdmin).toEqual(body.ownerAdmin);
+});
+
+it("preserves the full canonical analytics response and populated breakdowns", () => {
+  const body = fixture.responses["site-analytics"].body;
+  expect(decodeAnalytics(body)).toEqual(body);
+  for (const rows of [
+    body.byDay,
+    body.pages,
+    body.named,
+    body.referrers,
+    body.sources,
+    body.countries,
+    body.devices,
+    body.browsers,
+  ]) {
+    expect(rows.length).toBeGreaterThan(0);
+  }
+});
+
+it("keeps service admin routing optional for older servers", () => {
+  expect(decodeSnapshot(legacySnapshot)).toEqual(legacySnapshot);
+  const withAdmin = {
+    ...legacySnapshot,
+    ownerAdmin: { name: "Personal API", url: "https://api.example/admin" },
+  };
+  expect(decodeSnapshot(withAdmin)).toEqual(withAdmin);
+});
+
+it.each([
+  "http://api.example/admin",
+  "https://user:secret@api.example/admin",
+  "https://user@api.example/admin",
+  "javascript:alert(1)",
+  "/admin",
+])("rejects unsafe service admin URL %s", (url) => {
+  expect(() =>
+    decodeSnapshot({
+      ...legacySnapshot,
+      ownerAdmin: { name: "Personal API", url },
+    }),
+  ).toThrow();
+});
 
 it("preserves every analytics breakdown across the typed transport", () => {
   const breakdowns = {
@@ -35,11 +103,13 @@ it("preserves every analytics breakdown across the typed transport", () => {
     pages: [],
     named: [],
   };
-  const decode = Schema.decodeUnknownSync(SiteAnalytics);
-  expect(decode({ ...base, ...breakdowns })).toMatchObject(breakdowns);
-  expect(decode(base)).toEqual(base);
+  expect(decodeAnalytics({ ...base, ...breakdowns })).toMatchObject(breakdowns);
+  expect(decodeAnalytics(base)).toEqual(base);
   expect(() =>
-    decode({ ...base, sources: [{ source: "x", medium: "", campaign: "", pageviews: -1 }] }),
+    decodeAnalytics({
+      ...base,
+      sources: [{ source: "x", medium: "", campaign: "", pageviews: -1 }],
+    }),
   ).toThrow();
 });
 

@@ -31,6 +31,7 @@ import { Platform, Pressable, View } from "react-native";
 import { useResolveClassNames } from "uniwind";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironments } from "../../state/environments";
@@ -154,7 +155,6 @@ export function LibraryRouteScreen() {
             value={search}
             onChangeText={setSearch}
             autoCorrect={false}
-            className="min-h-[44px] rounded-xl bg-field px-4 text-base text-foreground"
           />
           {intent.kind !== "search" ? (
             <View className="gap-2">
@@ -208,7 +208,7 @@ export function LibraryRouteScreen() {
             detail={catalog.isPending && catalog.data === null ? "Loading projects..." : null}
             onRetry={catalog.error ? catalog.refresh : undefined}
           />
-          <SettingsSection>
+          <View>
             {projects.map((project, index) => (
               <LibraryProjectRow
                 key={project.id}
@@ -217,11 +217,11 @@ export function LibraryRouteScreen() {
                 onPress={() => navigation.navigate("LibraryProject", { projectId: project.id })}
               />
             ))}
-          </SettingsSection>
+          </View>
           {!archived && !query ? <LibraryRestingProjects /> : null}
           {!catalog.isPending && !catalog.error && !projects.length ? (
             <View className="gap-3 py-4">
-              <Text className="text-base font-t3-medium text-foreground">
+              <Text textRole="title" className="font-t3-semibold text-foreground">
                 {query
                   ? "No matching projects"
                   : archived
@@ -273,16 +273,19 @@ function LibraryProjectRow(props: {
       onPress={props.onPress}
       android_ripple={{ color: rippleStyle.backgroundColor }}
       unstable_pressDelay={Platform.OS === "android" ? 50 : undefined}
-      className={cn("bg-grouped-card", props.separated && "border-t border-border-subtle")}
+      className={cn(props.separated && "border-t border-border-subtle")}
     >
-      <View className="min-h-18 flex-row items-center gap-3 px-4 py-3">
+      <View className="min-h-20 flex-row items-center gap-4 py-4">
         <LibraryProjectTile project={props.project} />
         <View className="min-w-0 flex-1 gap-1">
-          <Text className="text-base text-foreground">{props.project.title}</Text>
-          <Text className="text-sm text-foreground-muted" numberOfLines={2}>
+          <Text textRole="body" className="font-t3-semibold text-foreground">
+            {props.project.title}
+          </Text>
+          <Text textRole="footnote" className="text-foreground-muted" numberOfLines={2}>
             {description}
           </Text>
         </View>
+        <SymbolView name="chevron.right" size={14} tintColorClassName="accent-chevron" />
       </View>
     </RowPressable>
   );
@@ -419,17 +422,20 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         <LibraryNotice detail="Library offline. Start from a computer's registered copy, or reconnect to edit the project and prepare files." />
       ) : null}
       <View className="gap-3">
-        <Text className="text-sm text-foreground-muted">
-          {[
-            `Edited ${ago(p.updatedAt)}`,
-            repositories.length
-              ? `${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"}`
-              : null,
-            links ? `${links} ${links === 1 ? "link" : "links"}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </Text>
+        <View className="flex-row items-center gap-4">
+          <LibraryProjectTile project={p} prominent />
+          <Text textRole="footnote" className="min-w-0 flex-1 text-foreground-muted">
+            {[
+              `Edited ${ago(p.updatedAt)}`,
+              repositories.length
+                ? `${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"}`
+                : null,
+              links ? `${links} ${links === 1 ? "link" : "links"}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+        </View>
         {p.archived ? (
           <LibraryNotice detail="Archived. Conversations stay readable; reopen the project to change it or start new work." />
         ) : null}
@@ -544,7 +550,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       </SettingsSection>
       <LibraryHistorySearchEntry projectId={p.id} />
       <View className="gap-3">
-        <Text className="text-base font-t3-medium text-foreground">Project files</Text>
+        <Text textRole="body" className="font-t3-semibold text-foreground">
+          Project files
+        </Text>
         <Button
           label="Tidy..."
           tone="secondary"
@@ -622,7 +630,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       <LibraryTimelinePreview projectId={p.id} />
       <SettingsSection title="Brief">
         <View className="p-4">
-          <Text selectable className="text-sm leading-normal text-foreground">
+          <Text selectable textRole="body" className="text-foreground">
             {p.brief ||
               "Every conversation in this project starts with the brief. Say what you're building and what matters."}
           </Text>
@@ -633,8 +641,10 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       <SettingsSection title="Repositories and links">
         {p.resources.map((resource) => (
           <View key={resource.id} className="gap-1 px-4 py-3">
-            <Text className="text-sm font-t3-medium text-foreground">{resource.title}</Text>
-            <Text selectable className="text-xs text-foreground-muted">
+            <Text textRole="body" className="font-t3-medium text-foreground">
+              {resource.title}
+            </Text>
+            <Text selectable textRole="footnote" className="text-foreground-muted">
               {libraryResourceLocation(resource)}
             </Text>
             {resource.kind !== "link" ? (
@@ -701,10 +711,12 @@ function LibraryThreadRow(props: {
     <Pressable
       accessibilityRole="button"
       onPress={props.onPress}
-      className="gap-1 p-4 active:opacity-70"
+      className="gap-1.5 px-5 py-4 active:opacity-70"
     >
-      <Text className="text-sm font-t3-medium text-foreground">{props.thread.title}</Text>
-      <Text className="text-xs text-foreground-muted">
+      <Text textRole="body" className="font-t3-medium text-foreground">
+        {props.thread.title}
+      </Text>
+      <Text textRole="footnote" className="text-foreground-muted">
         {libraryScopeLabel(props.project, props.thread.resourceIds)} · {props.computerLabel}
       </Text>
       <Text className="text-xs text-foreground-muted">

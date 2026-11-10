@@ -27,6 +27,15 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as AuthHttp from "./http.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 
+// fork: secure-session-cookies
+class HttpFixtureError extends Schema.TaggedError<HttpFixtureError>()("HttpFixtureError", {
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    return "Http operation failed.";
+  }
+}
+
 const DEV_TOKEN = "reusable-dev-auth-token-that-is-long-enough";
 class AuthTestApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.auth) {}
 
@@ -94,7 +103,7 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
           ] as const,
       ),
       ([environmentA, environmentB]) =>
-        Effect.tryPromise(async () => {
+        Effect.promise(async () => {
           const devResponse = await environmentA.handler(
             postJson("/api/auth/browser-session", { credential: DEV_TOKEN }),
             requestContext,
@@ -160,6 +169,39 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
+it.effect.each(["DPoP", "dpop"])("challenges a refused %s request with DPoP", (scheme) =>
+  Effect.gen(function* () {
+    const random = yield* SecureRandom.SecureRandom;
+    const unusedSecretStore = ServerSecretStore.ServerSecretStore.of({
+      get: () => Effect.succeedNone,
+      set: () => Effect.void,
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.die("Not used by these routes."),
+      remove: () => Effect.void,
+    });
+    const requestContext = Context.make(SecureRandom.SecureRandom, random).pipe(
+      Context.add(ServerSecretStore.ServerSecretStore, unusedSecretStore),
+    );
+    return yield* Effect.acquireUseRelease(
+      Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
+      (environment) =>
+        Effect.promise(async () => {
+          const refused = await environment.handler(
+            postJson(
+              "/api/auth/pairing-token",
+              { scopes: ["orchestration:read"] },
+              { authorization: `${scheme} not-a-valid-token` },
+            ),
+            requestContext,
+          );
+          expect(refused.status).toBe(401);
+          expect(refused.headers.get("www-authenticate")).toBe("DPoP");
+        }),
+      (environment) => Effect.promise(() => environment.dispose()),
+    );
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 // fork: secure-session-cookies
 const cookieAttributes = (cookie: string) =>
   cookie
@@ -184,54 +226,57 @@ it.effect("marks browser session cookies Secure only behind an HTTPS proxy", () 
     return yield* Effect.acquireUseRelease(
       Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
       (environment) =>
-        Effect.tryPromise(async () => {
-          const devResponse = await environment.handler(
-            postJson(
-              "/api/auth/browser-session",
-              { credential: DEV_TOKEN },
-              { "x-forwarded-proto": "https" },
-            ),
-            requestContext,
-          );
-          expect(devResponse.status).toBe(200);
-          const devCookies = devResponse.headers.getSetCookie();
-          expect(devCookies).toEqual([
-            expect.stringMatching(/^t3_dev_session_/),
-            expect.stringMatching(/^t3_session_[^=]*=;.*Max-Age=0/),
-          ]);
-          for (const cookie of devCookies) {
-            expect(cookieAttributes(cookie)).toEqual(
-              expect.arrayContaining(["Secure", "HttpOnly", "SameSite=Lax", "Path=/"]),
-            );
-          }
-
-          const devCookieHeader = devCookies[0]?.split(";", 1)[0] ?? "";
-          const redeemPairing = async (forwardedProto: string) => {
-            const pairingResponse = await environment.handler(
-              postJson(
-                "/api/auth/pairing-token",
-                { scopes: ["orchestration:read"] },
-                { cookie: devCookieHeader },
-              ),
-              requestContext,
-            );
-            expect(pairingResponse.status).toBe(200);
-            const pairing = (await pairingResponse.json()) as { credential: string };
-            const response = await environment.handler(
+        Effect.tryPromise({
+          try: async () => {
+            const devResponse = await environment.handler(
               postJson(
                 "/api/auth/browser-session",
-                { credential: pairing.credential },
-                { "x-forwarded-proto": forwardedProto },
+                { credential: DEV_TOKEN },
+                { "x-forwarded-proto": "https" },
               ),
               requestContext,
             );
-            expect(response.status).toBe(200);
-            const cookies = response.headers.getSetCookie();
-            expect(cookies).toEqual([expect.stringMatching(/^t3_session_/)]);
-            return cookieAttributes(cookies[0] ?? "");
-          };
-          expect(await redeemPairing("https")).toContain("Secure");
-          expect(await redeemPairing("http")).not.toContain("Secure");
+            expect(devResponse.status).toBe(200);
+            const devCookies = devResponse.headers.getSetCookie();
+            expect(devCookies).toEqual([
+              expect.stringMatching(/^t3_dev_session_/),
+              expect.stringMatching(/^t3_session_[^=]*=;.*Max-Age=0/),
+            ]);
+            for (const cookie of devCookies) {
+              expect(cookieAttributes(cookie)).toEqual(
+                expect.arrayContaining(["Secure", "HttpOnly", "SameSite=Lax", "Path=/"]),
+              );
+            }
+
+            const devCookieHeader = devCookies[0]?.split(";", 1)[0] ?? "";
+            const redeemPairing = async (forwardedProto: string) => {
+              const pairingResponse = await environment.handler(
+                postJson(
+                  "/api/auth/pairing-token",
+                  { scopes: ["orchestration:read"] },
+                  { cookie: devCookieHeader },
+                ),
+                requestContext,
+              );
+              expect(pairingResponse.status).toBe(200);
+              const pairing = (await pairingResponse.json()) as { credential: string };
+              const response = await environment.handler(
+                postJson(
+                  "/api/auth/browser-session",
+                  { credential: pairing.credential },
+                  { "x-forwarded-proto": forwardedProto },
+                ),
+                requestContext,
+              );
+              expect(response.status).toBe(200);
+              const cookies = response.headers.getSetCookie();
+              expect(cookies).toEqual([expect.stringMatching(/^t3_session_/)]);
+              return cookieAttributes(cookies[0] ?? "");
+            };
+            expect(await redeemPairing("https")).toContain("Secure");
+            expect(await redeemPairing("http")).not.toContain("Secure");
+          },
+          catch: (cause) => new HttpFixtureError({ cause }),
         }),
       (environment) => Effect.promise(() => environment.dispose()),
     );

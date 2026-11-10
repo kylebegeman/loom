@@ -87,7 +87,11 @@ vi.mock("../../state/session", () => ({
 }));
 // fork: provider-auth-retry
 vi.mock("../../state/server", () => ({
-  serverEnvironment: { updateSettings: {}, providerAuthState: () => "auth" },
+  serverEnvironment: {
+    updateSettings: {},
+    providerAuthState: () => "auth",
+    removeProviderAuthMethod: { permissionAtom: () => "removeProviderAuthMethodPermission" },
+  },
 }));
 vi.mock("../../state/presentation", () => ({
   environmentPresentations: { providersByEnvironmentAtom: "providers" },
@@ -125,7 +129,6 @@ vi.mock("./components/SettingsEnvironmentFilterHeader", () => ({
     icon: "line.3.horizontal.decrease.circle",
     items: [],
   }),
-  SettingsEnvironmentFilterHeader: () => null,
 }));
 // fork: github-host-setup
 vi.mock("./components/GitHubHostSetupSettings", () => ({ GitHubHostSetupSettings: () => null }));

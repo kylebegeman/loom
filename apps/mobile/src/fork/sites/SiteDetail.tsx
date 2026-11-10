@@ -1,21 +1,68 @@
-import { Pressable, View } from "react-native";
+import { useState, type ReactNode } from "react";
+import { Image } from "expo-image";
+import { View } from "react-native";
 import type { LibraryProject, SiteAnalytics, SitesSnapshot } from "@t3tools/contracts/fork";
 import { SITE_HEALTH_STATES, siteHealth } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
-import { SymbolView } from "../../components/ui/AppSymbol";
 import { Button } from "../../components/ui/Button";
-import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import type { EnvironmentQueryView } from "../../state/query";
-import { LibraryProjectTile } from "../library/libraryProjectColors";
-import { LibraryStateBadge } from "../library/LibraryStateBadge";
+import { siteFaviconUrl } from "../site-browser/site-browser-model";
 import type { SiteEditTarget } from "./SiteEditor";
-import { SiteServiceGroup, ago, siteHost } from "./SiteHealth";
+import { SiteServiceGroup, SiteStateDot, ago, siteHost } from "./SiteHealth";
 import { SiteTraffic, SiteTrafficSkeleton } from "./SiteTraffic";
 
 type Site = SitesSnapshot["sites"][number];
 
-/** Hex alpha for the hero's globe tile, matching project tiles. */
-const TILE_ALPHA = "24";
+function WebsiteIdentity({ site }: { readonly site: Site }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const uri = siteFaviconUrl(site.url);
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      className={`size-12 items-center justify-center ${loaded && !failed ? "" : "rounded-xl bg-secondary"}`}
+    >
+      <Text
+        textRole="title"
+        className="font-t3-bold text-secondary-foreground"
+        style={{ opacity: loaded && !failed ? 0 : 1 }}
+      >
+        {site.name.trim().slice(0, 1).toLocaleUpperCase() || "W"}
+      </Text>
+      {uri && !failed ? (
+        <Image
+          source={{ uri }}
+          style={{ position: "absolute", width: 28, height: 28, borderRadius: 6 }}
+          contentFit="contain"
+          cachePolicy="memory"
+          onLoad={() => setLoaded(true)}
+          onError={() => setFailed(true)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function DetailSection(props: {
+  readonly title: string;
+  readonly trailing?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <View className="gap-4 border-t border-border pt-6">
+      <View className="flex-row flex-wrap items-baseline justify-between gap-2">
+        <Text accessibilityRole="header" textRole="headline" className="font-t3-bold">
+          {props.title}
+        </Text>
+        {props.trailing}
+      </View>
+      {props.children}
+    </View>
+  );
+}
 
 export function SiteDetail({
   site,
@@ -32,7 +79,6 @@ export function SiteDetail({
   readonly site: Site;
   readonly snapshot: SitesSnapshot;
   readonly now: number;
-  /** The resolved color of the first project the site serves. */
   readonly color: string;
   readonly projects: ReadonlyMap<string, LibraryProject>;
   readonly analytics: EnvironmentQueryView<SiteAnalytics>;
@@ -45,102 +91,84 @@ export function SiteDetail({
   const state = SITE_HEALTH_STATES[health.state];
   const services = snapshot.services.filter((service) => site.serviceIds.includes(service.id));
   return (
-    <View className="gap-6">
-      <SettingsSection>
-        <View className="gap-4 p-4">
-          <View className="flex-row items-start gap-4">
-            <View
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              className="size-14 items-center justify-center rounded-2xl"
-              style={{ backgroundColor: `${color}${TILE_ALPHA}` }}
-            >
-              <SymbolView name="globe" size={26} tintColor={color} />
-            </View>
-            <View className="min-w-0 flex-1 gap-1">
-              <Text
-                accessibilityRole="header"
-                className="text-2xl font-t3-semibold text-foreground"
-              >
-                {site.name}
-              </Text>
-              <Text numberOfLines={1} className="font-mono text-xs text-foreground-muted">
-                {siteHost(site.url)}
-              </Text>
-            </View>
-          </View>
-          <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1.5">
-            <LibraryStateBadge tone={state.tone} label={state.label} />
-            {health.total ? (
-              <Text className="text-xs tabular-nums text-foreground-muted">
-                {health.passing} of {health.total} checks passing
-              </Text>
-            ) : null}
-            {snapshot.observedAt ? (
-              <Text className="text-xs text-foreground-muted">
-                Checked {ago(snapshot.observedAt)}
-              </Text>
-            ) : null}
-          </View>
-          <View className="flex-row flex-wrap gap-2">
-            <Button label="Visit" icon="safari" onPress={() => onVisit(site.url)} />
-            <Button
-              label="Edit site"
-              icon="pencil"
-              disabled={!canManage}
-              onPress={() => onEdit({ kind: "site", row: site })}
-            />
-          </View>
-          {site.projectIds?.length ? (
-            <View className="gap-2 border-t border-border-subtle pt-4">
-              <Text className="text-xs text-foreground-muted">Serves</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {site.projectIds.map((id) => {
-                  const project = projects.get(id);
-                  return (
-                    <Pressable
-                      key={id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open project ${project?.title ?? "Unavailable project"}`}
-                      onPress={() => onOpenProject(id)}
-                      className="max-w-full flex-row items-center gap-2 rounded-xl border border-border-subtle py-1 ps-1 pe-3 active:opacity-70"
-                    >
-                      <LibraryProjectTile project={project ?? { id, title: id }} />
-                      <Text
-                        numberOfLines={1}
-                        className="shrink text-sm font-t3-medium text-foreground"
-                      >
-                        {project?.title ?? "Unavailable project"}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-          ) : (
-            <Text className="border-t border-border-subtle pt-4 text-xs text-warning-foreground">
-              Not linked to a project yet. Edit the site to choose the projects it serves.
+    <View className="gap-7">
+      <View className="gap-5 pb-1">
+        <View className="flex-row items-start gap-3">
+          <WebsiteIdentity key={site.url} site={site} />
+          <View className="min-w-0 flex-1 gap-1">
+            <Text accessibilityRole="header" textRole="title" className="font-t3-bold">
+              {site.name}
             </Text>
-          )}
+            <Text textRole="body" className="text-foreground-muted">
+              {siteHost(site.url)}
+            </Text>
+          </View>
         </View>
-      </SettingsSection>
+        <View className="gap-1.5">
+          <View className="flex-row flex-wrap items-center gap-2">
+            <SiteStateDot tone={state.tone} />
+            <Text textRole="body" className="font-t3-bold">
+              {state.label}
+            </Text>
+            <Text textRole="footnote" className="text-foreground-muted">
+              {health.total
+                ? `${health.passing} of ${health.total} checks passing`
+                : "No monitoring checks"}
+            </Text>
+          </View>
+          {snapshot.observedAt ? (
+            <Text textRole="footnote" className="text-foreground-muted">
+              Updated {ago(snapshot.observedAt)}
+            </Text>
+          ) : null}
+        </View>
+        <View className="self-start">
+          <Button
+            label="Visit website"
+            icon="safari"
+            tone="primary"
+            onPress={() => onVisit(site.url)}
+          />
+        </View>
+      </View>
 
-      <SettingsSection
-        title="Health"
+      <DetailSection
+        title="Traffic"
         trailing={
-          services.length ? (
-            <Text className="text-xs tabular-nums text-foreground-muted">
-              {services.length} {services.length === 1 ? "service" : "services"}
+          analytics.data ? (
+            <Text textRole="footnote" className="text-foreground-muted">
+              Last {analytics.data.days} days
             </Text>
           ) : undefined
         }
       >
+        {analytics.error ? (
+          <View className="items-start gap-2">
+            <Text accessibilityRole="alert" textRole="body" className="text-danger-foreground">
+              {analytics.error}
+            </Text>
+            <Button label="Try again" tone="text" onPress={analytics.refresh} />
+          </View>
+        ) : null}
+        {analytics.data ? (
+          <SiteTraffic analytics={analytics.data} origins={site.origins} color={color} />
+        ) : analytics.isPending ? (
+          <SiteTrafficSkeleton />
+        ) : !analytics.error ? (
+          <Text textRole="body" className="text-foreground-muted">
+            Traffic is not available for this website yet.
+          </Text>
+        ) : null}
+      </DetailSection>
+
+      <DetailSection title="Monitoring">
         {services.length ? (
           services.map((service, index) => (
             <SiteServiceGroup
               key={service.id}
               service={service}
               separated={index > 0}
+              inset={false}
               checks={snapshot.checks.filter((check) => check.service_id === service.id)}
               staleAfterSeconds={snapshot.staleAfterSeconds}
               now={now}
@@ -151,44 +179,45 @@ export function SiteDetail({
             />
           ))
         ) : (
-          <View className="gap-2 p-4">
-            <Text className="text-sm text-foreground-muted">
-              No services linked. Link the services this site runs on to watch their endpoints.
+          <View className="items-start gap-3">
+            <Text textRole="body" className="text-foreground-muted">
+              No monitoring services are linked to this website.
             </Text>
-            <Button
-              label="Link services"
-              tone="text"
-              disabled={!canManage}
-              onPress={() => onEdit({ kind: "site", row: site })}
-            />
+            {canManage ? (
+              <Button
+                label="Link services"
+                tone="text"
+                onPress={() => onEdit({ kind: "site", row: site })}
+              />
+            ) : null}
           </View>
         )}
-      </SettingsSection>
+      </DetailSection>
 
-      <SettingsSection
-        title="Traffic"
-        trailing={
-          analytics.data ? (
-            <Text className="text-xs tabular-nums text-foreground-muted">
-              Last {analytics.data.days} days
-            </Text>
-          ) : undefined
-        }
-      >
-        {analytics.error ? (
-          <View className="gap-1 p-4">
-            <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
-              {analytics.error}
-            </Text>
-            <Button label="Try again" tone="text" onPress={analytics.refresh} />
+      {site.projectIds?.length ? (
+        <DetailSection title="Linked projects">
+          <View>
+            {site.projectIds.map((id) => {
+              const project = projects.get(id);
+              return (
+                <RowPressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !project }}
+                  disabled={!project}
+                  onPress={() => onOpenProject(id)}
+                  className="min-h-12 flex-row items-center justify-between gap-3 border-b border-border-subtle py-3"
+                >
+                  <Text textRole="body" className="min-w-0 flex-1 font-t3-medium">
+                    {project?.title ?? "Unavailable project"}
+                  </Text>
+                  <SymbolView name="chevron.right" size={14} tintColorClassName="accent-chevron" />
+                </RowPressable>
+              );
+            })}
           </View>
-        ) : null}
-        {analytics.data ? (
-          <SiteTraffic analytics={analytics.data} origins={site.origins} color={color} />
-        ) : analytics.isPending ? (
-          <SiteTrafficSkeleton />
-        ) : null}
-      </SettingsSection>
+        </DetailSection>
+      ) : null}
     </View>
   );
 }

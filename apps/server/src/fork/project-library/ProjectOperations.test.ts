@@ -13,6 +13,7 @@ import {
   AuthTerminalOperateScope,
   AuthOrchestrationOperateScope,
   EnvironmentId,
+  mcpClientScopes,
   type AuthClientSession,
   type OrchestrationV2ThreadShell,
   type VcsCreateWorktreeInput,
@@ -105,6 +106,11 @@ const fixture = Effect.gen(function* () {
   const dispatched = yield* Ref.make<string[]>([]);
   const retentionSaves = yield* Ref.make(0);
   const placedBorrowed = yield* Ref.make(false);
+  const releaseCancel = yield* Ref.make<"none" | "cleared" | "set-aside">("none");
+  const cancelGate = yield* Ref.make<{
+    readonly entered: Deferred.Deferred<string>;
+    readonly open: Deferred.Deferred<void>;
+  } | null>(null);
   const failBind = yield* Ref.make(false);
   const threadDeleted = yield* Ref.make(false);
   const revokeAtResolve = yield* Ref.make(false);
@@ -115,6 +121,7 @@ const fixture = Effect.gen(function* () {
   const createdIn = yield* Ref.make<
     readonly { branch: string | null; worktreePath: string | null }[]
   >([]);
+  const creators = yield* Ref.make<readonly unknown[]>([]);
   const boundIn = yield* Ref.make<readonly (string | undefined)[]>([]);
   const boundCopies = yield* Ref.make<readonly string[]>([]);
   const conversations = yield* Ref.make<
@@ -236,6 +243,15 @@ const fixture = Effect.gen(function* () {
     }),
     Layer.mock(LibraryWorkspace)({
       inspectFolder: () => Ref.get(inspected),
+      cancelRelease: (input) =>
+        Effect.gen(function* () {
+          const gate = yield* Ref.get(cancelGate);
+          if (gate !== null) {
+            yield* Deferred.succeed(gate.entered, input.requestId);
+            yield* Deferred.await(gate.open);
+          }
+          return yield* Ref.get(releaseCancel);
+        }),
       setCopyRetention: (input) =>
         Effect.gen(function* () {
           if ((yield* Ref.get(placedBorrowed)) && !input.keepOnComputer)
@@ -325,6 +341,15 @@ const fixture = Effect.gen(function* () {
               ...list,
               { branch: command.branch, worktreePath: command.worktreePath },
             ]);
+            yield* Ref.update(creators, (list) => [
+              ...list,
+              {
+                createdBy: command.createdBy,
+                creationSource: command.creationSource,
+                linkOrigin: command.linkOrigin,
+                delegatedFrom: command.delegatedFrom,
+              },
+            ]);
             // A repeated create does nothing, as the orchestrator's command receipt makes it.
             yield* Ref.update(conversations, (map) =>
               map.has(command.threadId)
@@ -408,9 +433,12 @@ const fixture = Effect.gen(function* () {
     worktreePath,
     worktreesMade,
     createdIn,
+    creators,
     boundIn,
     retentionSaves,
     placedBorrowed,
+    releaseCancel,
+    cancelGate,
     dispatched,
     failBind,
     threadDeleted,
@@ -700,7 +728,7 @@ describe("Project operations", () => {
         }),
       ),
   );
-  it.effect("deduplicates accepted operations and rejects changed inputs or another subject", () =>
+  it.effect("deduplicates accepted operations and rejects changed inputs from any subject", () =>
     run((state) =>
       Effect.gen(function* () {
         const first = yield* state.service.execute("operation", create, actor);
@@ -719,11 +747,18 @@ describe("Project operations", () => {
         yield* Ref.set(state.active, [
           { ...session(), sessionId: AuthSessionId.make("other"), subject: "other-owner" },
         ]);
+        const other = { sessionId: "other", subject: "other-owner" };
+        expect(yield* state.service.execute("operation", create, other)).toEqual(first);
         expect(
           (yield* state.service
-            .execute("operation", create, { sessionId: "other", subject: "other-owner" })
+            .execute(
+              "operation",
+              { kind: "create", input: { ...create.input, title: "Changed" } },
+              other,
+            )
             .pipe(Effect.flip)).reason,
         ).toBe("request-conflict");
+        expect(yield* Ref.get(state.calls)).toBe(1);
       }),
     ),
   );
@@ -829,7 +864,7 @@ describe("Project operations", () => {
       }),
     ),
   );
-  it.effect("refuses revoked or under-scoped sessions before dispatch", () =>
+  it.effect("refuses revoked or under-scoped sessions, and outside agents below Full access", () =>
     run((state) =>
       Effect.gen(function* () {
         yield* Ref.set(state.active, [session([AuthTerminalOperateScope])]);
@@ -841,24 +876,72 @@ describe("Project operations", () => {
         expect((yield* state.service.run("revoked", create, actor).pipe(Effect.flip)).reason).toBe(
           "blocked",
         );
+        const outsideAgent = { subject: "mcp-client", sessionId: AuthSessionId.make("outside") };
+        const prepare: LibraryOperationInput = {
+          kind: "prepare",
+          input: { requestId: "outside", project, rootPath: "/test/outside", strategy: "clone" },
+        };
+        yield* Ref.set(state.active, [{ ...session(mcpClientScopes("auto")), ...outsideAgent }]);
+        expect(
+          (yield* state.service.execute("outside", prepare, outsideAgent).pipe(Effect.flip))
+            .message,
+        ).toContain("needs Full access");
+        yield* Ref.set(state.active, [
+          { ...session(mcpClientScopes("full-access")), ...outsideAgent },
+        ]);
+        expect((yield* state.service.execute("outside", prepare, outsideAgent)).state).toBe(
+          "succeeded",
+        );
+        const unmatched: LibraryOperationInput = {
+          kind: "import",
+          input: { requestId: "outside-import", rootPath: "/work/project" },
+        };
+        expect(
+          (yield* state.service
+            .execute("outside-import", unmatched, outsideAgent)
+            .pipe(Effect.flip)).message,
+        ).toContain("outside agents cannot create shared projects");
+        expect(yield* Ref.get(state.creationInputs)).toEqual([]);
+        yield* Ref.update(state.active, (sessions) => [...sessions, session()]);
+        expect((yield* state.service.execute("outside-import", unmatched, actor)).state).toBe(
+          "succeeded",
+        );
+        expect(yield* Ref.get(state.creationInputs)).toHaveLength(1);
       }),
     ),
   );
-  it.effect("preserves existing file review blockers rather than bypassing them", () =>
-    run((state) =>
-      Effect.gen(function* () {
-        const request: LibraryOperationInput = {
-          kind: "release",
-          input: { requestId: "release", workingCopyId: "copy", reviewToken: "old-review" },
-        };
-        const error = yield* state.service.execute("release", request, actor).pipe(Effect.flip);
-        expect(error.reason).toBe("blocked");
-        expect(error.message).toBe("The reviewed files changed.");
-        const cancelled = yield* state.service.cancel("release", actor);
-        expect(cancelled.state).toBe("cancelled");
-        expect((yield* state.service.resume("release", actor)).state).toBe("cancelled");
-      }),
-    ),
+  it.effect(
+    "preserves file review blockers, keeps files set aside resumable and cancels without holding up other work",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const request: LibraryOperationInput = {
+            kind: "release",
+            input: { requestId: "release", workingCopyId: "copy", reviewToken: "old-review" },
+          };
+          const error = yield* state.service.execute("release", request, actor).pipe(Effect.flip);
+          expect(error.reason).toBe("blocked");
+          expect(error.message).toBe("The reviewed files changed.");
+          yield* Ref.set(state.releaseCancel, "set-aside");
+          expect(
+            (yield* state.service.cancel("release", actor).pipe(Effect.flip)).message,
+          ).toContain("Resume this operation to finish removing them");
+          yield* Ref.set(state.releaseCancel, "cleared");
+          const gate = {
+            entered: yield* Deferred.make<string>(),
+            open: yield* Deferred.make<void>(),
+          };
+          yield* Ref.set(state.cancelGate, gate);
+          const cancelling = yield* state.service.cancel("release", actor).pipe(Effect.forkChild);
+          yield* Deferred.await(gate.entered);
+          expect((yield* state.service.execute("meanwhile", create, actor)).state).toBe(
+            "succeeded",
+          );
+          yield* Deferred.succeed(gate.open, undefined);
+          expect((yield* Fiber.join(cancelling)).state).toBe("cancelled");
+          expect((yield* state.service.resume("release", actor)).state).toBe("cancelled");
+        }),
+      ),
   );
   it.effect(
     "does not persist recovery bearer tokens and requires fresh authorization to resume",
@@ -908,19 +991,60 @@ describe("Project operations", () => {
         }),
       ),
   );
-  it.effect("tells a signed-in client which conversation owns an agent operation", () =>
+  it.effect("lets a signed-in person take over an operation an agent started", () =>
     run((state) =>
       Effect.gen(function* () {
-        yield* state.service.execute("agent-owned", create, actor);
+        yield* Ref.set(state.failure, true);
         const sql = yield* SqlClient.SqlClient;
-        yield* sql`UPDATE fork_library_operations SET subject=${"workload:owning-thread"} WHERE id=${"agent-owned"}`;
-        for (const action of ["resume", "cancel"] as const) {
-          const error = yield* state.service
-            .controlClient("agent-owned", action, actor.sessionId)
-            .pipe(Effect.flip);
-          expect(error.message).toContain("agent in conversation owning-thread");
-          expect(error.message).not.toContain("Sign in");
+        const owners = {
+          "agent-owned": "workload:owning-thread",
+          "outside-owned": "mcp-client",
+          "outside-retried": "mcp-client",
+        };
+        for (const [id, owner] of Object.entries(owners)) {
+          yield* state.service.execute(id, create, actor).pipe(Effect.flip);
+          yield* sql`UPDATE fork_library_operations SET subject=${owner} WHERE id=${id}`;
         }
+        const otherAgent = { subject: "workload:other-thread", sessionId: "workload:other" };
+        const outsideAgent = { subject: "mcp-client", sessionId: "outside" };
+        for (const agent of [otherAgent, outsideAgent])
+          expect(
+            (yield* state.service.cancel("agent-owned", agent).pipe(Effect.flip)).message,
+          ).toContain("from that conversation with loom_library_operation_control");
+        yield* Ref.set(state.active, [session([AuthTerminalOperateScope])]);
+        expect(
+          (yield* state.service
+            .controlClient("agent-owned", "cancel", actor.sessionId)
+            .pipe(Effect.flip)).message,
+        ).toContain("access level");
+        yield* Ref.set(state.active, [session()]);
+        yield* Ref.set(state.failure, false);
+        yield* state.service.controlClient("agent-owned", "resume", actor.sessionId);
+        expect((yield* state.service.execute("agent-owned", create, actor)).state).toBe(
+          "succeeded",
+        );
+        const owningAgent = { subject: "workload:owning-thread", sessionId: "workload:owning" };
+        expect(
+          (yield* state.service.cancel("agent-owned", owningAgent).pipe(Effect.flip)).message,
+        ).toContain("another signed-in session");
+        expect(
+          (yield* state.service.controlClient("outside-owned", "cancel", actor.sessionId)).state,
+        ).toBe("cancelled");
+        yield* state.service.controlClient("outside-retried", "resume", actor.sessionId);
+        expect((yield* state.service.execute("outside-retried", create, actor)).state).toBe(
+          "succeeded",
+        );
+        yield* Ref.set(state.active, [
+          session(),
+          {
+            ...session(mcpClientScopes("full-access")),
+            sessionId: AuthSessionId.make(outsideAgent.sessionId),
+            subject: outsideAgent.subject,
+          },
+        ]);
+        expect((yield* state.service.execute("outside-retried", create, outsideAgent)).state).toBe(
+          "succeeded",
+        );
       }),
     ),
   );
@@ -977,6 +1101,46 @@ describe("Project operations", () => {
             yield* Deferred.await(state.entered);
             expect((yield* restarted.execute("restart", create, actor)).state).toBe("succeeded");
             expect(yield* Ref.get(state.calls)).toBe(1);
+          }),
+        ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
+      }),
+    ),
+  );
+  it.effect("lets Resume finish a removal an earlier build's cancel left set aside", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const request = yield* encodeRequest({
+          kind: "release",
+          input: { requestId: "stranded", workingCopyId: "copy", reviewToken: "old-review" },
+        });
+        const operation = yield* encodeOperation({
+          id: "stranded",
+          kind: "release",
+          projectId: null,
+          environmentId,
+          state: "cancelled",
+          phase: "Cancelled; completed steps were kept",
+          attempt: 1,
+          error: null,
+          result: null,
+          createdAt: project.createdAt,
+          updatedAt: project.createdAt,
+        });
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES ('stranded',${actor.subject},${actor.sessionId},${request},${operation},'cancelled',NULL,${project.createdAt})`;
+        yield* Ref.set(state.releaseCancel, "set-aside");
+        const gate = {
+          entered: yield* Deferred.make<string>(),
+          open: yield* Deferred.make<void>(),
+        };
+        yield* Ref.set(state.cancelGate, gate);
+        yield* Effect.flatMap(ProjectOperations.ProjectOperations, (restarted) =>
+          Effect.gen(function* () {
+            expect(yield* Deferred.await(gate.entered)).toBe("stranded");
+            // Waits behind the startup check, which holds the operation while it looks.
+            const resuming = yield* restarted.resume("stranded", actor).pipe(Effect.forkChild);
+            yield* Deferred.succeed(gate.open, undefined);
+            expect((yield* Fiber.join(resuming)).state).toBe("queued");
           }),
         ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
       }),
@@ -1175,6 +1339,57 @@ describe("Project operations", () => {
         expect((yield* state.service.list({}))[0]?.state).toBe("needs-input");
       }),
     ),
+  );
+  it.effect(
+    "keeps a delegated launch nested under its parent, also when a person finishes it",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const outsideAgent = { subject: "mcp-client", sessionId: AuthSessionId.make("outside") };
+          yield* Ref.set(state.active, [
+            { ...session(mcpClientScopes("full-access")), ...outsideAgent },
+          ]);
+          const origin = {
+            linkOrigin: { sessionId: "link", label: "Laptop", access: "full-access" as const },
+            delegatedFrom: {
+              environmentId: EnvironmentId.make("laptop"),
+              threadId: ThreadId.make("parent"),
+              title: "Parent",
+            },
+          };
+          const launch = (threadId: string): LibraryOperationInput => ({
+            kind: "launch",
+            input: {
+              project,
+              binding: {
+                projectId: project.id,
+                projectRevision: 1,
+                environmentId,
+                workingCopyId: "copy",
+                resourceIds: [],
+              },
+              threadId: ThreadId.make(threadId),
+              title: "Review",
+              modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+              runtimeMode: "approval-required",
+              interactionMode: "plan",
+            },
+          });
+          yield* state.service.execute("delegated", launch("delegated"), outsideAgent, origin);
+          // The agent's access ends before its conversation exists; a person resumes without it.
+          yield* Ref.set(state.revokeAtResolve, true);
+          yield* state.service
+            .execute("finished", launch("finished"), outsideAgent, origin)
+            .pipe(Effect.flip);
+          yield* Ref.set(state.revokeAtResolve, false);
+          yield* Ref.set(state.active, [session()]);
+          yield* state.service.execute("finished", launch("finished"), actor);
+          expect(yield* Ref.get(state.creators)).toEqual([
+            { createdBy: "agent", creationSource: "mcp", ...origin },
+            { createdBy: "user", creationSource: "web", ...origin },
+          ]);
+        }),
+      ),
   );
   it.effect("opens a launch's conversation in its reserved files before they download", () =>
     run((state) =>

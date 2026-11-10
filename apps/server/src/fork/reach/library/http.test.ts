@@ -1,3 +1,5 @@
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
+import type * as Signature from "effect/crypto/Signature";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
@@ -171,7 +173,7 @@ const fixture = Effect.gen(function* () {
 
 type Fixture = Effect.Success<typeof fixture>;
 
-const run = <A, E>(use: (f: Fixture) => Effect.Effect<A, E>) =>
+const run = <A, E>(use: (f: Fixture) => Effect.Effect<A, E, Signature.Signature>) =>
   fixture.pipe(
     Effect.flatMap((f) =>
       use(f).pipe(
@@ -185,7 +187,7 @@ const run = <A, E>(use: (f: Fixture) => Effect.Effect<A, E>) =>
       ),
     ),
     Effect.scoped,
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer)),
   );
 
 // Live: the web handler runs on its own runtime with the real clock, so requests are signed by it.

@@ -5,7 +5,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { makeThreadShellFixture } from "../../test-fixtures";
 
-vi.mock("react-native", () => ({ View: ({ children }: { children: ReactNode }) => children }));
+vi.mock("../../components/ProviderIcon", () => ({ ProviderIcon: () => null }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
+vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => children,
+  Pressable: ({
+    children,
+    disabled,
+    onPress,
+  }: {
+    children: ReactNode;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {children}
+    </button>
+  ),
+}));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: (atom: unknown) => (atom === "visible-turn-items" ? [] : null),
 }));

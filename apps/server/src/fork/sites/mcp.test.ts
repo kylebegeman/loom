@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import type { SitesError, SitesSnapshot } from "@t3tools/contracts/fork";
+import { LibraryError, SitesError, type SitesSnapshot } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -14,6 +14,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import * as SitesService from "./SitesService.ts";
 import { SitesToolkit, sitesHandlers } from "./mcp.ts";
+import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 
 const snapshot: SitesSnapshot = {
   schemaVersion: 1,
@@ -43,6 +44,7 @@ it.effect.each(cases)(
         const release = yield* Deferred.make<void>();
         let writes = 0;
         let calls = 0;
+        let managementError: LibraryError | null = null;
         const write = (authorize?: Effect.Effect<void, SitesError>) =>
           Effect.gen(function* () {
             calls += 1;
@@ -60,13 +62,29 @@ it.effect.each(cases)(
           saveCheck: (_, authorize) => write(authorize),
           runChecks: write,
         });
+        const management = yield* LibraryManagement.pipe(
+          Effect.provide(
+            Layer.mock(LibraryManagement)({
+              sitesAgent: (_, _caller, authorize) =>
+                managementError
+                  ? Effect.fail(managementError)
+                  : write(
+                      authorize?.pipe(
+                        Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
+                      ),
+                    ).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
+            }),
+          ),
+        );
         const toolkit = yield* SitesToolkit.pipe(
           Effect.provide(
             McpToolAccess.HandlersLayer.layer(sitesHandlers).pipe(
               Layer.provide(
                 Layer.succeed(
                   ForkRuntime,
-                  Context.make(SitesService.SitesService, service) as Context.Context<ForkServices>,
+                  Context.make(SitesService.SitesService, service).pipe(
+                    Context.add(LibraryManagement, management),
+                  ) as Context.Context<ForkServices>,
                 ),
               ),
             ),
@@ -117,7 +135,7 @@ it.effect.each(cases)(
         expect(revoked).toMatchObject({
           _tag: "SitesError",
           stage: "write",
-          cause: { code: "parent_not_active" },
+          cause: { reason: "blocked", cause: { code: "parent_not_active" } },
         });
         expect(writes).toBe(0);
 
@@ -125,6 +143,18 @@ it.effect.each(cases)(
         const allowed = yield* invoke(scope);
         expect(allowed[0]?.result).toEqual(snapshot);
         expect(writes).toBe(1);
+        for (const detail of [
+          "Update Loom on the Library to manage Sites from agents. Keep this computer enrolled.",
+          "This computer's Library enrollment has expired or been revoked. Sign in to the existing Library connection.",
+        ]) {
+          managementError = new LibraryError({ reason: "blocked", detail });
+          expect(yield* invoke(scope).pipe(Effect.flip)).toMatchObject({
+            _tag: "LibraryError",
+            reason: "blocked",
+            detail,
+          });
+          expect(writes).toBe(1);
+        }
       }),
     ),
 );

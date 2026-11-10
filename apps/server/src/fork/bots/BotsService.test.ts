@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  CommandId,
   DEFAULT_TEXT_GENERATION_MODEL,
   EnvironmentId,
   ProjectId,
@@ -12,6 +13,7 @@ import {
 import {
   BOTS_MAX_ACTIVE_RUNS,
   BOTS_RESULT_MAX_BYTES,
+  LibraryError,
   type BotRun,
   type BotStarterId,
 } from "@t3tools/contracts/fork";
@@ -21,6 +23,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import { makeBotsStore } from "./BotsStore.ts";
 import { USER_CALLER, versionInput } from "./BotsService.ts";
@@ -81,6 +84,28 @@ describe("BotsService", () => {
         const ended = yield* bots.awaitRun(run.id);
         expect(ended).toMatchObject({ status: "failed" });
         expect(harness.launches).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("fails a run the Library refuses to launch with the Library's reason", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        const bots = yield* harness.service;
+        yield* bots.save(reviewer(), USER_CALLER);
+        const detail =
+          "Start a new Library conversation from an active agent turn or a signed-in client.";
+        harness.state.launchError = new ThreadLaunch.ThreadLaunchError({
+          operation: "create-thread",
+          commandId: CommandId.make("bot-run:refused"),
+          projectId,
+          cause: new LibraryError({ reason: "blocked", detail }),
+        });
+        const run = yield* bots.run(
+          { botId: "reviewer", inputs: { file: "a.ts" }, projectId },
+          USER_CALLER,
+        );
+        expect(yield* bots.awaitRun(run.id)).toMatchObject({ status: "failed", error: detail });
       }),
     ),
   );

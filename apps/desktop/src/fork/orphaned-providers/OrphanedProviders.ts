@@ -23,6 +23,17 @@ import * as Schema from "effect/Schema";
 
 import { makeComponentLogger } from "../../app/DesktopObservability.ts";
 
+class OrphanedProvidersOperationError extends Schema.TaggedError<OrphanedProvidersOperationError>()(
+  "OrphanedProvidersOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Orphaned Providers operation failed.";
+  }
+}
+
 /** Quit, update install and restart wait at most this long for the cleanup. */
 export const CLEANUP_TIMEOUT = Duration.seconds(2);
 // The server's reap waits the same: for TERM to land, then for KILL to.
@@ -175,7 +186,10 @@ const stopOrphans = Effect.fn("desktop.orphanedProviders.stop")(function* (
     ),
   );
   if (Option.isNone(serialized)) return;
-  const ledger = yield* Effect.try(() => decodeProviderProcessLedger(serialized.value));
+  const ledger = yield* Effect.try({
+    try: () => decodeProviderProcessLedger(serialized.value),
+    catch: (cause) => new OrphanedProvidersOperationError({ cause }),
+  });
   // Records of anything else, such as a second server on this state dir, are not ours to stop.
   const owned = ledger.processes.filter((record) => sameProcess(record.owner, backend));
   if (owned.length === 0) return;

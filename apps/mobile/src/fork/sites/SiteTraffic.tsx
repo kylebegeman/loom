@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { View } from "react-native";
 import { Button } from "../../components/ui/Button";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import type { SiteAnalytics } from "@t3tools/contracts/fork";
 import {
   siteTrafficDays,
@@ -8,11 +10,8 @@ import {
   siteTrafficRatios,
 } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
-import { cn } from "../../lib/cn";
 import { ago, siteHost } from "./SiteHealth";
 
-/** Hex alpha for the soft share bar behind ranked rows, about 12% opacity. */
-const SHARE_ALPHA = "1F";
 const CHART_HEIGHT = 128;
 
 /** Exact up to five digits, compact past that, so a figure never wraps. */
@@ -40,93 +39,119 @@ export function SiteTraffic({
 }: {
   readonly analytics: SiteAnalytics;
   readonly origins: readonly string[];
-  /** The site's color, so its chart reads as part of the projects it serves. */
   readonly color: string;
 }) {
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const days = siteTrafficDays(analytics);
   const quiet = !analytics.pageviews && !analytics.events;
   const ratios = siteTrafficRatios(analytics);
   return (
-    <View className="gap-5 p-4">
-      <View className="flex-row">
+    <View className="gap-5">
+      <View className="flex-row flex-wrap items-end gap-4">
         <Figure label="Page views" value={analytics.pageviews} first />
-        <Figure label="Visitors" value={analytics.visitors} />
+        <Figure label="Daily visitors" value={analytics.visitors} />
         <Figure label="Events" value={analytics.events} />
       </View>
       {quiet || !days.length ? (
-        <View className="items-center justify-center gap-1 px-4" style={{ height: CHART_HEIGHT }}>
-          <Text className="text-sm font-t3-medium text-foreground">
-            No visits in the last {analytics.days} days
+        <View className="gap-1 py-2">
+          <Text textRole="body" className="font-t3-medium text-foreground">
+            {quiet
+              ? `No visits in the last ${analytics.days} days`
+              : "Daily traffic is unavailable"}
           </Text>
-          <Text className="text-center text-xs text-foreground-muted">
-            Visits from this site's analytics origins appear here as they arrive.
+          <Text textRole="footnote" className="text-foreground-muted">
+            {quiet
+              ? "Visits from this site's analytics origins appear here as they arrive."
+              : "Totals are available above; this source has not supplied a daily breakdown."}
           </Text>
         </View>
       ) : (
         <DailyChart days={days} analytics={analytics} color={color} />
       )}
-      {quiet ? null : (
-        <>
-          <RankedList
-            title="Top pages"
-            empty="No page views in this period."
-            color={color}
-            rows={analytics.pages.map((page) => ({
-              key: page.path,
-              label: page.path,
-              value: page.pageviews,
-            }))}
-          />
-          <RankedList
-            title="Clicks and events"
-            empty="No clicks or named events in this period."
-            color={color}
-            rows={analytics.named.map((event) => ({
-              key: JSON.stringify([event.name, event.label, event.target]),
-              label: event.name,
-              ...(event.label || event.target
-                ? { detail: [event.label, event.target].filter(Boolean).join(" · ") }
-                : {}),
-              value: event.count,
-            }))}
-          />
-          {analytics.pageviews > 0 ? (
+      <RowPressable
+        accessibilityRole="button"
+        accessibilityLabel="Traffic details"
+        accessibilityState={{ expanded: detailsExpanded }}
+        onPress={() => setDetailsExpanded((expanded) => !expanded)}
+        className="flex-row items-center justify-between gap-3 border-t border-border-subtle pt-4"
+      >
+        <Text textRole="body" className="font-t3-medium text-foreground">
+          Traffic details
+        </Text>
+        <SymbolView
+          name={detailsExpanded ? "chevron.up" : "chevron.down"}
+          size={16}
+          tintColorClassName="accent-icon-muted"
+        />
+      </RowPressable>
+      {detailsExpanded ? (
+        <View className="gap-5">
+          <ProductUsage analytics={analytics} color={color} />
+          {quiet ? null : (
             <>
-              <Text className="text-xs text-foreground-muted">
-                {ratios.viewsPerVisitor?.toLocaleString(undefined, { maximumFractionDigits: 1 }) ??
-                  "Not available"}{" "}
-                views per daily visitor.{" "}
-                {ratios.actionsPerHundredViews?.toLocaleString(undefined, {
-                  maximumFractionDigits: 1,
-                }) ?? "Not available"}{" "}
-                actions per 100 views. Activity averages, not unique-person conversion rates.
-              </Text>
-              {siteTrafficBreakdowns(analytics).map((group) => (
-                <View key={group.id} className="gap-1.5">
-                  <RankedList
-                    title={group.title}
-                    rows={group.rows}
-                    color={color}
-                    empty={
-                      group.available
-                        ? "No page views with this breakdown in this period."
-                        : "Update the connected Loom server to see this breakdown."
-                    }
-                  />
-                  <Text className="text-2xs text-foreground-muted">{group.note}</Text>
-                </View>
-              ))}
+              <RankedList
+                title="Top pages"
+                empty="No page views in this period."
+                color={color}
+                rows={analytics.pages.map((page) => ({
+                  key: page.path,
+                  label: page.path,
+                  value: page.pageviews,
+                }))}
+              />
+              <RankedList
+                title="Clicks and events"
+                empty="No clicks or named events in this period."
+                color={color}
+                rows={analytics.named.map((event) => ({
+                  key: JSON.stringify([event.name, event.label, event.target]),
+                  label: event.name,
+                  ...(event.label || event.target
+                    ? { detail: [event.label, event.target].filter(Boolean).join(" · ") }
+                    : {}),
+                  value: event.count,
+                }))}
+              />
+              {analytics.pageviews > 0 ? (
+                <>
+                  <Text className="text-xs text-foreground-muted">
+                    {ratios.viewsPerVisitor?.toLocaleString(undefined, {
+                      maximumFractionDigits: 1,
+                    }) ?? "Not available"}{" "}
+                    views per daily visitor.{" "}
+                    {ratios.actionsPerHundredViews?.toLocaleString(undefined, {
+                      maximumFractionDigits: 1,
+                    }) ?? "Not available"}{" "}
+                    actions per 100 views. Activity averages, not unique-person conversion rates.
+                  </Text>
+                  {siteTrafficBreakdowns(analytics).map((group) => (
+                    <View key={group.id} className="gap-1.5">
+                      <RankedList
+                        title={group.title}
+                        rows={group.rows}
+                        color={color}
+                        empty={
+                          group.available
+                            ? "No page views with this breakdown in this period."
+                            : "Update the connected Loom server to see this breakdown."
+                        }
+                      />
+                      <Text className="text-2xs text-foreground-muted">{group.note}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : null}
             </>
-          ) : null}
-        </>
-      )}
-      <Text className="border-t border-border-subtle pt-3 text-xs text-foreground-muted">
-        Visitors are counted once per day; a return on another day counts again
-        {analytics.lastEventAt
-          ? `, and the latest visit arrived ${ago(analytics.lastEventAt)}`
-          : ""}
-        . Counting visits from {origins.map(siteHost).join(", ")}.
-      </Text>
+          )}
+          <Text className="border-t border-border-subtle pt-3 text-xs text-foreground-muted">
+            Visitors are counted once per day; a return on another day counts again
+            {analytics.lastEventAt
+              ? `, and the latest visit arrived ${ago(analytics.lastEventAt)}`
+              : ""}
+            . Counting visits from {origins.map(siteHost).join(", ")}.
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -142,16 +167,15 @@ function Figure({
   readonly first?: boolean;
 }) {
   return (
-    <View
-      accessible
-      accessibilityLabel={`${label}: ${value}`}
-      className={cn("min-w-0 flex-1 gap-0.5", !first && "border-l border-border-subtle ps-3")}
-    >
-      <Text numberOfLines={1} className="text-2xs text-foreground-muted">
-        {label}
-      </Text>
-      <Text numberOfLines={1} className="text-xl font-t3-semibold tabular-nums text-foreground">
+    <View accessible accessibilityLabel={`${label}: ${value}`} className="min-w-20 flex-1 gap-1">
+      <Text
+        textRole={first ? "largeTitle" : "title"}
+        className="font-t3-bold tabular-nums text-foreground"
+      >
         {formatCount(value)}
+      </Text>
+      <Text textRole="footnote" className="text-foreground-muted">
+        {label}
       </Text>
     </View>
   );
@@ -175,9 +199,11 @@ function DailyChart({
       accessibilityLabel={`Daily page views for the last ${analytics.days} days. ${plural(analytics.pageviews, "page view")} and ${plural(analytics.visitors, "visitor")} in total. Busiest day ${dayLabel(busiest.day)} with ${plural(busiest.pageviews, "page view")}.`}
       className="gap-1.5"
     >
-      <View className="flex-row items-baseline justify-between gap-3">
-        <Text className="text-2xs text-foreground-muted">Daily page views</Text>
-        <Text className="text-2xs tabular-nums text-foreground-muted">
+      <View className="flex-row flex-wrap items-baseline justify-between gap-3">
+        <Text textRole="footnote" className="text-foreground-muted">
+          Daily page views
+        </Text>
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
           Busiest {dayLabel(busiest.day)}, {formatCount(busiest.pageviews)}
         </Text>
       </View>
@@ -199,10 +225,10 @@ function DailyChart({
         ))}
       </View>
       <View className="flex-row justify-between">
-        <Text className="text-2xs tabular-nums text-foreground-muted">
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
           {dayLabel(days[0]!.day)}
         </Text>
-        <Text className="text-2xs tabular-nums text-foreground-muted">
+        <Text textRole="footnote" className="tabular-nums text-foreground-muted">
           {dayLabel(days[days.length - 1]!.day)}
         </Text>
       </View>
@@ -242,7 +268,8 @@ function RankedList({
               className="absolute inset-y-0 left-0 rounded-md"
               style={{
                 width: `${(row.value / max) * 100}%`,
-                backgroundColor: `${color}${SHARE_ALPHA}`,
+                backgroundColor: color,
+                opacity: 0.12,
               }}
             />
             <Text className="min-w-0 flex-1 text-sm text-foreground">
@@ -270,16 +297,10 @@ function RankedList({
   );
 }
 
-/** Column heights for the loading shape, varied so it reads as a chart rather than a block. */
-const SKELETON_COLUMNS = Array.from({ length: 30 }, (_, index) => ({
-  id: `column-${index}`,
-  height: Math.round(35 + 25 * Math.sin(index / 3) + index),
-}));
-
 /** The traffic group's shape while its numbers load, so nothing jumps when they arrive. */
 export function SiteTrafficSkeleton() {
   return (
-    <View accessible accessibilityLabel="Loading traffic" className="gap-5 p-4">
+    <View accessible accessibilityLabel="Loading traffic" className="gap-5">
       <View className="flex-row gap-3">
         {[0, 1, 2].map((index) => (
           <View key={index} className="flex-1 gap-2">
@@ -288,20 +309,98 @@ export function SiteTrafficSkeleton() {
           </View>
         ))}
       </View>
-      <View className="flex-row items-end gap-0.5" style={{ height: CHART_HEIGHT }}>
-        {SKELETON_COLUMNS.map((column) => (
-          <View
-            key={column.id}
-            className="flex-1 rounded-sm bg-row-hover"
-            style={{ height: `${column.height}%` }}
-          />
-        ))}
-      </View>
+      <Text textRole="footnote" className="text-foreground-muted">
+        Loading traffic…
+      </Text>
+    </View>
+  );
+}
+
+function ProductUsage({
+  analytics,
+  color,
+}: {
+  readonly analytics: SiteAnalytics;
+  readonly color: string;
+}) {
+  const product = analytics.product;
+  if (!product)
+    return analytics.siteId === "corbelo" ? (
       <View className="gap-2">
-        <View className="h-3 w-24 rounded-md bg-row-hover" />
-        <View className="h-7 w-full rounded-md bg-row-hover" />
-        <View className="h-7 w-3/4 rounded-md bg-row-hover" />
+        <Text className="text-sm font-t3-medium text-foreground">Developer usage</Text>
+        <Text className="text-xs text-foreground-muted">
+          Reporting is unavailable on this collector or Library version.
+        </Text>
       </View>
+    ) : null;
+  const rows = [
+    ...product.byCommand.map((row) => ({
+      key: `command:${row.command}:${row.outcome}`,
+      label: `${row.command} · ${row.outcome} · ${row.averageDurationMS} ms average`,
+      value: row.count,
+    })),
+    ...product.byPlatform.map((row) => ({
+      key: `platform:${row.platform}`,
+      label: `Platform · ${row.platform}`,
+      value: row.count,
+    })),
+    ...product.byEvent.map((row) => ({
+      key: `event:${row.name}:${row.outcome}`,
+      label: `${row.name} · ${row.outcome}`,
+      value: row.count,
+    })),
+    ...product.bySurface.map((row) => ({
+      key: `surface:${row.surface}`,
+      label: `Surface · ${row.surface}`,
+      value: row.count,
+    })),
+    ...product.byVersion.map((row) => ({
+      key: `version:${row.version}`,
+      label: `Version · ${row.version}`,
+      value: row.count,
+    })),
+    ...product.byFeatureGroup.map((row) => ({
+      key: `feature:${row.featureGroup}`,
+      label: `Feature group · ${row.featureGroup}`,
+      value: row.count,
+    })),
+    ...product.byStack.map((row) => ({
+      key: `stack:${row.stack}`,
+      label: `Stack · ${row.stack}`,
+      value: row.count,
+    })),
+  ];
+  return (
+    <View className="gap-3 rounded-lg border border-border p-3">
+      <Text className="text-sm font-t3-medium text-foreground">Developer usage</Text>
+      <Text className="text-xs text-foreground-muted">
+        Optional anonymous {product.channel} activity. {product.retentionDays}-day retention, daily
+        installation counts, no account linking or cross-day tracking.
+      </Text>
+      <Text className="text-sm text-foreground">
+        {formatCount(product.events)} events · {formatCount(product.dailyInstallations)} daily
+        installations summed
+      </Text>
+      <RankedList
+        title="Daily usage (UTC)"
+        empty="No opted-in usage received in this window."
+        color={color}
+        rows={product.byDay.map((row) => ({
+          key: row.day,
+          label: `${row.day} · ${row.installations} daily installations`,
+          value: row.events,
+        }))}
+      />
+      <RankedList
+        title="Operations and breakdowns"
+        empty="No developer operations in this window."
+        color={color}
+        rows={rows}
+      />
+      <Text className="text-xs text-foreground-muted">
+        Client-reported activity, independent of purchase and license records. These counts do not
+        identify distinct developers or projects.
+      </Text>
     </View>
   );
 }

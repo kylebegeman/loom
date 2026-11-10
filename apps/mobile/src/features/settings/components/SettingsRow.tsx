@@ -10,6 +10,7 @@ import type { SettingsLegalDocumentTarget, SettingsPageTarget } from "./settings
 import { SettingsSidebarContext } from "./SettingsSection";
 import { openSettings } from "../settings-navigation";
 
+// fork: mobile-design
 export function SettingsRow(props: {
   readonly disabled?: boolean;
   readonly icon: ComponentProps<typeof ListRow>["icon"];
@@ -29,6 +30,8 @@ export function SettingsRow(props: {
     (props.valuePosition === undefined && Platform.OS === "android");
   const content = {
     icon: props.icon,
+    iconPresentation:
+      inList && !sidebar && Platform.OS === "ios" ? ("well" as const) : ("plain" as const),
     label: props.label,
     description: valueBelow ? props.value : undefined,
     detail: valueBelow ? undefined : props.value,

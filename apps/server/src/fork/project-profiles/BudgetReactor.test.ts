@@ -24,7 +24,7 @@ import { ProjectProfilesMigrations } from "./migrations.ts";
 import { makeStore } from "./ProfileStore.ts";
 import { startBudgetReactor } from "./BudgetReactor.ts";
 it.effect(
-  "commits usage before publishing each threshold exactly once and recovers pending markers",
+  "commits usage before publishing each threshold exactly once, recovers pending markers and follows deletions from the head",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -33,15 +33,28 @@ it.effect(
         yield* sql`CREATE TABLE projection_projects (project_id TEXT, deleted_at TEXT)`;
         yield* sql`CREATE TABLE orchestration_v2_projection_threads (thread_id TEXT, deleted_at TEXT)`;
         const projectId = ProjectId.make("project"),
-          threadId = ThreadId.make("thread");
+          threadId = ThreadId.make("thread"),
+          deletedThreadId = ThreadId.make("deleted-thread");
         yield* sql`INSERT INTO projection_projects VALUES (${projectId},null)`;
-        yield* sql`INSERT INTO orchestration_v2_projection_threads VALUES (${threadId},null)`;
+        yield* sql`INSERT INTO orchestration_v2_projection_threads VALUES (${threadId},null),(${deletedThreadId},null)`;
+        yield* sql`INSERT INTO fork_project_profiles_turn_usage VALUES ('deleted-turn',${deletedThreadId},${projectId},5,1)`;
+        yield* sql`INSERT INTO fork_project_profiles_thread_usage VALUES (${deletedThreadId},${projectId},5)`;
         const store = yield* makeStore;
         yield* store.put({
           ...defaultProjectProfile(projectId),
           budgets: { dailyTokens: 100, threadTokens: 100 },
         });
         const done = yield* Deferred.make<void>();
+        const deletionsDone = yield* Deferred.make<void>();
+        const head = 10;
+        let deliveredDeletions = 0;
+        const deletions = [5, 6, 7, 8, 9, head + 1].map((sequence) => ({
+          sequence,
+          event: {
+            type: "thread.deleted",
+            threadId: sequence > head ? deletedThreadId : ThreadId.make(`old-thread-${sequence}`),
+          },
+        }));
         const messages: string[] = [];
         const now = DateTime.makeUnsafe("2026-10-22T17:00:00Z");
         const events: OrchestrationV2StoredEvent[] = [90, 90, 110, 110].map((tokens, index) => ({
@@ -73,10 +86,19 @@ it.effect(
           },
         }));
         const sink = {
-          latestSequence: () => Effect.succeed(0),
-          stream: (input: { eventType?: string }) =>
+          latestSequence: () => Effect.succeed(head),
+          stream: (input: { afterSequence?: number; eventType?: string }) =>
             input.eventType === "thread.deleted"
-              ? Stream.never
+              ? Stream.fromIterable(deletions).pipe(
+                  Stream.filter((stored) => stored.sequence > (input.afterSequence ?? 0)),
+                  Stream.tap((stored) =>
+                    Effect.gen(function* () {
+                      deliveredDeletions += 1;
+                      yield* sql`UPDATE orchestration_v2_projection_threads SET deleted_at='deleted' WHERE thread_id=${stored.event.threadId}`;
+                    }),
+                  ),
+                  Stream.ensuring(Deferred.succeed(deletionsDone, undefined)),
+                )
               : Stream.fromIterable(events).pipe(
                   Stream.ensuring(Deferred.succeed(done, undefined)),
                 ),
@@ -111,6 +133,11 @@ it.effect(
           Effect.provide(ThreadCommandExecutor.layer),
         );
         yield* Deferred.await(done);
+        yield* Deferred.await(deletionsDone);
+        expect(deliveredDeletions).toBe(1);
+        expect(
+          yield* sql`SELECT thread_id FROM fork_project_profiles_turn_usage WHERE thread_id=${deletedThreadId} UNION ALL SELECT thread_id FROM fork_project_profiles_thread_usage WHERE thread_id=${deletedThreadId}`,
+        ).toEqual([]);
         expect(messages).toHaveLength(4);
         expect(new Set(messages).size).toBe(4);
         expect(yield* store.pendingAlerts).toEqual([]);

@@ -136,6 +136,15 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     });
   }
 
+  // The service launcher loads outside the embedded CLI; without T3CODE_HOME it exits right away.
+  const launcher = yield* runExecutable(executable, ["__service-launcher"], contentDir);
+  if (launcher.exitCode !== 1 || !launcher.stderr.includes("T3CODE_HOME is required")) {
+    return yield* new CliArchiveSmokeError({
+      step: "running __service-launcher",
+      detail: `exit ${String(launcher.exitCode)}\n${launcher.stdout}${launcher.stderr}`,
+    });
+  }
+
   // fork: smoke-port-race -- bind once through the kernel; probing and releasing a port
   // races other smoke runs. The probe reads the bound port from server-runtime.json.
   let port = 0;
@@ -213,7 +222,9 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
       detail: `no 200 from / within 30s\n${stdout}${stderr}`,
     });
   }
-  yield* Effect.log(`[cli-smoke] ${root}: --version passed and serve answered on ${String(port)}.`);
+  yield* Effect.log(
+    `[cli-smoke] ${root}: --version and __service-launcher passed, and serve answered on ${String(port)}.`,
+  );
 });
 
 const command = Command.make(

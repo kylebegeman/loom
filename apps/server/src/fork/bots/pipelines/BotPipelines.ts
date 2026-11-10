@@ -417,7 +417,7 @@ export const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.uninterruptible,
-          Effect.map(() => null),
+          Effect.as(null),
           Effect.catch((error) => Effect.succeed(error.message)),
         );
       if (started !== null) return yield* failAttempt(stored, entry, `${label}: ${started}`);

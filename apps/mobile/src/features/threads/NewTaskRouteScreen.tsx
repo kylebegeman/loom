@@ -46,7 +46,7 @@ import {
   getProjectScopeSelectionTarget,
   resolveNewTaskScratchOption,
 } from "./new-task-project-selection";
-import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
@@ -123,6 +123,7 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
   };
 }
 
+// fork: mobile-design
 function NewTaskHeader(props: {
   readonly title: string;
   readonly subtitle: string | null;
@@ -140,7 +141,6 @@ function NewTaskHeader(props: {
       <AppBar
         title={props.title}
         subtitle={props.subtitle ?? undefined}
-        options={{ headerBackVisible: true }}
         hideBottomBorder
         onBack={goBack}
         actions={
@@ -397,21 +397,21 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   disabled={!canStartScratch}
                   onPress={() => void startScratch()}
                   className={cn(
-                    "flex-row items-center gap-3 bg-grouped-card px-4 py-3.5",
+                    "min-h-20 flex-row items-center gap-3 bg-grouped-card px-4 py-3.5",
                     !canStartScratch && "opacity-45",
                   )}
                 >
-                  <View className="h-7 w-7 items-center justify-center">
+                  <View className="size-11 items-center justify-center">
                     <SymbolView
                       name="text.bubble"
-                      size={18}
+                      size={22}
                       tintColorClassName="accent-icon-muted"
                       type="monochrome"
                     />
                   </View>
-                  <View className="min-w-0 flex-1">
+                  <View className="min-w-0 flex-1 gap-1">
                     <Text className="text-base font-t3-bold leading-snug">No project</Text>
-                    <Text className="text-xs leading-snug text-foreground-muted" numberOfLines={1}>
+                    <Text textRole="footnote" className="text-foreground-muted" numberOfLines={2}>
                       {scratchSubtitle /* fork: no-project-first */}
                     </Text>
                   </View>
@@ -433,60 +433,58 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             disabled={reservedDestinationProject !== null} // fork: library
           />
           {legacyScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
-            <View
-              collapsable={false}
-              className={cn(
-                "items-center gap-3 px-6 py-8",
-                Platform.OS !== "android" && "rounded-[24px] bg-grouped-card",
-              )}
-            >
+            <View collapsable={false} className="items-center gap-3 px-6 py-6">
               {projectEmptyState.loading ? (
                 <AppActivityIndicator colorClassName="accent-icon-muted" />
               ) : null}
-              <Text className="text-center text-lg font-t3-bold text-foreground">
+              <Text textRole="title" className="text-center font-t3-bold text-foreground">
                 {projectEmptyState.title}
               </Text>
-              <Text className="text-center text-sm leading-normal text-foreground-muted">
+              <Text textRole="body" className="text-center text-foreground-muted">
                 {projectEmptyState.detail}
               </Text>
               {!projectEmptyState.loading /* fork: fleet-connections */ ? (
                 <>
                   {/* fork: fleet-connections */}
-                  <Button
-                    // fork: fleet-connections
-                    label={
-                      catalogState.hasReadyEnvironment
-                        ? "Add project"
-                        : catalogState.hasConnections
-                          ? "Manage computers"
-                          : "Add computer"
-                    }
-                    tone="primary"
-                    onPress={() =>
-                      catalogState.hasReadyEnvironment
-                        ? navigation.navigate("LibraryCreate") // fork: library - Same choice as the header's Add project.
-                        : navigation.navigate(
-                            catalogState.hasConnections ? "Connections" : "ConnectionsNew", // fork: fleet-connections
-                          )
-                    }
-                  />
-                  {canStartScratch ? (
+                  <View>
                     <Button
-                      label="Start without a project"
-                      tone="secondary"
-                      onPress={() => void startScratch()}
+                      // fork: fleet-connections
+                      label={
+                        catalogState.hasReadyEnvironment
+                          ? "Add project"
+                          : catalogState.hasConnections
+                            ? "Manage computers"
+                            : "Add computer"
+                      }
+                      tone="primary"
+                      onPress={() =>
+                        catalogState.hasReadyEnvironment
+                          ? navigation.navigate("LibraryCreate") // fork: library - Same choice as the header's Add project.
+                          : navigation.navigate(
+                              catalogState.hasConnections ? "Connections" : "ConnectionsNew", // fork: fleet-connections
+                            )
+                      }
                     />
+                  </View>
+                  {canStartScratch ? (
+                    <View>
+                      <Button
+                        label="Start without a project"
+                        tone="secondary"
+                        onPress={() => void startScratch()}
+                      />
+                    </View>
                   ) : null}
                 </>
               ) : // fork: fleet-connections -- the buttons above cover every ready state
               null}
             </View>
           ) : visibleScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
-            <View className="items-center gap-2 px-6 py-8">
-              <Text className="text-center text-lg font-t3-bold text-foreground">
+            <View className="items-center gap-2 px-6 py-6">
+              <Text textRole="title" className="text-center font-t3-bold text-foreground">
                 No matching projects
               </Text>
-              <Text className="text-center text-sm leading-normal text-foreground-muted">
+              <Text textRole="body" className="text-center text-foreground-muted">
                 Try a different project name or workspace path.
               </Text>
             </View>
@@ -559,26 +557,27 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       accessibilityLabel={`${scope.title}, ${projectSubtitle}`} // fork: fleet-connections
                       disabled={reservedDestinationProject !== null}
                       onPress={() => void selectProject(selectionTarget)}
-                      className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
+                      className="min-h-20 flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
                     >
-                      <View className="h-7 w-7 items-center justify-center">
+                      <View className="size-11 items-center justify-center">
                         <ProjectFavicon
                           environmentId={scope.representative.environmentId}
                           faviconPath={scope.representative.faviconPath}
                           projectIcon={scope.representative.projectIcon}
-                          size={20}
+                          size={26}
                           projectTitle={scope.title}
                           workspaceRoot={scope.representative.workspaceRoot}
                         />
                       </View>
-                      <View className="min-w-0 flex-1">
+                      <View className="min-w-0 flex-1 gap-1">
                         <Text className={cn("text-base leading-snug", "font-t3-bold")}>
                           {scope.title}
                         </Text>
                         <Text
-                          className="text-xs leading-snug text-foreground-muted"
+                          textRole="footnote"
+                          className="text-foreground-muted"
                           ellipsizeMode="middle"
-                          numberOfLines={1}
+                          numberOfLines={2}
                         >
                           {projectSubtitle /* fork: fleet-connections */}
                         </Text>

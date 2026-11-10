@@ -4,9 +4,21 @@ import * as NodePath from "node:path";
 
 import type { ServerProvider } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+
+class CodexLoginEmailOperationError extends Schema.TaggedError<CodexLoginEmailOperationError>()(
+  "CodexLoginEmailOperationError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Codex Login Email operation failed.";
+  }
+}
 
 /**
  * Codex reports no account when `model_provider` names a custom provider such as a CLIProxyAPI hub,
@@ -50,9 +62,11 @@ export const withCodexLoginEmail = <S extends AccountStatus>(
   }
   return HostProcess.HomeDirectory.pipe(
     Effect.flatMap((userHome) =>
-      Effect.tryPromise(() =>
-        NodeFSP.readFile(NodePath.join(expandHomePath(home, userHome), "auth.json"), "utf8"),
-      ),
+      Effect.tryPromise({
+        try: () =>
+          NodeFSP.readFile(NodePath.join(expandHomePath(home, userHome), "auth.json"), "utf8"),
+        catch: (cause) => new CodexLoginEmailOperationError({ cause }),
+      }),
     ),
     Effect.map((text) => {
       const email = emailFromCodexAuth(text);

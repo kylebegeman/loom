@@ -16,8 +16,9 @@ example:
 https://<environment-address>/mcp
 ```
 
-The copied URL uses the route this device is connected over, so an agent on the
-same device can reach it.
+When T3 Connect serves the environment, the copied URL is its T3 Connect
+address, which agents can reach from anywhere. Otherwise it uses the route this
+device is connected over, so an agent on the same device can reach it.
 
 - **An agent on your own computers** can use `localhost` on the host, T3
   Connect, or any `https` address, such as
@@ -45,9 +46,10 @@ Only approve a sign-in you just started. To approve, enter a pairing code from
 browser already signed in to the environment with permission to manage access
 can approve without a code.
 
-Then choose what the agent may do:
+Then choose what the agent may do. **Auto** is selected by default, or the
+closest lower mode allowed by your organization’s policy:
 
-- **Read only** is the default. The agent can read projects and threads and see
+- **Read only** lets the agent read projects and threads and see
   the available providers and models. It cannot change anything.
 - **Supervised** through **Full access** also let it start, message and stop
   threads in every project. A thread it starts or steers cannot run with more
@@ -124,14 +126,20 @@ and Library both need a version that supports these reads. Ask the agent to use
 `loom_library_projects`, `loom_library_search` or `loom_library_conversations`.
 
 To start a conversation in a registered local Library copy, use `t3_thread_launch` with that
-copy's local project id and the root workspace strategy. Loom binds the conversation before
-starting work. Library copies do not support separate worktree launches. Pass a
-`clientRequestId` and reuse it when retrying after a lost response to recover the same
-conversation and first turn.
+copy's local project id. The root workspace strategy works in the copy's folder, and the worktree
+strategy gives the conversation its own worktree; in a project with more than one repository, set
+that strategy's `repositoryPath`. Loom binds the conversation before starting work. This and
+other Library file work, such as preparing or importing a copy, needs an agent approved with
+**Full access**. An outside agent can import a folder only into a project already in the Library;
+add a folder that needs a new shared project from Loom. Pass a `clientRequestId` and reuse it
+when retrying after a lost response to recover the same conversation and first turn.
 
-An interrupted operation started by an agent belongs to its conversation. Ask that agent to
-resume or cancel it with `loom_library_operation_control` during a new full-access turn.
-Signing in again from another client does not transfer ownership.
+An agent can resume an interrupted operation it started with `loom_library_operation_control`; an
+agent in a conversation needs a new full-access turn for that. You can also resume or cancel it
+yourself from the project's file activity, even after its conversation is deleted, and resuming it
+makes it yours. Once Loom has moved files aside to remove them, resume the operation to finish the
+removal instead of cancelling it. Operations you start stay with your sign-in; signing in again
+from another client does not take them over.
 
 ## Remove an agent
 

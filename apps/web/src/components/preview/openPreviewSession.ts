@@ -11,7 +11,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 
 import { resolveBrowserDefaults } from "~/browser/browserDefaults";
-import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
+import { BrowserSettingsReadError, isBrowserSettingsReadError } from "~/browser/openFileInPreview";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
 import { navigablePreviewUrlFor } from "~/fork/preview-links/navigation"; // fork: preview-links
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
@@ -35,7 +35,7 @@ export async function openPreviewSession<E>(
   const defaults = await resolveBrowserDefaults().catch(
     (cause: unknown) => new BrowserSettingsReadError({ cause }),
   );
-  if (defaults instanceof BrowserSettingsReadError) {
+  if (isBrowserSettingsReadError(defaults)) {
     return AsyncResult.failure(Cause.fail(defaults));
   }
   const runtime = input.runtime ?? previewRuntimeFor(input.threadRef.environmentId);

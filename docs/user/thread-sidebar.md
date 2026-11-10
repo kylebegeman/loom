@@ -11,9 +11,24 @@ The app opens with your threads. Use the existing project filter above the threa
 to narrow it to one project, or choose **All projects** to see every thread. Filtering
 does not move conversations or change the computer they run on.
 
-**Projects** in the sidebar utility row opens the projects page, which lists every project
-and its conversations across your computers. Use **Settings → Projects** for project
-settings. Returning from either restores the conversation you left.
+On web and desktop, **Projects** in the sidebar utility row opens the projects page,
+which lists every project and its conversations across your computers. On iOS, open
+**Settings** with the toolbar gear, then choose **Projects** under **Work**. Open a
+project to see its conversations and settings. Returning restores the conversation you left.
+
+## Find work on iOS
+
+Use **Threads** to continue conversations and **Sites** to find your monitored websites.
+Tap a website to view its details and health, then choose **Visit website** to open it.
+Pin websites you revisit to keep them first. The separate
+**Live previews** section shows temporary apps running on a selected computer; manage
+their links and published pages in **Settings → Previews**.
+
+Use **Search** to find threads, message text, projects, sites, bots and settings across
+your computers and shared Library. Opening a match keeps a return path to your search.
+Search for **limits**, or open **Settings → Usage & limits**, to check provider quotas.
+The toolbar's **Settings** gear opens Settings. **Work** contains Projects, Bots, pull
+requests, Usage & limits and Archive. **Connections** contains Computers and Library.
 
 <!-- fork: attention-status -->
 
@@ -49,9 +64,8 @@ remains available when you want to choose a different setup.
 
 <!-- fork: library-projects -->
 
-For local projects on web and desktop, **New thread** opens the project picker when you have multiple
-projects in the default or project-grouped sidebar. The legacy sidebar always
-starts in the current project. **Shift-click** to start in
+For local projects on web and desktop, **New thread** opens the project picker when you have more than one
+open project in the default or project-grouped sidebar. Archived projects don't count. **Shift-click** to start in
 the current project, or use a project's own new-thread action. A new thread carries
 your model and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
@@ -205,7 +219,8 @@ project's folder comes last and shows only while it has active threads. Click a 
 close it. A closed folder shows how many threads it holds, and a dot when one of them
 needs you. Use the pen button on a folder, or right-click it, to start a thread in that project.
 Pinned threads stay above the folders, and Snoozed and Settled stay below them. In this mode you
-cannot drag threads, and the Working section is off. Each device keeps its own choice.
+can drag a thread onto the composer to mention it, but not within the sidebar, and the Working
+section is off. Each device keeps its own choice.
 
 ## Settle finished work
 
@@ -215,7 +230,11 @@ and prevents automatic settlement until new activity resumes the usual rules.
 Manually settling an idle thread dismisses unanswered async questions without
 sending an answer or restarting the agent. Settling also closes the thread's
 terminals that wait at an idle prompt, and keeps their output. A terminal that
-runs a command, such as a dev server, stays open.
+runs a command, such as a dev server, stays open unless its action has **Stop this action
+when the thread settles** enabled in Settings > Projects > Actions. You can also set
+`"stopOnSettle": true` on a `t3.json` action and import it there. Start the command through
+that action so T3 can stop its terminal and child processes. Commands started through an
+agent's own shell tools are managed by the provider.
 
 <!-- fork: project-checkout-management -->
 
@@ -244,7 +263,7 @@ settle every thread in that section between it and the one you release on.
 The **Un-settle** and **Wake** buttons work the same way in their sections.
 Press `Escape` while dragging to cancel.
 
-By default, environments settle inactive threads after three days and settle
+By default, environments settle inactive threads after seven days and settle
 threads whose pull request merged. A closed pull request can also settle an idle
 thread. An empty thread's inactivity counts from when it was created.
 Work in progress, pending questions or approvals, and background work the agent
@@ -287,8 +306,8 @@ you last picked for a query ranks higher when you type that query again.
 Threads whose messages contain all your words appear below, under **In
 messages**, and open at the matching message. Message search needs at least
 one word of three or more letters, or two for Chinese, Japanese, and Korean.
-On mobile, the thread list search also lists message matches and opens them at
-the matching message; on an iPad with a keyboard, `Cmd+K` opens the same
+On iOS, **Search** includes message matches and opens them at the matching message.
+On Android, use the thread list search. On an iPad with a keyboard, `Cmd+K` opens the same
 palette.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
@@ -369,9 +388,10 @@ You can also choose **Side chat** from the **+** menu in the right panel. The si
 chat opens as a tab there, with its own composer. Side chats do not show in the
 sidebar. Find one again under **Side chats** in thread details.
 
-A side chat works in the same folder as the thread. Its first reply asks before it
-edits files or runs commands. After that, it uses the permission mode you choose
-in its composer.
+A side chat works in the same folder as the thread and starts with the permissions,
+model, and reasoning level shown in the thread's composer, including for its first
+reply. Change them for an individual side chat in its composer. Later changes to the
+parent do not change existing side chats.
 
 To use what you learned, choose **Bring back**. The thread gets the side chat with
 your next message there. Bring back is available while the thread is idle.
@@ -395,6 +415,8 @@ Choose **Snooze → Custom…** from a thread's menu to pick a date and time in 
 local time zone, or a duration in minutes, hours, or days. Durations start when
 you confirm; one day means 24 hours. On web and desktop, you can also snooze
 several selected threads together. Choose **Wake thread** to bring a thread back early.
+
 A snoozed thread keeps working and stays hidden until its wake time, even while
-its agent wakes itself for background work. It comes back early only when it needs
-an approval or answer from you, when a run fails, or when you send it a message.
+its agent wakes itself for background work. It comes back early for an approval,
+a new question, a failed run, or a message or answer you send. You can snooze an existing
+question and answer when the thread wakes; the question stays unanswered.

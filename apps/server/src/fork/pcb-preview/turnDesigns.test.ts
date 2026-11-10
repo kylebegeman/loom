@@ -92,28 +92,101 @@ it.effect("uses repository prefixes, walks recent turns and emits checkpoint cha
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread"),
       runId = RunId.make("run"),
-      checkpoint = {
+      turn = (number: number, files: string[]) => ({
         runId,
-        checkpointId: CheckpointId.make("checkpoint"),
-        turn: 2,
-        files: ["hw/board.kicad_pcb", "other/board.kicad_sch"],
-      };
+        checkpointId: CheckpointId.make(`checkpoint-${number}`),
+        turn: number,
+        status: "ready" as const,
+        files,
+      }),
+      checkpoint = turn(2, ["hw/board.kicad_pcb", "other/board.kicad_sch"]);
+    const generations: string[] = [];
+    let snapshots = 0;
     const methods = makeTurnDesigns({
       workspace: () => Effect.succeed({ root: "/repo/hw" }),
-      discover: () => Effect.succeed([board]),
-      snapshotFiles: () => Effect.succeed([]),
+      discover: (_root, generation) =>
+        Effect.sync(() => {
+          generations.push(generation);
+          return [board, circuit];
+        }),
+      snapshotFiles: () =>
+        Effect.sync(() => {
+          snapshots++;
+          return [];
+        }),
       turnFiles: {
         repoPrefix: () => Effect.succeed("hw/"),
         workspaceFiles,
         turnCheckpoints: () =>
-          Effect.succeed([{ ...checkpoint, turn: 3, files: ["hw/README.md"] }, checkpoint]),
-        turnCheckpointEvents: () => Stream.succeed(checkpoint),
+          Effect.succeed({
+            generation: "checkpoint-5:ready",
+            checkpoints: [
+              turn(5, ["hw/lib/part.ts"]),
+              turn(4, ["hw/lib/pins.ts"]),
+              turn(3, ["hw/README.md"]),
+              checkpoint,
+            ],
+          }),
+        turnCheckpointEvents: () =>
+          Stream.succeed({ checkpoint, generation: Effect.succeed("checkpoint-2:ready") }),
       },
     });
     expect((yield* methods.turnDesigns({ threadId, runId: null })).turn).toBe(2);
+    expect(generations).toEqual(["checkpoint-5:ready"]);
+    expect(snapshots).toBe(1);
     expect(
       (yield* methods.turnDesignEvents({ threadId }).pipe(Stream.runCollect))[0]?.designs[0]
         ?.designId,
     ).toBe(board.id);
+    expect(generations).toEqual(["checkpoint-5:ready", "checkpoint-2:ready"]);
+  }),
+);
+it.effect("design events discover in the workspace the thread has when each checkpoint lands", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread");
+    let root: string | null = null;
+    const checkpoint = (turn: number) => ({
+      runId: RunId.make(`run-${turn}`),
+      checkpointId: CheckpointId.make(`checkpoint-${turn}`),
+      turn,
+      status: "ready" as const,
+      files: ["board.kicad_pcb"],
+    });
+    const methods = makeTurnDesigns({
+      workspace: (id) =>
+        Effect.suspend(() =>
+          id !== threadId
+            ? Effect.fail(new PcbPreviewError({ reason: "thread-not-found", message: "unknown" }))
+            : root === null
+              ? Effect.fail(new PcbPreviewError({ reason: "workspace-missing", message: "gone" }))
+              : Effect.succeed({ root }),
+        ),
+      discover: (at) => Effect.succeed(at === "/repo/worktree" ? [board] : []),
+      snapshotFiles: () => Effect.succeed([]),
+      turnFiles: {
+        repoPrefix: () => Effect.succeed(""),
+        workspaceFiles,
+        turnCheckpoints: () => Effect.succeed({ generation: null, checkpoints: [] }),
+        // The stream subscribes and turn 2 lands while the workspace is missing; turn 3 lands in
+        // the new worktree.
+        turnCheckpointEvents: () =>
+          Stream.make(checkpoint(2), checkpoint(3)).pipe(
+            Stream.tap((next) =>
+              Effect.sync(() => {
+                root = next.turn === 2 ? null : "/repo/worktree";
+              }),
+            ),
+            Stream.map((next) => ({ checkpoint: next, generation: Effect.succeed("generation") })),
+          ),
+      },
+    });
+    const events = yield* methods.turnDesignEvents({ threadId }).pipe(Stream.runCollect);
+    expect(
+      events.map((event) => [event.turn, event.designs.map((design) => design.designId)]),
+    ).toEqual([[3, [board.id]]]);
+    const unknown = methods.turnDesignEvents({ threadId: ThreadId.make("unknown") });
+    expect(yield* Effect.flip(Stream.runCollect(unknown))).toMatchObject({
+      reason: "thread-not-found",
+    });
   }),
 );

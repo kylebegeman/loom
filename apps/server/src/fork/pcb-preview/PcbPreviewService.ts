@@ -341,6 +341,10 @@ export const make = Effect.gen(function* () {
     tsciLock = yield* Semaphore.make(1);
   const renderJobs = yield* makeSharedJobs<PcbRenderResult, PcbPreviewError>();
   const assetJobs = yield* makeSharedJobs<W.PcbAsset, PcbPreviewError>();
+  const discoverJobs = yield* makeSharedJobs<
+    Effect.Success<ReturnType<typeof discover>>["designs"],
+    PcbPreviewError
+  >();
   const circuitVersions = new Map<string, { at: number; version: string }>();
   let detection: { at: number; value: PcbPreviewStatus } | null = null;
   const timestamp = Effect.map(DateTime.now, DateTime.formatIso);
@@ -372,10 +376,22 @@ export const make = Effect.gen(function* () {
     if (info.type !== "File") return yield* failure("design-not-found", "Choose a design file.");
     return real;
   });
+  // Reads skip the workspace lease. A write waits on it, so an in-flight checkout release
+  // finishes first and a released checkout comes back before anything lands in it.
+  const restoreForWrite = Effect.fn("PcbPreview.restoreForWrite")(function* (root: string) {
+    yield* workspacePaths
+      .normalizeWorkspaceRoot(root, { restoreManagedCheckout: true })
+      .pipe(
+        Effect.mapError(() =>
+          failure("workspace-missing", "The workspace directory is unavailable."),
+        ),
+      );
+  });
   const ensureWorkspaceDirectory = Effect.fn("PcbPreview.ensureWorkspaceDirectory")(function* (
     root: string,
     relative: string,
   ) {
+    yield* restoreForWrite(root);
     let current = root;
     for (const segment of relative.split(path.sep)) {
       const candidate = path.join(current, segment);
@@ -416,6 +432,11 @@ export const make = Effect.gen(function* () {
       );
     return { root, projectId: thread.projectId, workspaceKey: hashKey(thread.projectId, root) };
   });
+  const writableRoot = (threadId: ThreadId) =>
+    workspace(threadId).pipe(
+      Effect.tap((ws) => restoreForWrite(ws.root)),
+      Effect.map((ws) => ws.root),
+    );
   const run = (
     tool: PcbToolStatus,
     args: ReadonlyArray<string>,
@@ -2873,6 +2894,7 @@ export const make = Effect.gen(function* () {
     input: W.PcbApplyParametersInput,
   ) {
     const resolved = yield* resolveDesign(input);
+    if (!input.preview) yield* restoreForWrite(resolved.root);
     return yield* storageLock.withPermit(
       Effect.gen(function* () {
         const current = yield* parameters(input);
@@ -3412,11 +3434,15 @@ export const make = Effect.gen(function* () {
   const turnFiles = yield* makeTurnFiles;
   const turnDesignMethods = makeTurnDesigns({
     workspace: (threadId) => checked(workspace(threadId)),
-    discover: (root) =>
-      checked(
-        entries.refresh(root).pipe(
-          Effect.andThen(discover(root)),
-          Effect.map((d) => d.designs),
+    // Keyed by turn generation so a lookup after a turn or restore never joins an older refresh.
+    discover: (root, generation) =>
+      discoverJobs.run(
+        `${root}\0${generation}`,
+        checked(
+          entries.refresh(root).pipe(
+            Effect.andThen(discover(root)),
+            Effect.map((d) => d.designs),
+          ),
         ),
       ),
     snapshotFiles: (ws, design) =>
@@ -3430,7 +3456,7 @@ export const make = Effect.gen(function* () {
   });
   const pinMap = yield* makePinMap({
     inspect: (i) => checked(inspect(i)),
-    root: (i) => checked(workspace(i.threadId)).pipe(Effect.map((w) => w.root)),
+    writableRoot: (i) => checked(writableRoot(i.threadId)),
     hash: (i) =>
       checked(resolveDesign(i).pipe(Effect.flatMap(sourceSnapshot))).pipe(
         Effect.map((s) => s.sourceHash),
@@ -3448,10 +3474,14 @@ export const make = Effect.gen(function* () {
       i: W.PcbHistoryRestoreInput,
       options?: { checkContent: boolean },
     ) {
-      return storageLock.withPermit(pcbHistory.restore(i, options));
+      return (i.dryRun ? Effect.void : writableRoot(i.threadId)).pipe(
+        Effect.andThen(storageLock.withPermit(pcbHistory.restore(i, options))),
+      );
     }),
     historyUndo: Effect.fn("PcbPreviewService.historyUndo")(function (i) {
-      return storageLock.withPermit(pcbHistory.undo(i));
+      return writableRoot(i.threadId).pipe(
+        Effect.andThen(storageLock.withPermit(pcbHistory.undo(i))),
+      );
     }),
     ...turnDesignMethods,
     turnDesignEvents: (i) =>

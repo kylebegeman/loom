@@ -89,7 +89,7 @@ it("finds an archived conversation by title and reopens it with navigation", asy
   await userEvent.fill(search, " DNS ");
   expect(container.textContent).toContain("Fix DNS");
   expect(container.textContent).not.toContain("Review docs");
-  await userEvent.click(page.getByRole("button", { name: "Unarchive and open" }));
+  await userEvent.click(page.getByRole("button", { name: "Unarchive and open Fix DNS" }));
   expect(state.unarchive).toHaveBeenCalledWith(
     { environmentId, threadId: ThreadId.make("Fix DNS") },
     { navigate: true },

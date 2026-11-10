@@ -50,6 +50,7 @@ import {
 import { AuthOrchestrationOperateScope, type ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
+import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import { BotCompletions } from "./BotCompletions.ts";
 import { BotOperations } from "./BotOperations.ts";
@@ -61,10 +62,15 @@ import { BotPipelines } from "./pipelines/BotPipelines.ts";
 import { BotTriggers } from "./triggers/BotTriggers.ts";
 import { BotVersions } from "./versions/BotVersions.ts";
 
-export const makeBotsRpcHandlers = Effect.fn("Bots.makeRpcHandlers")(function* (auth: ForkRpcAuth) {
+export const makeBotsRpcHandlers = Effect.fn("Bots.makeRpcHandlers")(function* (
+  auth: ForkRpcAuth,
+  session: AuthenticatedSession,
+) {
   const service = yield* BotsService;
   const operations = yield* BotOperations;
   const completions = yield* BotCompletions;
+  const libraryCaller = { sessionId: session.sessionId };
+  const clientCaller: BotCaller = { ...USER_CALLER, libraryCaller };
   return {
     [B.badgePreferences]: () => auth.effect(B.badgePreferences, operations.badgePreferences()),
     [B.setBadgePreferences]: (input: { preferences: BotBadgePreferences }) =>
@@ -100,8 +106,8 @@ export const makeBotsRpcHandlers = Effect.fn("Bots.makeRpcHandlers")(function* (
         Effect.gen(function* () {
           const caller =
             input.callerThreadId === undefined
-              ? USER_CALLER
-              : yield* service.threadCaller(input.callerThreadId);
+              ? clientCaller
+              : { ...(yield* service.threadCaller(input.callerThreadId)), libraryCaller };
           return yield* service.run(input, caller);
         }),
       ),
@@ -127,7 +133,7 @@ export const makeBotsRpcHandlers = Effect.fn("Bots.makeRpcHandlers")(function* (
     [B.restoreStarter]: (input: { starterId: BotStarterId }) =>
       auth.effect(B.restoreStarter, service.restoreStarter(input.starterId, USER_CALLER)),
     [B.inbox]: (input: BotsInboxInput) => auth.effect(B.inbox, service.inbox(input)),
-    [B.retry]: (input: BotsRetryInput) => auth.effect(B.retry, service.retry(input, USER_CALLER)),
+    [B.retry]: (input: BotsRetryInput) => auth.effect(B.retry, service.retry(input, clientCaller)),
     [B.dismiss]: (input: BotsDismissInput) =>
       auth.effect(B.dismiss, service.dismiss(input).pipe(Effect.map((runs) => ({ runs })))),
     [B.promote]: (input: { runId: string }) =>

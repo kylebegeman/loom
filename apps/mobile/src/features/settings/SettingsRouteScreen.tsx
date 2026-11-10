@@ -3,17 +3,17 @@ import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import {
   navigationCustomizationAvailable,
   overflowNavigationTabs,
-} from "../workspace/navigation-tab-order";
+} from "../layout/workspace/navigation-tab-order";
 import {
   NAVIGATION_TAB_ICONS,
   WORKSPACE_TAB_LABELS,
   useNavigationTabOrder,
   useHiddenNavigationTabs,
-} from "../workspace/navigation-tabs";
-import { currentWorkspaceSelections } from "../workspace/workspace-selection-store";
-import { rememberedSettingsPage } from "../workspace/workspace-tab-navigation";
-import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
-import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+} from "../layout/workspace/navigation-tabs";
+import { currentWorkspaceSelections } from "../layout/workspace/workspace-selection-store";
+import { rememberedSettingsPage } from "../layout/workspace/workspace-tab-navigation";
+import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab";
+import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useAuth, useUser } from "@clerk/expo";
@@ -25,6 +25,7 @@ import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-g
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsComputerNotice } from "./components/SettingsComputerNotice"; // fork: fleet-connections
@@ -32,19 +33,34 @@ import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection, SettingsSidebarContext } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
 import type { SettingsPageTarget } from "./components/settings-page-targets";
-import {
-  useSettingsEnvironmentMenu,
-  SettingsEnvironmentFilterHeader,
-} from "./components/SettingsEnvironmentFilterHeader";
+import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
 import { filterSettingsSections } from "./settings-search";
-import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as LibraryPush from "../../fork/library-push/LibraryNotifications"; // fork: library-push
 import { useLibrarySignInStatus } from "../../fork/library/LibrarySignInStatus"; // fork: library-sign-in
+import { usePaneRole } from "../../components/ui/Pane";
 
-export function SettingsRouteScreen() {
-  const { layout } = useAdaptiveWorkspaceLayout();
-  const inSidebar = use(NativePrimaryColumnContext) !== null && layout.usesSplitView;
+export function SettingsRouteScreen(props: { readonly trailing?: ReactNode } = {}) {
+  const list = useSettingsListPlacement();
+  return (
+    <SettingsListScreen sidebar={list.sidebar} selected={list.selected} trailing={props.trailing} />
+  );
+}
+
+/** The Settings list inside a workspace shell that draws its bar, title and search itself. */
+export function WorkspaceSettingsList() {
+  const list = useSettingsListPlacement();
+  return (
+    <SettingsSidebarContext value={list.sidebar ? { selected: list.selected } : null}>
+      <View className="flex-1 bg-screen">
+        <SettingsListContent />
+      </View>
+    </SettingsSidebarContext>
+  );
+}
+
+function useSettingsListPlacement() {
+  const sidebar = usePaneRole() === "sidebar";
   // The page open beside the list: the route right above the Settings tab's route. While
   // another tab is open this list stays mounted, hidden, and must keep showing the page Settings
   // reopens on; otherwise returning shows it unselected for a frame before the page arrives.
@@ -54,49 +70,42 @@ export function SettingsRouteScreen() {
       ? rememberedSettingsPage(currentWorkspaceSelections())
       : (state.routes[list + 1]?.name ?? null);
   });
-  return <SettingsListScreen sidebar={inSidebar} selected={selected} />;
+  return { sidebar, selected };
 }
 
+function SettingsListContent() {
+  return hasCloudPublicConfig() ? <ConfiguredSettingsRouteScreen /> : <LocalSettingsRouteScreen />;
+}
+
+// fork: mobile-navigation
 export function SettingsListScreen(props: {
   readonly sidebar: boolean;
   readonly selected: string | null;
+  readonly trailing?: ReactNode;
 }) {
   const workspace = useWorkspaceTabs();
   const environmentMenu = useSettingsEnvironmentMenu();
-  const inSidebar = props.sidebar;
-  const selected = props.selected;
-  const sidebar = inSidebar ? { selected } : null;
-  const content = hasCloudPublicConfig() ? (
-    <ConfiguredSettingsRouteScreen />
-  ) : (
-    <LocalSettingsRouteScreen />
-  );
-
   return (
-    <SettingsSidebarContext value={sidebar}>
+    <SettingsSidebarContext value={props.sidebar ? { selected: props.selected } : null}>
       <View className="flex-1 bg-screen">
-        <SettingsEnvironmentFilterHeader />
-        {Platform.OS === "android" ? (
-          <SettingsScreen
-            title="Settings"
-            workspaceRoot={inSidebar}
-            menus={[environmentMenu]}
-            search={
-              workspace
-                ? {
-                    value: workspace.state.tabs.settings.query,
-                    onChangeText: (query) =>
-                      workspace.dispatch({ type: "query", tab: "settings", query }),
-                    placeholder: "Search settings",
-                  }
-                : undefined
-            }
-          >
-            {content}
-          </SettingsScreen>
-        ) : (
-          content
-        )}
+        <SettingsScreen
+          title="Settings"
+          workspaceRoot={props.sidebar}
+          menus={[environmentMenu]}
+          trailing={props.trailing}
+          search={
+            workspace
+              ? {
+                  value: workspace.state.tabs.settings.query,
+                  onChangeText: (query) =>
+                    workspace.dispatch({ type: "query", tab: "settings", query }),
+                  placeholder: "Search settings",
+                }
+              : undefined
+          }
+        >
+          <SettingsListContent />
+        </SettingsScreen>
       </View>
     </SettingsSidebarContext>
   );
@@ -200,7 +209,8 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   // UIKit's scroll-edge material takes the scroll view's own color; like the chat list, match
   // the sidebar's surface so the bar doesn't darken over content at rest.
   // Grouped cards only lift off the screen surface; the drawer is as dark as they are.
-  const listSurface = use(SettingsSidebarContext) ? "bg-drawer" : "bg-screen";
+  const sidebar = use(SettingsSidebarContext);
+  const listSurface = sidebar ? "bg-drawer" : "bg-screen";
   const insets = useSafeAreaInsets();
   // UIKit insets the scroll view by its column's safe area, which this context can report as 0.
   const bottomSafeArea = useNativeColumnLayoutMetrics()?.safeArea.bottom ?? insets.bottom;
@@ -208,8 +218,11 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   const query = workspace?.state.tabs.settings.query ?? "";
   const overflowRows = useOverflowRows();
   const indexSections = useSettingsIndexSections();
+  const connections: SettingsListSection = { title: "Connections", rows: props.connections };
   const sections = filterSettingsSections(
-    [{ rows: overflowRows }, { title: "Connections", rows: props.connections }, ...indexSections],
+    Platform.OS === "ios"
+      ? [...indexSections.slice(0, 1), connections, ...indexSections.slice(1)]
+      : [{ rows: overflowRows }, connections, ...indexSections],
     query,
   );
 
@@ -220,8 +233,11 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         className={`flex-1 ${listSurface}`}
-        contentContainerClassName="gap-4 px-5 pt-4"
+        contentContainerClassName="gap-7 px-5"
         contentContainerStyle={{
+          // Keep clearance inside the scroll view so its native blur reaches the sheet's top.
+          // fork: native-scroll-edge
+          paddingTop: Platform.OS === "ios" && !sidebar ? 28 : 16,
           // The workspace's clearance keeps the last row above its search field and keyboard.
           paddingBottom:
             Platform.OS === "ios"
@@ -252,6 +268,7 @@ function SettingsList(props: { readonly connections: readonly SettingsListRow[] 
   );
 }
 
+// fork: mobile-navigation
 function useSettingsIndexSections(): SettingsListSection[] {
   const navigation = useNavigation(); // fork: project-home
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
@@ -280,10 +297,64 @@ function useSettingsIndexSections(): SettingsListSection[] {
     page(target, icon, label, { disabled: noServerTargets });
   // fork: library
   const route = (
-    id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory",
+    id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory" | "PullRequests",
     icon: SettingsListRow["icon"],
     label: string,
   ): SettingsListRow => ({ id, icon, label, onPress: () => navigation.navigate(id) });
+  if (Platform.OS === "ios") {
+    return [
+      {
+        title: "Work",
+        rows: [
+          page("SettingsUsage", "chart.bar.xaxis", "Usage & limits"),
+          route("Library", "briefcase", "Projects"),
+          ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []),
+          route("PullRequests", PullRequestGlyph.pullRequest, "Pull requests"),
+          page("SettingsArchive", "archivebox", "Archive"),
+        ],
+      },
+      {
+        title: "App",
+        rows: [
+          page("SettingsOrganization", "gearshape", "General"),
+          page("SettingsAppearance", "paintbrush", "Appearance"),
+          page("SettingsFollowUp", "bubble.left.and.bubble.right", "Chat"),
+          ...(navigationCustomizationAvailable()
+            ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
+            : []),
+          page("SettingsKeyboard", "keyboard", "Keyboard"),
+          page("SettingsVoice", "mic", "Voice"),
+          page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`),
+        ],
+      },
+      {
+        title: "Agents",
+        ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
+        rows: [
+          serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
+          serverPage("SettingsThreads", "text.bubble", "Threads"),
+          page("SettingsScheduledTasks", "clock", "Scheduled tasks"),
+        ],
+      },
+      {
+        title: "Development tools",
+        rows: [
+          page(
+            "SettingsProjectOverview",
+            "folder",
+            "Computer folders",
+            selectedProjectKey !== null ? { value: projectLabel } : undefined,
+          ),
+          route("ProjectStorageInventory", "internaldrive", "Working files"),
+          serverPage("SettingsEnvironmentSourceControl", "arrow.triangle.branch", "Source control"),
+          serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
+          page("SettingsPreviewLinks", "globe", "Previews"),
+          serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
+          page("SettingsLabs", "sparkles", "Labs"),
+        ],
+      },
+    ];
+  }
   // The same pages and groups as Settings on web, minus what mobile has no setting for.
   return [
     {
@@ -294,8 +365,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         ...(navigationCustomizationAvailable()
           ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
           : []),
-        ...(Platform.OS === "ios" ? [page("SettingsKeyboard", "keyboard", "Keyboard")] : []),
-        page("SettingsMicrophone", "mic", "Microphone"),
+        page("SettingsVoice", "mic", "Voice"),
       ],
     },
     {
@@ -304,8 +374,6 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
       rows: [
         serverPage("SettingsProviderAccounts", "person.crop.circle", "Providers"),
-        // fork: usage-navigation
-        ...(Platform.OS === "ios" ? [page("SettingsUsage", "chart.bar.xaxis", "Limits")] : []),
         serverPage("SettingsThreads", "text.bubble", "Threads"),
         ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []), // fork: bots
         page("SettingsScheduledTasks", "clock", "Scheduled tasks"),

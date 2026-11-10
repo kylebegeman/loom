@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 
-import { formatContextWindowCompactionMessage } from "~/components/chat/ContextWindowMeter.logic";
+import { formatContextWindowCompactionMessage } from "~/components/chat/compaction.logic";
 import { DiffStatLabel } from "~/components/chat/DiffStatLabel";
 import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import { Button } from "~/components/ui/button";
@@ -72,7 +72,6 @@ export function ThreadInspectorPanel({ threadRef }: ForkPanelProps) {
   const model = useMemo(() => deriveInspectorModel(inputs), [inputs]);
   const runAction = useInspectorActions(threadRef);
   const { resolvedTheme } = useTheme();
-  const modelName = model.facts.find((fact) => fact.id === "model")?.label ?? null;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/60 px-3 pt-3 pb-2.5">
@@ -103,7 +102,7 @@ export function ThreadInspectorPanel({ threadRef }: ForkPanelProps) {
           {model.terminals.length > 0 ? (
             <TerminalsSection terminals={model.terminals} onAction={runAction} />
           ) : null}
-          {model.context ? <ContextSection context={model.context} modelName={modelName} /> : null}
+          {model.context ? <ContextSection context={model.context} /> : null}
           {FORK_INSPECTOR_SECTIONS.map(({ id, Component }) => (
             <Component key={id} threadRef={threadRef} surface="panel" />
           ))}
@@ -389,13 +388,7 @@ function TerminalsSection({
   );
 }
 
-function ContextSection({
-  context,
-  modelName,
-}: {
-  context: InspectorContext;
-  modelName: string | null;
-}) {
+function ContextSection({ context }: { context: InspectorContext }) {
   const percentage = context.percentage;
   const processed = context.totalProcessedTokens;
   return (
@@ -425,7 +418,7 @@ function ContextSection({
         </div>
         {context.compactsAutomatically ? (
           <p className="text-2xs text-muted-foreground">
-            {formatContextWindowCompactionMessage(modelName, context.autoCompactThreshold)}
+            {formatContextWindowCompactionMessage(context.autoCompactThreshold)}
           </p>
         ) : null}
       </div>

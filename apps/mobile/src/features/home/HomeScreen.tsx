@@ -71,14 +71,13 @@ import {
   useNativeColumnLayoutMetrics,
   useNativeLayoutMetrics,
 } from "../../native/native-layout-metrics";
-// fork: project-navigation -- the early-return empty state and its glass inset are gone
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useThreadSearch } from "../../state/queries";
 import { requestThreadMessageJump } from "../threads/threadMessageJump";
 import { useThreadListSearchMatches } from "../threads/useThreadListSearchMatches";
 import { useThreadListV2 } from "../threads/useThreadListV2";
 import { useThreadListNow } from "../threads/use-thread-list-now";
-import { useSearchScrollRestoration } from "../workspace/useSearchScrollRestoration";
+import { useSearchScrollRestoration } from "../layout/workspace/useSearchScrollRestoration";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/presentation";
@@ -115,7 +114,7 @@ import {
 import { createSwipeRowActivation } from "./swipe-row-activation";
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
 import { useFabScroll } from "./FabScrollContext";
-import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
 
 interface HomeScreenProps {
@@ -172,7 +171,7 @@ interface HomeScreenProps {
 
 type HomeNavigationItem = ThreadListV2ListItem | ProjectLibraryItem; // fork: project-navigation
 
-const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
+const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 96;
 // Rows away from the viewport skip their swipe actions (see
 // swipe-row-activation), so render further ahead: a fast fling then reaches
 // rows that are already built instead of rows still being rebuilt.
@@ -264,10 +263,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
     <ScrollViewMarker
       style={{ flex: 1 }}
-      scrollEdgeEffects={{
-        ...nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version),
-        top: Number.parseInt(String(Platform.Version), 10) >= 27 ? "automatic" : "soft",
-      }}
+      scrollEdgeEffects={nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version)}
     >
       <ScrollView
         {...props}
@@ -283,6 +279,7 @@ function renderHomeScrollView(props: ScrollViewProps) {
   return <HomeScrollView {...props} />;
 }
 
+// fork: mobile-navigation
 export function HomeScreen(props: HomeScreenProps) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
@@ -881,13 +878,15 @@ export function HomeScreen(props: HomeScreenProps) {
         onSelect={props.onSelectThread}
       />
       {/* fork: project-navigation */}
-      <ProjectNavigationControl
-        view={navigationView}
-        onChange={(view) => {
-          openSwipeableRef.current?.close();
-          setNavigationView(view);
-        }}
-      />
+      {Platform.OS !== "ios" ? (
+        <ProjectNavigationControl
+          view={navigationView}
+          onChange={(view) => {
+            openSwipeableRef.current?.close();
+            setNavigationView(view);
+          }}
+        />
+      ) : null}
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           gutter={sidebarSurface ? 8 : 0}
@@ -1010,7 +1009,7 @@ export function HomeScreen(props: HomeScreenProps) {
                 onTouchStart={(event) => trackListTouches(event, true)}
                 onTouchEnd={(event) => trackListTouches(event, false)}
                 onTouchCancel={(event) => trackListTouches(event, false)}
-                renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
+                renderScrollComponent={renderHomeScrollView}
                 data={navigationItems} // fork: project-navigation
                 renderItem={renderNavigationItem} // fork: project-navigation
                 keyExtractor={v2KeyExtractor}
@@ -1021,6 +1020,8 @@ export function HomeScreen(props: HomeScreenProps) {
                 recycleItems
                 extraData={v2ExtraData}
                 ListHeaderComponent={v2ListHeader}
+                // Lifted above the rows so an iOS filter menu's dismissal morph is not covered.
+                ListHeaderComponentStyle={{ zIndex: 1 }}
                 ListFooterComponent={
                   // fork: library - Saved Library threads follow the live list.
                   <>
@@ -1051,7 +1052,7 @@ export function HomeScreen(props: HomeScreenProps) {
                 }
                 ListEmptyComponent={sharedAuthority.environmentId ? null : v2ListEmpty} // fork: library
                 style={{ flex: 1 }}
-                automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
+                automaticallyAdjustsScrollIndicatorInsets
                 // UIKit owns the bar's inset, so a minimizing bar and a resized column move
                 // the list in the same frame as the bar.
                 contentInsetAdjustmentBehavior="automatic"

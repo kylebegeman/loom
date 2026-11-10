@@ -83,6 +83,7 @@ const makeHarness = Effect.gen(function* () {
     sendError: null as unknown,
     sendAfterReceiptError: null as unknown,
     autoOutcome: null as ThreadOutcome | null,
+    launchError: null as ThreadLaunch.ThreadLaunchError | null,
     usageError: false,
     settings: { defaultModelSelection: model as ModelSelection | null, providerInstances: {} },
   };
@@ -210,6 +211,7 @@ const makeHarness = Effect.gen(function* () {
     launch: Effect.fn("launch")(function* (input: ThreadLaunch.ThreadLaunchInput) {
       launches.push(input);
       yield* Queue.offer(launched, input);
+      if (state.launchError !== null) return yield* state.launchError;
       if (state.autoOutcome !== null) yield* end(input.threadId!, state.autoOutcome);
       return {
         threadId: input.threadId!,

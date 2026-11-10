@@ -44,14 +44,15 @@ it.live.skipIf(!configured)(
   "executes repeatedly with encrypted keys, refuses changed host trust and fresh revocation, and cleans public files and sockets",
   () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const temporaryDirectory =
-        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : process.env.TMPDIR!;
+        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : hostEnvironment.TMPDIR!;
       const f = yield* sshFixture();
       const target = {
         hostname: "127.0.0.1",
-        username: process.env.LOOM_VAULT_TEST_SSH_USER!,
-        port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
-        hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+        username: hostEnvironment.LOOM_VAULT_TEST_SSH_USER!,
+        port: Number(hostEnvironment.LOOM_VAULT_TEST_SSH_PORT),
+        hostKey: hostEnvironment.LOOM_VAULT_TEST_SSH_HOST_KEY!,
       };
       const request = {
         id: f.itemId,
@@ -63,9 +64,13 @@ it.live.skipIf(!configured)(
       expect(yield* f.ssh.generate(request, "fixture-admin", Effect.void)).toEqual(key);
       expect(JSON.stringify(key)).not.toContain("PRIVATE KEY");
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
-          mode: 0o600,
-        }),
+        NodeFSP.writeFile(
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          key.publicKey + "\n",
+          {
+            mode: 0o600,
+          },
+        ),
       );
       yield* f.grant(key.destination);
       const session = yield* f.session(key.destination);
@@ -128,20 +133,25 @@ it.live.skipIf(!configured)(
   "bounds time and output and removes operation resources after cancellation",
   () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const temporaryDirectory =
-        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : process.env.TMPDIR!;
+        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : hostEnvironment.TMPDIR!;
       const keys = yield* SshCrypto.SshCrypto,
         key = yield* keys.create;
       const target = {
         hostname: "127.0.0.1",
-        username: process.env.LOOM_VAULT_TEST_SSH_USER!,
-        port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
-        hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+        username: hostEnvironment.LOOM_VAULT_TEST_SSH_USER!,
+        port: Number(hostEnvironment.LOOM_VAULT_TEST_SSH_PORT),
+        hostKey: hostEnvironment.LOOM_VAULT_TEST_SSH_HOST_KEY!,
       };
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
-          mode: 0o600,
-        }),
+        NodeFSP.writeFile(
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          key.publicKey + "\n",
+          {
+            mode: 0o600,
+          },
+        ),
       );
       const transport = yield* SshTransport.SshTransport;
       const execute = (argv: readonly string[], timeoutMs = 8000) =>
@@ -200,18 +210,23 @@ it.live.skipIf(!configured)(
   "keeps ssh's agent connection open while each frame waits on slow authorization",
   () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const keys = yield* SshCrypto.SshCrypto,
         key = yield* keys.create;
       const target = {
         hostname: "127.0.0.1",
-        username: process.env.LOOM_VAULT_TEST_SSH_USER!,
-        port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
-        hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+        username: hostEnvironment.LOOM_VAULT_TEST_SSH_USER!,
+        port: Number(hostEnvironment.LOOM_VAULT_TEST_SSH_PORT),
+        hostKey: hostEnvironment.LOOM_VAULT_TEST_SSH_HOST_KEY!,
       };
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
-          mode: 0o600,
-        }),
+        NodeFSP.writeFile(
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          key.publicKey + "\n",
+          {
+            mode: 0o600,
+          },
+        ),
       );
       const transport = yield* SshTransport.SshTransport;
       let checks = 0;
@@ -245,12 +260,13 @@ it.live.skipIf(!configured)(
   "automatically signs Git ref listing and repeated fetches, denies wrong pins and revoked access, and releases sessions",
   () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const f = yield* sshFixture();
       const target = {
         hostname: "127.0.0.1",
-        username: process.env.LOOM_VAULT_TEST_SSH_USER!,
-        port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
-        hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+        username: hostEnvironment.LOOM_VAULT_TEST_SSH_USER!,
+        port: Number(hostEnvironment.LOOM_VAULT_TEST_SSH_PORT),
+        hostKey: hostEnvironment.LOOM_VAULT_TEST_SSH_HOST_KEY!,
       };
       const key = yield* f.ssh.generate(
         { id: f.itemId, operationId: yield* f.id, label: "Disposable Git key", target },
@@ -258,16 +274,20 @@ it.live.skipIf(!configured)(
         Effect.void,
       );
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
-          mode: 0o600,
-        }),
+        NodeFSP.writeFile(
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          key.publicKey + "\n",
+          {
+            mode: 0o600,
+          },
+        ),
       );
-      const repository = process.env.LOOM_VAULT_TEST_GIT_REMOTE!,
-        cwd = process.env.LOOM_VAULT_TEST_GIT_CHECKOUT!;
+      const repository = hostEnvironment.LOOM_VAULT_TEST_GIT_REMOTE!,
+        cwd = hostEnvironment.LOOM_VAULT_TEST_GIT_CHECKOUT!;
       f.state.thread = { ...f.state.thread, worktreePath: cwd };
       yield* f.grant(vaultGitDestination(target, repository));
       const temporaryRoot =
-        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : process.env.TMPDIR!;
+        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : hostEnvironment.TMPDIR!;
       const directory = yield* Effect.acquireRelease(
         Effect.promise(() => NodeFSP.mkdtemp(temporaryRoot + "/loom-launch-broker-")),
         (directory) =>
@@ -378,7 +398,7 @@ it.live.skipIf(!configured)(
       );
       yield* Effect.promise(() =>
         NodeFSP.writeFile(
-          process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
           'command="/bin/sleep 15" ' + key.publicKey + "\n",
           { mode: 0o600 },
         ),
@@ -390,9 +410,13 @@ it.live.skipIf(!configured)(
       ).toBe("timeout");
       expect(yield* f.workloads.list(f.threadId)).toEqual([]);
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
-          mode: 0o600,
-        }),
+        NodeFSP.writeFile(
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          key.publicKey + "\n",
+          {
+            mode: 0o600,
+          },
+        ),
       );
       yield* f.access.apply(
         {
@@ -414,6 +438,7 @@ it.live.skipIf(!configured)(
   "executes owner-trusted resource-name SSH without a profile or grant against encrypted storage and pinned host trust",
   () =>
     Effect.gen(function* () {
+      const hostEnvironment = yield* HostProcess.Environment;
       const f = yield* sshFixture();
       const key = yield* f.ssh.generate(
         {
@@ -422,18 +447,22 @@ it.live.skipIf(!configured)(
           label: "Disposable owner deployment",
           target: {
             hostname: "127.0.0.1",
-            username: process.env.LOOM_VAULT_TEST_SSH_USER!,
-            port: Number(process.env.LOOM_VAULT_TEST_SSH_PORT),
-            hostKey: process.env.LOOM_VAULT_TEST_SSH_HOST_KEY!,
+            username: hostEnvironment.LOOM_VAULT_TEST_SSH_USER!,
+            port: Number(hostEnvironment.LOOM_VAULT_TEST_SSH_PORT),
+            hostKey: hostEnvironment.LOOM_VAULT_TEST_SSH_HOST_KEY!,
           },
         },
         "fixture-admin",
         Effect.void,
       );
       yield* Effect.promise(() =>
-        NodeFSP.writeFile(process.env.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!, key.publicKey + "\n", {
-          mode: 0o600,
-        }),
+        NodeFSP.writeFile(
+          hostEnvironment.LOOM_VAULT_TEST_SSH_AUTHORIZED_KEYS!,
+          key.publicKey + "\n",
+          {
+            mode: 0o600,
+          },
+        ),
       );
       yield* f.access.setOwnerPolicy(
         { operationId: yield* f.id, expectedRevision: 0, mode: "owner-trusted" },
@@ -443,7 +472,7 @@ it.live.skipIf(!configured)(
       expect((yield* f.access.snapshot).grants).toEqual([]);
       expect((yield* f.profiles.list(f.state.thread.projectId)).profiles).toEqual([]);
       const temporaryRoot =
-        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : process.env.TMPDIR!;
+        (yield* HostProcess.Platform) === "darwin" ? "/private/tmp" : hostEnvironment.TMPDIR!;
       const directory = yield* Effect.acquireRelease(
         Effect.promise(() => NodeFSP.mkdtemp(temporaryRoot + "/loom-owner-broker-")),
         (directory) =>
