@@ -26,6 +26,7 @@ const httpsOrigin = httpsUrl.check(Schema.makeFilter((value) => new URL(value).o
 export const SitesSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   primarySiteId: SiteId,
+  ownerAdmin: Schema.optionalKey(Schema.Struct({ name: text, url: httpsUrl })),
   observedAt: Schema.String,
   staleAfterSeconds: count,
   sites: Schema.Array(

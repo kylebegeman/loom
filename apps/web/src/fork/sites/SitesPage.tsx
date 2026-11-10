@@ -602,6 +602,26 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
           You can view sites. Ask an owner of {libraryLabel} for settings access to change them.
         </LibraryNotice>
       ) : null}
+      {snapshot?.ownerAdmin ? (
+        <LibraryNotice
+          icon={ExternalLinkIcon}
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <a href={snapshot.ownerAdmin.url} target="_blank" rel="noopener noreferrer" />
+              }
+            >
+              Open {snapshot.ownerAdmin.name} admin
+              <ArrowUpRightIcon />
+            </Button>
+          }
+        >
+          Use Sites for daily management across projects. Open {snapshot.ownerAdmin.name} admin for
+          short links, inbox, bookings and résumé publishing.
+        </LibraryNotice>
+      ) : null}
       {snapshot ? <LibraryErrorNotice error={query.error} onRetry={query.refresh} /> : null}
     </>
   );

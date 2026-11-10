@@ -151,6 +151,11 @@ export class LibraryWorkspace extends Context.Service<
     readonly setCopyRetention: (
       input: LibrarySetCopyRetentionRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /** Forgets the removal a release request recorded while its files are still in place. */
+    readonly cancelRelease: (input: {
+      readonly workingCopyId: string;
+      readonly requestId: string;
+    }) => Effect.Effect<"none" | "cleared" | "set-aside", LibraryError>;
     readonly reopenCopy: (
       input: LibraryReopenCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -2177,6 +2182,11 @@ const make = Effect.gen(function* () {
       !(yield* fs.exists(path.dirname(receipt.copy.rootPath)))
     );
   });
+  const unreachable = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+    new LibraryError({
+      reason: "blocked",
+      detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
+    });
 
   const openOrRunning = (thread: OrchestrationV2ThreadShell) =>
     thread.activeRunId !== null ||
@@ -2670,10 +2680,7 @@ const make = Effect.gen(function* () {
       }
     }
     if (!(yield* fs.exists(receipt.copy.rootPath)) && (yield* folderUnavailable(receipt)))
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: `Loom cannot reach ${path.dirname(receipt.copy.rootPath)}. Connect the disk that holds these files, then retry.`,
-      });
+      return yield* unreachable(receipt);
     const released = {
       ...receipt,
       releaseRequestId: input.requestId,
@@ -2752,6 +2759,38 @@ const make = Effect.gen(function* () {
     const copy = { ...receipt.copy, keepOnComputer: input.keepOnComputer, updatedAt: yield* now };
     yield* store.put({ ...receipt, copy });
     return copy;
+  });
+
+  const cancelRelease = Effect.fn("LibraryWorkspace.cancelRelease")(function* (input: {
+    readonly workingCopyId: string;
+    readonly requestId: string;
+  }) {
+    const receipt = yield* store.get(input.workingCopyId).pipe(
+      Effect.catchIf(
+        (error) => error.reason === "not-found",
+        () => Effect.undefined,
+      ),
+    );
+    if (
+      receipt === undefined ||
+      receipt.releaseRequestId !== input.requestId ||
+      receipt.copy.state === "released" ||
+      receipt.removalPath === null
+    )
+      return "none" as const;
+    // A disk that is not connected is not files set aside.
+    if (yield* folderUnavailable(receipt)) return yield* unreachable(receipt);
+    // Only this request can finish files it already moved aside.
+    if (!(yield* fs.exists(receipt.copy.rootPath)) || (yield* fs.exists(receipt.removalPath)))
+      return "set-aside" as const;
+    yield* store.update(input.workingCopyId, (current) => ({
+      ...current,
+      publishedRelease: undefined,
+      releaseRequestId: null,
+      releaseReviewToken: null,
+      removalPath: null,
+    }));
+    return "cleared" as const;
   });
 
   const validatePortableRepository = Effect.fn("LibraryWorkspace.validatePortableRepository")(
@@ -4191,17 +4230,15 @@ const make = Effect.gen(function* () {
               ),
             )
           : found.receipt.copy;
-      const saved = yield* store.get(copy.id);
-      yield* store.put({
+      const fingerprint = yield* preparationFingerprint(request, request.rootPath);
+      // Without the copy's lock, so a long archive of this copy never holds up other launches.
+      yield* store.update(copy.id, (saved) => ({
         ...saved,
         registrationRequests: [
           ...(saved.registrationRequests ?? []),
-          {
-            requestId: input.requestId,
-            fingerprint: yield* preparationFingerprint(request, request.rootPath),
-          },
+          { requestId: input.requestId, fingerprint },
         ],
-      });
+      }));
       return { copy, request };
     }
     if (placement.action !== "clone") return { request, claimed: false };
@@ -4482,6 +4519,9 @@ const make = Effect.gen(function* () {
     }),
     unregister: Effect.fnUntraced(function* (input) {
       return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(unregister(input)));
+    }),
+    cancelRelease: Effect.fnUntraced(function* (input) {
+      return yield* locks.withLock(copyKey(input.workingCopyId), mapIo(cancelRelease(input)));
     }),
     release: Effect.fnUntraced(function* (input) {
       return yield* locks.withLock(

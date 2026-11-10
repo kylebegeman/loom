@@ -5,6 +5,8 @@ import {
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
   CommandId,
+  OrchestrationV2DelegatedFrom,
+  OrchestrationV2LinkOrigin,
   ThreadId,
   ProviderInstanceId,
   RunId,
@@ -44,7 +46,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
@@ -62,7 +63,7 @@ import * as SetupMarker from "../../workspace/setupMarker.ts";
 const isLibraryFailure = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" });
-const denied = (reason: "session" | "turn" | "workload" = "session") =>
+const denied = (reason: "session" | "access" | "outside" | "turn" | "workload" = "session") =>
   new LibraryError({
     reason: "blocked",
     detail:
@@ -70,22 +71,29 @@ const denied = (reason: "session" | "turn" | "workload" = "session") =>
         ? "The conversation that started this operation is no longer running a turn. Resume it from that conversation with loom_library_operation_control."
         : reason === "workload"
           ? "This operation's agent authorization is no longer current. Resume it from its original conversation during a full-access/default turn with loom_library_operation_control."
-          : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
+          : reason === "outside"
+            ? "This agent needs Full access for this file work. Revoke it under Settings → Sharing & access, then approve its next sign-in with Full access."
+            : reason === "access"
+              ? "This device's access level doesn't allow this kind of file work. Use a device with a higher access level."
+              : LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   });
+const SET_ASIDE =
+  "Loom already moved these files aside to remove them. Resume this operation to finish removing them.";
+const OUTSIDE_CREATE =
+  "No project in the Library matches this folder, and outside agents cannot create shared projects. Add this folder to the Library from Loom, or import it with the projectId of the project it belongs to.";
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 // In-app agents act as their conversation; every outside agent's MCP session shares one subject.
 const isAgent = (subject: string) => subject.startsWith("workload:") || subject === "mcp-client";
-const ownedElsewhere = (owner: string, actor: OperationActor) =>
+// A signed-in person may take over what any agent started; otherwise only the owner may.
+const mayControl = (owner: string, actor: OperationActor) =>
+  owner === actor.subject || (isAgent(owner) && !isAgent(actor.subject));
+const ownedElsewhere = (owner: string) =>
   new LibraryError({
     reason: "blocked",
     detail: owner.startsWith("workload:")
-      ? isAgent(actor.subject)
-        ? `This operation was started by an agent in conversation ${owner.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
-        : `This operation was started by an agent in conversation ${owner.slice(9)}. Resume it from that conversation, or cancel it here.`
+      ? `This operation was started by an agent in conversation ${owner.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
       : owner === "mcp-client"
-        ? isAgent(actor.subject)
-          ? "This operation was started by an agent connected over MCP. Resume or cancel it from that agent."
-          : "This operation was started by an agent connected over MCP. Ask that agent to resume it, or cancel it here."
+        ? "This operation was started by an agent connected over MCP. Resume or cancel it from that agent."
         : "This operation belongs to another signed-in session. Use the session that started it to resume or cancel.",
   });
 const Workload = Schema.Struct({
@@ -110,6 +118,13 @@ const requireOneRepository = (resolved: LibraryResolvedBinding) =>
 const worktreeCodec = Schema.fromJsonString(
   Schema.Struct({ path: Schema.String, branch: Schema.String }),
 );
+/** Where a launch came from. Only the server sets it, so it is kept apart from the request. */
+const LaunchOrigin = Schema.Struct({
+  linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
+  delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+});
+type LaunchOrigin = typeof LaunchOrigin.Type;
+const originCodec = Schema.fromJsonString(LaunchOrigin);
 const creationCodec = Schema.fromJsonString(LibraryCreateProjectRequest);
 const updateCodec = Schema.fromJsonString(LibraryUpdateProjectRequest);
 const registrationCodec = Schema.fromJsonString(LibraryRegisterCopyRequest);
@@ -154,11 +169,13 @@ export class ProjectOperations extends Context.Service<
       id: string,
       request: LibraryOperationInput,
       sessionId: string,
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly executeAgent: (
       id: string,
       request: LibraryOperationInput,
       caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly controlClient: (
       id: string,
@@ -178,11 +195,13 @@ export class ProjectOperations extends Context.Service<
       id: string,
       request: LibraryOperationInput,
       actor: OperationActor,
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly execute: (
       id: string,
       request: LibraryOperationInput,
       actor: OperationActor,
+      origin?: LaunchOrigin,
     ) => Effect.Effect<LibraryOperation, LibraryError>;
     readonly resume: (
       id: string,
@@ -224,7 +243,8 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const environmentId = yield* identity.getEnvironmentId;
   const scope = yield* Effect.scope;
-  const lock = yield* Semaphore.make(1);
+  // Per operation: a cancel waiting on its copy must not hold up every other operation.
+  const lock = yield* KeyedLock.make<string>();
   const folderImports = yield* KeyedLock.make<string>();
   const restoreGrants = new Map<string, LibraryRecoveryGrant>();
   const pending = new Map<string, Deferred.Deferred<LibraryOperation, LibraryError>>();
@@ -286,12 +306,14 @@ const make = Effect.gen(function* () {
       return;
     }
     const active = yield* currentSession(sessionId);
-    const required = operationScopes(request.kind);
-    if (
-      active?.subject !== subject ||
-      !required.every((permission) => (active.permissions ?? active.scopes).includes(permission))
-    )
-      return yield* denied();
+    if (active?.subject !== subject) return yield* denied();
+    const outside = subject === "mcp-client";
+    // Outside agents never get terminal:operate; settings:write marks their Full access grant.
+    const required = operationScopes(request.kind).map((permission) =>
+      outside && permission === AuthTerminalOperateScope ? AuthSettingsWriteScope : permission,
+    );
+    if (!required.every((permission) => (active.permissions ?? active.scopes).includes(permission)))
+      return yield* denied(outside ? "outside" : "access");
   }, Effect.mapError(io));
   /**
    * A launch's own worktree, made once so a retry never gives the conversation a second checkout.
@@ -511,6 +533,9 @@ const make = Effect.gen(function* () {
                       "Files created for another project still hold this folder. Review that project's Files before reusing it.",
                   });
                 if (!selected) {
+                  // Creating a shared project needs a person's Library sign-in.
+                  if (row.subject === "mcp-client")
+                    return yield* new LibraryError({ reason: "blocked", detail: OUTSIDE_CREATE });
                   const receiptId = yield* operationId(id, "create");
                   const saved = yield* sql<{
                     request_json: string;
@@ -739,6 +764,16 @@ const make = Effect.gen(function* () {
           if (worktreeFirst) yield* phase("Creating worktree");
           const worktree = worktreeFirst ? yield* launchWorktree(id, resolved) : null;
           yield* phase("Creating conversation");
+          const origin = yield* sql<{
+            result_json: string;
+          }>`SELECT result_json FROM fork_library_workflow_receipts WHERE id=${`${id}:origin`}`.pipe(
+            Effect.flatMap(([saved]) =>
+              saved
+                ? Schema.decodeEffect(originCodec)(saved.result_json)
+                : Effect.succeed<LaunchOrigin>({}),
+            ),
+            Effect.mapError(io),
+          );
           yield* threads
             .dispatch({
               type: "thread.create",
@@ -751,8 +786,9 @@ const make = Effect.gen(function* () {
               interactionMode: input.interactionMode,
               branch: worktree?.branch ?? null,
               worktreePath: worktree?.path ?? resolved.cwd,
-              createdBy: row.session_id.startsWith("workload:") ? "agent" : "user",
-              creationSource: row.session_id.startsWith("workload:") ? "mcp" : "web",
+              ...origin,
+              createdBy: isAgent(row.subject) ? "agent" : "user",
+              creationSource: isAgent(row.subject) ? "mcp" : "web",
             })
             .pipe(Effect.mapError(io));
           // A retry reuses the first try's create, which does nothing for a conversation deleted
@@ -895,70 +931,85 @@ const make = Effect.gen(function* () {
       Effect.forkIn(scope),
     );
   });
-  const run = Effect.fn("ProjectOperations.run")(function* (
-    id: string,
-    request: LibraryOperationInput,
-    actor: OperationActor,
-  ) {
-    yield* authorize(actor.sessionId, actor.subject, request);
-    const durableRequest =
-      request.kind === "restore"
-        ? {
-            ...request,
-            input: {
-              ...request.input,
-              grant: {
-                ...request.input.grant,
-                accessToken: "credential-required",
-                expiresAt: "1970-01-01T00:00:00.000Z",
+  const run = Effect.fn("ProjectOperations.run")(
+    function* (
+      id: string,
+      request: LibraryOperationInput,
+      actor: OperationActor,
+      origin?: LaunchOrigin,
+    ) {
+      yield* authorize(actor.sessionId, actor.subject, request);
+      const durableRequest =
+        request.kind === "restore"
+          ? {
+              ...request,
+              input: {
+                ...request.input,
+                grant: {
+                  ...request.input.grant,
+                  accessToken: "credential-required",
+                  expiresAt: "1970-01-01T00:00:00.000Z",
+                },
               },
-            },
-          }
-        : request;
-    const encoded = yield* Schema.encodeEffect(requestCodec)(durableRequest).pipe(
-      Effect.mapError(io),
-    );
-    const existing = yield* read(id);
-    if (existing && (existing.subject !== actor.subject || existing.request_json !== encoded))
-      return yield* new LibraryError({ reason: "request-conflict" });
-    if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
-      return existing.operation;
-    if (existing && pending.has(id)) return existing.operation;
-    const timestamp = yield* now;
-    const projectId =
-      request.kind === "create" || request.kind === "import"
-        ? (existing?.operation.projectId ?? null)
-        : request.kind === "launch" || request.kind === "prepare" || request.kind === "restore"
-          ? request.input.project.id
-          : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
-    const value: LibraryOperation = {
-      id,
-      kind: request.kind,
-      projectId,
-      environmentId,
-      state: "queued",
-      phase: "Waiting to start",
-      attempt: (existing?.operation.attempt ?? 0) + 1,
-      error: null,
-      result: request.kind === "import" ? (existing?.operation.result ?? null) : null,
-      createdAt: existing?.operation.createdAt ?? timestamp,
-      updatedAt: timestamp,
-    };
-    const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
-    yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
-      Effect.mapError(io),
-    );
-    yield* workflows.changed;
-    if (request.kind === "restore") restoreGrants.set(id, request.input.grant);
-    yield* start(id);
-    return value;
-  }, lock.withPermit);
+            }
+          : request;
+      const encoded = yield* Schema.encodeEffect(requestCodec)(durableRequest).pipe(
+        Effect.mapError(io),
+      );
+      const existing = yield* read(id);
+      if (existing && existing.request_json !== encoded)
+        return yield* new LibraryError({ reason: "request-conflict" });
+      // A retry after a person took the operation over still gets its outcome.
+      if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
+        return existing.operation;
+      if (existing && !mayControl(existing.subject, actor))
+        return yield* ownedElsewhere(existing.subject);
+      if (existing && pending.has(id)) return existing.operation;
+      // The first try's origin stays, so a person resuming the launch keeps it nested.
+      if (request.kind === "launch" && (origin?.linkOrigin || origin?.delegatedFrom)) {
+        const saved = yield* Schema.encodeEffect(originCodec)(origin).pipe(Effect.mapError(io));
+        yield* sql`INSERT INTO fork_library_workflow_receipts (id,request_json,result_json) VALUES (${`${id}:origin`},${"origin"},${saved}) ON CONFLICT(id) DO NOTHING`.pipe(
+          Effect.mapError(io),
+        );
+      }
+      const timestamp = yield* now;
+      const projectId =
+        request.kind === "create" || request.kind === "import"
+          ? (existing?.operation.projectId ?? null)
+          : request.kind === "launch" || request.kind === "prepare" || request.kind === "restore"
+            ? request.input.project.id
+            : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
+      const value: LibraryOperation = {
+        id,
+        kind: request.kind,
+        projectId,
+        environmentId,
+        state: "queued",
+        phase: "Waiting to start",
+        attempt: (existing?.operation.attempt ?? 0) + 1,
+        error: null,
+        result: request.kind === "import" ? (existing?.operation.result ?? null) : null,
+        createdAt: existing?.operation.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
+      yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
+        Effect.mapError(io),
+      );
+      yield* workflows.changed;
+      if (request.kind === "restore") restoreGrants.set(id, request.input.grant);
+      yield* start(id);
+      return value;
+    },
+    (effect, id) => lock.withLock(id, effect),
+  );
   const execute = Effect.fn("ProjectOperations.execute")(function* (
     id: string,
     request: LibraryOperationInput,
     actor: OperationActor,
+    origin?: LaunchOrigin,
   ) {
-    const initial = yield* run(id, request, actor);
+    const initial = yield* run(id, request, actor, origin);
     if (initial.state === "succeeded") return initial;
     if (initial.state === "cancelled")
       return yield* new LibraryError({
@@ -997,74 +1048,50 @@ const make = Effect.gen(function* () {
       ? operations
       : operations.filter((operation) => operation.kind !== "import");
   }, Effect.mapError(io));
-  const cancel = Effect.fn("ProjectOperations.cancel")(function* (
-    id: string,
-    actor: OperationActor,
-  ) {
-    const row = yield* read(id);
-    if (!row) return yield* new LibraryError({ reason: "not-found" });
-    // A person who could start this work may stop what an agent started, even after that
-    // conversation is gone. Resuming stays with the agent, since it runs as that agent.
-    const owns = row.subject === actor.subject;
-    if (!owns && !(isAgent(row.subject) && !isAgent(actor.subject)))
-      return yield* ownedElsewhere(row.subject, actor);
-    const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
-      Effect.mapError(io),
-    );
-    yield* authorize(actor.sessionId, actor.subject, request);
-    if (row.operation.state === "running" || pending.has(id))
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: "The current step is already running. Let it finish before changing these files.",
-      });
-    if (row.operation.state === "succeeded") return row.operation;
-    if (request.kind === "release") {
-      // Files this request already set aside can only be removed by it: a new removal conflicts
-      // with it, and Keep files on this computer no longer applies.
-      const receipt = yield* workspaceStore.get(request.input.workingCopyId).pipe(
-        Effect.catchIf(
-          (error) => error.reason === "not-found",
-          () => Effect.undefined,
-        ),
+  const cancel = Effect.fn("ProjectOperations.cancel")(
+    function* (id: string, actor: OperationActor) {
+      const row = yield* read(id);
+      if (!row) return yield* new LibraryError({ reason: "not-found" });
+      if (!mayControl(row.subject, actor)) return yield* ownedElsewhere(row.subject);
+      const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
+        Effect.mapError(io),
       );
-      const exists = (target: string) => fs.exists(target).pipe(Effect.mapError(io));
-      if (
-        receipt?.releaseRequestId === request.input.requestId &&
-        receipt.copy.state !== "released" &&
-        receipt.removalPath !== null &&
-        (!(yield* exists(receipt.copy.rootPath)) || (yield* exists(receipt.removalPath)))
-      )
+      yield* authorize(actor.sessionId, actor.subject, request);
+      if (row.operation.state === "running" || pending.has(id))
         return yield* new LibraryError({
           reason: "blocked",
-          detail: `Loom already started removing these files. ${
-            owns
-              ? "Resume this operation"
-              : row.subject.startsWith("workload:")
-                ? `Resume it from conversation ${row.subject.slice(9)}`
-                : "Have the agent that started this operation resume it"
-          } to finish removing them.`,
+          detail: "The current step is already running. Let it finish before changing these files.",
         });
-    }
-    return yield* save({
-      ...row.operation,
-      state: "cancelled",
-      phase: "Cancelled; completed steps were kept",
-      updatedAt: yield* now,
-    });
-  }, lock.withPermit);
+      if (row.operation.state === "succeeded") return row.operation;
+      if (
+        request.kind === "release" &&
+        (yield* workspace.cancelRelease(request.input)) === "set-aside"
+      )
+        return yield* new LibraryError({ reason: "blocked", detail: SET_ASIDE });
+      return yield* save({
+        ...row.operation,
+        state: "cancelled",
+        phase: "Cancelled; completed steps were kept",
+        updatedAt: yield* now,
+      });
+    },
+    (effect, id) => lock.withLock(id, effect),
+  );
   const executeClient = Effect.fn("ProjectOperations.executeClient")(function* (
     id: string,
     request: LibraryOperationInput,
     sessionId: string,
+    origin?: LaunchOrigin,
   ) {
     const actor = yield* currentSession(sessionId).pipe(Effect.mapError(io));
     if (!actor) return yield* denied();
-    return yield* execute(id, request, actor);
+    return yield* execute(id, request, actor, origin);
   });
   const executeAgent = Effect.fn("ProjectOperations.executeAgent")(function* (
     id: string,
     request: LibraryOperationInput,
     caller: { readonly threadId: ThreadId; readonly providerInstanceId: ProviderInstanceId },
+    origin?: LaunchOrigin,
   ) {
     const thread = yield* threads
       .getThreadShell(caller.threadId)
@@ -1074,10 +1101,12 @@ const make = Effect.gen(function* () {
       ...caller,
       runId: thread.activeRunId,
     }).pipe(Effect.mapError(io));
-    return yield* execute(id, request, {
-      subject: `workload:${caller.threadId}`,
-      sessionId: `workload:${claims}`,
-    });
+    return yield* execute(
+      id,
+      request,
+      { subject: `workload:${caller.threadId}`, sessionId: `workload:${claims}` },
+      origin,
+    );
   });
   const shareCreated = Effect.fn("ProjectOperations.shareCreated")(function* (
     project: CreatedProject,
@@ -1189,7 +1218,7 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* read(id);
     if (!row) return yield* denied();
-    if (row.subject !== actor.subject) return yield* ownedElsewhere(row.subject, actor);
+    if (!mayControl(row.subject, actor)) return yield* ownedElsewhere(row.subject);
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
@@ -1234,6 +1263,36 @@ const make = Effect.gen(function* () {
         id: string;
       }>`SELECT id FROM fork_library_operations WHERE state IN ('queued','running')`;
       for (const row of rows) yield* start(row.id);
+      // Cancels before cancelRelease existed left removals recorded. Files still in place are
+      // forgotten; files already set aside wait for a Resume to finish removing them.
+      const cancelled = yield* sql<{
+        id: string;
+        request_json: string;
+      }>`SELECT id,request_json FROM fork_library_operations WHERE state='cancelled'`;
+      for (const row of cancelled)
+        yield* lock
+          .withLock(
+            row.id,
+            Effect.gen(function* () {
+              const request = yield* Schema.decodeEffect(requestCodec)(row.request_json);
+              if (
+                request.kind !== "release" ||
+                (yield* workspace.cancelRelease(request.input)) !== "set-aside"
+              )
+                return;
+              const current = yield* read(row.id);
+              if (current?.operation.state !== "cancelled") return;
+              yield* save({
+                ...current.operation,
+                state: "needs-input",
+                phase: "Waiting to finish removing files",
+                error: SET_ASIDE,
+                failureReason: "blocked",
+                updatedAt: yield* now,
+              });
+            }),
+          )
+          .pipe(Effect.ignore);
     }).pipe(Effect.ignoreCause),
   );
   return {

@@ -5174,6 +5174,86 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
     }),
   );
 
+  it.effect("forgets a cancelled release only while its files are still in place", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-cancelled");
+      const request = { workingCopyId: copy.id, requestId: "release-cancelled" };
+      expect(yield* service.cancelRelease(request)).toBe("set-aside");
+      yield* fs.rename(removalPath, copy.rootPath);
+      expect(yield* service.cancelRelease({ ...request, requestId: "another-release" })).toBe(
+        "none",
+      );
+      const parent = path.dirname(copy.rootPath);
+      yield* fs.rename(parent, `${parent}-unplugged`);
+      const unplugged = yield* service
+        .cancelRelease(request)
+        .pipe(
+          Effect.flip,
+          Effect.ensuring(fs.rename(`${parent}-unplugged`, parent).pipe(Effect.orDie)),
+        );
+      expect(unplugged.message).toContain("Connect the disk");
+      expect(yield* service.cancelRelease(request)).toBe("cleared");
+      expect(yield* store.get(copy.id)).toMatchObject({
+        removalPath: null,
+        releaseRequestId: null,
+      });
+    }),
+  );
+
+  it.effect("keeps a launch's registration through a Cancel or a write from an earlier read", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const { copy, removalPath } = yield* interruptedRelease("release-raced");
+      yield* fs.rename(removalPath, copy.rootPath);
+      const { project } = yield* store.get(copy.id);
+      let cancelled = false;
+      // The Cancel lands after the launch picked this copy and before it records itself there.
+      const cancelFirst = (workingCopyId: string) =>
+        Effect.suspend(() => {
+          if (workingCopyId !== copy.id || cancelled) return Effect.void;
+          cancelled = true;
+          return service.cancelRelease({ workingCopyId, requestId: "release-raced" });
+        });
+      const launching = yield* LibraryWorkspace.LibraryWorkspace.pipe(
+        Effect.provide(Layer.fresh(LibraryWorkspace.layer)),
+        Effect.provideService(LibraryWorkspaceStore.LibraryWorkspaceStore, {
+          ...store,
+          get: (workingCopyId) =>
+            store.get(workingCopyId).pipe(Effect.tap(() => cancelFirst(workingCopyId))),
+          update: (workingCopyId, change) =>
+            cancelFirst(workingCopyId).pipe(Effect.andThen(store.update(workingCopyId, change))),
+        }),
+      );
+      const launched = yield* launching.prepareCopy({
+        requestId: "launch-raced",
+        project,
+        strategy: "clone",
+      });
+      expect(launched.id).toBe(copy.id);
+      expect(cancelled).toBe(true);
+      const saved = yield* store.get(copy.id);
+      expect(saved).toMatchObject({ removalPath: null, releaseRequestId: null });
+      expect(saved.registrationRequests?.map((request) => request.requestId)).toContain(
+        "launch-raced",
+      );
+      // Archive, removal and retention writes commit the receipt they read before a long step.
+      const beforeArchive = yield* store.get(copy.id);
+      expect(
+        (yield* service.prepareCopy({ requestId: "launch-later", project, strategy: "clone" })).id,
+      ).toBe(copy.id);
+      yield* store.put(beforeArchive);
+      expect(
+        (yield* store.get(copy.id)).registrationRequests?.map((request) => request.requestId),
+      ).toEqual(expect.arrayContaining(["launch-raced", "launch-later"]));
+    }),
+  );
+
   it.effect("downloads into a new folder when the copy here has another remote", () =>
     Effect.gen(function* () {
       const service = yield* LibraryWorkspace.LibraryWorkspace;

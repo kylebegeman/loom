@@ -1258,12 +1258,19 @@ const make = Effect.gen(function* () {
                       interactionMode: input.interactionMode,
                     },
                   };
+                  const origin = {
+                    ...(input.linkOrigin === undefined ? {} : { linkOrigin: input.linkOrigin }),
+                    ...(input.delegatedFrom === undefined
+                      ? {}
+                      : { delegatedFrom: input.delegatedFrom }),
+                  };
                   return "threadId" in libraryCaller
-                    ? operations.executeAgent(libraryOperationId, request, libraryCaller)
+                    ? operations.executeAgent(libraryOperationId, request, libraryCaller, origin)
                     : operations.executeClient(
                         libraryOperationId,
                         request,
                         libraryCaller.sessionId,
+                        origin,
                       );
                 }),
               ).pipe(
