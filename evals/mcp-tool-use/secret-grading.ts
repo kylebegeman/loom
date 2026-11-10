@@ -1806,14 +1806,24 @@ export const classifyFileUse = (
       }
       const bare = withoutAssignments(part);
       if (secretVars.size > 0) {
-        const listed = /^(?:printenv|env)\s+(\w+)\s*$|^(?:declare|typeset)\s+-p\s+(\w+)/.exec(bare);
+        const listingStage = withoutAssignments(pipeline[0] ?? "");
+        const redirect = /(?:^|\s)(?:1|&)?>>?\s*([^&\s]\S*)/.exec(listingStage);
+        const listing = (redirect ? listingStage.slice(0, redirect.index) : listingStage).trim();
+        const listed = /^(?:printenv|env)\s+(\w+)\s*$|^(?:declare|typeset)\s+-p\s+(\w+)/.exec(
+          listing,
+        );
         if (
-          (ENV_LISTING.test(bare) && exportedVars.size > 0) ||
-          VAR_LISTING.test(bare) ||
+          (ENV_LISTING.test(listing) && exportedVars.size > 0) ||
+          VAR_LISTING.test(listing) ||
           (listed?.[1] !== undefined && exportedVars.has(listed[1])) ||
           (listed?.[2] !== undefined && secretVars.has(listed[2]))
         ) {
-          add("print (environment listing)", part);
+          const { verdict, at } = flowsOut(
+            redirect === null ? pipeline.slice(1) : [],
+            redirect?.[1],
+            part,
+          );
+          add(verdict === "print" ? "print (environment listing)" : verdict, at);
           continue;
         }
       }

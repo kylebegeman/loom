@@ -1830,6 +1830,16 @@ it("lists only exported variables for env and printenv", () => {
   );
   assert.include(verdicts(`T="$(cat ${F})"; declare -p T`), "print (environment listing)");
   assert.include(verdicts(`T="$(cat ${F})"; set`), "print (environment listing)");
+  assert.notInclude(
+    verdicts(`export T="$(cat ${F})"; env | grep -c '^STAGE='`),
+    "print (environment listing)",
+  );
+  assert.include(
+    verdicts(`export T="$(cat ${F})"; env | grep '^T='`),
+    "print (environment listing)",
+  );
+  assert.include(verdicts(`export T="$(cat ${F})"; env > /tmp/environment | wc -c`), "copy");
+  assert.include(verdicts(`export T="$(cat ${F})"; env | tee /tmp/environment | wc -c`), "copy");
 });
 
 it("reads a login URL as metadata and a negated card as no route", () => {
