@@ -1,9 +1,10 @@
+// @effect-diagnostics nodeBuiltinImport:off - Exercises the pre-runtime pnpm hook against disposable filesystem fixtures.
 import * as NodeModule from "node:module";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeVM from "node:vm";
-import { expect, it } from "vitest";
+import { expect, it } from "vite-plus/test";
 
 const repo = NodePath.resolve(import.meta.dirname, "../..");
 const screens = "react-native-screens@5.0.0-t3.48";
@@ -15,7 +16,7 @@ function fixture(platform = "linux") {
   const manifestPath = NodePath.join(root, "apps/mobile/package.json");
   const manifest = JSON.parse(
     NodeFS.readFileSync(NodePath.join(repo, "apps/mobile/package.json"), "utf8"),
-  );
+  ) as { dependencies: Record<string, string> };
   for (const file of [patch, tarball]) {
     const target = NodePath.join(root, file);
     NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
@@ -31,7 +32,11 @@ function fixture(platform = "linux") {
     process: { platform },
   });
   const hook = module.exports as {
-    hooks: { updateConfig: (config: { patchedDependencies?: Record<string, string> }) => unknown };
+    hooks: {
+      updateConfig: (config: {
+        patchedDependencies?: Record<string, string> | undefined;
+      }) => unknown;
+    };
   };
   return {
     root,
@@ -74,7 +79,7 @@ it.each(["version", "tarball path", "patch path", "missing patch"])(
   "rejects a Screens %s outside the pin",
   (changed) => {
     using f = fixture();
-    const patches = { [screens]: patch };
+    const patches: Record<string, string> = { [screens]: patch };
     if (changed === "version") {
       delete patches[screens];
       patches["react-native-screens"] = patch;

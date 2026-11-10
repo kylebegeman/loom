@@ -17,6 +17,11 @@ it("protects live state, arbitrary nested homes and symlinks resolving outside t
     isProtectedFixturePath(shared + "/arbitrary", shared, shared + "/arbitrary", isolated),
   ).toBe(true);
   expect(isProtectedFixturePath(isolated, shared, isolated, null)).toBe(true);
+  const nestedShared = isolated + "/installed";
+  expect(isProtectedFixturePath(nestedShared, nestedShared, nestedShared, isolated)).toBe(true);
+  expect(
+    isProtectedFixturePath(nestedShared + "/userdata", nestedShared, nestedShared, isolated),
+  ).toBe(true);
 });
 
 it("permits dedicated test homes only inside the canonical recognized worktree home", () => {
