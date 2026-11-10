@@ -35,6 +35,7 @@ export const CLI_COMMAND_UNINSTALL_CHANNEL = "desktop:cli-command-uninstall";
 export const OPEN_AT_LOGIN_GET_STATE_CHANNEL = "loom:open-at-login:get-state"; // fork: open-at-login
 export const OPEN_AT_LOGIN_SET_ENABLED_CHANNEL = "loom:open-at-login:set-enabled"; // fork: open-at-login
 export const OPEN_AT_LOGIN_OPEN_SETTINGS_CHANNEL = "loom:open-at-login:open-settings"; // fork: open-at-login
+export const CLI_COMMAND_ADD_TO_PATH_CHANNEL = "desktop:cli-command-add-to-path";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
 export const GET_RELAY_TELEMETRY_ENABLED_CHANNEL = "desktop:get-relay-telemetry-enabled";
 export const GET_SYSTEM_LOCALE_CHANNEL = "desktop:get-system-locale";

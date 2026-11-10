@@ -1594,7 +1594,7 @@ apps/desktop/src/app/DesktopLifecycle.ts	machine-updates	7
 apps/desktop/src/window/DesktopApplicationMenu.ts	machine-updates	1
 apps/desktop/src/updates/DesktopRemoteUpdates.ts	machine-updates	16
 apps/desktop/src/telemetry/DesktopTelemetryPublisher.ts	machine-updates	4
-apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	2
+apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/package.json	-	"access:pilot"
 apps/desktop/src/app/DesktopApp.ts	cloudflare-access	1
@@ -1765,3 +1765,6 @@ apps/mobile/src/features/threads/ThreadHeader.tsx	native-menus	1
 apps/mobile/src/features/threads/ThreadHeader.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceListHeader.tsx	mobile-navigation	1
 apps/mobile/src/features/browser/BrowserPreviewRouteScreen.tsx	native-scroll-edge	1
+
+.pnpmfile.cjs	native-tab-bar	3
+apps/mobile/deps/README.md	native-tab-bar	1

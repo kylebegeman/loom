@@ -36,7 +36,10 @@ When upgrading Screens during an upstream merge, rebase this patch onto the
 new package or remove it once the package carries the equivalent fix. Verify
 Search result push/Back, interactive Back, Settings presentation/dismissal and
 tab switching before removing it. Keep the exact-version patch entry
-and generated lockfile aligned with the archive.
+and generated lockfile aligned with the archive. The `.pnpmfile.cjs` exception pins
+the Screens archive path, version, patch path and both SHA-256 hashes. Review and
+update that pin with either input; otherwise dependency installation deliberately
+fails. Other fork tarballs remain ineligible for pnpm patches.
 
 To reproduce an archive, use Node 24 and the repository's pinned Yarn from a
 clean fork checkout at the source commit recorded in its `t3-fork.json`:
