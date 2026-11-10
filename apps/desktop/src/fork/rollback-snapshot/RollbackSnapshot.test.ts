@@ -144,6 +144,9 @@ it.layer(NodeServices.layer)("saveRollbackSnapshot", (it) => {
         yield* h.saveState(previous, 2_000);
         const beforeLoom = h.path.join(h.buildsDirectory, "before-loom");
         yield* h.saveState(beforeLoom, 500);
+        // The legacy marker and old installer scripts sit beside the records.
+        yield* h.fs.writeFileString(h.path.join(h.buildsDirectory, "installed"), "0.0.131\n");
+        yield* h.fs.writeFileString(h.path.join(h.buildsDirectory, "install-1.command"), "");
         yield* saveRollbackSnapshot(h.paths);
         assert.isFalse(yield* h.fs.exists(h.path.join(oldest, "state")));
         assert.isTrue(yield* h.fs.exists(h.path.join(previous, "state")));
