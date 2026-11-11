@@ -156,7 +156,7 @@ export function libraryAccessRepairNotice(
     case "permission":
       return {
         title: "Computer permission required",
-        description: `Review this device's permissions on ${computer} in Settings > Connections. Ask that computer's owner for the required permission.`,
+        description: `Review this device's permissions in ${computer}'s connection settings. Ask that computer's owner for the required permission.`,
         actionLabel: `Review ${computer} permissions`,
         destination: { kind: "connection", environmentId } satisfies LibraryAccessRepairDestination,
         expectedIdentity: null,
@@ -165,7 +165,7 @@ export function libraryAccessRepairNotice(
     case "connection":
       return {
         title: "Computer connection needs attention",
-        description: `Reconnect ${computer} in Settings > Connections, then refresh its access.`,
+        description: `Reconnect ${computer} in its connection settings, then refresh its access.`,
         actionLabel: `Open ${computer} connection`,
         destination: { kind: "connection", environmentId } satisfies LibraryAccessRepairDestination,
         expectedIdentity: null,

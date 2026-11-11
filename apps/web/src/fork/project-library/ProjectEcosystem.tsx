@@ -231,7 +231,7 @@ export function ProjectEcosystem({
           and tools before preparing files.
         </p>
         <Button size="xs" variant="ghost" render={<Link to="/settings/connections" />}>
-          Open connections
+          Open computers
         </Button>
       </details>
       <LibraryDialog

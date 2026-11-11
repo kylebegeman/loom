@@ -4,7 +4,6 @@ import {
   LIBRARY_OPERATION_STATES,
   libraryProjectRequestOutcome,
   selectLibraryProjectRequests,
-  needsLibrarySignIn,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { PROJECT_WORKFLOWS_FEATURE, type LibraryOperation } from "@t3tools/contracts/fork";
@@ -32,7 +31,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { projectLibrary, useLibraryPermission } from "./state";
 import { openLibraryAction } from "./actions";
 import { LIBRARY_ROW, LibraryErrorNotice, LibraryStateBadge } from "./LibraryControls";
-import { LibrarySignInLink } from "./LibrarySignInLink";
+import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import { ComputerLabel } from "./ProjectIdentity";
 
 const OPERATION_ICONS: Record<LibraryOperation["kind"], LucideIcon> = {
@@ -258,13 +257,15 @@ function OperationRow({
           </p>
         </details>
       </div>
-      {operation.error ? (
-        <div className="flex flex-wrap items-center gap-2 ps-10">
-          <p role="status" className="text-xs text-destructive-foreground">
-            {operation.error}
-          </p>
-          {needsLibrarySignIn(operation.error, operation.accessRepair) ? (
-            <LibrarySignInLink />
+      {operation.error || operation.accessRepair || operation.repair ? (
+        <div className="ps-10">
+          <LibraryErrorNotice
+            error={operation.error ?? "Access is needed to continue this request."}
+            accessRepair={operation.accessRepair}
+            accessContext={{ environmentId: operation.environmentId }}
+          />
+          {operation.repair && !operation.accessRepair ? (
+            <LibraryCloneRepair repair={operation.repair} />
           ) : null}
         </div>
       ) : null}

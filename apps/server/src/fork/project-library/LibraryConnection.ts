@@ -77,7 +77,7 @@ const UNAVAILABLE: LibraryConnection = { kind: "unavailable" };
 const AUTHORITY: LibraryConnection = { kind: "authority" };
 
 export const LIBRARY_SIGN_IN_MISSING =
-  "This computer's sign-in to your Library is missing or expired. Open Settings > Connections on this computer. Ask your Library administrator to replace its publisher credential, then try again. Loom reloads it automatically.";
+  "This computer's sign-in to your Library is missing or expired. Open this computer's Library settings. Ask your Library administrator to replace its publisher credential, then try again. Loom reloads it automatically.";
 export const LIBRARY_NOT_CONNECTED =
   "This computer is not connected to a Library. Connect it to your Library, then try again.";
 export const LIBRARY_MISMATCH =

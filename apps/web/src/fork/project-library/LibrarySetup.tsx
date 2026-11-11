@@ -154,7 +154,7 @@ export function LibrarySetup({
         </Button>
         {showConnectionsLink ? (
           <Button variant="outline" render={<Link to="/settings/connections" />}>
-            Connections
+            Open computers
           </Button>
         ) : null}
       </div>

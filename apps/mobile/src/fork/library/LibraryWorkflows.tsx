@@ -48,6 +48,7 @@ import {
   useLoomFeature,
 } from "./libraryState";
 import { LibraryCopySection } from "./LibraryCopySection";
+import { LibraryNotice } from "./LibraryPage";
 import { LibraryStateBadge } from "./LibraryStateBadge";
 
 const inputStyle = "min-h-12 rounded-xl bg-field px-4 text-base text-foreground";
@@ -704,8 +705,13 @@ export function LibraryOperationHistory({
                   Requested {new Date(operation.createdAt).toLocaleString()}. Resume keeps this
                   reference.
                 </Text>
-                {operation.error ? (
-                  <Text className="text-sm text-danger">{operation.error}</Text>
+                {operation.error || operation.accessRepair || operation.repair ? (
+                  <LibraryNotice
+                    error={operation.error}
+                    accessRepair={operation.accessRepair}
+                    repair={operation.repair}
+                    accessContext={{ environmentId: operation.environmentId, computerLabel }}
+                  />
                 ) : null}
                 <Button
                   label="Check outcome"
