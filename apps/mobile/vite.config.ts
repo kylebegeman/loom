@@ -31,6 +31,7 @@ const reactTests = [
   "src/features/threads/ThreadRecoveryNotice.test.tsx", // fork: failed-run-retry
   "src/components/ui/FilePreviewSession.test.tsx",
   "src/features/threads/UsageLimitRecoveryCard.test.tsx",
+  "src/features/threads/PendingUserInputCard.test.tsx",
   "src/features/threads/thread-command-output.test.tsx", // fork: library
   "src/features/threads/useThreadHeaderOptions.test.tsx", // fork: source-control-cockpit
   "src/features/threads/NewTaskDraftRouteScreen.test.tsx",

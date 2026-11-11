@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./pullRequestAnchor": {
+      "types": "./src/pullRequestAnchor.ts",
+      "import": "./src/pullRequestAnchor.ts"
+    },
     "./fork/restart-impact": {
       "types": "./src/fork/restart-impact.ts",
       "import": "./src/fork/restart-impact.ts"

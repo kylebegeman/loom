@@ -97,12 +97,11 @@ export function dismissProjectFileCopy(ref: ScopedProjectRef) {
 }
 
 /**
- * Clones a project onto another machine, then copies the chosen ignored files
- * from the source. The client relays the files because the two servers never
- * talk to each other. Resolves once the clone starts. The caller opens the new
- * project, whose composer shows the clone and copy progress, so nothing toasts.
+ * Clones onto another machine, then relays the chosen ignored files, since the
+ * two servers never talk. Resolves with the cloning project once it starts; the
+ * caller opens it, and its composer shows progress, so nothing toasts.
  */
-// fork: file-placement - Resolves with the project the server used, which a reused checkout keeps.
+// fork: file-placement - A reused checkout resolves with its own project, which has no clone.
 export async function addProjectToMachine(input: AddProjectToMachineInput): Promise<ProjectId> {
   // Read first, so the copy reflects the files as they were when the user asked.
   const reads = await Promise.all(
@@ -121,11 +120,11 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
     }),
   );
 
-  const targetRef = { environmentId: input.target.environmentId, projectId: input.projectId };
-  // fork: file-placement -- copyKey comes from the project the start reply names
+  const requestedRef = { environmentId: input.target.environmentId, projectId: input.projectId };
+  const requestedKey = scopedProjectKey(requestedRef);
   // Marked before the start request, since the clone list can arrive before its reply.
-  silenceProjectCloneToasts(targetRef);
-  // fork: file-placement -- the copying phase starts once that project is known
+  silenceProjectCloneToasts(requestedRef);
+  if (reads.length > 0) setFileCopy(requestedKey, { phase: "copying" });
   const started = await runAtomCommand(
     appAtomRegistry,
     sourceControlEnvironment.startProjectClone,
@@ -141,15 +140,24 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
     },
     { label: "Add project to machine", reportFailure: false },
   );
-  // fork: file-placement
-  if (started._tag === "Failure") throw new Error(failureMessage(started));
-  void suggestAppAccessForRemote(input.target.environmentId, input.remoteUrl);
-  // fork: file-placement - Copies follow the returned project; a reused checkout has no clone.
+  if (started._tag === "Failure") {
+    setFileCopy(requestedKey, null);
+    throw new Error(failureMessage(started));
+  }
+  // The server clones for the existing project when one already owns the empty destination.
+  // fork: file-placement - A reused checkout's project has no clone to wait for.
   const { projectId, reused = false } = started.value;
-  if (reads.length === 0) return projectId; // fork: file-placement
-  // fork: file-placement
-  const copyKey = scopedProjectKey({ environmentId: input.target.environmentId, projectId });
-  setFileCopy(copyKey, { phase: "copying" }); // fork: file-placement
+  const targetRef = { environmentId: input.target.environmentId, projectId };
+  const copyKey = scopedProjectKey(targetRef);
+  if (projectId !== input.projectId) {
+    silenceProjectCloneToasts(targetRef);
+    if (reads.length > 0) {
+      setFileCopy(copyKey, { phase: "copying" });
+      setFileCopy(requestedKey, null);
+    }
+  }
+  void suggestAppAccessForRemote(input.target.environmentId, input.remoteUrl);
+  if (reads.length === 0) return projectId;
 
   void (async () => {
     // fork: file-placement
@@ -199,7 +207,7 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
           },
     );
   })();
-  return projectId; // fork: file-placement
+  return projectId;
 }
 
 // fork: file-placement

@@ -175,6 +175,8 @@ These actions work without a Library connection; the computer running the work m
 The Projects page also lists work on your computers when no Library is selected.
 
 To clone, choose **Git URL**, paste the repository address, and choose its destination folder.
+A branch or file page copied from GitHub, GitLab, GitCafe, Codeberg or Bitbucket also works: Loom
+clones that repository's default branch. On other hosts, paste the repository's clone URL.
 Loom opens the new thread while the clone runs. The repository name and files stay attached to
 that thread. Ready source-control account shortcuts also appear in the picker.
 **Add project** on a computer in **Computers** keeps that computer selected.
@@ -220,6 +222,10 @@ or merge. You can edit review titles and descriptions and your own comments wher
 Where you can edit a description, you can also tick its checkboxes from the Summary tab
 (the Overview tab on mobile).
 GitLab calls these merge requests.
+
+A link to part of a pull request opens that part: a comment or review is marked in the activity, a
+changed-line link opens the file at those lines, a checks link opens the checks, and a commit link
+opens that commit's changes. On web and desktop, hovering a comment or commit link previews it.
 
 On mobile, **Pull requests** lists reviews across your connected environments. Open a review
 to read its description, activity, commits, and changed files. Line comments stay as drafts

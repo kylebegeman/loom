@@ -283,7 +283,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/mobile/src/features/threads/ThreadMarkdownImage.test.tsx` | `cloudflare-access`   | Keep the native Access keychain out of markdown image tests.                 |
 | `apps/server/src/orchestration-v2/ThreadFork.execution.test.ts` | `deleted-history`     | Expect the deleted-source refusal that rejects a side chat first.            |
 | `apps/server/src/process/externalLauncher.test.ts`              | `hermetic-tests`      | Keep the host's installed editors out of the Insiders bundle case.           |
-| `apps/desktop/src/app/DesktopApp.test.ts`                       | `restart-compaction`  | Stub the startup repair and provide its process spawner in the startup test. |
+| `apps/desktop/src/app/DesktopApp.test.ts`                       | `restart-compaction`  | Stub the startup repair in the desktop startup test.                         |
 | `apps/desktop/src/app/DesktopApp.test.ts`                       | `rollback-snapshot`   | Stub the startup install-marker rewrite in the desktop startup test.         |
 | `apps/desktop/src/app/DesktopApp.test.ts`                       | `cloudflare-access`   | Mock the desktop Access service the startup program installs.                |
 | `apps/desktop/src/app/DesktopApp.test.ts`                       | `identity-renewal`    | Mock the renewal service the Identity IPC handlers require.                  |
@@ -556,11 +556,10 @@ each) and `packages/contracts/src/ipc.ts` (3); `apps/web/src/connection/platform
 The `retention-defaults` seams bound storage that otherwise grows without limit. Browser
 captures default to 14 days in `packages/contracts/src/settings.ts` (1 marker line), and
 `EventNdjsonLogger.ts` (1) halves the provider log cap to 256 MiB. `LocalDeviceHost.ts` (2)
-prunes device QA session folders idle for 14 days before it starts the device daemon, and
-`UsageService.ts` (3) deletes usage scan caches from older versions a week after their last
-write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
-`apps/server/src/fork/retention/`. Tests carry the rest: `settings.test.ts` (3),
-`LocalDeviceHost.test.ts` (3), `UsageService.test.ts` (2, including canonical fixture paths),
+prunes device QA session folders idle for 14 days before it starts the device daemon, with its
+helper in `apps/server/src/fork/retention/`. Upstream now removes older usage scan caches itself
+once the current one saves. Tests carry the rest: `settings.test.ts` (3),
+`LocalDeviceHost.test.ts` (3), `UsageService.test.ts` (1, canonical fixture paths),
 and one each in `EventNdjsonLogger.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts`
 and `packages/shared/src/serverSettings.test.ts`.
 
@@ -821,12 +820,13 @@ after revocation or once the window closes.
 
 The `restart-continuity` seams let Loom quit, restart and update without cutting off a busy
 backend, stop the agents a killed backend leaves behind, and make a slow or fatal start explain
-itself. `DesktopBackendManager.ts` (19 marker lines) raises the backend's SIGTERM grace from 5 s
+itself. `DesktopBackendManager.ts` (21 marker lines) raises the backend's SIGTERM grace from 5 s
 to 15 s, because three of four measured install stops hit the old cap while still stopping
-provider sessions. Its stop budget adds 2 s so a stop that returns has really ended the process,
-and 2 s more for the provider cleanup below. That budget is upstream's `BACKEND_QUIT_STOP_TIMEOUT`,
-which the quit in `DesktopApp.ts` and the update install in `DesktopUpdates.ts` use unchanged;
-`DesktopApp.ts` (1) only exports its pool stop for the fork's bounded quit test.
+provider sessions. Its stop budget adds 2 s for the force kill and 2 s more for the provider
+cleanup below. That budget is upstream's `BACKEND_QUIT_STOP_TIMEOUT`, which the quit in
+`DesktopApp.ts` and the update install in `DesktopUpdates.ts` use unchanged. Upstream's stop
+keeps waiting for the backend to exit past it, so the budget only decides when a stop is logged
+and traced as overrunning. `DesktopApp.ts` (1) only exports its pool stop for the fork's quit test.
 `serviceLauncher.ts` (1) uses the same 15 s grace, and `ProviderSessionManager.ts` (1) corrects
 a comment that names it. Keep the graces equal and the budget longer than the grace plus the
 cleanup. Provider CLIs lead their own process groups, so they outlive a backend that is
@@ -844,7 +844,8 @@ directory, and names the provider ledger only for the primary local backend, nev
 `DesktopWindow.ts` (2) hides a closed macOS main window so its renderer keeps raising
 notifications. Any new quit path must set `quitting` or destroy the windows before a close
 event, or it will only hide the window. Tests carry the rest: `DesktopWindow.test.ts` (6),
-`DesktopBackendManager.test.ts` (11) and `DesktopBackendConfiguration.test.ts` (2).
+`DesktopBackendManager.test.ts` (15), `DesktopBackendPool.test.ts` (1), which waits out the
+longer grace, and `DesktopBackendConfiguration.test.ts` (2).
 
 The `restart-compaction` seams let the Loom desktop app run the doctor's database repair itself
 during a restart, so desktop users never need `t3 doctor`. The repair lives in

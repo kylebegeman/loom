@@ -22,6 +22,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts"; // fork: file-placement
 import * as VcsProcess from "../vcs/VcsProcess.ts"; // fork: file-placement
 import * as SourceControlRepositoryService from "../sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectCloneTracker from "./ProjectCloneTracker.ts";
+import { ProjectConflictError } from "./ProjectService.ts";
 import { parseGitCloneProgressLine } from "./gitCloneProgress.ts";
 
 const projectId = ProjectId.make("project-1");
@@ -318,6 +319,35 @@ describe("ProjectCloneTracker", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("clones for the project that already owns the empty destination", () => {
+    const owner = ProjectId.make("project-stranded");
+    const harness = makeHarness();
+    const hooks: ProjectCloneTracker.ProjectCloneHooks = {
+      ...harness.hooks,
+      createProject: (input) =>
+        Effect.fail(
+          new ProjectConflictError({
+            projectId: input.projectId,
+            workspaceRoot: input.workspaceRoot,
+            conflictingProjectId: owner,
+          }),
+        ),
+    };
+    return Effect.gen(function* () {
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const result = yield* tracker.start(startInput, hooks);
+      expect(result.projectId).toBe(owner);
+      yield* Effect.yieldNow;
+      expect(yield* tracker.get(owner)).toMatchObject({
+        projectId: owner,
+        destinationPath: "/workspace/t3code",
+        phase: "done",
+      });
+      expect(harness.cloned).toEqual([owner]);
+      expect(yield* tracker.get(projectId)).toBeNull();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("does not create a project when the clone cannot be prepared", () => {
     const harness = makeHarness();
     // fork: file-placement
@@ -388,6 +418,40 @@ describe("ProjectCloneTracker", () => {
       expect(result).toMatchObject({ projectId: existing, reused: true });
       expect(harness.created).toEqual([]);
       expect(harness.cloned).toEqual([existing]);
+      expect(harness.cloneCalls).toEqual([]);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  // fork: file-placement
+  it.effect("an omitted destination opens the project that registered the checkout first", () => {
+    const owner = ProjectId.make("project-owner");
+    const harness = makeHarness({
+      prepare: (input) =>
+        Effect.succeed({
+          destinationPath: "/projects/t3code",
+          remoteUrl: input.remoteUrl ?? "",
+          cloneUrl: input.remoteUrl ?? "",
+          repository: null,
+          reuse: { path: "/projects/t3code", projectId: null },
+        }),
+    });
+    const hooks: ProjectCloneTracker.ProjectCloneHooks = {
+      ...harness.hooks,
+      createProject: (input) =>
+        Effect.fail(
+          new ProjectConflictError({
+            projectId: input.projectId,
+            workspaceRoot: input.workspaceRoot,
+            conflictingProjectId: owner,
+          }),
+        ),
+    };
+    const { destinationPath: _omitted, ...input } = startInput;
+    return Effect.gen(function* () {
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const result = yield* tracker.start(input, hooks);
+      expect(result).toMatchObject({ projectId: owner, reused: true });
+      expect(harness.cloned).toEqual([owner]);
       expect(harness.cloneCalls).toEqual([]);
     }).pipe(Effect.provide(harness.layer));
   });
