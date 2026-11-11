@@ -6,6 +6,7 @@ export type ConfirmDialogState =
       readonly status: "confirming";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
+      readonly initialFocus: ConfirmDialogOptions["initialFocus"];
       readonly confirmLabel: string | undefined; // fork: confirm-label
       readonly cancelLabel: string | undefined; // fork: confirm-label
     }
@@ -13,6 +14,7 @@ export type ConfirmDialogState =
       readonly status: "closing";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
+      readonly initialFocus: ConfirmDialogOptions["initialFocus"];
       readonly confirmLabel: string | undefined; // fork: confirm-label
       readonly cancelLabel: string | undefined; // fork: confirm-label
     };
@@ -20,6 +22,7 @@ export type ConfirmDialogState =
 type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
+  readonly initialFocus: ConfirmDialogOptions["initialFocus"];
   readonly confirmLabel: string | undefined; // fork: confirm-label
   readonly cancelLabel: string | undefined; // fork: confirm-label
   readonly resolve: (confirmed: boolean) => void;
@@ -75,6 +78,7 @@ export function requestConfirmDialog(
     const pending = {
       message,
       variant: options?.variant ?? "default",
+      initialFocus: options?.initialFocus,
       confirmLabel: options?.confirmLabel, // fork: confirm-label
       cancelLabel: options?.cancelLabel, // fork: confirm-label
       resolve,
@@ -89,6 +93,7 @@ export function requestConfirmDialog(
       status: "confirming",
       message,
       variant: pending.variant,
+      initialFocus: pending.initialFocus,
       confirmLabel: pending.confirmLabel, // fork: confirm-label
       cancelLabel: pending.cancelLabel, // fork: confirm-label
     });
@@ -107,7 +112,14 @@ export function respondToConfirmDialog(confirmed: boolean): void {
   const confirmation = activeConfirmation;
   activeConfirmation = null;
   confirmation.resolve(confirmed);
-  publish({ ...state, status: "closing" }); // fork: confirm-label
+  publish({
+    status: "closing",
+    message: state.message,
+    variant: state.variant,
+    initialFocus: state.initialFocus,
+    confirmLabel: state.confirmLabel, // fork: confirm-label
+    cancelLabel: state.cancelLabel, // fork: confirm-label
+  });
 }
 
 export function completeConfirmDialogClose(): void {
@@ -124,6 +136,7 @@ export function completeConfirmDialogClose(): void {
     status: "confirming",
     message: next.message,
     variant: next.variant,
+    initialFocus: next.initialFocus,
     confirmLabel: next.confirmLabel, // fork: confirm-label
     cancelLabel: next.cancelLabel, // fork: confirm-label
   });
