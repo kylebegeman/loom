@@ -985,9 +985,12 @@ const make = Effect.gen(function* () {
       const existing = yield* read(id);
       if (existing && existing.request_json !== encoded)
         return yield* new LibraryError({ reason: "request-conflict" });
-      // A retry after a person took the operation over still gets its outcome.
-      if (existing && ["succeeded", "cancelled"].includes(existing.operation.state))
+      // An agent retry after a person took the operation over still gets its outcome.
+      if (existing && ["succeeded", "cancelled"].includes(existing.operation.state)) {
+        if (!isAgent(actor.subject) && !mayControl(existing.subject, actor))
+          return yield* ownedElsewhere(existing.subject);
         return existing.operation;
+      }
       if (existing && !mayControl(existing.subject, actor))
         return yield* ownedElsewhere(existing.subject);
       if (existing && pending.has(id)) return existing.operation;

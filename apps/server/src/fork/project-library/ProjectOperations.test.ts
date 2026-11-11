@@ -758,7 +758,10 @@ describe("Project operations", () => {
           { ...session(), sessionId: AuthSessionId.make("other"), subject: "other-owner" },
         ]);
         const other = { sessionId: "other", subject: "other-owner" };
-        expect(yield* state.service.execute("operation", create, other)).toEqual(first);
+        expect(
+          (yield* state.service.execute("operation", create, other).pipe(Effect.flip)).accessRepair
+            ?.kind,
+        ).toBe("ownership");
         expect(
           (yield* state.service
             .execute(
@@ -931,6 +934,11 @@ describe("Project operations", () => {
                   .controlClient("stable-owner", "cancel", actor.sessionId)
                   .pipe(Effect.flip)).reason,
               ).toBe("blocked");
+              expect(
+                (yield* restarted
+                  .executeClient("stable-owner", create, actor.sessionId)
+                  .pipe(Effect.flip)).accessRepair?.kind,
+              ).toBe("ownership");
               yield* sql`UPDATE fork_library_operations SET subject=${original.subject} WHERE id='stable-owner'`;
               yield* Ref.set(state.active, [
                 { ...session(), subject: subjectFor(nextEnvironment) },

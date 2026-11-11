@@ -74,6 +74,18 @@ function checkedResult(
   return result;
 }
 
+export function assertLibraryProjectInitiator(
+  attempt: SubmittedLibraryProjectRequest,
+  identity: SubmittedLibraryProjectRequest["initiator"],
+) {
+  if (
+    attempt.initiator &&
+    (attempt.initiator.issuer !== identity?.issuer ||
+      attempt.initiator.subject !== identity?.subject)
+  )
+    throw new Error("Sign in with the account that started this request before continuing.");
+}
+
 /** Checking an uncertain outcome never also retries its mutation. */
 export async function runSubmittedLibraryProjectRequest(
   attempt: SubmittedLibraryProjectRequest,
@@ -90,12 +102,7 @@ export async function runSubmittedLibraryProjectRequest(
 ): Promise<SubmittedLibraryProjectRequest> {
   if (attempt.authorityId !== authorityId)
     throw new Error("Reconnect the Library used for this request before continuing.");
-  if (
-    attempt.initiator &&
-    (attempt.initiator.issuer !== ports.identity?.issuer ||
-      attempt.initiator.subject !== ports.identity?.subject)
-  )
-    throw new Error("Sign in with the account that started this request before continuing.");
+  assertLibraryProjectInitiator(attempt, ports.identity);
   if (attempt.state === "succeeded") {
     checkedResult(attempt, attempt.result);
     return attempt;

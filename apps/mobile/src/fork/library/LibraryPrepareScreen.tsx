@@ -34,6 +34,7 @@ import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { LibraryFolderPicker } from "./LibraryFolderPicker";
 import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import {
+  assertLibraryProjectInitiator,
   registerSubmittedLibraryProjectCopy,
   runSubmittedLibraryProjectRequest,
   type SubmittedLibraryProjectRequest,
@@ -153,7 +154,7 @@ function LibraryPrepareContent({
     setPending(true);
     setError(null);
     setAccessRepair(undefined);
-    try {
+    const prepareFiles = async () => {
       const submitted: SubmittedLibraryProjectRequest = attempt ?? {
         authorityId: authorityEnvironmentId,
         environmentId: execution,
@@ -188,12 +189,7 @@ function LibraryPrepareContent({
         },
       });
       const currentIdentity = readEnvironmentSessionState(execution)?.identity;
-      if (
-        complete.initiator &&
-        (complete.initiator.issuer !== currentIdentity?.issuer ||
-          complete.initiator.subject !== currentIdentity?.subject)
-      )
-        throw new Error("Sign in with the account that started this request before continuing.");
+      assertLibraryProjectInitiator(complete, currentIdentity);
       if (complete.state === "succeeded" && !checking) {
         await registerSubmittedLibraryProjectCopy(complete, authorityEnvironmentId, {
           persist: requests.persist,
@@ -218,13 +214,13 @@ function LibraryPrepareContent({
         });
       }
       refreshLibraryWork(authorityEnvironmentId, projectId);
-    } catch (cause) {
+    };
+    await prepareFiles().catch((cause: unknown) => {
       setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
       setError(cause instanceof Error ? cause.message : "The files could not be prepared.");
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
+    });
+    busy.current = false;
+    setPending(false);
   }
   return (
     <LibraryPage title={finished ? "Project ready" : "Prepare project files"} back>
