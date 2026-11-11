@@ -606,6 +606,7 @@ apps/server/src/provider/CodexDeveloperInstructions.test.ts	brand	1
 apps/server/src/provider/CodexAuthCallbackPage.ts	brand	4
 apps/server/src/provider/CodexInstallation.ts	brand	1
 apps/server/src/provider/CodexProvider.ts	brand	2
+apps/server/src/provider/AcpRegistrySessions.ts	brand	1
 apps/server/src/provider/ProviderAuthService.ts	brand	1
 apps/server/src/provider/ProviderRegistry.test.ts	brand	1
 apps/server/src/provider/antigravityAuthSupport.ts	brand	1
@@ -615,7 +616,7 @@ apps/server/src/provider/providerMaintenanceRunner.ts	brand	3
 apps/server/src/serverOwnership.ts	brand	2
 apps/server/src/serviceLauncher.ts	brand	2
 apps/server/src/startupAccess.ts	brand	1
-apps/server/src/ws.ts	brand	2
+apps/server/src/ws.ts	brand	1
 apps/web/src/components/HostedEmptyState.tsx	brand	1
 apps/web/src/components/RightPanelTabs.tsx	brand	1
 apps/web/src/components/ServerUpdateAction.tsx	brand	2
