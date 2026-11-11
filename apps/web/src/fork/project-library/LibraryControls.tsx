@@ -32,6 +32,7 @@ export function LibraryDialog({
   description,
   children,
   actions,
+  embedded = false,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -39,7 +40,21 @@ export function LibraryDialog({
   readonly description: string;
   readonly children: ReactNode;
   readonly actions: ReactNode;
+  readonly embedded?: boolean;
 }) {
+  if (embedded)
+    return open ? (
+      <section aria-label={title} className="flex min-h-0 flex-1 flex-col">
+        <header className="space-y-1 px-5 pt-5 pb-4">
+          <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </header>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-5">{children}</div>
+        <footer className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border/60 px-5 py-4">
+          {actions}
+        </footer>
+      </section>
+    ) : null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="sm:max-w-xl">

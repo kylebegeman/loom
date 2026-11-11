@@ -273,7 +273,7 @@ const makeCreationHarness = Effect.fn("TestProjectLibrary.creationHarness")(func
 
 describe("Library project creation recovery", () => {
   it.effect(
-    "replays the same create request after its response is lost and the session reconnects",
+    "returns an uncertain create outcome without replaying it after the session reconnects",
     () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -316,15 +316,15 @@ describe("Library project creation recovery", () => {
             phase: "connected" as const,
           }));
           const result = yield* Fiber.join(command);
-          expect(AsyncResult.isSuccess(result)).toBe(true);
-          if (AsyncResult.isSuccess(result)) expect(result.value).toEqual(project);
-          expect(requests).toEqual([input, input]);
-          expect(requests[0]).toBe(requests[1]);
+          expect(AsyncResult.isFailure(result)).toBe(true);
+          if (AsyncResult.isFailure(result))
+            expect(Cause.squash(result.cause)).toMatchObject({ _tag: "RpcClientError" });
+          expect(requests).toEqual([input]);
         }),
       ),
   );
 
-  it.effect("surfaces a blocked reconnect instead of retrying creation", () =>
+  it.effect("preserves an uncertain creation outcome when reconnect is blocked", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const received = yield* Deferred.make<void>();
@@ -361,9 +361,7 @@ describe("Library project creation recovery", () => {
         expect(AsyncResult.isFailure(result)).toBe(true);
         if (AsyncResult.isFailure(result))
           expect(Cause.squash(result.cause)).toMatchObject({
-            _tag: "LibraryError",
-            reason: "blocked",
-            detail: "Sign in to the Library again.",
+            _tag: "RpcClientError",
           });
         expect(calls).toBe(1);
       }),

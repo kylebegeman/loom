@@ -64,6 +64,7 @@ import {
 } from "./newProjectChoices";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
+import { CopyDialog } from "./CopyDialog";
 import {
   NewConversationDialog,
   libraryConversationDefaults,
@@ -145,7 +146,15 @@ export function useLibraryPaletteTakeover() {
 }
 
 /** `new` asks how a project starts and `git` takes the URL to clone; both lead to `create`. */
-type ProjectStep = "project" | "new" | "git" | "create" | "import" | "conversation";
+type ProjectStep =
+  | "project"
+  | "new"
+  | "git"
+  | "create"
+  | "import"
+  | "prepare"
+  | "ready"
+  | "conversation";
 
 type CreateDraft = Extract<NewProjectTarget, { step: "create" }>;
 const BLANK_DRAFT: CreateDraft = { step: "create", page: "name", title: "", repository: "" };
@@ -560,7 +569,7 @@ export function LibraryActionHost({
           onBack={back}
           onClose={onClose}
           filter={false}
-          message="The project name comes from this repository. Review it, then start working."
+          message="Review the project name, then choose a computer for its working copy."
           items={[
             gitChoice
               ? {
@@ -592,19 +601,18 @@ export function LibraryActionHost({
           initialTitle={draft.title}
           initialResource={draft.repository}
           initialPage={draft.page}
-          continueTo={repositoryStart || home === "project" ? "conversation" : "project"}
+          continueTo={home === "project" ? "conversation" : repositoryStart ? "clone" : "project"}
           onBack={back}
           onClose={onClose}
           onSaved={(saved) => {
             forget("create");
-            choose(saved, undefined, undefined, {
-              destination:
-                repositoryStart && holdsGitRemote(saved.resources, draft.repository)
-                  ? "conversation"
-                  : action === "new-conversation"
-                    ? "conversation"
-                    : "project",
-            });
+            if (repositoryStart && holdsGitRemote(saved.resources, draft.repository)) {
+              selectProject(saved.id);
+              setRequestedProject(saved.id);
+              setChosenProject(saved);
+              setChosenCopy(null);
+              setStep("prepare");
+            } else choose(saved);
           }}
         />
       ) : null}
@@ -628,6 +636,53 @@ export function LibraryActionHost({
               copy && quickStarts.start(saved, [copy], copy.environmentId)?.launch,
             );
           }}
+        />
+      ) : null}
+      {step === "prepare" && project ? (
+        <CopyDialog
+          embedded
+          newProject
+          project={project}
+          strategy="clone"
+          {...(defaults?.environmentId ? { initialHostId: defaults.environmentId } : {})}
+          onClose={onClose}
+          onSaved={(copy) => {
+            library.refresh();
+            setChosenCopy(copy);
+            if (copy.state === "ready") setStep("ready");
+          }}
+        />
+      ) : null}
+      {step === "ready" && project && chosenCopy ? (
+        <LibraryPaletteView
+          title="Project ready"
+          placeholder="Choose what to do next..."
+          query=""
+          onQueryChange={() => {}}
+          onClose={onClose}
+          filter={false}
+          message={`${project.title} is ready in ${chosenCopy.rootPath}.`}
+          items={[
+            {
+              id: "open-project",
+              title: "Open project",
+              description: "View files and project details",
+              icon: <ProjectTile project={project} size="sm" />,
+              select: () => choose(project, chosenCopy, undefined, { destination: "project" }),
+            },
+            {
+              id: "start-conversation",
+              title: "Start conversation",
+              description: "Review conversation settings",
+              icon: <PlusIcon className="size-4" />,
+              next: true,
+              select: () =>
+                choose(project, chosenCopy, undefined, {
+                  destination: "conversation",
+                  start: false,
+                }),
+            },
+          ]}
         />
       ) : null}
       {library.authorityId && project && !project.archived ? (

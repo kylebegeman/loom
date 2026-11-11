@@ -195,6 +195,20 @@ vi.mock("./ProjectEditorDialog", () => ({
     />
   ),
 }));
+vi.mock("./CopyDialog", () => ({
+  CopyDialog: (props: ComponentProps<typeof import("./CopyDialog").CopyDialog>) => (
+    <DraftStep
+      open
+      label="Working copy"
+      save={() => props.onSaved(state.copies[0]!)}
+      details={JSON.stringify({
+        project: props.project,
+        initialHostId: props.initialHostId,
+        strategy: props.strategy,
+      })}
+    />
+  ),
+}));
 vi.mock("./ImportProjectDialog", () => ({
   ImportProjectDialog: (
     props: ComponentProps<typeof import("./ImportProjectDialog").ImportProjectDialog>,
@@ -576,10 +590,10 @@ it("leads with what was typed: a folder path, a Git URL or a name", async () => 
   expect(launch()).toMatchObject({
     initialTitle: "harbor",
     initialResource: "https://github.com/example/harbor",
-    continueTo: "conversation",
+    continueTo: "clone",
   });
 });
-it("continues a new Git project into thread setup on the requested computer in the same popup", async () => {
+it("prepares a new Git project on the requested computer without starting a conversation", async () => {
   const laptop = EnvironmentId.make("laptop");
   await act(() => openLibraryAction("create-project", undefined, { environmentId: laptop }));
   await click("Git repository");
@@ -595,7 +609,17 @@ it("continues a new Git project into thread setup on the requested computer in t
   await click("Save");
   expect(state.navigate).not.toHaveBeenCalled();
   expect(takeLibraryClone(project.id)).toBeNull();
-  expect(launch()).toMatchObject({ project, initialHostId: laptop });
+  expect(launch()).toMatchObject({ project, initialHostId: laptop, strategy: "clone" });
+  expect(button("Start conversation")).toBeUndefined();
+  await click("Save");
+  expect(container.textContent).toContain(`${project.title} is ready in`);
+  expect(container.textContent).toContain(state.copies[0]!.rootPath);
+  expect(state.navigate).not.toHaveBeenCalled();
+  await click("Open project");
+  expect(state.navigate).toHaveBeenCalledWith({
+    to: "/library/$projectId",
+    params: { projectId: project.id },
+  });
 });
 it("skips cloning when the saved project holds no Git remote", async () => {
   state.projects = [second];

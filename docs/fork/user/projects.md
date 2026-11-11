@@ -15,7 +15,9 @@ connected computer that can run work.
 
 To make a project without starting a conversation, open **New project** and choose **Empty
 project**, **Existing folder** or **Git repository**, or type a name, folder path or Git URL. A
-project from a Git URL continues into choosing the computer and folder to clone it into.
+project from a Git URL continues into choosing the computer and folder for its working copy.
+Once the files are ready, open the project or choose to start a conversation separately.
+If file preparation fails, the project stays saved so you can finish preparing it later.
 
 You can also ask an authorized agent to add an existing folder to Projects. Loom inspects
 its repositories and registers its files together, reusing a unique matching project.
@@ -100,7 +102,8 @@ Creation, file preparation, recovery, conversation launch and file removal are r
 as operations on the computer doing the work. Closing the window does not cancel them.
 Open **Files** to see progress or resume a failed operation. After an app restart, Loom
 resumes pending work only while its original session or agent run remains authorized.
-Sign in again and resume when authorization has expired. Restore operations require a
+Sign in again and explicitly resume when authorization has expired. Reopening the new-project
+form or restoring access keeps the saved request without submitting it automatically. Restore operations require a
 fresh recovery authorization from **Start**; that credential is not stored in history.
 
 Cancellation keeps completed steps. A filesystem step already in progress must finish

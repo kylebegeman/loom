@@ -23,10 +23,10 @@ import {
   PROJECT_WORKFLOWS_FEATURE,
   LibraryError,
   LibraryProjectColor,
+  LibraryProject,
   LibraryResource,
   LibraryBlueprint,
   LibraryProjectProfileInput,
-  type LibraryProject,
 } from "@t3tools/contracts/fork";
 import { PROJECT_COLOR_NAMES, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import * as Schema from "effect/Schema";
@@ -56,6 +56,7 @@ const EditorAttempt = Schema.NullOr(
     resources: Schema.Array(LibraryResource),
     color: Schema.optional(LibraryProjectColor),
     profile: Schema.optional(LibraryProjectProfileInput),
+    result: Schema.optional(LibraryProject),
   }),
 );
 
@@ -141,15 +142,21 @@ export function ProjectEditorDialog({
     };
   }, []);
   const current = useStableCallback(() => mounted.current && open);
-  const working = busy || (open && saved !== null && canSave && error === null);
+  const working = busy;
   const locked = working || saved !== null;
   const completeCreation = useStableCallback(
     async (input: NonNullable<typeof EditorAttempt.Type>) => {
       if (inFlight.current === input.requestId) return;
       inFlight.current = input.requestId;
-      const result = await create({ environmentId: authorityId, input });
+      const { result: _result, ...request } = input;
+      const result = await create({ environmentId: authorityId, input: request });
       inFlight.current = null;
       if (!current()) {
+        if (result._tag === "Success")
+          saveAttempt(
+            { ...input, result: result.value },
+            (latest) => latest?.requestId === input.requestId,
+          );
         if (mounted.current) setBusy(false);
         return;
       }
@@ -192,10 +199,12 @@ export function ProjectEditorDialog({
     saveAttempt(input);
     await completeCreation(input);
   };
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resumes the saved server request when its editor reopens or its connection becomes available
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- delivers an already received creation result when its editor becomes visible
   useEffect(() => {
-    if (open && saved && canSave && !busy && error === null) void completeCreation(saved);
-  }, [open, saved, canSave, busy, error, completeCreation]);
+    if (!open || !saved?.result) return;
+    saveAttempt(null, (latest) => latest?.requestId === saved.requestId);
+    onSaved(saved.result);
+  }, [open, saved, saveAttempt, onSaved]);
 
   // A form that opened on the blueprint leaves from it until a blueprint fills in the name page.
   const back = () => {
@@ -377,7 +386,7 @@ export function ProjectEditorDialog({
           </details>
           {saved ? (
             <p role="status" className="text-sm text-muted-foreground">
-              Your project details are saved. Creation will resume with the same request.
+              Your project details are saved. Resume creation when you are ready.
             </p>
           ) : null}
           <LibraryErrorNotice error={error} onLeave={onClose} />

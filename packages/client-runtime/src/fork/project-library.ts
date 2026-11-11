@@ -18,80 +18,17 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import { persistQuery } from "../state/queryPersistence.ts";
 import { libraryThreadSaveStatusIsFinal } from "./library-save-state.ts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
-import { EnvironmentSupervisor } from "../connection/supervisor.ts";
-import type { RpcSession } from "../rpc/session.ts";
-import {
-  EnvironmentRpcUnavailableError,
-  isRpcClientError,
-  requestGuarded,
-  type EnvironmentRpcInput,
-} from "../rpc/client.ts";
+import { requestGuarded } from "../rpc/client.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "../state/runtime.ts";
-
-const isUnavailable = Schema.is(EnvironmentRpcUnavailableError);
-const canResumeCreation = (error: unknown) =>
-  isUnavailable(error) ||
-  (isRpcClientError(error) &&
-    ["SocketReadError", "SocketWriteError", "SocketOpenError", "SocketCloseError"].includes(
-      error.reason._tag,
-    ));
-
-const createProject = Effect.fn("ProjectLibrary.createProject")(function* (
-  input: EnvironmentRpcInput<typeof L.createProject>,
-) {
-  const supervisor = yield* EnvironmentSupervisor;
-  let attemptedSession = Option.none<RpcSession>();
-  const attempt = Effect.gen(function* () {
-    attemptedSession = yield* SubscriptionRef.get(supervisor.session);
-    return yield* requestGuarded(L.createProject, input);
-  });
-  // Creation has a server receipt, so a lost reply can replay the exact request on a new session.
-  return yield* attempt.pipe(
-    Effect.retry({
-      while: (error) => {
-        if (!canResumeCreation(error)) return Effect.succeed(false);
-        return SubscriptionRef.changes(supervisor.state).pipe(
-          Stream.zipLatest(SubscriptionRef.changes(supervisor.session)),
-          Stream.filter(
-            ([state, session]) =>
-              !state.desired ||
-              state.phase === "blocked" ||
-              (state.phase === "connected" &&
-                Option.isSome(session) &&
-                (Option.isNone(attemptedSession) || session.value !== attemptedSession.value)),
-          ),
-          Stream.runHead,
-          Effect.flatMap((connection) => {
-            if (Option.isNone(connection)) return Effect.succeed(false);
-            const [state] = connection.value;
-            if (state.phase === "blocked")
-              return Effect.fail(
-                new LibraryError({
-                  reason: "blocked",
-                  detail:
-                    state.lastFailure?.message ??
-                    "Reconnect the Library before creating this project.",
-                }),
-              );
-            return Effect.succeed(state.desired);
-          }),
-        );
-      },
-    }),
-  );
-});
 
 const prepareManagement = Effect.fn("ProjectLibrary.prepareManagement")(function* (input: {
   readonly authorityEnvironmentId: EnvironmentId;
@@ -382,7 +319,6 @@ export function createProjectLibraryAtoms<R, E>(
     createProject: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:create-project",
       tag: L.createProject,
-      execute: createProject,
     }),
     updateProject: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:update-project",

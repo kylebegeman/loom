@@ -63,6 +63,8 @@ export function CopyDialog({
   resourceId,
   onSaved,
   onClose,
+  embedded = false,
+  newProject = false,
 }: {
   readonly project: LibraryProject;
   readonly strategy: "clone" | "reuse";
@@ -71,6 +73,8 @@ export function CopyDialog({
   readonly resourceId?: string;
   readonly onSaved: (copy: LibraryWorkingCopy) => void;
   readonly onClose: () => void;
+  readonly embedded?: boolean;
+  readonly newProject?: boolean;
 }) {
   const authority = useLibraryAuthority();
   const [attempt, saveAttempt] = useLibraryAttempt(
@@ -359,26 +363,31 @@ export function CopyDialog({
     );
   return (
     <LibraryDialog
+      embedded={embedded}
       open
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
       title={
-        actualStrategy === "clone"
-          ? resourceId
-            ? "Prepare repository files"
-            : "Prepare files"
-          : "Use existing folder"
+        newProject
+          ? "Finish project setup"
+          : actualStrategy === "clone"
+            ? resourceId
+              ? "Prepare repository files"
+              : "Prepare files"
+            : "Use existing folder"
       }
       description={
-        actualStrategy === "clone"
-          ? "Prepare files on a computer. Temporary files can be removed after work finishes. Turn on Keep files on this computer to leave them available."
-          : "Choose the folder that already contains your project. Its files stay on this computer."
+        newProject
+          ? `${project.title} is saved in your Library. Choose where to prepare its working copy.`
+          : actualStrategy === "clone"
+            ? "Prepare files on a computer. Temporary files can be removed after work finishes. Turn on Keep files on this computer to leave them available."
+            : "Choose the folder that already contains your project. Its files stay on this computer."
       }
       actions={
         <>
           <Button variant="outline" disabled={busy} onClick={onClose}>
-            Close
+            {newProject ? "Finish later" : "Close"}
           </Button>
           {attempt?.copy?.state === "failed" ? (
             <Button
@@ -444,6 +453,10 @@ export function CopyDialog({
         </LibraryField>
         {hostId ? (
           <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Repository access uses the Git credentials configured on{" "}
+              {host?.label ?? "this computer"}.
+            </p>
             {folderLine ? (
               <p className="wrap-anywhere text-sm" role="status">
                 {folderLine}
@@ -505,6 +518,12 @@ export function CopyDialog({
             <p>Add a repository URL or use an existing folder for local repositories.</p>
           ) : null}
         </div>
+        {busy ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Preparing {project.title} on {host?.label ?? "the selected computer"}. Your project is
+            already saved.
+          </p>
+        ) : null}
         {attempt ? (
           <p className="text-xs text-muted-foreground">
             A previous preparation is waiting for confirmation. Retry to continue.

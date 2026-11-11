@@ -61,6 +61,16 @@ import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 let root: Root;
 let container: HTMLDivElement;
 const onSaved = vi.fn();
+const createdProject = {
+  id: "new-project",
+  title: "Coast",
+  brief: "",
+  revision: 1,
+  resources: [],
+  archived: false,
+  createdAt: "2026-11-11T12:00:00.000Z",
+  updatedAt: "2026-11-11T12:00:00.000Z",
+};
 const input = () => container.querySelector("input")!;
 const button = (title: string) =>
   [...container.querySelectorAll("button")].find((node) => node.textContent?.trim() === title)!;
@@ -82,7 +92,7 @@ beforeEach(async () => {
   state.workflows = true;
   state.access = null;
   onSaved.mockClear();
-  state.create.mockResolvedValue(AsyncResult.success({ id: "new-project" }));
+  state.create.mockResolvedValue(AsyncResult.success(createdProject));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -139,7 +149,7 @@ it("preserves drafts on Back, rejects duplicate repositories and keeps color sel
     }),
   );
 });
-it("resumes the same creation automatically after reopening without replacing another project's draft", async () => {
+it("waits for explicit resume after reopening without replacing another project's draft", async () => {
   state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
   await choose("Create project");
   expect(container.textContent).toContain("Response lost");
@@ -148,6 +158,7 @@ it("resumes the same creation automatically after reopening without replacing an
 
   await act(() => root.render(null));
   state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Still offline"))));
+  state.access = { message: "Sign in to the Library again." };
   await act(() =>
     root.render(
       <ProjectEditorDialog
@@ -160,6 +171,20 @@ it("resumes the same creation automatically after reopening without replacing an
   );
   expect(input().value).toBe("Coast");
   expect(input().readOnly).toBe(true);
+  expect(state.create).toHaveBeenCalledOnce();
+  state.access = null;
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(state.create).toHaveBeenCalledOnce();
+  await choose("Resume creation");
   expect(state.create.mock.calls[1]).toEqual(coastRequest);
 
   await act(() => root.render(null));
@@ -212,7 +237,7 @@ it("resumes a submitted creation when its response arrived while the editor was 
       />,
     ),
   );
-  await act(() => complete(AsyncResult.success({ id: "new-project" })));
+  await act(() => complete(AsyncResult.success(createdProject)));
   expect(onSaved).not.toHaveBeenCalled();
   await act(() =>
     root.render(
@@ -224,7 +249,8 @@ it("resumes a submitted creation when its response arrived while the editor was 
       />,
     ),
   );
-  expect(state.create.mock.calls[1]).toEqual(request);
+  expect(state.create).toHaveBeenCalledOnce();
+  expect(state.create.mock.calls[0]).toEqual(request);
   expect(onSaved).toHaveBeenCalledOnce();
 });
 
@@ -247,12 +273,14 @@ it("keeps one resumed request in flight across connection availability changes",
     />
   );
   await act(() => root.render(editor()));
+  expect(state.create).toHaveBeenCalledOnce();
+  await choose("Resume creation");
   state.access = { message: "Connecting" };
   await act(() => root.render(editor()));
   state.access = null;
   await act(() => root.render(editor()));
   expect(state.create).toHaveBeenCalledTimes(2);
-  await act(() => complete(AsyncResult.success({ id: "new-project" })));
+  await act(() => complete(AsyncResult.success(createdProject)));
   expect(onSaved).toHaveBeenCalledOnce();
 });
 
@@ -272,7 +300,7 @@ it("does not clear a newer persisted creation when an older response arrives", a
   await act(() =>
     saveLibraryAttempt("loom:library:editor:library:new", JSON.stringify(newer), localStorage),
   );
-  await act(() => complete(AsyncResult.success({ id: "new-project" })));
+  await act(() => complete(AsyncResult.success(createdProject)));
   expect(JSON.parse(readLibraryAttempt("loom:library:editor:library:new", localStorage)!)).toEqual(
     newer,
   );
