@@ -1,3 +1,5 @@
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as RepositoryTransport from "./GitHubRepositoryTransport.ts";
 import * as VaultConnections from "./VaultConnections.ts";
 import { newerVaultRun, vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
@@ -71,6 +73,29 @@ const fixture = Effect.gen(function* () {
           Effect.sync(() => {
             calls++;
             return { exitCode: 0, stdout: "Synthetic GH result" };
+          }),
+        ),
+      ),
+  });
+  let repositoryCalls = 0;
+  let beforeRepository: Effect.Effect<void> = Effect.void;
+  const repositoryTransport = Layer.succeed(RepositoryTransport.GitHubRepositoryTransport, {
+    execute: (input) =>
+      beforeRepository.pipe(
+        Effect.andThen(input.authorize),
+        Effect.andThen(
+          Effect.sync(() => {
+            repositoryCalls++;
+            return {
+              code: ChildProcessSpawner.ExitCode(0),
+              stdout: "",
+              stderr: "",
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            } as const;
           }),
         ),
       ),
@@ -153,6 +178,7 @@ const fixture = Effect.gen(function* () {
             transport,
             cli,
             terminal,
+            repositoryTransport,
             Layer.succeed(HttpClient.HttpClient, upstreamHttp),
           ),
         ),
@@ -196,6 +222,10 @@ const fixture = Effect.gen(function* () {
     input,
     onProbe: (effect: Effect.Effect<void>) => {
       beforeProbe = effect;
+    },
+    repositoryCalls: () => repositoryCalls,
+    beforeRepository: (effect: Effect.Effect<void>) => {
+      beforeRepository = effect;
     },
     terminalCalls: () => terminalCalls,
     terminalFailure: () => {
@@ -1328,4 +1358,44 @@ it.effect("retries only failed jobs of the exact main workflow original attempt"
     expect(postCount()).toBe(1);
     expect(f.upstreamRequests.some((r) => r.url.includes("/git/ref/tags/"))).toBe(false);
   }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "Library repository operations reauthorize before credential release and release sessions on interruption",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      const target = { id: f.input.id, expectedVersion: 1, repository: "owner/repo" };
+      let allowed = true;
+      const authorize = Effect.suspend(() =>
+        allowed ? Effect.void : Effect.fail(new VaultError({ reason: "denied" })),
+      );
+      f.onSession(() => {
+        allowed = false;
+      });
+      const released = f.releases();
+      expect(
+        (yield* f.service
+          .repositoryOperation(target, { kind: "preflight" }, authorize)
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(f.repositoryCalls()).toBe(0);
+      expect(f.releases()).toBe(released + 1);
+      allowed = true;
+      f.onSession(() => {});
+      const started = yield* Deferred.make<void>();
+      f.beforeRepository(Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)));
+      const running = yield* f.service
+        .repositoryOperation(target, { kind: "preflight" }, authorize)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(running);
+      expect(f.releases()).toBe(released + 2);
+      expect(
+        (yield* f.service
+          .repositoryOperation({ ...target, expectedVersion: 2 }, { kind: "preflight" }, authorize)
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+    }).pipe(Effect.scoped, Effect.provide(deps)),
 );

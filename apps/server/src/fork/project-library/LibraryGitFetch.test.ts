@@ -1,3 +1,6 @@
+import * as VaultGitHub from "../vault/VaultGitHub.ts";
+import { VaultError } from "@t3tools/contracts/fork";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -92,6 +95,122 @@ const cloneInto = Effect.fnUntraced(function* (
 });
 
 describe("LibraryGitFetch", () => {
+  it.live("fails closed for a selected Vault connection without human authorization", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const fetch = yield* LibraryGitFetch.LibraryGitFetch;
+      const root = yield* fs.makeTempDirectoryScoped();
+      const target = path.join(root, "copy");
+      const remote = yield* makeRemote();
+      const failure = yield* fetch
+        .cloneRepository({
+          remoteUrl: remote.remoteUrl,
+          branch: null,
+          path: target,
+          repositoryAccess: {
+            kind: "vault-github",
+            id: "1".repeat(32),
+            expectedVersion: 1,
+            repository: "owner/repo",
+          },
+        })
+        .pipe(Effect.flip);
+      expect(failure.reason).toBe("blocked");
+      expect(yield* fs.exists(target)).toBe(false);
+      expect(yield* fetch.mirrors).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+  it.live(
+    "keeps selected Vault preflight and clones off host Git and shared mirrors, including failures",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped();
+        const routes: string[] = [];
+        let denied = false;
+        const fetch = yield* LibraryGitFetch.LibraryGitFetch.pipe(
+          Effect.provide(
+            Layer.fresh(
+              LibraryGitFetch.layer.pipe(
+                Layer.provide(
+                  Layer.mock(VaultGitHub.VaultGitHub)({
+                    repositoryOperation: (_target, operation, authorize) =>
+                      authorize.pipe(
+                        Effect.andThen(
+                          Effect.suspend(() => {
+                            routes.push(operation.kind);
+                            return denied
+                              ? Effect.fail(new VaultError({ reason: "denied" }))
+                              : Effect.succeed({
+                                  code: 0,
+                                  stdout: "",
+                                  stderr: "",
+                                  timedOut: false,
+                                  stdoutTruncated: false,
+                                  stderrTruncated: false,
+                                  stdoutInvalidUtf8: false,
+                                  stderrInvalidUtf8: false,
+                                } as ProcessRunner.ProcessRunOutput);
+                          }),
+                        ),
+                      ),
+                  }),
+                ),
+              ),
+            ),
+          ),
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.die("Selected Vault access must never spawn host Git"),
+            ),
+          ),
+        );
+        const input = {
+          remoteUrl: "https://github.com/owner/repo.git",
+          repositoryAccess: {
+            kind: "vault-github" as const,
+            id: "1".repeat(32),
+            expectedVersion: 1,
+            repository: "owner/repo",
+          },
+          authorize: () => Effect.void,
+        };
+        for (const remoteUrl of [
+          input.remoteUrl,
+          "git@github.com:owner/repo.git",
+          "ssh://git@github.com/owner/repo.git",
+        ])
+          yield* fetch.preflightRepository({ ...input, remoteUrl });
+        yield* fetch.cloneRepository({ ...input, branch: null, path: path.join(root, "copy") });
+        denied = true;
+        expect(
+          (yield* fetch
+            .cloneRepository({ ...input, branch: null, path: path.join(root, "retry") })
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        yield* fetch.warmMirror({ ...input, create: true });
+        expect(routes).toEqual(["preflight", "preflight", "preflight", "clone", "clone"]);
+        expect(yield* fetch.mirrors).toEqual([]);
+        expect(
+          (yield* fetch
+            .preflightRepository({ ...input, remoteUrl: "https://github.com/other/repo.git" })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid");
+        expect(routes).toHaveLength(5);
+      }).pipe(Effect.provide(testLayer)),
+  );
+  it.live("preflights host access without creating a copy or mirror", () =>
+    Effect.gen(function* () {
+      const fetch = yield* LibraryGitFetch.LibraryGitFetch;
+      const remote = yield* makeRemote();
+      const result = yield* fetch.preflightRepository({ remoteUrl: remote.remoteUrl });
+      expect(result.code).toBe(0);
+      expect(yield* fetch.mirrors).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
   it.live("creates the mirror on the first clone and keeps the real remote as origin", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

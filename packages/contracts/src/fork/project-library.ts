@@ -1,3 +1,4 @@
+import { LibraryResourceRepositoryAccess } from "./library-repository-access.ts";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Rpc from "effect/rpc/Rpc";
@@ -546,6 +547,7 @@ export const LibraryFolderInspection = Schema.Struct({
 });
 export type LibraryFolderInspection = typeof LibraryFolderInspection.Type;
 export const LibraryPrepareCopyRequest = Schema.Struct({
+  repositoryAccess: Schema.optional(LibraryResourceRepositoryAccess),
   requestId: LibraryRequestId,
   project: LibraryProject,
   /** Absent asks the computer to place the copy; send it to computers without `serverChosenFolders`. */
