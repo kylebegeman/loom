@@ -153,9 +153,7 @@ function Header(props: {
         onRunProjectScript: async () => {},
       }}
       hasThreadCwd
-      fileInspectorSupported={false}
       inspectorMode={null}
-      onToggleInspector={() => {}}
       onOpenFilesInspector={() => {}}
     />
   );

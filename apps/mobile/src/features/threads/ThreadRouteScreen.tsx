@@ -97,10 +97,8 @@ import { useSelectedThreadGitActions } from "../../state/use-selected-thread-git
 import { useSelectedThreadGitState } from "../../state/use-selected-thread-git-state";
 import { useSelectedThreadRequests } from "../../state/use-selected-thread-requests";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
-import {
-  updateThreadDraftModelSelection, // fork: library
-  useThreadComposerState,
-} from "../../state/use-thread-composer-state";
+import { useThreadComposerState } from "../../state/use-thread-composer-state";
+import { selectThreadModel } from "../../state/thread-model-selection"; // fork: library
 import { updateComposerDraftSettings } from "../../state/use-composer-drafts"; // fork: library
 import { resolveMergeBackTargetThreadId } from "@t3tools/client-runtime/state/thread-relationships";
 import { resolveLatestMergeBackRun } from "@t3tools/client-runtime/state/thread-workflows";
@@ -555,11 +553,11 @@ function ThreadRouteContent(
           canOperate: canOperateThread,
           // fork: library - Draft settings update the way upstream's thread settings screen does.
           onUpdateModelSelection: (selection) =>
-            updateThreadDraftModelSelection(
-              scopedThreadKey(
-                selectedThreadWithDraftSettings.environmentId,
-                selectedThreadWithDraftSettings.id,
-              ),
+            selectThreadModel(
+              {
+                environmentId: selectedThreadWithDraftSettings.environmentId,
+                threadId: selectedThreadWithDraftSettings.id,
+              },
               selection,
             ),
           onUpdateRuntimeMode: (runtimeMode) =>
