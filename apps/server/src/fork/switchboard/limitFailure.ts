@@ -73,10 +73,11 @@ export const makeSwitchboardLimitFailures = Effect.fn("Switchboard.makeLimitFail
 ) {
   const { settings } = yield* ProviderHost.ProviderHost;
   const readLimits = yield* makeSwitchboardLimitsReader(settings.get);
-  return Effect.fn("Switchboard.explainLimitFailure")(function* (
-    failure: OrchestrationV2ProviderFailure,
-  ) {
-    if (switchboardRefusedModel(failure.message) === null) return failure;
-    return switchboardLimitFailure(failure, driver, yield* readLimits);
-  });
+  return Effect.fn("Switchboard.explainLimitFailure")(
+    function* (failure: OrchestrationV2ProviderFailure) {
+      if (switchboardRefusedModel(failure.message) === null) return failure;
+      return switchboardLimitFailure(failure, driver, yield* readLimits);
+    },
+    (effect, failure) => effect.pipe(Effect.catchCause(() => Effect.succeed(failure))),
+  );
 });
