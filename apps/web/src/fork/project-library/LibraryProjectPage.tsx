@@ -1,3 +1,4 @@
+import { useNowAfter } from "~/hooks/useDeadline";
 import { RecentlyDeletedConversations, useRecentlyDeletedSupported } from "./RecentlyDeleted";
 import { TidyProjectDialog } from "./TidyProjectDialog";
 import { projectEntries } from "@t3tools/client-runtime/fork";
@@ -15,6 +16,7 @@ import {
   LIBRARY_BRIEF_PROPOSALS_FEATURE,
   LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
   LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
+  LIBRARY_COPY_HEALTH_FEATURE,
   LIBRARY_PROJECT_PROFILE_FEATURE,
   type LibraryProject,
   type LibraryWorkingCopy,
@@ -24,6 +26,9 @@ import {
   ArchiveIcon,
   CalendarIcon,
   ClockIcon,
+  FolderIcon,
+  GitBranchIcon,
+  MonitorIcon,
   EllipsisIcon,
   MoonIcon,
   PencilLineIcon,
@@ -35,11 +40,18 @@ import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironments } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useProjects } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import {
   libraryActiveCopies,
+  libraryProjectHomeLocation,
+  LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS,
+  libraryProjectRequestHosts,
+  libraryResourceLocation,
+  selectLibraryProjectHomeCopies,
   libraryProjectColor,
   libraryCopyReadiness,
   isRestingSince,
@@ -61,6 +73,7 @@ import {
   LIBRARY_SURFACE,
   LibraryErrorNotice,
   LibrarySection,
+  LibraryPanel,
   LibraryStateBadge,
 } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
@@ -71,8 +84,13 @@ import { ConversationAutoStartContext, type ConversationQuickStart } from "./Con
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
-import { CopiesSummary, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
+import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
+import {
+  ComputerLabel,
+  ProjectColorPicker,
+  ProjectTile,
+  projectColorStyle,
+} from "./ProjectIdentity";
 import { ProjectConversations, RecentConversations } from "./ProjectConversations";
 import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
 import { PROJECT_VIEWS, projectViewSearch, type ProjectViewName } from "./projectViews";
@@ -87,6 +105,104 @@ import {
   takeLibraryBriefEdit,
   takeLibraryClone,
 } from "./actions";
+
+function ProjectHomeLocation({
+  project,
+  copy,
+  label,
+  connected,
+  canStart,
+  onStart,
+  onReview,
+}: {
+  readonly project: LibraryProject;
+  readonly copy: LibraryWorkingCopy;
+  readonly label: string;
+  readonly connected: boolean;
+  readonly canStart: boolean;
+  readonly onStart: () => void;
+  readonly onReview: () => void;
+}) {
+  const { environments } = useEnvironments();
+  const environment = environments.find((entry) => entry.environmentId === copy.environmentId);
+  const supported = supportsLoomFeature(
+    environment?.serverConfig?.environment.capabilities,
+    LIBRARY_COPY_HEALTH_FEATURE,
+  );
+  const health = useEnvironmentQuery(
+    connected && supported && copy.state === "ready"
+      ? projectLibrary.copyHealth({
+          environmentId: copy.environmentId,
+          input: { workingCopyId: copy.id },
+        })
+      : null,
+  );
+  const healthDeadline = health.data
+    ? Date.parse(health.data.checkedAt) + LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS
+    : null;
+  const now = useNowAfter(healthDeadline);
+  const location = libraryProjectHomeLocation({
+    project,
+    copy,
+    connected,
+    liveHealth: health.isSuccess ? health.data : null,
+    readFailed: health.error !== null,
+    readPending: health.isPending,
+    now: Math.max(now, health.dataUpdatedAt),
+  });
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border/60 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ComputerLabel
+          environmentId={copy.environmentId}
+          label={label}
+          className="text-sm font-medium"
+        />
+        <LibraryStateBadge tone={location.tone}>{location.label}</LibraryStateBadge>
+      </div>
+      <p className="break-all text-sm select-text">
+        <FolderIcon aria-hidden className="me-1.5 inline size-3.5 text-muted-foreground" />
+        {copy.rootPath}
+      </p>
+      <p className="text-xs text-muted-foreground">{location.detail}</p>
+      {location.checkedAt ? (
+        <p className="text-xs text-muted-foreground">
+          {location.observation}{" "}
+          <time dateTime={location.checkedAt}>{formatRelativeTimeLabel(location.checkedAt)}</time>
+        </p>
+      ) : null}
+      {location.attention.length ? (
+        <p className="text-xs text-warning-foreground">{location.attention.join(". ")}.</p>
+      ) : null}
+      {health.error ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {health.error}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-1.5">
+        {supported ? (
+          <Button
+            shape="pill"
+            size="xs"
+            variant="outline"
+            disabled={!connected || health.isPending || copy.state !== "ready"}
+            onClick={health.refresh}
+          >
+            {health.isPending ? "Checking files..." : "Check files"}
+          </Button>
+        ) : null}
+        <Button shape="pill" size="xs" variant="ghost" onClick={onReview}>
+          Review files
+        </Button>
+        {location.status === "available" ? (
+          <Button shape="pill" size="xs" variant="outline" disabled={!canStart} onClick={onStart}>
+            Start here
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;
@@ -276,10 +392,11 @@ function ProjectView({
       ? threads[0].updatedAt
       : project.updatedAt;
   const copiesLoading = libraryCopyReadiness(library.copies) === "loading";
-  // Only a connected computer can say what it is doing, and each says it once.
-  const activityHosts = [...new Set(activeCopies.map((copy) => copy.environmentId))].filter(
-    hostConnected,
-  );
+  const connectedHosts = library.environments
+    .filter((entry) => hostConnected(entry.environmentId))
+    .map((entry) => entry.environmentId);
+  const homeCopies = selectLibraryProjectHomeCopies(project.id, copies, new Set(connectedHosts));
+  const activityHosts = libraryProjectRequestHosts(authorityId, copies, connectedHosts);
   const views = PROJECT_VIEWS.filter(
     (entry) => entry !== "repositories" && (entry !== "setup" || keepsProfile),
   );
@@ -356,6 +473,56 @@ function ProjectView({
         {shown === "overview" ? (
           <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <div className="flex min-w-0 flex-col gap-10">
+              <LibrarySection
+                title="Project files"
+                icon={MonitorIcon}
+                action={
+                  <Button
+                    shape="pill"
+                    size="xs"
+                    variant="outline"
+                    onClick={() => show("computers")}
+                  >
+                    Manage files
+                  </Button>
+                }
+              >
+                <LibraryErrorNotice error={library.copies.error} onRetry={library.copies.refresh} />
+                {copiesLoading ? (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Loading saved file locations...
+                  </p>
+                ) : null}
+                {homeCopies.map((copy) => (
+                  <ProjectHomeLocation
+                    key={`${copy.environmentId}:${copy.id}`}
+                    project={project}
+                    copy={copy}
+                    label={hostLabel(copy.environmentId)}
+                    connected={hostConnected(copy.environmentId)}
+                    canStart={canStart}
+                    onStart={() => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
+                    onReview={() => show("computers")}
+                  />
+                ))}
+                {!homeCopies.length && !copiesLoading ? (
+                  <p className="text-sm text-muted-foreground">
+                    No registered file locations are shown. Prepare files on a computer to start
+                    work.
+                  </p>
+                ) : null}
+                <div>
+                  <Button
+                    shape="pill"
+                    size="xs"
+                    variant="outline"
+                    disabled={!canWork}
+                    onClick={() => setCopyRequest({ strategy: "clone" })}
+                  >
+                    Prepare on a computer
+                  </Button>
+                </div>
+              </LibrarySection>
               <ProjectAttention
                 threads={threads}
                 copies={copies}
@@ -389,17 +556,50 @@ function ProjectView({
                   onShowAll={() => show("conversations")}
                 />
               )}
+              <LibrarySection title="Request history" icon={ClockIcon}>
+                <p className="text-xs text-muted-foreground">
+                  Saved requests explain completed and remaining outcomes. Check a computer before
+                  retrying uncertain work.
+                </p>
+                {activityHosts.map((environmentId) => (
+                  <ProjectOperationHistory
+                    key={environmentId}
+                    environmentId={environmentId}
+                    computerLabel={hostLabel(environmentId)}
+                    projectId={project.id}
+                  />
+                ))}
+              </LibrarySection>
             </div>
             <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
-              <CopiesSummary
-                copies={copies}
-                loading={copiesLoading}
-                canAct={canWork}
-                hostLabel={hostLabel}
-                hostConnected={hostConnected}
-                onGetCopy={setCopyRequest}
-                onShowAll={() => show("computers")}
-              />
+              <LibraryPanel
+                title="Repository components"
+                icon={GitBranchIcon}
+                count={project.resources.filter((resource) => resource.kind !== "link").length}
+              >
+                <ul className="flex min-w-0 flex-col gap-3 px-3 pb-3">
+                  {project.resources
+                    .filter((resource) => resource.kind !== "link")
+                    .map((resource) => (
+                      <li key={resource.id} className="min-w-0 text-xs">
+                        <p className="font-medium">{resource.title}</p>
+                        <p className="break-all text-muted-foreground">
+                          {resource.relativePath || "."} · {libraryResourceLocation(resource)}
+                        </p>
+                      </li>
+                    ))}
+                </ul>
+                {!project.resources.some((resource) => resource.kind !== "link") ? (
+                  <p className="px-3 pb-3 text-xs text-muted-foreground">
+                    This project has no repository components saved.
+                  </p>
+                ) : null}
+                <div className="px-3 pb-3">
+                  <Button shape="pill" size="xs" variant="ghost" onClick={() => show("computers")}>
+                    Review components
+                  </Button>
+                </div>
+              </LibraryPanel>
               <SitesSummary environmentId={authorityId} projectId={project.id} />
             </aside>
             {/* Below both columns, so the side cards never leave it a narrow strip. */}
@@ -516,7 +716,7 @@ function ProjectView({
               onRemove={setReleasing}
             />
             <LibrarySection
-              title="Recovery and activity"
+              title="Requests and recovery"
               icon={ShieldCheckIcon}
               action={
                 <Button
@@ -535,13 +735,14 @@ function ProjectView({
                     <ProjectOperationHistory
                       key={environmentId}
                       environmentId={environmentId}
+                      computerLabel={hostLabel(environmentId)}
                       projectId={project.id}
                     />
                   ))}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  File activity shows here for each connected computer holding this project.
+                  Reconnect a computer to check its saved request outcomes.
                 </p>
               )}
             </LibrarySection>

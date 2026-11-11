@@ -1,16 +1,25 @@
+import { useNowAfter } from "../../lib/clock";
 import { useNewTaskLibraryProjects, useLibraryProjectStarts } from "./NewTaskLibraryProjects";
 import {
   useLibraryStartProjects,
   useLibraryStartProject,
   useLibraryStartCopies,
 } from "./libraryState";
-import { LibraryWorkflows, LibraryPreservationCenter } from "./LibraryWorkflows";
+import {
+  LibraryWorkflows,
+  LibraryPreservationCenter,
+  LibraryOperationHistory,
+} from "./LibraryWorkflows";
 import { ProjectSites } from "../sites/ProjectSites";
 import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   filterProjectEntries,
   libraryActiveCopies,
+  libraryProjectHomeLocation,
+  LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS,
+  libraryProjectRequestHosts,
+  selectLibraryProjectHomeCopies,
   libraryStartIntent,
   libraryStartRepositoryProjects,
   libraryResourceLocation,
@@ -18,7 +27,7 @@ import {
   sortProjectEntries,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { LIBRARY_DELETED_FEATURE } from "@t3tools/contracts/fork";
+import { LIBRARY_COPY_HEALTH_FEATURE, LIBRARY_DELETED_FEATURE } from "@t3tools/contracts/fork";
 import type {
   LibraryProject,
   LibraryProjectColor,
@@ -48,6 +57,7 @@ import {
   useLoomFeature,
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
+import { LibraryStateBadge } from "./LibraryStateBadge";
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryRestingProjects } from "./LibraryTidy";
 import { LibraryProjectTile } from "./libraryProjectColors";
@@ -59,6 +69,81 @@ import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryPag
 const RECENT_CONVERSATIONS = 5;
 const ANY_COLOR: ReadonlySet<LibraryProjectColor> = new Set();
 const ago = (iso: string) => `${relativeTime(iso)} ago`;
+
+function LibraryHomeLocation({
+  project,
+  copy,
+  label,
+  connected,
+  onReview,
+  onStart,
+}: {
+  readonly project: LibraryProject;
+  readonly copy: LibraryWorkingCopy;
+  readonly label: string;
+  readonly connected: boolean;
+  readonly onReview: () => void;
+  readonly onStart: () => void;
+}) {
+  const supported = useLoomFeature(copy.environmentId, LIBRARY_COPY_HEALTH_FEATURE);
+  const health = useEnvironmentQuery(
+    connected && supported && copy.state === "ready"
+      ? library.copyHealth({ environmentId: copy.environmentId, input: { workingCopyId: copy.id } })
+      : null,
+  );
+  const healthDeadline = health.data
+    ? Date.parse(health.data.checkedAt) + LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS
+    : null;
+  const now = useNowAfter(healthDeadline);
+  const location = libraryProjectHomeLocation({
+    project,
+    copy,
+    connected,
+    liveHealth: health.isSuccess ? health.data : null,
+    readFailed: health.error !== null,
+    readPending: health.isPending,
+    now: Math.max(now, health.successResult?.timestamp ?? 0),
+  });
+  return (
+    <View className="gap-2">
+      <View className="flex-row flex-wrap items-center justify-between gap-2">
+        <Text className="font-t3-medium text-foreground">{label}</Text>
+        <LibraryStateBadge tone={location.tone} label={location.label} />
+      </View>
+      <Text selectable className="text-sm text-foreground">
+        {copy.rootPath}
+      </Text>
+      <Text className="text-xs text-foreground-muted">{location.detail}</Text>
+      {location.checkedAt ? (
+        <Text className="text-xs text-foreground-muted">
+          {location.observation} {ago(location.checkedAt)}
+        </Text>
+      ) : null}
+      {location.attention.length ? (
+        <Text className="text-xs text-warning-foreground">{location.attention.join(". ")}.</Text>
+      ) : null}
+      {health.error ? (
+        <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+          {health.error}
+        </Text>
+      ) : null}
+      <View className="flex-row flex-wrap gap-2">
+        {supported ? (
+          <Button
+            label={health.isPending ? "Checking files..." : "Check files"}
+            tone="text"
+            disabled={!connected || health.isPending || copy.state !== "ready"}
+            onPress={health.refresh}
+          />
+        ) : null}
+        <Button label="Review files" tone="text" onPress={onReview} />
+        {location.status === "available" ? (
+          <Button label="Start here" disabled={project.archived} onPress={onStart} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
 
 export function LibraryRouteScreen() {
   const navigation = useNavigation();
@@ -398,6 +483,15 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
     });
   const repositories = libraryRepositories(p),
     links = p.resources.length - repositories.length;
+  const connectedHosts = environments
+    .filter((entry) => entry.entry.enabled && entry.connection.phase === "connected")
+    .map((entry) => entry.environmentId);
+  const homeCopies = selectLibraryProjectHomeCopies(
+    p.id,
+    copies.data ?? [],
+    new Set(connectedHosts),
+  );
+  const requestHosts = libraryProjectRequestHosts(target, copies.data ?? [], connectedHosts);
   const activeCopies = libraryActiveCopies(copies.data ?? []),
     removedCopies = (copies.data ?? [])
       .filter((copy) => !activeCopies.includes(copy))
@@ -456,6 +550,80 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           }
         />
       </View>
+      <SettingsSection title="Where to work">
+        <View className="gap-4 p-4">
+          {homeCopies.map((copy) => (
+            <LibraryHomeLocation
+              key={`${copy.environmentId}:${copy.id}`}
+              project={p}
+              copy={copy}
+              label={hostLabel(copy.environmentId)}
+              connected={connectedHosts.includes(copy.environmentId)}
+              onReview={() => reuseFolder(copy)}
+              onStart={() =>
+                navigation.navigate("LibraryStart", {
+                  projectId: p.id,
+                  reuseEnvironmentId: copy.environmentId,
+                  initialCopyId: copy.id,
+                })
+              }
+            />
+          ))}
+          {!homeCopies.length && copiesReady ? (
+            <Text className="text-sm text-foreground-muted">
+              No registered file locations are shown. Prepare files on a computer to start work.
+            </Text>
+          ) : null}
+          {!copiesReady ? (
+            <LibraryNotice
+              detail="File locations are saved observations. Reconnect and check your computers before starting."
+              error={copies.error}
+              onRetry={copies.refresh}
+            />
+          ) : null}
+          <Button
+            label="Prepare on a computer"
+            disabled={!authority.ready || p.archived}
+            onPress={() =>
+              navigation.navigate("LibraryPrepare", {
+                projectId: p.id,
+                authorityEnvironmentId: target,
+              })
+            }
+          />
+        </View>
+      </SettingsSection>
+      <SettingsSection title="Repository components">
+        {repositories.map((resource) => (
+          <View key={resource.id} className="gap-1 px-4 py-3">
+            <Text className="font-t3-medium text-foreground">{resource.title}</Text>
+            <Text selectable className="text-xs text-foreground-muted">
+              {resource.relativePath || "."} · {libraryResourceLocation(resource)}
+            </Text>
+          </View>
+        ))}
+        {!repositories.length ? (
+          <Text className="p-4 text-sm text-foreground-muted">
+            This project has no repository components saved.
+          </Text>
+        ) : null}
+      </SettingsSection>
+      <SettingsSection title="Request history">
+        <View className="gap-3 p-4">
+          <Text className="text-sm text-foreground-muted">
+            Saved requests explain completed and remaining outcomes. Check a computer before
+            retrying uncertain work.
+          </Text>
+          {requestHosts.map((environmentId) => (
+            <LibraryOperationHistory
+              key={environmentId}
+              environmentId={environmentId}
+              projectId={p.id}
+              computerLabel={hostLabel(environmentId)}
+            />
+          ))}
+        </View>
+      </SettingsSection>
       {authority.info.data?.features?.includes("project-workflows") ? (
         <LibraryWorkflows
           key={`${target}:${p.id}`}
