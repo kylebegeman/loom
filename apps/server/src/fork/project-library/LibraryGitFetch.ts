@@ -460,38 +460,51 @@ const make = Effect.gen(function* () {
         onLine: input.onProgress === undefined ? undefined : progressReporter(input.onProgress),
       });
     const target = yield* targetState(input.path);
-    const reporter = () =>
-      input.onProgress === undefined ? undefined : progressReporter(input.onProgress);
-    if (target !== "occupied" && mirrorable(input.remoteUrl)) {
-      const key = yield* mirrorKey(input.remoteUrl);
-      const viaMirror = yield* sharesMirrorVolume(input.path).pipe(
-        Effect.flatMap((shared) =>
-          shared
-            ? locks.withLock(key, cloneViaMirror(input, key, reporter()))
-            : Effect.succeed(null),
-        ),
-        Effect.result,
+    return yield* Effect.gen(function* () {
+      const reporter = () =>
+        input.onProgress === undefined ? undefined : progressReporter(input.onProgress);
+      if (target !== "occupied" && mirrorable(input.remoteUrl)) {
+        const key = yield* mirrorKey(input.remoteUrl);
+        const viaMirror = yield* sharesMirrorVolume(input.path).pipe(
+          Effect.flatMap((shared) =>
+            shared
+              ? locks.withLock(key, cloneViaMirror(input, key, reporter()))
+              : Effect.succeed(null),
+          ),
+          Effect.result,
+        );
+        if (Result.isSuccess(viaMirror) && viaMirror.success !== null) {
+          if (succeeded(viaMirror.success)) return viaMirror.success;
+          yield* Effect.logDebug("Loom is cloning without this computer's Git mirror", {
+            key,
+            code: viaMirror.success.code,
+            timedOut: viaMirror.success.timedOut,
+          });
+        } else if (Result.isFailure(viaMirror))
+          yield* Effect.logWarning("Loom is cloning without this computer's Git mirror", {
+            key,
+            error: viaMirror.failure,
+          });
+        yield* clearTarget(input.path, target);
+      }
+      const cloned = yield* runGit(
+        [
+          "clone",
+          "--progress",
+          ...branchArguments(input.branch),
+          "--",
+          input.remoteUrl,
+          input.path,
+        ],
+        reporter(),
       );
-      if (Result.isSuccess(viaMirror) && viaMirror.success !== null) {
-        if (succeeded(viaMirror.success)) return viaMirror.success;
-        yield* Effect.logDebug("Loom is cloning without this computer's Git mirror", {
-          key,
-          code: viaMirror.success.code,
-          timedOut: viaMirror.success.timedOut,
-        });
-      } else if (Result.isFailure(viaMirror))
-        yield* Effect.logWarning("Loom is cloning without this computer's Git mirror", {
-          key,
-          error: viaMirror.failure,
-        });
-      yield* clearTarget(input.path, target);
-    }
-    const cloned = yield* runGit(
-      ["clone", "--progress", ...branchArguments(input.branch), "--", input.remoteUrl, input.path],
-      reporter(),
+      if (!succeeded(cloned) && target !== "occupied") yield* clearTarget(input.path, target);
+      return cloned;
+    }).pipe(
+      Effect.onError(() =>
+        target === "occupied" ? Effect.void : clearTarget(input.path, target).pipe(Effect.ignore),
+      ),
     );
-    if (!succeeded(cloned) && target !== "occupied") yield* clearTarget(input.path, target);
-    return cloned;
   }, mapIo);
 
   const warmMirror: LibraryGitFetch["Service"]["warmMirror"] = Effect.fn(

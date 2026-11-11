@@ -1172,8 +1172,11 @@ const make = Effect.gen(function* () {
     const nested = selected.map((resource) => path.resolve(rootPath, resource.relativePath));
     const [only] = nested;
     if (only === undefined || nested.length !== 1 || only === rootPath) return nested;
+    const resourceId = selected[0]!.id;
     const recorded =
-      receipt?.reservation?.repositories[0]?.path ?? receipt?.copy.repositories[0]?.path;
+      receipt?.reservation?.repositories.find((repository) => repository.resourceId === resourceId)
+        ?.path ??
+      receipt?.copy.repositories.find((repository) => repository.resourceId === resourceId)?.path;
     if (recorded !== undefined) return [recorded];
     if (strategy === "reuse")
       return (yield* fs.exists(path.join(rootPath, ".git"))) &&

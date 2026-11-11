@@ -169,6 +169,15 @@ const fixture = Effect.gen(function* () {
   const external = Layer.mergeAll(
     Layer.mock(LibraryPublisher)({
       enabled: true,
+      project: (id) =>
+        Ref.get(catalog).pipe(
+          Effect.flatMap((projects) => {
+            const found = projects.find((project) => project.id === id);
+            return found
+              ? Effect.succeed(found)
+              : Effect.fail(new LibraryError({ reason: "not-found" }));
+          }),
+        ),
       projects: () => Ref.get(catalog),
       info: Effect.succeed({ authorityId: "authority", authorityEpoch: 1 } as never),
       registerCopy: (input) =>
@@ -231,6 +240,7 @@ const fixture = Effect.gen(function* () {
         }),
     }),
     Layer.mock(LibraryWorkspaceStore)({
+      receipts: Effect.succeed([]),
       get: () =>
         Effect.succeed({
           requestId: "copy",
@@ -329,7 +339,10 @@ const fixture = Effect.gen(function* () {
         ),
       restoreCopy: (input) =>
         Ref.set(observedToken, input.grant.accessToken).pipe(
-          Effect.as({ ...copyFor(project), environmentId }),
+          Effect.andThen(Ref.get(prepareFailure)),
+          Effect.flatMap((error) =>
+            error ? Effect.fail(error) : Effect.succeed({ ...copyFor(project), environmentId }),
+          ),
         ),
       release: () =>
         Effect.fail(new LibraryError({ reason: "blocked", detail: "The reviewed files changed." })),
@@ -1254,7 +1267,26 @@ describe("Project operations", () => {
             kind: "restore",
             input: { requestId: "restore", project, rootPath: "/test/restore", grant },
           };
-          expect((yield* state.service.execute("restore", request, actor)).state).toBe("succeeded");
+          yield* Ref.set(state.prepareFailure, new LibraryError({ reason: "blocked" }));
+          expect(
+            (yield* state.service.execute("restore", request, actor).pipe(Effect.flip)).reason,
+          ).toBe("blocked");
+          const expectedContext = {
+            requestId: "restore",
+            project,
+            rootPath: "/test/restore",
+            sourceCopy: grant.sourceCopy,
+            destinationEnvironmentId: grant.destinationEnvironmentId,
+            libraryEnvironmentId: grant.libraryEnvironmentId,
+          };
+          const failed = (yield* state.service.list({}))[0]!;
+          expect(failed).toMatchObject({ state: "needs-input", restoreRequest: expectedContext });
+          expect(
+            yield* state.service.outcomeClient(
+              { requestId: "restore", kind: "restore" },
+              actor.sessionId,
+            ),
+          ).toMatchObject({ restoreRequest: expectedContext });
           expect(yield* Ref.get(state.observedToken)).toBe(grant.accessToken);
           const sql = yield* SqlClient.SqlClient;
           const rows = yield* sql<{
@@ -1263,6 +1295,18 @@ describe("Project operations", () => {
           }>`SELECT request_json,payload_json FROM fork_library_operations WHERE id='restore'`;
           expect(rows[0]?.request_json).not.toContain(grant.accessToken);
           expect(rows[0]?.payload_json).not.toContain(grant.accessToken);
+          const legacy = yield* encodeOperation({ ...failed, restoreRequest: undefined });
+          yield* sql`UPDATE fork_library_operations SET payload_json=${legacy} WHERE id='restore'`;
+          expect((yield* state.service.list({}))[0]).toMatchObject({
+            restoreRequest: expectedContext,
+          });
+          expect(
+            yield* state.service.outcomeClient(
+              { requestId: "restore", kind: "restore" },
+              actor.sessionId,
+            ),
+          ).toMatchObject({ restoreRequest: expectedContext });
+          yield* Ref.set(state.prepareFailure, null);
           expect(
             (yield* state.service.execute(
               "restore",
@@ -1475,6 +1519,168 @@ describe("Project operations", () => {
       }),
     ),
   );
+  it.effect("refuses credential literals before storing a durable project request", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const profile = {
+          scripts: [
+            {
+              id: "setup",
+              name: "Setup",
+              command: "API_KEY=synthetic-secret setup",
+              icon: "play" as const,
+              runOnWorktreeCreate: false,
+            },
+          ],
+        };
+        const requests: readonly LibraryOperationInput[] = [
+          { kind: "create", input: { requestId: "unsafe-create", title: "Project", profile } },
+          {
+            kind: "update",
+            input: {
+              requestId: "unsafe-update",
+              projectId: project.id,
+              expectedRevision: 1,
+              profile,
+            },
+          },
+          {
+            kind: "prepare",
+            input: {
+              requestId: "unsafe-prepare",
+              project: { ...project, profile },
+              strategy: "clone",
+            },
+          },
+          {
+            kind: "prepare",
+            input: {
+              requestId: "unsafe-remote",
+              project: {
+                ...project,
+                resources: [
+                  {
+                    ...resource,
+                    remoteUrl: "https://user:synthetic-secret@github.com/acme/app.git",
+                  },
+                ],
+              },
+              strategy: "clone",
+            },
+          },
+          {
+            kind: "update",
+            input: {
+              requestId: "unsafe-url-edit",
+              projectId: project.id,
+              expectedRevision: 1,
+              resourceUpdates: [
+                {
+                  id: resource.id,
+                  remoteUrl: "https://user:synthetic-secret@github.com/acme/app.git",
+                },
+              ],
+            },
+          },
+          {
+            kind: "import",
+            input: {
+              requestId: "unsafe-url-import",
+              rootPath: "/work/project",
+              repositoryUpdate: {
+                resourceId: resource.id,
+                remoteUrl: "https://user:synthetic-secret@github.com/acme/app.git",
+              },
+            },
+          },
+        ];
+        for (const [index, request] of requests.entries()) {
+          const failure = yield* state.service
+            .run(`unsafe:${index}`, request, actor)
+            .pipe(Effect.flip);
+          expect(failure.reason).toBe("invalid");
+        }
+        const sql = yield* SqlClient.SqlClient;
+        expect(yield* sql`SELECT request_json FROM fork_library_operations`).toEqual([]);
+        expect(yield* Ref.get(state.calls)).toBe(0);
+        yield* Ref.set(state.catalog, [{ ...project, profile }]);
+        expect(
+          (yield* state.service.execute(
+            "unchanged-legacy",
+            {
+              kind: "update",
+              input: {
+                requestId: "unchanged-legacy",
+                projectId: project.id,
+                expectedRevision: 1,
+                profile,
+                title: "Renamed",
+              },
+            },
+            actor,
+          )).state,
+        ).toBe("succeeded");
+      }),
+    ),
+  );
+
+  it.effect(
+    "refuses inconsistent launch snapshots before reserving or applying project setup",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const input = {
+            project,
+            binding: {
+              projectId: project.id,
+              projectRevision: project.revision,
+              environmentId,
+              workingCopyId: "launch-files",
+              resourceIds: [],
+            },
+            threadId: ThreadId.make("inconsistent-launch"),
+            title: "Review",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "test" },
+            runtimeMode: "approval-required" as const,
+            interactionMode: "plan" as const,
+            files: { requestId: "launch-files", project, strategy: "clone" as const },
+          };
+          const variants = [
+            { ...input, binding: { ...input.binding, projectRevision: 2 } },
+            { ...input, files: { ...input.files, project: { ...project, revision: 2 } } },
+            {
+              ...input,
+              files: {
+                ...input.files,
+                project: {
+                  ...project,
+                  profile: {
+                    scripts: [
+                      {
+                        id: "setup",
+                        name: "Setup",
+                        command: "changed-setup",
+                        icon: "play" as const,
+                        runOnWorktreeCreate: true,
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          ];
+          for (const [index, variant] of variants.entries()) {
+            const failure = yield* state.service
+              .execute(`inconsistent-launch:${index}`, { kind: "launch", input: variant }, actor)
+              .pipe(Effect.flip);
+            expect(failure.reason).toBe("invalid");
+          }
+          expect(yield* Ref.get(state.reservations)).toEqual([]);
+          expect(yield* Ref.get(state.dispatched)).toEqual([]);
+        }),
+      ),
+  );
+
   it.effect("retries a launch with the same thread command, saving retention once", () =>
     run((state) =>
       Effect.gen(function* () {
@@ -1786,6 +1992,14 @@ describe("Project operations", () => {
         expect([...(yield* Ref.get(state.conversations)).keys()]).toEqual(["unfilled-thread"]);
         expect(yield* Ref.get(state.retentionSaves)).toBe(0);
 
+        yield* Ref.set(state.failBind, true);
+        const resumed = yield* state.service.resume("files-unfilled", actor);
+        expect(resumed).toMatchObject({ state: "queued", result: { threadId: "unfilled-thread" } });
+        expect(yield* settled(state, "files-unfilled")).toMatchObject({
+          state: "failed",
+          result: { threadId: "unfilled-thread" },
+        });
+        yield* Ref.set(state.failBind, false);
         yield* Ref.set(state.fillFailure, null);
         yield* state.service.resume("files-unfilled", actor);
         expect((yield* settled(state, "files-unfilled")).state).toBe("succeeded");

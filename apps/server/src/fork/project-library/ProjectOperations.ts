@@ -26,6 +26,7 @@ import {
 import {
   LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   LibraryError,
+  libraryProfileSecretValueField,
   VaultError,
   LibraryOperation,
   LibraryOperationInput,
@@ -117,6 +118,21 @@ const workloadCodec = Schema.fromJsonString(Workload);
 const operationCodec = Schema.fromJsonString(LibraryOperation);
 const requestCodec = Schema.fromJsonString(LibraryOperationInput);
 const copyCodec = Schema.fromJsonString(LibraryWorkingCopy);
+const withRestoreRequest = (
+  operation: LibraryOperation,
+  request: LibraryOperationInput,
+): LibraryOperation =>
+  request.kind === "restore"
+    ? {
+        ...operation,
+        restoreRequest: {
+          ...Struct.omit(request.input, ["grant"]),
+          sourceCopy: request.input.grant.sourceCopy,
+          destinationEnvironmentId: request.input.grant.destinationEnvironmentId,
+          libraryEnvironmentId: request.input.grant.libraryEnvironmentId,
+        },
+      }
+    : operation;
 const requireOneRepository = (resolved: LibraryResolvedBinding) =>
   resolved.repositoryPaths.length === 1 && resolved.repositoryPaths[0] === resolved.cwd
     ? Effect.void
@@ -141,6 +157,7 @@ const creationCodec = Schema.fromJsonString(LibraryCreateProjectRequest);
 const updateCodec = Schema.fromJsonString(LibraryUpdateProjectRequest);
 const registrationCodec = Schema.fromJsonString(LibraryRegisterCopyRequest);
 const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
+const encodeProject = Schema.encodeEffect(Schema.fromJsonString(LibraryProject));
 function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvironmentScope[] {
   return kind === "import"
     ? [AuthSettingsWriteScope, AuthTerminalOperateScope]
@@ -274,6 +291,16 @@ const make = Effect.gen(function* () {
   const restoreGrants = new Map<string, LibraryRecoveryGrant>();
   const pending = new Map<string, Deferred.Deferred<LibraryOperation, LibraryError>>();
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
+  // History pages decode up to 100 rows inside their read span.
+  const decodeStoredOperation = Effect.fnUntraced(function* (row: {
+    readonly payload_json: string;
+    readonly request_json: string;
+  }) {
+    const operation = yield* Schema.decodeEffect(operationCodec)(row.payload_json);
+    return operation.kind === "restore" && operation.restoreRequest === undefined
+      ? withRestoreRequest(operation, yield* Schema.decodeEffect(requestCodec)(row.request_json))
+      : operation;
+  });
   const read = Effect.fn("ProjectOperations.read")(function* (id: string) {
     const rows = yield* sql<{
       subject: string;
@@ -284,7 +311,7 @@ const make = Effect.gen(function* () {
     if (!rows[0]) return null;
     return {
       ...rows[0],
-      operation: yield* Schema.decodeEffect(operationCodec)(rows[0].payload_json),
+      operation: yield* decodeStoredOperation(rows[0]),
     };
   }, Effect.mapError(io));
   const save = Effect.fn("ProjectOperations.save")(function* (value: LibraryOperation) {
@@ -801,9 +828,12 @@ const make = Effect.gen(function* () {
           const files = input.files;
           if (
             input.binding.environmentId !== environmentId ||
+            input.binding.projectId !== input.project.id ||
+            input.binding.projectRevision !== input.project.revision ||
             (files !== undefined &&
               (files.requestId !== input.binding.workingCopyId ||
-                files.project.id !== input.project.id))
+                (yield* encodeProject(files.project).pipe(Effect.mapError(io))) !==
+                  (yield* encodeProject(input.project).pipe(Effect.mapError(io)))))
           )
             return yield* new LibraryError({ reason: "invalid" });
           yield* phase("Checking files and project scope");
@@ -1008,6 +1038,77 @@ const make = Effect.gen(function* () {
       origin?: LaunchOrigin,
     ) {
       yield* authorize(actor.sessionId, actor.subject, request);
+      const projects =
+        request.kind === "prepare" || request.kind === "restore" || request.kind === "launch"
+          ? [
+              request.input.project,
+              ...(request.kind === "launch" && request.input.files
+                ? [request.input.files.project]
+                : []),
+            ]
+          : [];
+      const profiles = [
+        ...(request.kind === "create" || request.kind === "update"
+          ? [
+              {
+                profile: request.input.profile,
+                projectId: request.kind === "update" ? request.input.projectId : undefined,
+              },
+            ]
+          : []),
+        ...projects.map((project) => ({ profile: project.profile, projectId: project.id })),
+      ];
+      let newCredentials = false;
+      for (const { profile, projectId } of profiles) {
+        if (!profile || libraryProfileSecretValueField(profile) === null) continue;
+        // Older saved profiles can be resent unchanged under the Library's credential policy.
+        const local =
+          projectId === undefined
+            ? undefined
+            : (yield* workspaceStore.receipts).find((receipt) => receipt.project.id === projectId)
+                ?.project;
+        const saved =
+          local ??
+          (projectId === undefined
+            ? undefined
+            : yield* publisher.project(projectId).pipe(Effect.orElseSucceed(() => undefined)));
+        if (libraryProfileSecretValueField(profile, saved?.profile) !== null) newCredentials = true;
+      }
+      const remoteUpdates =
+        request.kind === "update"
+          ? (request.input.resourceUpdates ?? []).flatMap((resource) =>
+              resource.remoteUrl === undefined ? [] : [resource.remoteUrl],
+            )
+          : request.kind === "import" && request.input.repositoryUpdate
+            ? [request.input.repositoryUpdate.remoteUrl]
+            : [];
+      const resources = [
+        ...(request.kind === "create" || request.kind === "update"
+          ? [request.input.resources]
+          : []),
+        ...projects.map((project) => project.resources),
+        ...remoteUpdates.map((remoteUrl) => [
+          {
+            id: "repository",
+            title: "Repository",
+            relativePath: ".",
+            remoteUrl,
+            defaultBranch: null,
+          },
+        ]),
+      ];
+      if (
+        newCredentials ||
+        resources.some(
+          (resources) =>
+            resources && !validLibraryResources(resources, { allowLocalRemotes: true }),
+        )
+      )
+        return yield* new LibraryError({
+          reason: "invalid",
+          detail:
+            "Review the project setup and repository addresses. Use secret names or environment references instead of credential values in a saved request.",
+        });
       const durableRequest =
         request.kind === "restore"
           ? {
@@ -1053,19 +1154,25 @@ const make = Effect.gen(function* () {
             : request.kind === "update"
               ? request.input.projectId
               : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
-      const value: LibraryOperation = {
-        id,
-        kind: request.kind,
-        projectId,
-        environmentId,
-        state: "queued",
-        phase: "Waiting to start",
-        attempt: (existing?.operation.attempt ?? 0) + 1,
-        error: null,
-        result: request.kind === "import" ? (existing?.operation.result ?? null) : null,
-        createdAt: existing?.operation.createdAt ?? timestamp,
-        updatedAt: timestamp,
-      };
+      const value = withRestoreRequest(
+        {
+          id,
+          kind: request.kind,
+          projectId,
+          environmentId,
+          state: "queued",
+          phase: "Waiting to start",
+          attempt: (existing?.operation.attempt ?? 0) + 1,
+          error: null,
+          result:
+            request.kind === "import" || request.kind === "launch"
+              ? (existing?.operation.result ?? null)
+              : null,
+          createdAt: existing?.operation.createdAt ?? timestamp,
+          updatedAt: timestamp,
+        },
+        request,
+      );
       const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
       yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${ownershipSubject(actor.subject)},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
         Effect.mapError(io),
@@ -1112,13 +1219,15 @@ const make = Effect.gen(function* () {
     const rows = input.projectId
       ? yield* sql<{
           payload_json: string;
-        }>`SELECT payload_json FROM fork_library_operations WHERE project_id=${input.projectId} ORDER BY created_at DESC LIMIT 100`
+          request_json: string;
+        }>`SELECT payload_json,CASE WHEN json_extract(payload_json,'$.kind')='restore' THEN request_json ELSE '' END AS request_json
+           FROM fork_library_operations WHERE project_id=${input.projectId} ORDER BY created_at DESC LIMIT 100`
       : yield* sql<{
           payload_json: string;
-        }>`SELECT payload_json FROM fork_library_operations ORDER BY created_at DESC LIMIT 100`;
-    const operations = yield* Effect.forEach(rows, (row) =>
-      Schema.decodeEffect(operationCodec)(row.payload_json),
-    );
+          request_json: string;
+        }>`SELECT payload_json,CASE WHEN json_extract(payload_json,'$.kind')='restore' THEN request_json ELSE '' END AS request_json
+           FROM fork_library_operations ORDER BY created_at DESC LIMIT 100`;
+    const operations = yield* Effect.forEach(rows, decodeStoredOperation);
     // Older clients opt into each new kind only when they can decode its receipts.
     return operations.filter(
       (operation) =>
@@ -1180,7 +1289,10 @@ const make = Effect.gen(function* () {
         if (request.kind !== input.kind) continue;
         if (request.kind !== "launch" && request.input.requestId !== input.requestId) continue;
         outcomes.push(
-          yield* Schema.decodeEffect(operationCodec)(row.payload_json).pipe(Effect.mapError(io)),
+          withRestoreRequest(
+            yield* Schema.decodeEffect(operationCodec)(row.payload_json).pipe(Effect.mapError(io)),
+            request,
+          ),
         );
       }
       if (outcomes.length > 1) return yield* new LibraryError({ reason: "request-conflict" });

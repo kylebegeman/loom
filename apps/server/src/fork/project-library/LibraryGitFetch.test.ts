@@ -1,3 +1,8 @@
+// @effect-diagnostics nodeBuiltinImport:off -- A disposable Git fixture exposes interruption without contacting a remote.
+import * as NodeProcess from "node:process";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as VaultGitHub from "../vault/VaultGitHub.ts";
 import { VaultError } from "@t3tools/contracts/fork";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -211,6 +216,48 @@ describe("LibraryGitFetch", () => {
         expect(routes).toHaveLength(5);
       }).pipe(Effect.provide(testLayer)),
   );
+  it.live("cleans interrupted host clones before a reserved destination is retried", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
+      yield* fs.writeFileString(
+        path.join(root, "git"),
+        `#!${NodeProcess.execPath}
+const fs = require('node:fs');
+if (process.argv.includes('--bare')) process.exit(1);
+const target = process.argv.at(-1);
+fs.mkdirSync(target + '/.git', { recursive: true });
+fs.writeFileSync(target + '/.git/partial', 'partial');
+process.stderr.write('Receiving objects: 10% (1/10)\\n');
+setInterval(() => {}, 1000);
+`,
+        { mode: 0o700 },
+      );
+      const fetch = yield* LibraryGitFetch.LibraryGitFetch.pipe(
+        Effect.provide(Layer.fresh(LibraryGitFetch.layer)),
+        Effect.provideService(HostProcess.Environment, { PATH: `${root}:/usr/bin:/bin` }),
+      );
+      for (const existed of [false, true]) {
+        const target = path.join(root, existed ? "reserved" : "missing");
+        if (existed) yield* fs.makeDirectory(target);
+        const started = yield* Deferred.make<void>();
+        const running = yield* fetch
+          .cloneRepository({
+            remoteUrl: "https://example.test/team/project.git",
+            branch: "main",
+            path: target,
+            onProgress: () => Deferred.succeed(started, undefined).pipe(Effect.asVoid),
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(started);
+        yield* Fiber.interrupt(running);
+        expect(yield* fs.exists(target)).toBe(existed);
+        if (existed) expect(yield* fs.readDirectory(target)).toEqual([]);
+      }
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.live("preflights host access without creating a copy or mirror", () =>
     Effect.gen(function* () {
       const fetch = yield* LibraryGitFetch.LibraryGitFetch;

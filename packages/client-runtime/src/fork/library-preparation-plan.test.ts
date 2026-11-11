@@ -97,6 +97,23 @@ describe("preparation plan review", () => {
     expect(libraryPreparationPlanMatches({ ...plan, projectId: "another-project" }, input)).toBe(
       false,
     );
+    const resource = {
+      id: "api",
+      title: "API",
+      relativePath: ".",
+      remoteUrl: null,
+      defaultBranch: null,
+    };
+    expect(
+      libraryPreparationPlanMatches(
+        { ...plan, repositories: [{ resource, path: plan.placement.rootPath }] },
+        {
+          ...input,
+          project: { ...input.project, resources: [resource] },
+          resourceIds: [resource.id, resource.id],
+        },
+      ),
+    ).toBe(false);
   });
 
   it("keeps unknown tool, connection and secret checks unverified", () => {
