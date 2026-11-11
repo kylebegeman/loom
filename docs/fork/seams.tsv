@@ -1777,3 +1777,6 @@ apps/mobile/src/features/browser/BrowserPreviewRouteScreen.tsx	native-scroll-edg
 
 .pnpmfile.cjs	native-tab-bar	3
 apps/mobile/deps/README.md	native-tab-bar	1
+apps/web/src/components/chat/turnDetailAnnouncement.ts	brand	1
+apps/web/src/components/chat/turnDetailAnnouncement.test.ts	brand	4
+apps/web/src/components/chat/ThreadActivityAnnouncer.browser.test.tsx	brand	4

@@ -255,10 +255,10 @@ describe("nextTurnDetailAnnouncement", () => {
 
   it.each<{ level: ScreenReaderAnnouncements; spoken: ReadonlyArray<string> }>([
     { level: "status", spoken: [] },
-    { level: "messages", spoken: ["T3 Code: first", "T3 Code: second"] },
+    { level: "messages", spoken: ["Loom: first", "Loom: second"] }, // fork: brand
     {
       level: "everything",
-      spoken: ["Running git", "T3 Code: first", "Reading a.ts", "T3 Code: second"],
+      spoken: ["Running git", "Loom: first", "Reading a.ts", "Loom: second"], // fork: brand
     },
   ])("says each message and step once at the $level level", ({ level, spoken }) => {
     expect(speak(level, turn)).toEqual(spoken);
@@ -271,7 +271,7 @@ describe("nextTurnDetailAnnouncement", () => {
         frame("Running git", [said("first")]),
         frame("Reading a.ts", [said("first"), said("second", true, true)]),
       ]),
-    ).toEqual(["T3 Code: second", "Reading a.ts"]);
+    ).toEqual(["Loom: second", "Reading a.ts"]); // fork: brand
   });
 
   it("stays silent about history loaded above the messages it knows", () => {
@@ -294,7 +294,7 @@ describe("nextTurnDetailAnnouncement", () => {
         frame(null),
         frame(null, [first, { ...said("empty", true, true), text: "<!-- note -->" }]),
       ]),
-    ).toEqual(["T3 Code: Tests pass in web. See the docs"]);
+    ).toEqual(["Loom: Tests pass in web. See the docs"]); // fork: brand
   });
 
   it("says a step again after waiting on the user", () => {
