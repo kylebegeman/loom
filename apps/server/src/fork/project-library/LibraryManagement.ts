@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LIBRARY_MANAGEMENT_FEATURE,
+  PROJECT_ECOSYSTEM_FEATURE,
   LIBRARY_SITES_FEATURE,
   type LibrarySitesMutation,
   SitesSnapshot,
@@ -515,6 +516,17 @@ const make = Effect.gen(function* () {
     }
     const info = yield* publisher.info;
     if (!info.features?.includes(LIBRARY_MANAGEMENT_FEATURE)) return yield* deny(UNSUPPORTED);
+    if (
+      (request.kind === "create" || request.kind === "update") &&
+      request.input.dependencies !== undefined &&
+      !info.features?.includes(PROJECT_ECOSYSTEM_FEATURE)
+    )
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail:
+          "Update Loom on the Library to save project dependencies. Keep this computer enrolled.",
+        accessRepair: { kind: "connection", environmentId: info.environmentId },
+      });
     if (request.kind === "api-workspace" && !info.features?.includes(LIBRARY_API_FEATURE))
       return yield* deny(
         "Update Loom on the Library to share API workspaces. The existing connection can stay enrolled.",

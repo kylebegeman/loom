@@ -671,6 +671,11 @@ describe("authority-routed project management", () => {
             (yield* f.first.manager.execute(f.request, f.actor).pipe(Effect.flip)).message,
           ).toContain("Library version");
           yield* Ref.set(f.supported, true);
+          expect(
+            (yield* f.first.manager
+              .execute({ ...f.request, input: { ...f.request.input, dependencies: [] } }, f.actor)
+              .pipe(Effect.flip)).message,
+          ).toContain("project dependencies");
           yield* Ref.update(f.thread, (thread) => ({
             ...thread,
             interactionMode: "plan" as const,
