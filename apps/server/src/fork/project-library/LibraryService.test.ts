@@ -1781,6 +1781,20 @@ describe("independent Library catalog and durable history", () => {
           validLibraryResources([{ ...resource, remoteUrl: "ssh://git@2130706433/team/repo" }]),
         ).toBe(false);
         expect(validLibraryResources([{ ...resource, relativePath: "../escape" }])).toBe(false);
+        expect(
+          validLibraryResources([{ ...resource, remoteUrl: "file:///work/repo" }], {
+            allowLocalRemotes: true,
+          }),
+        ).toBe(true);
+        for (const remoteUrl of [
+          "file://user:synthetic-secret@localhost/work/repo",
+          "file:///work/repo?token=synthetic-secret",
+          "file:///work/repo#synthetic-secret",
+        ]) {
+          expect(
+            validLibraryResources([{ ...resource, remoteUrl }], { allowLocalRemotes: true }),
+          ).toBe(false);
+        }
         const link = {
           ...resource,
           id: "design",

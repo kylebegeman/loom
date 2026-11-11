@@ -54,6 +54,14 @@ export function validLibraryResources(
     if (resource.remoteUrl === null) continue;
     if (options.allowLocalRemotes && /^(?:file:\/\/|\/|[a-zA-Z]:[\\/])/.test(resource.remoteUrl)) {
       if (/[\p{Cc}\p{Cf}]/u.test(resource.remoteUrl)) return false;
+      if (resource.remoteUrl.startsWith("file://")) {
+        try {
+          const url = new URL(resource.remoteUrl);
+          if (url.username || url.password || url.search || url.hash) return false;
+        } catch {
+          return false;
+        }
+      }
       continue;
     }
     let remote = resource.remoteUrl;
