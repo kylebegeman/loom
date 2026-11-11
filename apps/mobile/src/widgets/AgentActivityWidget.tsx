@@ -92,7 +92,7 @@ export function AgentActivityWidget(
   const summaryTint = rows[0] ? phaseTint(rows[0].phase) : secondaryForeground;
   const emptyMessage = loaded
     ? (props.subtitle ?? "No active agents")
-    : "Open T3 Code to load agent activity";
+    : "Open Loom to load agent activity"; // fork: brand
 
   // Widget taps open the containing app, and every build accepts the prod
   // scheme as a link prefix, so dev and preview builds route this too.
@@ -178,7 +178,8 @@ export function AgentActivityWidget(
             lineLimit(1),
           ]}
         >
-          {summary || (accessory ? "T3 Code" : "")}
+          {/* fork: brand */}
+          {summary || (accessory ? "Loom" : "")}
         </Text>
         <Spacer minLength={0} />
       </HStack>

@@ -715,7 +715,8 @@ function ConfiguredCloudLinkRow({
       ) : isElectron ? (
         <SettingsRow
           title={searchableSetting("t3-connect").title}
-          description="Run `t3 connect link` on the host, then restart T3 Code there."
+          // fork: brand
+          description="Run `t3 connect link` on the host, then restart Loom there."
         />
       ) : null}
       {signedOut && showSwitch ? null : (

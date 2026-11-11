@@ -12,7 +12,7 @@ export const PI_T3_SERVICE_TIER_COMMAND = "t3-service-tier";
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
-// fork: brand: the declined-tool reason and untrusted-folder notice inside this source say Loom.
+// fork: brand: the declined-tool reason, untrusted-folder notice and service-tier command inside this source say Loom.
 export const PI_T3_MCP_EXTENSION_SOURCE = `\
 import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import * as NodeFSP from "node:fs/promises";
@@ -294,7 +294,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Only a tier the active model advertises is sent; Standard sends none.
   let serviceTier: string | undefined;
   pi.registerCommand(SERVICE_TIER_COMMAND, {
-    description: "Set the service tier T3 Code sends with provider requests",
+    description: "Set the service tier Loom sends with provider requests",
     handler: async (args) => {
       serviceTier = args.trim() || undefined;
     },

@@ -1914,7 +1914,7 @@ function OpenCommandPaletteDialog(props: {
       "openclaw",
       "hermes",
     ],
-    title: "Use T3 Code in another app (MCP)",
+    title: "Use Loom in another app (MCP)", // fork: brand
     icon: <PlugIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       openUseInAnotherApp(
