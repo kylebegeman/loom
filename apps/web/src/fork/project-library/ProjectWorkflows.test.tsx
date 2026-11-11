@@ -10,6 +10,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   save: vi.fn(),
   update: vi.fn(),
+  outcome: vi.fn(),
   apply: vi.fn(),
   refresh: vi.fn(),
   read: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("./state", () => ({
     blueprint: () => "blueprint",
     applyBlueprint: "apply",
     updateProject: "update",
+    operationOutcome: "outcome",
     saveWorkstream: "save",
     refreshCopyHealth: "refresh",
     readCopyStatus: "read",
@@ -55,8 +57,9 @@ vi.mock("~/state/query", () => ({
   }),
 }));
 vi.mock("~/state/use-atom-command", () => ({
-  useAtomCommand: (command: "save" | "apply" | "refresh" | "read" | "register" | "update") =>
-    state[command] ?? vi.fn(),
+  useAtomCommand: (
+    command: "save" | "apply" | "refresh" | "read" | "register" | "update" | "outcome",
+  ) => state[command] ?? vi.fn(),
 }));
 vi.mock("./ProjectOperations", () => ({ ProjectOperationHistory: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
@@ -353,36 +356,59 @@ it("offers repository resources for workstreams without turning ordinary links i
   ]);
 });
 
-it("retries a small project edit with its original revision and receipt after a lost response", async () => {
-  state.update
-    .mockResolvedValueOnce(AsyncResult.failure(Cause.interrupt(0)))
-    .mockResolvedValueOnce(AsyncResult.success(project));
-  const onSaved = vi.fn();
-  function Editor({ revision }: { revision: number }) {
-    const update = useProjectUpdate({
-      project: { ...project, revision },
-      authorityId: EnvironmentId.make("library"),
-      connected: true,
-      onSaved,
-    });
-    return (
-      <>
-        <button onClick={() => void update.save({ brief: "New brief" })}>Save brief</button>
-        <p role="alert">{update.error}</p>
-      </>
+it.each(["absent", "succeeded"] as const)(
+  "checks an interrupted project edit's %s receipt before an explicit retry",
+  async (receipt) => {
+    state.update
+      .mockResolvedValueOnce(AsyncResult.failure(Cause.interrupt(0)))
+      .mockResolvedValueOnce(AsyncResult.success(project));
+    state.outcome.mockResolvedValue(
+      AsyncResult.success(
+        receipt === "absent"
+          ? null
+          : {
+              kind: "update",
+              environmentId: "library",
+              projectId: project.id,
+              state: "succeeded",
+              result: project,
+            },
+      ),
     );
-  }
-  await act(async () => root.render(<Editor revision={1} />));
-  await act(async () => button("Save brief").click());
-  expect(container.textContent).toContain("Check the saved request before retrying");
-  await act(async () => root.render(<Editor revision={2} />));
-  await act(async () => button("Save brief").click());
-  const first = state.update.mock.calls[0]![0];
-  expect(first.input).toEqual({
-    requestId: expect.any(String),
-    projectId: project.id,
-    expectedRevision: 1,
-    brief: "New brief",
-  });
-  expect(state.update.mock.calls[1]![0]).toEqual(first);
-});
+    const onSaved = vi.fn();
+    function Editor({ revision }: { revision: number }) {
+      const update = useProjectUpdate({
+        project: { ...project, revision },
+        authorityId: EnvironmentId.make("library"),
+        connected: true,
+        onSaved,
+      });
+      return (
+        <>
+          <button onClick={() => void update.save({ brief: "New brief" })}>Save brief</button>
+          <p role="alert">{update.error}</p>
+        </>
+      );
+    }
+    await act(async () => root.render(<Editor revision={1} />));
+    await act(async () => button("Save brief").click());
+    expect(container.textContent).toContain("Check the saved request before retrying");
+    await act(async () => root.render(<Editor revision={2} />));
+    await act(async () => button("Save brief").click());
+    expect(state.update).toHaveBeenCalledTimes(1);
+    const first = state.update.mock.calls[0]![0];
+    expect(state.outcome).toHaveBeenCalledExactlyOnceWith({
+      environmentId: first.environmentId,
+      input: { requestId: first.input.requestId, kind: "update" },
+    });
+    if (receipt === "succeeded") return;
+    await act(async () => button("Save brief").click());
+    expect(first.input).toEqual({
+      requestId: expect.any(String),
+      projectId: project.id,
+      expectedRevision: 1,
+      brief: "New brief",
+    });
+    expect(state.update.mock.calls[1]![0]).toEqual(first);
+  },
+);

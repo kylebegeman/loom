@@ -726,6 +726,8 @@ function ProjectHero({
               <TitleEditor
                 title={project.title}
                 busy={update.busy}
+                canSave={update.canEdit}
+                needsRecovery={update.needsRecovery}
                 onCancel={() => setRenaming(false)}
                 onSave={async (title) => {
                   if (await update.save({ title })) setRenaming(false);
@@ -793,6 +795,7 @@ function ProjectHero({
             brief={project.brief}
             canEdit={update.canEdit}
             busy={update.busy}
+            needsRecovery={update.needsRecovery}
             editing={editingBrief}
             showEmpty={showEmptyBrief}
             onEditingChange={onEditingBriefChange}
@@ -861,11 +864,15 @@ function StatusPill({
 function TitleEditor({
   title,
   busy,
+  canSave,
+  needsRecovery,
   onSave,
   onCancel,
 }: {
   readonly title: string;
   readonly busy: boolean;
+  readonly canSave: boolean;
+  readonly needsRecovery: boolean;
   readonly onSave: (title: string) => Promise<void>;
   readonly onCancel: () => void;
 }) {
@@ -883,14 +890,14 @@ function TitleEditor({
         aria-label="Project name"
         maxLength={160}
         value={draft}
-        disabled={busy}
+        disabled={busy || needsRecovery}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") onCancel();
         }}
       />
-      <Button shape="pill" type="submit" disabled={busy || !draft.trim()}>
-        Save
+      <Button shape="pill" type="submit" disabled={!canSave || busy || !draft.trim()}>
+        {needsRecovery ? "Check result" : "Save"}
       </Button>
       <Button shape="pill" type="button" variant="ghost" disabled={busy} onClick={onCancel}>
         Cancel
@@ -904,6 +911,7 @@ function ProjectBrief({
   brief,
   canEdit,
   busy,
+  needsRecovery,
   editing,
   showEmpty,
   onEditingChange,
@@ -915,6 +923,7 @@ function ProjectBrief({
   readonly editing: boolean;
   readonly showEmpty: boolean;
   readonly onEditingChange: (editing: boolean) => void;
+  readonly needsRecovery: boolean;
   readonly onSave: (brief: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState(brief);
@@ -952,8 +961,13 @@ function ProjectBrief({
           }}
         />
         <div className="flex items-center gap-2">
-          <Button shape="pill" type="submit" size="sm" disabled={busy || draft === brief}>
-            {busy ? "Saving..." : "Save brief"}
+          <Button
+            shape="pill"
+            type="submit"
+            size="sm"
+            disabled={!canEdit || busy || (!needsRecovery && draft === brief)}
+          >
+            {needsRecovery ? "Check result" : busy ? "Saving..." : "Save brief"}
           </Button>
           <Button
             shape="pill"

@@ -5,7 +5,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryError,
   type LibraryUpdateProjectRequest,
-  type LibraryProject,
+  LibraryProject,
   type LibraryProjectColor,
   type LibraryProjectProfileInput,
 } from "@t3tools/contracts/fork";
@@ -13,7 +13,7 @@ import { randomUUID } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission } from "./state";
 
-const isLibraryError = Schema.is(LibraryError);
+const isProject = Schema.is(LibraryProject);
 
 type ProjectChange = Partial<Pick<LibraryProject, "title" | "brief" | "resources">> & {
   /** Null returns the project to its automatic color. */
@@ -38,10 +38,12 @@ export function useProjectUpdate({
   readonly onSaved: () => void;
 }) {
   const update = useAtomCommand(projectLibrary.updateProject, { reportFailure: false });
+  const outcome = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.updateProject, authorityId);
   const pending = useRef<{ fingerprint: string; input: LibraryUpdateProjectRequest } | null>(null);
   const saving = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [needsRecovery, setNeedsRecovery] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const save = async (change: ProjectChange) => {
     if (!authorityId || saving.current) return false;
@@ -60,6 +62,10 @@ export function useProjectUpdate({
       return false;
     }
     const fingerprint = JSON.stringify({ authorityId, projectId: project.id, change });
+    if (needsRecovery && pending.current?.fingerprint !== fingerprint) {
+      setError("Check the saved update before changing its details.");
+      return false;
+    }
     if (pending.current?.fingerprint !== fingerprint) {
       const { resources, ...fields } = change;
       const patchResources =
@@ -117,21 +123,65 @@ export function useProjectUpdate({
     setBusy(true);
     setError(null);
     const saveProject = async () => {
+      if (needsRecovery) {
+        const answer = await outcome({
+          environmentId: authorityId,
+          input: { requestId: input.requestId, kind: "update" },
+        });
+        if (answer._tag === "Failure") throw squashLibraryCommandFailure(answer);
+        const operation = answer.value;
+        if (
+          operation &&
+          (operation.kind !== "update" ||
+            operation.environmentId !== authorityId ||
+            operation.projectId !== project.id)
+        )
+          throw new LibraryError({
+            reason: "invalid",
+            detail: "The receipt belongs to another project or computer.",
+          });
+        if (operation?.state === "succeeded") {
+          if (!isProject(operation.result) || operation.result.id !== project.id)
+            throw new LibraryError({
+              reason: "invalid",
+              detail: "The saved update did not return this project.",
+            });
+          pending.current = null;
+          setNeedsRecovery(false);
+          onSaved();
+          return true;
+        }
+        if (operation === null || operation.state === "paused" || operation.state === "failed") {
+          setNeedsRecovery(false);
+          setError(
+            "The saved update is ready for an explicit retry. Save again when you are ready.",
+          );
+          return false;
+        }
+        throw new LibraryError({
+          reason: "blocked",
+          detail:
+            operation.state === "cancelled"
+              ? "This update was cancelled. Review its completed steps before starting another."
+              : "This update is still running. Check its result again.",
+        });
+      }
       const result = await update({
         environmentId: authorityId,
         input,
       });
       if (result._tag === "Failure") {
         const cause = squashLibraryCommandFailure(result);
-        if (isLibraryError(cause) && cause.reason !== "io") pending.current = null;
         throw cause;
       }
       pending.current = null;
+      setNeedsRecovery(false);
       onSaved();
       return true;
     };
     return saveProject()
       .catch((cause) => {
+        setNeedsRecovery(pending.current !== null);
         setError(cause instanceof Error ? cause.message : "Could not save this change. Try again.");
         onSaved();
         return false;
@@ -144,6 +194,7 @@ export function useProjectUpdate({
   return {
     save,
     busy,
+    needsRecovery,
     error,
     clearError: () => setError(null),
     canEdit: allowed && connected && !project.archived,
