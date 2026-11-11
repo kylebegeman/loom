@@ -165,6 +165,36 @@ describe("directoryCatalogRows", () => {
     expect(row && directoryConnectPlan(row, identity(STUDIO), native)).toBeNull();
   });
 
+  it("offers explicit Library reconnect for an eligible saved computer without changing its address", () => {
+    const current = listing([
+      reported(STUDIO, { routes: [{ kind: "public", url: "https://studio.reach.example.com" }] }),
+    ]);
+    const [row] = directoryCatalogRows({
+      listing: current,
+      saved: [savedStudio],
+      connected: [],
+      reconnectable: [STUDIO],
+      now: NOW,
+    });
+    expect(row?.saved).toBe(savedStudio);
+    expect(savedStudio.httpBaseUrl).toBe("https://studio.saved.example.com");
+    expect(row).toMatchObject({
+      action: "connect",
+      routes: [{ kind: "public", url: "https://studio.reach.example.com" }],
+    });
+    expect(row && directoryConnectPlan(row, identity(STUDIO), native)?.signIn).toBe(
+      "loom-identity",
+    );
+    const [connected] = directoryCatalogRows({
+      listing: current,
+      saved: [savedStudio],
+      connected: [STUDIO],
+      reconnectable: [STUDIO],
+      now: NOW,
+    });
+    expect(connected).toMatchObject({ action: null, routes: [] });
+  });
+
   it("lists saved connections first in their order, then discovered computers by label", () => {
     const rows = directoryCatalogRows({
       listing: listing([reported(DESK, { label: "Desk" }), reported(BOOK, { label: "Book" })]),

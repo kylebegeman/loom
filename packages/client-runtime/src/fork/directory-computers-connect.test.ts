@@ -118,6 +118,35 @@ describe("resolveDirectoryConnect", () => {
     }),
   );
 
+  it.effect("repairs a saved computer through the Library's checked public address", () =>
+    Effect.gen(function* () {
+      const [saved] = directoryCatalogRows({
+        listing: listing([reported(BOOK, { routes: [{ kind: "public", url: PUBLIC }] })]),
+        saved: [{ environmentId: BOOK, label: "Saved Book" }],
+        connected: [],
+        reconnectable: [BOOK],
+        now: NOW,
+      });
+      if (saved === undefined) throw new Error("expected saved computer");
+      const { step, requested } = yield* resolve(
+        { [PUBLIC]: () => Response.json(identity(BOOK)) },
+        signedInLibrary,
+        saved,
+      );
+      expect(requested).toEqual([PUBLIC]);
+      expect(step).toMatchObject({
+        kind: "sign-in",
+        environmentId: BOOK,
+        request: {
+          httpBaseUrl: PUBLIC,
+          expectedEnvironmentId: BOOK,
+          expectedIdentity: ACCOUNT,
+          expectedIssuer: LIBRARY_ISSUER,
+        },
+      });
+    }),
+  );
+
   it.effect("pairs at the first route when no route answers", () =>
     Effect.gen(function* () {
       const { step } = yield* resolve({}, signedInLibrary);

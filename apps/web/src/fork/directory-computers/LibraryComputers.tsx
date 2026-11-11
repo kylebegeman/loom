@@ -91,6 +91,14 @@ export function LibraryComputers({ onPair }: { readonly onPair: PairLibraryCompu
       }
       libraryConnection={authority.environment?.connection ?? null}
       saved={authority.environments}
+      connected={authority.environments
+        .filter((entry) => entry.connection.phase === "connected")
+        .map((entry) => entry.environmentId)}
+      reconnectable={authority.environments
+        .filter(
+          (entry) => entry.entry.enabled && entry.entry.target._tag !== "PrimaryConnectionTarget",
+        )
+        .map((entry) => entry.environmentId)}
       onPair={onPair}
     />
   );
@@ -101,12 +109,16 @@ function LibraryComputersSection({
   supportsDirectory,
   libraryConnection,
   saved,
+  connected,
+  reconnectable,
   onPair,
 }: {
   readonly libraryId: EnvironmentId;
   readonly supportsDirectory: boolean | null;
   readonly libraryConnection: EnvironmentConnectionPresentation | null;
   readonly saved: readonly DirectorySavedConnection[];
+  readonly connected: readonly EnvironmentId[];
+  readonly reconnectable: readonly EnvironmentId[];
   readonly onPair: PairLibraryComputer;
 }) {
   const listingAtom = directoryComputers.listing(supportsDirectory === false ? null : libraryId);
@@ -130,7 +142,7 @@ function LibraryComputersSection({
   const listing = view.listing.listing;
   const old = listing ? directoryOldMachines(listing, now) : { environments: [], machines: [] };
   const oldIds = new Set(old.environments.map((row) => row.environmentId));
-  const rows = directoryCatalogRows({ listing, saved, connected: [], now }).filter(
+  const rows = directoryCatalogRows({ listing, saved, connected, reconnectable, now }).filter(
     (row) => row.report !== null && row.environmentId !== libraryId,
   );
 
@@ -351,7 +363,9 @@ function LibraryComputersSection({
                 ? "Checking..."
                 : state?.phase === "cancelling"
                   ? "Cancelling..."
-                  : "Connect"}
+                  : row.saved
+                    ? "Reconnect with Library"
+                    : "Connect"}
             </Button>
           )}
         </div>
@@ -380,8 +394,9 @@ function LibraryComputersSection({
         }
       >
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Connect a discovered computer to use it on this device. Saved connections keep their own
-          addresses.
+          Connect a computer to use it on this device. Reconnect with Library adds its current
+          address while keeping saved conversations and drafts. Access away from home needs Reach or
+          Tailscale HTTPS on that computer.
         </p>
         {view.error ? (
           <p role="alert" className="text-sm text-destructive">

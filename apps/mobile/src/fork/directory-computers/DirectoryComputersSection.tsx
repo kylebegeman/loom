@@ -45,7 +45,7 @@ import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 import { directoryComputers } from "./state";
 
 const FOOTER =
-  "Computers your Library knows about. Connect signs in with Loom Identity, or asks for a pairing code when a computer does not offer it. Forget clears the Library entry and leaves your files and saved connection in place.";
+  "Computers your Library knows about. Reconnect with Library adds a current address without removing saved conversations or drafts. A computer needs Reach or Tailscale HTTPS for access away from home. Forget clears the Library entry and leaves your files and saved connection in place.";
 
 const SIGN_IN_PROGRESS = { "signing-in": "Signing in...", verifying: "Verifying..." } as const;
 
@@ -107,9 +107,17 @@ export function useDirectoryComputers() {
   const listing = view.listing.listing;
   const old = listing ? directoryOldMachines(listing, now) : { environments: [], machines: [] };
   const oldIds = new Set(old.environments.map((row) => row.environmentId));
-  const rows = directoryCatalogRows({ listing, saved, connected: [], now }).filter(
-    (row) => row.report !== null && row.environmentId !== libraryId,
-  );
+  const rows = directoryCatalogRows({
+    listing,
+    saved,
+    connected: [...presentations.entries()]
+      .filter(([, entry]) => entry.connection.phase === "connected")
+      .map(([id]) => id),
+    reconnectable: [...catalog.entries.values()]
+      .filter((entry) => entry.enabled && entry.target._tag !== "PrimaryConnectionTarget")
+      .map((entry) => entry.target.environmentId),
+    now,
+  }).filter((row) => row.report !== null && row.environmentId !== libraryId);
   rows.sort(
     (left, right) =>
       Number(oldIds.has(left.environmentId)) - Number(oldIds.has(right.environmentId)),
@@ -310,7 +318,13 @@ export function DirectoryComputersSection({
                   description={description}
                   detail={
                     progress ??
-                    (row.saved ? "Saved on this device" : connectable ? "Connect" : "Pair instead")
+                    (row.action === null
+                      ? "Saved on this device"
+                      : connectable
+                        ? row.saved
+                          ? "Reconnect with Library"
+                          : "Connect"
+                        : "Pair instead")
                   }
                   loading={progress !== null}
                   disabled={row.action === null || (active !== null && progress === null)}

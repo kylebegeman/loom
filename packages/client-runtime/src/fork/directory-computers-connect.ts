@@ -150,7 +150,7 @@ const pairing = (
  * How to connect a discovered computer: read sign-in settings from its routes in order, skipping
  * one that does not answer or reaches another computer, then offer Loom Identity at the first that
  * answered when it uses the Library's issuer. A browser tries tailnet first and pairs when only a
- * public reach address answers. Null for a saved connection or no usable route.
+ * public reach address answers. Saved computers can explicitly reconnect through the same checks.
  */
 export const resolveDirectoryConnect = Effect.fn("DirectoryComputers.resolveConnect")(
   function* (input: {

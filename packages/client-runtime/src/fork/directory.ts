@@ -308,8 +308,8 @@ export interface DirectoryCatalogRow<
   /** The directory's latest report, or null when the directory does not list this computer. */
   readonly report: DirectoryCatalogReport | null;
   /**
-   * Directory routes for a discovered computer, public first. Always empty for a saved
-   * connection, which keeps the routes it has: the directory never changes them.
+   * Directory addresses offered for explicit connection or recovery, public first.
+   * Saved connections keep their current routes until the user finishes reconnecting.
    */
   readonly routes: readonly DirectoryRoute[];
   /** LoomOS machines this computer's report carried. */
@@ -317,22 +317,25 @@ export interface DirectoryCatalogRow<
   /** Connected from this device now. The only thing that makes a row online. */
   readonly connected: boolean;
   readonly proof: DirectoryProofAge | null;
-  /** Discovered computers can connect through a route or open the pairing form. */
+  /** A discovered or recoverable computer can connect or open the pairing form. */
   readonly action: "connect" | "pair" | null;
 }
 
 /**
  * Merges the directory with this device's saved connections: one row per environment id. Saved
- * connections come first in their own order and only gain the directory's annotations. Unsaved
- * computers follow by label as discovered rows. Pass a null listing while none is known.
+ * connections come first in their own order. Eligible disconnected computers offer recovery
+ * through the directory without changing saved routes. Unsaved computers follow by label.
  */
 export function directoryCatalogRows<Saved extends DirectorySavedConnection>(input: {
   readonly listing: DirectoryListing | null;
   readonly saved: readonly Saved[];
   readonly connected: Iterable<EnvironmentId>;
+  /** Saved computers this client can explicitly reconnect, excluding disabled or platform-owned ones. */
+  readonly reconnectable?: Iterable<EnvironmentId>;
   readonly now: number;
 }): readonly DirectoryCatalogRow<Saved>[] {
   const connected = new Set(input.connected);
+  const reconnectable = new Set(input.reconnectable);
   const environments = input.listing === null ? [] : directoryEnvironments(input.listing);
   const reports = new Map(
     environments.map((environment) => [environment.environmentId, environment]),
@@ -352,15 +355,19 @@ export function directoryCatalogRows<Saved extends DirectorySavedConnection>(inp
   for (const saved of input.saved) {
     if (savedIds.has(saved.environmentId)) continue;
     savedIds.add(saved.environmentId);
+    const report = reports.get(saved.environmentId);
+    const recoverable =
+      reconnectable.has(saved.environmentId) && !connected.has(saved.environmentId);
+    const routes = recoverable ? (report?.routes ?? []) : [];
     rows.push({
       environmentId: saved.environmentId,
       label: saved.label,
       saved,
-      ...annotate(reports.get(saved.environmentId)),
-      routes: [],
+      ...annotate(report),
+      routes,
       machines: machinesBy.get(saved.environmentId) ?? [],
       connected: connected.has(saved.environmentId),
-      action: null,
+      action: recoverable && report !== undefined ? (routes.length > 0 ? "connect" : "pair") : null,
     });
   }
   const discovered = environments
@@ -505,14 +512,14 @@ function pairingReason(
 /**
  * How to connect to a discovered computer, given the identity metadata one of its routes
  * returned (null when it has none). `resolveDirectoryConnect` reads the metadata and calls this.
- * Null for a saved connection or a computer with no usable route.
+ * Null when connection is not offered or the computer has no usable route.
  */
 export function directoryConnectPlan(
   row: DirectoryCatalogRow,
   identity: LoomIdentityMetadata | null,
   options: DirectoryConnectOptions,
 ): DirectoryConnectPlan | null {
-  if (row.saved !== null || row.action !== "connect") return null;
+  if (row.action !== "connect") return null;
   const order = options.signIn.surface === "browser" ? BROWSER_ROUTE_ORDER : ROUTE_ORDER;
   const routes = [...directoryRoutes(row.routes)].sort(
     (left, right) => order[left.kind] - order[right.kind],
