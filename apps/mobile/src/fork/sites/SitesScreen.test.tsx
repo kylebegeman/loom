@@ -69,7 +69,9 @@ vi.mock("./state", () => ({
     runChecks: {},
   },
 }));
-vi.mock("./use-site-check-clock", () => ({ useSiteCheckClock: () => 0 }));
+vi.mock("./use-site-check-clock", () => ({
+  useSiteCheckClock: () => Date.parse("2026-10-17T00:00:00Z"),
+}));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.run }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (key: string | null) => {
