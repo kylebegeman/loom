@@ -1850,7 +1850,7 @@ export function AddProjectDestinationScreen(props: {
     const startResult = await startProjectClone({
       environmentId: environment.environmentId,
       input: {
-        projectId,
+        projectId, // fork: project-home
         title,
         createdAt: preparation?.createdAt ?? new Date().toISOString(), // fork: project-home
         remoteUrl,
@@ -1861,6 +1861,7 @@ export function AddProjectDestinationScreen(props: {
       setError(errorMessage(Cause.squash(startResult.cause)));
     } else {
       void suggestAppAccessForRemote(checkAppAccess, environment.environmentId, remoteUrl);
+      const { projectId } = startResult.value;
       // Wait for the create event; the client store otherwise falls back to the project picker and loses clone controls.
       const project = await waitForProject(
         { environmentId: environment.environmentId, projectId },

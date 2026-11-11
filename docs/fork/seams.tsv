@@ -1248,7 +1248,7 @@ apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	every
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	library-sign-in	1
 apps/web/src/components/settings/StorageSettings.tsx	file-placement	1
 apps/web/src/components/settings/settingsSearch.ts	file-placement	1
-apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	12
+apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	10
 apps/web/src/components/AddProjectToMachineDialog.tsx	file-placement	10
 apps/web/src/lib/addProjectToMachine.ts	file-placement	14
 docs/user/project-settings.md	file-placement	1

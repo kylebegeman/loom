@@ -9,6 +9,9 @@ import { appAtomRegistry } from "../state/atom-registry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { withKnownPullRequestSummary } from "../state/use-thread-pr";
 
+let linkNavigationId = 0;
+const nextLinkNavigationId = () => ++linkNavigationId;
+
 type PullRequestContext = { readonly environmentId: string; readonly projectId: string };
 
 // Avoid useRoute so layouts without route context can open any thread's pull requests.
@@ -29,7 +32,10 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
         url,
         "pull-request",
       ); /* fork: preview-links */
-    const params = withKnownPullRequestSummary(destination);
+    const params = withKnownPullRequestSummary({
+      ...destination,
+      ...(destination.navigationUrl ? { navigationId: nextLinkNavigationId() } : {}),
+    });
     // Android shows one page at a time; iOS opens it over the current page, so Back returns.
     if (Platform.OS === "android") selectDetail({ name: "PullRequest", params });
     else if (replace) navigation.dispatch(StackActions.replace("PullRequest", params));
