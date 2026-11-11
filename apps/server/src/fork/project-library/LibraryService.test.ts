@@ -850,6 +850,14 @@ describe("independent Library catalog and durable history", () => {
               .projectRevision,
           ).toBe(1);
           const current = yield* service.project({ projectId: project.id });
+          expect(
+            yield* service.archiveProject({
+              requestId: "already-active",
+              projectId: project.id,
+              expectedRevision: current.revision,
+              archived: false,
+            }),
+          ).toEqual(current);
           const archived = yield* service.archiveProject({
             requestId: "archive",
             projectId: project.id,
@@ -857,6 +865,14 @@ describe("independent Library catalog and durable history", () => {
             archived: true,
           });
           expect(yield* service.projects({})).toEqual([]);
+          expect(
+            yield* service.archiveProject({
+              requestId: "already-archived",
+              projectId: project.id,
+              expectedRevision: archived.revision,
+              archived: true,
+            }),
+          ).toEqual(archived);
           yield* service.archiveProject({
             requestId: "reopen",
             projectId: project.id,

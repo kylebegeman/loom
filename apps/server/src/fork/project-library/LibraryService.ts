@@ -1008,6 +1008,7 @@ const make = Effect.gen(function* () {
         const current = yield* getProject(input.projectId);
         if (current.revision !== input.expectedRevision)
           return yield* new LibraryError({ reason: "revision-conflict" });
+        if (current.archived === input.archived) return current;
         return yield* putProject({
           ...current,
           archived: input.archived,
