@@ -422,6 +422,40 @@ describe("ProjectCloneTracker", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  // fork: file-placement
+  it.effect("an omitted destination opens the project that registered the checkout first", () => {
+    const owner = ProjectId.make("project-owner");
+    const harness = makeHarness({
+      prepare: (input) =>
+        Effect.succeed({
+          destinationPath: "/projects/t3code",
+          remoteUrl: input.remoteUrl ?? "",
+          cloneUrl: input.remoteUrl ?? "",
+          repository: null,
+          reuse: { path: "/projects/t3code", projectId: null },
+        }),
+    });
+    const hooks: ProjectCloneTracker.ProjectCloneHooks = {
+      ...harness.hooks,
+      createProject: (input) =>
+        Effect.fail(
+          new ProjectConflictError({
+            projectId: input.projectId,
+            workspaceRoot: input.workspaceRoot,
+            conflictingProjectId: owner,
+          }),
+        ),
+    };
+    const { destinationPath: _omitted, ...input } = startInput;
+    return Effect.gen(function* () {
+      const tracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const result = yield* tracker.start(input, hooks);
+      expect(result).toMatchObject({ projectId: owner, reused: true });
+      expect(harness.cloned).toEqual([owner]);
+      expect(harness.cloneCalls).toEqual([]);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("an omitted destination clones into the folder the server claimed", () => {
     const prepared: Array<{ readonly title: string | undefined }> = [];
     const harness = makeHarness({

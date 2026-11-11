@@ -366,16 +366,24 @@ export const make = Effect.gen(function* () {
           });
           return reused;
         }
-        yield* hooks.createProject({
-          projectId: input.projectId,
-          title: input.title,
-          workspaceRoot: prepared.destinationPath,
-          createdAt: input.createdAt,
-        });
+        // fork: file-placement -- a project that took the checkout meanwhile is opened instead.
+        const projectId = yield* hooks
+          .createProject({
+            projectId: input.projectId,
+            title: input.title,
+            workspaceRoot: prepared.destinationPath,
+            createdAt: input.createdAt,
+          })
+          .pipe(
+            Effect.as(input.projectId),
+            Effect.catchTags({
+              ProjectConflictError: (conflict) => Effect.succeed(conflict.conflictingProjectId),
+            }),
+          );
         yield* hooks
-          .onCloned({ projectId: input.projectId, workspaceRoot: prepared.destinationPath })
+          .onCloned({ projectId, workspaceRoot: prepared.destinationPath }) // fork: file-placement
           .pipe(Effect.ignoreCause({ log: true }));
-        return reused;
+        return { ...reused, projectId }; // fork: file-placement
       }
       const startedAt = yield* nowIso;
       const snapshot: ProjectCloneSnapshot = {

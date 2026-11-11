@@ -1302,9 +1302,13 @@ export const make = Effect.gen(function* () {
   });
 
   // Only chats left in an excluded folder, such as Codex's scratch folder, take their project's root.
-  const projectCwd = (cwd: string, projectRoots: ReadonlyArray<string> | undefined) =>
+  const projectCwd = (
+    cwd: string,
+    projectRoots: ReadonlyArray<string> | undefined,
+    loomRoots: ReadonlyArray<string>, // fork: file-placement
+  ) =>
     projectRoots !== undefined &&
-    isExcludedProjectPath(path.resolve(expandHomePath(cwd.trim(), homeDir)))
+    isExcludedProjectPath(path.resolve(expandHomePath(cwd.trim(), homeDir)), loomRoots) // fork: file-placement
       ? projectRoots[0]!
       : cwd;
 
@@ -1450,11 +1454,12 @@ export const make = Effect.gen(function* () {
         transcripts: Array<TranscriptCandidate>;
       }
     >();
+    const loomRoots = yield* readLoomRoots; // fork: file-placement
 
     for (const transcript of transcripts) {
       const rolloutCwd = yield* readCwd(source, transcript, budget);
       if (rolloutCwd === null || rolloutCwd === false) continue;
-      const cwd = projectCwd(rolloutCwd, transcript.projectRoots);
+      const cwd = projectCwd(rolloutCwd, transcript.projectRoots, loomRoots); // fork: file-placement
       const key = `${transcript.providerInstanceId}\0${cwd}`;
       const existing = byOwnerAndCwd.get(key);
       if (existing) {
@@ -1895,7 +1900,7 @@ export const make = Effect.gen(function* () {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
           const expandedCwd = expandHomePath(
-            projectCwd(snapshot.cwd.value, transcript.projectRoots).trim(),
+            projectCwd(snapshot.cwd.value, transcript.projectRoots, loomRoots).trim(), // fork: file-placement
             homeDir,
           );
           if (
