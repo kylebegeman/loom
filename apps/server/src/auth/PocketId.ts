@@ -552,6 +552,8 @@ const make = Effect.gen(function* () {
     if (maxSessionAgeSeconds === null) return identity;
     if (authTime === undefined) return yield* new PocketIdError({ reason: "token" });
     const now = yield* DateTime.now;
+    if (authTime * 1000 > now.epochMilliseconds)
+      return yield* new PocketIdError({ reason: "token" });
     const limit = (authTime + maxSessionAgeSeconds) * 1000;
     if (limit <= now.epochMilliseconds) return yield* new PocketIdError({ reason: "expired" });
     return limit < identity.expiresAt.epochMilliseconds

@@ -226,7 +226,7 @@ export function createSitesWriteGuard(storage: {
           result = await send({ ...input, requestId });
         } catch (cause) {
           if (isSitesError(cause) && !["unknown-outcome", "write"].includes(cause.stage)) {
-            await storage.remove(key).catch(() => {});
+            if (requestId !== previous?.requestId) await storage.remove(key).catch(() => {});
             throw cause;
           }
           if (
@@ -235,7 +235,7 @@ export function createSitesWriteGuard(storage: {
             "_tag" in cause &&
             cause._tag === "EnvironmentAuthorizationError"
           ) {
-            await storage.remove(key).catch(() => {});
+            if (requestId !== previous?.requestId) await storage.remove(key).catch(() => {});
             throw cause;
           }
           throw new SitesError({ stage: "unknown-outcome", requestId, cause });

@@ -693,6 +693,7 @@ it.effect(
         expect(yield* refused(yield* idToken({ azp: CLIENT_ID }))).toBe("token");
         expect(yield* refused(yield* idToken({ sub: "different-owner" }))).toBe("subject");
         expect(yield* refused(yield* idToken({ auth_time: undefined }))).toBe("token");
+        expect(yield* refused(yield* idToken({ auth_time: test.seconds + 3601 }))).toBe("token");
         expect(yield* refused(yield* idToken({ auth_time: test.seconds - 3601 }))).toBe("expired");
         expect(
           (yield* identity
@@ -810,6 +811,9 @@ it.effect("caps browser sign-in age and asks Pocket ID for a recent enough sign-
         });
       expect(yield* signIn(test.seconds - 7200).pipe(Effect.flip)).toMatchObject({
         reason: "expired",
+      });
+      expect(yield* signIn(test.seconds + 7201).pipe(Effect.flip)).toMatchObject({
+        reason: "token",
       });
       const session = yield* signIn(test.seconds - 7170);
       expect(session.expiresAt.epochMilliseconds - (yield* DateTime.now).epochMilliseconds).toBe(

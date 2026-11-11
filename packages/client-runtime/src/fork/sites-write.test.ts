@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vite-plus/test";
 import { SitesError, type SitesSnapshot } from "@t3tools/contracts/fork";
+import { EnvironmentAuthorizationError } from "@t3tools/contracts";
 import { createSitesWriteGuard } from "./sites.ts";
 
 const site = {
@@ -200,3 +201,34 @@ it.each(["absent", "pending", "unavailable"] as const)(
     expect(f.data.size).toBe(1);
   },
 );
+
+it.each([
+  new SitesError({ stage: "authentication" }),
+  new SitesError({ stage: "permission" }),
+  new SitesError({ stage: "revision-conflict" }),
+  new SitesError({ stage: "library-connection" }),
+  new EnvironmentAuthorizationError({ message: "Denied", requiredScope: "settings:write" }),
+])("preserves uncertain request identity when an explicit retry fails with %s", async (failure) => {
+  const f = fixture();
+  const input = { ...site, expectedEtag: '"base"' };
+  f.guard.observe("library", snapshot("2026-11-11T12:00:00Z"));
+  const lost = async () => {
+    throw new Error("reply lost");
+  };
+  await expect(f.guard.execute("library", "site", input, lost)).rejects.toMatchObject({
+    requestId: "request-1",
+  });
+  f.guard.observe("library", snapshot("2026-11-11T12:01:00Z"));
+  await expect(
+    f.guard.execute("library", "site", input, async () => {
+      throw failure;
+    }),
+  ).rejects.toBe(failure);
+  expect(f.data.size).toBe(1);
+  const reopened = createSitesWriteGuard(f.options);
+  reopened.observe("library", snapshot("2026-11-11T12:02:00Z"));
+  const send = vi.fn(async () => snapshot("2026-11-11T12:03:00Z", site.name, '"saved"'));
+  await reopened.execute("library", "site", input, send);
+  expect(send).toHaveBeenCalledExactlyOnceWith({ ...input, requestId: "request-1" });
+  expect(f.data.size).toBe(0);
+});
