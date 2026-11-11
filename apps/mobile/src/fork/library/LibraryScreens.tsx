@@ -573,8 +573,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         ))}
         {copiesReady && activeCopies.length === 0 ? (
           <Text className="text-sm text-foreground-muted">
-            Start work to prepare files on your chosen computer. Your project and conversations stay
-            saved when the files are removed.
+            Prepare files on your chosen computer. Start a conversation when you are ready.
           </Text>
         ) : null}
         {copiesState === "loading" ? (
@@ -588,12 +587,17 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         ) : null}
         {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
         <Button
-          label="Work on another computer"
+          label="Prepare project files"
           tone="secondary"
           disabled={
             p.archived || (!authority.ready && !activeCopies.some((copy) => copy.state === "ready"))
           }
-          onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
+          onPress={() =>
+            navigation.navigate("LibraryPrepare", {
+              projectId: p.id,
+              authorityEnvironmentId: target,
+            })
+          }
         />
       </View>
       {removedCopies.length ? (

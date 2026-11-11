@@ -1,25 +1,48 @@
 // @vitest-environment jsdom
 import { AsyncResult } from "effect/reactivity";
+import { LibraryError, type LibraryProject } from "@t3tools/contracts/fork";
+import * as Cause from "effect/Cause";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  online: true,
+  focused: true,
+  authorityId: "library",
   create: Object.assign(vi.fn(), { permissionAtom: () => true }),
   update: Object.assign(vi.fn(), { permissionAtom: () => true }),
   queries: {} as Record<string, unknown>,
+  preferenceAtom: {},
+  preferences: {} as Record<string, string>,
+  savePreferences: vi.fn(),
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: (atom: unknown) => atom }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: unknown) =>
+    atom === state.preferenceAtom
+      ? AsyncResult.success({ loomLibraryLaunches: state.preferences })
+      : atom,
+  useAtomSet: () => state.savePreferences,
+}));
+vi.mock("../../state/preferences", () => ({
+  mobilePreferencesAtom: state.preferenceAtom,
+  updateMobilePreferencesAtom: {},
+}));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ dispatch: state.dispatch, navigate: vi.fn(), goBack: vi.fn() }),
+  useNavigation: () => ({
+    dispatch: state.dispatch,
+    navigate: vi.fn(),
+    goBack: vi.fn(),
+    isFocused: () => state.focused,
+  }),
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
 }));
 vi.mock("./libraryState", () => ({
   useLibraryAuthority: () => ({
-    environmentId: "library",
-    ready: true,
-    connected: true,
+    environmentId: state.authorityId,
+    ready: state.online,
+    connected: state.online,
     keepsProfile: false,
     computers: [],
   }),
@@ -125,7 +148,9 @@ const button = (label: string) =>
 const field = (label: string) =>
   container.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`);
 async function click(label: string) {
-  await act(() => button(label)!.click());
+  await act(async () => {
+    button(label)!.click();
+  });
 }
 async function input(label: string, text: string) {
   await act(() => {
@@ -140,7 +165,33 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   state.queries = {};
-  state.create.mockResolvedValue(AsyncResult.success({ id: "created" }));
+  state.online = true;
+  state.focused = true;
+  state.authorityId = "library";
+  state.preferences = {};
+  state.savePreferences.mockImplementation(
+    async ({
+      transform,
+    }: {
+      transform: (current: { loomLibraryLaunches: Record<string, string> }) => {
+        loomLibraryLaunches: Record<string, string>;
+      };
+    }) => {
+      state.preferences = transform({ loomLibraryLaunches: state.preferences }).loomLibraryLaunches;
+    },
+  );
+  state.create.mockImplementation(async ({ input }) =>
+    AsyncResult.success({
+      id: "created",
+      title: input.title,
+      brief: input.brief ?? "",
+      resources: input.resources ?? [],
+      archived: false,
+      revision: 1,
+      createdAt: "2026-11-11T00:00:00Z",
+      updatedAt: "2026-11-11T00:00:00Z",
+    }),
+  );
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -183,6 +234,79 @@ describe("New project", () => {
           }),
         ],
       }),
+    });
+    expect(state.dispatch).toHaveBeenCalledExactlyOnceWith({
+      name: "LibraryPrepare",
+      params: { projectId: "created", authorityEnvironmentId: "library" },
+    });
+  });
+
+  it("keeps the submitted request after access repair until an explicit retry", async () => {
+    state.create.mockResolvedValueOnce(
+      AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked" }))),
+    );
+    await render({ start: "repository", initialInput: "github.com/acme/rocket" });
+    await click("Create project");
+    const submitted = state.create.mock.calls[0]![0];
+    state.online = false;
+    await render({ start: "repository", initialInput: "github.com/acme/rocket" });
+    state.online = true;
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({ start: "repository", initialInput: "github.com/acme/changed" });
+    expect(field("Project name")!.value).toBe("rocket");
+    expect(state.create).toHaveBeenCalledTimes(1);
+    await click("Retry save");
+    expect(state.create).toHaveBeenLastCalledWith(submitted);
+  });
+
+  it("keeps an unknown create outcome paused instead of replaying the write", async () => {
+    state.create.mockRejectedValueOnce(new Error("Reply lost"));
+    await render({ start: "repository", initialInput: "github.com/acme/rocket" });
+    await click("Create project");
+    state.authorityId = "another-library";
+    await render({ start: "repository", initialInput: "github.com/acme/rocket" });
+    expect(button("Check save result")!.disabled).toBe(true);
+    state.authorityId = "library";
+    await render({ start: "repository", initialInput: "github.com/acme/rocket" });
+    await click("Check save result");
+    expect(state.create).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("saved result");
+  });
+
+  it("keeps an accepted result after the form closes without replacing another screen", async () => {
+    const response = Promise.withResolvers<AsyncResult.AsyncResult<LibraryProject>>();
+    state.create.mockReturnValueOnce(response.promise);
+    await render({ start: "repository", initialInput: "github.com/acme/rocket" });
+    await click("Create project");
+    await act(async () => root.unmount());
+    state.focused = false;
+    const submitted = state.create.mock.calls[0]![0].input;
+    await act(async () =>
+      response.resolve(
+        AsyncResult.success({
+          id: "created",
+          title: submitted.title,
+          brief: submitted.brief,
+          resources: submitted.resources,
+          archived: false,
+          revision: 1,
+          createdAt: "2026-11-11T00:00:00Z",
+          updatedAt: "2026-11-11T00:00:00Z",
+        }),
+      ),
+    );
+    expect(state.dispatch).not.toHaveBeenCalled();
+    expect(Object.values(state.preferences)).toHaveLength(1);
+    state.focused = true;
+    root = createRoot(container);
+    await render({ start: "repository" });
+    expect(field("Project name")!.value).toBe("rocket");
+    await click("Retry save");
+    expect(state.create).toHaveBeenCalledTimes(1);
+    expect(state.dispatch).toHaveBeenCalledWith({
+      name: "LibraryPrepare",
+      params: { projectId: "created", authorityEnvironmentId: "library" },
     });
   });
 

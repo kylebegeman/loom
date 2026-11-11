@@ -56,6 +56,9 @@ const normalizedRoot = (root: string) => {
     ? normalized.toLowerCase()
     : normalized;
 };
+export const libraryLaunchPathsEqual = (left: string, right: string) =>
+  normalizedRoot(left) === normalizedRoot(right);
+
 const containsRoot = (parent: string, child: string) => {
   const a = normalizedRoot(parent),
     b = normalizedRoot(child);
