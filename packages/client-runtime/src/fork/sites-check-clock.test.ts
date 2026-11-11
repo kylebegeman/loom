@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { createSiteCheckClock } from "./sites-check-clock.ts";
 import { siteCheckState } from "./sites-presentation.ts";
+import { projectServices } from "./project-ecosystem.ts";
 
 const checkedAt = Date.parse("2026-10-17T00:00:00Z");
 const check = {
@@ -25,7 +26,10 @@ afterEach(() => vi.useRealTimers());
 it("expires cached checks without interaction and stops waking after the last expiry", () => {
   vi.useFakeTimers();
   vi.setSystemTime(checkedAt);
-  const clock = createSiteCheckClock({ checks: [check], staleAfterSeconds: 900 }, () => () => {});
+  const clock = createSiteCheckClock(
+    { observedAt: check.last.checked_at, checks: [check], staleAfterSeconds: 900 },
+    () => () => {},
+  );
   const states: string[] = [];
   const unmount = clock.subscribe(() =>
     states.push(siteCheckState(check, 900, clock.getSnapshot())),
@@ -44,10 +48,13 @@ it("revalidates wall time on resume and releases the timer and resume listener o
   vi.setSystemTime(checkedAt);
   let resume: (() => void) | undefined;
   const unsubscribe = vi.fn();
-  const clock = createSiteCheckClock({ checks: [check], staleAfterSeconds: 900 }, (listener) => {
-    resume = listener;
-    return unsubscribe;
-  });
+  const clock = createSiteCheckClock(
+    { observedAt: check.last.checked_at, checks: [check], staleAfterSeconds: 900 },
+    (listener) => {
+      resume = listener;
+      return unsubscribe;
+    },
+  );
   const changed = vi.fn();
   const unmount = clock.subscribe(changed);
   expect(vi.getTimerCount()).toBe(1);
@@ -78,6 +85,7 @@ it("uses one timer for successive deadlines and ignores checks without a future 
   };
   const clock = createSiteCheckClock(
     {
+      observedAt: check.last.checked_at,
       checks: [
         check,
         later,
@@ -92,12 +100,57 @@ it("uses one timer for successive deadlines and ignores checks without a future 
   const changed = vi.fn();
   const unmount = clock.subscribe(changed);
   expect(vi.getTimerCount()).toBe(1);
-  vi.advanceTimersByTime(900_001);
+  expect(siteCheckState(later, 900, clock.getSnapshot())).toBe("unknown");
+  vi.advanceTimersByTime(30_000);
+  expect(siteCheckState(later, 900, clock.getSnapshot())).toBe("healthy");
+  vi.advanceTimersByTime(870_001);
   expect(siteCheckState(later, 900, clock.getSnapshot())).toBe("healthy");
   expect(vi.getTimerCount()).toBe(1);
   vi.advanceTimersByTime(30_000);
   expect(siteCheckState(later, 900, clock.getSnapshot())).toBe("stale");
   expect(vi.getTimerCount()).toBe(0);
-  expect(changed).toHaveBeenCalledTimes(3);
+  expect(changed).toHaveBeenCalledTimes(4);
+  unmount();
+});
+
+it("expires the inventory observation even when service checks are absent", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(checkedAt);
+  const snapshot = {
+    schemaVersion: 1 as const,
+    primarySiteId: "app",
+    observedAt: "2026-10-17T00:00:00Z",
+    staleAfterSeconds: 60,
+    sites: [
+      {
+        id: "app",
+        name: "App",
+        url: "https://app.example.test",
+        active: 1 as const,
+        origins: [],
+        serviceIds: ["api"],
+        projectIds: ["project"],
+      },
+    ],
+    services: [
+      {
+        id: "api",
+        name: "API",
+        url: "https://api.example.test",
+        active: 1 as const,
+        kind: "api" as const,
+      },
+    ],
+    checks: [],
+  };
+  const clock = createSiteCheckClock(snapshot, () => () => {});
+  const states: string[] = [];
+  const unmount = clock.subscribe(() =>
+    states.push(projectServices(["project"], snapshot, clock.getSnapshot())[0]!.health.state),
+  );
+  expect(states).toEqual(["unmonitored"]);
+  vi.advanceTimersByTime(60_001);
+  expect(states).toEqual(["unmonitored", "stale"]);
+  expect(vi.getTimerCount()).toBe(0);
   unmount();
 });

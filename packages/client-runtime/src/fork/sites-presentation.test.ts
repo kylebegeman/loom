@@ -26,6 +26,8 @@ const check = {
 it("ages cached healthy checks without showing offline data as current", () => {
   expect(siteCheckState(check, 900, Date.parse("2026-10-17T00:10:00Z"))).toBe("healthy");
   expect(siteCheckState(check, 900, Date.parse("2026-10-17T00:16:00Z"))).toBe("stale");
+  expect(siteCheckState(check, 900, Date.parse("2026-10-16T23:59:59Z"))).toBe("unknown");
+  expect(siteCheckState(check, 900, Number.NaN)).toBe("unknown");
   expect(
     siteCheckState({ ...check, state: "disabled" }, 900, Date.parse("2026-10-18T00:00:00Z")),
   ).toBe("disabled");

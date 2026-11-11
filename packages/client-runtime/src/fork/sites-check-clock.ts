@@ -5,16 +5,23 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 
 /** Only mounted consumers own a timer or a platform resume listener. */
 export function createSiteCheckClock(
-  snapshot: Pick<SitesSnapshot, "checks" | "staleAfterSeconds"> | null | undefined,
+  snapshot: Pick<SitesSnapshot, "checks" | "staleAfterSeconds" | "observedAt"> | null | undefined,
   subscribeToResume: (refresh: () => void) => () => void,
 ) {
-  const deadlines =
-    snapshot?.checks.flatMap((check) => {
-      if (!check.last || check.state === "disabled" || check.state === "stale") return [];
-      // siteCheckState treats the exact age boundary as fresh.
-      const deadline = Date.parse(check.last.checked_at) + snapshot.staleAfterSeconds * 1000 + 1;
-      return Number.isFinite(deadline) ? [deadline] : [];
-    }) ?? [];
+  const expiry = (timestamp: string) => {
+    const at = Date.parse(timestamp);
+    if (!Number.isFinite(at)) return [];
+    // The exact age boundary is still fresh; future observations remain unverified until then.
+    return [at, at + (snapshot?.staleAfterSeconds ?? 0) * 1000 + 1].filter(Number.isFinite);
+  };
+  const deadlines = [
+    ...(snapshot?.observedAt ? expiry(snapshot.observedAt) : []),
+    ...(snapshot?.checks.flatMap((check) =>
+      !check.last || check.state === "disabled" || check.state === "stale"
+        ? []
+        : expiry(check.last.checked_at),
+    ) ?? []),
+  ];
   let now = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let unsubscribeResume: (() => void) | undefined;

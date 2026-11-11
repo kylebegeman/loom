@@ -15,6 +15,7 @@ export function siteCheckState(
   if (check.state === "disabled") return "disabled";
   if (!check.last) return "unknown";
   const checkedAt = Date.parse(check.last.checked_at);
+  if (!Number.isFinite(now) || checkedAt > now) return "unknown";
   if (!Number.isFinite(checkedAt) || now - checkedAt > staleAfterSeconds * 1000) return "stale";
   return check.state;
 }
