@@ -2367,6 +2367,179 @@ it.live("failed desktop initialization releases its relay without closing the na
   ).pipe(Effect.provide(layer)),
 );
 
+it.effect("text-only snapshots leave viewer screencasts running and skip image capture", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId } = yield* ready;
+      yield* browser.attachViewer(viewerInput(tabId, false));
+      const context = contexts[0]!;
+      for (const session of context.sessions) session.send.mockClear();
+      const snapshot = yield* broker.invoke<PreviewAutomationSnapshot>({
+        scope,
+        tabId,
+        operation: "snapshot",
+        input: { includeImage: false },
+      });
+      expect(snapshot.title).toBe("test page");
+      expect(snapshot).not.toHaveProperty("screenshot");
+      const commands = context.sessions.flatMap((session) =>
+        session.send.mock.calls.map(([method]) => method),
+      );
+      expect(commands).not.toContain("Page.stopScreencast");
+      expect(commands).not.toContain("Page.startScreencast");
+      expect(commands).not.toContain("Page.captureScreenshot");
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect.each(["Page.stopScreencast", "Page.startScreencast"])(
+  "a snapshot reconnects a viewer stalled on %s without overlapping image work",
+  (stalledMethod) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, broker, tabId } = yield* ready;
+        const viewer = yield* browser.attachViewer(viewerInput(tabId, false));
+        yield* Queue.clear(viewer.output);
+        const original = contexts[0]!;
+        const viewerSession = original.sessions.at(-1)!;
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<Record<string, unknown>>();
+        yield* Effect.addFinalizer(() => Effect.sync(() => release.resolve({})));
+        const previous = viewerSession.send.getMockImplementation()!;
+        viewerSession.send.mockImplementation((method, input) => {
+          if (method === stalledMethod) {
+            started.resolve();
+            return release.promise;
+          }
+          return previous(method, input);
+        });
+        const snapshot = yield* broker
+          .invoke<PreviewAutomationSnapshot>({
+            scope,
+            tabId,
+            operation: "snapshot",
+            input: {},
+          })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust("1 second");
+        expect(original.page.isClosed()).toBe(true);
+        expect(yield* Fiber.join(snapshot)).toMatchObject({
+          _tag: "PreviewAutomationTimeoutError",
+          remoteTag: "PreviewAutomationTimeoutError",
+          timeoutMs: 1000,
+          reason: expect.stringContaining("close and reopen the Browser tab"),
+        });
+        expect(yield* Queue.takeAll(viewer.output)).toContainEqual({ _tag: "reconnect" });
+        expect(
+          original.sessions[0]!.send.mock.calls.filter(
+            ([method, input]) =>
+              method === "Page.captureScreenshot" && (input as { format: string }).format === "png",
+          ),
+        ).toHaveLength(stalledMethod === "Page.stopScreencast" ? 0 : 1);
+        release.resolve({});
+        const recovered = yield* broker.invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+        });
+        expect(recovered.title).toBe("test page");
+        expect(original.pages).toHaveLength(2);
+        expect(
+          viewerSession.send.mock.calls.filter(([method]) => method === "Page.startScreencast"),
+        ).toHaveLength(stalledMethod === "Page.stopScreencast" ? 1 : 2);
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
+it.effect(
+  "an image snapshot holds capture serialization until the screenshot actually settles",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, broker, tabId } = yield* ready;
+        yield* browser.attachViewer(viewerInput(tabId, false));
+        const original = contexts[0]!;
+        const started = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<Record<string, unknown>>();
+        const send = original.sessions[0]!.send;
+        const previous = send.getMockImplementation()!;
+        send.mockImplementation((method, input) => {
+          if (method === "Page.captureScreenshot") {
+            started.resolve();
+            return release.promise;
+          }
+          return previous(method, input);
+        });
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+        yield* Effect.addFinalizer(() => Effect.sync(() => vi.useRealTimers()));
+        yield* Effect.addFinalizer(() => Effect.sync(() => release.resolve({ data: PNG_HEADER })));
+        const snapshot = yield* broker
+          .invoke<PreviewAutomationSnapshot>({
+            scope,
+            tabId,
+            operation: "snapshot",
+            input: {},
+          })
+          .pipe(Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* Effect.promise(() => vi.advanceTimersByTimeAsync(10_000));
+        expect(snapshot.pollUnsafe()).toBeUndefined();
+        expect(original.page.isClosed()).toBe(false);
+        expect(
+          original.sessions
+            .at(-1)!
+            .send.mock.calls.filter(([method]) => method === "Page.startScreencast"),
+        ).toHaveLength(1);
+        release.resolve({ data: PNG_HEADER });
+        expect((yield* Fiber.join(snapshot)).screenshot).toBeDefined();
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
+it.effect("a stalled viewer cannot make an image snapshot reload a human-controlled page", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker } = yield* ready;
+      const manager = yield* Manager.PreviewManager;
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      const tabId = PreviewTabId.make(opened.tabId);
+      const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
+      yield* viewer.input({ type: "takeControl" });
+      const original = contexts.at(-1)!;
+      const session = original.sessions.at(-1)!;
+      const calls = yield* Queue.unbounded<string>();
+      const release = Promise.withResolvers<Record<string, unknown>>();
+      yield* Effect.addFinalizer(() => Effect.sync(() => release.resolve({})));
+      const previous = session.send.getMockImplementation()!;
+      session.send.mockImplementation((method, input) => {
+        if (method === "Page.stopScreencast") {
+          Queue.offerUnsafe(calls, method);
+          return release.promise;
+        }
+        return previous(method, input);
+      });
+      const snapshot = yield* broker
+        .invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+        })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Queue.take(calls);
+      yield* TestClock.adjust("1 second");
+      expect(original.page.isClosed()).toBe(false);
+      yield* TestClock.adjust("1 second");
+      expect(snapshot.pollUnsafe()).toBeDefined();
+      expect(yield* Fiber.join(snapshot)).toMatchObject({ _tag: "PreviewAutomationTimeoutError" });
+      expect(original.page.isClosed()).toBe(false);
+      expect(original.pages).toHaveLength(1);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
 // fork: browser-timeout-recovery -- a stalled tab recovers without replaying its action.
 it.effect("a stalled snapshot recreates its page with the same profile and committed URL", () =>
   Effect.scoped(
