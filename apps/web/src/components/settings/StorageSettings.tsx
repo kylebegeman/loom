@@ -1049,7 +1049,9 @@ export function StorageCleanupSections() {
               <RetentionControl
                 label="Release inactive project checkouts"
                 value={settings.projectAfterDays}
-                onChange={(projectAfterDays, onFailed) => update({ projectAfterDays }, { onFailed })}
+                onChange={(projectAfterDays, onFailed) =>
+                  update({ projectAfterDays }, { onFailed })
+                }
               />
             }
           />
@@ -1089,7 +1091,9 @@ export function StorageCleanupSections() {
               <RetentionControl
                 label="Release inactive Scratch folders"
                 value={settings.scratchAfterDays}
-                onChange={(scratchAfterDays, onFailed) => update({ scratchAfterDays }, { onFailed })}
+                onChange={(scratchAfterDays, onFailed) =>
+                  update({ scratchAfterDays }, { onFailed })
+                }
               />
             }
           />
