@@ -1,5 +1,7 @@
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import * as Stream from "effect/Stream";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { identitySessionPrefix } from "../../auth/identityPolicy.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -12,6 +14,7 @@ import {
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
   AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   EnvironmentId,
   mcpClientScopes,
   type AuthClientSession,
@@ -23,6 +26,7 @@ import {
   LibraryError,
   LibraryOperation,
   LibraryOperationInput,
+  PROJECT_WORKFLOW_WS_METHODS as W,
   type LibraryProject,
   type LibraryFolderInspection,
   type LibraryCreateProjectRequest,
@@ -53,6 +57,8 @@ import { LibraryManagement } from "./LibraryManagement.ts";
 import { LibraryWorkspaceStore } from "./LibraryWorkspaceStore.ts";
 import { LibraryWorkspace } from "./LibraryWorkspace.ts";
 import * as ProjectOperations from "./ProjectOperations.ts";
+import { makeProjectWorkflowRpcHandlers } from "./workflow-rpc.ts";
+import { makeForkRpcAuth } from "../rpcAuthorization.ts";
 import * as ServerConfig from "../../config.ts";
 import * as SetupMarker from "../../workspace/setupMarker.ts";
 import { copyFor, resource } from "./Library.testkit.ts";
@@ -460,7 +466,10 @@ const fixture = Effect.gen(function* () {
 type State = Effect.Success<typeof fixture> & {
   service: ProjectOperations.ProjectOperations["Service"];
 };
-const run = <A, E, R>(use: (state: State) => Effect.Effect<A, E, R>) =>
+const run = <A, E, R>(
+  use: (state: State) => Effect.Effect<A, E, R>,
+  environment: NodeJS.ProcessEnv = {},
+) =>
   Effect.gen(function* () {
     yield* runForkMigrationSet(ProjectLibraryMigrations);
     const state = yield* fixture;
@@ -476,6 +485,7 @@ const run = <A, E, R>(use: (state: State) => Effect.Effect<A, E, R>) =>
         Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
       ),
     ),
+    Effect.provideService(HostProcess.Environment, environment),
     Effect.scoped,
   );
 
@@ -805,12 +815,23 @@ describe("Project operations", () => {
     run((state) =>
       Effect.gen(function* () {
         const renewal = { ...session(), sessionId: AuthSessionId.make("renewal") };
-        yield* Ref.set(state.active, [renewal]);
+        const expired = { ...session([]), expiresAt: DateTime.makeUnsafe(0) };
+        yield* Ref.set(state.active, [expired, renewal]);
         yield* Ref.set(state.renewals, new Map([[actor.sessionId, [renewal.sessionId]]]));
         expect((yield* state.service.execute("renewed", create, actor)).state).toBe("succeeded");
         expect(
           (yield* state.service.executeClient("client-renewed", create, actor.sessionId)).state,
         ).toBe("succeeded");
+        yield* Ref.set(state.active, [expired]);
+        expect(
+          (yield* state.service.executeClient("expired", create, actor.sessionId).pipe(Effect.flip))
+            .reason,
+        ).toBe("blocked");
+        expect(
+          (yield* state.service
+            .executeClient("expired-repair", create, actor.sessionId)
+            .pipe(Effect.flip)).accessRepair?.kind,
+        ).toBe("sign-in");
         yield* Ref.set(state.active, [{ ...renewal, subject: "stranger" }]);
         expect(
           (yield* state.service.execute("stranger", create, actor).pipe(Effect.flip)).reason,
@@ -818,6 +839,193 @@ describe("Project operations", () => {
       }),
     ),
   );
+  it.effect("rejects connected Identity sessions from an earlier host policy", () => {
+    const environment = {
+      LOOM_IDENTITY_ISSUER: "https://identity.test",
+      LOOM_IDENTITY_AUDIENCE: "host",
+      LOOM_IDENTITY_ALLOWED_SUBJECTS: "owner",
+    };
+    return run(
+      (state) =>
+        Effect.gen(function* () {
+          const stale = {
+            ...session(),
+            subject: `${identitySessionPrefix({ ...environment, LOOM_IDENTITY_REQUIRE_PASSKEY: "true" })}b3duZXI`,
+          };
+          yield* Ref.set(state.active, [stale]);
+          expect(
+            (yield* state.service
+              .executeClient("stale-policy", create, actor.sessionId)
+              .pipe(Effect.flip)).reason,
+          ).toBe("blocked");
+          expect(yield* Ref.get(state.calls)).toBe(0);
+        }),
+      environment,
+    );
+  });
+
+  it.effect(
+    "keeps operation ownership across policy changes and upgrades a proven legacy owner",
+    () => {
+      const environment = {
+        LOOM_IDENTITY_ISSUER: "https://identity.test",
+        LOOM_IDENTITY_AUDIENCE: "host",
+        LOOM_IDENTITY_ALLOWED_SUBJECTS: "owner,other",
+      };
+      const subjectFor = (env: NodeJS.ProcessEnv, account = "owner") =>
+        `${identitySessionPrefix(env)}${Buffer.from(account).toString("base64url")}`;
+      return run(
+        (state) =>
+          Effect.gen(function* () {
+            const original = { ...session(), subject: subjectFor(environment) };
+            yield* Ref.set(state.active, [original]);
+            yield* Ref.set(state.failure, true);
+            yield* state.service
+              .executeClient("stable-owner", create, actor.sessionId)
+              .pipe(Effect.flip);
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`UPDATE fork_library_operations SET subject=${original.subject} WHERE id='stable-owner'`;
+            yield* state.service
+              .executeClient("stable-owner", create, actor.sessionId)
+              .pipe(Effect.flip);
+            yield* sql`UPDATE fork_library_operations SET subject=${original.subject} WHERE id='stable-owner'`;
+            yield* Effect.gen(function* () {
+              yield* ProjectOperations.ProjectOperations;
+              const [migrated] = yield* sql<{
+                subject: string;
+              }>`SELECT subject FROM fork_library_operations WHERE id='stable-owner'`;
+              expect(migrated?.subject).toMatch(/^identity-principal:v1:/);
+            }).pipe(
+              Effect.provide(
+                Layer.fresh(ProjectOperations.layer.pipe(Layer.provide(state.external))),
+              ),
+            );
+            const nextEnvironment = {
+              ...environment,
+              LOOM_IDENTITY_REQUIRE_PASSKEY: "true",
+              LOOM_IDENTITY_RESOURCE: "new-resource",
+            };
+            yield* Ref.set(state.active, [{ ...session(), subject: subjectFor(nextEnvironment) }]);
+            yield* Ref.set(state.failure, false);
+            yield* Effect.gen(function* () {
+              const restarted = yield* ProjectOperations.ProjectOperations;
+              const calls = yield* Ref.get(state.calls);
+              expect(
+                (yield* restarted.outcomeClient(
+                  { requestId: create.input.requestId, kind: "create" },
+                  actor.sessionId,
+                ))?.state,
+              ).toBe("failed");
+              expect(yield* Ref.get(state.calls)).toBe(calls);
+              expect(
+                (yield* restarted.controlClient("stable-owner", "resume", actor.sessionId)).state,
+              ).toBe("queued");
+              expect(
+                (yield* restarted.executeClient("stable-owner", create, actor.sessionId)).state,
+              ).toBe("succeeded");
+              yield* Ref.set(state.active, [
+                { ...session(), subject: subjectFor(nextEnvironment, "other") },
+              ]);
+              expect(
+                (yield* restarted
+                  .controlClient("stable-owner", "cancel", actor.sessionId)
+                  .pipe(Effect.flip)).reason,
+              ).toBe("blocked");
+              yield* sql`UPDATE fork_library_operations SET subject=${original.subject} WHERE id='stable-owner'`;
+              yield* Ref.set(state.active, [
+                { ...session(), subject: subjectFor(nextEnvironment) },
+              ]);
+              expect(
+                (yield* restarted
+                  .controlClient("stable-owner", "cancel", actor.sessionId)
+                  .pipe(Effect.flip)).reason,
+              ).toBe("blocked");
+            }).pipe(
+              Effect.provide(
+                Layer.fresh(ProjectOperations.layer.pipe(Layer.provide(state.external))),
+              ),
+              Effect.provideService(HostProcess.Environment, nextEnvironment),
+            );
+          }),
+        environment,
+      );
+    },
+  );
+
+  it.effect(
+    "reads an exact accepted outcome without replay, including hashed IDs beyond the history window",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          const requestId = "a".repeat(200);
+          const query = { requestId, kind: "create" as const };
+          const caller = {
+            ...actor,
+            method: "browser-session-cookie" as const,
+            scopes: [AuthOrchestrationReadScope],
+          };
+          const handlers = yield* makeProjectWorkflowRpcHandlers(
+            makeForkRpcAuth(caller),
+            caller,
+          ).pipe(
+            Effect.provide(state.external),
+            Effect.provideService(ProjectOperations.ProjectOperations, state.service),
+          );
+          expect(yield* handlers[W.operationOutcome](query)).toBeNull();
+          expect(yield* Ref.get(state.calls)).toBe(0);
+          const id = yield* state.service.operationId(requestId, "create");
+          const accepted = yield* state.service.executeClient(
+            id,
+            { kind: "create", input: { requestId, title: "Project" } },
+            actor.sessionId,
+          );
+          const sql = yield* SqlClient.SqlClient;
+          const [row] = yield* sql`SELECT * FROM fork_library_operations WHERE id=${id}`;
+          for (let index = 0; index < 101; index++) {
+            const otherId = `later-${index}`;
+            yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) SELECT ${otherId},subject,session_id,request_json,payload_json,state,project_id,'2027-01-01' FROM fork_library_operations WHERE id=${id}`;
+            yield* sql`UPDATE fork_library_operations SET request_json=${yield* encodeRequest({ kind: "create", input: { requestId: otherId, title: "Other" } })},payload_json=${yield* encodeOperation({ ...accepted, id: otherId })} WHERE id=${otherId}`;
+          }
+          expect((yield* state.service.list({})).some((entry) => entry.id === id)).toBe(false);
+          expect(yield* handlers[W.operationOutcome](query)).toEqual(accepted);
+          expect(
+            yield* state.service.outcomeClient({ ...query, kind: "prepare" }, actor.sessionId),
+          ).toBeNull();
+          for (const status of [
+            "queued",
+            "running",
+            "needs-input",
+            "failed",
+            "cancelled",
+          ] as const) {
+            const operation = { ...accepted, state: status };
+            yield* sql`UPDATE fork_library_operations SET state=${status},payload_json=${yield* encodeOperation(operation)} WHERE id=${id}`;
+            expect(yield* state.service.outcomeClient(query, actor.sessionId)).toEqual(operation);
+          }
+          const custom = { ...query, requestId: "custom-workflow-request" };
+          const customResult = yield* state.service.executeClient(
+            "custom-workflow-id",
+            { kind: "create", input: { requestId: custom.requestId, title: "Project" } },
+            actor.sessionId,
+          );
+          expect(yield* state.service.outcomeClient(custom, actor.sessionId)).toEqual(customResult);
+          expect(yield* Ref.get(state.calls)).toBe(2);
+          const [unchanged] = yield* sql`SELECT * FROM fork_library_operations WHERE id=${id}`;
+          expect(unchanged).toEqual({
+            ...row,
+            state: "cancelled",
+            payload_json: yield* encodeOperation({ ...accepted, state: "cancelled" }),
+          });
+          yield* Ref.set(state.active, [{ ...session(), subject: "other-person" }]);
+          expect(yield* state.service.outcomeClient(query, actor.sessionId)).toBeNull();
+          yield* Ref.set(state.active, []);
+          expect(
+            (yield* state.service.outcomeClient(query, actor.sessionId).pipe(Effect.flip)).reason,
+          ).toBe("blocked");
+        }),
+      ),
+  );
+
   it.effect("records unexpected worker failures and keeps the same operation retryable", () =>
     run((state) =>
       Effect.gen(function* () {

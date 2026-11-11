@@ -135,6 +135,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [WF.blueprint]: AuthOrchestrationReadScope,
   [WF.preservation]: AuthOrchestrationReadScope,
   [WF.operations]: AuthOrchestrationReadScope,
+  [WF.operationOutcome]: AuthOrchestrationReadScope,
   [PP.update]: AuthOrchestrationOperateScope,
   [PP.reset]: AuthOrchestrationOperateScope,
   [PP.updateSettings]: AuthOrchestrationOperateScope,

@@ -85,6 +85,17 @@ export function isCurrentIdentitySession(subject: string, prefix: string | null)
 export function identityAccountFromSession(subject: string, environment: NodeJS.ProcessEnv) {
   const prefix = identitySessionPrefix(environment);
   if (!prefix || !subject.startsWith(prefix)) return undefined;
-  const id = Buffer.from(subject.slice(prefix.length), "base64url").toString("utf8");
+  const encoded = subject.slice(prefix.length);
+  const bytes = Buffer.from(encoded, "base64url");
+  const id = bytes.toString("utf8");
+  if (!id || Buffer.from(id).toString("base64url") !== encoded) return undefined;
   return { issuer: environment.LOOM_IDENTITY_ISSUER!.trim(), subject: id };
+}
+
+/** Only the current policy proves a legacy subject's issuer; unknown fingerprints stay opaque. */
+export function identityOwnershipSubject(subject: string, environment: NodeJS.ProcessEnv) {
+  const account = identityAccountFromSession(subject, environment);
+  if (!account) return subject;
+  const principal = JSON.stringify([account.issuer, account.subject]);
+  return `identity-principal:v1:${NodeCrypto.createHash("sha256").update(principal).digest("base64url")}`;
 }

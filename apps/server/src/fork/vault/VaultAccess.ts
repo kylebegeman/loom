@@ -1,3 +1,5 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { identityOwnershipSubject } from "../../auth/identityPolicy.ts";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   VaultApprovalRetryInput,
@@ -334,6 +336,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* Digest.Digest,
     secureRandom = yield* SecureRandom.SecureRandom;
   const environmentId = yield* identity.getEnvironmentId;
+  const environment = yield* HostProcess.Environment;
   const hash = (input: string) =>
     crypto.digest(Digest.sha256, new TextEncoder().encode(input)).pipe(
       Effect.map(Hex.encode),
@@ -344,23 +347,41 @@ const make = Effect.gen(function* () {
     Effect.map((value) => value.replaceAll("-", "")),
     Effect.mapError(() => new VaultError({ reason: "unavailable" })),
   );
-  const load = Effect.fnUntraced(function* () {
-    const record = yield* store.read(path);
-    if (record === null) return { policy: EMPTY, version: 0 };
-    const value = decodePolicy(Redacted.value(record.value));
-    if (
-      Option.isNone(value) ||
-      new Set(value.value.grants.map((grant) => grant.definition.id)).size !==
-        value.value.grants.length ||
-      new Set(value.value.approvals?.map((r) => r.request.id)).size !==
-        (value.value.approvals?.length ?? 0) ||
-      (value.value.schemaVersion === 4 && value.value.environmentId !== environmentId) ||
-      (value.value.ownerPolicy !== undefined &&
-        value.value.ownerPolicy.environmentId !== environmentId)
-    )
-      return yield* new VaultError({ reason: "invalid-response" });
-    return { policy: value.value, version: record.version };
-  });
+  const load = Effect.fnUntraced(
+    function* () {
+      const record = yield* store.read(path);
+      if (record === null) return { policy: EMPTY, version: 0 };
+      const value = decodePolicy(Redacted.value(record.value));
+      if (
+        Option.isNone(value) ||
+        new Set(value.value.grants.map((grant) => grant.definition.id)).size !==
+          value.value.grants.length ||
+        new Set(value.value.approvals?.map((r) => r.request.id)).size !==
+          (value.value.approvals?.length ?? 0) ||
+        (value.value.schemaVersion === 4 && value.value.environmentId !== environmentId) ||
+        (value.value.ownerPolicy !== undefined &&
+          value.value.ownerPolicy.environmentId !== environmentId)
+      )
+        return yield* new VaultError({ reason: "invalid-response" });
+      const owner = value.value.ownerPolicy;
+      if (owner) {
+        const ownerSubject = identityOwnershipSubject(owner.ownerSubject, environment);
+        if (ownerSubject !== owner.ownerSubject) {
+          const policy = {
+            ...value.value,
+            ownerPolicy: { ...owner, ownerSubject, updatedBy: ownerSubject },
+          };
+          const encoded = yield* encodePolicy(policy).pipe(
+            Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+          );
+          const version = yield* store.write(path, Redacted.make(encoded), record.version);
+          return { policy, version };
+        }
+      }
+      return { policy: value.value, version: record.version };
+    },
+    Effect.retry({ times: 3, while: (error) => error.reason === "conflict" }),
+  );
   const persist = Effect.fnUntraced(function* (policy: Policy, version: number) {
     const encoded = yield* encodePolicy(
       policy.schemaVersion === 4 || policy.approvals === undefined
@@ -1894,15 +1915,19 @@ const make = Effect.gen(function* () {
         )
       )
         return yield* new VaultError({ reason: "denied" });
+      const ownerSubject = identityOwnershipSubject(actor, environment);
       const fingerprint = yield* hash(
-        yield* encodeOwnerPolicyChange({ input, actor }).pipe(
+        yield* encodeOwnerPolicyChange({ input, actor: ownerSubject }).pipe(
           Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
         ),
       );
       for (let attempt = 0; attempt < 4; attempt++) {
         yield* authorize;
         const { policy, version } = yield* load();
-        if (policy.ownerPolicy && policy.ownerPolicy.ownerSubject !== actor)
+        if (
+          policy.ownerPolicy &&
+          identityOwnershipSubject(policy.ownerPolicy.ownerSubject, environment) !== ownerSubject
+        )
           return yield* new VaultError({ reason: "denied" });
         if (
           policy.receipts.some((entry) => entry.id === input.operationId) ||
@@ -1911,7 +1936,12 @@ const make = Effect.gen(function* () {
           return yield* new VaultError({ reason: "conflict" });
         const receipt = policy.ownerReceipts?.find((entry) => entry.id === input.operationId);
         if (receipt) {
-          if (receipt.fingerprint !== fingerprint)
+          const legacyFingerprint = yield* hash(
+            yield* encodeOwnerPolicyChange({ input, actor }).pipe(
+              Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+            ),
+          );
+          if (receipt.fingerprint !== fingerprint && receipt.fingerprint !== legacyFingerprint)
             return yield* new VaultError({ reason: "conflict" });
           yield* authorize;
           // A replay observes current state and never re-enables a subsequently disabled policy.
@@ -1931,10 +1961,10 @@ const make = Effect.gen(function* () {
             ownerPolicy: {
               environmentId,
               ownerId,
-              ownerSubject: actor,
+              ownerSubject,
               mode: input.mode,
               updatedAt: now,
-              updatedBy: actor,
+              updatedBy: ownerSubject,
             },
             ownerReceipts: [
               ...(policy.ownerReceipts ?? []),

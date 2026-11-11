@@ -537,7 +537,9 @@ describe("authenticated Library publishing", () => {
     () =>
       run({ LOOM_LIBRARY_URL: configured.LOOM_LIBRARY_URL }, (f) =>
         Effect.gen(function* () {
-          expect((yield* f.publisher.info.pipe(Effect.flip)).reason).toBe("blocked");
+          const failure = yield* f.publisher.info.pipe(Effect.flip);
+          expect(failure.reason).toBe("blocked");
+          expect(failure.accessRepair?.kind).toBe("connection");
           expect(yield* Ref.get(f.requests)).toEqual([]);
         }),
       ),

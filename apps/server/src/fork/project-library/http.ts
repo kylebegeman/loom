@@ -403,7 +403,11 @@ const handler = (
       LibraryError: (error) =>
         Effect.succeed(
           HttpServerResponse.jsonUnsafe(
-            { reason: error.reason, detail: error.detail },
+            {
+              reason: error.reason,
+              detail: error.detail,
+              ...(error.accessRepair ? { accessRepair: error.accessRepair } : {}),
+            },
             {
               status:
                 error.reason === "invalid"

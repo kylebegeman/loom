@@ -28,6 +28,8 @@ export const makeProjectWorkflowRpcHandlers = Effect.fn("ProjectWorkflows.makeRp
         ),
       [W.preservation]: (input: Parameters<typeof workflows.preservation>[0]) =>
         auth.effect(W.preservation, publisher.preservation(input)),
+      [W.operationOutcome]: (input: Parameters<typeof operations.outcomeClient>[0]) =>
+        auth.effect(W.operationOutcome, operations.outcomeClient(input, session.sessionId)),
       [W.operations]: (input: Parameters<typeof operations.list>[0]) =>
         auth.effect(W.operations, operations.list(input)),
       [W.run]: (input: { operationId: string; request: Parameters<typeof operations.run>[1] }) =>
