@@ -210,13 +210,13 @@ it.each([
     step: "folder",
     source: "Existing folder", // fork: file-placement
     keys: "",
-    description: /^(?!.*(Ctrl|⌘)).*Add.*Enter/,
+    description: /^(?!.*(Ctrl|⌘)).*Open.*Enter/, // fork: fleet-connections
   },
   {
     step: "highlighted folder",
     source: "Existing folder", // fork: file-placement
     keys: "{ArrowDown}",
-    description: /Add.*(Ctrl|⌘) Enter/,
+    description: /Open.*(Ctrl|⌘) Enter/, // fork: fleet-connections
   },
   { step: "repository", source: "Git URL", keys: "", description: /Continue.*Enter/ },
   { step: "new project", source: "New project", keys: "", description: /Create.*Enter/ },
