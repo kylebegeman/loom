@@ -19,6 +19,8 @@ export interface EnvironmentQueryView<A, E = unknown> {
 }
 
 export function formatEnvironmentQueryError(cause: Cause.Cause<unknown>): string {
+  if (Cause.hasInterruptsOnly(cause))
+    return "The connection changed before Loom could load this information. Reconnect, then refresh.";
   const error = Cause.squash(cause);
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
