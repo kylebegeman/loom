@@ -45,14 +45,18 @@ function makeHarness(environmentIds: ReadonlyArray<EnvironmentId> = [environment
       ]),
     ),
   });
+  const hiddenThreadTagsAtom = Atom.family((_id: EnvironmentId) =>
+    Atom.make<ReadonlyArray<string> | null>(null),
+  );
   return {
     registry: AtomRegistry.make(),
+    hiddenThreadTagsAtom,
     snapshotAtom,
     catalogValueAtom,
     threads: createEnvironmentThreadShellAtoms({
       catalogValueAtom,
       snapshotAtom,
-      hiddenThreadTagsAtom: () => Atom.make(null),
+      hiddenThreadTagsAtom,
     }),
   };
 }
@@ -141,6 +145,7 @@ describe("v2 thread shell lists", () => {
       registry.get(threads.threadShellAtom({ environmentId, threadId: root.id }))
         ?.pendingSubagentRequest,
     ).toBeNull();
+    expect(registry.get(threads.attentionThreadShellsAtom)).toEqual([]);
     registry.set(snapshotAtom(environmentId), {
       ...v2ShellSnapshot,
       threads: [root, { ...child, status: "queued" as const }],
@@ -206,6 +211,9 @@ describe("v2 thread shell lists", () => {
     withRequest("user_input");
     expect(registry.get(parent)?.pendingSubagentRequest).toBe("user_input");
     expect(childThreadInputsTitle(registry.get(inputs))).toBe("Side chat needs input");
+    expect(registry.get(threads.attentionThreadShellsAtom).map((thread) => thread.id)).toEqual([
+      root.id,
+    ]);
     expect(registry.get(threads.navigationThreadShellsAtom).map((thread) => thread.id)).toEqual([
       root.id,
     ]);
@@ -244,6 +252,7 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(parent)?.pendingSubagentRequest).toBeNull();
     expect(registry.get(sideChats).map((thread) => thread.pendingSubagentRequest)).toEqual([null]);
     expect(registry.get(inputs)).toEqual([]);
+    expect(registry.get(threads.attentionThreadShellsAtom)).toEqual([]);
     disposeSideChats();
     disposeNavigation();
     disposeInputs();
@@ -358,6 +367,11 @@ describe("v2 thread shell lists", () => {
         .get(threads.navigationThreadShellsAtom)
         .map((thread) => `${thread.environmentId}/${thread.id}`);
     expect(listed()).toEqual([`${environmentId}/${parent.id}`]);
+    const needing = () =>
+      registry
+        .get(threads.attentionThreadShellsAtom)
+        .map((thread) => `${thread.environmentId}/${thread.id}`);
+    expect(needing()).toEqual([]);
 
     // The helper the task started there asks for approval: the parent here hears of it.
     registry.set(snapshotAtom(remoteEnvironmentId), {
@@ -367,6 +381,7 @@ describe("v2 thread shell lists", () => {
     expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBe(
       "approval",
     );
+    expect(needing()).toEqual([`${environmentId}/${parent.id}`]);
     expect(registry.get(inputs).map((thread) => `${thread.environmentId}/${thread.id}`)).toEqual([
       `${remoteEnvironmentId}/${helper.id}`,
     ]);
@@ -380,17 +395,26 @@ describe("v2 thread shell lists", () => {
     });
     expect(registry.get(threads.threadShellAtom(parentRef))?.pendingSubagentRequest).toBeNull();
     expect(registry.get(inputs).map((thread) => thread.id)).toEqual([helper.id]);
+    expect(needing()).toEqual([]);
+    const failedTask = { ...task, status: "failed" as const, activityRunStatus: null };
+    registry.set(snapshotAtom(remoteEnvironmentId), {
+      ...v2ShellSnapshot,
+      threads: [failedTask],
+    });
+    expect(needing()).toEqual([]);
 
     // A task whose parent is gone there is listed on its own, as is one whose
     // parent's environment is switched off.
     registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [] });
     expect(listed()).toEqual([`${remoteEnvironmentId}/${task.id}`]);
+    expect(needing()).toEqual([`${remoteEnvironmentId}/${task.id}`]);
     // Archiving the parent here leaves the task there unarchived, so it is listed on its own.
     registry.set(snapshotAtom(environmentId), {
       ...v2ShellSnapshot,
       threads: [{ ...parent, archivedAt: v2Now }],
     });
     expect(listed()).toEqual([`${remoteEnvironmentId}/${task.id}`]);
+    expect(needing()).toEqual([`${remoteEnvironmentId}/${task.id}`]);
     registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [parent] });
     expect(listed()).toEqual([`${environmentId}/${parent.id}`]);
     const catalog = registry.get(catalogValueAtom);
@@ -684,5 +708,44 @@ it("counts only enabled environments and wakes paused attention at its snooze de
     dispose();
     registry.dispose();
     vi.useRealTimers();
+  }
+});
+
+it("keeps tag-hidden and bot work out of attention while preserving visible failures and forks", () => {
+  const { registry, threads, snapshotAtom, hiddenThreadTagsAtom } = makeHarness();
+  const visible = { ...v2ThreadShell, status: "failed" as const };
+  const hidden = { ...visible, id: ThreadId.make("hidden"), tags: ["quiet"] };
+  const bot = { ...visible, id: ThreadId.make("bot-run-hidden") };
+  const fork = {
+    ...visible,
+    id: ThreadId.make("fork"),
+    lineage: {
+      ...visible.lineage,
+      parentThreadId: visible.id,
+      relationshipToParent: "fork" as const,
+    },
+  };
+  registry.set(snapshotAtom(environmentId), {
+    ...v2ShellSnapshot,
+    threads: [visible, hidden, bot, fork],
+  });
+  registry.set(hiddenThreadTagsAtom(environmentId), ["quiet"]);
+  const dispose = registry.mount(threads.attentionThreadShellsAtom);
+  try {
+    expect(registry.get(threads.attentionThreadShellsAtom).map((thread) => thread.id)).toEqual([
+      fork.id,
+      visible.id,
+    ]);
+    registry.set(hiddenThreadTagsAtom(environmentId), null);
+    expect(registry.get(threads.attentionThreadShellsAtom).map((thread) => thread.id)).toEqual([
+      fork.id,
+      hidden.id,
+      visible.id,
+    ]);
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [] });
+    expect(registry.get(threads.attentionThreadShellsAtom)).toEqual([]);
+  } finally {
+    dispose();
+    registry.dispose();
   }
 });

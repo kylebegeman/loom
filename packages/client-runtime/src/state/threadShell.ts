@@ -721,7 +721,7 @@ export function createEnvironmentThreadShellAtoms(input: {
   // fork: attention-status - Wake at the next snooze deadline, without a polling clock.
   let previousAttention: ReadonlyArray<EnvironmentThreadShell> = [];
   const attentionThreadShellsAtom = Atom.make((get) => {
-    const threads = get(threadShellsAtom);
+    const threads = get(navigationThreadShellsAtom);
     // @effect-diagnostics-next-line globalDate:off -- Client timer for a persisted snooze deadline.
     const nowMs = Date.now();
     const next = attentionThreads(threads, nowMs);

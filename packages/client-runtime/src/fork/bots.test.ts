@@ -619,6 +619,7 @@ describe("waitingBotRunThreads", () => {
       hasPendingApprovals: false,
       hasPendingUserInput: false,
       archivedAt: null,
+      deletedAt: null,
       updatedAt: "2026-10-20T10:00:00.000Z",
       ...fields,
     }) as EnvironmentThreadShell;
@@ -630,8 +631,18 @@ describe("waitingBotRunThreads", () => {
       shell("bot-run-c", {}),
       shell("bot-run-d", { hasPendingApprovals: true, archivedAt: "2026-10-20T12:00:00.000Z" }),
       shell("thread-e", { hasPendingApprovals: true }),
+      shell("bot-run-deleted", {
+        hasPendingApprovals: true,
+        deletedAt: "2026-10-20T12:00:00.000Z",
+      }),
+      shell("bot-run-nested", { pendingSubagentRequest: "approval" }),
     ]);
-    expect(waiting.map((thread) => thread.id)).toEqual(["bot-run-b", "bot-run-a"]);
+    expect(waiting.map((thread) => thread.id)).toEqual([
+      "bot-run-b",
+      "bot-run-a",
+      "bot-run-nested",
+    ]);
+    expect(waiting.at(-1)?.hasPendingApprovals).toBe(true);
   });
 });
 

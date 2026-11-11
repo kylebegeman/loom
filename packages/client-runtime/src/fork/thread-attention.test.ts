@@ -11,6 +11,7 @@ import * as DateTime from "effect/DateTime";
 import { v2Now, v2ThreadShell } from "../state/orchestrationV2TestFixtures.ts";
 import { presentThreadShell } from "../state/models.ts";
 import { attentionThreads, nextAttentionThread } from "./thread-attention.ts";
+import { attentionRow } from "./attention-retry.ts";
 
 const now = DateTime.toEpochMillis(v2Now);
 const raw = (
@@ -40,14 +41,12 @@ describe("thread attention", () => {
         pendingRuntimeRequest: request("user_input", false),
       }),
     ];
-    expect(selectAttentionThreadShells(threads, now).map((thread) => thread.id)).toEqual([
-      "approval",
-      "failed",
-      "input",
-      "limited",
-      "paused",
-      "stopped-async",
-    ]);
+    expect(
+      attentionThreads(
+        threads.map((thread) => presentThreadShell(EnvironmentId.make("one"), thread)),
+        now,
+      ).map((thread) => thread.id),
+    ).toEqual(["approval", "failed", "input", "limited", "paused", "stopped-async"]);
     expect(threadAttentionKind(threads[0]!)).toBe("paused");
     expect(threadAttentionKind(threads[2]!)).toBe("limited");
     expect(
@@ -85,6 +84,16 @@ describe("thread attention", () => {
       "new-failure",
     ]);
     expect(selectAttentionThreadShells([raw("paused", snoozed)], now + 3_600_000)).toHaveLength(1);
+    const oldQuestion = presentThreadShell(EnvironmentId.make("one"), threads.at(-1)!);
+    const freshQuestion = presentThreadShell(EnvironmentId.make("one"), {
+      ...oldQuestion.source,
+      pendingRuntimeRequest: {
+        ...request("user_input"),
+        createdAt: DateTime.add(v2Now, { minutes: 1 }),
+      },
+    });
+    expect(attentionThreads([oldQuestion], now)).toEqual([]);
+    expect(attentionThreads([freshQuestion], now)).toEqual([freshQuestion]);
   });
 
   it("rolls live child questions up once, keeps forks and ignores ended child questions", () => {
@@ -131,6 +140,7 @@ describe("thread attention", () => {
     );
     const selected = attentionThreads([second, first], now);
     expect(selected).toEqual([first, second]);
+    expect(selected.every((thread) => attentionRow(thread) !== null)).toBe(true);
     expect(nextAttentionThread(selected, null)).toBe(first);
     expect(
       nextAttentionThread(selected, { environmentId: first.environmentId, threadId: first.id }),

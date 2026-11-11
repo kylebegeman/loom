@@ -313,7 +313,10 @@ export const waitingBotRunThreads = (
       (shell) =>
         isBotRunThreadId(shell.id) &&
         shell.archivedAt === null &&
-        (shell.hasPendingApprovals || shell.hasPendingUserInput),
+        shell.deletedAt == null &&
+        (shell.hasPendingApprovals ||
+          shell.hasPendingUserInput ||
+          shell.pendingSubagentRequest != null),
     )
     .map(
       ({
@@ -322,14 +325,15 @@ export const waitingBotRunThreads = (
         title,
         hasPendingApprovals,
         hasPendingUserInput,
+        pendingSubagentRequest,
         updatedAt,
         pendingRuntimeRequestAt,
       }) => ({
         environmentId,
         id,
         title,
-        hasPendingApprovals,
-        hasPendingUserInput,
+        hasPendingApprovals: hasPendingApprovals || pendingSubagentRequest === "approval",
+        hasPendingUserInput: hasPendingUserInput || pendingSubagentRequest === "user_input",
         updatedAt,
         waitingSince: pendingRuntimeRequestAt ?? null,
       }),
