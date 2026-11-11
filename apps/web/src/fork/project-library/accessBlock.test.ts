@@ -127,6 +127,12 @@ it("keeps repair links on the exact computer and selected Vault repository", () 
     ).hash,
   ).toBe(LIBRARY_SIGN_IN_TARGET);
   const environmentId = EnvironmentId.make("worker");
+  expect(
+    libraryAccessRepairLink(
+      { kind: "library-sign-in", environmentId },
+      { libraryId: "library", saved: true },
+    ).hash,
+  ).toBe("remote-environments");
   expect(libraryAccessRepairLink({ kind: "connection", environmentId })).toEqual({
     to: "/settings/connections",
     search: { machine: "worker", project: undefined, checkout: undefined },
@@ -143,4 +149,5 @@ it("keeps repair links on the exact computer and selected Vault repository", () 
   expect(link.search.machine).toBe("worker");
   expect(new URLSearchParams(link.hash.split("?")[1]).get("connection")).toBe("1".repeat(32));
   expect(new URLSearchParams(link.hash.split("?")[1]).get("repository")).toBe("owner/repo");
+  expect(new URLSearchParams(link.hash.split("?")[1]).get("version")).toBe("3");
 });

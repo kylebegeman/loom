@@ -30,6 +30,7 @@ export function LibraryAccessRepairNotice({
       authorityEnvironmentId: libraryId,
       ...context,
       environmentId,
+      originalAccountEnvironmentId: context?.originalAccountEnvironmentId ?? context?.environmentId,
       computerLabel:
         environment?.label ??
         (context?.environmentId === environmentId ? context.computerLabel : undefined),

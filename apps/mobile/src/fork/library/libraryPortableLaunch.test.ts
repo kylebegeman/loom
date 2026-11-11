@@ -3,6 +3,7 @@ import {
   LibraryError,
   type LibraryProject,
   type LibraryRecoveryGrant,
+  type LibraryOperation,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -72,6 +73,8 @@ function harness() {
     accessToken: "temporary-grant",
   };
   const ports = {
+    lookup: vi.fn(async (): Promise<LibraryOperation | null> => null),
+    copies: vi.fn(async (): Promise<readonly LibraryWorkingCopy[]> => []),
     readStatus: vi.fn<Parameters<typeof preparePortableLibraryLaunchCopy>[2]["readStatus"]>(
       async () => ({
         copy: source,
@@ -150,6 +153,7 @@ describe("mobile portable recovery preparation", () => {
     );
     expect(receipt.recoverySnapshot).toEqual(fresh);
     expect(ports.authorize).not.toHaveBeenCalled();
+    await expect(preparePortableLibraryLaunchCopy(args, receipt, ports)).rejects.toThrow("checked");
     await preparePortableLibraryLaunchCopy(args, receipt, ports);
     expect(ports.snapshot).toHaveBeenCalledTimes(1);
     expect(ports.snapshot).toHaveBeenCalledWith({
@@ -221,6 +225,9 @@ describe("mobile portable recovery preparation", () => {
     });
     ports.snapshot.mockResolvedValue(ready);
     ports.authorize.mockResolvedValue({ ...grant, sourceCopy: ready });
+    await expect(
+      preparePortableLibraryLaunchCopy({ ...input, sourceCopy: ready }, saved.receipt, ports),
+    ).rejects.toThrow("checked");
     await preparePortableLibraryLaunchCopy({ ...input, sourceCopy: ready }, saved.receipt, ports);
     expect(ports.readStatus).toHaveBeenCalledTimes(1);
     expect(ports.snapshot.mock.calls.map(([call]) => call.input)).toEqual([
@@ -263,6 +270,7 @@ describe("mobile portable recovery preparation", () => {
     delete receipt.recoverySnapshotReview;
     delete receipt.recoverySnapshotRejected;
     receipt.recoverySnapshotAttempt = 1;
+    receipt.snapshotState = "ready";
     ports.readStatus.mockResolvedValue({ copy: ready, blockers: [], reviewToken: "new-review" });
     ports.snapshot.mockResolvedValue(ready);
     ports.authorize.mockResolvedValue({ ...grant, sourceCopy: ready });
@@ -284,6 +292,10 @@ describe("mobile portable recovery preparation", () => {
       "Connection lost",
     );
     ports.authorize.mockResolvedValue({ ...grant, accessToken: "fresh-grant" });
+    await expect(preparePortableLibraryLaunchCopy(input, receipt, ports)).rejects.toThrow(
+      "checked",
+    );
+    expect(ports.restore).toHaveBeenCalledOnce();
     await preparePortableLibraryLaunchCopy(input, receipt, ports);
     expect(ports.authorize).toHaveBeenCalledTimes(2);
     expect(ports.restore.mock.calls.map(([call]) => call.input.requestId)).toEqual([
@@ -312,6 +324,7 @@ describe("mobile portable recovery preparation", () => {
       sourceCopy: request.sourceCopy ?? catalogB,
       accessToken: "renewed-token",
     }));
+    await expect(preparePortableLibraryLaunchCopy(args, receipt, ports)).rejects.toThrow("checked");
     await preparePortableLibraryLaunchCopy(args, receipt, ports);
     expect(ports.authorize.mock.calls.map(([call]) => call.input.sourceCopy)).toEqual([
       snapshotA,

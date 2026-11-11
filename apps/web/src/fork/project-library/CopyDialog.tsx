@@ -61,7 +61,13 @@ const isLibraryError = Schema.is(LibraryError);
 const isCopy = Schema.is(LibraryWorkingCopy);
 const PreparationAttempt = Schema.NullOr(
   Schema.Struct({
+    authorityId: Schema.optionalKey(EnvironmentId),
+    authorityInitiator: Schema.optionalKey(
+      Schema.Struct({ issuer: Schema.String, subject: Schema.String }),
+    ),
     environmentId: EnvironmentId,
+    state: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
+    registration: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
     input: LibraryPrepareCopyRequest,
     registerRequestId: Schema.String,
     copy: Schema.NullOr(LibraryWorkingCopy),
@@ -95,8 +101,12 @@ export function CopyDialog({
   readonly newProject?: boolean;
 }) {
   const authority = useLibraryAuthority();
-  const [attempt, saveAttempt] = useLibraryAttempt(
-    `loom:library:prepare:${authority.authorityId}:${project.id}`,
+  const [authorityId, pinAuthority] = useState(authority.authorityId);
+  if (!authorityId && authority.authorityId) pinAuthority(authority.authorityId);
+  const correctAuthority = authorityId !== null && authority.authorityId === authorityId;
+  const authorityIdentity = useEnvironmentSessionState(authorityId).data?.identity;
+  const [attempt, saveAttempt, unreadable] = useLibraryAttempt(
+    `loom:library:prepare:${authorityId}:${project.id}`,
     PreparationAttempt,
   );
   const executionHosts = authority.environments.filter(
@@ -132,9 +142,12 @@ export function CopyDialog({
   const canUseVault = useLibraryPermission(libraryGitHub.readiness, hostId);
   const vaultBlock = useAccessBlock(hostId, [libraryGitHub.readiness, projectLibrary.prepareCopy]);
   const accountMatches =
-    !attempt?.initiator ||
-    (attempt.initiator.issuer === identity?.issuer &&
-      attempt.initiator.subject === identity?.subject);
+    (!attempt?.initiator ||
+      (attempt.initiator.issuer === identity?.issuer &&
+        attempt.initiator.subject === identity?.subject)) &&
+    (!attempt?.authorityInitiator ||
+      (attempt.authorityInitiator.issuer === authorityIdentity?.issuer &&
+        attempt.authorityInitiator.subject === authorityIdentity?.subject));
   const mounted = useRef(true);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prevents a late preparation reply from navigating after the dialog closes
   useEffect(() => {
@@ -143,7 +156,10 @@ export function CopyDialog({
       mounted.current = false;
     };
   }, []);
-  const activeAccount = useStableCallback(() => mounted.current && accountMatches);
+  const activeAccount = useStableCallback(
+    () => mounted.current && accountMatches && correctAuthority,
+  );
+  const submitting = useRef(false);
   const [chosen, setChosen] = useState<ChosenFolder | null>(() => {
     const path = attempt ? attempt.input.rootPath : initialRootPath;
     return path ? { path, strategy: attempt?.input.strategy ?? strategy } : null;
@@ -196,6 +212,10 @@ export function CopyDialog({
       : undefined;
   const [busy, setBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const readCopies = useAtomQueryRunner(projectLibrary.copies, {
+    refresh: true,
+    reportFailure: false,
+  });
   const recover = useAtomQueryRunner(projectLibrary.preparation, {
     refresh: true,
     reportFailure: false,
@@ -210,6 +230,13 @@ export function CopyDialog({
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.prepareCopy, hostId);
+  const canLookup = useLibraryPermission(projectLibrary.operationOutcome, hostId);
+  const checkingSaved =
+    attempt !== null &&
+    (((!attempt.copy || attempt.copy.state !== "ready") && attempt.state !== "ready") ||
+      (attempt.copy?.state === "ready" &&
+        (attempt.registration === "unknown" || attempt.registration === undefined)) ||
+      attempt.registered === true);
   const canInspect = useLibraryPermission(projectLibrary.inspectFolder, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
   const selectedResources = (attempt?.input.project ?? project).resources.filter(
@@ -224,7 +251,7 @@ export function CopyDialog({
     "project-library",
   );
   const changePreparation = async () => {
-    if (!attempt || busy || !accountMatches) return;
+    if (!attempt || busy || !accountMatches || !correctAuthority) return;
     setBusy(true);
     setError(null);
     const change = async () => {
@@ -246,6 +273,10 @@ export function CopyDialog({
           return result.value;
         },
         cancel: async (operationId) => {
+          if (!activeAccount())
+            throw new Error(
+              "Return to the original account and Library before changing this request.",
+            );
           const result = await cancel({
             environmentId: attempt.environmentId,
             input: { operationId },
@@ -268,10 +299,18 @@ export function CopyDialog({
     setBusy(false);
   };
   const submit = async () => {
-    const authorityId = authority.authorityId;
-    if (!authorityId || !hostId || !accountMatches || (!serverPlaces && !rootPath.trim()) || busy)
+    if (
+      unreadable ||
+      !authorityId ||
+      !correctAuthority ||
+      !hostId ||
+      !accountMatches ||
+      (!serverPlaces && !rootPath.trim()) ||
+      busy ||
+      submitting.current
+    )
       return;
-    if (usesVault && (!vaultSupported || !canUseVault)) {
+    if (!checkingSaved && usesVault && (!vaultSupported || !canUseVault)) {
       setError(
         vaultSupported
           ? "Vault credential-use access is required on this computer."
@@ -279,6 +318,7 @@ export function CopyDialog({
       );
       return;
     }
+    submitting.current = true;
     setBusy(true);
     setError(null);
     setRepair(undefined);
@@ -287,6 +327,9 @@ export function CopyDialog({
     let requestEnvironmentId = hostId;
     const prepareCopy = async () => {
       let next = attempt ?? {
+        authorityId,
+        ...(authorityIdentity ? { authorityInitiator: authorityIdentity } : {}),
+        state: "unknown" as const,
         environmentId: hostId,
         ...(identity ? { initiator: identity } : {}),
         input: {
@@ -311,7 +354,7 @@ export function CopyDialog({
         }
         return;
       }
-      if ((!next.copy || next.copy.state !== "ready") && attempt) {
+      if ((!next.copy || next.copy.state !== "ready") && attempt && attempt.state !== "ready") {
         const outcome = await lookup({
           environmentId: next.environmentId,
           input: { requestId: next.input.requestId, kind: "prepare" },
@@ -319,6 +362,13 @@ export function CopyDialog({
         if (outcome._tag === "Failure") throw squashLibraryCommandFailure(outcome);
         if (!activeAccount()) return;
         const operation = outcome.value;
+        if (
+          operation &&
+          (operation.kind !== "prepare" ||
+            operation.environmentId !== next.environmentId ||
+            operation.projectId !== next.input.project.id)
+        )
+          throw new Error("The preparation receipt belongs to another project or computer.");
         if (operation?.state === "queued" || operation?.state === "running")
           throw new Error(
             "This preparation is already in progress. Check its result before retrying.",
@@ -340,9 +390,18 @@ export function CopyDialog({
             );
           next = { ...next, copy };
           saveAttempt(next);
+        } else {
+          next = { ...next, state: "ready" };
+          saveAttempt(next);
+          setAccessRepair(operation?.accessRepair);
         }
+        setError("The saved preparation has been checked. Continue explicitly when you are ready.");
+        return;
       }
       if (!next.copy || next.copy.state !== "ready") {
+        next = { ...next, state: "unknown" };
+        submitted = next;
+        saveAttempt(next);
         const result = await prepare({ environmentId: next.environmentId, input: next.input });
         if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
         next = { ...next, copy: result.value };
@@ -350,13 +409,43 @@ export function CopyDialog({
       }
       if (!activeAccount()) return;
       requestEnvironmentId = authorityId;
+      if (
+        next.registration === "unknown" ||
+        (attempt?.copy?.state === "ready" && next.registration === undefined)
+      ) {
+        const copies = await readCopies({
+          environmentId: authorityId,
+          input: { projectId: next.input.project.id },
+        });
+        if (copies._tag === "Failure") throw squashLibraryCommandFailure(copies);
+        const registered = copies.value.find((copy) => copy.id === next.copy!.id);
+        if (
+          registered &&
+          (registered.environmentId !== next.environmentId ||
+            registered.projectId !== next.input.project.id ||
+            registered.rootPath !== next.copy!.rootPath ||
+            registered.state !== "ready" ||
+            registered.registered === false)
+        )
+          throw new Error("The registered files do not match the saved preparation.");
+        saveAttempt({ ...next, registered: !!registered, registration: "ready" });
+        setError(
+          registered
+            ? "These files are already registered. Continue to finish."
+            : "The saved registration has been checked. Continue explicitly when you are ready.",
+        );
+        return;
+      }
+      next = { ...next, registration: "unknown" };
+      submitted = next;
+      saveAttempt(next);
       const result = await register({
         environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
       });
       if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
       if (activeAccount()) {
-        saveAttempt(null);
+        saveAttempt(null, (latest) => latest?.input.requestId === next.input.requestId);
         onSaved(result.value);
       } else saveAttempt({ ...next, copy: result.value, registered: true });
     };
@@ -381,9 +470,13 @@ export function CopyDialog({
             : "Could not prepare the working copy. Retry the same request.",
         );
       };
-      await handleFailure().finally(() => setBusy(false));
+      await handleFailure().finally(() => {
+        submitting.current = false;
+        setBusy(false);
+      });
       return;
     }
+    submitting.current = false;
     setBusy(false);
   };
   const inspectFolder = async () => {
@@ -418,11 +511,11 @@ export function CopyDialog({
     setBusy(false);
   };
   const reviewCleanup = async () => {
-    if (!attempt?.copy || !authority.authorityId) return;
+    if (!attempt?.copy || !authorityId || !correctAuthority || !accountMatches || busy) return;
     setBusy(true);
     setError(null);
     const result = await register({
-      environmentId: authority.authorityId,
+      environmentId: authorityId,
       input: {
         requestId: `${attempt.registerRequestId}:failed:${attempt.copy.updatedAt}`,
         copy: attempt.copy,
@@ -494,7 +587,7 @@ export function CopyDialog({
         />
       </LibraryPaletteDialog>
     );
-  if (cleaning && attempt?.copy)
+  if (cleaning && attempt?.copy && correctAuthority)
     return (
       <ReleaseCopyDialog
         copy={attempt.copy}
@@ -537,7 +630,7 @@ export function CopyDialog({
           {attempt && !attempt.copy ? (
             <Button
               variant="outline"
-              disabled={busy || !accountMatches || !allowed || !connected}
+              disabled={busy || !correctAuthority || !accountMatches || !allowed || !connected}
               onClick={() => void changePreparation()}
             >
               Change setup
@@ -546,7 +639,9 @@ export function CopyDialog({
           {attempt?.copy?.state === "failed" ? (
             <Button
               variant="outline"
-              disabled={busy || !canRegister || !authority.connected}
+              disabled={
+                busy || !correctAuthority || !accountMatches || !canRegister || !authority.connected
+              }
               onClick={() => void reviewCleanup()}
             >
               Review failed copy
@@ -555,15 +650,18 @@ export function CopyDialog({
           <Button
             disabled={
               busy ||
+              unreadable ||
               !accountMatches ||
-              (usesVault && (!vaultSupported || !canUseVault)) ||
-              !allowed ||
-              !canRegister ||
+              !correctAuthority ||
+              (checkingSaved
+                ? !canLookup
+                : (usesVault && (!vaultSupported || !canUseVault)) || !allowed || !canRegister) ||
               !connected ||
               !supported ||
               !authority.connected ||
-              (!serverPlaces && !rootPath.trim()) ||
-              (actualStrategy === "clone" &&
+              (!checkingSaved && !serverPlaces && !rootPath.trim()) ||
+              (!checkingSaved &&
+                actualStrategy === "clone" &&
                 selectedResources.some((resource) => !resource.remoteUrl))
             }
             onClick={() => void submit()}
@@ -580,6 +678,15 @@ export function CopyDialog({
       }
     >
       <div className="space-y-4">
+        {!correctAuthority ? (
+          <LibraryAccessRepairNotice
+            accessRepair={{
+              kind: "connection",
+              ...(authorityId ? { environmentId: authorityId } : {}),
+            }}
+            context={{ environmentId: authorityId }}
+          />
+        ) : null}
         <LibraryField label="Computer">
           <Select
             value={hostId}
@@ -801,13 +908,16 @@ export function CopyDialog({
           accessRepair={accessRepair}
           accessContext={{
             environmentId: hostId,
-            authorityEnvironmentId: authority.authorityId,
+            authorityEnvironmentId: authorityId,
             originalAccount:
-              accessRepair?.environmentId === authority.authorityId
-                ? undefined
-                : attempt?.initiator,
+              accessRepair?.environmentId === authorityId ? undefined : attempt?.initiator,
           }}
-          error={error}
+          error={
+            error ??
+            (unreadable
+              ? "The saved preparation could not be read. Keep it for recovery before preparing another copy."
+              : null)
+          }
           onLeave={onClose}
         />
         {repair && repair.environmentId === hostId ? (

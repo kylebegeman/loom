@@ -1,10 +1,16 @@
 import * as Schema from "effect/Schema";
+import {
+  checkLibraryCopyRequest,
+  checkedLibraryCopyRegistration,
+  type LibraryCopyReceiptTarget,
+} from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryError,
   type LibraryAuthorizeRecoveryRequest,
   type LibraryCopyStatus,
   type LibraryProject,
+  type LibraryOperation,
   type LibraryRecoveryGrant,
   type LibraryRegisterCopyRequest,
   type LibraryWorkingCopy,
@@ -33,6 +39,13 @@ export async function preparePortableLibraryLaunchCopy(
   },
   receipt: LibraryLaunchReceipt,
   ports: {
+    lookup?:
+      | ((target: {
+          environmentId: EnvironmentId;
+          input: { requestId: string; kind: LibraryCopyReceiptTarget["kind"] };
+        }) => Promise<LibraryOperation | null>)
+      | undefined;
+    copies?: (() => Promise<readonly LibraryWorkingCopy[]>) | undefined;
     readStatus: (input: {
       environmentId: EnvironmentId;
       input: { workingCopyId: string };
@@ -61,6 +74,66 @@ export async function preparePortableLibraryLaunchCopy(
   },
 ) {
   const { sourceCopy } = input;
+  const checked = (accessRepair?: LibraryError["accessRepair"]) =>
+    new LibraryError({
+      reason: "blocked",
+      detail: "The saved file request has been checked. Continue explicitly when you are ready.",
+      ...(accessRepair ? { accessRepair } : {}),
+    });
+  if (receipt.recoverySnapshotRejected && !receipt.recoverySnapshot)
+    throw new Error("Review the latest source files before trying another snapshot.");
+  if (receipt.snapshotState === "unknown" && !receipt.recoverySnapshot) {
+    if (!ports.lookup || !receipt.recoverySnapshotReview)
+      throw new Error("Update this computer to check the original snapshot before retrying.");
+    const result = await checkLibraryCopyRequest(
+      {
+        environmentId: sourceCopy.environmentId,
+        requestId: receipt.recoverySnapshotReview.requestId,
+        kind: "snapshot",
+        projectId: input.project.id,
+        workingCopyId: sourceCopy.id,
+      },
+      ports.lookup,
+    );
+    receipt.snapshotState = "ready";
+    if (result.copy) receipt.recoverySnapshot = result.copy;
+    await ports.persist();
+    throw checked(result.accessRepair);
+  }
+  if (receipt.restoreState === "unknown" && !receipt.copy) {
+    if (!ports.lookup)
+      throw new Error("Update this computer to check the original restore before retrying.");
+    const result = await checkLibraryCopyRequest(
+      {
+        environmentId: input.destinationEnvironmentId,
+        requestId: `${input.requestId}:restore`,
+        kind: "restore",
+        projectId: input.project.id,
+        ...(input.rootPath ? { rootPath: input.rootPath } : {}),
+      },
+      ports.lookup,
+    );
+    receipt.restoreState = "ready";
+    if (result.copy) receipt.copy = result.copy;
+    await ports.persist();
+    throw checked(result.accessRepair);
+  }
+  const checkedDestination = (restored: LibraryWorkingCopy) => {
+    if (
+      restored.id === sourceCopy.id ||
+      restored.projectId !== input.project.id ||
+      restored.projectRevision !== input.project.revision ||
+      restored.environmentId !== input.destinationEnvironmentId ||
+      (input.rootPath !== "" && restored.rootPath !== input.rootPath) ||
+      restored.ownership !== "managed" ||
+      restored.state !== "ready" ||
+      restored.registered === false ||
+      restored.keepOnComputer !== true
+    )
+      throw new Error("The restored files do not match the selected destination.");
+    return restored;
+  };
+  if (receipt.copy) return checkedDestination(receipt.copy);
   if (!receipt.recoverySnapshot && sourceCopy.state === "ready") {
     if (receipt.recoverySnapshotRejected)
       throw new Error("Review the latest source files before trying another snapshot.");
@@ -85,6 +158,8 @@ export async function preparePortableLibraryLaunchCopy(
       };
       await ports.persist();
     }
+    receipt.snapshotState = "unknown";
+    await ports.persist();
     const snapshot = await ports
       .snapshot({
         environmentId: sourceCopy.environmentId,
@@ -117,9 +192,23 @@ export async function preparePortableLibraryLaunchCopy(
       "Saved files are unavailable for this source. Reconnect its computer to save them.",
     );
   if (receipt.recoverySnapshot && !receipt.recoverySnapshotRegistered) {
+    if (receipt.sourceRegistration === "unknown") {
+      if (!ports.copies)
+        throw new Error(
+          "Reconnect the Library to check the saved source registration before retrying.",
+        );
+      const registered = checkedLibraryCopyRegistration(source, await ports.copies());
+      receipt.sourceRegistration = registered ? "succeeded" : "ready";
+      receipt.recoverySnapshotRegistered = registered !== null;
+      await ports.persist();
+      throw checked();
+    }
     ports.progress("Saving the source file location…");
+    receipt.sourceRegistration = "unknown";
+    await ports.persist();
     await ports.registerCopy({ requestId: `${input.requestId}:source-copy`, copy: source });
     receipt.recoverySnapshotRegistered = true;
+    receipt.sourceRegistration = "succeeded";
     await ports.persist();
   }
   ports.progress("Restoring saved project files…");
@@ -139,6 +228,8 @@ export async function preparePortableLibraryLaunchCopy(
     grant.libraryEnvironmentId !== input.authorityEnvironmentId
   )
     throw new Error("The authorized saved files changed. Review the source before continuing.");
+  receipt.restoreState = "unknown";
+  await ports.persist();
   const restored = await ports.restore({
     environmentId: input.destinationEnvironmentId,
     input: {
@@ -149,17 +240,5 @@ export async function preparePortableLibraryLaunchCopy(
       resourceIds: input.resourceIds,
     },
   });
-  if (
-    restored.id === source.id ||
-    restored.projectId !== input.project.id ||
-    restored.projectRevision !== input.project.revision ||
-    restored.environmentId !== input.destinationEnvironmentId ||
-    (input.rootPath !== "" && restored.rootPath !== input.rootPath) ||
-    restored.ownership !== "managed" ||
-    restored.state !== "ready" ||
-    restored.registered === false ||
-    restored.keepOnComputer !== true
-  )
-    throw new Error("The restored files do not match the selected destination.");
-  return restored;
+  return checkedDestination(restored);
 }

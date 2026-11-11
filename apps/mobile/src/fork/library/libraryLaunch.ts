@@ -8,6 +8,8 @@ import {
 } from "@t3tools/contracts";
 import {
   LibraryLaunchWorkspace,
+  LibraryError,
+  type LibraryOperation,
   type LibraryPrepareCopyRequest,
   LibraryProject,
   type LibraryResolveBindingRequest,
@@ -20,6 +22,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { libraryBinding } from "./libraryLogic";
+import { checkedLibraryCopyRegistration } from "@t3tools/client-runtime/fork";
 
 export interface LibraryLaunchIntent {
   project: LibraryProject;
@@ -42,6 +45,11 @@ export interface LibraryLaunchReceipt {
   threadCreated: boolean;
   threadBound: boolean;
   historyRegistered: boolean;
+  launchState?: "unknown" | "ready";
+  copyRegistrationState?: "unknown" | "ready";
+  snapshotState?: "unknown" | "ready";
+  restoreState?: "unknown" | "ready";
+  sourceRegistration?: "unknown" | "ready" | "succeeded";
 }
 const Receipt = Schema.Struct({
   intent: Schema.NullOr(
@@ -67,6 +75,11 @@ const Receipt = Schema.Struct({
   threadCreated: Schema.Boolean,
   threadBound: Schema.Boolean,
   historyRegistered: Schema.Boolean,
+  launchState: Schema.optional(Schema.Literals(["unknown", "ready"])),
+  copyRegistrationState: Schema.optional(Schema.Literals(["unknown", "ready"])),
+  snapshotState: Schema.optional(Schema.Literals(["unknown", "ready"])),
+  restoreState: Schema.optional(Schema.Literals(["unknown", "ready"])),
+  sourceRegistration: Schema.optional(Schema.Literals(["unknown", "ready", "succeeded"])),
 });
 export const LibraryLaunchAttempt = Schema.Struct({
   version: Schema.Literal(1),
@@ -75,6 +88,10 @@ export const LibraryLaunchAttempt = Schema.Struct({
   receipt: Receipt,
   review: Schema.Struct({
     authorityEnvironmentId: EnvironmentId,
+    initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
+    authorityInitiator: Schema.optionalKey(
+      Schema.Struct({ issuer: Schema.String, subject: Schema.String }),
+    ),
     model: Schema.Struct({ key: Schema.String, selection: ModelSelection }),
     title: Schema.String,
     mode: Schema.Literals(["reuse", "folder", "clone"]),
@@ -186,6 +203,10 @@ export async function launchLibraryConversation(
   input: LibraryLaunchIntent,
   receipt: LibraryLaunchReceipt,
   ports: {
+    assertCurrent?: (() => void) | undefined;
+    lookupLaunch?: LibraryLaunchOutcomeLookup | undefined;
+    launchOperationId?: string | undefined;
+    registeredCopies?: (() => Promise<readonly LibraryWorkingCopy[]>) | undefined;
     prepare: (intent: LibraryLaunchIntent) => Promise<LibraryWorkingCopy>;
     registerCopy: (copy: LibraryWorkingCopy) => Promise<void>;
     resolve: (
@@ -202,6 +223,7 @@ export async function launchLibraryConversation(
 ) {
   const intent = recordLibraryLaunchIntent(input, receipt);
   await ports.persist?.();
+  ports.assertCurrent?.();
   if (!receipt.copy) {
     ports.progress("Preparing working files…");
     receipt.copy = await ports.prepare(intent);
@@ -216,6 +238,25 @@ export async function launchLibraryConversation(
     ...(intent.continuationOf ? { continuationOf: intent.continuationOf } : {}),
   };
   if (!receipt.copyRegistered) {
+    if (receipt.copyRegistrationState === "unknown") {
+      if (!ports.registeredCopies)
+        throw new Error(
+          "Reconnect the Library to check the saved file registration before retrying.",
+        );
+      const registered = checkedLibraryCopyRegistration(
+        receipt.copy,
+        await ports.registeredCopies(),
+      );
+      receipt.copyRegistered = registered !== null;
+      receipt.copyRegistrationState = "ready";
+      await ports.persist?.();
+      throw new Error(
+        "The saved file registration has been checked. Continue explicitly when you are ready.",
+      );
+    }
+    receipt.copyRegistrationState = "unknown";
+    await ports.persist?.();
+    ports.assertCurrent?.();
     ports.progress("Saving file location…");
     await ports.registerCopy(receipt.copy);
     receipt.copyRegistered = true;
@@ -237,6 +278,18 @@ export async function launchLibraryConversation(
   )
     throw new Error("The resolved conversation belongs to another working copy.");
   if (ports.durableLaunch) {
+    if (ports.launchOperationId) {
+      const recovered = await reconcileLibraryLaunchOperation(
+        intent,
+        receipt,
+        ports.launchOperationId,
+        ports,
+      );
+      if (recovered) return recovered;
+      receipt.launchState = "unknown";
+      await ports.persist?.();
+    }
+    ports.assertCurrent?.();
     ports.progress("Starting and saving conversation...");
     await ports.durableLaunch({ threadId: intent.threadId, binding, project: intent.project });
     receipt.threadCreated = true;
@@ -318,6 +371,75 @@ export function libraryLaunchFilesPlan(input: {
   };
 }
 
+type LibraryLaunchOutcomeLookup = (target: {
+  environmentId: EnvironmentId;
+  input: { requestId: string; kind: "launch" };
+}) => Promise<LibraryOperation | null>;
+export async function reconcileLibraryLaunchOperation(
+  intent: LibraryLaunchIntent,
+  receipt: LibraryLaunchReceipt,
+  operationId: string,
+  ports: {
+    lookupLaunch?: LibraryLaunchOutcomeLookup | undefined;
+    persist?: (() => Promise<void>) | undefined;
+    assertCurrent?: (() => void) | undefined;
+  },
+) {
+  if (receipt.launchState === "unknown") {
+    if (!ports.lookupLaunch)
+      throw new Error(
+        "This server cannot check the original launch yet. Keep the saved request and update Loom before continuing.",
+      );
+    ports.assertCurrent?.();
+    const operation = await ports.lookupLaunch({
+      environmentId: intent.executionEnvironmentId,
+      input: { requestId: operationId, kind: "launch" },
+    });
+    ports.assertCurrent?.();
+    if (
+      operation &&
+      (operation.id !== operationId ||
+        operation.kind !== "launch" ||
+        operation.environmentId !== intent.executionEnvironmentId ||
+        operation.projectId !== intent.project.id)
+    )
+      throw new Error("The launch receipt belongs to another request, project or computer.");
+    if (operation?.state === "succeeded") {
+      if (
+        !operation.result ||
+        !("threadId" in operation.result) ||
+        operation.result.threadId !== intent.threadId
+      )
+        throw new Error("The launch receipt does not contain the original conversation.");
+      receipt.threadCreated = true;
+      receipt.threadBound = true;
+      receipt.historyRegistered = true;
+      await ports.persist?.();
+      return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
+    }
+    if (
+      operation?.state === "running" ||
+      operation?.state === "queued" ||
+      operation?.state === "cancelled"
+    )
+      throw new Error(
+        operation.state === "cancelled"
+          ? "This conversation request was cancelled. Review its completed steps before starting another."
+          : "This conversation request is already running. Check its result again.",
+      );
+    receipt.launchState = "ready";
+    await ports.persist?.();
+    throw new LibraryError({
+      reason: "blocked",
+      detail:
+        operation?.error ??
+        "The saved conversation request has been checked. Continue explicitly when you are ready.",
+      ...(operation?.accessRepair ? { accessRepair: operation.accessRepair } : {}),
+    });
+  }
+  return null;
+}
+
 /**
  * One durable launch: the computer creates and binds the conversation, then fills any reserved
  * files after `execute` returns. A retry sends the same operation, so it never makes a second one.
@@ -328,6 +450,13 @@ export async function launchLibraryConversationNow(
   requestId: string,
   files: LibraryLaunchFiles,
   ports: {
+    assertCurrent?: (() => void) | undefined;
+    lookup?:
+      | ((target: {
+          environmentId: EnvironmentId;
+          input: { requestId: string; kind: "launch" };
+        }) => Promise<LibraryOperation | null>)
+      | undefined;
     execute: (
       operationId: string,
       input: LibraryLaunchBindingInput & { readonly files?: LibraryPrepareCopyRequest },
@@ -353,8 +482,17 @@ export async function launchLibraryConversationNow(
         }),
     ...(intent.continuationOf ? { continuationOf: intent.continuationOf } : {}),
   };
+  const recovered = await reconcileLibraryLaunchOperation(
+    intent,
+    receipt,
+    libraryLaunchOperationId(requestId),
+    { ...ports, lookupLaunch: ports.lookup },
+  );
+  if (recovered) return recovered;
+  receipt.launchState = "unknown";
   // Saved first, so leaving or a lost reply resumes this operation instead of starting another.
   await ports.persist();
+  ports.assertCurrent?.();
   ports.progress("Starting conversation…");
   await ports.execute(libraryLaunchOperationId(requestId), {
     threadId: intent.threadId,

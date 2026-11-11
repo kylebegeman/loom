@@ -75,6 +75,11 @@ export function VaultGitHubSettingsSection() {
   const params = new URLSearchParams(hash.split("?")[1] ?? "");
   const repairId = params.get("connection");
   const repository = params.get("repository");
+  const version = params.get("version");
+  const expectedVersion =
+    version && /^[1-9]\d*$/.test(version) && Number.isSafeInteger(Number(version))
+      ? Number(version)
+      : undefined;
   const configs = useServerConfigs();
   const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
   const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
@@ -97,9 +102,10 @@ export function VaultGitHubSettingsSection() {
   if (repairId && /^[a-f0-9]{32}$/.test(repairId) && repository && isRepository(repository))
     return (
       <GitHubRepair
-        key={`${environment.environmentId}:${repairId}:${repository}`}
+        key={`${environment.environmentId}:${repairId}:${repository}:${expectedVersion}`}
         environmentId={environment.environmentId}
         id={repairId}
+        expectedVersion={expectedVersion}
         repository={repository}
         canWrite={canWrite}
       />
@@ -870,11 +876,13 @@ function GitHubRepair({
   environmentId,
   id: itemId,
   repository,
+  expectedVersion,
   canWrite,
 }: {
   environmentId: EnvironmentId;
   id: string;
   repository: string;
+  expectedVersion?: number | undefined;
   canWrite: boolean;
 }) {
   const result = useAtomValue(atoms.info({ environmentId, input: { id: itemId } }));
@@ -900,6 +908,7 @@ function GitHubRepair({
       environmentId={environmentId}
       info={result.value}
       repository={repository}
+      expectedVersion={expectedVersion}
       canWrite={canWrite && !result.waiting}
       ownerTrusted={
         policy._tag === "Success" &&
@@ -913,12 +922,14 @@ function GitHubRepairEditor({
   environmentId,
   info,
   repository,
+  expectedVersion,
   canWrite,
   ownerTrusted,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
   repository: string;
+  expectedVersion?: number | undefined;
   canWrite: boolean;
   ownerTrusted: boolean;
 }) {
@@ -961,7 +972,14 @@ function GitHubRepairEditor({
     setBusy(false);
   };
   return (
-    <LoomSettingsPanel title={`Add ${repository} to ${info.item.label}`}>
+    <LoomSettingsPanel title={`Review ${repository} on ${info.item.label}`}>
+      {expectedVersion !== undefined ? (
+        <LoomSettingsNotice role="status">
+          The saved request uses connection version {expectedVersion}. This connection is now
+          version {info.item.version}. The saved request keeps its original pin. Returning only
+          refreshes access and reads results; continue it explicitly.
+        </LoomSettingsNotice>
+      ) : null}
       <ConnectionEditor
         draft={draft}
         ownerTrusted={ownerTrusted}

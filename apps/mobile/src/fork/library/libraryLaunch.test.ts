@@ -566,6 +566,20 @@ describe("library conversation launch on computers that fill files after opening
       receipt: restored.receipt,
       review: restored.review,
     })!;
+    const lookup = vi.fn(async () => null);
+    await expect(
+      launchLibraryConversationNow(input, restored.receipt, restored.requestId, files, {
+        execute,
+        lookup,
+        progress: () => {},
+        persist: async () => {},
+      }),
+    ).rejects.toThrow("checked");
+    expect(execute).toHaveBeenCalledOnce();
+    expect(lookup).toHaveBeenCalledExactlyOnceWith({
+      environmentId: host,
+      input: { requestId: "saved-request:launch", kind: "launch" },
+    });
     await launchLibraryConversationNow(input, restored.receipt, restored.requestId, files, {
       execute,
       progress: () => {},

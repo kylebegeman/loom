@@ -1,5 +1,10 @@
 import * as Schema from "effect/Schema";
 import {
+  checkLibraryCopyRequest,
+  checkedLibraryCopyRegistration,
+  type LibraryCopyReceiptTarget,
+} from "@t3tools/client-runtime/fork";
+import {
   EnvironmentId,
   ModelSelection,
   RuntimeMode,
@@ -11,6 +16,7 @@ import {
   LibraryWorkingCopy,
   LibraryError,
   type LibraryCopyStatus,
+  type LibraryOperation,
   type LibraryRecoveryGrant,
   type LibraryAuthorizeRecoveryRequest,
   type LibraryRestoreCopyRequest,
@@ -19,6 +25,11 @@ import {
 
 export const PortableLaunchAttempt = Schema.NullOr(
   Schema.Struct({
+    authorityId: Schema.optionalKey(EnvironmentId),
+    initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
+    authorityInitiator: Schema.optionalKey(
+      Schema.Struct({ issuer: Schema.String, subject: Schema.String }),
+    ),
     environmentId: EnvironmentId,
     project: LibraryProject,
     /** Absent lets a computer with `serverChosenFolders` pick a new folder for the restore. */
@@ -28,6 +39,10 @@ export const PortableLaunchAttempt = Schema.NullOr(
     requestId: Schema.String,
     registerRequestId: Schema.String,
     snapshotRequestId: Schema.String,
+    snapshotState: Schema.optional(Schema.Literals(["unknown", "ready"])),
+    restoreState: Schema.optional(Schema.Literals(["unknown", "ready"])),
+    sourceRegistration: Schema.optional(Schema.Literals(["unknown", "ready", "succeeded"])),
+    registration: Schema.optional(Schema.Literals(["unknown", "ready", "succeeded"])),
     sourceReviewToken: Schema.optional(Schema.String),
     sourceSnapshotRejected: Schema.optional(Schema.Boolean),
     sourceSnapshot: Schema.optional(LibraryWorkingCopy),
@@ -55,6 +70,13 @@ const isLibraryError = Schema.is(LibraryError);
 export async function restoreLibraryLaunchCopy(
   initial: PortableLaunchFiles,
   commands: {
+    readonly lookup?:
+      | ((target: {
+          environmentId: EnvironmentId;
+          input: { requestId: string; kind: LibraryCopyReceiptTarget["kind"] };
+        }) => Promise<LibraryOperation | null>)
+      | undefined;
+    readonly copies?: (() => Promise<readonly LibraryWorkingCopy[]>) | undefined;
     readonly readStatus: (input: {
       readonly environmentId: EnvironmentId;
       readonly input: { readonly workingCopyId: string };
@@ -76,6 +98,52 @@ export async function restoreLibraryLaunchCopy(
   },
 ) {
   let attempt = initial;
+  const checked = (accessRepair?: LibraryError["accessRepair"]) =>
+    new LibraryError({
+      reason: "blocked",
+      detail: "The saved file request has been checked. Continue explicitly when you are ready.",
+      ...(accessRepair ? { accessRepair } : {}),
+    });
+  if (attempt.sourceSnapshotRejected && !attempt.sourceSnapshot)
+    throw new Error("Review the latest source files before trying another snapshot.");
+  if (attempt.snapshotState === "unknown" && !attempt.sourceSnapshot) {
+    if (!commands.lookup)
+      throw new Error("Update this computer to check the original snapshot before retrying.");
+    const result = await checkLibraryCopyRequest(
+      {
+        environmentId: attempt.sourceCopy.environmentId,
+        requestId: attempt.snapshotRequestId,
+        kind: "snapshot",
+        projectId: attempt.project.id,
+        workingCopyId: attempt.sourceCopy.id,
+      },
+      commands.lookup,
+    );
+    attempt = {
+      ...attempt,
+      snapshotState: "ready",
+      ...(result.copy ? { sourceSnapshot: result.copy } : {}),
+    };
+    commands.save(attempt);
+    throw checked(result.accessRepair);
+  }
+  if (attempt.restoreState === "unknown" && !attempt.copy) {
+    if (!commands.lookup)
+      throw new Error("Update this computer to check the original restore before retrying.");
+    const result = await checkLibraryCopyRequest(
+      {
+        environmentId: attempt.environmentId,
+        requestId: attempt.requestId,
+        kind: "restore",
+        projectId: attempt.project.id,
+        rootPath: attempt.rootPath,
+      },
+      commands.lookup,
+    );
+    attempt = { ...attempt, restoreState: "ready", ...(result.copy ? { copy: result.copy } : {}) };
+    commands.save(attempt);
+    throw checked(result.accessRepair);
+  }
   if (!attempt.copy && attempt.sourceCopy.state === "ready") {
     if (!attempt.sourceSnapshot) {
       if (attempt.sourceSnapshotRejected)
@@ -100,6 +168,8 @@ export async function restoreLibraryLaunchCopy(
         attempt = { ...attempt, sourceReviewToken: status.reviewToken };
         commands.save(attempt);
       }
+      attempt = { ...attempt, snapshotState: "unknown" };
+      commands.save(attempt);
       const sourceSnapshot = await commands
         .snapshot({
           environmentId: attempt.sourceCopy.environmentId,
@@ -126,17 +196,35 @@ export async function restoreLibraryLaunchCopy(
       attempt = { ...attempt, sourceSnapshot };
       commands.save(attempt);
     }
-    const registeredSource = await commands.register({
-      requestId: `${attempt.registerRequestId}:source`,
-      copy: attempt.sourceSnapshot!,
-    });
-    if (
-      registeredSource.id !== attempt.sourceCopy.id ||
-      registeredSource.environmentId !== attempt.sourceCopy.environmentId ||
-      registeredSource.projectId !== attempt.project.id ||
-      registeredSource.recovery?.sha256 !== attempt.sourceSnapshot!.recovery?.sha256
-    )
-      throw new Error("The latest source files were not registered for this conversation.");
+    if (attempt.sourceRegistration === "unknown") {
+      if (!commands.copies)
+        throw new Error(
+          "Reconnect the Library to check the saved source registration before retrying.",
+        );
+      const registered = checkedLibraryCopyRegistration(
+        attempt.sourceSnapshot!,
+        await commands.copies(),
+      );
+      commands.save({ ...attempt, sourceRegistration: registered ? "succeeded" : "ready" });
+      throw checked();
+    }
+    if (attempt.sourceRegistration !== "succeeded") {
+      attempt = { ...attempt, sourceRegistration: "unknown" };
+      commands.save(attempt);
+      const registeredSource = await commands.register({
+        requestId: `${attempt.registerRequestId}:source`,
+        copy: attempt.sourceSnapshot!,
+      });
+      if (
+        registeredSource.id !== attempt.sourceCopy.id ||
+        registeredSource.environmentId !== attempt.sourceCopy.environmentId ||
+        registeredSource.projectId !== attempt.project.id ||
+        registeredSource.recovery?.sha256 !== attempt.sourceSnapshot!.recovery?.sha256
+      )
+        throw new Error("The latest source files were not registered for this conversation.");
+      attempt = { ...attempt, sourceRegistration: "succeeded" };
+      commands.save(attempt);
+    }
   }
   let copy = attempt.copy;
   if (!copy) {
@@ -156,6 +244,8 @@ export async function restoreLibraryLaunchCopy(
       grant.sourceCopy.recovery?.sha256 !== source.recovery.sha256
     )
       throw new Error("The selected saved files changed. Review the source before starting again.");
+    attempt = { ...attempt, restoreState: "unknown" };
+    commands.save(attempt);
     copy = await commands.restore({
       environmentId: attempt.environmentId,
       input: {
@@ -182,8 +272,21 @@ export async function restoreLibraryLaunchCopy(
     attempt = { ...attempt, copy };
     commands.save(attempt);
   }
+  if (attempt.registration === "succeeded") return copy;
+  if (attempt.registration === "unknown") {
+    if (!commands.copies)
+      throw new Error(
+        "Reconnect the Library to check the saved file registration before retrying.",
+      );
+    const registered = checkedLibraryCopyRegistration(copy, await commands.copies());
+    commands.save({ ...attempt, registration: registered ? "succeeded" : "ready" });
+    throw checked();
+  }
+  attempt = { ...attempt, registration: "unknown" };
+  commands.save(attempt);
   const registered = await commands.register({ requestId: attempt.registerRequestId, copy });
   if (!matches(registered) || registered.id !== copy.id)
     throw new Error("The restored files were not registered for this conversation.");
+  commands.save({ ...attempt, copy: registered, registration: "succeeded" });
   return registered;
 }

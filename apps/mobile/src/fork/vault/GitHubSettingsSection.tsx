@@ -23,6 +23,7 @@ import { Sheet } from "../../components/ui/Sheet";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironments } from "../../state/environments";
 import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -93,6 +94,9 @@ export function VaultGitHubRepairSheet({
   readonly target: VaultGitHubTarget;
   readonly onClose: () => void;
 }) {
+  const { environments } = useEnvironments();
+  const computer = environments.find((entry) => entry.environmentId === environmentId);
+  const connected = computer?.entry.enabled === true && computer.connection.phase === "connected";
   const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
   const policy = useEnvironmentQuery(accessAtoms.snapshot({ environmentId, input: {} }));
   return (
@@ -101,7 +105,7 @@ export function VaultGitHubRepairSheet({
         {policy.isSuccess && !policy.isPending && !policy.error ? (
           <Manager
             environmentId={environmentId}
-            connected
+            connected={connected}
             canWrite={canWrite}
             ownerMode={policy.data?.ownerPolicy?.mode === "owner-trusted"}
             selection={target}

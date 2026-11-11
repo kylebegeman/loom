@@ -9,9 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const state = vi.hoisted(() => ({
   dispatch: vi.fn(),
   online: true,
+  ecosystem: false,
   focused: true,
   authorityId: "library",
-  outcome: vi.fn(),
+  outcome: Object.assign(vi.fn(), { permissionAtom: () => true }),
   create: Object.assign(vi.fn(), { permissionAtom: () => true }),
   update: Object.assign(vi.fn(), { permissionAtom: () => true }),
   queries: {} as Record<string, unknown>,
@@ -47,7 +48,7 @@ vi.mock("./libraryState", () => ({
     keepsProfile: false,
     computers: [],
   }),
-  useLoomFeature: () => false,
+  useLoomFeature: () => state.ecosystem,
   refreshLibraryProject: vi.fn(),
   library: {
     operationOutcome: state.outcome,
@@ -193,6 +194,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.queries = {};
   state.online = true;
+  state.ecosystem = false;
   state.focused = true;
   state.authorityId = "library";
   state.preferences = {};
@@ -279,6 +281,7 @@ describe("New project", () => {
     state.online = false;
     await render({ start: "repository", initialInput: "github.com/acme/rocket" });
     state.online = true;
+    state.ecosystem = false;
     await act(async () => root.unmount());
     root = createRoot(container);
     await render({ start: "repository", initialInput: "github.com/acme/changed" });
@@ -443,4 +446,39 @@ describe("Edit project", () => {
     expect(field("Repository or link URL")!.value).toBe("");
     expect(button("Add anyway")).toBeNull();
   });
+});
+
+it("keeps unavailable dependencies removable and stops adding at the wire limit", async () => {
+  state.ecosystem = true;
+  const dependencies = Array.from({ length: 32 }, (_, index) => `dependency-${index}`);
+  const existing: LibraryProject = {
+    id: "existing",
+    title: "Existing project",
+    brief: "",
+    revision: 1,
+    resources: [],
+    archived: false,
+    dependencies,
+    createdAt: "2026-11-11T00:00:00Z",
+    updatedAt: "2026-11-11T00:00:00Z",
+  };
+  state.queries.project = existing;
+  state.queries.projects = [{ ...existing, id: "candidate", title: "Candidate" }];
+  await act(() =>
+    root.render(<LibraryEditRouteScreen route={{ params: { projectId: "existing" } }} />),
+  );
+  const candidate = container.querySelector<HTMLInputElement>('[aria-label="Candidate"]')!;
+  expect(candidate.disabled).toBe(true);
+  const unavailable = container.querySelector<HTMLInputElement>(
+    '[aria-label="Unavailable project (dependency-0)"]',
+  )!;
+  expect(unavailable.checked).toBe(true);
+  await act(() => unavailable.click());
+  expect(candidate.disabled).toBe(false);
+  await act(() => candidate.click());
+  await click("Save project");
+  expect(state.update.mock.calls[0]?.[0].input.dependencies).toEqual([
+    ...dependencies.slice(1),
+    "candidate",
+  ]);
 });

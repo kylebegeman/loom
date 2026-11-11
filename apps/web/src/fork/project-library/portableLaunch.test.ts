@@ -4,6 +4,7 @@ import {
   LibraryError,
   type LibraryWorkingCopy,
   type LibraryAuthorizeRecoveryRequest,
+  type LibraryOperation,
 } from "@t3tools/contracts/fork";
 import { restoreLibraryLaunchCopy, type PortableLaunchFiles } from "./portableLaunch";
 
@@ -56,6 +57,8 @@ const initial: PortableLaunchFiles = {
 };
 function commands() {
   return {
+    lookup: vi.fn(async (): Promise<LibraryOperation | null> => null),
+    copies: vi.fn(async (): Promise<readonly LibraryWorkingCopy[]> => []),
     readStatus: vi.fn(async () => ({
       copy: { ...source, state: "ready" as const },
       blockers: [],
@@ -82,7 +85,9 @@ describe("portable launch receipts", () => {
   it("restores an offline released source into a new identity, saving before authority registration", async () => {
     const c = commands();
     c.register.mockImplementation(async ({ copy }) => {
-      expect(c.save).toHaveBeenLastCalledWith({ ...initial, copy: destination });
+      expect(c.save).toHaveBeenLastCalledWith(
+        expect.objectContaining({ ...initial, copy: destination }),
+      );
       return copy;
     });
     expect(await restoreLibraryLaunchCopy(initial, c)).toEqual(destination);
@@ -116,9 +121,20 @@ describe("portable launch receipts", () => {
   });
   it("obtains fresh access after a lost restore response and replays the same destination request", async () => {
     const c = commands();
+    let saved = initial;
+    c.save.mockImplementation((next) => {
+      saved = next;
+    });
     c.restore.mockRejectedValueOnce(new Error("Disconnected"));
-    await expect(restoreLibraryLaunchCopy(initial, c)).rejects.toThrow("Disconnected");
-    await expect(restoreLibraryLaunchCopy(initial, c)).resolves.toEqual(destination);
+    await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("Disconnected");
+    await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("checked");
+    expect(c.authorize).toHaveBeenCalledOnce();
+    expect(c.restore).toHaveBeenCalledOnce();
+    expect(c.lookup).toHaveBeenCalledExactlyOnceWith({
+      environmentId: destination.environmentId,
+      input: { requestId: "restore-request", kind: "restore" },
+    });
+    await expect(restoreLibraryLaunchCopy(saved, c)).resolves.toEqual(destination);
     expect(c.authorize).toHaveBeenCalledTimes(2);
     expect(c.restore.mock.calls[0]).toEqual(c.restore.mock.calls[1]);
   });
@@ -143,6 +159,7 @@ describe("portable launch receipts", () => {
       "Disconnected",
     );
     current = { ...source, recovery: { ...source.recovery!, sha256: "b".repeat(64) } };
+    await expect(restoreLibraryLaunchCopy(saved, { ...c, authorize })).rejects.toThrow("checked");
     await expect(restoreLibraryLaunchCopy(saved, { ...c, authorize })).resolves.toEqual(
       destination,
     );
@@ -170,6 +187,7 @@ describe("portable launch receipts", () => {
     });
     c.register.mockRejectedValueOnce(new Error("Library offline"));
     await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("Library offline");
+    await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("checked");
     await expect(restoreLibraryLaunchCopy(saved, c)).resolves.toEqual(destination);
     expect(c.authorize).toHaveBeenCalledOnce();
     expect(c.restore).toHaveBeenCalledOnce();
@@ -187,6 +205,7 @@ describe("portable launch receipts", () => {
     await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("Library offline");
     expect(saved.sourceSnapshot).toEqual(await c.snapshot.mock.results[0]!.value);
     expect(c.authorize).not.toHaveBeenCalled();
+    await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("checked");
     await expect(restoreLibraryLaunchCopy(saved, c)).resolves.toEqual(destination);
     expect(c.readStatus).toHaveBeenCalledOnce();
     expect(c.snapshot).toHaveBeenCalledOnce();
@@ -210,6 +229,7 @@ describe("portable launch receipts", () => {
       blockers: [],
       reviewToken: "changed-review",
     });
+    await expect(restoreLibraryLaunchCopy(saved, c)).rejects.toThrow("checked");
     await expect(restoreLibraryLaunchCopy(saved, c)).resolves.toEqual(destination);
     expect(c.readStatus).toHaveBeenCalledOnce();
     expect(c.snapshot.mock.calls[0]).toEqual(c.snapshot.mock.calls[1]);
@@ -238,6 +258,7 @@ describe("portable launch receipts", () => {
     saved = {
       ...saved,
       sourceReviewToken: undefined,
+      snapshotState: "ready",
       sourceSnapshotRejected: undefined,
       snapshotRequestId: `${initial.snapshotRequestId}:review-1`,
     };

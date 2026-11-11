@@ -92,6 +92,7 @@ export async function runSubmittedLibraryProjectRequest(
   authorityId: EnvironmentId,
   ports: {
     readonly identity?: { readonly issuer: string; readonly subject: string } | undefined;
+    readonly currentIdentity?: (() => SubmittedLibraryProjectRequest["initiator"]) | undefined;
     readonly persist: (next: SubmittedLibraryProjectRequest) => Promise<void>;
     readonly execute: (
       request: SubmittedLibraryProjectRequest,
@@ -102,7 +103,10 @@ export async function runSubmittedLibraryProjectRequest(
 ): Promise<SubmittedLibraryProjectRequest> {
   if (attempt.authorityId !== authorityId)
     throw new Error("Reconnect the Library used for this request before continuing.");
-  assertLibraryProjectInitiator(attempt, ports.identity);
+  assertLibraryProjectInitiator(
+    attempt,
+    ports.currentIdentity ? ports.currentIdentity() : ports.identity,
+  );
   if (attempt.state === "succeeded") {
     checkedResult(attempt, attempt.result);
     return attempt;
@@ -139,6 +143,10 @@ export async function runSubmittedLibraryProjectRequest(
   }
   const submitted: SubmittedLibraryProjectRequest = { ...attempt, state: "unknown" };
   await ports.persist(submitted);
+  assertLibraryProjectInitiator(
+    submitted,
+    ports.currentIdentity ? ports.currentIdentity() : ports.identity,
+  );
   let result: LibraryProject | LibraryWorkingCopy;
   try {
     result = await ports.execute(submitted);
@@ -160,6 +168,8 @@ export async function registerSubmittedLibraryProjectCopy(
   attempt: SubmittedLibraryProjectRequest,
   authorityId: EnvironmentId,
   ports: {
+    readonly identity?: SubmittedLibraryProjectRequest["initiator"];
+    readonly currentIdentity?: (() => SubmittedLibraryProjectRequest["initiator"]) | undefined;
     readonly persist: (next: SubmittedLibraryProjectRequest) => Promise<void>;
     readonly copies: () => Promise<readonly LibraryWorkingCopy[]>;
     readonly register: (input: { requestId: string; copy: LibraryWorkingCopy }) => Promise<void>;
@@ -172,6 +182,11 @@ export async function registerSubmittedLibraryProjectCopy(
     !isCopy(attempt.result)
   )
     throw new Error("Reconnect the Library used to prepare these files.");
+  assertLibraryProjectInitiator(
+    attempt,
+    ports.currentIdentity ? ports.currentIdentity() : ports.identity,
+  );
+  checkedResult(attempt, attempt.result);
   if (attempt.registration === "succeeded") return attempt;
   const copy = attempt.result;
   if (attempt.registration === "unknown") {
@@ -194,6 +209,10 @@ export async function registerSubmittedLibraryProjectCopy(
   }
   const submitted = { ...attempt, registration: "unknown" as const };
   await ports.persist(submitted);
+  assertLibraryProjectInitiator(
+    submitted,
+    ports.currentIdentity ? ports.currentIdentity() : ports.identity,
+  );
   try {
     await ports.register({ requestId: `${attempt.request.input.requestId}:copy`, copy });
   } catch (cause) {

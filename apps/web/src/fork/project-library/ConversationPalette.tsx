@@ -1,3 +1,5 @@
+import { Button } from "~/components/ui/button";
+import { LibraryAccessRepairNotice } from "./LibraryAccessNotice";
 import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import {
   createContext,
@@ -677,6 +679,23 @@ export function ConversationPalette({
             : undefined
       }
     >
+      <LibraryAccessRepairNotice
+        accessRepair={s.accessRepair}
+        context={s.accessContext}
+        error={s.error}
+      />
+      {s.reviewRestore ? (
+        <div className="px-4 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={s.busy}
+            onClick={() => void s.reviewRestore?.()}
+          >
+            Review original restore
+          </Button>
+        </div>
+      ) : null}
       {s.cloneRepair ? (
         <LibraryCloneRepair key={s.cloneRepair.environmentId} repair={s.cloneRepair} />
       ) : null}

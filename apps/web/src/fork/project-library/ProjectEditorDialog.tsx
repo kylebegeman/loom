@@ -53,6 +53,7 @@ const isLibraryError = Schema.is(LibraryError);
 const isProject = Schema.is(LibraryProject);
 const EditorAttempt = Schema.NullOr(
   Schema.Struct({
+    state: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
     requestId: Schema.String,
     title: Schema.String,
     brief: Schema.String,
@@ -92,8 +93,11 @@ export function ProjectEditorDialog({
 }) {
   const legacyKey = `loom:library:editor:${authorityId}:new`;
   const key = `${legacyKey}:${newProjectDraftKey({ step: "create", page: initialPage, repository: initialResource, title: initialTitle })}`;
-  const [scopedAttempt, saveAttempt] = useLibraryAttempt(key, EditorAttempt);
-  const [legacyAttempt, saveLegacyAttempt] = useLibraryAttempt(legacyKey, EditorAttempt);
+  const [scopedAttempt, saveAttempt, unreadable] = useLibraryAttempt(key, EditorAttempt);
+  const [legacyAttempt, saveLegacyAttempt, legacyUnreadable] = useLibraryAttempt(
+    legacyKey,
+    EditorAttempt,
+  );
   const matchingLegacy =
     initialPage === "name" &&
     legacyAttempt &&
@@ -148,9 +152,10 @@ export function ProjectEditorDialog({
   const accountMatches = !saved || sameInitiator(saved);
   const [checking, setChecking] = useState(false);
   const allowed = useLibraryPermission(projectLibrary.createProject, authorityId);
+  const canLookup = useLibraryPermission(projectLibrary.operationOutcome, authorityId);
   const access = useLibraryAccessBlock(authorityId, [projectLibrary.createProject]);
   // Access is apart from the form: the notice on the name page says why and offers the repair.
-  const canSave = allowed && access === null;
+  const canSave = allowed && access === null && !unreadable && !legacyUnreadable;
   const mounted = useRef(true);
   const inFlight = useRef<string | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks the lifetime of this editor for its in-flight server request
@@ -202,6 +207,10 @@ export function ProjectEditorDialog({
       );
       return undefined;
     }
+    if (operation?.state !== "cancelled") {
+      saveAttempt({ ...input, state: "ready" }, (latest) => latest?.requestId === input.requestId);
+      setAccessRepair(operation?.accessRepair);
+    }
     return operation;
   });
   const locked = working || saved !== null;
@@ -209,7 +218,11 @@ export function ProjectEditorDialog({
     async (input: NonNullable<typeof EditorAttempt.Type>) => {
       if (inFlight.current === input.requestId) return;
       inFlight.current = input.requestId;
-      const { result: _result, initiator: _initiator, ...request } = input;
+      const { result: _result, initiator: _initiator, state: _state, ...request } = input;
+      saveAttempt(
+        { ...input, state: "unknown" },
+        (latest) => latest?.requestId === input.requestId,
+      );
       const result = await create({ environmentId: authorityId, input: request });
       inFlight.current = null;
       if (!current(input)) {
@@ -237,14 +250,16 @@ export function ProjectEditorDialog({
     },
   );
   const save = async () => {
-    if (!canSave || working || !accountMatches) return;
-    if (saved) {
+    if ((saved && saved.state !== "ready" ? !canLookup : !canSave) || working || !accountMatches)
+      return;
+    if (saved && saved.state !== "ready") {
       const operation = await reconcile(saved);
       if (operation === undefined) return;
       if (operation?.state === "cancelled") {
         setError("This creation was cancelled. Keep its receipt and start a different project.");
         return;
       }
+      return;
     }
     if (profile && !supportsBlueprint) {
       setError("Connect an updated Library before creating a project from this blueprint.");
@@ -259,6 +274,7 @@ export function ProjectEditorDialog({
     setError(null);
     setAccessRepair(undefined);
     const input = saved ?? {
+      state: "unknown" as const,
       requestId: randomUUID(),
       title: title.trim(),
       brief,
@@ -281,11 +297,11 @@ export function ProjectEditorDialog({
   const savedRequestId = saved?.requestId;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reconciles a persisted request by reading its receipt when access or visibility returns
   useEffect(() => {
-    if (open && canSave && accountMatches && savedRequestId && !inFlight.current) {
+    if (open && canLookup && accountMatches && savedRequestId && !inFlight.current) {
       const input = attempt?.requestId === savedRequestId ? attempt : null;
-      if (input && !input.result) void reconcile(input);
+      if (input && !input.result && input.state !== "ready") void reconcile(input);
     }
-  }, [open, canSave, accountMatches, savedRequestId, attempt, reconcile]);
+  }, [open, canLookup, accountMatches, savedRequestId, attempt, reconcile]);
 
   // A form that opened on the blueprint leaves from it until a blueprint fills in the name page.
   const back = () => {
@@ -480,7 +496,12 @@ export function ProjectEditorDialog({
             />
           ) : null}
           <LibraryErrorNotice
-            error={error}
+            error={
+              error ??
+              (unreadable || legacyUnreadable
+                ? "The saved creation could not be read. Keep it for recovery before creating another project."
+                : null)
+            }
             accessRepair={accessRepair}
             accessContext={{ environmentId: authorityId, originalAccount: saved?.initiator }}
             onLeave={onClose}
@@ -491,7 +512,7 @@ export function ProjectEditorDialog({
               type="button"
               variant="ghost"
               size="sm"
-              disabled={!canSave || !accountMatches}
+              disabled={!canLookup || !accountMatches}
               onClick={async () => {
                 const operation = await reconcile(saved);
                 if (operation === undefined) return;
@@ -534,7 +555,15 @@ export function ProjectEditorDialog({
               </Button>
             ) : null}
           </span>
-          <Button type="submit" disabled={!canSave || !accountMatches || !title.trim() || working}>
+          <Button
+            type="submit"
+            disabled={
+              (saved && saved.state !== "ready" ? !canLookup : !canSave) ||
+              !accountMatches ||
+              !title.trim() ||
+              working
+            }
+          >
             {checking
               ? "Checking result…"
               : busy
@@ -556,7 +585,12 @@ export function ProjectEditorDialog({
         onClose={onClose}
         onDone={importBlueprint}
         doneLabel="Review this blueprint"
-        error={error}
+        error={
+          error ??
+          (unreadable || legacyUnreadable
+            ? "The saved creation could not be read. Keep it for recovery before creating another project."
+            : null)
+        }
       />
     ) : page === "brief" ? (
       <LibraryTextPalette

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 const state = vi.hoisted(() => ({
   save: vi.fn(),
   navigate: vi.fn(),
-  hash: `loom-vault-github?connection=${"a".repeat(32)}&repository=owner%2Fnew`,
+  hash: `loom-vault-github?connection=${"a".repeat(32)}&repository=owner%2Fnew&version=3`,
   info: {
     item: {
       id: "a".repeat(32),
@@ -72,6 +72,8 @@ afterEach(() => {
 });
 it("opens the requested connection with the denied repository prefilled and keeps its App credential", async () => {
   await act(async () => root.render(<VaultGitHubSettingsSection />));
+  expect(container.textContent).toContain("saved request uses connection version 3");
+  expect(container.textContent).toContain("now version 4");
   expect(
     container.querySelector<HTMLInputElement>(
       'input[placeholder="owner/repository, owner/another-repository"]',

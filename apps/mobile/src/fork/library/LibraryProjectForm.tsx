@@ -4,6 +4,7 @@ import { StackActions, useNavigation, type StaticScreenProps } from "@react-navi
 import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import {
   LIBRARY_PROJECT_COLORS,
+  LIBRARY_PROJECT_DEPENDENCY_LIMIT,
   LibraryBlueprint,
   type LibraryError,
   PROJECT_WORKFLOWS_FEATURE,
@@ -105,12 +106,18 @@ export function LibraryEditRouteScreen({
       : null,
   );
   return query.data ? (
-    <LibraryProjectForm key={query.data.id} initial={query.data} />
+    <LibraryProjectForm key={`${authority.environmentId}:${query.data.id}`} initial={query.data} />
   ) : (
     <LibraryPage title="Edit project" back>
       <LibraryNotice
         error={query.error}
-        detail={query.error ? null : "Loading the saved project…"}
+        detail={
+          query.error
+            ? null
+            : authority.ready && query.isSuccess && !query.isPending
+              ? "This project is no longer available in the selected Library."
+              : "Loading the saved project…"
+        }
         onRetry={query.refresh}
       />
     </LibraryPage>
@@ -144,6 +151,7 @@ function LibraryProjectForm(props: ProjectFormProps) {
     <LibraryProjectFormContent
       {...props}
       key={`${pinned}:${props.initial?.id ?? "new"}`}
+      authorityId={pinned}
       saved={requestState.attempt}
       persist={requestState.persist}
     />
@@ -155,7 +163,9 @@ function LibraryProjectFormContent({
   start,
   saved,
   persist,
+  authorityId,
 }: ProjectFormProps & {
+  authorityId: EnvironmentId | null;
   saved: SubmittedLibraryProjectRequest | null;
   persist: (attempt: SubmittedLibraryProjectRequest | null) => Promise<void>;
 }) {
@@ -166,7 +176,8 @@ function LibraryProjectFormContent({
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
     { environments } = useEnvironments();
-  const identity = useEnvironmentSessionState(authority.environmentId)?.identity;
+  const identity = useEnvironmentSessionState(authorityId)?.identity;
+  const correctAuthority = authorityId !== null && authorityId === authority.environmentId;
   const lookup = useAtomCommand(library.operationOutcome, { reportFailure: false });
   const create = useAtomCommand(library.createProject, { reportFailure: false }),
     update = useAtomCommand(library.updateProject, { reportFailure: false });
@@ -175,13 +186,14 @@ function LibraryProjectFormContent({
       authority.environmentId,
     ),
   );
+  const canLookup = useAtomValue(library.operationOutcome.permissionAtom(authorityId));
   const [title, setTitle] = useState(
       savedInput?.title ?? initial?.title ?? (intent.kind !== "search" ? intent.title : ""),
     ),
     [brief, setBrief] = useState(savedInput?.brief ?? initial?.brief ?? "");
   // Null means automatic: the project keeps a stable color derived from its id.
   const [color, setColor] = useState<LibraryProjectColor | null>(
-    savedInput?.color ?? initial?.color ?? null,
+    savedInput?.color === undefined ? (initial?.color ?? null) : savedInput.color,
   );
   const [resources, setResources] = useState<readonly ResourceDraft[]>(
     () =>
@@ -212,7 +224,7 @@ function LibraryProjectFormContent({
   // The setup is edited with a saved project, and only once the Library says it keeps one.
   const editsProfile = Boolean(initial && authority.keepsProfile);
   const [profile, setProfile] = useState<LibraryProfileDraft>(() => ({
-    ...(savedInput?.profile ?? initial?.profile),
+    ...(savedInput?.profile === undefined ? initial?.profile : savedInput.profile),
   }));
   const editsDependencies = useLoomFeature(authority.environmentId, PROJECT_ECOSYSTEM_FEATURE);
   const [dependencies, setDependencies] = useState<readonly string[]>(
@@ -361,7 +373,9 @@ function LibraryProjectFormContent({
       inspectingFolder ||
       !authority.environmentId ||
       !authority.ready ||
-      !canSave ||
+      !correctAuthority ||
+      !accountMatches ||
+      (submitted?.state === "unknown" ? !canLookup : !canSave) ||
       !title.trim() ||
       (submitted === null && folderTarget !== null && !folderTarget.canCreate)
     )
@@ -459,6 +473,7 @@ function LibraryProjectFormContent({
       const complete = await runSubmittedLibraryProjectRequest(attempt, target, {
         persist: saveAttempt,
         identity,
+        currentIdentity: () => readEnvironmentSessionState(target)?.identity,
         lookup: async ({ environmentId, requestId, kind }) => {
           const result = await lookup({ environmentId, input: { requestId, kind } });
           if (AsyncResult.isFailure(result)) throw squashLibraryCommandFailure(result);
@@ -925,6 +940,24 @@ function LibraryProjectFormContent({
           title="Depends on"
           footer="Declare other Library projects this one uses. Each project keeps its repositories and releases."
         >
+          <Text className="px-5 pt-3 text-xs text-foreground-muted">
+            {dependencies.length} of {LIBRARY_PROJECT_DEPENDENCY_LIMIT} dependencies selected
+          </Text>
+          {dependencies
+            .filter(
+              (id) =>
+                id === initial.id || !dependencyCatalog.data?.some((entry) => entry.id === id),
+            )
+            .map((id) => (
+              <SettingsSwitchRow
+                key={id}
+                label={`Unavailable project (${id})`}
+                subtitle="Saved dependency. Remove it if this project no longer needs it."
+                value
+                disabled={pending || awaitingResult}
+                onValueChange={() => setDependencies((ids) => ids.filter((entry) => entry !== id))}
+              />
+            ))}
           {(dependencyCatalog.data ?? [])
             .filter((entry) => entry.id !== initial.id)
             .map((entry) => (
@@ -934,18 +967,26 @@ function LibraryProjectFormContent({
                 subtitle={entry.archived ? "Archived project" : undefined}
                 value={dependencies.includes(entry.id)}
                 disabled={
-                  pending || awaitingResult || (entry.archived && !dependencies.includes(entry.id))
+                  pending ||
+                  awaitingResult ||
+                  (!dependencies.includes(entry.id) &&
+                    (entry.archived || dependencies.length >= LIBRARY_PROJECT_DEPENDENCY_LIMIT))
                 }
                 onValueChange={(selected) =>
                   setDependencies((ids) =>
-                    selected ? [...ids, entry.id] : ids.filter((id) => id !== entry.id),
+                    selected
+                      ? ids.includes(entry.id) || ids.length >= LIBRARY_PROJECT_DEPENDENCY_LIMIT
+                        ? ids
+                        : [...ids, entry.id]
+                      : ids.filter((id) => id !== entry.id),
                   )
                 }
               />
             ))}
-          {!dependencyCatalog.data ? (
+          {dependencyCatalog.error || !dependencyCatalog.data ? (
             <LibraryNotice
-              detail={dependencyCatalog.error ?? "Loading projects..."}
+              error={dependencyCatalog.error}
+              detail={dependencyCatalog.error ? null : "Loading projects..."}
               onRetry={dependencyCatalog.refresh}
             />
           ) : null}
@@ -990,8 +1031,12 @@ function LibraryProjectFormContent({
           disabled={pending || awaitingResult}
         />
       ) : null}
-      {submitted && submitted.authorityId !== authority.environmentId ? (
-        <LibraryNotice error="Reconnect the Library used for this saved request before continuing." />
+      {!correctAuthority ? (
+        <LibraryNotice
+          error="Reconnect the Library used for this project before continuing."
+          accessRepair={{ kind: "connection" }}
+          accessContext={{ environmentId: authorityId }}
+        />
       ) : null}
       {!authority.environmentId ? (
         <Button
@@ -1037,13 +1082,36 @@ function LibraryProjectFormContent({
         <Button
           label="Edit saved request"
           tone="text"
-          disabled={pending}
+          disabled={pending || !correctAuthority || !accountMatches || !canLookup}
           onPress={() => {
-            void saveAttempt(null).catch((cause: unknown) =>
-              setError(
-                cause instanceof Error ? cause.message : "The request could not be cleared.",
-              ),
-            );
+            if (busy.current) return;
+            const editSaved = async () => {
+              busy.current = true;
+              setPending(true);
+              const result = await lookup({
+                environmentId: submitted.environmentId,
+                input: {
+                  requestId: submitted.request.input.requestId,
+                  kind: submitted.request.kind,
+                },
+              });
+              if (AsyncResult.isFailure(result)) throw squashLibraryCommandFailure(result);
+              if (result.value !== null)
+                throw new Error(
+                  "This request was already accepted. Continue it with its original details before starting another.",
+                );
+              await saveAttempt(null);
+            };
+            void editSaved()
+              .catch((cause: unknown) =>
+                setError(
+                  cause instanceof Error ? cause.message : "The request could not be cleared.",
+                ),
+              )
+              .finally(() => {
+                busy.current = false;
+                setPending(false);
+              });
           }}
         />
       ) : null}
@@ -1065,8 +1133,9 @@ function LibraryProjectFormContent({
           inspectingFolder ||
           !accountMatches ||
           !authority.ready ||
+          !correctAuthority ||
           (submitted !== null && submitted.authorityId !== authority.environmentId) ||
-          !canSave ||
+          (submitted?.state === "unknown" ? !canLookup : !canSave) ||
           !title.trim() ||
           (submitted === null && folderTarget !== null && !folderTarget.canCreate)
         }

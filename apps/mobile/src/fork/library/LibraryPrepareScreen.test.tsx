@@ -21,7 +21,7 @@ const state = vi.hoisted(() => ({
     serverConfig: ServerConfig;
   } | null,
   online: true,
-  outcome: vi.fn(),
+  outcome: Object.assign(vi.fn(), { permissionAtom: () => true }),
   prepare: Object.assign(vi.fn(), { permissionAtom: () => true }),
   register: Object.assign(vi.fn(), { permissionAtom: () => true }),
   dispatch: vi.fn(),

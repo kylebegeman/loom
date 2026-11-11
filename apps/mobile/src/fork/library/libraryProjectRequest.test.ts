@@ -346,6 +346,33 @@ describe("submitted mobile project requests", () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
+  it("rechecks the initiating account after saving and before registering prepared files", async () => {
+    const initiator = { issuer: "https://id.test", subject: "kyle" };
+    let identity = initiator;
+    const execute = vi.fn(async () => project);
+    const register = vi.fn(async () => undefined);
+    const persist = vi.fn(async () => {
+      identity = { ...initiator, subject: "other" };
+    });
+    await expect(
+      runSubmittedLibraryProjectRequest({ ...create, initiator }, authorityId, {
+        identity: initiator,
+        currentIdentity: () => identity,
+        persist,
+        execute,
+      }),
+    ).rejects.toThrow("account that started");
+    expect(execute).not.toHaveBeenCalled();
+    await expect(
+      registerSubmittedLibraryProjectCopy(
+        { ...prepare, initiator, state: "succeeded", result: copy },
+        authorityId,
+        { identity, persist, register, copies: async () => [] },
+      ),
+    ).rejects.toThrow("account that started");
+    expect(register).not.toHaveBeenCalled();
+  });
+
   it("does not submit when the original request cannot be preserved", async () => {
     const execute = vi.fn(async () => project);
     await expect(

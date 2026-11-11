@@ -3,8 +3,11 @@ import { getCustomModelOptionsByInstance } from "~/modelSelection";
 import { mergeEnvironmentSettings, useClientSettings } from "~/hooks/useSettings";
 import { ConversationPalette, useConversationAutoStart } from "./ConversationPalette";
 import { LibraryPaletteDialog } from "./LibraryPalette";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  libraryAccessRepairFromFailure,
+  checkLibraryCopyRequest,
+  checkedLibraryCopyRegistration,
   libraryContinuationContext,
   libraryCopyFolderConversations,
   libraryCopyReadiness,
@@ -53,6 +56,7 @@ import {
   LibraryWorkingCopy,
   type LibraryFolderInspection,
   LibraryError,
+  type LibraryOperation,
   type LibraryThreadSummary,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -80,11 +84,18 @@ import { environmentServerConfigsAtom, serverEnvironment } from "~/state/server"
 
 import { newThreadId, randomUUID } from "~/lib/utils";
 import { useLibraryAttempt } from "./attempts";
-import { PortableLaunchAttempt, restoreLibraryLaunchCopy } from "./portableLaunch";
+import {
+  PortableLaunchAttempt,
+  restoreLibraryLaunchCopy,
+  type PortableLaunchFiles,
+} from "./portableLaunch";
 import { useComposerDraftStore } from "~/composerDraftStore";
+import { useEnvironmentSessionState } from "~/state/session";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
+import { LibraryRestoreRequestDialog } from "./LibraryRestoreRequestDialog";
 import {
   libraryLaunchCopyMatchesScope,
   libraryLaunchPathOverlaps,
@@ -95,8 +106,16 @@ import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
 import { vcsEnvironment } from "~/state/vcs";
 import type { EnvironmentQueryView } from "~/state/query";
 
+const LaunchActor = Schema.Struct({
+  authorityId: Schema.optionalKey(EnvironmentId),
+  initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
+  authorityInitiator: Schema.optionalKey(
+    Schema.Struct({ issuer: Schema.String, subject: Schema.String }),
+  ),
+});
 const ConversationAttempt = Schema.NullOr(
   Schema.Struct({
+    ...LaunchActor.fields,
     environmentId: EnvironmentId,
     threadId: ThreadId,
     binding: LibraryThreadBinding,
@@ -111,6 +130,7 @@ const ConversationAttempt = Schema.NullOr(
     created: Schema.Boolean,
     registerRequestId: Schema.String,
     launchOperationId: Schema.optional(Schema.String),
+    launchState: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
     defaultsResolved: Schema.optional(Schema.Boolean),
     requestedModelSelection: Schema.optional(ModelSelection),
     keepOnComputer: Schema.optional(Schema.Boolean),
@@ -123,6 +143,9 @@ const ConversationAttempt = Schema.NullOr(
 
 const PreparationAttempt = Schema.NullOr(
   Schema.Struct({
+    ...LaunchActor.fields,
+    state: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
+    registration: Schema.optionalKey(Schema.Literals(["unknown", "ready", "succeeded"])),
     environmentId: EnvironmentId,
     input: LibraryPrepareCopyRequest,
     registerRequestId: Schema.String,
@@ -133,6 +156,9 @@ const PreparationAttempt = Schema.NullOr(
 );
 const ReopeningAttempt = Schema.NullOr(
   Schema.Struct({
+    ...LaunchActor.fields,
+    state: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
+    registration: Schema.optionalKey(Schema.Literals(["unknown", "ready", "succeeded"])),
     environmentId: EnvironmentId,
     input: LibraryReopenCopyRequest,
     project: LibraryProject,
@@ -150,6 +176,13 @@ type ReopeningFiles = NonNullable<typeof ReopeningAttempt.Type>;
 export async function reopenLibraryLaunchCopy(
   attempt: ReopeningFiles,
   commands: {
+    readonly lookup?:
+      | ((target: {
+          environmentId: EnvironmentId;
+          input: { requestId: string; kind: "reopen" };
+        }) => Promise<LibraryOperation | null>)
+      | undefined;
+    readonly copies?: (() => Promise<readonly LibraryWorkingCopy[]>) | undefined;
     readonly reopen: (input: {
       readonly environmentId: EnvironmentId;
       readonly input: LibraryReopenCopyRequest;
@@ -161,6 +194,32 @@ export async function reopenLibraryLaunchCopy(
     readonly save: (attempt: ReopeningFiles) => void;
   },
 ) {
+  if (attempt.state === "unknown" && !attempt.copy) {
+    if (!commands.lookup)
+      throw new Error("Update this computer to check the original reopen request before retrying.");
+    const result = await checkLibraryCopyRequest(
+      {
+        environmentId: attempt.environmentId,
+        requestId: attempt.input.requestId,
+        kind: "reopen",
+        projectId: attempt.project.id,
+        workingCopyId: attempt.input.workingCopyId,
+        rootPath: attempt.rootPath,
+      },
+      (target) => commands.lookup!({ ...target, input: { ...target.input, kind: "reopen" } }),
+    );
+    commands.save({
+      ...attempt,
+      state: "ready",
+      ...(result.copy ? { copy: result.copy, registration: "ready" } : {}),
+    });
+    throw new LibraryError({
+      reason: "blocked",
+      detail: "The saved reopen request has been checked. Continue explicitly when you are ready.",
+      ...(result.accessRepair ? { accessRepair: result.accessRepair } : {}),
+    });
+  }
+  if (!attempt.copy) commands.save({ ...attempt, state: "unknown" });
   const copy =
     attempt.copy ??
     (await commands.reopen({ environmentId: attempt.environmentId, input: attempt.input }));
@@ -173,10 +232,24 @@ export async function reopenLibraryLaunchCopy(
     restored.state === "ready";
   if (!matches(copy))
     throw new Error("The restored files do not match this conversation's saved project files.");
-  if (!attempt.copy) commands.save({ ...attempt, copy });
+  if (!attempt.copy) commands.save({ ...attempt, copy, registration: "ready" });
+  if (attempt.registration === "succeeded") return copy;
+  if (attempt.registration === "unknown") {
+    if (!commands.copies)
+      throw new Error(
+        "Reconnect the Library to check the saved file registration before retrying.",
+      );
+    const registered = checkedLibraryCopyRegistration(copy, await commands.copies());
+    commands.save({ ...attempt, copy, registration: registered ? "succeeded" : "ready" });
+    throw new Error(
+      "The saved file registration has been checked. Continue explicitly when you are ready.",
+    );
+  }
+  commands.save({ ...attempt, copy, registration: "unknown" });
   const registered = await commands.register({ requestId: attempt.registerRequestId, copy });
   if (!matches(registered))
     throw new Error("The restored files were not registered for this conversation.");
+  commands.save({ ...attempt, copy: registered, registration: "succeeded" });
   return registered;
 }
 
@@ -275,6 +348,10 @@ export function useLibraryConversationSetup({
   readonly onClose: () => void;
 }) {
   const authority = useLibraryAuthority();
+  const [pinnedAuthorityId, pinAuthority] = useState(authority.authorityId);
+  if (!pinnedAuthorityId && authority.authorityId) pinAuthority(authority.authorityId);
+  const authorityMatches =
+    pinnedAuthorityId !== null && authority.authorityId === pinnedAuthorityId;
   const providersByEnvironment = useEnvironmentProviders();
   const clientSettings = useClientSettings();
   const navigate = useNavigate();
@@ -283,20 +360,20 @@ export function useLibraryConversationSetup({
   // A continuation holds its own attempt, so an unfinished one never turns every later start in
   // the project into its retry, replaying the archived conversation's title, context and link.
   // Ordinary starts keep the bare key their attempts are already saved under.
-  const attemptScope = `${authority.authorityId}:${project.id}${continuation ? `:continue:${continuation.id}` : ""}`;
-  const [attempt, saveAttempt] = useLibraryAttempt(
+  const attemptScope = `${pinnedAuthorityId}:${project.id}${continuation ? `:continue:${continuation.id}` : ""}`;
+  const [attempt, saveAttempt, conversationUnreadable] = useLibraryAttempt(
     `loom:library:conversation:${attemptScope}`,
     ConversationAttempt,
   );
-  const [preparation, savePreparation] = useLibraryAttempt(
+  const [preparation, savePreparation, preparationUnreadable] = useLibraryAttempt(
     `loom:library:launch-files:${attemptScope}`,
     PreparationAttempt,
   );
-  const [reopening, saveReopening] = useLibraryAttempt(
+  const [reopening, saveReopening, reopeningUnreadable] = useLibraryAttempt(
     `loom:library:launch-reopen:${attemptScope}`,
     ReopeningAttempt,
   );
-  const [restoring, saveRestoring] = useLibraryAttempt(
+  const [restoring, saveRestoring, restoringUnreadable] = useLibraryAttempt(
     `loom:library:launch-portable:${attemptScope}`,
     PortableLaunchAttempt,
   );
@@ -395,6 +472,8 @@ export function useLibraryConversationSetup({
   const [pulling, setPulling] = useState(false);
   const [reviewingFiles, setReviewingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restoreReview, setRestoreReview] = useState<LibraryOperation | null>(null);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const [cloneRepair, setCloneRepair] = useState<LibraryError["repair"]>(undefined);
   const copiesReadiness = libraryCopyReadiness(copiesQuery);
   const knownCopies = [
@@ -439,6 +518,43 @@ export function useLibraryConversationSetup({
     preparation?.environmentId ??
     choice.hostId;
   const host = authority.environments.find((entry) => entry.environmentId === hostId);
+  const identity = useEnvironmentSessionState(hostId).data?.identity;
+  const authorityIdentity = useEnvironmentSessionState(pinnedAuthorityId).data?.identity;
+  const savedActor = attempt ?? preparation ?? reopening ?? restoring;
+  const matchesActor = (actor: typeof LaunchActor.Type) =>
+    (!actor.authorityId || actor.authorityId === pinnedAuthorityId) &&
+    (!actor.initiator ||
+      (actor.initiator.issuer === identity?.issuer &&
+        actor.initiator.subject === identity?.subject)) &&
+    (!actor.authorityInitiator ||
+      (actor.authorityInitiator.issuer === authorityIdentity?.issuer &&
+        actor.authorityInitiator.subject === authorityIdentity?.subject));
+  const accountMatches = !savedActor || matchesActor(savedActor);
+  const unreadable =
+    conversationUnreadable || preparationUnreadable || reopeningUnreadable || restoringUnreadable;
+  const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- guards the launch chain after the conversation form closes
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const ensureCurrent = useStableCallback(
+    (environmentId: EnvironmentId, actor: typeof LaunchActor.Type) => {
+      if (
+        !mounted.current ||
+        !open ||
+        !authorityMatches ||
+        hostId !== environmentId ||
+        !matchesActor(actor)
+      )
+        throw new Error(
+          "Return to the original Library, computer and account before continuing this conversation request.",
+        );
+    },
+  );
+
   const candidates = ranking.candidates.flatMap((candidate) =>
     candidate.kind === "copy" && candidate.environmentId === hostId
       ? knownCopies.filter((entry) => entry.id === candidate.copyId)
@@ -687,6 +803,7 @@ export function useLibraryConversationSetup({
   });
   const create = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
   const bind = useAtomCommand(projectLibrary.bindThread, { reportFailure: false });
+  const lookupOutcome = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
   const executeOperation = useAtomCommand(projectLibrary.executeOperation, {
     reportFailure: false,
   });
@@ -702,6 +819,10 @@ export function useLibraryConversationSetup({
   const registerCopy = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerThread, { reportFailure: false });
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
+  const readRegisteredCopies = useAtomQueryRunner(projectLibrary.copies, {
+    refresh: true,
+    reportFailure: false,
+  });
   const recoverPreparation = useAtomQueryRunner(projectLibrary.preparation, {
     refresh: true,
     reportFailure: false,
@@ -725,6 +846,7 @@ export function useLibraryConversationSetup({
   const canInspect = useLibraryPermission(projectLibrary.inspectFolder, hostId);
   const canRegisterCopy = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
+  const canLookupOutcome = useLibraryPermission(projectLibrary.operationOutcome, hostId);
   const canExecuteOperation = useLibraryPermission(projectLibrary.executeOperation, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
   // Untagged saved attempts finish their original receipt chain; every new start has an operation.
@@ -758,22 +880,32 @@ export function useLibraryConversationSetup({
   // and an Enter on the same row, would both pass it and each create a conversation.
   const submitting = useRef(false);
   const submit = async () => {
-    const authorityId = authority.authorityId;
+    const authorityId = pinnedAuthorityId;
     if (
+      unreadable ||
+      !authorityMatches ||
+      !accountMatches ||
       !authorityId ||
       !hostId ||
       !modelSelection ||
       busy ||
       submitting.current ||
-      copiesReadiness !== "ready" ||
-      (offline && !offlineReady)
+      (!canCheckLaunch && (copiesReadiness !== "ready" || (offline && !offlineReady)))
     )
       return;
     submitting.current = true;
     setBusy(true);
     setError(null);
+    setAccessRepair(undefined);
+    const actor = savedActor ?? {
+      authorityId,
+      ...(identity ? { initiator: identity } : {}),
+      ...(authorityIdentity ? { authorityInitiator: authorityIdentity } : {}),
+    };
+    const assertCurrent = () => ensureCurrent(hostId, actor);
     let submittedPreparation = preparation;
     const openConversation = async (next: NonNullable<typeof attempt>) => {
+      assertCurrent();
       if (next.context.trim())
         useComposerDraftStore
           .getState()
@@ -790,6 +922,51 @@ export function useLibraryConversationSetup({
       });
     };
     const launch = async () => {
+      assertCurrent();
+      if (canCheckLaunch && attempt?.launchOperationId) {
+        const answer = await lookupOutcome({
+          environmentId: attempt.environmentId,
+          input: { requestId: attempt.launchOperationId, kind: "launch" },
+        });
+        if (answer._tag === "Failure") throw squashAtomCommandFailure(answer);
+        assertCurrent();
+        const operation = answer.value;
+        if (
+          operation &&
+          (operation.id !== attempt.launchOperationId ||
+            operation.kind !== "launch" ||
+            operation.environmentId !== attempt.environmentId ||
+            operation.projectId !== attempt.project.id)
+        )
+          throw new Error("The launch receipt belongs to another request, project or computer.");
+        if (operation?.state === "succeeded") {
+          if (
+            !operation.result ||
+            !("threadId" in operation.result) ||
+            operation.result.threadId !== attempt.threadId
+          )
+            throw new Error("The launch receipt does not contain the original conversation.");
+          await openConversation(attempt);
+          return;
+        }
+        if (
+          operation?.state === "running" ||
+          operation?.state === "queued" ||
+          operation?.state === "cancelled"
+        )
+          throw new Error(
+            operation.state === "cancelled"
+              ? "This conversation request was cancelled. Review its completed steps before starting another."
+              : "This conversation request is already running. Check its result again.",
+          );
+        saveAttempt({ ...attempt, launchState: "ready" });
+        setAccessRepair(operation?.accessRepair);
+        setError(
+          operation?.error ??
+            "The saved conversation request has been checked. Continue explicitly when you are ready.",
+        );
+        return;
+      }
       let launchCopy = copy ?? (retainedCopy?.state === "ready" ? retainedCopy : null);
       let pendingPreparation = preparation;
       if (!locked && filesPlan.kind === "choose")
@@ -811,10 +988,11 @@ export function useLibraryConversationSetup({
           throw new Error(
             "Connect the source computer to save its latest files before starting here.",
           );
-        const files =
+        const files: PortableLaunchFiles | null =
           restoring ??
           (portableSource
             ? {
+                ...actor,
                 environmentId: hostId,
                 project: launchProject,
                 ...(restoreChoosesFolder ? {} : { rootPath: rootPath.trim() }),
@@ -871,34 +1049,75 @@ export function useLibraryConversationSetup({
           }
         }
         saveRestoring(files);
-        launchCopy = await restoreLibraryLaunchCopy(files, {
-          readStatus: async (input) => {
-            const result = await readCopyStatus(input);
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
+        launchCopy = await restoreLibraryLaunchCopy(
+          restoring
+            ? {
+                ...files,
+                ...(!files.sourceSnapshot && files.sourceReviewToken
+                  ? { snapshotState: files.snapshotState ?? "unknown" }
+                  : {}),
+                ...(files.snapshotState === undefined &&
+                files.sourceRegistration === undefined &&
+                files.restoreState === undefined
+                  ? {
+                      ...(files.sourceSnapshot ? { sourceRegistration: "unknown" as const } : {}),
+                      ...(!files.copy &&
+                      (files.sourceCopy.state !== "ready" || files.sourceSnapshot)
+                        ? { restoreState: "unknown" as const }
+                        : {}),
+                      ...(files.copy && files.registration === undefined
+                        ? { registration: "unknown" as const }
+                        : {}),
+                    }
+                  : {}),
+              }
+            : files,
+          {
+            lookup: async (target) => {
+              const result = await lookupOutcome(target);
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            copies: async () => {
+              const result = await readRegisteredCopies({
+                environmentId: authorityId,
+                input: { projectId: files.project.id },
+              });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            readStatus: async (input) => {
+              const result = await readCopyStatus(input);
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            snapshot: async (input) => {
+              assertCurrent();
+              const result = await snapshotCopy(input);
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            authorize: async (input) => {
+              assertCurrent();
+              const result = await authorizeRecovery({ environmentId: authorityId, input });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            restore: async (input) => {
+              assertCurrent();
+              const result = await restoreCopy(input);
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            register: async (input) => {
+              assertCurrent();
+              const result = await registerCopy({ environmentId: authorityId, input });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            save: (next) => saveRestoring(next, (latest) => latest?.requestId === next.requestId),
           },
-          snapshot: async (input) => {
-            const result = await snapshotCopy(input);
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          authorize: async (input) => {
-            const result = await authorizeRecovery({ environmentId: authorityId, input });
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          restore: async (input) => {
-            const result = await restoreCopy(input);
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          register: async (input) => {
-            const result = await registerCopy({ environmentId: authorityId, input });
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          save: saveRestoring,
-        });
+        );
         setPreparedCopy(launchCopy);
         setCopyId(launchCopy.id);
         setHostId(files.environmentId);
@@ -916,6 +1135,7 @@ export function useLibraryConversationSetup({
           reopening ??
           (retainedCopy
             ? {
+                ...actor,
                 environmentId: hostId,
                 input: { requestId: randomUUID(), workingCopyId: retainedCopy.id },
                 project: launchProject,
@@ -923,6 +1143,8 @@ export function useLibraryConversationSetup({
                 rootPath: retainedCopy.rootPath,
                 registerRequestId: randomUUID(),
                 copy: null,
+                state: "ready" as const,
+                registration: "ready" as const,
                 keepOnComputer,
                 savedAt: new Date().toISOString(),
               }
@@ -932,19 +1154,46 @@ export function useLibraryConversationSetup({
             "The saved project files are unavailable. Reconnect this computer and retry.",
           );
         saveReopening(files);
-        launchCopy = await reopenLibraryLaunchCopy(files, {
-          reopen: async (input) => {
-            const result = await reopenCopy(input);
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
+        launchCopy = await reopenLibraryLaunchCopy(
+          reopening
+            ? {
+                ...files,
+                state: files.state ?? "unknown",
+                ...(files.copy && files.registration === undefined
+                  ? { registration: "unknown" }
+                  : {}),
+              }
+            : files,
+          {
+            lookup: async (target) => {
+              const result = await lookupOutcome(target);
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            copies: async () => {
+              const result = await readRegisteredCopies({
+                environmentId: authorityId,
+                input: { projectId: files.project.id },
+              });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            reopen: async (input) => {
+              assertCurrent();
+              const result = await reopenCopy(input);
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            register: async (input) => {
+              assertCurrent();
+              const result = await registerCopy({ environmentId: authorityId, input });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            save: (next) =>
+              saveReopening(next, (latest) => latest?.input.requestId === next.input.requestId),
           },
-          register: async (input) => {
-            const result = await registerCopy({ environmentId: authorityId, input });
-            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-            return result.value;
-          },
-          save: saveReopening,
-        });
+        );
         setPreparedCopy(launchCopy);
         setCopyId(launchCopy.id);
         setHostId(files.environmentId);
@@ -999,6 +1248,7 @@ export function useLibraryConversationSetup({
           throw new Error("Reopen this conversation's original project files before retrying.");
         const registerRequestId = attempt?.registerRequestId ?? randomUUID();
         const next = attempt ?? {
+          ...actor,
           environmentId: hostId,
           project: launchProject,
           threadId: newThreadId(),
@@ -1045,6 +1295,8 @@ export function useLibraryConversationSetup({
               next.files.strategy,
             )
           : readyCopy?.ownership === "managed";
+        saveAttempt({ ...next, launchState: "unknown" });
+        assertCurrent();
         const launched = await executeOperation({
           environmentId: next.environmentId,
           input: {
@@ -1074,6 +1326,32 @@ export function useLibraryConversationSetup({
       }
       if (pendingPreparation) {
         let files = pendingPreparation;
+        if (!files.copy && files.state !== "ready") {
+          const result = await checkLibraryCopyRequest(
+            {
+              environmentId: files.environmentId,
+              requestId: files.input.requestId,
+              kind: "prepare",
+              projectId: files.input.project.id,
+              rootPath: files.input.rootPath,
+            },
+            async (target) => {
+              const answer = await lookupOutcome(target);
+              if (answer._tag === "Failure") throw squashAtomCommandFailure(answer);
+              return answer.value;
+            },
+          );
+          savePreparation({
+            ...files,
+            state: "ready",
+            ...(result.copy ? { copy: result.copy, registration: "ready" } : {}),
+          });
+          setAccessRepair(result.accessRepair);
+          setError(
+            "The saved preparation has been checked. Continue explicitly when you are ready.",
+          );
+          return;
+        }
         const filesRootPath = files.input.rootPath;
         if (
           filesRootPath !== undefined &&
@@ -1092,22 +1370,51 @@ export function useLibraryConversationSetup({
           });
         submittedPreparation = files;
         if (!files.copy || files.copy.state !== "ready") {
+          files = { ...files, state: "unknown" };
+          submittedPreparation = files;
+          savePreparation(files);
+          assertCurrent();
           const prepared = await prepareCopy({
             environmentId: files.environmentId,
             input: files.input,
           });
           if (prepared._tag === "Failure") throw squashAtomCommandFailure(prepared);
-          files = { ...files, copy: prepared.value };
+          files = { ...files, copy: prepared.value, registration: "ready" };
           submittedPreparation = files;
           savePreparation(files);
         }
         if (files.copy?.state !== "ready")
           throw new Error("Project files are not ready. Retry preparation.");
-        const savedCopy = await registerCopy({
-          environmentId: authorityId,
-          input: { requestId: files.registerRequestId, copy: files.copy },
-        });
+        const fileCopy = files.copy;
+        if (files.registration === "unknown" || files.registration === undefined) {
+          const result = await readRegisteredCopies({
+            environmentId: authorityId,
+            input: { projectId: files.input.project.id },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          const registered = checkedLibraryCopyRegistration(fileCopy, result.value);
+          savePreparation({ ...files, registration: registered ? "succeeded" : "ready" });
+          setError(
+            "The saved file registration has been checked. Continue explicitly when you are ready.",
+          );
+          return;
+        }
+        const registeredAlready = files.registration === "succeeded";
+        if (!registeredAlready) {
+          files = { ...files, registration: "unknown" };
+          submittedPreparation = files;
+          savePreparation(files);
+        }
+        assertCurrent();
+        const savedCopy = registeredAlready
+          ? { _tag: "Success" as const, value: fileCopy }
+          : await registerCopy({
+              environmentId: authorityId,
+              input: { requestId: files.registerRequestId, copy: fileCopy },
+            });
         if (savedCopy._tag === "Failure") throw squashAtomCommandFailure(savedCopy);
+        files = { ...files, copy: savedCopy.value, registration: "succeeded" };
+        savePreparation(files);
         launchCopy = savedCopy.value;
         if (attempt && launchCopy.id !== attempt.binding.workingCopyId)
           throw new Error(
@@ -1122,6 +1429,7 @@ export function useLibraryConversationSetup({
         throw new Error("The project files are unavailable. Reopen the project and try again.");
       const registerRequestId = attempt?.registerRequestId ?? randomUUID();
       let next = attempt ?? {
+        ...actor,
         environmentId: hostId,
         project: launchProject,
         threadId: newThreadId(),
@@ -1166,6 +1474,7 @@ export function useLibraryConversationSetup({
       savePreparation(null);
       submittedPreparation = null;
       if (launchCopy.ownership === "borrowed" && !next.created && !offline) {
+        assertCurrent();
         const prepared = await prepareCopy({
           environmentId: next.environmentId,
           input: {
@@ -1179,6 +1488,7 @@ export function useLibraryConversationSetup({
         if (prepared._tag === "Failure") throw squashAtomCommandFailure(prepared);
         if (prepared.value.id !== next.binding.workingCopyId)
           throw new Error("The prepared folder does not match this conversation's project files.");
+        assertCurrent();
         const savedCopy = await registerCopy({
           environmentId: authorityId,
           input: { requestId: `${next.registerRequestId}:copy`, copy: prepared.value },
@@ -1224,6 +1534,8 @@ export function useLibraryConversationSetup({
         saveAttempt(next);
       }
       if (next.launchOperationId !== undefined) {
+        saveAttempt({ ...next, launchState: "unknown" });
+        assertCurrent();
         const launched = await executeOperation({
           environmentId: next.environmentId,
           input: {
@@ -1251,6 +1563,7 @@ export function useLibraryConversationSetup({
         if (launched._tag === "Failure") throw squashAtomCommandFailure(launched);
       } else {
         if (!next.created) {
+          assertCurrent();
           const created = await create({
             environmentId: next.environmentId,
             input: {
@@ -1267,6 +1580,7 @@ export function useLibraryConversationSetup({
           });
           // A lost create response may leave the same empty thread upstream. Binding that ID is recoverable.
           if (created._tag === "Failure") {
+            assertCurrent();
             const recovery = await bind({
               environmentId: next.environmentId,
               input: { threadId: next.threadId, binding: next.binding, project: next.project },
@@ -1276,6 +1590,7 @@ export function useLibraryConversationSetup({
           next = { ...next, created: true };
           saveAttempt(next);
         }
+        assertCurrent();
         const bound = await bind({
           environmentId: next.environmentId,
           input: { threadId: next.threadId, binding: next.binding, project: next.project },
@@ -1288,6 +1603,7 @@ export function useLibraryConversationSetup({
           (next.retentionCopy || (launchCopy.keepOnComputer !== false) !== next.keepOnComputer)
         ) {
           if (!next.retentionCopy) {
+            assertCurrent();
             const updated = await setRetention({
               environmentId: next.environmentId,
               input: {
@@ -1299,6 +1615,7 @@ export function useLibraryConversationSetup({
             next = { ...next, retentionCopy: updated.value };
             saveAttempt(next);
           }
+          assertCurrent();
           const published = await registerCopy({
             environmentId: authorityId,
             input: { requestId: `${next.registerRequestId}:retention`, copy: next.retentionCopy! },
@@ -1310,6 +1627,7 @@ export function useLibraryConversationSetup({
           input: { threadId: next.threadId },
         });
         if (archived._tag === "Failure") throw squashAtomCommandFailure(archived);
+        assertCurrent();
         const saved = await register({
           environmentId: authorityId,
           input: { requestId: next.registerRequestId, thread: archived.value },
@@ -1322,6 +1640,7 @@ export function useLibraryConversationSetup({
       await launch();
     } catch (cause) {
       setCloneRepair(isLibraryError(cause) ? cause.repair : undefined);
+      setAccessRepair(libraryAccessRepairFromFailure(cause, hostId));
       if (submittedPreparation) {
         const receipt = await recoverPreparation({
           environmentId: submittedPreparation.environmentId,
@@ -1329,11 +1648,6 @@ export function useLibraryConversationSetup({
         });
         if (receipt._tag === "Success") {
           if (receipt.value) savePreparation({ ...submittedPreparation, copy: receipt.value });
-          else if (
-            isLibraryError(cause) &&
-            ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
-          )
-            savePreparation(null);
         }
       }
       setError(
@@ -1430,8 +1744,17 @@ export function useLibraryConversationSetup({
   const operationPhase = operationProgress.data?.find(
     (operation) => operation.id === attempt?.launchOperationId,
   )?.phase;
+  const canCheckLaunch =
+    !!attempt?.launchOperationId &&
+    attempt.launchState !== "ready" &&
+    connected &&
+    canLookupOutcome;
   const canCreate =
-    canContinue && modelSelection !== null && (usesLegacyLaunch || canExecuteOperation);
+    !unreadable &&
+    accountMatches &&
+    authorityMatches &&
+    (canCheckLaunch ||
+      (canContinue && modelSelection !== null && (usesLegacyLaunch || canExecuteOperation)));
   // Only live connections deliver these; a disconnected computer's query waits without failing.
   const checking =
     connected &&
@@ -1625,7 +1948,22 @@ export function useLibraryConversationSetup({
     canPull,
     pullThenSubmit,
     submit,
-    error,
+    error: unreadable
+      ? "The saved conversation request could not be read. Keep it for recovery before starting another."
+      : error,
+    accessRepair: !accountMatches
+      ? { kind: "ownership" as const, ...(hostId ? { environmentId: hostId } : {}) }
+      : !authorityMatches
+        ? {
+            kind: "connection" as const,
+            ...(pinnedAuthorityId ? { environmentId: pinnedAuthorityId } : {}),
+          }
+        : accessRepair,
+    accessContext: {
+      environmentId: hostId,
+      authorityEnvironmentId: pinnedAuthorityId,
+      originalAccount: savedActor?.initiator,
+    },
     cloneRepair: error && cloneRepair?.environmentId === hostId ? cloneRepair : null,
     blocker,
     refreshFiles: () => {
@@ -1638,6 +1976,7 @@ export function useLibraryConversationSetup({
             saveRestoring({
               ...restoring,
               sourceReviewToken: undefined,
+              snapshotState: "ready",
               sourceSnapshotRejected: undefined,
               snapshotRequestId: randomUUID(),
             });
@@ -1649,37 +1988,146 @@ export function useLibraryConversationSetup({
     // no error showing. The computer may still finish the abandoned request, so its files location
     // stays: the next start then finds those files instead of preparing a second set elsewhere.
     startOver:
-      locked && !busy && !pulling
-        ? () => {
-            setRootPath(
-              restoring?.rootPath ??
-                preparation?.input.rootPath ??
-                reopening?.rootPath ??
-                typedPath,
+      locked && !busy && !pulling && !unreadable && accountMatches && authorityMatches
+        ? async () => {
+            if (!hostId || submitting.current) return;
+            submitting.current = true;
+            setBusy(true);
+            const check = async () => {
+              const requests = [
+                ...(attempt?.launchOperationId
+                  ? [
+                      {
+                        environmentId: attempt.environmentId,
+                        requestId: attempt.launchOperationId,
+                        kind: "launch" as const,
+                      },
+                    ]
+                  : []),
+                ...(preparation
+                  ? [
+                      {
+                        environmentId: preparation.environmentId,
+                        requestId: preparation.input.requestId,
+                        kind: "prepare" as const,
+                      },
+                    ]
+                  : []),
+                ...(reopening
+                  ? [
+                      {
+                        environmentId: reopening.environmentId,
+                        requestId: reopening.input.requestId,
+                        kind: "reopen" as const,
+                      },
+                    ]
+                  : []),
+                ...(restoring
+                  ? [
+                      {
+                        environmentId: restoring.environmentId,
+                        requestId: restoring.requestId,
+                        kind: "restore" as const,
+                      },
+                    ]
+                  : []),
+              ];
+              for (const request of requests) {
+                const result = await lookupOutcome({
+                  environmentId: request.environmentId,
+                  input: { requestId: request.requestId, kind: request.kind },
+                });
+                if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                if (result.value?.state === "running" || result.value?.state === "queued")
+                  throw new Error(
+                    "The saved request is still running. Check its result before starting another.",
+                  );
+              }
+              ensureCurrent(hostId, savedActor ?? {});
+              setRootPath(
+                restoring?.rootPath ??
+                  preparation?.input.rootPath ??
+                  reopening?.rootPath ??
+                  typedPath,
+              );
+              saveAttempt(null);
+              savePreparation(null);
+              saveReopening(null);
+              saveRestoring(null);
+              setError(null);
+              retained.refresh();
+              onChanged();
+            };
+            await check().catch((cause: unknown) =>
+              setError(
+                cause instanceof Error ? cause.message : "Could not check the original request.",
+              ),
             );
-            saveAttempt(null);
-            savePreparation(null);
-            saveReopening(null);
-            saveRestoring(null);
-            setError(null);
-            retained.refresh();
-            onChanged();
+            submitting.current = false;
+            setBusy(false);
+          }
+        : null,
+    reviewRestore:
+      restoring && !restoring.copy && canLookupOutcome && accountMatches && authorityMatches
+        ? async () => {
+            if (submitting.current || !hostId) return;
+            submitting.current = true;
+            setBusy(true);
+            const review = async () => {
+              const result = await lookupOutcome({
+                environmentId: restoring.environmentId,
+                input: { requestId: restoring.requestId, kind: "restore" },
+              });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              ensureCurrent(hostId, savedActor ?? {});
+              const operation = result.value;
+              if (
+                !operation?.restoreRequest ||
+                operation.kind !== "restore" ||
+                operation.environmentId !== restoring.environmentId ||
+                operation.restoreRequest.requestId !== restoring.requestId ||
+                operation.restoreRequest.project.id !== restoring.project.id ||
+                operation.restoreRequest.libraryEnvironmentId !== pinnedAuthorityId
+              )
+                throw new Error(
+                  "Refresh the destination computer's history to recover the original restore selection. Keep this saved request.",
+                );
+              setRestoreReview(operation);
+            };
+            await review().catch((cause: unknown) => {
+              setError(
+                cause instanceof Error
+                  ? cause.message
+                  : "Could not read the original restore request.",
+              );
+              setAccessRepair(libraryAccessRepairFromFailure(cause, restoring.environmentId));
+            });
+            submitting.current = false;
+            setBusy(false);
           }
         : null,
     reviewFiles: preparation?.copy?.state === "failed" ? reviewFiles : null,
-    review:
-      reviewingFiles && preparation?.copy ? (
-        <ReleaseCopyDialog
-          copy={preparation.copy}
-          onClose={() => setReviewingFiles(false)}
-          onReleased={() => {
-            savePreparation(null);
-            setReviewingFiles(false);
-            setPreparedCopy(null);
-            onChanged();
-          }}
-        />
-      ) : null,
+    review: restoreReview ? (
+      <LibraryRestoreRequestDialog
+        operation={restoreReview}
+        onClose={() => setRestoreReview(null)}
+        onChanged={() => {
+          retained.refresh();
+          onChanged();
+        }}
+      />
+    ) : reviewingFiles && preparation?.copy ? (
+      <ReleaseCopyDialog
+        copy={preparation.copy}
+        onClose={() => setReviewingFiles(false)}
+        onReleased={() => {
+          savePreparation(null);
+          setReviewingFiles(false);
+          setPreparedCopy(null);
+          onChanged();
+        }}
+      />
+    ) : null,
   };
 }
 

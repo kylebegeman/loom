@@ -11,6 +11,7 @@ import {
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 
 vi.mock("./state", () => ({}));
+vi.mock("~/state/session", () => ({}));
 vi.mock("~/state/server", () => ({}));
 vi.mock("~/state/entities", () => ({}));
 vi.mock("~/state/threads", () => ({}));
@@ -27,6 +28,7 @@ vi.mock("~/components/chat/ProviderModelPicker", () => ({}));
 vi.mock("~/components/chat/TraitsPicker", () => ({}));
 vi.mock("~/modelSelection", () => ({}));
 vi.mock("./ProfileReadiness", () => ({}));
+vi.mock("./LibraryRestoreRequestDialog", () => ({ LibraryRestoreRequestDialog: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({}));
 vi.mock("./useLibraryLaunchRanking", () => ({}));
 vi.mock("./ConversationPalette", () => ({}));
@@ -225,7 +227,8 @@ describe("restoring launch files", () => {
     expect(await reopenLibraryLaunchCopy(reopenAttempt, { reopen, register, save })).toEqual(
       restoredCopy,
     );
-    expect(order).toEqual(["reopen", "save", "register"]);
+    expect(order.indexOf("save")).toBeLessThan(order.indexOf("reopen"));
+    expect(order.lastIndexOf("save")).toBeGreaterThan(order.indexOf("register"));
     expect(reopen).toHaveBeenCalledWith({
       environmentId: archivedCopy.environmentId,
       input: reopenAttempt.input,
@@ -241,14 +244,22 @@ describe("restoring launch files", () => {
       .mockRejectedValueOnce(new Error("connection lost"))
       .mockResolvedValue(restoredCopy);
     const register = vi.fn(async () => restoredCopy);
-    const save = vi.fn();
+    let saved: Parameters<typeof reopenLibraryLaunchCopy>[0] = reopenAttempt;
+    const save = vi.fn((next: typeof saved) => {
+      saved = next;
+    });
+    const lookup = vi.fn(async () => null);
     await expect(
-      reopenLibraryLaunchCopy(reopenAttempt, { reopen, register, save }),
+      reopenLibraryLaunchCopy(saved, { reopen, register, save, lookup }),
     ).rejects.toThrow("connection lost");
     expect(register).not.toHaveBeenCalled();
-    expect(save).not.toHaveBeenCalled();
+    expect(saved).toMatchObject({ state: "unknown", input: reopenAttempt.input, copy: null });
     await expect(
-      reopenLibraryLaunchCopy(reopenAttempt, { reopen, register, save }),
+      reopenLibraryLaunchCopy(saved, { reopen, register, save, lookup }),
+    ).rejects.toThrow("checked");
+    expect(reopen).toHaveBeenCalledOnce();
+    await expect(
+      reopenLibraryLaunchCopy(saved, { reopen, register, save, lookup }),
     ).resolves.toEqual(restoredCopy);
     expect(reopen.mock.calls[0]).toEqual(reopen.mock.calls[1]);
   });
@@ -266,6 +277,9 @@ describe("restoring launch files", () => {
       "authority offline",
     );
     expect(saved.copy).toEqual(restoredCopy);
+    await expect(
+      reopenLibraryLaunchCopy(saved, { reopen, register, save, copies: async () => [] }),
+    ).rejects.toThrow("checked");
     await expect(reopenLibraryLaunchCopy(saved, { reopen, register, save })).resolves.toEqual(
       restoredCopy,
     );
@@ -285,7 +299,9 @@ describe("restoring launch files", () => {
         reopenLibraryLaunchCopy(reopenAttempt, { reopen: async () => copy, register, save }),
       ).rejects.toThrow("restored files");
       expect(register).not.toHaveBeenCalled();
-      expect(save).not.toHaveBeenCalled();
+      expect(save).toHaveBeenLastCalledWith(
+        expect.objectContaining({ state: "unknown", copy: null, input: reopenAttempt.input }),
+      );
     }
   });
 });

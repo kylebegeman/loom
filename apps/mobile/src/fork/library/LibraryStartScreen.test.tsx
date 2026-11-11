@@ -41,6 +41,8 @@ const state = vi.hoisted(() => ({
   navigate: vi.fn(),
   dispatch: vi.fn(),
   launch: vi.fn<Launch>(),
+  copiesQuery: () => "copies",
+  readRegisteredCopies: vi.fn(),
   prepare: Object.assign(vi.fn(), { permissionAtom: () => true }),
   bind: Object.assign(vi.fn(), { permissionAtom: () => true }),
   registerCopy: Object.assign(vi.fn(), { permissionAtom: () => true }),
@@ -99,7 +101,11 @@ vi.mock("@effect/atom-react", () => ({
   useAtomSet: () => state.savePreferences,
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: state.navigate, dispatch: state.dispatch }),
+  useNavigation: () => ({
+    navigate: state.navigate,
+    dispatch: state.dispatch,
+    isFocused: () => true,
+  }),
   useFocusEffect: () => undefined,
   usePreventRemove: () => undefined,
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
@@ -137,7 +143,7 @@ vi.mock("./libraryState", () => ({
   refreshLibraryWork: vi.fn(),
   library: {
     project: () => "project",
-    copies: () => "copies",
+    copies: state.copiesQuery,
     history: () => "history",
     copyHealth: () => "health",
     prepareCopy: state.prepare,
@@ -152,6 +158,10 @@ vi.mock("./libraryState", () => ({
     snapshotCopy: state.snapshotCopy,
     resolveBinding: state.resolve,
     snapshotThread: state.snapshot,
+    operationOutcome: Object.assign(
+      vi.fn(async () => AsyncResult.success(null)),
+      { permissionAtom: () => true },
+    ),
     executeOperation: state.executeOperation,
     inspectFolder: state.inspectFolder,
     placement: { resultAtom: () => "placement" },
@@ -189,6 +199,8 @@ vi.mock("../../state/session", () => ({
   useEnvironmentsWithScope: () =>
     new Set(state.computers.map((computer) => computer.environmentId)),
   readEnvironmentScope: () => true,
+  useEnvironmentSessionState: () => null,
+  readEnvironmentSessionState: () => null,
 }));
 vi.mock("../../state/atom-registry", () => ({
   appAtomRegistry: {
@@ -237,7 +249,8 @@ vi.mock("../../state/query", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("../../state/use-atom-query-runner", () => ({
-  useAtomQueryRunner: (query: unknown) => query,
+  useAtomQueryRunner: (query: unknown) =>
+    query === state.copiesQuery ? state.readRegisteredCopies : query,
 }));
 vi.mock("../../state/threads", () => ({ threadEnvironment: { create: state.create } }));
 vi.mock("../../state/vcs", () => ({ vcsEnvironment: { pull: state.pull } }));
@@ -1011,6 +1024,7 @@ describe("Library start progressive disclosure", () => {
     await render();
     expect(container.textContent).toContain("An unfinished preparation is saved");
     expect(button("Workspace").textContent).toContain("New worktree");
+    await click("Check conversation result");
     await click("Resume starting work");
     expect(state.executeOperation.mock.calls[1]![0].input.request.input.workspace).toBe("worktree");
   });
@@ -1213,7 +1227,7 @@ describe("Library start progressive disclosure", () => {
       }),
     };
     await render();
-    expect(button("Resume starting work").disabled).toBe(false);
+    expect(button("Check conversation result").disabled).toBe(false);
     expect(button("Computer").disabled).toBe(true);
     expect(button("Agent model").textContent).toContain("Codex: custom");
     await click("Conversation options");

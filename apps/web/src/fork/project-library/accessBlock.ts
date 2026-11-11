@@ -112,6 +112,7 @@ export function libraryAccessRepairLink(
     const params = new URLSearchParams({
       connection: destination.id,
       repository: destination.repository,
+      version: String(destination.expectedVersion),
     });
     return { to: "/settings/vault" as const, search, hash: `loom-vault-github?${params}` };
   }
@@ -119,7 +120,10 @@ export function libraryAccessRepairLink(
     to: "/settings/connections" as const,
     search,
     hash:
-      destination.kind === "library-sign-in"
+      destination.kind === "library-sign-in" &&
+      (!connection ||
+        destination.environmentId === null ||
+        destination.environmentId === connection.libraryId)
         ? LIBRARY_SIGN_IN_TARGET
         : ((connection && destination.environmentId
             ? accessRepairTarget(

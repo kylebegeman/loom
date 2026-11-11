@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 const state = vi.hoisted(() => ({
   commands: {
     executeOperation: { run: vi.fn() },
+    operationOutcome: { run: vi.fn() },
     bindThread: { run: vi.fn() },
     prepareCopy: { run: vi.fn() },
     reopenCopy: { run: vi.fn() },
@@ -63,11 +64,13 @@ const state = vi.hoisted(() => ({
   configsAtom: {},
   providersAtom: {},
   nextId: 0,
+  readRegisteredCopies: vi.fn(),
+  identity: { issuer: "https://identity.test", subject: "original" },
 }));
 vi.mock("./state", () => ({
   projectLibrary: {
     ...state.commands,
-    copies: () => state.retainedQuery,
+    copies: Object.assign(() => state.retainedQuery, { run: state.readRegisteredCopies }),
     history: () => state.historyQuery,
     copyHealth: () => state.healthQuery,
     operations: () => state.operationsQuery,
@@ -127,11 +130,16 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => state.navigate,
 }));
 vi.mock("../vault/LibraryCloneRepair", () => ({ LibraryCloneRepair: () => null }));
+vi.mock("./LibraryRestoreRequestDialog", () => ({ LibraryRestoreRequestDialog: () => null }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
 vi.mock("./useLibraryLaunchRanking", () => ({ useLibraryLaunchRanking: state.ranking }));
 vi.mock("~/fork/switchboard/switchboardPicker", () => ({
   withSwitchboardEntries: (component: unknown) => component,
 }));
+vi.mock("~/state/session", () => ({
+  useEnvironmentSessionState: () => ({ data: { identity: state.identity } }),
+}));
+vi.mock("./LibraryAccessNotice", () => ({ LibraryAccessRepairNotice: () => null }));
 vi.mock("./ProfileReadiness", () => ({ ProfileReadiness: () => null }));
 vi.mock("./LibraryPalette", () => ({
   LibraryPaletteDialog: ({ children }: { children: import("react").ReactNode }) => <>{children}</>,
@@ -318,6 +326,9 @@ beforeEach(() => {
   for (const command of Object.values(commands)) command.run.mockReset();
   state.permission.mockReset().mockReturnValue(true);
   state.nextId = 0;
+  state.readRegisteredCopies.mockReset().mockResolvedValue(AsyncResult.success([]));
+  state.identity = { issuer: "https://identity.test", subject: "original" };
+  commands.operationOutcome.run.mockResolvedValue(AsyncResult.success(null));
   state.threadIds = [];
   state.placementTargets = [];
   const serverConfig = {
@@ -516,8 +527,15 @@ describe("saved legacy conversation recovery", () => {
       copy: null,
     };
     saveLibraryAttempt(key, JSON.stringify(preparation), storage);
-    commands.prepareCopy.run.mockResolvedValueOnce(failure("Receipt lost"));
-    commands.preparation.run.mockResolvedValueOnce(AsyncResult.success(recovered));
+    commands.operationOutcome.run.mockResolvedValueOnce(
+      AsyncResult.success({
+        kind: "prepare",
+        environmentId,
+        projectId: project.id,
+        state: "succeeded",
+        result: recovered,
+      }),
+    );
     await mount([]);
     await click("Retry conversation");
     expect(JSON.parse(storage.getItem(key)!)).toMatchObject({ copy: recovered });
@@ -525,7 +543,7 @@ describe("saved legacy conversation recovery", () => {
     renderer = undefined;
     await mount([]);
     await click("Retry conversation");
-    expect(commands.prepareCopy.run).toHaveBeenCalledOnce();
+    expect(commands.prepareCopy.run).not.toHaveBeenCalled();
     expect(commands.registerCopy.run).toHaveBeenCalledWith({
       environmentId: authorityId,
       input: { requestId: "old-registration", copy: recovered },
@@ -693,6 +711,7 @@ describe("new conversations with source settings", () => {
     await act(() => renderer!.unmount());
     renderer = undefined;
     await mount([restoredCopy]);
+    await click("Retry conversation");
     await click("Retry conversation");
     expectLaunched({
       environmentId,
@@ -952,6 +971,7 @@ describe("portable project launch", () => {
     expect({
       ...reviewed,
       snapshotRequestId: rejected.snapshotRequestId,
+      snapshotState: rejected.snapshotState,
       sourceReviewToken: rejected.sourceReviewToken,
       sourceSnapshotRejected: true,
     }).toEqual(rejected);
@@ -1001,6 +1021,7 @@ describe("portable project launch", () => {
     );
     await mount();
     expect(launch.reviewLatest).toBeNull();
+    await click("Retry conversation");
     await click("Retry conversation");
     expect(commands.snapshotCopy.run.mock.calls[1]).toEqual(snapshot);
     expect(commands.readCopyStatus.run).toHaveBeenCalledOnce();
@@ -1098,6 +1119,7 @@ describe("portable project launch", () => {
     renderer = undefined;
     await mount();
     await click("Retry conversation");
+    await click("Retry conversation");
     expect(commands.authorizeRecovery.run).toHaveBeenCalledOnce();
     expect(commands.restoreCopy.run).toHaveBeenCalledOnce();
     expect(commands.registerCopy.run.mock.calls[1]).toEqual(registration);
@@ -1192,6 +1214,7 @@ describe("portable project launch", () => {
     await mount([restoredCopy], { continuation: sourceSummary });
     expect(launch.held).toEqual({ title: "Continue: Original work", savedAt: held.createdAt });
     await click("Retry conversation");
+    await click("Retry conversation");
     expect(commands.restoreCopy.run).not.toHaveBeenCalled();
     expectLaunched({
       environmentId,
@@ -1239,6 +1262,7 @@ describe("portable project launch", () => {
     renderer = undefined;
     await mount([], { continuation: sourceSummary });
     expect(launch.held).toEqual({ title: "Continue: Original work", savedAt: null });
+    await click("Retry conversation");
     await click("Retry conversation");
     expect(commands.restoreCopy.run.mock.calls[0]![0].input.requestId).toBe(
       commands.restoreCopy.run.mock.calls[1]![0].input.requestId,
@@ -1581,6 +1605,9 @@ describe("held attempts and one-step starts", () => {
     // The binding names the first revision, and the computer refuses a project that differs from it.
     await mount([restoredCopy], { project: { ...project, brief: "Edited", revision: 2 } });
     await click("Retry conversation");
+    expect(commands.executeOperation.run).toHaveBeenCalledOnce();
+    expect(commands.operationOutcome.run).toHaveBeenCalledOnce();
+    await click("Retry conversation");
     expect(lastLaunch()).toMatchObject({ binding, project });
     expectLaunched({
       environmentId,
@@ -1692,6 +1719,7 @@ describe("held attempts and one-step starts", () => {
     renderer = undefined;
     await mount([siteCopy], { project: siteProject });
     expect(launch.workspace).toBe("worktree");
+    await click("Retry conversation");
     await click("Retry conversation");
     const [first, retried] = commands.executeOperation.run.mock.calls.map(([call]) => call.input);
     expect(first.request.input.workspace).toBe("worktree");
@@ -1978,6 +2006,7 @@ describe("starts that open the conversation before its files", () => {
     });
 
     await click("Retry conversation");
+    await click("Retry conversation");
     const [first, retried] = [launchInput(0), launchInput(1)];
     const files = first.request.input.files as { requestId: string; rootPath: string };
     expect(files).toMatchObject({ project, strategy: "clone", rootPath: launch.rootPath });
@@ -2096,4 +2125,19 @@ describe("starts that open the conversation before its files", () => {
     expect(commands.resolveBinding.run).not.toHaveBeenCalled();
     expect(state.navigate).toHaveBeenCalledOnce();
   });
+});
+
+it("keeps a saved launch bound to the account that initiated it", async () => {
+  commands.executeOperation.run.mockResolvedValueOnce(failure("Disconnected"));
+  await mount([restoredCopy]);
+  await click("Start conversation");
+  await act(() => renderer!.unmount());
+  renderer = undefined;
+  state.identity = { ...state.identity, subject: "another-account" };
+  await mount([restoredCopy]);
+  expect(launch.canCreate).toBe(false);
+  expect(launch.accessRepair?.kind).toBe("ownership");
+  await act(() => launch.submit());
+  expect(commands.operationOutcome.run).not.toHaveBeenCalled();
+  expect(commands.executeOperation.run).toHaveBeenCalledOnce();
 });

@@ -28,6 +28,7 @@ import {
   LibraryIdentityRouteScreen,
   ComputerIdentityRouteScreen,
 } from "./fork/library/LibraryIdentityScreen";
+import { LibraryRestoreRouteScreen } from "./fork/library/LibraryRestoreScreen";
 import { LibraryPrepareRouteScreen } from "./fork/library/LibraryPrepareScreen";
 import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
 import { LibraryTidyRouteScreen } from "./fork/library/LibraryTidy";
@@ -676,6 +677,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibraryPrepare: createNativeStackScreen({
       screen: LibraryPrepareRouteScreen,
       linking: "library/projects/:projectId/prepare/:authorityEnvironmentId",
+      options: pageRoute({ itemStyle: "standard" }),
+    }),
+    LibraryRestore: createNativeStackScreen({
+      screen: LibraryRestoreRouteScreen,
       options: pageRoute({ itemStyle: "standard" }),
     }),
     LibraryStart: createNativeStackScreen({

@@ -11,6 +11,7 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import {
+  libraryAccessRepairFromFailure,
   libraryContinuationContext,
   libraryCopyFolderConversations,
   libraryLaunchCanUseWorktree,
@@ -46,8 +47,6 @@ import {
   EnvironmentId,
   ThreadId,
   type ProjectId,
-  type RuntimeMode,
-  type ProviderInteractionMode,
 } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
@@ -61,7 +60,15 @@ import {
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useInsertionEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
@@ -82,7 +89,12 @@ import { useProject, useServerConfigs, useThreadShells } from "../../state/entit
 import { useEnvironments } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
-import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
+import {
+  readEnvironmentScope,
+  readEnvironmentSessionState,
+  useEnvironmentSessionState,
+  useEnvironmentsWithScope,
+} from "../../state/session";
 import {
   setComposerDraftText,
   flushComposerDrafts,
@@ -107,6 +119,7 @@ import {
   launchLibraryConversationNow,
   libraryLaunchFilesPlan,
   libraryLaunchOperationId,
+  reconcileLibraryLaunchOperation,
   readLibraryLaunchAttempt,
   encodeLibraryLaunchAttempt,
   type LibraryLaunchAttempt,
@@ -395,6 +408,7 @@ function LibraryStartContent(props: {
   }, []);
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const [cloneRepair, setCloneRepair] = useState<LibraryError["repair"]>(undefined);
   const [showGitHubSetup, setShowGitHubSetup] = useState(false);
   const [launchedThread, setLaunchedThread] = useState<Awaited<
@@ -411,27 +425,36 @@ function LibraryStartContent(props: {
     if (launchedThread && pending === null)
       navigation.dispatch(StackActions.replace("Thread", launchedThread));
   }, [launchedThread, pending, navigation]);
-  const [progress, setProgress] = useState(saved?.receipt ?? emptyLibraryLaunchReceipt());
-  const receipt = useRef<LibraryLaunchReceipt>(saved?.receipt ?? emptyLibraryLaunchReceipt()),
+  const initialReceipt: LibraryLaunchReceipt = saved
+    ? {
+        ...saved.receipt,
+        ...(saved.receipt.recoverySnapshotReview && !saved.receipt.recoverySnapshot
+          ? { snapshotState: saved.receipt.snapshotState ?? "unknown" }
+          : {}),
+        ...(saved.review.recoverySource && saved.receipt.intent && !saved.receipt.copy
+          ? { restoreState: saved.receipt.restoreState ?? "unknown" }
+          : {}),
+        ...(saved.receipt.intent && !saved.receipt.threadCreated && !saved.review.recoverySource
+          ? { launchState: saved.receipt.launchState ?? "unknown" }
+          : {}),
+      }
+    : emptyLibraryLaunchReceipt();
+  const [progress, setProgress] = useState(initialReceipt);
+  const receipt = useRef<LibraryLaunchReceipt>(initialReceipt),
     requestId = useRef(saved?.requestId ?? uuidv4()),
     threadId = useRef(saved?.threadId ?? ThreadId.make(uuidv4())),
     busy = useRef(false);
-  const reviewed = useRef<{
-    authorityEnvironmentId: EnvironmentId;
-    model: Pick<ReturnType<typeof buildModelOptions>[number], "key" | "selection">;
-    title: string;
-    mode: "reuse" | "folder" | "clone";
-    rootPath: string;
-    placementStrategy?: "reuse" | "clone";
-    placementOwnership?: "managed" | "borrowed";
-    copy: LibraryWorkingCopy | null;
-    recoverySource?: LibraryWorkingCopy;
-    carryContext: string;
-    keepOnComputer?: boolean;
-    workspace?: LibraryLaunchWorkspace;
-    runtimeMode?: RuntimeMode;
-    interactionMode?: ProviderInteractionMode;
-  } | null>(saved?.review ?? null);
+  const activeScreen = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops an unmounted launch form from dispatching later steps or replacing a newer draft
+  useEffect(() => {
+    activeScreen.current = true;
+    return () => {
+      activeScreen.current = false;
+    };
+  }, []);
+  const reviewed = useRef<(typeof LibraryLaunchAttempt.Type)["review"] | null>(
+    saved?.review ?? null,
+  );
   const [reviewState, setReviewState] = useState(saved?.review ?? null);
   const source = useEnvironmentQuery(
     authority.environmentId && props.sourceArchiveId
@@ -788,12 +811,17 @@ function LibraryStartContent(props: {
       : null;
   const canPull = useAtomValue(vcsEnvironment.pull.permissionAtom(execution));
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
+  const lookupOutcome = useAtomCommand(library.operationOutcome, { reportFailure: false });
   const executeOperation = useAtomCommand(library.executeOperation, { reportFailure: false });
   const prepare = useAtomCommand(library.prepareCopy, { reportFailure: false }),
     registerCopy = useAtomCommand(library.registerCopy, { reportFailure: false }),
     bind = useAtomCommand(library.bindThread, { reportFailure: false }),
     registerThread = useAtomCommand(library.registerThread, { reportFailure: false }),
     create = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const readRegisteredCopies = useAtomQueryRunner(library.copies, {
+    refresh: true,
+    reportFailure: false,
+  });
   const resolve = useAtomQueryRunner(library.resolveBinding, {
       refresh: true,
       reportFailure: false,
@@ -821,34 +849,60 @@ function LibraryStartContent(props: {
       (offlineCopy.keepOnComputer !== false) === keepOnComputer) &&
     supportsLoomFeature(config?.environment.capabilities, "project-workflows");
   const canExecuteOperation = useAtomValue(library.executeOperation.permissionAtom(execution));
+  const identity = useEnvironmentSessionState(execution)?.identity;
+  const authorityIdentity = useEnvironmentSessionState(authority.environmentId)?.identity;
+  const latestAuthority = useRef(authority.environmentId);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps in-flight launch writes bound to the selected Library after navigation or account changes
+  useInsertionEffect(() => {
+    latestAuthority.current = authority.environmentId;
+  });
+  const accountMatches =
+    (!reviewState?.initiator ||
+      (reviewState.initiator.issuer === identity?.issuer &&
+        reviewState.initiator.subject === identity?.subject)) &&
+    (!reviewState?.authorityInitiator ||
+      (reviewState.authorityInitiator.issuer === authorityIdentity?.issuer &&
+        reviewState.authorityInitiator.subject === authorityIdentity?.subject));
+  const canLookupOutcome = useAtomValue(library.operationOutcome.permissionAtom(execution));
+  const canCheckLaunch =
+    progress.launchState === "unknown" &&
+    canLookupOutcome &&
+    selectedHost?.entry.enabled === true &&
+    selectedHost.connection.phase === "connected";
   const canStart =
-    (offline ? offlineReady && canExecuteOperation : authority.ready) &&
-    !folderPending &&
-    hostReady &&
-    canBind &&
-    (offline || (canRegisterCopy && canRegisterThread)) &&
-    (!supportsFileLifecycle || keepFiles === null || canSetRetention) &&
-    (progress.intent !== null || copiesReady) &&
-    (progress.intent !== null || props.projectReady) &&
-    (resourceIds.length > 0 || repositories.length === 0) &&
-    (progress.threadCreated || chosenModel !== null) &&
-    (progress.copy !== null ||
-      mode !== "reuse" ||
-      selectedCopy?.state !== "released" ||
-      canReopen) &&
-    (progress.intent !== null || !overlappingRoot) &&
-    !launchProject.archived &&
-    !progress.recoverySnapshotRejected &&
-    (progress.copy !== null || (!recoveryAmbiguous && recoveryUnavailable === null)) &&
-    (progress.copy !== null || mode === "reuse"
-      ? progress.copy !== null || selectedCopy !== null
-      : (serverPlaces || serverRestores || rootPath.trim().length > 0) &&
-        (recoverySource
-          ? canRestoreCopy && canAuthorizeRecovery
-          : canPrepare && (mode !== "clone" || (execution !== null && writable.has(execution))))) &&
-    (!props.sourceArchiveId ||
-      progress.intent !== null ||
-      (source.data !== null && source.isSuccess && !source.isPending && source.error === null));
+    accountMatches &&
+    (canCheckLaunch ||
+      ((offline ? offlineReady && canExecuteOperation : authority.ready) &&
+        !folderPending &&
+        hostReady &&
+        canBind &&
+        (offline || (canRegisterCopy && canRegisterThread)) &&
+        (!supportsFileLifecycle || keepFiles === null || canSetRetention) &&
+        (progress.intent !== null || copiesReady) &&
+        (progress.intent !== null || props.projectReady) &&
+        (resourceIds.length > 0 || repositories.length === 0) &&
+        (progress.threadCreated || chosenModel !== null) &&
+        (progress.copy !== null ||
+          mode !== "reuse" ||
+          selectedCopy?.state !== "released" ||
+          canReopen) &&
+        (progress.intent !== null || !overlappingRoot) &&
+        !launchProject.archived &&
+        !progress.recoverySnapshotRejected &&
+        (progress.copy !== null || (!recoveryAmbiguous && recoveryUnavailable === null)) &&
+        (progress.copy !== null || mode === "reuse"
+          ? progress.copy !== null || selectedCopy !== null
+          : (serverPlaces || serverRestores || rootPath.trim().length > 0) &&
+            (recoverySource
+              ? canRestoreCopy && canAuthorizeRecovery
+              : canPrepare &&
+                (mode !== "clone" || (execution !== null && writable.has(execution))))) &&
+        (!props.sourceArchiveId ||
+          progress.intent !== null ||
+          (source.data !== null &&
+            source.isSuccess &&
+            !source.isPending &&
+            source.error === null))));
   async function persistAttempt() {
     const review = reviewed.current;
     if (!review) throw new Error("Review this preparation before saving it.");
@@ -862,9 +916,18 @@ function LibraryStartContent(props: {
     if (serialized.length > 256 * 1024)
       throw new Error("This preparation is too large to save safely on this device.");
     await savePreferences({
-      transform: (current) => ({
-        loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
-      }),
+      transform: (current) => {
+        const previous = readLibraryLaunchAttempt(current.loomLibraryLaunches?.[attemptKey]);
+        if (previous && previous.requestId !== requestId.current)
+          throw new Error(
+            "Another saved request now owns this form. Keep the original request in history for recovery.",
+          );
+        if (!previous && !activeScreen.current)
+          throw new Error("This form was closed. Recover the original request from its history.");
+        return {
+          loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
+        };
+      },
     });
   }
   async function start() {
@@ -876,7 +939,7 @@ function LibraryStartContent(props: {
     if (
       current?.entry.enabled !== true ||
       current.connection.phase !== "connected" ||
-      !readEnvironmentScope(execution, AuthOrchestrationOperateScope)
+      (!canCheckLaunch && !readEnvironmentScope(execution, AuthOrchestrationOperateScope))
     )
       return;
     if (!reviewed.current) {
@@ -902,6 +965,8 @@ function LibraryStartContent(props: {
       setCopyId(selectedCopy?.id ?? null);
       reviewed.current = {
         authorityEnvironmentId: authority.environmentId,
+        ...(identity ? { initiator: identity } : {}),
+        ...(authorityIdentity ? { authorityInitiator: authorityIdentity } : {}),
         model: chosenModel,
         ...(runtimeMode ? { runtimeMode } : {}),
         ...(interactionMode ? { interactionMode } : {}),
@@ -925,12 +990,33 @@ function LibraryStartContent(props: {
       setError("Reconnect the library used to start this preparation before resuming it.");
       return;
     }
+    const assertCurrent = () => {
+      const currentIdentity = readEnvironmentSessionState(execution)?.identity;
+      const currentAuthorityIdentity = readEnvironmentSessionState(
+        review.authorityEnvironmentId,
+      )?.identity;
+      if (
+        !activeScreen.current ||
+        !navigation.isFocused() ||
+        latestAuthority.current !== review.authorityEnvironmentId ||
+        (review.initiator &&
+          (review.initiator.issuer !== currentIdentity?.issuer ||
+            review.initiator.subject !== currentIdentity?.subject)) ||
+        (review.authorityInitiator &&
+          (review.authorityInitiator.issuer !== currentAuthorityIdentity?.issuer ||
+            review.authorityInitiator.subject !== currentAuthorityIdentity?.subject))
+      )
+        throw new Error(
+          "Return to the original Library and account before continuing this conversation request.",
+        );
+    };
     const executeLaunch = async (
       operationId: string,
       input: Parameters<Parameters<typeof launchLibraryConversationNow>[4]["execute"]>[1],
       localProjectId: ProjectId | null,
       managed: boolean,
     ) => {
+      assertCurrent();
       const currentModels = buildModelOptions(
         config,
         review.model.selection,
@@ -980,7 +1066,9 @@ function LibraryStartContent(props: {
     setInstantLaunch(instantFiles !== null);
     setPending("Preparing conversation…");
     setError(null);
+    setAccessRepair(undefined);
     try {
+      assertCurrent();
       const continuation =
         receipt.current.intent?.continuationOf ??
         (source.data
@@ -1001,212 +1089,274 @@ function LibraryStartContent(props: {
         setProgress({ ...receipt.current });
         setPending(label);
       };
-      const target = instantFiles
-        ? await launchLibraryConversationNow(
-            intent,
-            receipt.current,
-            requestId.current,
-            instantFiles,
-            {
-              // Only files Loom manages take Keep; a found checkout or chosen folder stays the user's.
-              execute: (operationId, input) =>
-                executeLaunch(
-                  operationId,
-                  input,
-                  null,
-                  instantFiles.kind === "files"
-                    ? libraryPlacementManaged(
-                        review.placementOwnership ? { ownership: review.placementOwnership } : null,
-                        instantFiles.request.strategy,
-                      )
-                    : instantFiles.copy.ownership === "managed",
+      const recovered =
+        canCheckLaunch && receipt.current.intent
+          ? await reconcileLibraryLaunchOperation(
+              receipt.current.intent,
+              receipt.current,
+              libraryLaunchOperationId(requestId.current),
+              {
+                assertCurrent,
+                lookupLaunch: async (target) => unwrap(await lookupOutcome(target)),
+                persist,
+              },
+            )
+          : null;
+      const target =
+        recovered ??
+        (instantFiles
+          ? await launchLibraryConversationNow(
+              intent,
+              receipt.current,
+              requestId.current,
+              instantFiles,
+              {
+                assertCurrent,
+                lookup: async (target) => unwrap(await lookupOutcome(target)),
+                // Only files Loom manages take Keep; a found checkout or chosen folder stays the user's.
+                execute: (operationId, input) =>
+                  executeLaunch(
+                    operationId,
+                    input,
+                    null,
+                    instantFiles.kind === "files"
+                      ? libraryPlacementManaged(
+                          review.placementOwnership
+                            ? { ownership: review.placementOwnership }
+                            : null,
+                          instantFiles.request.strategy,
+                        )
+                      : instantFiles.copy.ownership === "managed",
+                  ),
+                progress: reportProgress,
+                persist,
+              },
+            )
+          : await launchLibraryConversation(intent, receipt.current, {
+              assertCurrent,
+              lookupLaunch: async (target) => unwrap(await lookupOutcome(target)),
+              launchOperationId: libraryLaunchOperationId(requestId.current),
+              registeredCopies: async () =>
+                unwrap(
+                  await readRegisteredCopies({
+                    environmentId: review.authorityEnvironmentId,
+                    input: { projectId: intent.project.id },
+                  }),
                 ),
-              progress: reportProgress,
               persist,
-            },
-          )
-        : await launchLibraryConversation(intent, receipt.current, {
-            persist,
-            prepare: async (intent) => {
-              if (review.recoverySource) {
-                return preparePortableLibraryLaunchCopy(
-                  {
-                    sourceCopy: review.recoverySource,
-                    project: intent.project,
-                    destinationEnvironmentId: execution,
-                    authorityEnvironmentId: authority.environmentId!,
-                    rootPath: review.rootPath,
-                    resourceIds: intent.resourceIds,
-                    requestId: requestId.current,
-                  },
+              prepare: async (intent) => {
+                assertCurrent();
+                if (review.recoverySource) {
+                  return preparePortableLibraryLaunchCopy(
+                    {
+                      sourceCopy: review.recoverySource,
+                      project: intent.project,
+                      destinationEnvironmentId: execution,
+                      authorityEnvironmentId: authority.environmentId!,
+                      rootPath: review.rootPath,
+                      resourceIds: intent.resourceIds,
+                      requestId: requestId.current,
+                    },
+                    receipt.current,
+                    {
+                      lookup: async (target) => unwrap(await lookupOutcome(target)),
+                      copies: async () =>
+                        unwrap(
+                          await readRegisteredCopies({
+                            environmentId: review.authorityEnvironmentId,
+                            input: { projectId: intent.project.id },
+                          }),
+                        ),
+                      readStatus: async (input) => unwrap(await readSourceStatus(input)),
+                      snapshot: async (input) => {
+                        assertCurrent();
+                        return unwrap(await snapshotCopy(input));
+                      },
+                      registerCopy: async (input) => {
+                        assertCurrent();
+                        assertCurrent();
+                        unwrap(
+                          await registerCopy({ environmentId: authority.environmentId!, input }),
+                        );
+                      },
+                      authorize: async (input) => {
+                        assertCurrent();
+                        return unwrap(await authorizeRecovery(input));
+                      },
+                      restore: async (input) => {
+                        assertCurrent();
+                        return unwrap(await restoreCopy(input));
+                      },
+                      persist,
+                      progress: setPending,
+                    },
+                  );
+                }
+                const copy =
+                  review.mode === "reuse" &&
+                  review.copy &&
+                  (review.copy.ownership === "managed" || offlineReady)
+                    ? review.copy.state === "released"
+                      ? await restoreLibraryLaunchCopy(
+                          review.copy,
+                          `${requestId.current}:reopen`,
+                          async (input) => {
+                            if (
+                              !supportsFileLifecycle ||
+                              !appAtomRegistry.get(library.reopenCopy.permissionAtom(execution))
+                            )
+                              throw new Error(
+                                "This computer needs permission to restore saved project files.",
+                              );
+                            assertCurrent();
+                            return unwrap(await reopen(input));
+                          },
+                        )
+                      : review.copy
+                    : unwrap(
+                        await prepare({
+                          environmentId: execution,
+                          input: {
+                            requestId: `${requestId.current}:prepare`,
+                            project: intent.project,
+                            ...(review.mode === "reuse" && review.copy
+                              ? { rootPath: review.copy.rootPath }
+                              : review.placementStrategy
+                                ? {}
+                                : { rootPath: review.rootPath }),
+                            strategy:
+                              review.placementStrategy ??
+                              (review.mode === "clone" ? "clone" : "reuse"),
+                            resourceIds: intent.resourceIds,
+                          },
+                        }),
+                      );
+                if (review.mode === "reuse" && review.copy && copy.id !== review.copy.id)
+                  throw new Error("The prepared folder does not match the selected files.");
+                assertCurrent();
+                return copy;
+              },
+              registerCopy: async (copy) => {
+                assertCurrent();
+                if (
+                  offlineReady &&
+                  copy.id === offlineCopy?.id &&
+                  copy.registered !== false &&
+                  copy.state === "ready"
+                )
+                  return;
+                unwrap(
+                  await registerCopy({
+                    environmentId: authority.environmentId!,
+                    input: { requestId: `${requestId.current}:copy`, copy },
+                  }),
+                );
+              },
+              resolve: async (input) =>
+                unwrap(
+                  await resolve({
+                    environmentId: execution,
+                    input,
+                  }),
+                ),
+              durableLaunch: supportsLoomFeature(
+                config?.environment.capabilities,
+                "project-workflows",
+              )
+                ? async (input) => {
+                    const localProjectId = receipt.current.resolved?.localProjectId;
+                    if (!localProjectId)
+                      throw new Error("Review the selected files before starting.");
+                    await executeLaunch(
+                      libraryLaunchOperationId(requestId.current),
+                      input,
+                      localProjectId,
+                      receipt.current.copy?.ownership === "managed",
+                    );
+                  }
+                : undefined,
+              create: async (localProjectId) => {
+                assertCurrent();
+                const currentModels = buildModelOptions(
+                  config,
+                  review.model.selection,
+                  undefined,
+                  localProjectId,
+                );
+                if (
+                  !currentModels.some(
+                    (model) => model.key === review.model.key && !model.isUnavailable,
+                  )
+                )
+                  throw new Error(
+                    "This model is unavailable for the chosen workspace. Review provider settings.",
+                  );
+                unwrap(
+                  await create({
+                    environmentId: execution,
+                    input: {
+                      commandId: CommandId.make(`${requestId.current}:thread`),
+                      threadId: threadId.current,
+                      projectId: localProjectId,
+                      title: review.title,
+                      modelSelection: review.model.selection,
+                      runtimeMode:
+                        review.runtimeMode ??
+                        libraryLaunchDefaults({
+                          settings: config?.settings,
+                          localProjectId,
+                        }).runtimeMode,
+                      interactionMode: review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
+                      branch: null,
+                      worktreePath: null,
+                    },
+                  }),
+                );
+              },
+              bind: (input) =>
+                bindLibraryLaunchConversation(
+                  input,
                   receipt.current,
+                  review.keepOnComputer,
+                  requestId.current,
                   {
-                    readStatus: async (input) => unwrap(await readSourceStatus(input)),
-                    snapshot: async (input) => unwrap(await snapshotCopy(input)),
+                    bind: async (input) => {
+                      assertCurrent();
+                      unwrap(await bind({ environmentId: execution, input }));
+                    },
+                    setRetention: async (input) => {
+                      assertCurrent();
+                      if (!supportsFileLifecycle)
+                        throw new Error("Update this computer to save the Keep files setting.");
+                      return unwrap(await setRetention({ environmentId: execution, input }));
+                    },
                     registerCopy: async (input) => {
                       unwrap(
                         await registerCopy({ environmentId: authority.environmentId!, input }),
                       );
                     },
-                    authorize: async (input) => unwrap(await authorizeRecovery(input)),
-                    restore: async (input) => unwrap(await restoreCopy(input)),
                     persist,
-                    progress: setPending,
                   },
+                ),
+              snapshot: async () =>
+                unwrap(
+                  await snapshot({
+                    environmentId: execution,
+                    input: { threadId: threadId.current },
+                  }),
+                ),
+              registerHistory: async (archive) => {
+                assertCurrent();
+                unwrap(
+                  await registerThread({
+                    environmentId: authority.environmentId!,
+                    input: { requestId: `${requestId.current}:history`, thread: archive },
+                  }),
                 );
-              }
-              const copy =
-                review.mode === "reuse" &&
-                review.copy &&
-                (review.copy.ownership === "managed" || offlineReady)
-                  ? review.copy.state === "released"
-                    ? await restoreLibraryLaunchCopy(
-                        review.copy,
-                        `${requestId.current}:reopen`,
-                        async (input) => {
-                          if (
-                            !supportsFileLifecycle ||
-                            !appAtomRegistry.get(library.reopenCopy.permissionAtom(execution))
-                          )
-                            throw new Error(
-                              "This computer needs permission to restore saved project files.",
-                            );
-                          return unwrap(await reopen(input));
-                        },
-                      )
-                    : review.copy
-                  : unwrap(
-                      await prepare({
-                        environmentId: execution,
-                        input: {
-                          requestId: `${requestId.current}:prepare`,
-                          project: intent.project,
-                          ...(review.mode === "reuse" && review.copy
-                            ? { rootPath: review.copy.rootPath }
-                            : review.placementStrategy
-                              ? {}
-                              : { rootPath: review.rootPath }),
-                          strategy:
-                            review.placementStrategy ??
-                            (review.mode === "clone" ? "clone" : "reuse"),
-                          resourceIds: intent.resourceIds,
-                        },
-                      }),
-                    );
-              if (review.mode === "reuse" && review.copy && copy.id !== review.copy.id)
-                throw new Error("The prepared folder does not match the selected files.");
-              return copy;
-            },
-            registerCopy: async (copy) => {
-              if (
-                offlineReady &&
-                copy.id === offlineCopy?.id &&
-                copy.registered !== false &&
-                copy.state === "ready"
-              )
-                return;
-              unwrap(
-                await registerCopy({
-                  environmentId: authority.environmentId!,
-                  input: { requestId: `${requestId.current}:copy`, copy },
-                }),
-              );
-            },
-            resolve: async (input) =>
-              unwrap(
-                await resolve({
-                  environmentId: execution,
-                  input,
-                }),
-              ),
-            durableLaunch: supportsLoomFeature(
-              config?.environment.capabilities,
-              "project-workflows",
-            )
-              ? async (input) => {
-                  const localProjectId = receipt.current.resolved?.localProjectId;
-                  if (!localProjectId)
-                    throw new Error("Review the selected files before starting.");
-                  await executeLaunch(
-                    libraryLaunchOperationId(requestId.current),
-                    input,
-                    localProjectId,
-                    receipt.current.copy?.ownership === "managed",
-                  );
-                }
-              : undefined,
-            create: async (localProjectId) => {
-              const currentModels = buildModelOptions(
-                config,
-                review.model.selection,
-                undefined,
-                localProjectId,
-              );
-              if (
-                !currentModels.some(
-                  (model) => model.key === review.model.key && !model.isUnavailable,
-                )
-              )
-                throw new Error(
-                  "This model is unavailable for the chosen workspace. Review provider settings.",
-                );
-              unwrap(
-                await create({
-                  environmentId: execution,
-                  input: {
-                    commandId: CommandId.make(`${requestId.current}:thread`),
-                    threadId: threadId.current,
-                    projectId: localProjectId,
-                    title: review.title,
-                    modelSelection: review.model.selection,
-                    runtimeMode:
-                      review.runtimeMode ??
-                      libraryLaunchDefaults({
-                        settings: config?.settings,
-                        localProjectId,
-                      }).runtimeMode,
-                    interactionMode: review.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
-                    branch: null,
-                    worktreePath: null,
-                  },
-                }),
-              );
-            },
-            bind: (input) =>
-              bindLibraryLaunchConversation(
-                input,
-                receipt.current,
-                review.keepOnComputer,
-                requestId.current,
-                {
-                  bind: async (input) => {
-                    unwrap(await bind({ environmentId: execution, input }));
-                  },
-                  setRetention: async (input) => {
-                    if (!supportsFileLifecycle)
-                      throw new Error("Update this computer to save the Keep files setting.");
-                    return unwrap(await setRetention({ environmentId: execution, input }));
-                  },
-                  registerCopy: async (input) => {
-                    unwrap(await registerCopy({ environmentId: authority.environmentId!, input }));
-                  },
-                  persist,
-                },
-              ),
-            snapshot: async () =>
-              unwrap(
-                await snapshot({ environmentId: execution, input: { threadId: threadId.current } }),
-              ),
-            registerHistory: async (archive) => {
-              unwrap(
-                await registerThread({
-                  environmentId: authority.environmentId!,
-                  input: { requestId: `${requestId.current}:history`, thread: archive },
-                }),
-              );
-            },
-            progress: reportProgress,
-          });
+              },
+              progress: reportProgress,
+            }));
+      assertCurrent();
       if (props.sourceArchiveId && review.carryContext.trim()) {
         setComposerDraftText(scopedThreadKey(target), review.carryContext);
         await flushComposerDrafts();
@@ -1214,11 +1364,13 @@ function LibraryStartContent(props: {
       const shared =
         props.incomingShareId !== undefined &&
         (await addIncomingShare(incomingShare, scopedThreadKey(target), config, consumeShare));
-      refreshLibraryWork(authority.environmentId, launchProject.id);
+      assertCurrent();
+      refreshLibraryWork(review.authorityEnvironmentId, launchProject.id);
       await savePreferences({
         transform: (current) => {
           const next = { ...current.loomLibraryLaunches };
-          delete next[attemptKey];
+          if (readLibraryLaunchAttempt(next[attemptKey])?.requestId === requestId.current)
+            delete next[attemptKey];
           return { loomLibraryLaunches: next };
         },
       });
@@ -1227,6 +1379,7 @@ function LibraryStartContent(props: {
       setLaunchedThread(target);
     } catch (cause) {
       setCloneRepair(isLibraryErrorValue(cause) ? cause.repair : undefined);
+      setAccessRepair(libraryAccessRepairFromFailure(cause, execution));
       setError(
         cause instanceof Error
           ? cause.message
@@ -1246,13 +1399,30 @@ function LibraryStartContent(props: {
   async function startOver() {
     const review = reviewed.current;
     if (busy.current || folderBusy.current || !review) return;
+    if (!accountMatches || latestAuthority.current !== review.authorityEnvironmentId) return;
     // Held while the attempt is forgotten, so Resume cannot run it meanwhile.
     busy.current = true;
+    const checkBeforeForget = async () => {
+      if (receipt.current.launchState !== undefined && receipt.current.intent) {
+        const result = unwrap(
+          await lookupOutcome({
+            environmentId: receipt.current.intent.executionEnvironmentId,
+            input: { requestId: libraryLaunchOperationId(requestId.current), kind: "launch" },
+          }),
+        );
+        if (result?.state === "running" || result?.state === "queued")
+          throw new Error(
+            "The original conversation request is still running. Check its result before starting another.",
+          );
+      }
+    };
     try {
+      await checkBeforeForget();
       await savePreferences({
         transform: (current) => {
           const next = { ...current.loomLibraryLaunches };
-          delete next[attemptKey];
+          if (readLibraryLaunchAttempt(next[attemptKey])?.requestId === requestId.current)
+            delete next[attemptKey];
           return { loomLibraryLaunches: next };
         },
       });
@@ -1288,6 +1458,7 @@ function LibraryStartContent(props: {
     setError(null);
     try {
       delete receipt.current.recoverySnapshotReview;
+      receipt.current.snapshotState = "ready";
       delete receipt.current.recoverySnapshotRejected;
       receipt.current.recoverySnapshotAttempt = (receipt.current.recoverySnapshotAttempt ?? 0) + 1;
       await persistAttempt();
@@ -1896,7 +2067,28 @@ function LibraryStartContent(props: {
       {modelKey !== null && !chosenModel && !progress.threadCreated ? (
         <LibraryNotice detail="The selected model is unavailable. Restore it in provider settings before resuming this preparation." />
       ) : null}
-      {error ? <LibraryNotice error={error} /> : null}
+      {!accountMatches ? (
+        <LibraryNotice
+          error="Sign in with the account that started this conversation request."
+          accessRepair={{ kind: "ownership" }}
+          accessContext={{
+            environmentId: execution,
+            authorityEnvironmentId: reviewState?.authorityEnvironmentId,
+            originalAccount: reviewState?.initiator,
+          }}
+        />
+      ) : null}
+      {error ? (
+        <LibraryNotice
+          error={error}
+          accessRepair={accessRepair}
+          accessContext={{
+            environmentId: execution,
+            authorityEnvironmentId: reviewState?.authorityEnvironmentId,
+            originalAccount: reviewState?.initiator,
+          }}
+        />
+      ) : null}
       {error && cloneRepair && cloneRepair.environmentId === execution ? (
         <>
           <Button
@@ -1924,7 +2116,13 @@ function LibraryStartContent(props: {
       <Button
         label={
           pending ??
-          (progress.intent ? "Resume starting work" : warning ? "Continue anyway" : "Start work")
+          (progress.launchState === "unknown"
+            ? "Check conversation result"
+            : progress.intent
+              ? "Resume starting work"
+              : warning
+                ? "Continue anyway"
+                : "Start work")
         }
         tone="primary"
         fullWidth

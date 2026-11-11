@@ -7,6 +7,7 @@ import { act, render } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
   vaultFeature: false,
+  writeAllowed: true,
   commands: { prepare: {}, register: {}, inspect: {}, outcome: {} },
   outcome: vi.fn(),
   attempt: null as unknown,
@@ -62,7 +63,8 @@ vi.mock("./state", () => ({
     connected: true,
     environments: [computer("dorothy", "Dorothy"), computer("air", "Air")],
   }),
-  useLibraryPermission: () => true,
+  useLibraryPermission: (command: unknown) =>
+    command === state.commands.outcome || state.writeAllowed,
   useAccessBlock: () => null,
 }));
 vi.mock("../vault/GitHubConnectionPicker", () => ({
@@ -229,9 +231,16 @@ it("uses a browsed folder only when it holds the project, and downloads into a n
 it("checks a persisted preparation before retrying and leaves running work alone", async () => {
   state.prepare.mockReset();
   state.register.mockReset();
-  state.outcome
-    .mockReset()
-    .mockResolvedValue({ _tag: "Success", value: { state: "running", result: null } });
+  state.outcome.mockReset().mockResolvedValue({
+    _tag: "Success",
+    value: {
+      kind: "prepare",
+      environmentId: "air",
+      projectId: project.id,
+      state: "running",
+      result: null,
+    },
+  });
   state.attempt = {
     environmentId: "air",
     input: { requestId: "original", project, strategy: "clone" },
@@ -323,5 +332,30 @@ it("pins the reviewed Vault route and blocks hosts that cannot honor it", async 
     ]);
   } finally {
     state.vaultFeature = false;
+  }
+});
+
+it("checks a saved preparation without issuing a prepare or registration write", async () => {
+  state.writeAllowed = false;
+  state.attempt = {
+    environmentId: "air",
+    input: { requestId: "original-prepare", project, strategy: "clone" },
+    registerRequestId: "original-registration",
+    copy: null,
+  };
+  state.outcome.mockReset().mockResolvedValue({ _tag: "Success", value: null });
+  state.prepare.mockClear();
+  state.register.mockClear();
+  try {
+    await using _screen = await render(
+      <CopyDialog project={project} strategy="clone" onSaved={vi.fn()} onClose={vi.fn()} />,
+    );
+    await press("Retry preparation");
+    await vi.waitFor(() => expect(state.outcome).toHaveBeenCalledOnce());
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.register).not.toHaveBeenCalled();
+  } finally {
+    state.attempt = null;
+    state.writeAllowed = true;
   }
 });

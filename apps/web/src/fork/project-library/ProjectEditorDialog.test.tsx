@@ -488,6 +488,9 @@ it("migrates a matching legacy saved creation without submitting it", async () =
   );
   expect(input().readOnly).toBe(true);
   expect(state.create).not.toHaveBeenCalled();
-  expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual(legacy);
+  expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual({
+    ...legacy,
+    state: "ready",
+  });
   expect(readLibraryAttempt(legacyKey, localStorage)).toBeNull();
 });

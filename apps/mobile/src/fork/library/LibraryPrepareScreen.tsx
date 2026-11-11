@@ -117,6 +117,8 @@ function LibraryPrepareContent({
   );
   const canUseVault = useAtomValue(libraryGitHub.readiness.permissionAtom(execution));
   const writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
+  const canLookup = useAtomValue(library.operationOutcome.permissionAtom(execution));
+  const checkingSaved = attempt?.state === "unknown" || attempt?.registration === "unknown";
   const canPrepare = useAtomValue(library.prepareCopy.permissionAtom(execution));
   const canRegister = useAtomValue(library.registerCopy.permissionAtom(authorityEnvironmentId));
   const prepare = useAtomCommand(library.prepareCopy, { reportFailure: false });
@@ -208,9 +210,15 @@ function LibraryPrepareContent({
       !execution
     )
       return;
-    if (!copy && (!connected || !supported || !canPrepare || !writable.has(execution))) return;
+    if (
+      checkingSaved
+        ? !canLookup
+        : !copy && (!connected || !supported || !canPrepare || !writable.has(execution))
+    )
+      return;
     if (!copy && !attempt && (!rootPath.trim() || !destinationReady)) return;
-    if (!canRegister || (usesVault && (!vaultSupported || !canUseVault))) return;
+    if (!checkingSaved && (!canRegister || (usesVault && (!vaultSupported || !canUseVault))))
+      return;
     busy.current = true;
     setPending(true);
     setError(null);
@@ -243,6 +251,7 @@ function LibraryPrepareContent({
       const complete = await runSubmittedLibraryProjectRequest(submitted, authorityEnvironmentId, {
         persist: requests.persist,
         identity,
+        currentIdentity: () => readEnvironmentSessionState(execution)?.identity,
         lookup: async ({ environmentId, requestId, kind }) =>
           unwrap(await lookup({ environmentId, input: { requestId, kind } })),
         execute: async (saved) => {
@@ -256,6 +265,7 @@ function LibraryPrepareContent({
       assertLibraryProjectInitiator(complete, currentIdentity);
       if (complete.state === "succeeded" && !checking) {
         await registerSubmittedLibraryProjectCopy(complete, authorityEnvironmentId, {
+          currentIdentity: () => readEnvironmentSessionState(execution)?.identity,
           persist: requests.persist,
           copies: async () => {
             requestEnvironmentId = authorityEnvironmentId;
@@ -270,6 +280,7 @@ function LibraryPrepareContent({
         });
       } else if (complete.registration === "unknown") {
         await registerSubmittedLibraryProjectCopy(complete, authorityEnvironmentId, {
+          currentIdentity: () => readEnvironmentSessionState(execution)?.identity,
           persist: requests.persist,
           copies: async () => {
             requestEnvironmentId = authorityEnvironmentId;
@@ -614,9 +625,11 @@ function LibraryPrepareContent({
             !projectReady ||
             chosenProject.archived ||
             !execution ||
-            !canRegister ||
-            (usesVault && (!vaultSupported || !canUseVault)) ||
-            (!copy &&
+            (checkingSaved
+              ? !canLookup
+              : !canRegister || (usesVault && (!vaultSupported || !canUseVault))) ||
+            (!checkingSaved &&
+              !copy &&
               (!connected ||
                 !supported ||
                 !canPrepare ||

@@ -10,7 +10,7 @@ import { randomUUID } from "~/lib/utils";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
-  LibraryError,
+  type LibraryError,
   LibraryProject,
   LibraryWorkingCopy,
   LibraryCreateProjectRequest,
@@ -25,6 +25,8 @@ import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useEnvironmentQuery } from "~/state/query";
 import { useLibraryAttempt } from "./attempts";
+import { useEnvironmentSessionState } from "~/state/session";
+import { useStableCallback } from "~/hooks/useStableCallback";
 
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import {
@@ -48,18 +50,31 @@ import {
   useLibraryProjects,
   useLibraryPermission,
 } from "./state";
-import { LibraryAccessNotice } from "./LibraryAccessNotice";
+import { LibraryAccessNotice, LibraryAccessRepairNotice } from "./LibraryAccessNotice";
 
-const isLibraryError = Schema.is(LibraryError);
+const isProject = Schema.is(LibraryProject);
+const isCopy = Schema.is(LibraryWorkingCopy);
+const ImportRequest = Schema.Struct({
+  authorityId: Schema.optionalKey(EnvironmentId),
+  initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
+  authorityInitiator: Schema.optionalKey(
+    Schema.Struct({ issuer: Schema.String, subject: Schema.String }),
+  ),
+  creation: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
+  preparation: Schema.optionalKey(Schema.Literals(["unknown", "ready"])),
+  registration: Schema.optionalKey(Schema.Literals(["unknown", "ready", "succeeded"])),
+  environmentId: EnvironmentId,
+  rootPath: Schema.String,
+  createInput: Schema.NullOr(LibraryCreateProjectRequest),
+  project: Schema.NullOr(LibraryProject),
+  prepareRequestId: Schema.String,
+  registerRequestId: Schema.String,
+  copy: Schema.NullOr(LibraryWorkingCopy),
+});
 const ImportAttempt = Schema.NullOr(
   Schema.Struct({
-    environmentId: EnvironmentId,
-    rootPath: Schema.String,
-    createInput: Schema.NullOr(LibraryCreateProjectRequest),
-    project: Schema.NullOr(LibraryProject),
-    prepareRequestId: Schema.String,
-    registerRequestId: Schema.String,
-    copy: Schema.NullOr(LibraryWorkingCopy),
+    ...ImportRequest.fields,
+    previous: Schema.optionalKey(Schema.Array(ImportRequest)),
   }),
 );
 
@@ -95,8 +110,12 @@ export function ImportProjectDialog({
 }) {
   // Archived projects tell a folder's archived owner apart from one the Library no longer has.
   const library = useLibraryProjects(true);
-  const [attempt, saveAttempt] = useLibraryAttempt(
-    `loom:library:import:${library.authorityId}`,
+  const [authorityId, pinAuthority] = useState(library.authorityId);
+  if (!authorityId && library.authorityId) pinAuthority(library.authorityId);
+  const correctAuthority = authorityId !== null && library.authorityId === authorityId;
+  const authorityIdentity = useEnvironmentSessionState(authorityId).data?.identity;
+  const [attempt, storeAttempt, unreadable] = useLibraryAttempt(
+    `loom:library:import:${authorityId}`,
     ImportAttempt,
   );
   const primaryId = usePrimaryEnvironmentId();
@@ -127,10 +146,54 @@ export function ImportProjectDialog({
       ? attempt.registerRequestId
       : null,
   );
-  const saved = attempt?.registerRequestId === resumed ? attempt : null;
+  const attempts = attempt ? [attempt, ...(attempt.previous ?? [])] : [];
+  const saved = attempts.find((entry) => entry.registerRequestId === resumed) ?? null;
+  const saveAttempt = useStableCallback(
+    (
+      value: typeof ImportRequest.Type | null,
+      onlyIf?: (latest: typeof ImportRequest.Type | null) => boolean,
+    ) => {
+      const requestId = value?.registerRequestId ?? saved?.registerRequestId;
+      const latest = onlyIf
+        ? (attempts.find((entry) => onlyIf(entry)) ?? null)
+        : (attempts.find((entry) => entry.registerRequestId === requestId) ?? null);
+      if (onlyIf && !onlyIf(latest)) return;
+      const previous = attempts.filter(
+        (entry) =>
+          entry.registerRequestId !== (value?.registerRequestId ?? latest?.registerRequestId),
+      );
+      storeAttempt(
+        value
+          ? { ...value, previous }
+          : previous[0]
+            ? { ...previous[0], previous: previous.slice(1) }
+            : null,
+      );
+    },
+  );
   const [hostId, setHostId] = useState<EnvironmentId | null>(
     saved?.environmentId ?? initialHostId ?? defaultHostId,
   );
+  const identity = useEnvironmentSessionState(hostId).data?.identity;
+  const accountMatches =
+    (!saved?.initiator ||
+      (saved.initiator.issuer === identity?.issuer &&
+        saved.initiator.subject === identity?.subject)) &&
+    (!saved?.authorityInitiator ||
+      (saved.authorityInitiator.issuer === authorityIdentity?.issuer &&
+        saved.authorityInitiator.subject === authorityIdentity?.subject));
+  const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prevents a late import reply from continuing after this dialog closes
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const active = useStableCallback(
+    () => mounted.current && open && correctAuthority && accountMatches,
+  );
+  const submitting = useRef(false);
   const [page, setPage] = useState<
     "computers" | "folders" | "project" | "choose-project" | "name" | "brief"
   >(
@@ -204,9 +267,22 @@ export function ImportProjectDialog({
   const [error, setError] = useState<string | null>(null);
   const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
+  const lookup = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
   const prepare = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
+  const canLookup = useLibraryPermission(
+    projectLibrary.operationOutcome,
+    saved?.project ? saved.environmentId : authorityId,
+  );
+  const checkingSaved =
+    saved !== null &&
+    ((!saved.project && saved.creation !== "ready") ||
+      (saved.project && !saved.copy && saved.preparation !== "ready") ||
+      (saved.copy?.state === "ready" &&
+        (saved.registration === undefined ||
+          saved.registration === "unknown" ||
+          saved.registration === "succeeded")));
   const canInspect = useLibraryPermission(projectLibrary.inspectFolder, hostId);
   const canPrepare = useLibraryPermission(projectLibrary.prepareCopy, hostId);
   const canCreate = useLibraryPermission(projectLibrary.createProject, library.authorityId);
@@ -329,27 +405,45 @@ export function ImportProjectDialog({
     readonly title: string;
     readonly inspection: LibraryFolderInspection | null;
   }) => {
-    const authorityId = library.authorityId;
     const { inspection } = target;
     const holder = libraryFolderOwner(libraryFolderRegistrations(inspection), library.query.data);
     if (
+      unreadable ||
       !hostId ||
       !authorityId ||
+      !correctAuthority ||
+      !accountMatches ||
       busy ||
+      submitting.current ||
       issueFor(holder, target.projectId) ||
       (!saved && !inspection?.exists)
     )
       return false;
+    const retry =
+      saved ??
+      attempts.find(
+        (entry) =>
+          entry.environmentId === hostId &&
+          entry.rootPath === inspection?.rootPath &&
+          (entry.project?.id === target.projectId ||
+            (!entry.project && target.projectId === "new")),
+      ) ??
+      null;
     const existing = findProject(target.projectId);
     if (!saved && target.projectId !== "new" && !existing) return false;
     const title = target.title.trim();
+    submitting.current = true;
     setBusy(true);
     setError(null);
-    let submitted = saved;
+    let submitted = retry;
+    let finished = false;
     let requestEnvironmentId = authorityId;
     setAccessRepair(undefined);
     const importFolder = async () => {
-      let next = saved ?? {
+      let next: typeof ImportRequest.Type = retry ?? {
+        authorityId,
+        ...(identity ? { initiator: identity } : {}),
+        ...(authorityIdentity ? { authorityInitiator: authorityIdentity } : {}),
         environmentId: hostId,
         rootPath: inspection!.rootPath,
         createInput: existing
@@ -375,15 +469,52 @@ export function ImportProjectDialog({
         registerRequestId: randomUUID(),
         copy: null,
       };
-      // A new import replaces one saved for another folder; the work that one finished stays.
       saveAttempt(next);
       setResumed(next.registerRequestId);
       submitted = next;
       if (!next.project) {
         if (!next.createInput) throw new Error("Choose a project before importing.");
+        if (retry && next.creation !== "ready") {
+          const receipt = await lookup({
+            environmentId: authorityId,
+            input: { requestId: next.createInput.requestId, kind: "create" },
+          });
+          if (receipt._tag === "Failure") throw squashAtomCommandFailure(receipt);
+          const operation = receipt.value;
+          if (operation && (operation.kind !== "create" || operation.environmentId !== authorityId))
+            throw new Error("The creation receipt belongs to another request or Library.");
+          if (
+            operation?.state === "queued" ||
+            operation?.state === "running" ||
+            operation?.state === "cancelled"
+          )
+            throw new Error(
+              "This project request is running or cancelled. Review its saved result before continuing.",
+            );
+          if (operation?.state === "succeeded") {
+            if (!isProject(operation.result))
+              throw new Error("The creation receipt does not contain this project.");
+            next = { ...next, project: operation.result };
+            setCreated({
+              environmentId: next.environmentId,
+              rootPath: next.rootPath,
+              project: operation.result,
+            });
+          } else next = { ...next, creation: "ready" };
+          saveAttempt(next);
+          setAccessRepair(operation?.accessRepair);
+          setError(
+            "The saved project request has been checked. Continue explicitly when you are ready.",
+          );
+          return;
+        }
+        const createInput = next.createInput;
+        next = { ...next, creation: "unknown" };
+        submitted = next;
+        saveAttempt(next);
         const result = await create({
           environmentId: authorityId,
-          input: next.createInput,
+          input: createInput,
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         next = { ...next, project: result.value };
@@ -395,7 +526,52 @@ export function ImportProjectDialog({
         saveAttempt(next);
         submitted = next;
       }
+      if (!active()) return;
       if (!next.copy || next.copy.state !== "ready") {
+        if (retry && next.preparation !== "ready") {
+          const receipt = await lookup({
+            environmentId: next.environmentId,
+            input: { requestId: next.prepareRequestId, kind: "prepare" },
+          });
+          if (receipt._tag === "Failure") throw squashAtomCommandFailure(receipt);
+          const operation = receipt.value;
+          if (
+            operation &&
+            (operation.kind !== "prepare" ||
+              operation.environmentId !== next.environmentId ||
+              operation.projectId !== next.project!.id)
+          )
+            throw new Error("The preparation receipt belongs to another project or computer.");
+          if (
+            operation?.state === "queued" ||
+            operation?.state === "running" ||
+            operation?.state === "cancelled"
+          )
+            throw new Error(
+              "This preparation is running or cancelled. Review its saved result before continuing.",
+            );
+          if (operation?.state === "succeeded") {
+            const copy = operation.result;
+            if (
+              !isCopy(copy) ||
+              copy.projectId !== next.project!.id ||
+              copy.environmentId !== next.environmentId ||
+              copy.rootPath !== next.rootPath ||
+              copy.state !== "ready"
+            )
+              throw new Error("The preparation receipt does not match the saved folder.");
+            next = { ...next, copy };
+          } else next = { ...next, preparation: "ready" };
+          saveAttempt(next);
+          setAccessRepair(operation?.accessRepair);
+          setError(
+            "The saved preparation has been checked. Continue explicitly when you are ready.",
+          );
+          return;
+        }
+        next = { ...next, preparation: "unknown" };
+        submitted = next;
+        saveAttempt(next);
         requestEnvironmentId = next.environmentId;
         const result = await prepare({
           environmentId: next.environmentId,
@@ -410,14 +586,52 @@ export function ImportProjectDialog({
         next = { ...next, copy: result.value };
         saveAttempt(next);
       }
+      if (!active()) return;
       requestEnvironmentId = authorityId;
+      if (next.registration === "succeeded") {
+        saveAttempt(null);
+        finished = true;
+        onSaved(next.project!, next.copy!);
+        return;
+      }
+      if (
+        next.registration === "unknown" ||
+        (retry && next.registration === undefined && retry.copy?.state === "ready")
+      ) {
+        const result = await readCopies({
+          environmentId: authorityId,
+          input: { projectId: next.project!.id },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        const copy = result.value.find((entry) => entry.id === next.copy!.id);
+        if (
+          copy &&
+          (copy.environmentId !== next.environmentId ||
+            copy.projectId !== next.project!.id ||
+            copy.rootPath !== next.rootPath ||
+            copy.state !== "ready" ||
+            copy.registered === false)
+        )
+          throw new Error("The registered folder does not match this saved import.");
+        saveAttempt({ ...next, registration: copy ? "succeeded" : "ready" });
+        setError(
+          "The saved folder registration has been checked. Continue explicitly when you are ready.",
+        );
+        return;
+      }
+      next = { ...next, registration: "unknown" };
+      submitted = next;
+      saveAttempt(next);
       const result = await register({
         environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      saveAttempt(null);
-      onSaved(next.project!, result.value);
+      if (active()) {
+        saveAttempt(null, (latest) => latest?.registerRequestId === next.registerRequestId);
+        finished = true;
+        onSaved(next.project!, result.value);
+      } else saveAttempt({ ...next, copy: result.value, registration: "succeeded" });
     };
     try {
       await importFolder();
@@ -431,41 +645,30 @@ export function ImportProjectDialog({
           });
           if (receipt._tag === "Success") {
             if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
-            else if (
-              isLibraryError(cause) &&
-              !cause.accessRepair &&
-              ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
-            ) {
-              // The project already exists, so a retry adds the folder to it. An import saved by
-              // another window created it too, before this dialog could record it.
-              if (submitted.createInput)
-                setCreated({
-                  environmentId: submitted.environmentId,
-                  rootPath: submitted.rootPath,
-                  project: submitted.project,
-                });
-              setProjectId(submitted.project.id);
-              saveAttempt(null);
-            }
           }
-        } else if (isLibraryError(cause) && cause.reason === "invalid") saveAttempt(null);
+        }
         setError(
           cause instanceof Error
             ? cause.message
             : "Could not register this folder. Retry the same import.",
         );
       };
-      await handleFailure().finally(() => setBusy(false));
+      await handleFailure().finally(() => {
+        submitting.current = false;
+        setBusy(false);
+      });
       return false;
     }
+    submitting.current = false;
     setBusy(false);
-    return true;
+    return finished;
   };
   const inspectedInitial = useRef(false);
+  const autoAdd = useRef(autoAddInitial && correctAuthority && library.connected && canAdd(false));
   const inspectInitial = useEffectEvent(async () => {
     const target = await inspectFolder();
     if (
-      !autoAddInitial ||
+      !autoAdd.current ||
       !target?.report?.exists ||
       target.action.kind === "choose" ||
       target.issue ||
@@ -565,11 +768,32 @@ export function ImportProjectDialog({
    * project it created stays in `created`, so the folder's row joins that project and reuses files
    * already prepared there instead of creating another.
    */
-  const startOver = () => {
-    saveAttempt(null);
-    setError(null);
-    setSearch("");
-    setPage("folders");
+  const startOver = async () => {
+    if (!saved || busy || !active()) return;
+    setBusy(true);
+    const clear = async () => {
+      const requestId = saved.project ? saved.prepareRequestId : saved.createInput?.requestId;
+      if (!requestId) throw new Error("Keep this saved import for recovery.");
+      const result = await lookup({
+        environmentId: saved.project ? saved.environmentId : authorityId!,
+        input: { requestId, kind: saved.project ? "prepare" : "create" },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      if (result.value !== null || saved.copy)
+        throw new Error(
+          "This import was already accepted. Continue it with its original details before starting another.",
+        );
+      if (!active()) return;
+      saveAttempt(null, (latest) => latest?.registerRequestId === saved.registerRequestId);
+      setResumed(null);
+      setError(null);
+      setSearch("");
+      setPage("folders");
+    };
+    await clear().catch((cause: unknown) =>
+      setError(cause instanceof Error ? cause.message : "Could not check this import."),
+    );
+    setBusy(false);
   };
   const savedPlace = (unfinished: NonNullable<typeof attempt>) => {
     const computer =
@@ -580,28 +804,25 @@ export function ImportProjectDialog({
       : `a new project named ${unfinished.createInput?.title ?? libraryFolderTitle(unfinished.rootPath)}`;
     return `Adds ${unfinished.rootPath} on ${computer} to ${target}.`;
   };
-  const savedOffer: LibraryPaletteItem[] =
-    attempt && !saved
-      ? [
-          {
-            id: "saved-import",
-            title: "Retry earlier import",
-            description: savedPlace(attempt),
-            icon: <RotateCcwIcon className="size-4" />,
-            next: true,
-            select: () => resume(attempt),
-          },
-        ]
-      : [];
+  const savedOffer: LibraryPaletteItem[] = attempts
+    .filter((entry) => entry.registerRequestId !== saved?.registerRequestId)
+    .map((entry) => ({
+      id: `saved-import:${entry.registerRequestId}`,
+      title: "Retry earlier import",
+      description: savedPlace(entry),
+      icon: <RotateCcwIcon className="size-4" />,
+      next: true,
+      select: () => resume(entry),
+    }));
   const reviewCleanup = async () => {
-    if (!attempt?.copy || !library.authorityId) return;
+    if (!saved?.copy || !authorityId || !correctAuthority || !accountMatches || busy) return;
     setBusy(true);
     setError(null);
     const result = await register({
-      environmentId: library.authorityId,
+      environmentId: authorityId,
       input: {
-        requestId: `${attempt.registerRequestId}:failed:${attempt.copy.updatedAt}`,
-        copy: attempt.copy,
+        requestId: `${saved.registerRequestId}:failed:${saved.copy.updatedAt}`,
+        copy: saved.copy,
       },
     });
     if (result._tag === "Failure") {
@@ -612,15 +833,15 @@ export function ImportProjectDialog({
     } else setCleaning(true);
     setBusy(false);
   };
-  if (cleaning && attempt?.copy && attempt.project)
+  if (cleaning && saved?.copy && saved.project && correctAuthority)
     return (
       <ReleaseCopyDialog
-        copy={attempt.copy}
+        copy={saved.copy}
         onClose={() => setCleaning(false)}
         onReleased={() => {
           saveAttempt(null);
           setCleaning(false);
-          onSaved(attempt.project!);
+          onSaved(saved.project!);
         }}
       />
     );
@@ -628,7 +849,10 @@ export function ImportProjectDialog({
   const locked = saved !== null;
   const selectedProject = findProject(projectId);
   const canImport =
-    canAdd(projectId === "new") &&
+    !unreadable &&
+    correctAuthority &&
+    accountMatches &&
+    (checkingSaved ? canLookup : canAdd(projectId === "new")) &&
     !ownerIssue &&
     (!!saved ||
       (!!inspection?.exists && projectId !== "choose" && (projectId !== "new" || !!title.trim())));
@@ -787,7 +1011,12 @@ export function ImportProjectDialog({
         onBack={back}
         onClose={close}
         busy={busy}
-        error={error}
+        error={
+          error ??
+          (unreadable
+            ? "The saved import could not be read. Keep it for recovery before importing another folder."
+            : null)
+        }
         accessRepair={accessRepair}
         actions={folderActions}
         onFolderChange={(folder) => void lookUpFolder(folder)}
@@ -829,7 +1058,7 @@ export function ImportProjectDialog({
         accessRepair={accessRepair}
         accessContext={{
           environmentId: hostId,
-          authorityEnvironmentId: library.authorityId,
+          authorityEnvironmentId: authorityId,
           computerLabel: host?.label,
         }}
         message={
@@ -986,7 +1215,11 @@ export function ImportProjectDialog({
                           {
                             id: "review",
                             title: "Review failed copy",
-                            disabled: !canRegister || !library.connected,
+                            disabled:
+                              !correctAuthority ||
+                              !accountMatches ||
+                              !canRegister ||
+                              !library.connected,
                             select: () => void reviewCleanup(),
                           },
                         ]
@@ -995,6 +1228,15 @@ export function ImportProjectDialog({
                   ]
         }
       >
+        {!correctAuthority || !accountMatches ? (
+          <LibraryAccessRepairNotice
+            accessRepair={{
+              kind: !accountMatches ? "ownership" : "connection",
+              ...(authorityId ? { environmentId: authorityId } : {}),
+            }}
+            context={{ environmentId: authorityId, originalAccount: saved?.authorityInitiator }}
+          />
+        ) : null}
         {page === "project" && accessIssue?.repair ? (
           <div className="px-4 py-2">
             <LibraryAccessNotice block={accessIssue} onLeave={onClose} />

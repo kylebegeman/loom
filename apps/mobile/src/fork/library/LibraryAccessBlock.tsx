@@ -33,13 +33,15 @@ export function LibraryAccessBlock({
   const environmentId =
     accessRepair?.environmentId ?? accessContext?.environmentId ?? authorityEnvironmentId;
   const connection = useSavedRemoteConnection(environmentId);
-  const [review, setReview] = useState(false);
+  const [review, setReview] = useState<string | null>(null);
   const notice = libraryAccessRepairNotice(
     accessRepair,
     {
       authorityEnvironmentId,
       ...accessContext,
       environmentId,
+      originalAccountEnvironmentId:
+        accessContext?.originalAccountEnvironmentId ?? accessContext?.environmentId,
       computerLabel:
         connection?.environmentLabel ??
         (accessContext?.environmentId === environmentId ? accessContext.computerLabel : undefined),
@@ -48,10 +50,12 @@ export function LibraryAccessBlock({
     error,
   );
   const destination = notice?.destination;
+  const repairKey = JSON.stringify(destination ?? repair);
+  const reviewing = review === repairKey;
   function openRepair() {
     if (!destination) return;
     if (destination.kind === "vault-github") {
-      setReview(true);
+      setReview(repairKey);
       return;
     }
     if (destination.kind === "connection") {
@@ -74,10 +78,10 @@ export function LibraryAccessBlock({
         <Button
           label={`Set up GitHub on ${repair.label}`}
           tone="secondary"
-          onPress={() => setReview(true)}
+          onPress={() => setReview(repairKey)}
         />
-        {review ? (
-          <Sheet title={`GitHub on ${repair.label}`} onClose={() => setReview(false)}>
+        {reviewing ? (
+          <Sheet title={`GitHub on ${repair.label}`} onClose={() => setReview(null)}>
             <GitHubHostSetupSettings environmentId={repair.environmentId} label={repair.label} />
           </Sheet>
         ) : null}
@@ -101,11 +105,11 @@ export function LibraryAccessBlock({
       ) : (
         <Button label={notice.actionLabel} tone="secondary" onPress={openRepair} />
       )}
-      {review && destination?.kind === "vault-github" && destination.environmentId ? (
+      {reviewing && destination?.kind === "vault-github" && destination.environmentId ? (
         <VaultGitHubRepairSheet
           environmentId={destination.environmentId}
           target={destination}
-          onClose={() => setReview(false)}
+          onClose={() => setReview(null)}
         />
       ) : null}
     </View>

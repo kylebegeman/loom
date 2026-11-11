@@ -17,6 +17,7 @@ export interface LibraryAccessRepairContext {
   readonly computerLabel?: string | null | undefined;
   readonly account?: LoomIdentityAccount | undefined;
   readonly originalAccount?: LoomIdentityAccount | undefined;
+  readonly originalAccountEnvironmentId?: EnvironmentId | null | undefined;
 }
 
 export const LIBRARY_ACCESS_REPAIR_RETURN_TEXT =
@@ -126,8 +127,15 @@ export function libraryAccessRepairNotice(
       afterReturn,
     };
   }
+  const originalEnvironmentId = context.originalAccountEnvironmentId ?? context.environmentId;
+  const originalAccount =
+    !originalEnvironmentId || originalEnvironmentId === environmentId
+      ? context.originalAccount
+      : undefined;
+  const accountOnComputer =
+    !context.environmentId || context.environmentId === environmentId ? context.account : undefined;
   const expectedIdentity =
-    context.originalAccount ?? (access.kind === "ownership" ? null : (context.account ?? null));
+    originalAccount ?? (access.kind === "ownership" ? null : (accountOnComputer ?? null));
   const account = expectedIdentity ? loomIdentityAccountLabel(expectedIdentity) : null;
   const signIn =
     environmentId === null || environmentId === context.authorityEnvironmentId

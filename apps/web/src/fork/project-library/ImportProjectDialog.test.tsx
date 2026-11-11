@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   inspect: vi.fn(),
   readCopies: vi.fn(),
   create: vi.fn(),
+  outcome: vi.fn(),
   prepare: vi.fn(),
   register: vi.fn(),
   recover: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock("./state", () => ({
   projectLibrary: {
     inspectFolder: "inspect",
     createProject: "create",
+    operationOutcome: "outcome",
     prepareCopy: "prepare",
     registerCopy: "register",
     preparation: "preparation",
@@ -74,6 +76,9 @@ vi.mock("./LibraryAccessNotice", () => ({
   }) => (block ? <button onClick={onLeave}>{`Repair: ${block.message}`}</button> : null),
 }));
 vi.mock("./ReleaseCopyDialog", () => ({ ReleaseCopyDialog: () => null }));
+vi.mock("~/state/session", () => ({
+  useEnvironmentSessionState: () => ({ data: null }),
+}));
 vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "dorothy" }));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: "inspect" | "create" | "prepare" | "register") => state[command],
@@ -157,7 +162,7 @@ vi.mock("./LibraryPalette", () => ({
   ),
 }));
 import { ImportProjectDialog } from "./ImportProjectDialog";
-import { saveLibraryAttempt } from "./attempts";
+import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -229,6 +234,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   saveLibraryAttempt("loom:library:import:library", null, window.localStorage);
   state.readCopies.mockResolvedValue(AsyncResult.success([]));
+  state.outcome.mockReset().mockResolvedValue(AsyncResult.success(null));
   state.create.mockResolvedValue(AsyncResult.success(created));
   state.prepare.mockImplementation(async ({ input }: { input: { project: LibraryProject } }) =>
     AsyncResult.success(copyOf(input.project)),
@@ -569,10 +575,16 @@ it.each([false, true])(
     const request = state.prepare.mock.calls[0]![0];
     await mount({ onSaved });
     expect(state.prepare).toHaveBeenCalledTimes(1);
-    const retry = button(accessDenied ? "Retry import" : "Add folder to kyle");
+    const retry = button("Retry import");
     expect(retry).toBeDefined();
     await act(async () => retry.click());
-    if (accessDenied) expect(state.prepare.mock.calls[1]![0]).toEqual(request);
+    expect(state.prepare).toHaveBeenCalledTimes(1);
+    expect(state.outcome).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "dorothy",
+      input: { requestId: request.input.requestId, kind: "prepare" },
+    });
+    await act(async () => button("Retry import").click());
+    expect(state.prepare.mock.calls[1]![0]).toEqual(request);
     expect(state.create).toHaveBeenCalledOnce();
     expect(state.prepare).toHaveBeenCalledTimes(2);
     expect(state.prepare.mock.calls[1]![0].input.project.id).toBe("created");
@@ -590,6 +602,8 @@ it("still adds the folder to the project it created after returning to the brows
   await act(async () => button("Add to kyle").click());
   expect(state.inspect).toHaveBeenCalledTimes(2);
   expect(state.create).toHaveBeenCalledOnce();
+  expect(state.prepare).toHaveBeenCalledOnce();
+  await act(async () => button("Retry import").click());
   expect(state.prepare.mock.calls[1]![0].input.project.id).toBe("created");
 });
 
@@ -728,6 +742,8 @@ it("reopens an unfinished import with Retry, Back and Start over, and keeps it o
   await act(async () => button("Retry import").click());
   expect(state.create).not.toHaveBeenCalled();
   expect(state.prepare).not.toHaveBeenCalled();
+  expect(state.register).not.toHaveBeenCalled();
+  await act(async () => button("Retry import").click());
   expect(state.register.mock.calls[0]![0].input.requestId).toBe("register-earlier");
   expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
 });
@@ -761,6 +777,9 @@ it("adds a different browsed folder while an unfinished import waits", async () 
   expect(state.prepare.mock.calls[0]![0].input.rootPath).toBe("/Users/kyle/Developer");
   expect(state.register.mock.calls[0]![0].input.requestId).not.toBe("register-earlier");
   expect(onSaved).toHaveBeenCalledOnce();
+  expect(
+    JSON.parse(readLibraryAttempt("loom:library:import:library", localStorage)!),
+  ).toMatchObject({ registerRequestId: "register-earlier", rootPath: "/Users/kyle" });
 });
 
 it("opens on the folder it was asked to add and only offers an unfinished import of another", async () => {

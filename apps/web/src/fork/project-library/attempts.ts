@@ -61,12 +61,15 @@ export function useLibraryAttempt<A, E>(key: string, schema: Schema.Codec<A, E>)
   );
   const snapshot = useCallback(() => readLibraryAttempt(key, clientStorage()), [key]);
   const serialized = useSyncExternalStore(subscribe, snapshot, () => null);
-  const attempt = useMemo(() => {
-    if (serialized === null) return null;
+  const decoded = useMemo(() => {
+    if (serialized === null) return { value: null, invalid: false };
     try {
-      return Schema.decodeSync(Schema.fromJsonString(schema))(serialized);
+      return {
+        value: Schema.decodeSync(Schema.fromJsonString(schema))(serialized),
+        invalid: false,
+      };
     } catch {
-      return null;
+      return { value: null, invalid: true };
     }
   }, [schema, serialized]);
   const save = useCallback(
@@ -90,5 +93,5 @@ export function useLibraryAttempt<A, E>(key: string, schema: Schema.Codec<A, E>)
     },
     [key, schema],
   );
-  return [attempt, save] as const;
+  return [decoded.value, save, decoded.invalid] as const;
 }

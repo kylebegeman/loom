@@ -30,6 +30,15 @@ describe("contextual Library access repair", () => {
     ).toEqual({ kind: "library-sign-in", environmentId: library });
   });
 
+  it("does not apply another computer's account pin to a failing Library", () => {
+    const notice = libraryAccessRepairNotice(
+      { kind: "sign-in", environmentId: library },
+      { ...context, originalAccount: original, account: original },
+    )!;
+    expect(notice.expectedIdentity).toBeNull();
+    expect(notice.destination).toEqual({ kind: "library-sign-in", environmentId: library });
+  });
+
   it("routes permission and connection failures to that computer without requesting another login", () => {
     for (const kind of ["permission", "connection"] as const) {
       const notice = libraryAccessRepairNotice({ kind, environmentId: computer }, context)!;
