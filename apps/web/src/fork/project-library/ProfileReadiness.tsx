@@ -20,6 +20,7 @@ import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryErrorNotice } from "./LibraryControls";
+import { ProjectPreparationPlan } from "./ProjectPreparationPlan";
 import { projectLibrary, useLibraryPermission } from "./state";
 
 const TONE_ICONS: Record<LibraryToolCheckTone, typeof CheckIcon> = {
@@ -40,7 +41,7 @@ function useSupportsReadiness(environmentId: EnvironmentId) {
 
 /**
  * The project's required tools as checked on one computer, plus the secret names to set there.
- * Renders nothing when the project requires nothing or the computer cannot check.
+ * The preparation plan opens separately and gates its query on computer support.
  */
 export function ProfileReadiness({
   environmentId,
@@ -52,9 +53,14 @@ export function ProfileReadiness({
   const supported = useSupportsReadiness(environmentId);
   const required =
     (project.profile?.requiredTools?.length ?? 0) + (project.profile?.secretNames?.length ?? 0) > 0;
-  return supported && required ? (
-    <ReadinessChecklist environmentId={environmentId} project={project} />
-  ) : null;
+  return (
+    <div className="space-y-2">
+      {supported && required ? (
+        <ReadinessChecklist environmentId={environmentId} project={project} />
+      ) : null}
+      <ProjectPreparationPlan environmentId={environmentId} project={project} />
+    </div>
+  );
 }
 
 /**

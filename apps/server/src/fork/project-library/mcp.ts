@@ -316,6 +316,17 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       loom_library_copy_status: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.status(input))),
       ),
+      loom_library_preparation_plan: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) =>
+            service.preparationPlan({
+              project: input.project,
+              environmentId: input.expectedEnvironmentId,
+              ...(input.resourceIds === undefined ? {} : { resourceIds: input.resourceIds }),
+            }),
+          ),
+        ),
+      ),
       loom_library_profile_readiness: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.readiness(input))),
       ),

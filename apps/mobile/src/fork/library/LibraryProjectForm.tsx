@@ -23,6 +23,7 @@ import { useEnvironments } from "../../state/environments";
 import { readEnvironmentSessionState, useEnvironmentSessionState } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LibraryPreparationPlans } from "./LibraryPreparationPlan";
 import { LibraryProfileSection } from "./LibraryProfileSection";
 import { LibraryBriefSuggestionsSetting } from "./LibraryBriefSuggestions";
 import { LibraryNotice, LibraryPage } from "./LibraryPage";
@@ -787,6 +788,32 @@ function LibraryProjectFormContent({
                     ? `${blueprint.title}: ${blueprint.resources.length} repositories and links, ${blueprint.connections.length} named connections.`
                     : "Paste a version 1 Loom blueprint. Computer preferences and credentials are refused."}
                 </Text>
+                {blueprint ? (
+                  <View className="gap-2">
+                    {blueprint.resources.map((resource) => (
+                      <Text key={resource.id} className="text-xs text-foreground-muted">
+                        {resource.title}:{" "}
+                        {resource.kind === "link"
+                          ? resource.url
+                          : `${resource.relativePath} · ${resource.remoteUrl ?? "Local files"} · ${resource.defaultBranch ?? "Remote default branch"}`}
+                      </Text>
+                    ))}
+                    <Text className="text-xs text-foreground-muted">
+                      Required tools:{" "}
+                      {blueprint.setup?.requiredTools
+                        ?.map(
+                          (tool) =>
+                            `${tool.id}${tool.minimumVersion ? ` ${tool.minimumVersion}+` : ""}`,
+                        )
+                        .join(", ") || "none"}
+                    </Text>
+                    <Text className="text-xs text-foreground-muted">
+                      Named connections: {blueprint.connections.join(", ") || "none"}. Secret names:{" "}
+                      {blueprint.setup?.secretNames?.join(", ") || "none"}. Importing does not
+                      verify availability.
+                    </Text>
+                  </View>
+                ) : null}
                 {blueprint?.setup?.scripts?.map((script) => (
                   <Text key={script.id} className="text-sm text-foreground-muted">
                     {script.name}: {script.command}
@@ -881,6 +908,7 @@ function LibraryProjectFormContent({
           </Text>
         </View>
       ) : null}
+      {initial && showSetup ? <LibraryPreparationPlans project={initial} /> : null}
       {editsProfile && showSetup ? (
         <LibraryProfileSection
           draft={profile}

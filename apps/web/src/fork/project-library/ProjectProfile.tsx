@@ -53,6 +53,7 @@ import {
   LibraryErrorNotice,
   LibrarySection,
 } from "./LibraryControls";
+import { ProjectPreparationPlans } from "./ProjectPreparationPlan";
 import { ComputerReadiness } from "./ProfileReadiness";
 import { ComputerLabel } from "./ProjectIdentity";
 
@@ -279,6 +280,7 @@ export function ProjectProfile({
           </ul>
         </div>
       ) : null}
+      <ProjectPreparationPlans project={project} />
       {editing ? (
         <ProfileDialog
           project={project}

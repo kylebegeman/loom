@@ -249,6 +249,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   // Matches vcs.refreshStatus: a remote fetch is a read.
   [LH.copyHealth]: AuthOrchestrationReadScope,
   [LR.readiness]: AuthOrchestrationReadScope,
+  [LR.preparationPlan]: AuthOrchestrationReadScope,
   [LR.profileSettings]: AuthOrchestrationReadScope,
   [LR.applyProfile]: AuthSettingsWriteScope,
   [SUGGEST.suggestion]: AuthOrchestrationReadScope,

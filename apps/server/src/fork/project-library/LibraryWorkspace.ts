@@ -21,6 +21,9 @@ import {
   LibraryPrepareCopyRequest,
   type LibraryRestoreCopyRequest,
   type LibrarySnapshotCopyRequest,
+  type LibraryPreparationPlan,
+  type LibraryPreparationPlanRequest,
+  libraryProfileSecretValueField,
   type LibraryProfileReadiness,
   type LibraryProfileReadinessRequest,
   type LibraryProfileSettings,
@@ -142,6 +145,9 @@ export class LibraryWorkspace extends Context.Service<
     readonly health: (
       input: LibraryCopyHealthRequest,
     ) => Effect.Effect<LibraryCopyHealth, LibraryError>;
+    readonly preparationPlan: (
+      input: LibraryPreparationPlanRequest,
+    ) => Effect.Effect<LibraryPreparationPlan, LibraryError>;
     /** Checks a project's required tools on this computer. Secret values are never read. */
     readonly readiness: (
       input: LibraryProfileReadinessRequest,
@@ -4589,6 +4595,53 @@ const make = Effect.gen(function* () {
           ),
         )
         .pipe(Effect.tap(publishCopy));
+    }),
+    preparationPlan: Effect.fn("LibraryWorkspace.preparationPlan")(function* (input) {
+      if (
+        input.environmentId !== environmentId ||
+        !validLibraryResources(input.project.resources) ||
+        libraryProfileSecretValueField(input.project.profile ?? {}) !== null ||
+        (input.resourceIds !== undefined &&
+          new Set(input.resourceIds).size !== input.resourceIds.length)
+      )
+        return yield* new LibraryError({ reason: "invalid" });
+      const { placement, receipt } = yield* mapIo(findPlacement(input));
+      const selected = input.project.resources.filter(
+        (resource) =>
+          resource.kind !== "link" &&
+          (input.resourceIds === undefined || input.resourceIds.includes(resource.id)),
+      );
+      const paths = yield* mapIo(
+        repositoryLayout(
+          placement.rootPath,
+          selected,
+          placement.action === "reuse-existing" || placement.action === "use" ? "reuse" : "clone",
+          receipt,
+        ),
+      );
+      const readiness = yield* readReadiness({
+        projectId: input.project.id,
+        environmentId,
+        profile: input.project.profile ?? {},
+      });
+      return {
+        projectId: input.project.id,
+        projectRevision: input.project.revision,
+        projectTitle: input.project.title,
+        environmentId,
+        execution: "review-only",
+        placement,
+        repositories: selected.map((resource, index) => ({ resource, path: paths[index]! })),
+        links: input.project.resources.filter((resource) => resource.kind === "link"),
+        checks: readiness.checks,
+        secrets: readiness.secrets.map(({ name }) => ({ name, status: "unknown" as const })),
+        connections: (input.project.profile?.connectionNames ?? []).map((name) => ({
+          name,
+          status: "unknown" as const,
+        })),
+        scripts: input.project.profile?.scripts ?? [],
+        checkedAt: readiness.checkedAt,
+      } satisfies LibraryPreparationPlan;
     }),
     readiness: Effect.fn("LibraryWorkspace.readiness")(function (input) {
       return mapIo(

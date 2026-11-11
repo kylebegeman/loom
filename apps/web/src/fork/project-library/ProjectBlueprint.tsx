@@ -323,6 +323,21 @@ function BlueprintSummary({ blueprint }: { readonly blueprint: LibraryBlueprint 
           </div>
         ))}
       </dl>
+      <ul className="space-y-1 text-xs text-muted-foreground">
+        {blueprint.resources.map((resource) => (
+          <li key={resource.id} className="wrap-anywhere">
+            {resource.title}:{" "}
+            {resource.kind === "link"
+              ? resource.url
+              : `${resource.relativePath} · ${resource.remoteUrl ?? "Local files"} · ${resource.defaultBranch ?? "Remote default branch"}`}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Named connections: {blueprint.connections.join(", ") || "none"}. Secret names:{" "}
+        {blueprint.setup?.secretNames?.join(", ") || "none"}. Importing does not verify
+        availability. After saving, choose a computer in Setup to review its preparation plan.
+      </p>
       {tools.length ? (
         <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           Needs

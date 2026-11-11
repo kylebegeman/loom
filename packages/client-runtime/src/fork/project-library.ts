@@ -312,7 +312,11 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:read-copy-health",
       tag: LH.copyHealth,
     }),
-    /** Query the copy's computer, which must advertise `library-profile-readiness`. */
+    /** Read-only plan from the selected computer with `library-preparation-plan`. */
+    preparationPlan: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:preparation-plan",
+      tag: LR.preparationPlan,
+    }),
     profileReadiness: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:profile-readiness",
       tag: LR.readiness,

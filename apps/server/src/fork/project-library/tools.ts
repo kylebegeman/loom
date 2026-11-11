@@ -352,6 +352,18 @@ export const ProjectLibraryToolkit = Toolkit.make(
     success: Library.LibraryCopyStatus,
     failure,
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_preparation_plan", {
+    description:
+      "Review preparation for a pinned Library project revision on a computer. Pass the project snapshot from loom_library_project and bind expectedEnvironmentId to the selected computer. Set environmentId too when routing to a linked computer. Shows proposed repository folders, required and observed tool versions, named connections and secret names with unverified availability, and scripts for review. Unknown checks never mean ready. Does not run scripts, install tools, fetch credentials or create files. Use existing reviewed copy preparation and profile actions separately; this plan is not execution approval.",
+    parameters: Schema.Struct({
+      ...Library.LibraryPreparationPlanRequest.fields,
+      project: looseProject,
+      environmentId: OrchestratorMcpEnvironmentTarget,
+      expectedEnvironmentId: Library.LibraryPreparationPlanRequest.fields.environmentId,
+    }),
+    success: Library.LibraryPreparationPlan,
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_profile_readiness", {
     description:
       "Check a Library project's required tools on this computer: ok, missing, outdated (with the version found) or unknown when a check could not run. Also lists the secret names to configure; secret values are never read. Pass the current profile from loom_library_project when this computer has no copy yet.",

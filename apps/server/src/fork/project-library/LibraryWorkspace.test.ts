@@ -486,6 +486,86 @@ const workspaceWithThreads = Effect.fnUntraced(function* (threads: Map<ThreadId,
 });
 
 it.layer(layerTest)("LibraryWorkspace", (it) => {
+  it.effect(
+    "reviews preparation for an exact project revision and computer without preparing files",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const scriptMarker = path.join(yield* makeTemp, "must-not-run");
+        const project = {
+          ...projectFor(),
+          id: "project:preparation-plan",
+          revision: 7,
+          profile: {
+            requiredTools: [{ id: "future-tool", minimumVersion: "3" }],
+            secretNames: ["PROJECT_API_KEY"],
+            connectionNames: ["work-git"],
+            scripts: [
+              {
+                id: "setup",
+                name: "Install",
+                command: `touch "${scriptMarker}"`,
+                icon: "play",
+                runOnWorktreeCreate: true,
+              },
+            ],
+          },
+        } satisfies LibraryProject;
+        const receipts = yield* store.receipts;
+        const plan = yield* service.preparationPlan({ project, environmentId });
+        expect(plan).toMatchObject({
+          projectId: project.id,
+          projectRevision: 7,
+          environmentId,
+          execution: "review-only",
+          checks: [{ id: "future-tool", minimumVersion: "3", status: "unknown" }],
+          secrets: [{ name: "PROJECT_API_KEY", status: "unknown" }],
+          connections: [{ name: "work-git", status: "unknown" }],
+          scripts: project.profile.scripts,
+        });
+        expect(plan.repositories.map((repository) => repository.path)).toEqual(
+          project.resources.map((resource) =>
+            path.join(plan.placement.rootPath, resource.relativePath),
+          ),
+        );
+        expect(yield* fs.exists(plan.placement.rootPath)).toBe(false);
+        expect(yield* fs.exists(scriptMarker)).toBe(false);
+        expect(yield* store.receipts).toEqual(receipts);
+        const next = yield* service.preparationPlan({
+          project: { ...project, revision: 8 },
+          environmentId,
+          resourceIds: ["web"],
+        });
+        expect(next.projectRevision).toBe(8);
+        expect(next.repositories.map((repository) => repository.resource.id)).toEqual(["web"]);
+        expect(next.repositories[0]?.path).toBe(next.placement.rootPath);
+        const wrongComputer = yield* service
+          .preparationPlan({ project, environmentId: EnvironmentId.make("another-computer") })
+          .pipe(Effect.flip);
+        expect(wrongComputer.reason).toBe("invalid");
+        const unsafe = yield* service
+          .preparationPlan({
+            project: {
+              ...project,
+              resources: [{ ...project.resources[0]!, relativePath: "../escape" }],
+            },
+            environmentId,
+          })
+          .pipe(Effect.flip);
+        expect(unsafe.reason).toBe("invalid");
+        const secretValue = yield* service
+          .preparationPlan({
+            project: { ...project, profile: { connectionNames: ["PASSWORD=not-a-name"] } },
+            environmentId,
+          })
+          .pipe(Effect.flip);
+        expect(secretValue.reason).toBe("invalid");
+      }),
+  );
+
   it.effect("refuses a selected Vault route before reserving a folder without authorization", () =>
     Effect.gen(function* () {
       const parent = yield* makeTemp;
