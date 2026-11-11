@@ -18,7 +18,7 @@ export function VaultGitHubConnectionPicker({
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
-  onSelect: (id: string, repository: string) => void;
+  onSelect: (id: string, repository: string, info: VaultGitHubInfo) => void;
 }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -67,7 +67,7 @@ export function VaultGitHubConnectionPicker({
           onSaved={(info) => {
             setAdding(false);
             page.refresh();
-            onSelect(info.item.id, info.repositories[0]!);
+            onSelect(info.item.id, info.repositories[0]!, info);
           }}
         />
       ) : null}
@@ -99,7 +99,7 @@ function Choice({
 }: {
   info: VaultGitHubInfo;
   disabled: boolean;
-  onSelect: (id: string, repo: string) => void;
+  onSelect: (id: string, repo: string, info: VaultGitHubInfo) => void;
 }) {
   const [index, setIndex] = useState(0),
     repository = info.repositories[index]!;
@@ -116,7 +116,7 @@ function Choice({
       <Button
         label={`Bind GitHub connection ${info.item.label}`}
         disabled={disabled || info.item.state !== "active"}
-        onPress={() => onSelect(info.item.id, repository)}
+        onPress={() => onSelect(info.item.id, repository, info)}
       />
     </View>
   );

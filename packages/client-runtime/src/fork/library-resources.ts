@@ -1,3 +1,4 @@
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { isLibraryBranchName, type LibraryResource } from "@t3tools/contracts/fork";
 
 export const isRepositoryResource = (resource: LibraryResource) => resource.kind !== "link";
@@ -51,4 +52,16 @@ export function validateResources(resources: readonly LibraryResource[]) {
     paths.add(path);
   }
   return null;
+}
+
+/** Only explicit GitHub HTTPS/SSH remotes can select a Vault GitHub repository. */
+export function libraryGitHubRepository(remoteUrl: string | null) {
+  if (
+    !remoteUrl ||
+    !/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/(?:git@)?github\.com\/)/i.test(remoteUrl)
+  )
+    return null;
+  const normalized = normalizeGitRemoteUrl(remoteUrl);
+  const match = /^github\.com\/([a-z0-9][a-z0-9-]{0,38}\/[a-z0-9_.-]{1,100})$/.exec(normalized);
+  return match?.[1] ?? null;
 }

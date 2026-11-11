@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { LibraryResource } from "@t3tools/contracts/fork";
-import { resourceLink, validateResources } from "./library-resources.ts";
+import { libraryGitHubRepository, resourceLink, validateResources } from "./library-resources.ts";
 const repository = (path: string): LibraryResource => ({
   id: path,
   title: path,
@@ -32,4 +32,21 @@ describe("Library resource validation", () => {
     expect(resourceLink({ ...link, url: "https://user:secret@example.com/private" })).toBeNull();
     expect(resourceLink({ ...link, url: "https://example.com/\nprivate" })).toBeNull();
   });
+});
+
+it("binds Vault selection to the exact GitHub repository across supported transports", () => {
+  for (const remote of [
+    "https://github.com/Acme/App.git",
+    "git@github.com:acme/app.git",
+    "ssh://git@github.com/acme/app.git",
+  ])
+    expect(libraryGitHubRepository(remote)).toBe("acme/app");
+  for (const remote of [
+    null,
+    "http://github.com/acme/app",
+    "https://github.com.evil.test/acme/app",
+    "https://name:secret@github.com/acme/app",
+    "https://gitlab.com/acme/app",
+  ])
+    expect(libraryGitHubRepository(remote)).toBeNull();
 });

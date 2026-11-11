@@ -1,10 +1,12 @@
 import { LIBRARY_FOLDER_OCCUPIED_MESSAGE } from "@t3tools/client-runtime/fork";
+import { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryPlacement, LibraryProject } from "@t3tools/contracts/fork";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
+  vaultFeature: false,
   commands: { prepare: {}, register: {}, inspect: {}, outcome: {} },
   outcome: vi.fn(),
   attempt: null as unknown,
@@ -29,7 +31,15 @@ const computer = (environmentId: string, label: string) => ({
     serverChosenFolders: true,
     newProjectsRoot: "/Users/kyle/Developer/active",
     folders: { projects: "/Users/kyle/Developer/active", worktrees: "/Users/kyle/.t3/worktrees" },
-    environment: { capabilities: { supportsExecution: true, loomFeatures: ["project-library"] } },
+    environment: {
+      capabilities: {
+        supportsExecution: true,
+        loomFeatures: [
+          "project-library",
+          ...(state.vaultFeature ? ["library-repository-access"] : []),
+        ],
+      },
+    },
   },
 });
 vi.mock("./state", () => ({
@@ -46,13 +56,27 @@ vi.mock("./state", () => ({
       },
     },
   },
+  libraryGitHub: { readiness: {} },
   useLibraryAuthority: () => ({
     authorityId: "library",
     connected: true,
     environments: [computer("dorothy", "Dorothy"), computer("air", "Air")],
   }),
   useLibraryPermission: () => true,
+  useAccessBlock: () => null,
 }));
+vi.mock("../vault/GitHubConnectionPicker", () => ({
+  VaultGitHubConnectionPicker: ({
+    onSelect,
+  }: {
+    onSelect: (id: string, repo: string, info: { item: { version: number } }) => void;
+  }) => (
+    <button onClick={() => onSelect("1".repeat(32), "kyle/corbelo", { item: { version: 7 } })}>
+      Fixture Vault connection
+    </button>
+  ),
+}));
+vi.mock("./LibraryAccessNotice", () => ({ LibraryAccessNotice: () => null }));
 vi.mock("./attempts", () => ({ useLibraryAttempt: () => [state.attempt, vi.fn()] }));
 vi.mock("~/state/environments", async (original) => ({
   ...(await original<typeof import("~/state/environments")>()),
@@ -231,5 +255,70 @@ it("checks a persisted preparation before retrying and leaves running work alone
     expect(state.register).not.toHaveBeenCalled();
   } finally {
     state.attempt = null;
+  }
+});
+
+it("pins the reviewed Vault route and blocks hosts that cannot honor it", async () => {
+  state.vaultFeature = true;
+  state.prepare
+    .mockReset()
+    .mockResolvedValue({ _tag: "Success", value: { id: "copy", state: "ready" } });
+  state.register
+    .mockReset()
+    .mockResolvedValue({ _tag: "Success", value: { id: "copy", state: "ready" } });
+  const onSaved = vi.fn(),
+    onClose = vi.fn();
+  try {
+    await using screen = await render(
+      <CopyDialog
+        project={project}
+        strategy="clone"
+        initialHostId={EnvironmentId.make("air")}
+        onSaved={onSaved}
+        onClose={onClose}
+      />,
+    );
+    await press("Choose Vault GitHub connection");
+    await press("Fixture Vault connection");
+    await expect.element(page.getByText("Vault GitHub for kyle/corbelo, version 7")).toBeVisible();
+    state.vaultFeature = false;
+    await screen.rerender(
+      <CopyDialog
+        project={project}
+        strategy="clone"
+        initialHostId={EnvironmentId.make("air")}
+        onSaved={onSaved}
+        onClose={onClose}
+      />,
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Prepare files", exact: true }))
+      .toBeDisabled();
+    expect(state.prepare).not.toHaveBeenCalled();
+    state.vaultFeature = true;
+    await screen.rerender(
+      <CopyDialog
+        project={project}
+        strategy="clone"
+        initialHostId={EnvironmentId.make("air")}
+        onSaved={onSaved}
+        onClose={onClose}
+      />,
+    );
+    await press("Prepare files");
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    expect(state.prepare.mock.calls[0]?.[0].input.repositoryAccess).toEqual([
+      {
+        resourceId: "repo",
+        access: {
+          kind: "vault-github",
+          id: "1".repeat(32),
+          expectedVersion: 7,
+          repository: "kyle/corbelo",
+        },
+      },
+    ]);
+  } finally {
+    state.vaultFeature = false;
   }
 });

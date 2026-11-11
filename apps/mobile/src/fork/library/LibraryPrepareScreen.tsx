@@ -6,13 +6,18 @@ import {
   libraryPlacementStrategy,
   serverChoosesFolders,
   supportsLoomFeature,
+  libraryGitHubRepository,
+  cancelEmptyLibraryPreparation,
+  squashLibraryCommandFailure,
 } from "@t3tools/client-runtime/fork";
-import {
-  squashAtomCommandFailure,
-  type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+import { type AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { AuthSourceControlWriteScope, EnvironmentId } from "@t3tools/contracts";
-import { LibraryError, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_REPOSITORY_ACCESS_FEATURE,
+  type LibraryResourceRepositoryAccess,
+  LibraryError,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { useRef, useState } from "react";
@@ -31,6 +36,7 @@ import {
 } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { VaultGitHubConnectionPicker } from "../vault/GitHubConnectionPicker";
 import { LibraryFolderPicker } from "./LibraryFolderPicker";
 import { LibraryNotice, LibraryPage } from "./LibraryPage";
 import {
@@ -39,13 +45,13 @@ import {
   runSubmittedLibraryProjectRequest,
   type SubmittedLibraryProjectRequest,
 } from "./libraryProjectRequest";
-import { library, refreshLibraryWork, useLibraryAuthority } from "./libraryState";
+import { libraryGitHub, library, refreshLibraryWork, useLibraryAuthority } from "./libraryState";
 import { useLibraryProjectRequest } from "./useLibraryProjectRequest";
 
 const isCopy = Schema.is(LibraryWorkingCopy);
 const isLibraryError = Schema.is(LibraryError);
 function unwrap<A, E>(result: AtomCommandResult<A, E>) {
-  if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+  if (AsyncResult.isFailure(result)) throw squashLibraryCommandFailure(result);
   return result.value;
 }
 
@@ -91,11 +97,33 @@ function LibraryPrepareContent({
   const computer = environments.find((entry) => entry.environmentId === execution);
   const config = computer?.serverConfig;
   const identity = useEnvironmentSessionState(execution)?.identity;
+  const [accessSelection, setAccessSelection] = useState<{
+    environmentId: EnvironmentId | null;
+    entries: LibraryResourceRepositoryAccess;
+  }>({ environmentId: execution, entries: [] });
+  const [choosingAccess, setChoosingAccess] = useState<string | null>(null);
+  const repositoryAccess =
+    attempt?.request.kind === "prepare"
+      ? (attempt.request.input.repositoryAccess ?? [])
+      : accessSelection.environmentId === execution
+        ? accessSelection.entries
+        : [];
+  const usesVault = repositoryAccess.some((entry) => entry.access.kind === "vault-github");
+  const vaultSupported = supportsLoomFeature(
+    config?.environment.capabilities,
+    LIBRARY_REPOSITORY_ACCESS_FEATURE,
+  );
+  const canUseVault = useAtomValue(libraryGitHub.readiness.permissionAtom(execution));
   const writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const canPrepare = useAtomValue(library.prepareCopy.permissionAtom(execution));
   const canRegister = useAtomValue(library.registerCopy.permissionAtom(authorityEnvironmentId));
   const prepare = useAtomCommand(library.prepareCopy, { reportFailure: false });
   const lookup = useAtomCommand(library.operationOutcome, { reportFailure: false });
+  const cancel = useAtomCommand(library.cancelOperation, { reportFailure: false });
+  const readPreparation = useAtomQueryRunner(library.preparation, {
+    refresh: true,
+    reportFailure: false,
+  });
   const register = useAtomCommand(library.registerCopy, { reportFailure: false });
   const readCopies = useAtomQueryRunner(library.copies, { refresh: true, reportFailure: false });
   const places = serverChoosesFolders(config);
@@ -135,6 +163,37 @@ function LibraryPrepareContent({
     supportsLoomFeature(config?.environment.capabilities, "project-library") &&
     config?.environment.capabilities.supportsExecution !== false;
 
+  async function changePreparation() {
+    if (!attempt || !execution || !ready || pending) return;
+    setPending(true);
+    setError(null);
+    const change = async () => {
+      await cancelEmptyLibraryPreparation(attempt.request.input.requestId, {
+        outcome: async (requestId) =>
+          unwrap(
+            await lookup({
+              environmentId: attempt.environmentId,
+              input: { requestId, kind: "prepare" },
+            }),
+          ),
+        preparation: async (requestId) =>
+          unwrap(
+            await readPreparation({ environmentId: attempt.environmentId, input: { requestId } }),
+          ),
+        cancel: async (operationId) =>
+          unwrap(await cancel({ environmentId: attempt.environmentId, input: { operationId } })),
+      });
+      await requests.persist(null);
+    };
+    await change().catch((cause: unknown) =>
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not change this preparation. Check its result first.",
+      ),
+    );
+    setPending(false);
+  }
   async function act() {
     if (
       busy.current ||
@@ -149,7 +208,7 @@ function LibraryPrepareContent({
       return;
     if (!copy && (!connected || !supported || !canPrepare || !writable.has(execution))) return;
     if (!copy && !attempt && (!rootPath.trim() || !destinationReady)) return;
-    if (!canRegister) return;
+    if (!canRegister || (usesVault && (!vaultSupported || !canUseVault))) return;
     busy.current = true;
     setPending(true);
     setError(null);
@@ -168,6 +227,7 @@ function LibraryPrepareContent({
             requestId: uuidv4(),
             project: chosenProject,
             rootPath: rootPath.trim(),
+            ...(repositoryAccess.length ? { repositoryAccess } : {}),
             strategy:
               destination === null && placement.data
                 ? libraryPlacementStrategy(placement.data)
@@ -286,46 +346,142 @@ function LibraryPrepareContent({
             ))}
           </SettingsSection>
           {execution ? (
-            <SettingsSection title="Destination">
-              <View className="gap-3 p-4">
-                <TextInput
-                  accessibilityLabel="Project files destination"
-                  value={rootPath}
-                  editable={!pending && !attempt}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onChangeText={setDestination}
-                />
-                <Text className="text-sm text-foreground-muted">
-                  Uses Git access configured on {computer?.label ?? "the selected computer"}.
-                </Text>
-                <Button
-                  label={browse ? "Hide folders" : "Choose destination folder"}
-                  disabled={pending || attempt !== null}
-                  onPress={() => setBrowse(!browse)}
-                />
-                {browse && !attempt ? (
-                  <LibraryFolderPicker
-                    environmentId={execution}
-                    projectTitle={chosenProject?.title}
-                    disabled={pending}
-                    onChoose={(path) => {
-                      setDestination(path);
-                      setBrowse(false);
-                    }}
+            <>
+              {chosenProject?.resources.some((resource) => resource.kind !== "link") ? (
+                <SettingsSection title="Repository access">
+                  <View className="gap-3 p-4">
+                    {chosenProject.resources
+                      .filter((resource) => resource.kind !== "link")
+                      .map((resource) => {
+                        const selected = repositoryAccess.find(
+                          (entry) => entry.resourceId === resource.id,
+                        )?.access;
+                        const repository = libraryGitHubRepository(resource.remoteUrl);
+                        return (
+                          <View key={resource.id} className="gap-2">
+                            <Text>{resource.title}</Text>
+                            <Text>
+                              {selected?.kind === "vault-github"
+                                ? `Vault GitHub for ${selected.repository}, version ${selected.expectedVersion}`
+                                : `Git credentials configured on ${computerLabel}`}
+                            </Text>
+                            {vaultSupported && repository ? (
+                              <Button
+                                label="Choose Vault GitHub connection"
+                                disabled={pending || attempt !== null || !canUseVault}
+                                onPress={() =>
+                                  setChoosingAccess(
+                                    choosingAccess === resource.id ? null : resource.id,
+                                  )
+                                }
+                              />
+                            ) : null}
+                            {selected?.kind === "vault-github" ? (
+                              <Button
+                                label="Use computer credentials"
+                                disabled={pending || attempt !== null}
+                                onPress={() =>
+                                  setAccessSelection({
+                                    environmentId: execution,
+                                    entries: repositoryAccess.filter(
+                                      (entry) => entry.resourceId !== resource.id,
+                                    ),
+                                  })
+                                }
+                              />
+                            ) : null}
+                            {choosingAccess === resource.id ? (
+                              <VaultGitHubConnectionPicker
+                                environmentId={execution}
+                                connected={connected && !pending && attempt === null}
+                                onSelect={(id, selectedRepository, info) => {
+                                  if (selectedRepository.toLowerCase() !== repository) {
+                                    setError(`Choose the connection's access to ${repository}.`);
+                                    return;
+                                  }
+                                  setAccessSelection({
+                                    environmentId: execution,
+                                    entries: [
+                                      ...repositoryAccess.filter(
+                                        (entry) => entry.resourceId !== resource.id,
+                                      ),
+                                      {
+                                        resourceId: resource.id,
+                                        access: {
+                                          kind: "vault-github",
+                                          id,
+                                          expectedVersion: info.item.version,
+                                          repository: selectedRepository.toLowerCase(),
+                                        },
+                                      },
+                                    ],
+                                  });
+                                  setChoosingAccess(null);
+                                  setError(null);
+                                }}
+                              />
+                            ) : null}
+                          </View>
+                        );
+                      })}
+                    {usesVault && !vaultSupported ? (
+                      <LibraryNotice error="Update this computer to use the selected Vault connection." />
+                    ) : null}
+                    {usesVault && !canUseVault ? (
+                      <LibraryNotice error="Vault credential-use access is required on this computer." />
+                    ) : null}
+                  </View>
+                </SettingsSection>
+              ) : null}
+              <SettingsSection title="Destination">
+                <View className="gap-3 p-4">
+                  <TextInput
+                    accessibilityLabel="Project files destination"
+                    value={rootPath}
+                    editable={!pending && !attempt}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onChangeText={setDestination}
                   />
-                ) : null}
-                {placement.data &&
-                !attempt &&
-                destination === null &&
-                libraryPlacementReuses(placement.data) ? (
-                  <Text>The computer can use its existing checkout at this destination.</Text>
-                ) : null}
-              </View>
-            </SettingsSection>
+                  <Text className="text-sm text-foreground-muted">
+                    Repository access is checked before creating folders.
+                  </Text>
+                  <Button
+                    label={browse ? "Hide folders" : "Choose destination folder"}
+                    disabled={pending || attempt !== null}
+                    onPress={() => setBrowse(!browse)}
+                  />
+                  {browse && !attempt ? (
+                    <LibraryFolderPicker
+                      environmentId={execution}
+                      projectTitle={chosenProject?.title}
+                      disabled={pending}
+                      onChoose={(path) => {
+                        setDestination(path);
+                        setBrowse(false);
+                      }}
+                    />
+                  ) : null}
+                  {placement.data &&
+                  !attempt &&
+                  destination === null &&
+                  libraryPlacementReuses(placement.data) ? (
+                    <Text>The computer can use its existing checkout at this destination.</Text>
+                  ) : null}
+                </View>
+              </SettingsSection>
+            </>
           ) : null}
         </>
       )}
+      {attempt && !copy ? (
+        <Button
+          label="Change setup"
+          tone="text"
+          disabled={pending || !ready || !connected}
+          onPress={() => void changePreparation()}
+        />
+      ) : null}
       {attempt?.state === "unknown" || attempt?.registration === "unknown" ? (
         <LibraryNotice detail="The submitted request and destination are saved. Check the existing result before retrying. Signing in does not run this request." />
       ) : null}
@@ -413,6 +569,7 @@ function LibraryPrepareContent({
             chosenProject.archived ||
             !execution ||
             !canRegister ||
+            (usesVault && (!vaultSupported || !canUseVault)) ||
             (!copy &&
               (!connected ||
                 !supported ||

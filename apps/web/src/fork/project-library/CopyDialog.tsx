@@ -1,3 +1,5 @@
+import { VaultGitHubConnectionPicker } from "../vault/GitHubConnectionPicker";
+import { LibraryAccessNotice } from "./LibraryAccessNotice";
 import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useRef, useState } from "react";
@@ -7,10 +9,14 @@ import {
   LibraryProject,
   LibraryWorkingCopy,
   LibraryPrepareCopyRequest,
+  LIBRARY_REPOSITORY_ACCESS_FEATURE,
+  type LibraryResourceRepositoryAccess,
 } from "@t3tools/contracts/fork";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import {
   supportsLoomFeature,
+  libraryGitHubRepository,
+  cancelEmptyLibraryPreparation,
   isRepositoryResource,
   LIBRARY_FOLDER_CHOICE_TITLES,
   LIBRARY_FOLDER_OCCUPIED_MESSAGE,
@@ -35,7 +41,13 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useEnvironmentSessionState } from "~/state/session";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useLibraryAttempt } from "./attempts";
-import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
+import {
+  libraryGitHub,
+  projectLibrary,
+  useAccessBlock,
+  useLibraryAuthority,
+  useLibraryPermission,
+} from "./state";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 import { readLocalApi } from "~/localApi";
@@ -103,6 +115,21 @@ export function CopyDialog({
   );
   const host = authority.environments.find((entry) => entry.environmentId === hostId);
   const identity = useEnvironmentSessionState(hostId).data?.identity;
+  const [accessSelection, setAccessSelection] = useState<{
+    environmentId: EnvironmentId | null;
+    entries: LibraryResourceRepositoryAccess;
+  }>({ environmentId: hostId, entries: attempt?.input.repositoryAccess ?? [] });
+  const [choosingAccess, setChoosingAccess] = useState<string | null>(null);
+  const repositoryAccess =
+    attempt?.input.repositoryAccess ??
+    (accessSelection.environmentId === hostId ? accessSelection.entries : []);
+  const usesVault = repositoryAccess.some((entry) => entry.access.kind === "vault-github");
+  const vaultSupported = supportsLoomFeature(
+    host?.serverConfig?.environment.capabilities,
+    LIBRARY_REPOSITORY_ACCESS_FEATURE,
+  );
+  const canUseVault = useLibraryPermission(libraryGitHub.readiness, hostId);
+  const vaultBlock = useAccessBlock(hostId, [libraryGitHub.readiness, projectLibrary.prepareCopy]);
   const accountMatches =
     !attempt?.initiator ||
     (attempt.initiator.issuer === identity?.issuer &&
@@ -178,6 +205,7 @@ export function CopyDialog({
   const [inspection, setInspection] = useState<string | null>(null);
   const prepare = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
   const lookup = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
+  const cancel = useAtomCommand(projectLibrary.cancelOperation, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.prepareCopy, hostId);
@@ -194,10 +222,62 @@ export function CopyDialog({
     host?.serverConfig?.environment.capabilities,
     "project-library",
   );
+  const changePreparation = async () => {
+    if (!attempt || busy || !accountMatches) return;
+    setBusy(true);
+    setError(null);
+    const change = async () => {
+      await cancelEmptyLibraryPreparation(attempt.input.requestId, {
+        outcome: async (requestId) => {
+          const result = await lookup({
+            environmentId: attempt.environmentId,
+            input: { requestId, kind: "prepare" },
+          });
+          if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
+          return result.value;
+        },
+        preparation: async (requestId) => {
+          const result = await recover({
+            environmentId: attempt.environmentId,
+            input: { requestId },
+          });
+          if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
+          return result.value;
+        },
+        cancel: async (operationId) => {
+          const result = await cancel({
+            environmentId: attempt.environmentId,
+            input: { operationId },
+          });
+          if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
+          return result.value;
+        },
+      });
+      saveAttempt(null, (latest) => latest?.input.requestId === attempt.input.requestId);
+      setRepair(undefined);
+      setAccessRepair(undefined);
+    };
+    await change().catch((cause: unknown) =>
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not change this preparation. Check its result first.",
+      ),
+    );
+    setBusy(false);
+  };
   const submit = async () => {
     const authorityId = authority.authorityId;
     if (!authorityId || !hostId || !accountMatches || (!serverPlaces && !rootPath.trim()) || busy)
       return;
+    if (usesVault && (!vaultSupported || !canUseVault)) {
+      setError(
+        vaultSupported
+          ? "Vault credential-use access is required on this computer."
+          : "Update this computer before preparing files with a Vault connection.",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     setRepair(undefined);
@@ -211,6 +291,7 @@ export function CopyDialog({
           requestId: randomUUID(),
           project,
           ...(serverPlaces ? {} : { rootPath: rootPath.trim() }),
+          ...(repositoryAccess.length ? { repositoryAccess } : {}),
           strategy: serverPlaces
             ? libraryPlacementStrategy(placement.data)
             : (chosen?.strategy ?? strategy),
@@ -233,7 +314,7 @@ export function CopyDialog({
           environmentId: next.environmentId,
           input: { requestId: next.input.requestId, kind: "prepare" },
         });
-        if (outcome._tag === "Failure") throw squashAtomCommandFailure(outcome);
+        if (outcome._tag === "Failure") throw squashLibraryCommandFailure(outcome);
         if (!activeAccount()) return;
         const operation = outcome.value;
         if (operation?.state === "queued" || operation?.state === "running")
@@ -261,7 +342,7 @@ export function CopyDialog({
       }
       if (!next.copy || next.copy.state !== "ready") {
         const result = await prepare({ environmentId: next.environmentId, input: next.input });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
         next = { ...next, copy: result.value };
         saveAttempt(next);
       }
@@ -270,7 +351,7 @@ export function CopyDialog({
         environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
       });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
       if (activeAccount()) {
         saveAttempt(null);
         onSaved(result.value);
@@ -308,7 +389,7 @@ export function CopyDialog({
     setError(null);
     const loadInspection = async () => {
       const result = await inspect({ environmentId: hostId, input: { rootPath: rootPath.trim() } });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      if (result._tag === "Failure") throw squashLibraryCommandFailure(result);
       setInspection(
         result.value.exists
           ? result.value.repositories.length
@@ -345,7 +426,7 @@ export function CopyDialog({
       },
     });
     if (result._tag === "Failure") {
-      const cause = squashAtomCommandFailure(result);
+      const cause = squashLibraryCommandFailure(result);
       setError(
         cause instanceof Error ? cause.message : "Could not register the failed copy for review.",
       );
@@ -372,7 +453,7 @@ export function CopyDialog({
     }
     const result = await inspect({ environmentId: hostId, input: { rootPath: path } });
     if (result._tag === "Failure") {
-      const cause = squashAtomCommandFailure(result);
+      const cause = squashLibraryCommandFailure(result);
       setError(cause instanceof Error ? cause.message : "Could not check this folder.");
       return;
     }
@@ -450,6 +531,15 @@ export function CopyDialog({
           <Button variant="outline" disabled={busy} onClick={onClose}>
             {newProject ? "Finish later" : "Close"}
           </Button>
+          {attempt && !attempt.copy ? (
+            <Button
+              variant="outline"
+              disabled={busy || !accountMatches || !allowed || !connected}
+              onClick={() => void changePreparation()}
+            >
+              Change setup
+            </Button>
+          ) : null}
           {attempt?.copy?.state === "failed" ? (
             <Button
               variant="outline"
@@ -463,6 +553,7 @@ export function CopyDialog({
             disabled={
               busy ||
               !accountMatches ||
+              (usesVault && (!vaultSupported || !canUseVault)) ||
               !allowed ||
               !canRegister ||
               !connected ||
@@ -518,11 +609,100 @@ export function CopyDialog({
             Sign in with the account that started this preparation before continuing.
           </p>
         ) : null}
+        {hostId && actualStrategy === "clone" && selectedResources.length ? (
+          <div className="space-y-3">
+            <p className="text-sm font-medium">Repository access</p>
+            {selectedResources.map((resource) => {
+              const selected = repositoryAccess.find(
+                (entry) => entry.resourceId === resource.id,
+              )?.access;
+              const repository = libraryGitHubRepository(resource.remoteUrl);
+              return (
+                <div key={resource.id} className="space-y-2 rounded-lg bg-muted/35 p-3">
+                  <p className="text-sm font-medium">{resource.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {selected?.kind === "vault-github"
+                      ? `Vault GitHub for ${selected.repository}, version ${selected.expectedVersion}`
+                      : `Git credentials configured on ${host?.label ?? "this computer"}`}
+                  </p>
+                  {vaultSupported && repository ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || attempt !== null || !canUseVault}
+                        onClick={() =>
+                          setChoosingAccess(choosingAccess === resource.id ? null : resource.id)
+                        }
+                      >
+                        Choose Vault GitHub connection
+                      </Button>
+                      {selected?.kind === "vault-github" ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || attempt !== null}
+                          onClick={() =>
+                            setAccessSelection({
+                              environmentId: hostId,
+                              entries: repositoryAccess.filter(
+                                (entry) => entry.resourceId !== resource.id,
+                              ),
+                            })
+                          }
+                        >
+                          Use computer credentials
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {choosingAccess === resource.id ? (
+                    <VaultGitHubConnectionPicker
+                      environmentId={hostId}
+                      disabled={busy || attempt !== null}
+                      onSelect={(id, selectedRepository, info) => {
+                        if (selectedRepository.toLowerCase() !== repository) {
+                          setError(`Choose the connection's access to ${repository}.`);
+                          return;
+                        }
+                        setAccessSelection({
+                          environmentId: hostId,
+                          entries: [
+                            ...repositoryAccess.filter((entry) => entry.resourceId !== resource.id),
+                            {
+                              resourceId: resource.id,
+                              access: {
+                                kind: "vault-github",
+                                id,
+                                expectedVersion: info.item.version,
+                                repository: selectedRepository.toLowerCase(),
+                              },
+                            },
+                          ],
+                        });
+                        setChoosingAccess(null);
+                        setError(null);
+                      }}
+                    />
+                  ) : null}
+                </div>
+              );
+            })}
+            {usesVault && !vaultSupported ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                Update this computer to use the selected Vault connection.
+              </p>
+            ) : null}
+            {usesVault && vaultBlock ? (
+              <LibraryAccessNotice block={vaultBlock} onLeave={onClose} />
+            ) : null}
+          </div>
+        ) : null}
         {hostId ? (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Repository access uses the Git credentials configured on{" "}
-              {host?.label ?? "this computer"}.
+              Repository access is checked on {host?.label ?? "this computer"} before creating
+              folders.
             </p>
             {folderLine ? (
               <p className="wrap-anywhere text-sm" role="status">

@@ -34,7 +34,7 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type * as RpcSession from "../rpc/session.ts";
 import { v2Projection } from "../state/orchestrationV2TestFixtures.ts";
-import { createProjectLibraryAtoms } from "./project-library.ts";
+import { createProjectLibraryAtoms, squashLibraryCommandFailure } from "./project-library.ts";
 
 vi.mock("../state/commandPermissions.ts", async () => {
   const { Atom } = await import("effect/reactivity");
@@ -514,3 +514,11 @@ it.effect.each(["ready", "missing"] as const)(
       }),
     ),
 );
+
+it("retains an interrupted Library command as an uncertain result", () => {
+  const interrupted = squashLibraryCommandFailure(AsyncResult.failure(Cause.interrupt(0)));
+  expect(interrupted).toBeInstanceOf(LibraryError);
+  expect(interrupted).toMatchObject({ reason: "io" });
+  const denied = new LibraryError({ reason: "blocked" });
+  expect(squashLibraryCommandFailure(AsyncResult.failure(Cause.fail(denied)))).toBe(denied);
+});

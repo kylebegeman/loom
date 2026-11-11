@@ -43,6 +43,7 @@ import * as VaultMigration from "./vault/VaultMigration.ts";
 import * as VaultHealthContext from "./vault/VaultHealthContext.ts";
 import * as VaultHealth from "./vault/VaultHealth.ts";
 import * as VaultHealthChecks from "./vault/VaultHealthChecks.ts";
+import * as GitHubRepositoryTransport from "./vault/GitHubRepositoryTransport.ts";
 import * as GitHubTerminal from "./vault/GitHubTerminal.ts";
 import * as VaultGitHub from "./vault/VaultGitHub.ts";
 import * as GitHubTransport from "./vault/GitHubTransport.ts";
@@ -244,6 +245,7 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
       FetchHttpClient.layer,
       GitHubCli.layer,
       GitHubTerminal.layer,
+      GitHubRepositoryTransport.layer,
       ProjectStore.layer,
     ),
   ),
@@ -553,6 +555,7 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryMaintenance.retentionLayer.pipe(Layer.provide(layerLibraryService)),
   layerProjectWorkflows,
   ProjectOperations.layer.pipe(
+    Layer.provide(layerVaultGitHub),
     Layer.provide(layerLibraryPublisher),
     Layer.provide(layerLibraryManagement),
     Layer.provide(LibraryWorkspaceStore.layer),

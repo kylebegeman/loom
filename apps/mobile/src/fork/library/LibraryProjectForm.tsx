@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import {
   LIBRARY_PROJECT_COLORS,
   LibraryBlueprint,
@@ -442,7 +442,7 @@ function LibraryProjectFormContent({
         identity,
         lookup: async ({ environmentId, requestId, kind }) => {
           const result = await lookup({ environmentId, input: { requestId, kind } });
-          if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+          if (AsyncResult.isFailure(result)) throw squashLibraryCommandFailure(result);
           return result.value;
         },
         execute: async (submitted) => {
@@ -458,7 +458,7 @@ function LibraryProjectFormContent({
                   environmentId: submitted.environmentId,
                   input: submitted.request.input,
                 });
-          if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+          if (AsyncResult.isFailure(result)) throw squashLibraryCommandFailure(result);
           return result.value;
         },
       });

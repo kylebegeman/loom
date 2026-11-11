@@ -25,7 +25,7 @@ export function VaultGitHubConnectionPicker({
 }: {
   environmentId: EnvironmentId;
   disabled: boolean;
-  onSelect: (itemId: string, repository: string) => void;
+  onSelect: (itemId: string, repository: string, info: VaultGitHubInfo) => void;
 }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const atom = atoms.list({ environmentId, input: { cursor } }),
@@ -97,7 +97,7 @@ function Choice({
 }: {
   info: VaultGitHubInfo;
   disabled: boolean;
-  onSelect: (id: string, repo: string) => void;
+  onSelect: (id: string, repo: string, info: VaultGitHubInfo) => void;
 }) {
   const [repository, setRepository] = useState(info.repositories[0]!);
   return (
@@ -136,7 +136,7 @@ function Choice({
           variant="outline"
           aria-label={`Bind GitHub connection ${info.item.label}`}
           disabled={disabled || info.item.state !== "active"}
-          onClick={() => onSelect(info.item.id, repository)}
+          onClick={() => onSelect(info.item.id, repository, info)}
         >
           Bind connection
         </Button>

@@ -163,7 +163,7 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
   const hostEnvironment = yield* HostProcess.Environment;
-  const vault = yield* Effect.serviceOption(VaultGitHub.VaultGitHub);
+  const configuredVault = yield* Effect.serviceOption(VaultGitHub.VaultGitHub);
   const scope = yield* Effect.scope;
   const locks = yield* KeyedLock.make<string>();
   const warming = yield* Semaphore.make(1);
@@ -417,6 +417,9 @@ const make = Effect.gen(function* () {
     operation: RepositoryOperation,
   ) {
     const access = input.repositoryAccess;
+    // Shared mirror services may start before Vault; the human operation supplies its context.
+    const operationVault = yield* Effect.serviceOption(VaultGitHub.VaultGitHub);
+    const vault = Option.isSome(configuredVault) ? configuredVault : operationVault;
     if (access?.kind !== "vault-github" || input.authorize === undefined || Option.isNone(vault))
       return yield* new LibraryError({
         reason: "blocked",

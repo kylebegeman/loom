@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   createProjectLibraryAtoms,
+  createVaultGitHubAtoms,
   resolveLibraryAuthorityId,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
@@ -32,6 +33,7 @@ import { accessBlock } from "./accessBlock";
 
 export const projectLibrary: ReturnType<typeof createProjectLibraryAtoms> =
   createProjectLibraryAtoms(connectionAtomRuntime);
+export const libraryGitHub = createVaultGitHubAtoms(connectionAtomRuntime);
 /** Every surface reads this one page of the thread index, so the client fetches it once. */
 export const LIBRARY_THREAD_INDEX_LIMIT = 200;
 const AUTHORITY_KEY = "loom:project-library:authority:v1";

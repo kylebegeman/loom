@@ -13,6 +13,7 @@ import {
   ProjectId,
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
+  AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentId,
@@ -311,8 +312,17 @@ const fixture = Effect.gen(function* () {
                 }),
           ),
         ),
-      prepareCopy: () =>
-        Ref.get(prepareFailure).pipe(
+      prepareCopy: (input, authorize) =>
+        Effect.forEach(input.repositoryAccess ?? [], (entry) =>
+          entry.access.kind === "vault-github"
+            ? authorize
+              ? authorize(entry.access).pipe(
+                  Effect.mapError((cause) => new LibraryError({ reason: "blocked", cause })),
+                )
+              : Effect.fail(new LibraryError({ reason: "blocked" }))
+            : Effect.void,
+        ).pipe(
+          Effect.andThen(Ref.get(prepareFailure)),
           Effect.flatMap((error) =>
             error ? Effect.fail(error) : Effect.succeed({ ...copyFor(project), environmentId }),
           ),
@@ -1206,6 +1216,40 @@ describe("Project operations", () => {
           ).toContain("renew");
         }),
       ),
+  );
+  it.effect("requires fresh human credential-use permission for a pinned repository route", () =>
+    run((state) =>
+      Effect.gen(function* () {
+        const request: LibraryOperationInput = {
+          kind: "prepare",
+          input: {
+            requestId: "vault-files",
+            project,
+            strategy: "clone",
+            repositoryAccess: [
+              {
+                resourceId: resource.id,
+                access: {
+                  kind: "vault-github",
+                  id: "1".repeat(32),
+                  expectedVersion: 1,
+                  repository: "acme/app",
+                },
+              },
+            ],
+          },
+        };
+        expect(
+          (yield* state.service
+            .executeClient("vault-files", request, actor.sessionId)
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        yield* Ref.set(state.active, [session([...session().scopes, AuthAccessWriteScope])]);
+        expect(
+          (yield* state.service.executeClient("vault-files", request, actor.sessionId)).state,
+        ).toBe("succeeded");
+      }),
+    ),
   );
   it.effect("lets a signed-in person take over an operation an agent started", () =>
     run((state) =>

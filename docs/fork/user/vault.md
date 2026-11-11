@@ -690,6 +690,13 @@ Personal owner-trusted environments support up to 100 repositories per connectio
 environments support 32. When editing repositories or the name, leave the credential blank
 to keep it. Enter a credential only when replacing it.
 
+For **New project → Git repository**, file preparation can use one of these connections
+on a supported macOS or Linux computer. Choose the matching allowed repository and
+review the selected connection before preparing files. Your current access on that
+computer must permit file work and Vault credential use. This human action does not
+require an agent conversation or grant one permission to use the connection. Library
+sign-in, Vault access and GitHub acceptance are checked separately.
+
 The token form links to GitHub and lists the required repository permissions. Choosing
 **All repositories** on GitHub chooses repository coverage; it does not add permission entries.
 For development, set **Contents** and **Pull requests** to read and write, and **Actions** and

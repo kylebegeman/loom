@@ -2,6 +2,7 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   createProjectLibraryAtoms,
+  createVaultGitHubAtoms,
   resolveLibraryAuthorityId,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
@@ -23,6 +24,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 
 export const library = createProjectLibraryAtoms(connectionAtomRuntime);
+export const libraryGitHub = createVaultGitHubAtoms(connectionAtomRuntime);
 
 export function refreshLibraryProject(environmentId: EnvironmentId, projectId: string) {
   appAtomRegistry.refresh(library.projects({ environmentId, input: { includeArchived: false } }));

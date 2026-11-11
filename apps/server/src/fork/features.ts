@@ -2,6 +2,7 @@ import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
 import {
   AGENT_TOOL_FAMILIES_FEATURE,
+  LIBRARY_REPOSITORY_ACCESS_FEATURE,
   LIVE_AGENT_TOOL_POLICY_FEATURE,
   PROJECT_FOLDER_IMPORT_FEATURE,
   ATTENTION_RETRY_FEATURE,
@@ -100,6 +101,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "sites",
   "sites-management",
   "project-library",
+  LIBRARY_REPOSITORY_ACCESS_FEATURE,
   "library-history-deltas",
   "library-project-profile",
   "computer-naming",

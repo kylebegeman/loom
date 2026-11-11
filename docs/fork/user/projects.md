@@ -19,6 +19,12 @@ project from a Git URL continues into choosing the computer and folder for its w
 Once the files are ready, open the project or choose to start a conversation separately.
 If file preparation fails, the project stays saved so you can finish preparing it later.
 
+Review repository access on the selected computer. Use its configured Git credentials,
+or choose a dedicated Vault GitHub connection for a matching repository. Vault selection
+keeps the reviewed connection and version; it never falls back to another account. If
+access fails before any files are created, **Change setup** lets you review another
+connection or destination after checking and cancelling the previous preparation.
+
 You can also ask an authorized agent to add an existing folder to Projects. Loom inspects
 its repositories and registers its files together, reusing a unique matching project.
 If more than one project matches, the agent can choose the intended project by name.

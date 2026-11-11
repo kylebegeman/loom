@@ -2,6 +2,8 @@ import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "../baseSchemas.ts";
 import { VaultGitHubTarget } from "./vault-github.ts";
 
+export const LIBRARY_REPOSITORY_ACCESS_FEATURE = "library-repository-access";
+
 export const LibraryRepositoryAccess = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("host") }),
   Schema.Struct({ kind: Schema.Literal("vault-github"), ...VaultGitHubTarget.fields }),

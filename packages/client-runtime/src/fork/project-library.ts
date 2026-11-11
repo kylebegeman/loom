@@ -18,6 +18,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
 import { persistQuery } from "../state/queryPersistence.ts";
 import { libraryThreadSaveStatusIsFinal } from "./library-save-state.ts";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -29,6 +30,18 @@ import {
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "../state/runtime.ts";
+
+export function squashLibraryCommandFailure(result: {
+  readonly cause: Cause.Cause<unknown>;
+}): unknown {
+  return Cause.hasInterruptsOnly(result.cause)
+    ? new LibraryError({
+        reason: "io",
+        detail:
+          "The connection changed before Loom could confirm the result. Check the saved request before retrying.",
+      })
+    : Cause.squash(result.cause);
+}
 
 const prepareManagement = Effect.fn("ProjectLibrary.prepareManagement")(function* (input: {
   readonly authorityEnvironmentId: EnvironmentId;

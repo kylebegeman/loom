@@ -46,9 +46,11 @@ vi.mock("@react-navigation/native", () => ({
   StackActions: { replace: (name: string, params: unknown) => ({ name, params }) },
 }));
 vi.mock("./libraryState", () => ({
+  libraryGitHub: { readiness: { permissionAtom: () => true } },
   useLibraryAuthority: () => ({ environmentId: "library", ready: state.online }),
   refreshLibraryWork: vi.fn(),
   library: {
+    preparation: () => "preparation",
     project: () => "project",
     copies: () => "copies",
     placement: { resultAtom: () => "placement" },
@@ -79,6 +81,17 @@ vi.mock("../../state/session", () => ({
   useEnvironmentsWithScope: () => new Set([state.computer?.environmentId]),
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "original-request" }));
+vi.mock("../vault/GitHubConnectionPicker", () => ({
+  VaultGitHubConnectionPicker: ({
+    onSelect,
+  }: {
+    onSelect: (id: string, repo: string, info: { item: { version: number } }) => void;
+  }) => (
+    <button onClick={() => onSelect("1".repeat(32), "acme/rocket", { item: { version: 7 } })}>
+      Fixture Vault connection
+    </button>
+  ),
+}));
 vi.mock("./LibraryFolderPicker", () => ({ LibraryFolderPicker: () => null }));
 vi.mock("./LibraryPage", () => ({
   LibraryPage: ({ children }: { children: ReactNode }) => <main>{children}</main>,
@@ -329,4 +342,40 @@ it("preserves the selected computer and destination after a lost reply and refre
   await recovered.click("Save file location");
   expect(state.register).toHaveBeenCalledTimes(1);
   expect(recovered.container.textContent).toContain("No conversation has been started");
+});
+
+it("sends the reviewed Vault connection and version with mobile preparation", async () => {
+  using _act = allowReactUpdates();
+  setup();
+  const config = state.computer!.serverConfig;
+  state.computer = {
+    ...state.computer!,
+    serverConfig: {
+      ...config,
+      environment: {
+        ...config.environment,
+        capabilities: {
+          ...config.environment.capabilities,
+          loomFeatures: ["project-library", "library-repository-access"],
+        },
+      },
+    },
+  };
+  await using screen = await render();
+  await screen.click("Computer");
+  await screen.click("Choose Vault GitHub connection");
+  await screen.click("Fixture Vault connection");
+  await screen.click("Prepare files");
+  expect(state.prepare.mock.calls[0]?.[0].input.repositoryAccess).toEqual([
+    {
+      resourceId: "repo",
+      access: {
+        kind: "vault-github",
+        id: "1".repeat(32),
+        expectedVersion: 7,
+        repository: "acme/rocket",
+      },
+    },
+  ]);
+  expect(screen.container.textContent).toContain("No conversation has been started");
 });

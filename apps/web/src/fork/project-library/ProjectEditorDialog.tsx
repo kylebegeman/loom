@@ -32,7 +32,7 @@ import { PROJECT_COLOR_NAMES, supportsLoomFeature } from "@t3tools/client-runtim
 import * as Schema from "effect/Schema";
 import { useLibraryAttempt } from "./attempts";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useEnvironmentSessionState } from "~/state/session";
@@ -224,7 +224,7 @@ export function ProjectEditorDialog({
         saveAttempt(null, (latest) => latest?.requestId === input.requestId);
         onSaved(result.value);
       } else {
-        const cause = squashAtomCommandFailure(result);
+        const cause = squashLibraryCommandFailure(result);
         setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
         if (isLibraryError(cause) && ["invalid", "not-found"].includes(cause.reason))
           saveAttempt(null, (latest) => latest?.requestId === input.requestId);

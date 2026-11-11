@@ -1,3 +1,5 @@
+import * as VaultGitHub from "../vault/VaultGitHub.ts";
+import type { RepositoryAuthorizer } from "../vault/GitHubRepositoryTransport.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   identityOwnershipSubject,
@@ -10,6 +12,7 @@ import {
   AuthSessionId,
   AuthSettingsWriteScope,
   AuthTerminalOperateScope,
+  AuthAccessWriteScope,
   CommandId,
   OrchestrationV2DelegatedFrom,
   OrchestrationV2LinkOrigin,
@@ -23,6 +26,7 @@ import {
 import {
   LIBRARY_SIGN_IN_NOT_CURRENT_TEXT,
   LibraryError,
+  VaultError,
   LibraryOperation,
   LibraryOperationInput,
   LibraryWorkingCopy,
@@ -50,6 +54,7 @@ import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -249,6 +254,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService;
   const sessions = yield* SessionStore;
   const environment = yield* HostProcess.Environment;
+  const repositoryVault = yield* Effect.serviceOption(VaultGitHub.VaultGitHub);
   const sessionPrefix = identitySessionPrefix(environment);
   const ownershipSubject = (subject: string) => identityOwnershipSubject(subject, environment);
   // A signed-in person may take over what any agent started; otherwise only the owner may.
@@ -440,6 +446,28 @@ const make = Effect.gen(function* () {
     const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
       Effect.mapError(io),
     );
+    const repositoryAuthorization: RepositoryAuthorizer = Effect.fn(
+      "ProjectOperations.repositoryAuthorization",
+    )(function* () {
+      if (isAgent(row.subject) || row.session_id.startsWith("workload:"))
+        return yield* new VaultError({ reason: "denied" });
+      const active = yield* currentSession(row.session_id).pipe(
+        Effect.mapError(() => new VaultError({ reason: "unavailable" })),
+      );
+      if (
+        !active ||
+        isAgent(active.subject) ||
+        ownershipSubject(active.subject) !== ownershipSubject(row.subject) ||
+        ![AuthTerminalOperateScope, AuthAccessWriteScope].every((permission) =>
+          (active.permissions ?? active.scopes).includes(permission),
+        )
+      )
+        return yield* new VaultError({ reason: "denied" });
+    });
+    const withRepositoryContext = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Option.isSome(repositoryVault)
+        ? effect.pipe(Effect.provideService(VaultGitHub.VaultGitHub, repositoryVault.value))
+        : effect;
     let operation = row.operation;
     // Each step rechecks access until a launch's conversation exists. The steps after it finish
     // that launch, so a download outlasting the session or agent turn that asked for it completes.
@@ -731,7 +759,9 @@ const make = Effect.gen(function* () {
           break;
         case "prepare":
           yield* phase("Preparing files");
-          result = yield* workspace.prepareCopy(request.input);
+          result = yield* withRepositoryContext(
+            workspace.prepareCopy(request.input, repositoryAuthorization),
+          );
           break;
         case "restore": {
           yield* phase("Restoring saved recovery archive");
@@ -773,7 +803,10 @@ const make = Effect.gen(function* () {
             return yield* new LibraryError({ reason: "invalid" });
           yield* phase("Checking files and project scope");
           // With files, the launch reserves them, opens the conversation in them, then downloads.
-          const reserved = files === undefined ? null : yield* workspace.reserveCopy(files);
+          const reserved =
+            files === undefined
+              ? null
+              : yield* withRepositoryContext(workspace.reserveCopy(files, repositoryAuthorization));
           const binding =
             reserved === null ? input.binding : { ...input.binding, workingCopyId: reserved.id };
           const resolved = yield* workspace.resolveBinding({ binding, project: input.project });
@@ -842,7 +875,12 @@ const make = Effect.gen(function* () {
             });
             yield* opened(operation);
             yield* phase("Downloading files");
-            yield* workspace.fillCopy({ workingCopyId: reserved.id, operationId: id });
+            yield* withRepositoryContext(
+              workspace.fillCopy(
+                { workingCopyId: reserved.id, operationId: id },
+                repositoryAuthorization,
+              ),
+            );
             if (worktreeAfter) {
               yield* phase("Creating worktree");
               yield* moveToWorktree(
