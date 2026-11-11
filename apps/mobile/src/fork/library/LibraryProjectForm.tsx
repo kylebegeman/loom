@@ -5,7 +5,6 @@ import {
   LIBRARY_PROJECT_COLORS,
   LibraryBlueprint,
   PROJECT_WORKFLOWS_FEATURE,
-  LibraryError,
   type LibraryProject,
   type LibraryProjectColor,
   type LibraryResource,
@@ -44,6 +43,12 @@ import {
   rememberedLibraryFolderProject,
 } from "./libraryExistingFolderTarget";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { useLibraryProjectRequest } from "./useLibraryProjectRequest";
+import {
+  runSubmittedLibraryProjectRequest,
+  type SubmittedLibraryProjectRequest,
+} from "./libraryProjectRequest";
+import { EnvironmentId } from "@t3tools/contracts";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import { LibraryNewProjectChoices, type LibraryCreateStart } from "./LibraryNewProjectChoices";
 import {
@@ -58,8 +63,6 @@ import {
   validateResources,
   type LibraryProfileDraft,
 } from "@t3tools/client-runtime/fork";
-
-const isLibraryErrorValue = Schema.is(LibraryError);
 
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
 
@@ -107,15 +110,50 @@ export function LibraryEditRouteScreen({
     </LibraryPage>
   );
 }
-function LibraryProjectForm({
-  initial: seed,
-  initialInput,
-  start,
-}: {
+type ProjectFormProps = {
   initial?: LibraryProject;
   initialInput?: string | undefined;
   start?: LibraryCreateStart | undefined;
+};
+function LibraryProjectForm(props: ProjectFormProps) {
+  const authority = useLibraryAuthority();
+  const [pinned, setPinned] = useState(authority.environmentId);
+  if (!pinned && authority.environmentId) setPinned(authority.environmentId);
+  const requestState = useLibraryProjectRequest(
+    JSON.stringify(["project-save", pinned, props.initial?.id ?? "new"]),
+  );
+  if (!requestState.loaded || requestState.attempt === false)
+    return (
+      <LibraryPage title="New project" back>
+        <LibraryNotice
+          detail={
+            requestState.attempt === false
+              ? "The saved project request could not be read. Keep it for recovery before creating another project."
+              : "Loading the saved project request…"
+          }
+        />
+      </LibraryPage>
+    );
+  return (
+    <LibraryProjectFormContent
+      {...props}
+      key={`${pinned}:${props.initial?.id ?? "new"}`}
+      saved={requestState.attempt}
+      persist={requestState.persist}
+    />
+  );
+}
+function LibraryProjectFormContent({
+  initial: seed,
+  initialInput,
+  start,
+  saved,
+  persist,
+}: ProjectFormProps & {
+  saved: SubmittedLibraryProjectRequest | null;
+  persist: (attempt: SubmittedLibraryProjectRequest | null) => Promise<void>;
 }) {
+  const savedInput = saved?.request.kind !== "prepare" ? saved?.request.input : undefined;
   const intent = libraryStartIntent(initialInput ?? "");
   const lead = start === "folder" || start === "repository" ? start : null;
   const [initial] = useState(seed);
@@ -130,14 +168,16 @@ function LibraryProjectForm({
     ),
   );
   const [title, setTitle] = useState(
-      initial?.title ?? (intent.kind !== "search" ? intent.title : ""),
+      savedInput?.title ?? initial?.title ?? (intent.kind !== "search" ? intent.title : ""),
     ),
-    [brief, setBrief] = useState(initial?.brief ?? "");
+    [brief, setBrief] = useState(savedInput?.brief ?? initial?.brief ?? "");
   // Null means automatic: the project keeps a stable color derived from its id.
-  const [color, setColor] = useState<LibraryProjectColor | null>(initial?.color ?? null);
+  const [color, setColor] = useState<LibraryProjectColor | null>(
+    savedInput?.color ?? initial?.color ?? null,
+  );
   const [resources, setResources] = useState<readonly ResourceDraft[]>(
     () =>
-      initial?.resources.map((resource) => ({
+      (savedInput?.resources ?? initial?.resources)?.map((resource) => ({
         id: resource.id,
         kind: resource.kind ?? "repository",
         title: resource.title,
@@ -163,7 +203,9 @@ function LibraryProjectForm({
   );
   // The setup is edited with a saved project, and only once the Library says it keeps one.
   const editsProfile = Boolean(initial && authority.keepsProfile);
-  const [profile, setProfile] = useState<LibraryProfileDraft>(() => ({ ...initial?.profile }));
+  const [profile, setProfile] = useState<LibraryProfileDraft>(() => ({
+    ...(savedInput?.profile ?? initial?.profile),
+  }));
   const supportsBlueprint = useLoomFeature(authority.environmentId, PROJECT_WORKFLOWS_FEATURE);
   const [blueprintText, setBlueprintText] = useState<string | null>(null);
   const [importedBlueprint, setImportedBlueprint] = useState(false);
@@ -184,10 +226,13 @@ function LibraryProjectForm({
     "Saved computer";
   const [pending, setPending] = useState(false),
     [error, setError] = useState<string | null>(null);
-  const [awaitingResult, setAwaitingResult] = useState(false);
-  const request = useRef(uuidv4()),
-    submittedAuthority = useRef<string | null>(null),
-    busy = useRef(false);
+  const [submitted, setSubmitted] = useState(saved);
+  const awaitingResult = submitted !== null;
+  const busy = useRef(false);
+  const saveAttempt = async (next: SubmittedLibraryProjectRequest | null) => {
+    await persist(next);
+    setSubmitted(next);
+  };
   const [showSetup, setShowSetup] = useState(false);
   const [existingFolder, setExistingFolder] = useState<ExistingLibraryFolder | null>(null),
     [inspectingFolder, setInspectingFolder] = useState(false),
@@ -293,7 +338,7 @@ function LibraryProjectForm({
       !authority.ready ||
       !canSave ||
       !title.trim() ||
-      (folderTarget !== null && !folderTarget.canCreate)
+      (submitted === null && folderTarget !== null && !folderTarget.canCreate)
     )
       return;
     let parsed: LibraryResource[];
@@ -334,62 +379,105 @@ function LibraryProjectForm({
       setError(profileProblem);
       return;
     }
-    if (submittedAuthority.current && submittedAuthority.current !== authority.environmentId) {
-      setError("Reconnect the library used for this save before retrying it.");
-      return;
-    }
-    submittedAuthority.current = authority.environmentId;
-    busy.current = true;
-    setPending(true);
-    setAwaitingResult(true);
-    setError(null);
-    try {
-      const result = initial
-        ? await update({
-            environmentId: authority.environmentId,
+    const target = EnvironmentId.make(authority.environmentId);
+    const attempt: SubmittedLibraryProjectRequest = submitted ?? {
+      authorityId: target,
+      environmentId: target,
+      request: initial
+        ? {
+            kind: "update",
             input: {
-              requestId: request.current,
+              requestId: uuidv4(),
               projectId: initial.id,
               expectedRevision: initial.revision,
               title: title.trim(),
               brief,
               resources: parsed,
-              // Only send a color the person changed; null returns the project to automatic.
               ...((initial.color ?? null) !== color ? { color } : {}),
               ...(profileChange === undefined ? {} : { profile: profileChange }),
             },
-          })
-        : await create({
-            environmentId: authority.environmentId,
+          }
+        : {
+            kind: "create",
             input: {
-              requestId: request.current,
+              requestId: uuidv4(),
               title: title.trim(),
               brief,
               resources: parsed,
               ...(color ? { color } : {}),
               ...(importedBlueprint ? { profile } : {}),
             },
-          });
-      if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
-      if (existingFolder && !initial)
-        rememberLibraryFolderProject(authority.environmentId, existingFolder, result.value);
-      refreshLibraryProject(authority.environmentId, result.value.id);
-      setAwaitingResult(false);
-      if (existingFolder && !initial) addFolderTo(result.value, null);
-      else
-        navigation.dispatch(StackActions.replace("LibraryProject", { projectId: result.value.id }));
-    } catch (cause) {
-      if (isLibraryErrorValue(cause) && cause.reason !== "io") {
-        setAwaitingResult(false);
-        request.current = uuidv4();
-        submittedAuthority.current = null;
+          },
+      state: "ready",
+      result: null,
+      prepareFiles:
+        !initial && !existingFolder && parsed.some((resource) => resource.kind !== "link"),
+      ...(existingFolder
+        ? {
+            folder: {
+              environmentId: existingFolder.environmentId,
+              rootPath: existingFolder.rootPath,
+            },
+          }
+        : {}),
+    };
+    busy.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      const complete = await runSubmittedLibraryProjectRequest(attempt, target, {
+        persist: saveAttempt,
+        execute: async (submitted) => {
+          if (submitted.request.kind === "prepare")
+            throw new Error("Review the saved project request.");
+          const result =
+            submitted.request.kind === "update"
+              ? await update({
+                  environmentId: submitted.environmentId,
+                  input: submitted.request.input,
+                })
+              : await create({
+                  environmentId: submitted.environmentId,
+                  input: submitted.request.input,
+                });
+          if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+          return result.value;
+        },
+      });
+      if (complete.state !== "succeeded" || !complete.result || !("title" in complete.result))
+        return;
+      const project = complete.result;
+      if (existingFolder && !initial) rememberLibraryFolderProject(target, existingFolder, project);
+      refreshLibraryProject(target, project.id);
+      if (!navigation.isFocused()) return;
+      await saveAttempt(null);
+      if (complete.folder && !initial) {
+        navigation.dispatch(
+          StackActions.replace("LibraryStart", {
+            projectId: project.id,
+            reuseEnvironmentId: complete.folder.environmentId,
+            reuseRootPath: complete.folder.rootPath,
+            startNow: attempt.state !== "unknown",
+          }),
+        );
+      } else if (complete.prepareFiles) {
+        navigation.dispatch(
+          StackActions.replace("LibraryPrepare", {
+            projectId: project.id,
+            authorityEnvironmentId: target,
+          }),
+        );
+      } else {
+        navigation.dispatch(StackActions.replace("LibraryProject", { projectId: project.id }));
       }
+    } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The project could not be saved.");
     } finally {
       busy.current = false;
       setPending(false);
     }
   }
+
   // A folder joins its project when its first conversation starts there, so adding it starts that
   // conversation unless the start screen finds something to decide first.
   const addFolderTo = (project: LibraryProject, copyId: string | null) => {
@@ -421,11 +509,15 @@ function LibraryProjectForm({
   // Each tap is decided once, so a later catalog refresh never acts on it again.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- acts on the chosen folder's outcome once its catalog state has rendered, once per request
   useEffect(() => {
+    if (!authority.ready) {
+      decidedFolderRequest.current = folderRequest;
+      return;
+    }
     if (!folderOutcome || folderOutcome.kind === "wait") return;
     if (decidedFolderRequest.current === folderRequest) return;
     decidedFolderRequest.current = folderRequest;
     finishFolderAction(folderOutcome);
-  }, [folderOutcome, folderRequest]);
+  }, [folderOutcome, folderRequest, authority.ready]);
   const repositorySections = (
     <>
       {resources.map((resource) => (
@@ -619,7 +711,7 @@ function LibraryProjectForm({
         <Button
           label={`Add folder to ${offeredProject.title}`}
           tone="primary"
-          disabled={pending || awaitingResult || inspectingFolder}
+          disabled={pending || awaitingResult || inspectingFolder || !authority.ready || !canSave}
           onPress={() => addFolderTo(offeredProject, folderTarget?.copyId ?? null)}
         />
       ) : null}
@@ -628,7 +720,7 @@ function LibraryProjectForm({
   return (
     <LibraryPage title={initial ? "Edit project" : "New project"} back>
       {awaitingResult && !pending ? (
-        <LibraryNotice detail="The save result is not yet confirmed. Retry the same save before making further edits." />
+        <LibraryNotice detail="The submitted request is saved with its Library and inputs. Check an uncertain result before retrying. Signing in does not submit it." />
       ) : null}
       {/* The folder list explains itself, so a folder start leads with it alone. */}
       {lead !== "folder" ? (
@@ -636,7 +728,7 @@ function LibraryProjectForm({
           {initial
             ? "Update the brief, repositories and links together. Your conversations stay saved."
             : lead === "repository"
-              ? "Paste a Git URL. Loom clones it onto a computer when you start work."
+              ? "Create the Library project, then choose a computer and destination to prepare its files. Start a conversation separately."
               : "Start with a name. Add a brief, repositories or links now or later. Files are prepared when you start work."}
         </Text>
       ) : null}
@@ -785,6 +877,9 @@ function LibraryProjectForm({
           disabled={pending || awaitingResult}
         />
       ) : null}
+      {submitted && submitted.authorityId !== authority.environmentId ? (
+        <LibraryNotice error="Reconnect the Library used for this saved request before continuing." />
+      ) : null}
       {!authority.environmentId ? (
         <Button
           label="Connect your Library"
@@ -796,16 +891,41 @@ function LibraryProjectForm({
         <LibraryNotice detail="Project settings access is required to save this project." />
       ) : null}
       {error && !savingFromFolder ? <LibraryNotice error={error} /> : null}
+      {submitted?.state === "ready" ? (
+        <Button
+          label="Edit saved request"
+          tone="text"
+          disabled={pending}
+          onPress={() => {
+            void saveAttempt(null).catch((cause: unknown) =>
+              setError(
+                cause instanceof Error ? cause.message : "The request could not be cleared.",
+              ),
+            );
+          }}
+        />
+      ) : null}
       <Button
-        label={pending ? "Saving…" : initial ? "Save project" : "Create project"}
+        label={
+          pending
+            ? "Saving…"
+            : submitted?.state === "unknown"
+              ? "Check save result"
+              : submitted
+                ? "Retry save"
+                : initial
+                  ? "Save project"
+                  : "Create project"
+        }
         tone="primary"
         disabled={
           pending ||
           inspectingFolder ||
           !authority.ready ||
+          (submitted !== null && submitted.authorityId !== authority.environmentId) ||
           !canSave ||
           !title.trim() ||
-          (folderTarget !== null && !folderTarget.canCreate)
+          (submitted === null && folderTarget !== null && !folderTarget.canCreate)
         }
         onPress={() => {
           setFolderRequest(null);

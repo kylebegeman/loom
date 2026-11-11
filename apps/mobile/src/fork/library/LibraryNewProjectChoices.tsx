@@ -30,7 +30,7 @@ const CHOICES: ReadonlyArray<{
     start: "repository",
     icon: "arrow.triangle.branch",
     label: "Git repository",
-    description: "Paste a Git URL. Loom clones it onto a computer when you start work.",
+    description: "Create a Library project and prepare its files on a computer you choose.",
   },
 ];
 
