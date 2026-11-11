@@ -61,7 +61,10 @@ export const isDefaultThreadTitle = (title: string) => DEFAULT_THREAD_TITLES.has
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
-const projectDependencies = Schema.Array(LibraryId).check(Schema.isMaxLength(32));
+export const LIBRARY_PROJECT_DEPENDENCY_LIMIT = 32;
+const projectDependencies = Schema.Array(LibraryId).check(
+  Schema.isMaxLength(LIBRARY_PROJECT_DEPENDENCY_LIMIT),
+);
 export function isLibraryBranchName(branch: string): boolean {
   return (
     branch.length > 0 &&
