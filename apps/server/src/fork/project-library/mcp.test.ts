@@ -13,7 +13,7 @@ import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { archiveFor, resource, source, threadId } from "./Library.testkit.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Catalog from "./LibraryService.ts";
-import * as Management from "./LibraryManagement.ts";
+import * as Operations from "./ProjectOperations.ts";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { liveThreadsLayer } from "../../mcp/McpToolAccess.testkit.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
@@ -288,7 +288,7 @@ it.effect("still validates the full history projection before encoding", () =>
   }),
 );
 
-it.effect("routes project edits through Library management on an execution computer", () =>
+it.effect("returns the saved project from a durable update on an execution computer", () =>
   Effect.gen(function* () {
     const input = {
       requestId: "edit",
@@ -306,12 +306,25 @@ it.effect("routes project edits through Library management on an execution compu
         Layer.mock(Catalog.LibraryService)({
           updateProject: () => Effect.fail(new Library.LibraryError({ reason: "not-authority" })),
         }),
-        Layer.mock(Management.LibraryManagement)({
-          status: Effect.die("Unused management status"),
-          executeAgent: (request, caller) => {
+        Layer.mock(Operations.ProjectOperations)({
+          operationId: (requestId, kind) => Effect.succeed(`${requestId}:${kind}`),
+          executeAgent: (id, request, caller) => {
+            expect(id).toBe("edit:update");
             expect(request).toEqual({ kind: "update", input });
             expect(caller.threadId).toBe(threadId);
-            return Effect.succeed(updated);
+            return Effect.succeed({
+              id,
+              kind: "update",
+              projectId: project.id,
+              environmentId: source,
+              state: "succeeded",
+              phase: "Done",
+              attempt: 1,
+              error: null,
+              result: updated,
+              createdAt: project.createdAt,
+              updatedAt: project.updatedAt,
+            });
           },
         }),
       ),

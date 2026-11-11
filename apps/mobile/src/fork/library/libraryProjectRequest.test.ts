@@ -82,12 +82,25 @@ const prepare: SubmittedLibraryProjectRequest = {
     input: { requestId: "original:prepare", project, rootPath: copy.rootPath, strategy: "clone" },
   },
 };
+const update: SubmittedLibraryProjectRequest = {
+  ...create,
+  prepareFiles: false,
+  request: {
+    kind: "update",
+    input: {
+      requestId: "original-update",
+      projectId: project.id,
+      expectedRevision: project.revision,
+      title: "Updated project",
+    },
+  },
+};
 const receipt = (
   attempt: SubmittedLibraryProjectRequest,
   result: LibraryProject | LibraryWorkingCopy,
 ): LibraryOperation => ({
   id: "server-operation",
-  kind: attempt.request.kind === "prepare" ? "prepare" : "create",
+  kind: attempt.request.kind,
   projectId: project.id,
   environmentId: attempt.environmentId,
   state: "succeeded",
@@ -136,6 +149,7 @@ describe("submitted mobile project requests", () => {
   it("reconciles lost replies using the original request and kind without executing another mutation", async () => {
     for (const [attempt, result] of [
       [create, project],
+      [update, { ...project, title: "Updated project", revision: 2 }],
       [prepare, copy],
     ] as const) {
       const execute = vi.fn(async () => result);
@@ -216,6 +230,58 @@ describe("submitted mobile project requests", () => {
       ).rejects.toThrow("selected computer");
     }
   });
+  it("checks a reopened update before any explicit retry and keeps the original input", async () => {
+    let saved = update;
+    const persist = async (next: SubmittedLibraryProjectRequest) => {
+      saved = next;
+    };
+    const execute = vi.fn(async () => {
+      throw new Error("Lost update reply");
+    });
+    await expect(
+      runSubmittedLibraryProjectRequest(update, authorityId, { persist, execute }),
+    ).rejects.toThrow("Lost update reply");
+    const reopened = readSubmittedLibraryProjectRequest(
+      encodeSubmittedLibraryProjectRequest(saved),
+    );
+    if (!reopened) throw new Error("Expected the saved update request");
+    expect(reopened.state).toBe("unknown");
+    const lookup = vi.fn(async () => null);
+    const ready = await runSubmittedLibraryProjectRequest(reopened, authorityId, {
+      persist,
+      execute,
+      lookup,
+    });
+    expect(ready.state).toBe("ready");
+    expect(ready.request).toEqual(update.request);
+    expect(execute).toHaveBeenCalledTimes(1);
+    const result = { ...project, title: "Updated project", revision: 2 };
+    const retry = vi.fn(async (_request: SubmittedLibraryProjectRequest) => result);
+    expect(
+      (
+        await runSubmittedLibraryProjectRequest(ready, authorityId, {
+          persist,
+          execute: retry,
+          lookup,
+        })
+      ).result,
+    ).toEqual(result);
+    expect(retry.mock.calls[0]?.[0].request).toEqual(update.request);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith({
+      environmentId: authorityId,
+      requestId: "original-update",
+      kind: "update",
+    });
+    await expect(
+      runSubmittedLibraryProjectRequest(reopened, authorityId, {
+        persist,
+        execute: retry,
+        lookup: async () => receipt(update, { ...result, id: "different-project" }),
+      }),
+    ).rejects.toThrow("saved project request");
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
   it("reconciles a lost registration before allowing another explicit registration", async () => {
     let saved = {
       ...prepare,
@@ -264,14 +330,16 @@ describe("submitted mobile project requests", () => {
     const persist = vi.fn(async () => undefined);
     const lookup = vi.fn(async () => receipt(create, project));
     const initiator = { issuer: "https://id.test", subject: "kyle" };
-    for (const state of ["ready", "unknown", "succeeded"] as const) {
-      await expect(
-        runSubmittedLibraryProjectRequest(
-          { ...create, initiator, state, result: state === "succeeded" ? project : null },
-          authorityId,
-          { execute, persist, lookup, identity: { ...initiator, subject: "other" } },
-        ),
-      ).rejects.toThrow("account that started");
+    for (const attempt of [create, update]) {
+      for (const state of ["ready", "unknown", "succeeded"] as const) {
+        await expect(
+          runSubmittedLibraryProjectRequest(
+            { ...attempt, initiator, state, result: state === "succeeded" ? project : null },
+            authorityId,
+            { execute, persist, lookup, identity: { ...initiator, subject: "other" } },
+          ),
+        ).rejects.toThrow("account that started");
+      }
     }
     expect(execute).not.toHaveBeenCalled();
     expect(lookup).not.toHaveBeenCalled();

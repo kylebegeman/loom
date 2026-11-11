@@ -103,9 +103,11 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
     [L.updateProject]: (input: Parameters<typeof library.updateProject>[0]) =>
       auth.effect(
         L.updateProject,
-        management.execute(
-          { kind: "update", input },
-          { kind: "client", sessionId: session.sessionId },
+        execute({ kind: "update", input }).pipe(
+          Effect.flatMap((operation) => decodeOperationProject(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new LibraryError({ reason: "io" }),
+          ),
         ),
       ),
     [L.archiveProject]: (input: Parameters<typeof library.archiveProject>[0]) =>

@@ -154,7 +154,12 @@ export function createProjectLibraryAtoms<R, E>(
     operations: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:operations",
       tag: W.operations,
-      execute: (input) => requestGuarded(W.operations, { ...input, includeFolderImports: true }),
+      execute: (input) =>
+        requestGuarded(W.operations, {
+          ...input,
+          includeFolderImports: true,
+          includeProjectUpdates: true,
+        }),
       refreshTrigger: ({ environmentId }) => workflowChanges({ environmentId, input: {} }),
     }),
     operationOutcome: createEnvironmentRpcCommand(runtime, {
