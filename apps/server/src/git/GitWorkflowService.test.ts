@@ -73,7 +73,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
           hasUpstream: false,
           pr: null,
         });
-        expect(yield* workflow.isRepository("/registered-project")).toBe(false);
+        expect(yield* workflow.repositoryRoot("/registered-project")).toBeNull();
         expect(yield* workflow.remoteStatus({ cwd: "/registered-project" })).toBeNull();
         expect(
           (yield* workflow.localStatus({ cwd: "/ordinary-folder" })).checkpointCapable,

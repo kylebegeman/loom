@@ -24,6 +24,7 @@ const child = (turnItems: ReadonlyArray<ReturnType<typeof assistantItem>>, runs 
   messages: [],
   turnItems: [...turnItems],
   checkpoints: [],
+  providerTurns: [],
 });
 const subagent = makeSubagent({
   id: NodeId.make("node:agent"),

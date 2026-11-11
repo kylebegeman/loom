@@ -178,16 +178,11 @@ const runnerLayer = Layer.effect(
             } as ProcessRunner.ProcessRunOutput;
           const source = cloneSources.get(remoteUrl);
           if (source === undefined) return yield* Effect.die("Unexpected clone fixture");
-          const args = [...input.args];
-          args[remoteIndex] = source;
-          const result = yield* runner.run({ ...input, args });
-          if (result.code === 0)
-            yield* runner.run({
-              command: "git",
-              args: ["remote", "set-url", "origin", remoteUrl],
-              cwd: args.at(-1)!,
-            });
-          return result;
+          // One process, like a real clone, so a cancel never leaves origin pointing at the source.
+          return yield* runner.run({
+            ...input,
+            args: ["-c", `url.${source}.insteadOf=${remoteUrl}`, ...input.args],
+          });
         });
       },
     });

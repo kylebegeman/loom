@@ -194,6 +194,8 @@ export function V5StackHeader(props: {
   readonly column?: "primary" | "detail";
   /** The workspace's compose action, shown as its own group in this column's bar. */
   readonly onCompose?: () => void;
+  /** UIKit morphs search items that share an identifier between bars as columns change. */
+  readonly searchIdentifier?: string;
 }) {
   const { options } = props;
   const theme = useMobileNavigationTheme();
@@ -223,7 +225,14 @@ export function V5StackHeader(props: {
     if (item.type === "mailSearchToolbar") continue;
     const converted: HeaderItem[] =
       item.type === "searchBarPlacement"
-        ? [{ type: "item", id: `toolbar-search:${index}`, searchBarPlacement: true }]
+        ? [
+            {
+              type: "item",
+              id: `toolbar-search:${index}`,
+              searchBarPlacement: true,
+              ...(props.searchIdentifier ? { identifier: props.searchIdentifier } : {}),
+            },
+          ]
         : convertItems([item], `toolbar:${index}`);
     const separated = groupSeparator(previousToolbarItem, item, converted[0]!.id);
     previousToolbarItem = item;
@@ -243,7 +252,12 @@ export function V5StackHeader(props: {
     if (bottomSearch) {
       if (spacesSearch && bottom.length)
         bottom.push({ type: "spacer", id: "before-search", sizing: "fixed", width: 8 });
-      bottom.push({ type: "item", id: "home-search", searchBarPlacement: true });
+      bottom.push({
+        type: "item",
+        id: "home-search",
+        searchBarPlacement: true,
+        ...(props.searchIdentifier ? { identifier: props.searchIdentifier } : {}),
+      });
       if (spacesSearch && mailSearch.onComposePress)
         bottom.push({ type: "spacer", id: "after-search", sizing: "fixed", width: 8 });
     }

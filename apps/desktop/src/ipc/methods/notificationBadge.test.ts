@@ -105,7 +105,7 @@ it.effect("validates IPC, preserves attention on focus, and clears on quit and d
       Effect.provideService(HostProcess.Platform, "linux"),
       Effect.provide([
         ElectronApp.layer,
-        DesktopIpc.layer({
+        DesktopIpc.layerTest({
           handle: (channel, handler) => {
             handlers.set(channel, handler);
           },

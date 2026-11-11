@@ -15,8 +15,8 @@ import { hasCloudPublicConfig } from "../../features/cloud/publicConfig";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "../../features/settings/components/SettingsScreen";
-import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
-import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
+import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu.android";
+import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader.android";
 import { CloudEnvironmentRows } from "../../features/connection/CloudEnvironmentRows";
 import { LinkedEnvironmentsSection } from "../../features/connection/LinkedEnvironmentsSection";
 import { LocalEnvironmentList } from "../../features/connection/LocalEnvironmentList";

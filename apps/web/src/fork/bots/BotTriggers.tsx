@@ -14,7 +14,7 @@ import {
   PlusIcon,
   RotateCwIcon,
   ShieldCheckIcon,
-  SparklesIcon,
+  BotIcon,
   Trash2Icon,
   TriangleAlertIcon,
   WorkflowIcon,
@@ -1631,7 +1631,7 @@ function TriggerSheet({
               </LibraryStateBadge>
             ) : null}
             {trigger.createdBy === "agent" ? (
-              <LibraryStateBadge tone="neutral" icon={SparklesIcon}>
+              <LibraryStateBadge tone="neutral" icon={BotIcon}>
                 Added by an agent
               </LibraryStateBadge>
             ) : null}

@@ -117,14 +117,20 @@ const fixture = (env: Record<string, string>) =>
         Layer.merge(
           NodeHttpPlatform.layer,
           Layer.mock(EnvironmentAuth.EnvironmentAuth)({
-            authenticateHttpRequest: () => Ref.get(caller),
-            authenticateBrowserSession: () =>
-              Ref.get(browser).pipe(
-                Effect.filterOrFail(
-                  (session): session is EnvironmentAuth.AuthenticatedSession => session !== null,
-                  () => new EnvironmentAuth.ServerAuthMissingCredentialError(),
-                ),
-              ),
+            authenticateHttpRequest: (request) =>
+              request.url.includes("/api/loom/preview/ticket")
+                ? Ref.get(browser).pipe(
+                    Effect.filterOrFail(
+                      (session): session is EnvironmentAuth.AuthenticatedSession =>
+                        session !== null,
+                      () => new EnvironmentAuth.ServerAuthMissingCredentialError(),
+                    ),
+                    Effect.map((session): EnvironmentAuth.AuthenticatedSession => ({
+                      ...session,
+                      method: "browser-session-cookie",
+                    })),
+                  )
+                : Ref.get(caller),
           }),
         ),
       ),

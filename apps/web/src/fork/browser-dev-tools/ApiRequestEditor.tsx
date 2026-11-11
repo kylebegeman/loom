@@ -1,6 +1,6 @@
 import MultipartFields from "./MultipartFields";
 import { useState } from "react";
-import { PlusIcon, Trash2Icon, WandSparklesIcon, ShieldCheckIcon, FileUpIcon } from "lucide-react";
+import { PlusIcon, Trash2Icon, BracesIcon, ShieldCheckIcon, FileUpIcon } from "lucide-react";
 import type { DevApiDetails } from "@t3tools/contracts/fork";
 import { randomUUID } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -242,7 +242,7 @@ export default function ApiRequestEditor({
                   update({ body: { ...body, body: formatResponse(draftText(body.body), true) } })
                 }
               >
-                <WandSparklesIcon />
+                <BracesIcon />
                 Format JSON
               </Button>
             ) : null}

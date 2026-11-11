@@ -484,78 +484,6 @@ describe("Codex usage history", () => {
   );
 });
 
-// fork: retention-defaults
-describe("legacy usage scan caches", () => {
-  it.live("deletes week-old legacy caches once per process, after a save succeeds", () =>
-    Effect.gen(function* () {
-      const { transcript, settings, home } = yield* setup;
-      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
-      yield* Effect.gen(function* () {
-        const { stateDir } = yield* ServerConfig.ServerConfig;
-        const cachePath = NodePath.join(stateDir, SCAN_CACHE_FILE_NAME);
-        const v6 = NodePath.join(stateDir, "usage-scan-cache-v6.json");
-        const v5 = NodePath.join(stateDir, "usage-scan-cache-v5.json");
-        const v4 = NodePath.join(stateDir, "usage-scan-cache.json");
-        const writeLegacy = (file: string, ageDays: number) =>
-          Clock.currentTimeMillis.pipe(
-            Effect.flatMap((nowMs) =>
-              Effect.promise(async () => {
-                await NodeFSP.writeFile(file, "{}");
-                const seconds = nowMs / 1000 - ageDays * 24 * 60 * 60;
-                await NodeFSP.utimes(file, seconds, seconds);
-              }),
-            ),
-          );
-        const present = Effect.promise(() =>
-          Promise.all(
-            [v6, v5, v4].map((file) =>
-              NodeFSP.access(file).then(
-                () => true,
-                () => false,
-              ),
-            ),
-          ),
-        );
-        const readCache = Effect.promise(() => NodeFSP.readFile(cachePath, "utf8"));
-
-        yield* Effect.promise(() => NodeFSP.mkdir(stateDir, { recursive: true }));
-        yield* writeLegacy(v6, 8);
-        yield* writeLegacy(v5, 1);
-        yield* writeLegacy(v4, 30);
-        // A folder where the cache file belongs makes the save fail.
-        const blocker = NodePath.join(cachePath, "blocker");
-        yield* Effect.promise(() => NodeFSP.mkdir(blocker, { recursive: true }));
-        const service = yield* UsageService.make;
-        yield* service.readSummary(WINDOW);
-        yield* service.awaitPersisted;
-        assert.deepStrictEqual(yield* present, [true, true, true]);
-
-        yield* Effect.promise(() => NodeFSP.rm(cachePath, { recursive: true }));
-        yield* service.readSummary(WINDOW);
-        yield* service.awaitPersisted;
-        assert.include(yield* readCache, transcript);
-        assert.deepStrictEqual(yield* present, [false, true, false]);
-
-        yield* writeLegacy(v6, 8);
-        const savedBefore = yield* readCache;
-        yield* Effect.promise(() => NodeFSP.appendFile(transcript, claudeLine(2, 7)));
-        assert.strictEqual(totalOutputTokens(yield* service.readSummary(WINDOW)), 12);
-        yield* service.awaitPersisted;
-        assert.notStrictEqual(yield* readCache, savedBefore);
-        assert.deepStrictEqual(yield* present, [true, true, false]);
-
-        const restarted = yield* UsageService.make;
-        yield* Effect.promise(() => NodeFSP.appendFile(transcript, claudeLine(3, 1)));
-        assert.strictEqual(totalOutputTokens(yield* restarted.readSummary(WINDOW)), 13);
-        yield* restarted.awaitPersisted;
-        assert.deepStrictEqual(yield* present, [false, true, false]);
-      }).pipe(
-        Effect.provide(layerService({ prefix: "usage-service-legacy-cache-test", home, settings })),
-      );
-    }).pipe(Effect.scoped),
-  );
-});
-
 describe("UsageService", () => {
   it.live("counts compressed Codex rollouts across refresh, rewrites, and cache restarts", () =>
     Effect.gen(function* () {
@@ -1654,6 +1582,8 @@ describe("UsageService", () => {
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
       const cursor = makeFakeCursor();
+      let inFlight = 0;
+      let mostInFlight = 0;
       const started = yield* Deferred.make<void>();
       const gate = yield* Deferred.make<void>();
       yield* Effect.gen(function* () {
@@ -1661,17 +1591,28 @@ describe("UsageService", () => {
           layerCursorUsageAccounts(
             Layer.succeed(CursorAccountReader.CursorAccountReader, {
               read: (credential, sinceMs, untilMs) =>
-                (credential as { apiKey?: string }).apiKey === "failing-key"
-                  ? Effect.succeed({
+                Effect.gen(function* () {
+                  inFlight++;
+                  mostInFlight = Math.max(mostInFlight, inFlight);
+                  if (credential.apiKey === "failing-key") {
+                    yield* Deferred.await(started);
+                    return {
                       accountKey: null,
                       records: [],
                       missing: false,
                       error: "Cursor account usage could not be read.",
-                    })
-                  : Deferred.succeed(started, undefined).pipe(
-                      Effect.andThen(Deferred.await(gate)),
-                      Effect.andThen(cursor.read(credential, sinceMs, untilMs)),
-                    ),
+                    };
+                  }
+                  yield* Deferred.succeed(started, undefined);
+                  yield* Deferred.await(gate);
+                  return yield* cursor.read(credential, sinceMs, untilMs);
+                }).pipe(
+                  Effect.ensuring(
+                    Effect.sync(() => {
+                      inFlight--;
+                    }),
+                  ),
+                ),
             }),
           ),
         );
@@ -1687,6 +1628,14 @@ describe("UsageService", () => {
                 instanceId: ProviderInstanceId.make("cursor-work"),
                 environment: { CURSOR_API_KEY: "new-key" },
               },
+              {
+                instanceId: ProviderInstanceId.make("cursor-third"),
+                environment: { CURSOR_API_KEY: "third-key" },
+              },
+              {
+                instanceId: ProviderInstanceId.make("cursor-fourth"),
+                environment: { CURSOR_API_KEY: "fourth-key" },
+              },
             ],
             windowStartMs: 0,
             retentionCutoffMs: 0,
@@ -1698,6 +1647,8 @@ describe("UsageService", () => {
         assert.isTrue(sources.some((source) => source.refreshing === true));
         yield* Deferred.succeed(gate, undefined);
         yield* Fiber.join(first);
+        assert.strictEqual(mostInFlight, 2);
+        assert.strictEqual(inFlight, 0);
       }).pipe(
         Effect.provide(
           layerService({
@@ -2638,7 +2589,7 @@ describe("UsageService", () => {
   );
 
   it.live.each([4, 5, 6, 7, 8, 10])(
-    "upgrades a v%s cache: reparses live Codex usage, keeps deleted rollouts and the old file",
+    "upgrades a v%s cache: reparses live Codex usage, keeps deleted rollouts, removes the old file",
     (version) =>
       Effect.gen(function* () {
         const { home, settings } = yield* setup;
@@ -2687,7 +2638,7 @@ describe("UsageService", () => {
           yield* first.readSummary(WINDOW);
           yield* first.awaitPersisted;
 
-          const legacy = yield* Effect.promise(async () => {
+          yield* Effect.promise(async () => {
             const livePath = await NodeFSP.realpath(live);
             const document = decodeUnknownJsonString(await NodeFSP.readFile(cachePath, "utf8")) as {
               files: Record<string, { r: unknown[][]; mr: number; cs: Record<string, unknown> }>;
@@ -2725,7 +2676,9 @@ describe("UsageService", () => {
               }
             }
             await NodeFSP.rm(deleted);
-            return text;
+            await NodeFSP.mkdir(`${cachePath}.stale`);
+            await NodeFSP.utimes(`${cachePath}.stale`, 0, 0);
+            await NodeFSP.mkdir(`${cachePath}.active`);
           });
 
           const upgraded = yield* UsageService.make;
@@ -2737,9 +2690,11 @@ describe("UsageService", () => {
           );
           yield* upgraded.awaitPersisted;
           assert.strictEqual(SCAN_CACHE_FILE_NAME, "usage-scan-cache-v11.json");
-          assert.strictEqual(
-            yield* Effect.promise(() => NodeFSP.readFile(legacyPath, "utf8")),
-            legacy,
+          assert.deepStrictEqual(
+            (yield* Effect.promise(() => NodeFSP.readdir(stateDir)))
+              .filter((name) => name.startsWith("usage-scan-cache"))
+              .toSorted(),
+            [SCAN_CACHE_FILE_NAME, `${SCAN_CACHE_FILE_NAME}.active`],
           );
         }).pipe(
           Effect.provide(

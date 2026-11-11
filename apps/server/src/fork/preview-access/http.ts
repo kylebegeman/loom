@@ -149,18 +149,30 @@ const ticketPage = (reason: LibraryError["reason"]) => {
   }
 };
 
+// Without an Authorization header the credential can only come from a cookie.
+const browserSession = (
+  auth: EnvironmentAuth.EnvironmentAuth["Service"],
+  request: HttpServerRequest.HttpServerRequest,
+): Effect.Effect<
+  EnvironmentAuth.AuthenticatedSession | null,
+  EnvironmentAuth.ServerAuthInternalError
+> =>
+  request.headers.authorization !== undefined
+    ? Effect.succeed(null)
+    : auth.authenticateHttpRequest(request).pipe(
+        Effect.map((session) => (session.method === "browser-session-cookie" ? session : null)),
+        Effect.catchTags({
+          ServerAuthMissingCredentialError: () => Effect.succeed(null),
+          ServerAuthInvalidCredentialError: () => Effect.succeed(null),
+        }),
+      );
+
 const ticket = withForkRuntime(
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
     const query = new URL(request.url, "http://localhost").searchParams;
-    const session = yield* auth.authenticateBrowserSession(request).pipe(
-      Effect.map((value): EnvironmentAuth.AuthenticatedSession | null => value),
-      Effect.catchTags({
-        ServerAuthMissingCredentialError: () => Effect.succeed(null),
-        ServerAuthInvalidCredentialError: () => Effect.succeed(null),
-      }),
-    );
+    const session = yield* browserSession(auth, request);
     const access = yield* PreviewAccessService;
     const outcome = yield* access.ticket({
       host: query.get("host"),

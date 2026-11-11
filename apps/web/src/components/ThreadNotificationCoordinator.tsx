@@ -8,6 +8,7 @@ import type { AnyRouter } from "@tanstack/react-router";
 import { threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
+import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 // fork: respectful-notifications
 import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
@@ -40,6 +41,7 @@ import {
   threadNotificationTag,
   unlockNotificationAudio,
 } from "../threadNotifications";
+import { resolveBackgroundThreadRequest } from "./backgroundThreadAnnouncement";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
 import {
   createThreadNotificationGate,
@@ -73,8 +75,10 @@ const RESYNC_COMPLETION_WINDOW_MS = 10 * 60 * 1_000;
 // fork: respectful-notifications - after a gap, a thread first seen now is news as well
 const UNSEEN_THREAD: ThreadNotificationObservation = {
   attention: null,
+  requestId: null,
   settled: false,
   completedAt: null,
+  backgroundWake: false,
 };
 
 // fork: scheduled-task-alerts - fork alerts join the pending set, so focus and settings close them
@@ -350,25 +354,31 @@ export function startThreadNotifications(
       let status = resolveSidebarThreadStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       // fork: respectful-notifications
-      const attention =
+      const needsAttention =
         status === "input" ||
         status === "request" ||
         status === "approval" ||
         status === "failed" ||
         status === "limited" || // fork: respectful-notifications
-        status === "paused"
-          ? `${thread.latestRun?.runId ?? ""}:${rawThread.pendingRuntimeRequest?.id ?? ""}:${status}`
-          : null;
-      const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
-      const settled = status === "ready" && thread.latestRun?.status === "completed";
+        status === "paused";
+      const requestId = needsAttention ? resolveBackgroundThreadRequest(thread).requestId : null;
+      const attention = needsAttention
+        ? `${thread.latestRun?.runId ?? ""}:${status}:${requestId ?? ""}`
+        : null;
+      const completed = status === "ready" && thread.latestRun?.status === "completed";
+      const settled = completed && !monitorHoldsWakeCompletion(rawThread);
+      const parsedCompletedAt = Date.parse(thread.latestRun?.completedAt ?? "");
+      const completedAt = Number.isFinite(parsedCompletedAt) ? parsedCompletedAt : null;
       const state = {
         raw: rawThread,
         subagentRequest,
         thread,
         status,
         attention,
+        requestId,
         settled,
-        completedAt: settled && Number.isFinite(completedAt) ? completedAt : null,
+        completedAt: settled ? completedAt : null,
+        backgroundWake: rawThread.latestRunBackgroundWake === true,
       };
       next.set(thread.id, state);
       // fork: respectful-notifications
@@ -436,6 +446,7 @@ export function startThreadNotifications(
         if (!entry.seeded && snapshot !== null) observeThreads(environmentId, entry, snapshot);
         entry.resync = entry.seeded; // fork: respectful-notifications
         entry.reconnecting = true;
+        entry.gate.pause();
       },
       { immediate: true },
     );
