@@ -151,7 +151,11 @@ export function useProjectUpdate({
           onSaved();
           return true;
         }
-        if (operation === null || operation.state === "paused" || operation.state === "failed") {
+        if (
+          operation === null ||
+          operation.state === "needs-input" ||
+          operation.state === "failed"
+        ) {
           setNeedsRecovery(false);
           setError(
             "The saved update is ready for an explicit retry. Save again when you are ready.",

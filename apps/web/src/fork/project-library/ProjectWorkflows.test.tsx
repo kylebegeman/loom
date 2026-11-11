@@ -356,9 +356,11 @@ it("offers repository resources for workstreams without turning ordinary links i
   ]);
 });
 
-it.each(["absent", "succeeded"] as const)(
+it.each(["absent", "succeeded", "needs-input"] as const)(
   "checks an interrupted project edit's %s receipt before an explicit retry",
   async (receipt) => {
+    state.update.mockReset();
+    state.outcome.mockReset();
     state.update
       .mockResolvedValueOnce(AsyncResult.failure(Cause.interrupt(0)))
       .mockResolvedValueOnce(AsyncResult.success(project));
@@ -370,7 +372,7 @@ it.each(["absent", "succeeded"] as const)(
               kind: "update",
               environmentId: "library",
               projectId: project.id,
-              state: "succeeded",
+              state: receipt === "needs-input" ? "needs-input" : "succeeded",
               result: project,
             },
       ),
