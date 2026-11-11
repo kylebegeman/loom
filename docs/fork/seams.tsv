@@ -1029,7 +1029,7 @@ packages/shared/src/git.ts	source-control-cockpit	2
 packages/shared/src/git.ts	checkpoint-capable	1
 packages/shared/src/git.ts	project-checkout-management	3
 apps/server/src/ws.test.ts	project-lifecycle	2
-apps/server/src/ws.test.ts	file-placement	9
+apps/server/src/ws.test.ts	file-placement	11
 apps/web/src/components/chat/useTimelineRewind.ts	project-lifecycle	22
 docs/user/source-control.md	source-control-cockpit	1
 docs/user/remote-access.md	preview-popups	1
