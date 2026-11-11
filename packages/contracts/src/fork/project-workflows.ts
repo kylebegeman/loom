@@ -18,6 +18,7 @@ import {
   LibraryResource,
   LibraryProjectColor,
   LibraryCreateProjectRequest,
+  LibraryUpdateProjectRequest,
   LibraryPrepareCopyRequest,
   LibraryReopenCopyRequest,
   LibraryReleaseCopyRequest,
@@ -162,6 +163,7 @@ export type LibraryImportFolderRequest = typeof LibraryImportFolderRequest.Type;
 export const LibraryOperationInput = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("import"), input: LibraryImportFolderRequest }),
   Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),
+  Schema.Struct({ kind: Schema.Literal("update"), input: LibraryUpdateProjectRequest }),
   Schema.Struct({ kind: Schema.Literal("prepare"), input: LibraryPrepareCopyRequest }),
   Schema.Struct({ kind: Schema.Literal("restore"), input: LibraryRestoreCopyRequest }),
   Schema.Struct({ kind: Schema.Literal("reopen"), input: LibraryReopenCopyRequest }),
@@ -176,6 +178,7 @@ export const LibraryOperation = Schema.Struct({
   kind: Schema.Literals([
     "import",
     "create",
+    "update",
     "prepare",
     "restore",
     "reopen",
@@ -252,6 +255,7 @@ export const ProjectWorkflowsRpcGroup = RpcGroup.make(
     payload: {
       projectId: Schema.optional(LibraryId),
       includeFolderImports: Schema.optionalKey(Schema.Boolean),
+      includeProjectUpdates: Schema.optionalKey(Schema.Boolean),
     },
     success: Schema.Array(LibraryOperation),
     error,

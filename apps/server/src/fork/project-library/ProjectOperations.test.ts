@@ -518,6 +518,7 @@ it.effect(
         expect(pending.state).toBe("pending");
         expect(pending.operationId).toBeTruthy();
         expect(yield* state.service.list({ includeFolderImports: true })).toHaveLength(1);
+        expect(yield* state.service.list({ includeProjectUpdates: true })).toEqual([]);
         yield* Ref.set(state.publishFailure, false);
         const shared = yield* state.service.shareCreated(localProject, {
           kind: "client",
@@ -968,6 +969,74 @@ describe("Project operations", () => {
         environment,
       );
     },
+  );
+
+  it.effect(
+    "keeps exact update receipts across reopen without replay and excludes them from legacy lists",
+    () =>
+      run((state) =>
+        Effect.gen(function* () {
+          yield* Ref.set(state.active, [session([AuthSettingsWriteScope])]);
+          const request: LibraryOperationInput = {
+            kind: "update",
+            input: {
+              requestId: "u".repeat(200),
+              projectId: project.id,
+              expectedRevision: project.revision,
+              title: "Updated project",
+            },
+          };
+          const query = { requestId: request.input.requestId, kind: request.kind };
+          const id = yield* state.service.operationId(query.requestId, query.kind);
+          expect(yield* state.service.outcomeClient(query, actor.sessionId)).toBeNull();
+          const accepted = yield* state.service.executeClient(id, request, actor.sessionId);
+          expect(accepted).toMatchObject({
+            kind: "update",
+            projectId: project.id,
+            state: "succeeded",
+            result: { id: project.id, revision: project.revision + 1 },
+          });
+          expect(yield* state.service.list({})).toEqual([]);
+          expect(yield* state.service.list({ includeFolderImports: true })).toEqual([]);
+          expect(yield* state.service.list({ includeProjectUpdates: false })).toEqual([]);
+          expect(
+            yield* state.service.list({ projectId: project.id, includeProjectUpdates: true }),
+          ).toEqual([accepted]);
+          expect(
+            yield* state.service.list({ includeProjectUpdates: true, includeFolderImports: true }),
+          ).toEqual([accepted]);
+          yield* Ref.set(state.catalog, [{ ...project, revision: 7, title: "Changed elsewhere" }]);
+          yield* Effect.gen(function* () {
+            const reopened = yield* ProjectOperations.ProjectOperations;
+            expect(yield* reopened.outcomeClient(query, actor.sessionId)).toEqual(accepted);
+            expect(yield* reopened.executeClient(id, request, actor.sessionId)).toEqual(accepted);
+            expect(
+              (yield* reopened
+                .executeClient(
+                  id,
+                  {
+                    kind: "update",
+                    input: { ...request.input, title: "Different update" },
+                  },
+                  actor.sessionId,
+                )
+                .pipe(Effect.flip)).reason,
+            ).toBe("request-conflict");
+            yield* Ref.set(state.active, [{ ...session(), subject: "another-account" }]);
+            expect(yield* reopened.outcomeClient(query, actor.sessionId)).toBeNull();
+            expect(
+              (yield* reopened.executeClient(id, request, actor.sessionId).pipe(Effect.flip))
+                .accessRepair?.kind,
+            ).toBe("ownership");
+          }).pipe(
+            Effect.provide(
+              Layer.fresh(ProjectOperations.layer.pipe(Layer.provide(state.external))),
+            ),
+          );
+          expect(yield* Ref.get(state.updateInputs)).toEqual([request.input]);
+          expect(yield* Ref.get(state.calls)).toBe(1);
+        }),
+      ),
   );
 
   it.effect(

@@ -125,7 +125,7 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       loom_library_operations: McpToolAccess.reads((input) =>
         onHost(
           Effect.flatMap(ProjectOperations, (service) =>
-            service.list({ ...input, includeFolderImports: true }),
+            service.list({ ...input, includeFolderImports: true, includeProjectUpdates: true }),
           ),
         ),
       ),
@@ -235,7 +235,13 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_project_update: McpToolAccess.writesEnvironment((input) =>
-        manage({ kind: "update", input }),
+        projectOperationId(input.requestId, "update").pipe(
+          Effect.flatMap((id) => operate(id, { kind: "update", input })),
+          Effect.flatMap((operation) => decodeOperationProject(operation.result)),
+          Effect.mapError((cause) =>
+            isLibraryFailure(cause) ? cause : new Library.LibraryError({ reason: "io" }),
+          ),
+        ),
       ),
       loom_library_project_archive: McpToolAccess.writesEnvironment((input) =>
         manage({ kind: "archive", input }),

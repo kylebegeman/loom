@@ -12,6 +12,7 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   FolderOpenIcon,
+  FolderPenIcon,
   FolderPlusIcon,
   FolderXIcon,
   HardDriveDownloadIcon,
@@ -37,6 +38,7 @@ import { ComputerLabel } from "./ProjectIdentity";
 const OPERATION_ICONS: Record<LibraryOperation["kind"], LucideIcon> = {
   import: FolderPlusIcon,
   create: FolderPlusIcon,
+  update: FolderPenIcon,
   prepare: HardDriveDownloadIcon,
   restore: ArchiveRestoreIcon,
   reopen: FolderOpenIcon,

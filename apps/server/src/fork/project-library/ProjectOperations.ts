@@ -144,7 +144,7 @@ const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
 function operationScopes(kind: LibraryOperationInput["kind"]): readonly AuthEnvironmentScope[] {
   return kind === "import"
     ? [AuthSettingsWriteScope, AuthTerminalOperateScope]
-    : kind === "create"
+    : kind === "create" || kind === "update"
       ? [AuthSettingsWriteScope]
       : kind === "launch"
         ? [AuthTerminalOperateScope, AuthOrchestrationOperateScope]
@@ -206,6 +206,7 @@ export class ProjectOperations extends Context.Service<
     readonly list: (input: {
       projectId?: string | undefined;
       includeFolderImports?: boolean;
+      includeProjectUpdates?: boolean;
     }) => Effect.Effect<readonly LibraryOperation[], LibraryError>;
     readonly run: (
       id: string,
@@ -757,6 +758,10 @@ const make = Effect.gen(function* () {
           yield* phase("Creating project");
           result = yield* management.execute(request, yield* managementActor());
           break;
+        case "update":
+          yield* phase("Updating project");
+          result = yield* management.execute(request, yield* managementActor());
+          break;
         case "prepare":
           yield* phase("Preparing files");
           result = yield* withRepositoryContext(
@@ -1045,7 +1050,9 @@ const make = Effect.gen(function* () {
           ? (existing?.operation.projectId ?? null)
           : request.kind === "launch" || request.kind === "prepare" || request.kind === "restore"
             ? request.input.project.id
-            : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
+            : request.kind === "update"
+              ? request.input.projectId
+              : (yield* workspaceStore.get(request.input.workingCopyId)).copy.projectId;
       const value: LibraryOperation = {
         id,
         kind: request.kind,
@@ -1100,6 +1107,7 @@ const make = Effect.gen(function* () {
   const list = Effect.fn("ProjectOperations.list")(function* (input: {
     projectId?: string | undefined;
     includeFolderImports?: boolean;
+    includeProjectUpdates?: boolean;
   }) {
     const rows = input.projectId
       ? yield* sql<{
@@ -1111,10 +1119,12 @@ const make = Effect.gen(function* () {
     const operations = yield* Effect.forEach(rows, (row) =>
       Schema.decodeEffect(operationCodec)(row.payload_json),
     );
-    // Older clients cannot decode the new operation kind until they opt into folder imports.
-    return input.includeFolderImports === true
-      ? operations
-      : operations.filter((operation) => operation.kind !== "import");
+    // Older clients opt into each new kind only when they can decode its receipts.
+    return operations.filter(
+      (operation) =>
+        (input.includeFolderImports === true || operation.kind !== "import") &&
+        (input.includeProjectUpdates === true || operation.kind !== "update"),
+    );
   }, Effect.mapError(io));
   const cancel = Effect.fn("ProjectOperations.cancel")(
     function* (id: string, actor: OperationActor) {
