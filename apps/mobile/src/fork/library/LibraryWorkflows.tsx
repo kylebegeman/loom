@@ -1,4 +1,4 @@
-import { useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useRef, useState } from "react";
 import { Linking, Share, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
@@ -561,7 +561,15 @@ export function LibraryPreservationCenter({
                   })
                 }
               />
-              <LibraryOperationHistory environmentId={entry.copy.environmentId} />
+              <LibraryOperationHistory
+                environmentId={entry.copy.environmentId}
+                projectId={entry.project.id}
+                computerLabel={
+                  authority.computers.find(
+                    (computer) => computer.environmentId === entry.copy.environmentId,
+                  )?.label
+                }
+              />
             </View>
           ))}
         </>
@@ -573,7 +581,7 @@ export function LibraryPreservationCenter({
 export function LibraryOperationHistory({
   environmentId,
   projectId,
-  computerLabel = "This computer",
+  computerLabel: savedComputerLabel,
 }: {
   readonly environmentId: EnvironmentId;
   readonly projectId?: string;
@@ -581,12 +589,10 @@ export function LibraryOperationHistory({
 }) {
   const navigation = useNavigation();
   const { environments } = useEnvironments();
-  const connected = environments.some(
-    (entry) =>
-      entry.environmentId === environmentId &&
-      entry.entry.enabled &&
-      entry.connection.phase === "connected",
-  );
+  const environment = environments.find((entry) => entry.environmentId === environmentId);
+  const computerLabel = environment?.label ?? savedComputerLabel ?? "Saved computer";
+  const connected =
+    environment?.entry.enabled === true && environment.connection.phase === "connected";
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const supported = useLoomFeature(environmentId, PROJECT_WORKFLOWS_FEATURE);
@@ -705,12 +711,33 @@ export function LibraryOperationHistory({
                   Requested {new Date(operation.createdAt).toLocaleString()}. Resume keeps this
                   reference.
                 </Text>
-                {operation.error || operation.accessRepair || operation.repair ? (
+                {outcome.error || outcome.accessRepair || outcome.repair ? (
                   <LibraryNotice
-                    error={operation.error}
-                    accessRepair={operation.accessRepair}
-                    repair={operation.repair}
+                    error={outcome.error}
+                    accessRepair={outcome.accessRepair}
+                    repair={outcome.repair}
                     accessContext={{ environmentId: operation.environmentId, computerLabel }}
+                  />
+                ) : null}
+                {operation.error && !outcome.error ? (
+                  <Text className="text-xs text-foreground-muted">
+                    Last error: {operation.error}
+                  </Text>
+                ) : null}
+                {outcome.threadId ? (
+                  <Button
+                    label="Open conversation"
+                    tone="text"
+                    disabled={!connected}
+                    onPress={() => {
+                      if (outcome.threadId)
+                        navigation.dispatch(
+                          StackActions.push("Thread", {
+                            environmentId: operation.environmentId,
+                            threadId: outcome.threadId,
+                          }),
+                        );
+                    }}
                   />
                 ) : null}
                 <Button

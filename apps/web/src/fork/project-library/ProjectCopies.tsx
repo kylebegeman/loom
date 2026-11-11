@@ -227,12 +227,15 @@ function CopyHealth({
     effectiveLibraryCopyHealth({ copy, live: null, lastSeenAt }) !== null
   )
     return (
-      <PublishedCopyHealth
-        project={project}
-        copy={copy}
-        lastSeenAt={lastSeenAt}
-        offlineLabel={null}
-      />
+      <div className="space-y-1.5">
+        <PublishedCopyHealth
+          project={project}
+          copy={copy}
+          lastSeenAt={lastSeenAt}
+          offlineLabel={null}
+        />
+        <LibraryErrorNotice error={health.error} onRetry={health.refresh} />
+      </div>
     );
   if (data === null)
     return health.error ? (
@@ -250,7 +253,11 @@ function CopyHealth({
         const cwd = copy.repositories.find(
           (entry) => entry.resourceId === repository.resourceId,
         )?.path;
-        return cwd !== undefined && canPull && libraryRepositoryCanPull(repository) ? (
+        return health.isSuccess &&
+          !health.isPending &&
+          cwd !== undefined &&
+          canPull &&
+          libraryRepositoryCanPull(repository) ? (
           <Button
             shape="pill"
             size="xs"
@@ -264,7 +271,11 @@ function CopyHealth({
       }}
       footer={
         <>
-          <span>Checked {formatRelativeTimeLabel(data.checkedAt)}</span>
+          <span>Last checked {formatRelativeTimeLabel(data.checkedAt)}</span>
+          {health.isPending ? <span role="status">Checking files...</span> : null}
+          {health.error ? (
+            <LibraryErrorNotice error={health.error} onRetry={health.refresh} />
+          ) : null}
           {canRefreshRemote ? (
             <Button
               shape="pill"
@@ -462,10 +473,7 @@ export function ProjectCopies({
                   />
                 ) : null}
                 <TemporaryResources copy={copy} connected={online} />
-                <details className="space-y-3">
-                  <summary className="w-fit cursor-pointer text-xs text-muted-foreground">
-                    Computer details
-                  </summary>
+                <CopyComputerDetails>
                   {copy.state !== "ready" ? null : online && supportsHealth(copy.environmentId) ? (
                     <CopyHealth
                       project={project}
@@ -485,7 +493,7 @@ export function ProjectCopies({
                   {online && copy.state === "ready" ? (
                     <CopyProfileSetup project={project} copy={copy} />
                   ) : null}
-                </details>
+                </CopyComputerDetails>
                 {copy.projectRevision !== project.revision && copy.state === "ready" ? (
                   <p className="text-xs text-muted-foreground">
                     From an earlier version of the project
@@ -540,6 +548,18 @@ export function ProjectCopies({
         </div>
       ) : null}
     </LibrarySection>
+  );
+}
+
+function CopyComputerDetails({ children }: { readonly children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="space-y-3" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="w-fit cursor-pointer text-xs text-muted-foreground">
+        Computer details
+      </summary>
+      {open ? children : null}
+    </details>
   );
 }
 
@@ -606,6 +626,10 @@ function CopyFileControls({
   const setRetention = useAtomCommand(projectLibrary.setCopyRetention, { reportFailure: false });
   const reopen = useAtomCommand(projectLibrary.reopenCopy, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
+  const outcome = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
+  const cancel = useAtomCommand(projectLibrary.cancelOperation, { reportFailure: false });
+  const canCheckOutcome = useLibraryPermission(projectLibrary.operationOutcome, copy.environmentId);
+  const canCancel = useLibraryPermission(projectLibrary.cancelOperation, copy.environmentId);
   const canRetain = useLibraryPermission(projectLibrary.setCopyRetention, copy.environmentId);
   const canReopen = useLibraryPermission(projectLibrary.reopenCopy, copy.environmentId);
   const canRegister = useLibraryPermission(projectLibrary.registerCopy, authority.authorityId);
@@ -623,8 +647,7 @@ function CopyFileControls({
     if (
       !authority.authorityId ||
       changing.current ||
-      !online ||
-      !supported ||
+      (!attempt?.copy && (!online || !supported)) ||
       !canAct ||
       !canRegister ||
       !authority.connected ||
@@ -672,6 +695,64 @@ function CopyFileControls({
       setError(
         cause instanceof Error ? cause.message : "Could not update project files. Try again.",
       );
+    }
+    changing.current = false;
+    setBusy(false);
+  };
+  const cancelUpdate = async () => {
+    if (!attempt || attempt.copy || changing.current) return;
+    if (attempt.keepOnComputer !== null) {
+      saveAttempt(null);
+      setError(null);
+      onChanged();
+      return;
+    }
+    if (!online || !supported || !canCheckOutcome || !canCancel) return;
+    changing.current = true;
+    setBusy(true);
+    setError(null);
+    const stopRestore = async () => {
+      const read = await outcome({
+        environmentId: copy.environmentId,
+        input: { requestId: attempt.requestId, kind: "reopen" },
+      });
+      if (read._tag === "Failure") throw squashAtomCommandFailure(read);
+      const operation = read.value;
+      if (!operation)
+        throw new Error(
+          "No saved restore receipt was returned. Keep this request and check again.",
+        );
+      if (operation.state === "succeeded") {
+        const restored = operation.result;
+        if (
+          !restored ||
+          !("rootPath" in restored) ||
+          restored.id !== copy.id ||
+          restored.projectId !== copy.projectId ||
+          restored.environmentId !== copy.environmentId ||
+          restored.rootPath !== copy.rootPath
+        )
+          throw new Error("The restore receipt does not match these files. Keep it for review.");
+        saveAttempt({ ...attempt, copy: restored });
+        setError("Files were already restored. Retry file update to finish saving their status.");
+        return;
+      }
+      if (operation.state !== "cancelled") {
+        const cancelled = await cancel({
+          environmentId: copy.environmentId,
+          input: { operationId: operation.id },
+        });
+        if (cancelled._tag === "Failure") throw squashAtomCommandFailure(cancelled);
+        if (cancelled.value.state !== "cancelled")
+          throw new Error("The restore was not cancelled. Keep this request and check again.");
+      }
+      saveAttempt(null);
+      onChanged();
+    };
+    try {
+      await stopRestore();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not cancel this restore.");
     }
     changing.current = false;
     setBusy(false);
@@ -737,7 +818,17 @@ function CopyFileControls({
           shape="pill"
           size="xs"
           variant="outline"
-          disabled={busy || !online || !canRegister || !authority.connected}
+          disabled={
+            busy ||
+            (!attempt.copy &&
+              (!online ||
+                !supported ||
+                (attempt.keepOnComputer === null ? !canReopen : !canRetain))) ||
+            !canAct ||
+            !canRegister ||
+            !authority.connected ||
+            attempt.authorityId !== authority.authorityId
+          }
           onClick={() => void change(attempt.keepOnComputer ?? undefined)}
         >
           {busy ? "Saving..." : "Retry file update"}
@@ -747,12 +838,12 @@ function CopyFileControls({
         <Button
           variant="ghost"
           size="xs"
-          disabled={busy}
-          onClick={() => {
-            saveAttempt(null);
-            setError(null);
-            onChanged();
-          }}
+          disabled={
+            busy ||
+            (attempt.keepOnComputer === null &&
+              (!online || !supported || !canCheckOutcome || !canCancel))
+          }
+          onClick={() => void cancelUpdate()}
         >
           Cancel update
         </Button>

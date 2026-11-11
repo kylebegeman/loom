@@ -7,6 +7,7 @@ import type {
 import { describe, expect, it } from "vite-plus/test";
 import {
   libraryProjectHomeLocation,
+  libraryProjectHomeHealthDeadline,
   selectLibraryProjectHomeCopies,
   libraryProjectRequestHosts,
 } from "./library-project-home-status.ts";
@@ -93,6 +94,22 @@ describe("Library project home location evidence", () => {
     );
     expect(location({ liveHealth: health(), readFailed: true }).status).toBe("needs-check");
     expect(location({ liveHealth: health(), readPending: true }).status).toBe("needs-check");
+    const earlier = "2026-11-11T11:59:00.000Z";
+    const staggered = health({
+      repositories: [
+        { ...health().repositories[0]!, checkedAt: earlier },
+        {
+          ...health().repositories[0]!,
+          resourceId: "removed",
+          checkedAt: "2026-11-11T10:00:00.000Z",
+        },
+      ],
+    });
+    const deadline = libraryProjectHomeHealthDeadline(project, staggered);
+    expect(deadline).toBe(Date.parse(earlier) + 300_000);
+    expect(location({ liveHealth: staggered, now: deadline! - 1 }).status).toBe("available");
+    expect(location({ liveHealth: staggered, now: deadline! }).status).toBe("needs-check");
+    expect(libraryProjectHomeHealthDeadline(project, null)).toBeNull();
     expect(location({ liveHealth: health(), now: Date.parse(at) + 300_000 }).status).toBe(
       "needs-check",
     );

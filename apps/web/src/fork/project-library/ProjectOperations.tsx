@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   LIBRARY_OPERATION_LABELS,
   LIBRARY_OPERATION_STATES,
@@ -151,6 +152,7 @@ export function ProjectOperationHistory({
                   operation={operation}
                   canResume={connected && canResume && !busy}
                   canCancel={connected && canCancel && !busy}
+                  connected={connected}
                   canCheck={connected && !query.isPending}
                   onCheck={query.refresh}
                   onResume={() =>
@@ -193,6 +195,7 @@ function OperationRow({
   operation,
   canResume,
   canCancel,
+  connected,
   canCheck,
   onCheck,
   onResume,
@@ -201,6 +204,7 @@ function OperationRow({
   readonly operation: LibraryOperation;
   readonly canResume: boolean;
   readonly canCancel: boolean;
+  readonly connected: boolean;
   readonly canCheck: boolean;
   readonly onCheck: () => void;
   readonly onResume: () => void;
@@ -257,19 +261,38 @@ function OperationRow({
           </p>
         </details>
       </div>
-      {operation.error || operation.accessRepair || operation.repair ? (
+      {outcome.error || outcome.accessRepair || outcome.repair ? (
         <div className="ps-10">
           <LibraryErrorNotice
-            error={operation.error ?? "Access is needed to continue this request."}
-            accessRepair={operation.accessRepair}
+            error={outcome.error ?? "Access is needed to continue this request."}
+            accessRepair={outcome.accessRepair}
             accessContext={{ environmentId: operation.environmentId }}
           />
-          {operation.repair && !operation.accessRepair ? (
-            <LibraryCloneRepair repair={operation.repair} />
+          {outcome.repair && !outcome.accessRepair ? (
+            <LibraryCloneRepair repair={outcome.repair} />
           ) : null}
         </div>
       ) : null}
+      {operation.error && !outcome.error ? (
+        <p className="ps-10 text-xs text-muted-foreground">Last error: {operation.error}</p>
+      ) : null}
       <div className="flex flex-wrap gap-1.5 ps-10">
+        {outcome.threadId ? (
+          <Button
+            shape="pill"
+            size="xs"
+            variant="outline"
+            render={
+              <Link
+                to="/$environmentId/$threadId"
+                disabled={!connected}
+                params={{ environmentId: operation.environmentId, threadId: outcome.threadId }}
+              />
+            }
+          >
+            Open conversation
+          </Button>
+        ) : null}
         <Button shape="pill" size="xs" variant="ghost" disabled={!canCheck} onClick={onCheck}>
           Check outcome
         </Button>
