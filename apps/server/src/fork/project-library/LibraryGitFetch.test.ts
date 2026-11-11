@@ -186,11 +186,20 @@ describe("LibraryGitFetch", () => {
           yield* fetch.preflightRepository({ ...input, remoteUrl });
         yield* fetch.cloneRepository({ ...input, branch: null, path: path.join(root, "copy") });
         denied = true;
-        expect(
-          (yield* fetch
-            .cloneRepository({ ...input, branch: null, path: path.join(root, "retry") })
-            .pipe(Effect.flip)).reason,
-        ).toBe("blocked");
+        const failure = yield* fetch
+          .cloneRepository({ ...input, branch: null, path: path.join(root, "retry") })
+          .pipe(Effect.flip);
+        expect(failure.reason).toBe("blocked");
+        expect(failure.accessRepair).toMatchObject({
+          kind: "permission",
+          vaultReason: "denied",
+          repository: {
+            id: input.repositoryAccess.id,
+            expectedVersion: 1,
+            repository: "owner/repo",
+          },
+        });
+        expect(failure.cause).toBeUndefined();
         yield* fetch.warmMirror({ ...input, create: true });
         expect(routes).toEqual(["preflight", "preflight", "preflight", "clone", "clone"]);
         expect(yield* fetch.mirrors).toEqual([]);

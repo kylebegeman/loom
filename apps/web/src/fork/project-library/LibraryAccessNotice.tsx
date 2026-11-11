@@ -1,28 +1,74 @@
-import { Link } from "@tanstack/react-router";
 import { KeyRoundIcon, UnplugIcon } from "lucide-react";
+import {
+  libraryAccessRepairNotice,
+  type LibraryAccessRepairContext,
+} from "@t3tools/client-runtime/fork";
+import type { LibraryAccessRepair } from "@t3tools/contracts/fork";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
-import { Button } from "~/components/ui/button";
-import { SavedIdentitySignIn } from "~/fork/identity/ComputerIdentityAccess";
+import { identityProfile } from "~/fork/identity/identityProfile";
 import { useEnvironment } from "~/state/environments";
-import { accessRepairTarget } from "./accessBlock";
 import { type EnvironmentAccessBlock, useLibraryAuthorityId } from "./state";
+import { LibrarySignInLink } from "./LibrarySignInLink";
 
-/**
- * Says why a Library action is unavailable for access reasons and offers the repair where the
- * action is. Signing in again refreshes the session the action's permission reads, so the action
- * comes back without a reload. Connections stays one click away for pairing, or when the saved
- * sign-in itself reports a problem.
- */
+export function LibraryAccessRepairNotice({
+  accessRepair,
+  context,
+  error,
+  onLeave,
+}: {
+  readonly accessRepair?: LibraryAccessRepair | undefined;
+  readonly context?: LibraryAccessRepairContext | undefined;
+  readonly error?: string | null | undefined;
+  readonly onLeave?: (() => void) | undefined;
+}) {
+  const libraryId = useLibraryAuthorityId();
+  const environmentId = accessRepair?.environmentId ?? context?.environmentId ?? libraryId;
+  const environment = useEnvironment(environmentId);
+  const notice = libraryAccessRepairNotice(
+    accessRepair,
+    {
+      authorityEnvironmentId: libraryId,
+      ...context,
+      environmentId,
+      computerLabel:
+        environment?.label ??
+        (context?.environmentId === environmentId ? context.computerLabel : undefined),
+      account:
+        context?.account ??
+        (environment ? identityProfile(environment.entry)?.identity : undefined),
+    },
+    error,
+  );
+  if (!notice) return null;
+  const signIn = notice.destination.kind.endsWith("sign-in");
+  return (
+    <Alert variant="warning" role="status" controlAlignment="first-line">
+      {signIn ? <KeyRoundIcon /> : <UnplugIcon />}
+      <AlertTitle>{notice.title}</AlertTitle>
+      <AlertDescription>
+        <p>{notice.description}</p>
+        <p>{notice.afterReturn}</p>
+        <div>
+          <LibrarySignInLink
+            destination={notice.destination}
+            libraryEnvironmentId={libraryId}
+            expectedIdentity={notice.expectedIdentity}
+            label={notice.actionLabel}
+            onClick={onLeave}
+          />
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export function LibraryAccessNotice({
   block,
   onLeave,
 }: {
   readonly block: EnvironmentAccessBlock | null;
-  /** Runs before opening Connections, so a dialog can close first. */
   readonly onLeave?: (() => void) | undefined;
 }) {
-  const environment = useEnvironment(block?.environmentId ?? null);
-  const libraryId = useLibraryAuthorityId();
   if (!block) return null;
   if (!block.repair)
     return (
@@ -30,27 +76,14 @@ export function LibraryAccessNotice({
         {block.message}
       </p>
     );
-  const signIn = block.repair === "sign-in" && environment ? environment.entry : null;
-  const target = accessRepairTarget(block, libraryId, environment !== null);
   return (
-    <Alert variant="warning" role="status" controlAlignment="first-line">
-      {signIn ? <KeyRoundIcon /> : <UnplugIcon />}
-      <AlertTitle>{block.message}</AlertTitle>
-      <AlertDescription>
-        {signIn ? <SavedIdentitySignIn entry={signIn} /> : null}
-        <div>
-          <Button
-            size="sm"
-            variant={signIn ? "ghost" : "outline"}
-            render={
-              <Link to="/settings/connections" {...(target === null ? {} : { hash: target })} />
-            }
-            onClick={onLeave}
-          >
-            {target === null ? "Open connections" : "Library sign-in"}
-          </Button>
-        </div>
-      </AlertDescription>
-    </Alert>
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">{block.message}</p>
+      <LibraryAccessRepairNotice
+        accessRepair={{ kind: block.repair, environmentId: block.environmentId }}
+        context={{ environmentId: block.environmentId, computerLabel: block.label }}
+        onLeave={onLeave}
+      />
+    </div>
   );
 }

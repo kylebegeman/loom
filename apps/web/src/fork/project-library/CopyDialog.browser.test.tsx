@@ -76,7 +76,10 @@ vi.mock("../vault/GitHubConnectionPicker", () => ({
     </button>
   ),
 }));
-vi.mock("./LibraryAccessNotice", () => ({ LibraryAccessNotice: () => null }));
+vi.mock("./LibraryAccessNotice", () => ({
+  LibraryAccessRepairNotice: () => null,
+  LibraryAccessNotice: () => null,
+}));
 vi.mock("./attempts", () => ({ useLibraryAttempt: () => [state.attempt, vi.fn()] }));
 vi.mock("~/state/environments", async (original) => ({
   ...(await original<typeof import("~/state/environments")>()),

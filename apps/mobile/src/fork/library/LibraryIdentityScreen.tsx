@@ -1,7 +1,12 @@
 import * as Schema from "effect/Schema";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { loadIdentityDirectoryAddresses } from "@t3tools/client-runtime/fork";
+import {
+  loomIdentityAccountLabel,
+  LIBRARY_ACCESS_REPAIR_RETURN_TEXT,
+  loadIdentityDirectoryAddresses,
+} from "@t3tools/client-runtime/fork";
 import { createRuntimeCommand } from "@t3tools/client-runtime/state/runtime";
+import type { LoomIdentityAccount } from "@t3tools/contracts/fork";
 import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
@@ -24,7 +29,11 @@ import {
 
 const isNativeIdentitySignInExpiredValue = Schema.is(NativeIdentitySignInExpired);
 
-type IdentityRouteParams = { readonly environmentId?: string; readonly address?: string };
+type IdentityRouteParams = {
+  readonly environmentId?: string;
+  readonly address?: string;
+  readonly expectedIdentity?: LoomIdentityAccount;
+};
 
 const SIGN_IN_PROGRESS = {
   "signing-in": "Sign in with your account...",
@@ -51,6 +60,7 @@ export function LibraryIdentityRouteScreen({ route }: StaticScreenProps<Identity
       environmentId={environmentId}
       purpose="library"
       initialAddress={route.params?.address ?? ""}
+      expectedIdentity={route.params?.expectedIdentity}
     />
   );
 }
@@ -65,6 +75,7 @@ export function ComputerIdentityRouteScreen({ route }: StaticScreenProps<Identit
       environmentId={environmentId}
       purpose="computer"
       initialAddress={route.params?.address ?? ""}
+      expectedIdentity={route.params?.expectedIdentity}
     />
   );
 }
@@ -73,13 +84,16 @@ function IdentityContent({
   environmentId,
   purpose,
   initialAddress,
+  expectedIdentity,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly purpose: "library" | "computer";
   readonly initialAddress: string;
+  readonly expectedIdentity?: LoomIdentityAccount | undefined;
 }) {
   const connection = useSavedRemoteConnection(environmentId);
   const authority = useLibraryAuthority();
+  const account = expectedIdentity ?? connection?.identity;
   const navigation = useNavigation();
   const register = useAtomCommand(environmentCatalog.register, { reportFailure: false });
   const enable = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
@@ -135,7 +149,7 @@ function IdentityContent({
         expectedEnvironmentId: environmentId ?? undefined,
         options: {
           requireSessionExchange: true,
-          ...(connection?.identity ? { expectedIdentity: connection.identity } : {}),
+          ...(account ? { expectedIdentity: account } : {}),
           ...(directory === null ? {} : { directory }),
         },
         label: connection?.environmentLabel,
@@ -177,12 +191,13 @@ function IdentityContent({
             ? "Sign in to your Library with its configured Identity account. Choose an execution computer separately when starting work."
             : "Sign in with the Identity account configured by this computer's administrator. No pairing code is needed. Direct and tailnet addresses are supported; T3 Connect uses its own account."}
         </Text>
-        {connection?.identity ? (
+        {account ? (
           <Text className="text-xs text-foreground-muted">
-            Saved Identity provider: {connection.identity.issuer}. Sign in with the same account to
-            renew access.
+            Loom account: {loomIdentityAccountLabel(account) ?? "the original authorized account"}.
+            Provider: {account.issuer}. Sign in with this same account to renew access.
           </Text>
         ) : null}
+        <Text className="text-xs text-foreground-muted">{LIBRARY_ACCESS_REPAIR_RETURN_TEXT}</Text>
         <TextInput
           accessibilityLabel="Computer address"
           placeholder="https://your-computer.example"

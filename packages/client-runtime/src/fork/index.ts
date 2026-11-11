@@ -98,6 +98,7 @@ export * from "./identity-renewal.ts";
 export * from "./identity-renewal-worker.ts";
 export * from "./identity-renewal-policy.ts";
 export * from "./library-sign-in.ts";
+export * from "./library-access-repair.ts";
 export * from "./connection-health.ts";
 export * from "./no-project-target.ts";
 export * from "./library-tidy.ts";

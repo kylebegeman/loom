@@ -1,8 +1,13 @@
-import { AuthOrchestrationOperateScope, AuthSettingsWriteScope } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
+} from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
 import {
   accessBlock,
   accessRepairTarget,
+  libraryAccessRepairLink,
   LIBRARY_SIGN_IN_TARGET,
   type AccessTarget,
 } from "./accessBlock";
@@ -112,4 +117,30 @@ it("leads an expired Library sign-in to the Library block, other computers to Co
   expect(accessRepairTarget({ ...offline, environmentId: "library" }, "library", false)).toBe(
     LIBRARY_SIGN_IN_TARGET,
   );
+});
+
+it("keeps repair links on the exact computer and selected Vault repository", () => {
+  expect(
+    libraryAccessRepairLink(
+      { kind: "connection", environmentId: EnvironmentId.make("library") },
+      { libraryId: "library", saved: false },
+    ).hash,
+  ).toBe(LIBRARY_SIGN_IN_TARGET);
+  const environmentId = EnvironmentId.make("worker");
+  expect(libraryAccessRepairLink({ kind: "connection", environmentId })).toEqual({
+    to: "/settings/connections",
+    search: { machine: "worker", project: undefined, checkout: undefined },
+    hash: "remote-environments",
+  });
+  const link = libraryAccessRepairLink({
+    kind: "vault-github",
+    environmentId,
+    id: "1".repeat(32),
+    expectedVersion: 3,
+    repository: "owner/repo",
+  });
+  expect(link.to).toBe("/settings/vault");
+  expect(link.search.machine).toBe("worker");
+  expect(new URLSearchParams(link.hash.split("?")[1]).get("connection")).toBe("1".repeat(32));
+  expect(new URLSearchParams(link.hash.split("?")[1]).get("repository")).toBe("owner/repo");
 });

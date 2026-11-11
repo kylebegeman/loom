@@ -1,10 +1,11 @@
+import { libraryAccessRepairFromFailure } from "@t3tools/client-runtime/fork";
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import {
   LIBRARY_PROJECT_COLORS,
   LibraryBlueprint,
-  LibraryError,
+  type LibraryError,
   PROJECT_WORKFLOWS_FEATURE,
   PROJECT_ECOSYSTEM_FEATURE,
   type LibraryProject,
@@ -70,7 +71,6 @@ import {
 } from "@t3tools/client-runtime/fork";
 
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
-const isLibraryError = Schema.is(LibraryError);
 
 type ResourceDraft = {
   id: string;
@@ -515,7 +515,7 @@ function LibraryProjectFormContent({
         navigation.dispatch(StackActions.replace("LibraryProject", { projectId: project.id }));
       }
     } catch (cause) {
-      setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
+      setAccessRepair(libraryAccessRepairFromFailure(cause, target));
       setError(cause instanceof Error ? cause.message : "The project could not be saved.");
     } finally {
       busy.current = false;
@@ -745,7 +745,15 @@ function LibraryProjectFormContent({
     >
       {savingFromFolder && pending ? <LibraryNotice detail="Creating project…" /> : null}
       {savingFromFolder && error ? (
-        <LibraryNotice accessRepair={accessRepair} error={error} />
+        <LibraryNotice
+          accessRepair={accessRepair}
+          accessContext={{
+            environmentId: submitted?.environmentId ?? authority.environmentId,
+            authorityEnvironmentId: submitted?.authorityId ?? authority.environmentId,
+            originalAccount: submitted?.initiator,
+          }}
+          error={error}
+        />
       ) : null}
       {folderTarget && (folderTarget.error || folderTarget.detail) ? (
         <LibraryNotice
@@ -991,15 +999,39 @@ function LibraryProjectFormContent({
           onPress={() => navigation.navigate("LibrarySettings")}
         />
       ) : !authority.ready ? (
-        <LibraryNotice detail="Reconnect your Library to save this project." />
+        <LibraryNotice
+          detail="Reconnect your Library to save this project."
+          accessRepair={{ kind: "connection" }}
+          accessContext={{ environmentId: submitted?.authorityId ?? authority.environmentId }}
+        />
       ) : !canSave ? (
-        <LibraryNotice detail="Project settings access is required to save this project." />
+        <LibraryNotice
+          detail="Project settings access is required to save this project."
+          accessRepair={{ kind: "permission" }}
+          accessContext={{ environmentId: submitted?.authorityId ?? authority.environmentId }}
+        />
       ) : null}
       {!accountMatches ? (
-        <LibraryNotice error="Sign in with the account that started this request before continuing." />
+        <LibraryNotice
+          error="Sign in with the account that started this request before continuing."
+          accessRepair={{ kind: "ownership" }}
+          accessContext={{
+            environmentId: submitted?.environmentId ?? authority.environmentId,
+            authorityEnvironmentId: submitted?.authorityId ?? authority.environmentId,
+            originalAccount: submitted?.initiator,
+          }}
+        />
       ) : null}
       {error && !savingFromFolder ? (
-        <LibraryNotice accessRepair={accessRepair} error={error} />
+        <LibraryNotice
+          accessRepair={accessRepair}
+          accessContext={{
+            environmentId: submitted?.environmentId ?? authority.environmentId,
+            authorityEnvironmentId: submitted?.authorityId ?? authority.environmentId,
+            originalAccount: submitted?.initiator,
+          }}
+          error={error}
+        />
       ) : null}
       {submitted?.state === "ready" ? (
         <Button

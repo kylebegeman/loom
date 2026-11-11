@@ -8,6 +8,7 @@ import type {
   EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
 import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import type { LibraryAccessRepairDestination } from "@t3tools/client-runtime/fork";
 import type { SettingsSearchItemId } from "~/components/settings/settingsSearch";
 
 /** The Library block in Settings > Connections, also reachable from the command palette. */
@@ -32,7 +33,7 @@ export interface AccessBlock {
    * How to repair it: signing in again with the saved Identity route, or Settings > Connections.
    * Null while nothing is known to be wrong yet.
    */
-  readonly repair: "sign-in" | "connection" | null;
+  readonly repair: "sign-in" | "permission" | "connection" | null;
 }
 
 /**
@@ -79,8 +80,8 @@ function explain(target: AccessTarget): Omit<AccessBlock, "label"> | null {
     .map((scope) => AUTH_SCOPE_OPTIONS.find((option) => option.scope === scope)?.title ?? scope);
   if (missing.length === 0) return null;
   return {
-    message: `This device's access to ${target.label} does not include ${missing.join(" or ")}. ${target.identity ? "Sign in again" : "Pair it again"} with that permission.`,
-    repair: target.identity ? "sign-in" : "connection",
+    message: `This device's access to ${target.label} does not include ${missing.join(" or ")}. Review this computer's permissions in Settings > Connections.`,
+    repair: "permission",
   };
 }
 
@@ -96,4 +97,39 @@ export function accessRepairTarget(
   return block.environmentId === libraryId && (block.repair === "sign-in" || !saved)
     ? LIBRARY_SIGN_IN_TARGET
     : null;
+}
+
+export function libraryAccessRepairLink(
+  destination: LibraryAccessRepairDestination,
+  connection?: { readonly libraryId: string | null; readonly saved: boolean },
+) {
+  const search = {
+    machine: destination.environmentId ?? undefined,
+    project: undefined,
+    checkout: undefined,
+  };
+  if (destination.kind === "vault-github") {
+    const params = new URLSearchParams({
+      connection: destination.id,
+      repository: destination.repository,
+    });
+    return { to: "/settings/vault" as const, search, hash: `loom-vault-github?${params}` };
+  }
+  return {
+    to: "/settings/connections" as const,
+    search,
+    hash:
+      destination.kind === "library-sign-in"
+        ? LIBRARY_SIGN_IN_TARGET
+        : ((connection && destination.environmentId
+            ? accessRepairTarget(
+                {
+                  repair: destination.kind === "computer-sign-in" ? "sign-in" : "connection",
+                  environmentId: destination.environmentId,
+                },
+                connection.libraryId,
+                connection.saved,
+              )
+            : null) ?? "remote-environments"),
+  };
 }

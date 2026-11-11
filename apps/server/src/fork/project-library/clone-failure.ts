@@ -1,5 +1,11 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { LibraryError } from "@t3tools/contracts/fork";
+import {
+  type LibraryRepositoryAccess,
+  type VaultError,
+  VaultGitHubError,
+  LibraryError,
+} from "@t3tools/contracts/fork";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { classifyGitFailure } from "../../vcs/GitVcsDriverCore.ts";
 export function libraryCloneFailure(input: {
   stderr: string;
@@ -7,16 +13,35 @@ export function libraryCloneFailure(input: {
   environmentId: EnvironmentId;
   computer: string;
   timedOut: boolean;
+  repositoryAccess?: LibraryRepositoryAccess | undefined;
 }) {
   const reason = classifyGitFailure(input.stderr);
+  if (input.repositoryAccess?.kind === "vault-github")
+    return libraryVaultRepositoryFailure(
+      input.repositoryAccess,
+      new VaultGitHubError({
+        reason: input.timedOut
+          ? "timeout"
+          : reason === "authentication_failed"
+            ? "unauthorized"
+            : reason === "remote_unreachable"
+              ? "unavailable"
+              : "failed",
+      }),
+      input.environmentId,
+    );
   const github =
     /^(?:https?:\/\/github\.com\/|git@github\.com:|ssh:\/\/(?:git@)?github\.com(?::[0-9]+)?\/)/i.test(
       input.remoteUrl,
     );
   const ssh = /^(?:git@|ssh:\/\/)/i.test(input.remoteUrl);
+  const repository = /^github\.com\/([a-z0-9][a-z0-9-]{0,38}\/[a-z0-9_.-]{1,100})$/.exec(
+    normalizeGitRemoteUrl(input.remoteUrl),
+  )?.[1];
   const repair = github
     ? {
         kind: "github-host-setup" as const,
+        ...(repository ? { repository } : {}),
         environmentId: input.environmentId,
         label: input.computer,
         agentTool: "loom_github_host_setup" as const,
@@ -45,4 +70,26 @@ export function libraryCloneFailure(input: {
       ...(repair ? { repair } : {}),
     });
   return new LibraryError({ reason: "io" });
+}
+
+export function libraryVaultRepositoryFailure(
+  access: Extract<LibraryRepositoryAccess, { readonly kind: "vault-github" }>,
+  failure?: VaultError | VaultGitHubError,
+  environmentId?: EnvironmentId,
+) {
+  const { kind: _kind, ...repository } = access;
+  return new LibraryError({
+    reason: "blocked",
+    detail:
+      "The selected Vault GitHub connection could not access this repository. Review this computer's selected connection and repository access, then check the saved request before continuing.",
+    accessRepair: {
+      kind: "permission",
+      ...(environmentId ? { environmentId } : {}),
+      repository,
+      ...(failure ? { vaultReason: failure.reason } : {}),
+      ...(failure?._tag === "VaultError" && failure.detail
+        ? { vaultDeniedDetail: failure.detail }
+        : {}),
+    },
+  });
 }

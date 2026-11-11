@@ -8,9 +8,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { Linking, ScrollView, View } from "react-native";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import type { VaultGitHubInfo } from "@t3tools/contracts/fork";
+import type { VaultGitHubInfo, VaultGitHubTarget } from "@t3tools/contracts/fork";
 import {
   createVaultGitHubAtoms,
+  createVaultAccessAtoms,
   supportsLoomFeature,
   makeVaultGitHubSave,
   type VaultGitHubDraft,
@@ -26,6 +27,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { uuidv4 } from "../../lib/uuid";
+const accessAtoms = createVaultAccessAtoms(connectionAtomRuntime);
 const atoms = createVaultGitHubAtoms(connectionAtomRuntime),
   id = () => uuidv4().replaceAll("-", "");
 export function VaultGitHubSettingsSection({
@@ -82,17 +84,56 @@ export function VaultGitHubConnectSheet({
   );
 }
 
+export function VaultGitHubRepairSheet({
+  environmentId,
+  target,
+  onClose,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly target: VaultGitHubTarget;
+  readonly onClose: () => void;
+}) {
+  const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const policy = useEnvironmentQuery(accessAtoms.snapshot({ environmentId, input: {} }));
+  return (
+    <Sheet title="Selected Vault GitHub connection" onClose={onClose}>
+      <ScrollView contentContainerClassName="gap-3 p-4">
+        {policy.isSuccess && !policy.isPending && !policy.error ? (
+          <Manager
+            environmentId={environmentId}
+            connected
+            canWrite={canWrite}
+            ownerMode={policy.data?.ownerPolicy?.mode === "owner-trusted"}
+            selection={target}
+          />
+        ) : (
+          <>
+            <Text>
+              {policy.error
+                ? "Check this computer's Vault access before reviewing the selected connection."
+                : "Checking this computer's Vault access…"}
+            </Text>
+            <Button label="Refresh Vault access" onPress={policy.refresh} />
+          </>
+        )}
+      </ScrollView>
+    </Sheet>
+  );
+}
+
 function Manager({
   environmentId,
   connected,
   ownerMode,
   canWrite,
   creation,
+  selection,
 }: {
   environmentId: EnvironmentId;
   connected: boolean;
   ownerMode: boolean;
   canWrite: boolean;
+  selection?: VaultGitHubTarget;
   creation?: { label: string; onSaved: (info: VaultGitHubInfo) => void; onClose: () => void };
 }) {
   const [cursor, setCursor] = useState<string | null>(null),
@@ -118,12 +159,17 @@ function Manager({
     canTest = useAtomValue(atoms.test.permissionAtom(environmentId)),
     canChange = useAtomValue(atoms.change.permissionAtom(environmentId));
   const page = useEnvironmentQuery(
-      connected ? atoms.list({ environmentId, input: { cursor } }) : null,
+      connected && !selection ? atoms.list({ environmentId, input: { cursor } }) : null,
     ),
     save = useAtomCommand(atoms.save, { reportFailure: false }),
     test = useAtomCommand(atoms.test, { reportFailure: false }),
     change = useAtomCommand(atoms.change, { reportFailure: false });
-  const locked = busy || !connected || page.isPending || !!page.error;
+  const selected = useEnvironmentQuery(
+    selection ? atoms.info({ environmentId, input: { id: selection.id } }) : null,
+  );
+  const records = selection ? (selected.data ? [selected.data] : []) : page.data?.items;
+  const query = selection ? selected : page;
+  const locked = busy || !connected || query.isPending || !!query.error;
   const cannotSave = locked || !canWrite || !canSave;
   const act = async (work: () => Promise<void>) => {
     if (busy) return;
@@ -147,7 +193,9 @@ function Manager({
       id: info?.item.id ?? id(),
       expectedVersion: info?.item.version ?? 0,
       label: info?.item.label ?? "GitHub",
-      repositories: info?.repositories.join(", ") ?? "",
+      repositories: [
+        ...new Set([...(info?.repositories ?? []), ...(selection ? [selection.repository] : [])]),
+      ].join(", "),
       type: info?.mechanism ?? "token",
       appId: "",
       installationId: "",
@@ -159,37 +207,52 @@ function Manager({
       {!creation ? (
         <>
           <Text>
-            {ownerMode
-              ? "Connect GitHub once. Agents in this owner's environment can use the saved connection for its listed repositories. GitHub permissions still apply."
-              : "Save a GitHub connection, then choose the projects and repositories it can use. Approve recurring project access once; it lasts until you revoke it."}
+            {selection
+              ? `Review ${selection.repository} using the selected Vault connection, version ${selection.expectedVersion}. The paused request keeps that original pin. Returning only refreshes access and reads results; it never resumes the download.`
+              : ownerMode
+                ? "Connect GitHub once. Agents in this owner's environment can use the saved connection for its listed repositories. GitHub permissions still apply."
+                : "Save a GitHub connection, then choose the projects and repositories it can use. Approve recurring project access once; it lasts until you revoke it."}
           </Text>
           {!connected ? <Text>Reconnect this computer to manage GitHub connections.</Text> : null}
-          <Button
-            label="Connect GitHub"
-            tone="primary"
-            disabled={cannotSave || !!draft}
-            onPress={() => edit()}
-          />
+          {!selection ? (
+            <Button
+              label="Connect GitHub"
+              tone="primary"
+              disabled={cannotSave || !!draft}
+              onPress={() => edit()}
+            />
+          ) : null}
           <Button
             label="Refresh GitHub connections"
             tone="text"
             disabled={busy || !connected}
-            onPress={page.refresh}
+            onPress={query.refresh}
           />
-          {page.isPending ? <Text>Loading GitHub connections…</Text> : null}
-          {error || page.error ? (
+          {query.isPending ? <Text>Loading GitHub connections…</Text> : null}
+          {error || query.error ? (
             <Text accessibilityRole="alert">
-              {error ?? "Could not load connections. Check Vault access and refresh."}
+              {error ??
+                "Could not read this selection. It may be hidden by policy or unavailable. Check this computer's Vault access and refresh."}
+            </Text>
+          ) : null}
+          {selection &&
+          selected.data &&
+          selected.data.item.version !== selection.expectedVersion ? (
+            <Text>
+              The selected request uses version {selection.expectedVersion}; this connection is now
+              version {selected.data.item.version}. Review the saved request before changing its
+              selection.
             </Text>
           ) : null}
           {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
-          {page.data?.items.length === 0 ? (
+          {!selection && page.data?.items.length === 0 ? (
             <Text>No saved GitHub connections on this page. Connect GitHub to get started.</Text>
           ) : null}
-          {page.data?.items.map((info) => (
+          {records?.map((info) => (
             <Connection
               key={`${info.item.id}:${info.item.version}`}
               info={info}
+              selectedRepository={selection?.repository}
               environmentId={environmentId}
               connected={connected}
               ownerMode={ownerMode}
@@ -232,16 +295,20 @@ function Manager({
               }
             />
           ))}
-          <Button
-            label="First GitHub connections"
-            disabled={busy || !cursor}
-            onPress={() => setCursor(null)}
-          />
-          <Button
-            label="More GitHub connections"
-            disabled={busy || !page.data?.nextCursor}
-            onPress={() => setCursor(page.data?.nextCursor ?? null)}
-          />
+          {!selection ? (
+            <>
+              <Button
+                label="First GitHub connections"
+                disabled={busy || !cursor}
+                onPress={() => setCursor(null)}
+              />
+              <Button
+                label="More GitHub connections"
+                disabled={busy || !page.data?.nextCursor}
+                onPress={() => setCursor(page.data?.nextCursor ?? null)}
+              />
+            </>
+          ) : null}
         </>
       ) : null}
       {draft ? (
@@ -381,11 +448,11 @@ function Manager({
                 : "Saving this connection does not authorize any project."}
             </Text>
             {!connected ? <Text>Reconnect this computer to save a GitHub connection.</Text> : null}
-            {error || page.error ? (
-              <Text accessibilityRole="alert">{error ?? page.error}</Text>
+            {error || query.error ? (
+              <Text accessibilityRole="alert">{error ?? query.error}</Text>
             ) : null}
-            {page.isPending ? <Text>Checking Vault connection…</Text> : null}
-            {page.error ? <Button label="Retry Vault connection" onPress={page.refresh} /> : null}
+            {query.isPending ? <Text>Checking Vault connection…</Text> : null}
+            {query.error ? <Button label="Retry Vault connection" onPress={query.refresh} /> : null}
             {!canWrite || !canSave ? (
               <Text>This connection does not have permission to save GitHub credentials.</Text>
             ) : null}
@@ -438,9 +505,11 @@ function Connection({
   onEdit,
   onTest,
   onChange,
+  selectedRepository,
 }: {
   environmentId: EnvironmentId;
   info: VaultGitHubInfo;
+  selectedRepository?: string | undefined;
   connected: boolean;
   ownerMode: boolean;
   canWrite: boolean;
@@ -456,7 +525,7 @@ function Connection({
     [confirm, setConfirm] = useState(false),
     [details, setDetails] = useState(false),
     [restricted, setRestricted] = useState(false);
-  const repo = info.repositories[index]!;
+  const repo = selectedRepository ?? info.repositories[index]!;
   return (
     <View className="gap-3 rounded-2xl bg-subtle p-3">
       <Text accessibilityRole="header" className="font-t3-semibold">
@@ -518,7 +587,7 @@ function Connection({
               ? "GitHub API, GH CLI and Git HTTPS are checked separately. A saved connection does not prove the execution computer has every required tool."
               : "Saving a connection, authorizing projects and checking an active run's tools are separate steps. Project access does not prove the current run can reach GitHub."}
           </Text>
-          {info.repositories.length > 1 ? (
+          {!selectedRepository && info.repositories.length > 1 ? (
             <Button
               label={`Test repository: ${repo}. Choose next repository`}
               disabled={disabled}

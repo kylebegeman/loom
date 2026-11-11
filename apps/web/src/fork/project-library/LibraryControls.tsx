@@ -12,9 +12,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty";
-import { needsLibrarySignIn, type LibraryWorkflowTone } from "@t3tools/client-runtime/fork";
+import {
+  type LibraryAccessRepairContext,
+  type LibraryWorkflowTone,
+} from "@t3tools/client-runtime/fork";
 import { cn } from "~/lib/utils";
-import { LibrarySignInLink } from "./LibrarySignInLink";
+import { LibraryAccessRepairNotice } from "./LibraryAccessNotice";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
   Dialog,
@@ -140,7 +143,9 @@ export function LibraryErrorNotice({
   accessRepair,
   onRetry,
   onLeave,
+  accessContext,
 }: {
+  readonly accessContext?: LibraryAccessRepairContext | undefined;
   readonly error: string | null;
   readonly accessRepair?: LibraryAccessRepair | undefined;
   readonly onRetry?: () => void;
@@ -148,23 +153,27 @@ export function LibraryErrorNotice({
   readonly onLeave?: () => void;
 }) {
   if (!error) return null;
-  const signIn = needsLibrarySignIn(error, accessRepair);
   return (
-    <Alert variant="error">
-      <AlertDescription>
-        <p>{error}</p>
-      </AlertDescription>
-      {signIn || onRetry ? (
-        <AlertAction>
-          {signIn ? <LibrarySignInLink onClick={onLeave} /> : null}
-          {onRetry ? (
+    <div className="space-y-3">
+      <Alert variant="error">
+        <AlertDescription>
+          <p>{error}</p>
+        </AlertDescription>
+        {onRetry ? (
+          <AlertAction>
             <Button shape="pill" size="xs" variant="outline" onClick={onRetry}>
               Try again
             </Button>
-          ) : null}
-        </AlertAction>
-      ) : null}
-    </Alert>
+          </AlertAction>
+        ) : null}
+      </Alert>
+      <LibraryAccessRepairNotice
+        accessRepair={accessRepair}
+        context={accessContext}
+        error={error}
+        onLeave={onLeave}
+      />
+    </div>
   );
 }
 

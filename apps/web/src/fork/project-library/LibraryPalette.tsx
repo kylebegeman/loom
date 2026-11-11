@@ -16,8 +16,9 @@ import { CommandPaletteResults } from "~/components/CommandPaletteResults";
 import type { CommandPaletteActionItem } from "~/components/CommandPalette.logic";
 import { Button } from "~/components/ui/button";
 import { CommandDialog, CommandDialogPopup } from "~/components/ui/command";
-import { needsLibrarySignIn } from "@t3tools/client-runtime/fork";
-import { LibrarySignInLink } from "./LibrarySignInLink";
+import type { LibraryAccessRepairContext } from "@t3tools/client-runtime/fork";
+import type { LibraryAccessRepair } from "@t3tools/contracts/fork";
+import { LibraryAccessRepairNotice } from "./LibraryAccessNotice";
 
 const NO_HIGHLIGHT = { id: null, choice: null } as const;
 
@@ -83,6 +84,8 @@ export function LibraryPaletteView({
   filter = true,
   message,
   error,
+  accessRepair,
+  accessContext,
   children,
   footerHints,
 }: {
@@ -100,6 +103,8 @@ export function LibraryPaletteView({
   readonly filter?: boolean | undefined;
   readonly message?: string | null | undefined;
   readonly error?: string | null | undefined;
+  readonly accessRepair?: LibraryAccessRepair | undefined;
+  readonly accessContext?: LibraryAccessRepairContext | undefined;
   readonly children?: ReactNode;
 }) {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -302,7 +307,12 @@ export function LibraryPaletteView({
       {error ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
           <p className="text-destructive">{error}</p>
-          {needsLibrarySignIn(error) ? <LibrarySignInLink onClick={onClose} /> : null}
+          <LibraryAccessRepairNotice
+            accessRepair={accessRepair}
+            context={accessContext}
+            error={error}
+            onLeave={onClose}
+          />
         </div>
       ) : null}
       {children}

@@ -46,7 +46,10 @@ export function VaultGitHubConnectionPicker({
         </Text>
       ) : null}
       {page.data?.items.length === 0 ? (
-        <Text>No GitHub connections in this page. Continue if more pages are available.</Text>
+        <Text>
+          No GitHub connections are visible on this page. Policy may hide existing connections.
+          Check access or continue to more pages.
+        </Text>
       ) : null}
       {page.data?.items.length === 0 &&
       cursor === null &&
