@@ -13,12 +13,11 @@ import { ListRow } from "../../components/ui/ListRow";
 import { Sheet } from "../../components/ui/Sheet";
 import { useControlTheme } from "../../components/ui/useControlTheme";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { LibraryNotice, LibraryPage } from "../library/LibraryPage";
 import { library, useLibraryAuthority } from "../library/libraryState";
-import { sites } from "./state";
+import { sites, useSitesWrites } from "./state";
 import { SiteEditor, type SiteEditTarget } from "./SiteEditor";
 import { SiteDetail } from "./SiteDetail";
 import { SiteServiceGroup, siteHost } from "./SiteHealth";
@@ -78,7 +77,7 @@ function SitesScreen({
   const [servicesOpen, setServicesOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const runChecks = useAtomCommand(sites.runChecks, { reportFailure: false });
+  const { runChecks } = useSitesWrites();
   const refresh = () => {
     query.refresh();
     analytics.refresh();

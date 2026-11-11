@@ -13,6 +13,12 @@ const harness = vi.hoisted(() => ({
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
 vi.mock("./state", () => ({
+  useSitesWrites: () => ({
+    saveSite: harness.save,
+    saveService: harness.save,
+    saveCheck: harness.save,
+    runChecks: harness.save,
+  }),
   sites: { saveSite: { permissionAtom: () => null }, saveService: {}, saveCheck: {} },
 }));
 vi.mock("../library/libraryState", () => ({ library: { projects: () => null } }));

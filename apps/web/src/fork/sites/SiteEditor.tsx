@@ -8,6 +8,7 @@ import {
   type LibraryProject,
   type SitesSnapshot,
 } from "@t3tools/contracts/fork";
+import { siteWritePrecondition } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 import { ChevronRightIcon, LockIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
@@ -35,13 +36,12 @@ import {
 } from "~/components/ui/wizard";
 import { ensureLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
-import { useAtomCommand } from "~/state/use-atom-command";
 import { LibraryDialog } from "../project-library/LibraryControls";
 import { useUnsavedChangesGuard } from "../project-library/LibraryEditor";
 import { ProjectTile } from "../project-library/ProjectIdentity";
 import { useLibraryPermission, useLibraryProjects } from "../project-library/state";
 import { SERVICE_KINDS, SiteMark, siteHost, sitePath, type ActiveToggleTarget } from "./SiteHealth";
-import { sites } from "./state";
+import { sites, useSitesWrites } from "./state";
 
 type Site = SitesSnapshot["sites"][number];
 type Service = SitesSnapshot["services"][number];
@@ -314,7 +314,9 @@ function servicesForOrigin(services: readonly Service[], origin: string) {
  * one already went through. A retry after an edit sends the edited entry rather than skipping it.
  */
 export function unsentRequest<T>(request: T, sent: string | null | undefined) {
-  const key = JSON.stringify(request);
+  const key = JSON.stringify(request, (field, value) =>
+    field === "expectedEtag" || field === "requestId" ? undefined : value,
+  );
   return { key, request: key === sent ? null : request };
 }
 
@@ -360,7 +362,8 @@ export function SiteEditor({ target, ...props }: EditorProps & { target: SiteEdi
   return <CheckDialog target={target} {...props} />;
 }
 
-const DISCARD_MESSAGE = "Discard your changes? Nothing has been saved yet.";
+const DISCARD_MESSAGE =
+  "Discard unsaved changes and close? Completed saves remain in Sites. An uncertain save may already have applied.";
 
 /**
  * Closing keeps a draft from vanishing by accident: Escape and the close button ask first once
@@ -419,6 +422,7 @@ function SiteWizard({
   // The favicon loads once the address is settled, never on every key press.
   const [markOrigin, setMarkOrigin] = useState(row ? originOf(row.url) : null);
   const [busy, setBusy] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
   const [error, setError] = useState<string | null>(null);
   // What a partly failed save already sent, so trying again sends only what is missing or edited.
   // The IDs stay fixed across tries, so a retry updates those entries instead of adding more.
@@ -432,9 +436,8 @@ function SiteWizard({
   const formId = useId();
   const catalog = useLibraryProjects(true);
   const allowed = useLibraryPermission(sites.saveSite, environmentId);
-  const saveSite = useAtomCommand(sites.saveSite, { reportFailure: false });
-  const saveService = useAtomCommand(sites.saveService, { reportFailure: false });
-  const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
+  const { saveSite, saveService, saveCheck } = useSitesWrites();
+
   const { requestClose, leave } = useDraftClose({ dirty, busy, onClose });
 
   const reading = readSiteAddress(address);
@@ -450,7 +453,7 @@ function SiteWizard({
     id,
     projectIds,
     serviceIds,
-    watch: watchable && watch,
+    watch: (watchable || sent !== null) && watch,
     extraOrigins,
     active,
   };
@@ -518,8 +521,12 @@ function SiteWizard({
             new Set(snapshot.checks.map((check) => check.id)),
           );
         progress = progress ?? { serviceId, checkId, service: null, check: null };
+        setSent(progress);
         const service = unsentRequest(
           decodeSaveSiteServiceRequest({
+            ...siteWritePrecondition(
+              savedSnapshot.services.find((service) => service.id === serviceId),
+            ),
             id: serviceId,
             name: name.trim(),
             url: origin,
@@ -531,11 +538,13 @@ function SiteWizard({
         if (service.request) {
           const result = await saveService({ environmentId, input: service.request });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          setSavedSnapshot(result.value);
           progress = { ...progress, service: service.key };
           setSent(progress);
         }
         const check = unsentRequest(
           decodeSaveSiteCheckRequest({
+            ...siteWritePrecondition(savedSnapshot.checks.find((check) => check.id === checkId)),
             id: checkId,
             name: "Home",
             url: `${origin}/`,
@@ -549,15 +558,17 @@ function SiteWizard({
         if (check.request) {
           const result = await saveCheck({ environmentId, input: check.request });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          setSavedSnapshot(result.value);
           progress = { ...progress, check: check.key };
           setSent(progress);
         }
       }
       const result = await saveSite({
         environmentId,
-        input: decodeSaveSiteRequest(
-          siteSaveRequest(draft, origin, draft.watch ? (progress?.serviceId ?? null) : null),
-        ),
+        input: decodeSaveSiteRequest({
+          ...siteSaveRequest(draft, origin, draft.watch ? (progress?.serviceId ?? null) : null),
+          ...siteWritePrecondition(row),
+        }),
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       leave(() => onSaved(draft.id));
@@ -671,6 +682,12 @@ function SiteWizard({
               )}
             </fieldset>
           </form>
+          {row && !row.etag ? (
+            <p className="text-sm text-muted-foreground">
+              This API does not provide revisions. Concurrent edits cannot be protected. Refresh and
+              compare settings before saving.
+            </p>
+          ) : null}
           {error ? (
             <p role="alert" className="mt-4 text-sm text-destructive-foreground">
               {error}
@@ -1188,14 +1205,15 @@ function ServiceDialog({
   const [addCheckOverride, setAddCheckOverride] = useState<boolean | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
   const [error, setError] = useState<string | null>(null);
   // The service request a partly failed save already sent, so a retry skips it only if unedited.
   const [sentService, setSentService] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const formId = useId();
   const allowed = useLibraryPermission(sites.saveService, environmentId);
-  const saveService = useAtomCommand(sites.saveService, { reportFailure: false });
-  const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
+  const { saveService, saveCheck } = useSitesWrites();
+
   const { requestClose, leave } = useDraftClose({ dirty, busy, onClose });
 
   const reading = readSiteAddress(address);
@@ -1232,12 +1250,22 @@ function ServiceDialog({
     // Async so a synchronous decode failure reaches the same handler as a failed save.
     await (async () => {
       const service = unsentRequest(
-        decodeSaveSiteServiceRequest({ id, name: name.trim(), url: origin, active, kind }),
+        decodeSaveSiteServiceRequest({
+          ...siteWritePrecondition(
+            row ?? savedSnapshot.services.find((service) => service.id === id),
+          ),
+          id,
+          name: name.trim(),
+          url: origin,
+          active,
+          kind,
+        }),
         sentService,
       );
       if (service.request) {
         const result = await saveService({ environmentId, input: service.request });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        setSavedSnapshot(result.value);
         setSentService(service.key);
         // Pinned, so a name edited before the retry updates this service rather than adding one.
         setIdOverride(id);
@@ -1247,6 +1275,7 @@ function ServiceDialog({
         const result = await saveCheck({
           environmentId,
           input: decodeSaveSiteCheckRequest({
+            ...siteWritePrecondition(),
             id: uniqueId(
               `${id}-home`.slice(0, MAX_ID_LENGTH),
               new Set(snapshot.checks.map((check) => check.id)),
@@ -1402,6 +1431,12 @@ function ServiceDialog({
             <Switch checked={active} onCheckedChange={edited(setActive)} />
           </label>
         </fieldset>
+        {row && !row.etag ? (
+          <p className="text-sm text-muted-foreground">
+            This API does not provide revisions. Concurrent edits cannot be protected. Refresh and
+            compare settings before saving.
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="mt-4 text-sm text-destructive-foreground">
             {error}
@@ -1481,7 +1516,8 @@ function CheckDialog({
   const formId = useId();
   const statusId = useId();
   const allowed = useLibraryPermission(sites.saveCheck, environmentId);
-  const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
+  const { saveCheck } = useSitesWrites();
+
   const { requestClose, leave } = useDraftClose({ dirty, busy, onClose });
 
   const service = services.find((entry) => entry.id === serviceId) ?? null;
@@ -1526,6 +1562,7 @@ function CheckDialog({
       const result = await saveCheck({
         environmentId,
         input: decodeSaveSiteCheckRequest({
+          ...siteWritePrecondition(row),
           id,
           name: name.trim(),
           url: reading.url,
@@ -1758,6 +1795,12 @@ function CheckDialog({
             <Switch checked={active} onCheckedChange={edited(setActive)} />
           </label>
         </fieldset>
+        {row && !row.etag ? (
+          <p className="text-sm text-muted-foreground">
+            This API does not provide revisions. Concurrent edits cannot be protected. Refresh and
+            compare settings before saving.
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="mt-4 text-sm text-destructive-foreground">
             {error}
@@ -1869,6 +1912,7 @@ export function activeToggleRequest(target: ActiveToggleTarget, active: boolean)
       return {
         kind: "site" as const,
         input: decodeSaveSiteRequest({
+          ...siteWritePrecondition(row),
           id: row.id,
           name: row.name,
           url: row.url,
@@ -1884,6 +1928,7 @@ export function activeToggleRequest(target: ActiveToggleTarget, active: boolean)
       return {
         kind: "service" as const,
         input: decodeSaveSiteServiceRequest({
+          ...siteWritePrecondition(row),
           id: row.id,
           name: row.name,
           url: row.url,
@@ -1897,6 +1942,7 @@ export function activeToggleRequest(target: ActiveToggleTarget, active: boolean)
       return {
         kind: "check" as const,
         input: decodeSaveSiteCheckRequest({
+          ...siteWritePrecondition(row),
           id: row.id,
           name: row.name,
           url: row.url,
@@ -1926,9 +1972,8 @@ export function useSiteActiveToggle({
 }) {
   // Per entry, so a second quick toggle never clears the first one's "Saving…".
   const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
-  const saveSite = useAtomCommand(sites.saveSite, { reportFailure: false });
-  const saveService = useAtomCommand(sites.saveService, { reportFailure: false });
-  const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
+  const { saveSite, saveService, saveCheck } = useSitesWrites();
+
   const apply = async (target: ActiveToggleTarget, active: boolean): Promise<void> => {
     if (!environmentId || !connected) return;
     const key = `${target.kind}:${target.row.id}`;
@@ -1955,7 +2000,16 @@ export function useSiteActiveToggle({
           children: "Undo",
           onClick: () => {
             toastManager.close(toastId);
-            void apply(target, !active);
+            if (target.kind === "site") {
+              const row = result.value.sites.find((row) => row.id === target.row.id);
+              if (row) void apply({ kind: "site", row }, !active);
+            } else if (target.kind === "service") {
+              const row = result.value.services.find((row) => row.id === target.row.id);
+              if (row) void apply({ kind: "service", row }, !active);
+            } else {
+              const row = result.value.checks.find((row) => row.id === target.row.id);
+              if (row) void apply({ kind: "check", row }, !active);
+            }
           },
         },
       });

@@ -23,6 +23,14 @@ const httpsUrl = text.check(
   }),
 );
 const httpsOrigin = httpsUrl.check(Schema.makeFilter((value) => new URL(value).origin === value));
+const requestId = Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,255}$/));
+const etag = Schema.String.check(Schema.isPattern(/^"[\x21\x23-\x7e]{1,254}"$/));
+const writeFields = {
+  requestId: Schema.optionalKey(requestId),
+  expectedEtag: Schema.optionalKey(Schema.NullOr(etag)),
+};
+export const RunSiteChecksRequest = Schema.Struct({ requestId: writeFields.requestId });
+export type RunSiteChecksRequest = typeof RunSiteChecksRequest.Type;
 export const SitesSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   primarySiteId: SiteId,
@@ -31,6 +39,7 @@ export const SitesSnapshot = Schema.Struct({
   staleAfterSeconds: count,
   sites: Schema.Array(
     Schema.Struct({
+      etag: Schema.optionalKey(etag),
       id: SiteId,
       name: text,
       url: httpsUrl,
@@ -42,6 +51,7 @@ export const SitesSnapshot = Schema.Struct({
   ),
   services: Schema.Array(
     Schema.Struct({
+      etag: Schema.optionalKey(etag),
       id: SiteId,
       name: text,
       url: httpsUrl,
@@ -51,6 +61,7 @@ export const SitesSnapshot = Schema.Struct({
   ),
   checks: Schema.Array(
     Schema.Struct({
+      etag: Schema.optionalKey(etag),
       id: text,
       service_id: SiteId,
       name: text,
@@ -135,6 +146,7 @@ export type SiteAnalytics = typeof SiteAnalytics.Type;
 const name = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120));
 const ids = Schema.Array(SiteId).check(Schema.isMaxLength(20));
 export const SaveSiteRequest = Schema.Struct({
+  ...writeFields,
   id: SiteId,
   name,
   url: httpsOrigin,
@@ -149,6 +161,7 @@ export const SaveSiteRequest = Schema.Struct({
 );
 export type SaveSiteRequest = typeof SaveSiteRequest.Type;
 export const SaveSiteServiceRequest = Schema.Struct({
+  ...writeFields,
   id: SiteId,
   name,
   url: httpsOrigin,
@@ -157,6 +170,7 @@ export const SaveSiteServiceRequest = Schema.Struct({
 });
 export type SaveSiteServiceRequest = typeof SaveSiteServiceRequest.Type;
 export const SaveSiteCheckRequest = Schema.Struct({
+  ...writeFields,
   id: SiteId,
   name,
   url: httpsUrl,
@@ -174,7 +188,10 @@ export const LibrarySitesMutation = Schema.Union([
   Schema.Struct({ action: Schema.Literal("saveSite"), input: SaveSiteRequest }),
   Schema.Struct({ action: Schema.Literal("saveService"), input: SaveSiteServiceRequest }),
   Schema.Struct({ action: Schema.Literal("saveCheck"), input: SaveSiteCheckRequest }),
-  Schema.Struct({ action: Schema.Literal("runChecks") }),
+  Schema.Struct({
+    action: Schema.Literal("runChecks"),
+    input: Schema.optionalKey(RunSiteChecksRequest),
+  }),
 ]);
 export type LibrarySitesMutation = typeof LibrarySitesMutation.Type;
 export const LibrarySitesRead = Schema.Struct({ siteId: Schema.optionalKey(SiteId) });
@@ -189,14 +206,34 @@ export class SitesError extends Schema.TaggedError<SitesError>()("SitesError", {
     "library-update",
     "configuration",
     "authentication",
+    "permission",
+    "revision-conflict",
+    "revision-required",
+    "request-conflict",
+    "unknown-outcome",
+    "recovery",
     "read",
     "write",
     "validation",
     "project",
   ]),
+  requestId: Schema.optionalKey(requestId),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message(): string {
+    const identity = this.requestId ? ` Request: ${this.requestId}.` : "";
+    if (this.stage === "revision-conflict")
+      return `These settings changed on another management surface. Refresh Sites and review the latest settings before saving again.${identity}`;
+    if (this.stage === "revision-required")
+      return `Refresh Sites and reopen the editor to load its current revision before saving.${identity}`;
+    if (this.stage === "request-conflict")
+      return `This request identity was already used for different settings. Read Sites and review a new save; do not replay this request.${identity}`;
+    if (this.stage === "unknown-outcome" || this.stage === "write")
+      return `Sites could not confirm the change. It may already have applied. Refresh Sites and compare the current settings before an explicit retry. Keep the original request identity; do not retry automatically.${identity}`;
+    if (this.stage === "permission")
+      return `The Sites integration lacks the required permission. Repair the Library server's integration access, then explicitly continue.${identity}`;
+    if (this.stage === "recovery")
+      return "Sites cannot preserve this request's recovery information. Restore local storage before saving.";
     return this.stage === "library-connection"
       ? "Sites cannot use this computer's enrolled Library connection. Check Settings > Connections on this computer. Keep the existing Sites connections on the Library."
       : this.stage === "library-update"
@@ -204,14 +241,12 @@ export class SitesError extends Schema.TaggedError<SitesError>()("SitesError", {
         : this.stage === "configuration"
           ? "Sites is not configured on this Library server."
           : this.stage === "authentication"
-            ? "Sites could not sign in to the personal API. Check the Library server's integration."
+            ? "Sites could not sign in to the personal API. Check the Library server's integration, then explicitly continue. Sign-in does not repeat the save."
             : this.stage === "project"
               ? "Choose existing projects from this Library before saving the site."
               : this.stage === "validation"
                 ? "Check the site settings. Use exact HTTPS origins, unique analytics origins, and registered services. Checks must use their service's origin."
-                : this.stage === "write"
-                  ? "Sites could not save to the personal API. Refresh before trying again."
-                  : "Sites could not load from the personal API. Try refreshing.";
+                : "Sites could not load from the personal API. Try refreshing.";
   }
 }
 export const SITES_WS_METHODS = {
@@ -236,7 +271,7 @@ export const SitesRpcGroup = RpcGroup.make(
     error,
   }),
   Rpc.make(SITES_WS_METHODS.runChecks, {
-    payload: Schema.Struct({}),
+    payload: RunSiteChecksRequest,
     success: SitesSnapshot,
     error,
   }),

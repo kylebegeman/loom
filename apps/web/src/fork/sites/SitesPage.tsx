@@ -67,7 +67,6 @@ import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useRelativeTimeState } from "~/hooks/useRelativeTimeState";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
-import { useAtomCommand } from "~/state/use-atom-command";
 import {
   LibraryCardTarget,
   LibraryLayoutToggle,
@@ -119,7 +118,7 @@ import {
 } from "./SiteHealth";
 import { SiteThumbnail, useSeen } from "./SiteThumbnail";
 import { formatCount } from "./SiteTraffic";
-import { sites } from "./state";
+import { sites, useSitesWrites } from "./state";
 import { useSiteCheckClock } from "./use-site-check-clock";
 
 type Site = SitesSnapshot["sites"][number];
@@ -483,7 +482,7 @@ function SitesContent({ authority }: { authority: ReturnType<typeof useLibraryAu
     DEFAULT_PREFERENCES,
     SitesPreferences,
   );
-  const runChecks = useAtomCommand(sites.runChecks, { reportFailure: false });
+  const { runChecks } = useSitesWrites();
   const query = useEnvironmentQuery(
     environmentId && supported ? sites.snapshot({ environmentId, input: {} }) : null,
   );

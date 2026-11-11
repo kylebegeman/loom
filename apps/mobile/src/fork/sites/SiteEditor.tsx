@@ -9,14 +9,14 @@ import {
   type SitesSnapshot,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
+import { siteWritePrecondition } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { useEnvironmentQuery } from "../../state/query";
 import { library } from "../library/libraryState";
-import { sites } from "./state";
+import { sites, useSitesWrites } from "./state";
 const decodeSaveSiteRequest = Schema.decodeUnknownSync(SaveSiteRequest);
 const decodeSaveSiteServiceRequest = Schema.decodeUnknownSync(SaveSiteServiceRequest);
 const decodeSaveSiteCheckRequest = Schema.decodeUnknownSync(SaveSiteCheckRequest);
@@ -91,6 +91,7 @@ export function SiteEditor({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
   const allowed = useAtomValue(sites.saveSite.permissionAtom(environmentId));
+  const { saveSite, saveService, saveCheck } = useSitesWrites();
   const catalog = useEnvironmentQuery(
     library.projects({ environmentId, input: { includeArchived: true } }),
   );
@@ -100,9 +101,7 @@ export function SiteEditor({
     (project) =>
       !project.archived || projectIds.includes(project.id) || savedProjectIds.includes(project.id),
   );
-  const saveSite = useAtomCommand(sites.saveSite, { reportFailure: false });
-  const saveService = useAtomCommand(sites.saveService, { reportFailure: false });
-  const saveCheck = useAtomCommand(sites.saveCheck, { reportFailure: false });
+
   const toggle = (values: readonly string[], value: string) =>
     values.includes(value) ? values.filter((v) => v !== value) : [...values, value];
   const changeName = (next: string) => {
@@ -126,7 +125,7 @@ export function SiteEditor({
     setError(null);
     setBusy(true);
     try {
-      const base = { id, name, url, active };
+      const base = { ...siteWritePrecondition(row), id, name, url, active };
       const result =
         target.kind === "site"
           ? await saveSite({
@@ -311,6 +310,12 @@ export function SiteEditor({
               onValueChange={setActive}
             />
           </View>
+          {row && !row.etag ? (
+            <Text>
+              This API does not provide revisions. Concurrent edits cannot be protected. Refresh and
+              compare settings before saving.
+            </Text>
+          ) : null}
           {error ? <Text accessibilityRole="alert">{error}</Text> : null}
           <View className="flex-row flex-wrap gap-2">
             <Button label="Cancel" disabled={busy} onPress={onClose} />
