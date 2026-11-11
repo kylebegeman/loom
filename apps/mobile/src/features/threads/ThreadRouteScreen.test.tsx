@@ -132,8 +132,10 @@ vi.mock("../settings/appearance/AppearancePreferencesProvider", () => ({
 }));
 vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useAdaptiveWorkspaceLayout: () => ({
-    fileInspector: { supported: false },
     layout: { usesSplitView: false },
+  }),
+  useWorkspacePaneState: () => ({
+    fileInspector: { supported: false },
     panes: { auxiliaryPaneVisible: false },
   }),
   useAdaptiveWorkspacePaneRole: () => {},

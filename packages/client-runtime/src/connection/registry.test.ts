@@ -2685,6 +2685,7 @@ describe("EnvironmentRegistry routes", () => {
                 }),
               authorizeDpop: () => Effect.die("unused"),
               authorizeDpopHttp: () => Effect.die("unused"),
+              rememberCheckedDescriptor: () => Effect.void,
               renewDpopBeforeExpiry: () => Effect.die("unused"),
             }),
             Effect.provideService(

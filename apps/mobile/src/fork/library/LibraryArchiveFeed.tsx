@@ -8,7 +8,7 @@ import { memo, useCallback, useState } from "react";
 import { Alert, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { Button } from "../../components/ui/Button";
 import { useMarkdownPreviewStyles } from "../../features/files/FileMarkdownPreview";
 import {

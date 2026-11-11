@@ -64,7 +64,7 @@ export function installCommandPaletteCommands(
       capture: true,
       when: isCommandPaletteMounted,
       onKeyDown: (event) => {
-        if (event.isComposing || event.key !== "Escape") return false;
+        if (event.isComposing || event.keyCode === 229 || event.key !== "Escape") return false;
         const { open, mode } = useCommandPaletteStore.getState();
         if (!open || mode === "command" || isLibraryPaletteOpen()) return false; // fork: library-palette
         consume(event);

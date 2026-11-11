@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -227,7 +228,7 @@ const makeHarness = Effect.gen(function* () {
   } as unknown as ManagedProjectFolders.ManagedProjectFolders["Service"];
 
   const settingsService = {
-    getSettings: Effect.sync(() => state.settings),
+    getSettings: Effect.sync(() => ({ ...DEFAULT_SERVER_SETTINGS, ...state.settings })),
   } as unknown as ServerSettings.ServerSettingsService["Service"];
 
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>

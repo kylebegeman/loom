@@ -264,7 +264,7 @@ apps/server/src/project/ProjectService.ts	project-lifecycle	1
 apps/server/src/project/ProjectService.deletion.test.ts	file-placement	2
 apps/server/src/project/ProjectCloneTracker.ts	file-placement	28
 apps/server/src/project/ProjectCloneTracker.test.ts	file-placement	24
-apps/server/src/project/ProjectService.test.ts	file-placement	22
+apps/server/src/project/ProjectService.test.ts	file-placement	21
 apps/server/src/ws.ts	file-placement	13
 apps/server/src/serverSettings.ts	file-placement	4
 apps/server/src/serverSettings.test.ts	file-placement	2
@@ -387,7 +387,7 @@ scripts/setup-worktree.ts	setup-reuse	5
 scripts/smoke-cli-archive.ts	smoke-port-race	5
 apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	4
 
-apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	4
+apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	3
 apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	3
 apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1
 # Loom Vault encrypted record foundation
@@ -396,7 +396,7 @@ apps/server/src/secrets/SecretRequests.test.ts	ext-vault	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	vault-core	2
 apps/server/scripts/seed-dev-db.ts	dev-fixtures	8
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	brand	2
-apps/web/src/components/onboarding/WelcomeWizard.tsx	brand	9
+apps/web/src/components/onboarding/WelcomePage.tsx	brand	4
 apps/server/src/binCli.ts	brand	6
 apps/server/src/binCli.ts	github-host-setup	2
 apps/server/src/cli/pair.ts	brand	6
@@ -702,11 +702,18 @@ packages/provider-opencode/src/server/status.ts	brand	4
 packages/provider-opencode/src/server/v2/adapter.ts	brand	7
 packages/provider-opencode/src/server/versionProbe.ts	brand	2
 packages/provider-opencode/src/settings.ts	brand	1
-packages/provider-pi/src/server/adapter.ts	brand	1
+packages/provider-pi/src/server/adapter.ts	brand	2
 packages/provider-pi/src/server/mcpExtensionSource.ts	brand	1
 packages/provider-pi/src/server/mcpInjection.test.ts	brand	1
 packages/provider-pi/src/server/mcpInjection.ts	brand	2
 packages/provider-pi/src/server/status.ts	brand	4
+apps/mobile/src/widgets/AgentActivityWidget.tsx	brand	2
+apps/mobile/src/widgets/agentActivityWidgetTimeline.ts	brand	1
+apps/server/src/textGeneration/textGeneratorDrivers.ts	brand	1
+apps/web/src/components/CommandPalette.tsx	brand	1
+apps/web/src/components/auth/ConnectAgentSurface.tsx	brand	1
+apps/web/src/components/mcp/UseInAnotherAppDialog.tsx	brand	3
+apps/web/src/components/settings/SavedEnvironmentRows.tsx	brand	1
 packages/shared/src/codexAuthCallback.ts	brand	2
 packages/shared/src/codexAuthHandoff.ts	brand	1
 packages/shared/src/otelEnvironment.ts	brand	1
@@ -772,7 +779,7 @@ apps/server/src/orchestration-v2/FoundationPersistence.test.ts	server-weight	13
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	server-weight	20
 apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	10
 apps/server/src/orchestration-v2/ThreadPullRequestService.ts	server-weight	2
-apps/server/src/orchestration-v2/ThreadPullRequestService.test.ts	server-weight	8
+apps/server/src/orchestration-v2/ThreadPullRequestService.test.ts	server-weight	9
 apps/server/src/persistence/DatabaseStorage.ts	server-weight	7
 apps/server/src/persistence/DatabaseStorage.test.ts	server-weight	4
 apps/server/src/persistence/Sqlite.ts	server-weight	1
@@ -991,7 +998,7 @@ apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
 apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
-apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	22
+apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1
@@ -1022,7 +1029,7 @@ packages/shared/src/git.ts	source-control-cockpit	2
 packages/shared/src/git.ts	checkpoint-capable	1
 packages/shared/src/git.ts	project-checkout-management	3
 apps/server/src/ws.test.ts	project-lifecycle	2
-apps/server/src/ws.test.ts	file-placement	5
+apps/server/src/ws.test.ts	file-placement	9
 apps/web/src/components/chat/useTimelineRewind.ts	project-lifecycle	22
 docs/user/source-control.md	source-control-cockpit	1
 docs/user/remote-access.md	preview-popups	1
@@ -1405,6 +1412,7 @@ apps/web/src/components/ui/toggle.tsx	iris-pill	4
 apps/web/src/connection/storage.ts	library	3
 apps/web/src/diffPanelStore.test.ts	checkpoint-capable	3
 apps/web/src/diffPanelStore.ts	checkpoint-capable	1
+apps/web/src/state/vcs.ts	checkpoint-capable	2
 apps/web/src/hooks/useThreadActionMenu.test.ts	bots	1
 apps/web/src/hooks/useThreadActionMenu.test.ts	library-projects	9
 apps/web/src/hooks/useThreadActionMenu.test.ts	workspace-handoff	4
@@ -1418,7 +1426,7 @@ apps/web/src/rpc/requestLatencyState.test.ts	library-launch-files	1
 apps/web/src/state/queries.ts	fleet-connections	1
 apps/web/src/state/session.ts	library-projects	1
 apps/web/vite.config.ts	update-publisher	2
-knip.jsonc	ext-lint	7
+knip.jsonc	ext-lint	8
 package.json	-	"dev:fixtures": "node apps/server/scripts/dev-fixtures.ts"
 package.json	-	"seed-dev-db": "node apps/server/scripts/seed-dev-db.ts"
 packages/client-runtime/src/connection/catalog.ts	directory-computers	1
@@ -1446,6 +1454,7 @@ packages/contracts/src/server.test.ts	file-placement	2
 packages/contracts/src/sourceControl.ts	file-placement	2
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	was declined in Loom.
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	launch arguments in Loom settings
+packages/provider-pi/src/server/mcpExtensionSource.ts	-	Set the service tier Loom sends
 packages/shared/src/nodeSqliteClient.test.ts	library-projects	5
 packages/shared/src/usageLimits.test.ts	switchboard	1
 packages/ssh/src/auth.ts	-	Loom ssh-askpass invoked without T3_SSH_AUTH_SECRET.
@@ -1502,13 +1511,13 @@ apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	client-computer	19
 apps/desktop/src/ipc/methods/localEnvironment.ts	client-computer	1
 apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
-apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
+apps/web/src/components/onboarding/WelcomePage.tsx	fleet-connections	5
 apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
 apps/web/src/components/CommandPalette.tsx	library-only	1
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	5
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.browser.test.tsx	client-computer	2
 apps/web/src/state/shell.ts	client-computer	5
-apps/web/src/state/shell.test.ts	client-computer	7
+apps/web/src/state/shell.test.ts	client-computer	5
 docs/user/updating.md	client-computer	1
 docs/user/faq.md	fleet-connections	1
 apps/mobile/src/features/projects/AddProjectScreen.tsx	library-only	3
@@ -1606,10 +1615,10 @@ apps/desktop/src/app/DesktopApp.test.ts	open-at-login	2
 apps/desktop/src/fork/identity-renewal/DesktopIdentityRenewal.ts	cloudflare-access	1
 apps/desktop/src/ipc/methods/loomIdentity.ts	cloudflare-access	1
 apps/desktop/src/main.ts	cloudflare-access	1
-apps/mobile/src/components/FilePreviewModal.tsx	cloudflare-access	1
-apps/mobile/src/components/MediaImagePreview.tsx	cloudflare-access	1
+apps/mobile/src/components/ui/FilePreviewSession.tsx	cloudflare-access	1
+apps/mobile/src/components/ui/FilePreviewModal.android.tsx	cloudflare-access	2
 apps/mobile/src/components/MediaVideoPlayer.tsx	cloudflare-access	1
-apps/mobile/src/components/VideoPreviewModal.ios.tsx	cloudflare-access	1
+apps/mobile/src/components/ui/VideoPreviewModal.tsx	cloudflare-access	1
 apps/mobile/src/features/files/WorkspaceFileWebPreview.tsx	cloudflare-access	1
 apps/mobile/src/features/threads/ThreadMarkdownImage.test.tsx	cloudflare-access	1
 apps/mobile/src/features/voice-input/usePlaybackAudioPlayer.ts	cloudflare-access	1
@@ -1729,7 +1738,7 @@ apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	mobile-navigat
 apps/mobile/src/features/layout/workspace/WorkspaceSectionToolbar.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceSidebarTabs.ios.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceTabsContext.tsx	mobile-navigation	2
-apps/mobile/src/features/layout/workspace/WorkspaceToolbar.ios.tsx	mobile-navigation	1
+apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/navigation-tab-order.ts	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/navigation-tabs.ts	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/useSelectWorkspaceTab.ts	mobile-navigation	1
@@ -1750,9 +1759,9 @@ apps/mobile/src/features/layout/workspace/WorkspaceListHeader.tsx	project-naviga
 apps/mobile/src/features/layout/workspace/WorkspaceListEmptyDetail.tsx	project-navigation	3
 apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	project-navigation	3
 apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	library	5
-apps/mobile/src/features/layout/workspace/WorkspaceToolbar.ios.tsx	project-navigation	3
+apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx	project-navigation	3
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	brand	2
-apps/mobile/src/components/FilePreviewModal.test.tsx	cloudflare-access	4
+apps/mobile/src/components/ui/FilePreviewSession.test.tsx	cloudflare-access	4
 apps/mobile/src/features/settings/VoiceModelSection.tsx	brand	1
 apps/mobile/src/features/voice-input/voiceDestination.ts	brand	1
 apps/mobile/src/state/use-thread-composer-state.ts	brand	1
@@ -1761,6 +1770,8 @@ packages/shared/package.json	-	./fork/relayJwt
 apps/server/src/device/DeviceService.test.ts	brand	2
 apps/web/src/connection/storage.browser.test.ts	library	1
 apps/web/src/components/CommandPalette.composition.browser.test.tsx	file-placement	1
+apps/web/src/components/CommandPalette.composition.browser.test.tsx	fleet-connections	2
+apps/web/src/components/CommandPalette.browser.test.tsx	library-palette	2
 apps/mobile/src/features/threads/ThreadHeader.tsx	native-menus	1
 apps/mobile/src/features/threads/ThreadHeader.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceListHeader.tsx	mobile-navigation	1

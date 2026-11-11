@@ -10,7 +10,7 @@ import {
   PlusIcon,
   RotateCcwIcon,
   Share2Icon,
-  SparklesIcon,
+  BotIcon,
   Trash2Icon,
   TriangleAlertIcon,
   WifiOffIcon,
@@ -1235,7 +1235,7 @@ export function BotEditorForm({
               disabled={locked || !access.canSave}
               onClick={() => askModel("refine")}
             >
-              <SparklesIcon />
+              <BotIcon />
               Refine with model
             </Button>
           ) : bot && host.versionsSupported ? (
@@ -1246,7 +1246,7 @@ export function BotEditorForm({
               disabled={locked || !access.canSave || archived}
               onClick={() => askModel("suggest")}
             >
-              <SparklesIcon />
+              <BotIcon />
               Suggest an edit
             </Button>
           ) : null}
@@ -1327,7 +1327,7 @@ export function BotEditorForm({
           </LibraryNotice>
         ) : null}
         {refining !== null || notes.length > 0 ? (
-          <LibraryNotice icon={SparklesIcon}>
+          <LibraryNotice icon={BotIcon}>
             {refining !== null ? (
               <p>{refining}</p>
             ) : (

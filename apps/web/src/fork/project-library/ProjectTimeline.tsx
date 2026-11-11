@@ -40,7 +40,7 @@ import {
   MessageSquarePlusIcon,
   MonitorXIcon,
   PencilLineIcon,
-  SparklesIcon,
+  BotIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -419,7 +419,7 @@ const KIND_DISPLAY: Record<
   "pull-request-closed": { icon: PullRequestGlyph.closed, tone: "quiet" },
   "pull-request-checks-failed": { icon: CircleAlertIcon, tone: "warning" },
   "brief-revised": { icon: PencilLineIcon, tone: "project" },
-  "brief-proposed": { icon: SparklesIcon, tone: "project" },
+  "brief-proposed": { icon: BotIcon, tone: "project" },
   "copy-added": { icon: HardDriveDownloadIcon, tone: "quiet" },
   "copy-released": { icon: MonitorXIcon, tone: "quiet" },
   "copy-failed": { icon: MonitorXIcon, tone: "warning" },

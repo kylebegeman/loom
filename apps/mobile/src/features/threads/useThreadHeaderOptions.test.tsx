@@ -76,10 +76,12 @@ vi.mock("../../native/native-layout-metrics", () => ({ useDeviceType: () => "pho
 vi.mock("../layout/AdaptiveWorkspaceLayout", () => ({
   useAdaptiveWorkspaceLayout: () => ({
     layout: { usesSplitView: harness.splitView },
-    panes: { primarySidebarVisible: harness.sidebarVisible, auxiliaryPaneVisible: false },
     togglePrimarySidebar: () => {},
     toggleAuxiliaryPane: () => {},
     startNewTask: () => {},
+  }),
+  useWorkspacePaneState: () => ({
+    panes: { primarySidebarVisible: harness.sidebarVisible, auxiliaryPaneVisible: false },
   }),
 }));
 vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
@@ -153,9 +155,7 @@ function Header(props: {
         onRunProjectScript: async () => {},
       }}
       hasThreadCwd
-      fileInspectorSupported={false}
       inspectorMode={null}
-      onToggleInspector={() => {}}
       onOpenFilesInspector={() => {}}
     />
   );

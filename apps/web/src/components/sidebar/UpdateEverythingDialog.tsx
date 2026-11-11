@@ -66,6 +66,8 @@ interface UpdateEverythingDialogProps {
   readonly disabledReason?: string | null;
   /** The confirmed work is starting; it cannot be cancelled from here. */
   readonly busy?: boolean;
+  /** Machines are still looking for provider updates, so more rows can appear. */
+  readonly checking?: boolean;
   // fork: machine-updates: the app install confirm shares this dialog, and both can wait for
   // local agents instead of interrupting them.
   readonly onConfirmWhenIdle?: () => void;
@@ -116,6 +118,7 @@ function UpdateEverythingDialogContent({
   notes = [],
   disabledReason = null,
   busy = false,
+  checking = false,
   onConfirmWhenIdle, // fork: machine-updates
 }: UpdateEverythingDialogContentProps) {
   // fork: machine-updates
@@ -183,6 +186,9 @@ function UpdateEverythingDialogContent({
           {version !== null && providerCount > 0 ? " · " : null}
           {providerCount > 0
             ? `${providerCount} provider ${providerCount === 1 ? "update" : "updates"}`
+            : null}
+          {checking
+            ? `${version !== null || providerCount > 0 ? " · " : ""}Checking for more…`
             : null}
         </AlertDialogDescription>
       </AlertDialogHeader>

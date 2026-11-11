@@ -36,7 +36,7 @@ export type ReceiptBody = Omit<AgentReceipt, "id">;
 
 export type ChildRecords = Pick<
   OrchestrationV2ThreadProjection,
-  "runs" | "messages" | "turnItems" | "checkpoints"
+  "runs" | "messages" | "turnItems" | "checkpoints" | "providerTurns"
 >;
 
 export interface Lineage {

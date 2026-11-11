@@ -26,6 +26,7 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => state.router, useParams: () => null }));
 vi.mock("~/hooks/useSettings", () => ({ getClientSettings: () => ({}) }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
+vi.mock("~/state/projects", () => ({ defaultProjectFallbackReadyAtom: () => true }));
 vi.mock("~/state/presentation", () => ({
   environmentPresentations: { presentationAtom: () => ({}) },
   environmentSummaries: { connectedEnvironmentIdsAtom: {} },

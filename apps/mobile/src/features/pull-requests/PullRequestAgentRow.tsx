@@ -17,7 +17,7 @@ export function PullRequestAgentRow(props: {
   const row = (
     <PullRequestCardRow
       title={props.title ?? action.title}
-      icon="sparkles"
+      icon="hammer"
       accessibilityLabel={props.title ?? action.title}
       menu={agent.chooseThread && !action.attributes.disabled}
       onPress={
@@ -31,7 +31,7 @@ export function PullRequestAgentRow(props: {
       nativeTrigger={{
         // fork: native-menus
         label: props.title ?? action.title,
-        icon: "sparkles",
+        icon: "hammer",
         accessibilityLabel: props.title ?? action.title,
         fullWidth: true,
       }}

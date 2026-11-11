@@ -82,7 +82,7 @@ const KIND_DISPLAY: Record<
   "pull-request-closed": { icon: PullRequestGlyph.closed, tone: "quiet" },
   "pull-request-checks-failed": { icon: "exclamationmark.circle", tone: "warning" },
   "brief-revised": { icon: "pencil", tone: "project" },
-  "brief-proposed": { icon: "sparkles", tone: "project" },
+  "brief-proposed": { icon: "robot", tone: "project" },
   "copy-added": { icon: "internaldrive", tone: "quiet" },
   "copy-released": { icon: "desktopcomputer", tone: "quiet" },
   "copy-failed": { icon: "exclamationmark.triangle", tone: "warning" },
