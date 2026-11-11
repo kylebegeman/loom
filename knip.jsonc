@@ -135,6 +135,8 @@
         "@t3tools/mobile-review-diff-native",
         "@t3tools/mobile-terminal-native",
       ],
+      // fork: ext-lint -- project-navigation's in-list empty states replace this inset's only caller.
+      "ignore": ["src/features/layout/workspace/workspace-list-insets.ts"],
     },
     "apps/mobile/modules/t3-highlights": {
       // Nitrogen discovers HybridObject specifications by filename.
