@@ -1,6 +1,12 @@
+import * as VaultGitHub from "../vault/VaultGitHub.ts";
+import type {
+  RepositoryAuthorizer,
+  RepositoryOperation,
+} from "../vault/GitHubRepositoryTransport.ts";
+import { runRepositoryGit } from "./runRepositoryGit.ts";
 import { measureStoragePath } from "../project-lifecycle/storageMeasurement.ts";
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
-import { LibraryError } from "@t3tools/contracts/fork";
+import { LibraryError, type LibraryRepositoryAccess } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { normalizeGitRemoteUrl, parseRemoteDefaultBranch } from "@t3tools/shared/git";
@@ -17,8 +23,6 @@ import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as Stream from "effect/Stream";
-import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ServerConfig from "../../config.ts";
 import type * as ProcessRunner from "../../processRunner.ts";
@@ -47,12 +51,20 @@ export interface LibraryGitMirror {
 export class LibraryGitFetch extends Context.Service<
   LibraryGitFetch,
   {
+    /** Checks remote access without creating a mirror or checkout. */
+    readonly preflightRepository: (input: {
+      readonly remoteUrl: string;
+      readonly repositoryAccess?: LibraryRepositoryAccess | undefined;
+      readonly authorize?: RepositoryAuthorizer | undefined;
+    }) => Effect.Effect<ProcessRunner.ProcessRunOutput, LibraryError>;
     /**
      * Clones `remoteUrl` into `path`, an empty or missing folder, through this computer's mirror
      * of the remote. Git failures come back as a non-zero `code`, as `runner.run` reports them.
      */
     readonly cloneRepository: (input: {
       readonly remoteUrl: string;
+      readonly repositoryAccess?: LibraryRepositoryAccess | undefined;
+      readonly authorize?: RepositoryAuthorizer | undefined;
       readonly branch: string | null;
       readonly path: string;
       readonly onProgress?: ((progress: LibraryCloneProgress) => Effect.Effect<void>) | undefined;
@@ -61,6 +73,7 @@ export class LibraryGitFetch extends Context.Service<
     readonly warmMirror: (input: {
       readonly remoteUrl: string;
       readonly create: boolean;
+      readonly repositoryAccess?: LibraryRepositoryAccess | undefined;
     }) => Effect.Effect<void>;
     readonly mirrorKey: (remoteUrl: string) => Effect.Effect<string>;
     readonly mirrors: Effect.Effect<ReadonlyArray<LibraryGitMirror>, LibraryError>;
@@ -81,10 +94,6 @@ const MIRROR_SUFFIX = ".git";
 const PARTIAL_SUFFIX = ".partial";
 const MIRROR_KEY = /^[0-9a-f]{64}$/;
 const LAST_USED_FILE = "loom-last-used";
-const GIT_STEP_TIMEOUT = "10 minutes";
-const FORCE_KILL_AFTER = "1 second";
-const STDERR_TAIL_CHARS = 64 * 1024;
-const STDOUT_LIMIT_CHARS = 64 * 1024;
 const PROGRESS_INTERVAL_MS = 250;
 
 const isLibraryError = Schema.is(LibraryError);
@@ -98,6 +107,9 @@ const mapIo = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 const succeeded = (result: ProcessRunner.ProcessRunOutput) => result.code === 0 && !result.timedOut;
 // Option-shaped remotes only ever reach git behind `--`, which the direct clone provides.
 const mirrorable = (remoteUrl: string) => !remoteUrl.startsWith("-") && !remoteUrl.includes("\0");
+export const matchesVaultGitHubRepository = (remoteUrl: string, repository: string) =>
+  /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/(?:git@)?github\.com\/)/i.test(remoteUrl) &&
+  normalizeGitRemoteUrl(remoteUrl) === `github.com/${repository.toLowerCase()}`;
 const branchArguments = (branch: string | null) => (branch === null ? [] : ["--branch", branch]);
 const gitDirectory = (directory: string) => `--git-dir=${directory}`;
 
@@ -151,6 +163,7 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const config = yield* ServerConfig.ServerConfig;
   const hostEnvironment = yield* HostProcess.Environment;
+  const vault = yield* Effect.serviceOption(VaultGitHub.VaultGitHub);
   const scope = yield* Effect.scope;
   const locks = yield* KeyedLock.make<string>();
   const warming = yield* Semaphore.make(1);
@@ -162,76 +175,11 @@ const make = Effect.gen(function* () {
   const removeDirectory = (directory: string) =>
     fs.remove(directory, { recursive: true, force: true });
 
-  const runGit = Effect.fn("LibraryGitFetch.git")(function* (
+  const runGit = (
     args: ReadonlyArray<string>,
     onLine?: (line: string) => Effect.Effect<void>,
-  ) {
-    const stdoutDecoder = new TextDecoder();
-    const stderrDecoder = new TextDecoder();
-    let stdout = "";
-    let stdoutTruncated = false;
-    let stderr = "";
-    let stderrTruncated = false;
-    let partialLine = "";
-    /** Keeps the tail for failure classification and returns the complete progress lines. */
-    const takeStderr = (text: string, final = false) => {
-      stderr += text;
-      if (stderr.length > 2 * STDERR_TAIL_CHARS) {
-        stderr = stderr.slice(-STDERR_TAIL_CHARS);
-        stderrTruncated = true;
-      }
-      if (onLine === undefined) return [];
-      const lines = `${partialLine}${text}`.split(/[\r\n]/);
-      partialLine = final ? "" : (lines.pop() ?? "");
-      return lines;
-    };
-    const report = (lines: ReadonlyArray<string>) =>
-      onLine === undefined ? Effect.void : Effect.forEach(lines, onLine, { discard: true });
-    const exitCode = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const child = yield* spawner
-          .spawn(
-            ChildProcess.make("git", args, {
-              env: gitEnvironment,
-              extendEnv: true,
-              stdin: "ignore",
-              forceKillAfter: FORCE_KILL_AFTER,
-            }),
-          )
-          .pipe(
-            // Synchronous spawn throws arrive as defects.
-            Effect.catchDefect((cause) => Effect.fail(new LibraryError({ reason: "io", cause }))),
-          );
-        yield* Effect.all(
-          [
-            Stream.runForEach(child.stdout, (chunk) =>
-              Effect.sync(() => {
-                if (stdout.length < STDOUT_LIMIT_CHARS)
-                  stdout += stdoutDecoder.decode(chunk, { stream: true });
-                else stdoutTruncated = true;
-              }),
-            ),
-            Stream.runForEach(child.stderr, (chunk) =>
-              report(takeStderr(stderrDecoder.decode(chunk, { stream: true }))),
-            ),
-          ],
-          { concurrency: "unbounded" },
-        );
-        yield* report(takeStderr(stderrDecoder.decode(), true));
-        return yield* child.exitCode;
-      }),
-    ).pipe(Effect.timeoutOption(GIT_STEP_TIMEOUT));
-    return {
-      stdout,
-      stderr: stderr.slice(-STDERR_TAIL_CHARS),
-      code: Option.getOrNull(exitCode),
-      timedOut: Option.isNone(exitCode),
-      stdoutTruncated,
-      stderrTruncated: stderrTruncated || stderr.length > STDERR_TAIL_CHARS,
-      stdoutInvalidUtf8: false,
-      stderrInvalidUtf8: false,
-    } satisfies ProcessRunner.ProcessRunOutput;
-  }, mapIo);
+    timeout: "10 minutes" | "30 seconds" = "10 minutes",
+  ) => runRepositoryGit(spawner, args, { env: gitEnvironment, extendEnv: true, timeout, onLine });
 
   const mirrorKey = Effect.fn("LibraryGitFetch.mirrorKey")(function* (remoteUrl: string) {
     const bytes = new TextEncoder().encode(normalizeGitRemoteUrl(remoteUrl));
@@ -460,9 +408,58 @@ const make = Effect.gen(function* () {
     return mirrors.dev === folder.dev;
   });
 
+  const vaultOperation = Effect.fn("LibraryGitFetch.vaultOperation")(function* (
+    input: {
+      readonly remoteUrl: string;
+      readonly repositoryAccess?: LibraryRepositoryAccess | undefined;
+      readonly authorize?: RepositoryAuthorizer | undefined;
+    },
+    operation: RepositoryOperation,
+  ) {
+    const access = input.repositoryAccess;
+    if (access?.kind !== "vault-github" || input.authorize === undefined || Option.isNone(vault))
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: "Authorize the selected Vault GitHub connection before downloading project files.",
+      });
+    const repository = access.repository.toLowerCase();
+    if (!matchesVaultGitHubRepository(input.remoteUrl, repository))
+      return yield* new LibraryError({ reason: "invalid" });
+    return yield* vault.value.repositoryOperation(access, operation, input.authorize(access)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new LibraryError({
+            reason: "blocked",
+            cause,
+            detail:
+              "The selected Vault GitHub connection could not access this repository. Review the connection and repository permissions, then retry.",
+          }),
+      ),
+    );
+  });
+  const preflightRepository: LibraryGitFetch["Service"]["preflightRepository"] = Effect.fn(
+    "LibraryGitFetch.preflightRepository",
+  )(function* (input) {
+    if (input.repositoryAccess?.kind === "vault-github")
+      return yield* vaultOperation(input, { kind: "preflight" });
+    if (!mirrorable(input.remoteUrl)) return yield* new LibraryError({ reason: "invalid" });
+    return yield* runGit(
+      ["ls-remote", "--symref", "--", input.remoteUrl, "HEAD"],
+      undefined,
+      "30 seconds",
+    );
+  });
+
   const cloneRepository: LibraryGitFetch["Service"]["cloneRepository"] = Effect.fn(
     "LibraryGitFetch.cloneRepository",
   )(function* (input) {
+    if (input.repositoryAccess?.kind === "vault-github")
+      return yield* vaultOperation(input, {
+        kind: "clone",
+        path: input.path,
+        branch: input.branch,
+        onLine: input.onProgress === undefined ? undefined : progressReporter(input.onProgress),
+      });
     const target = yield* targetState(input.path);
     const reporter = () =>
       input.onProgress === undefined ? undefined : progressReporter(input.onProgress);
@@ -501,7 +498,7 @@ const make = Effect.gen(function* () {
   const warmMirror: LibraryGitFetch["Service"]["warmMirror"] = Effect.fn(
     "LibraryGitFetch.warmMirror",
   )(function* (input) {
-    if (!mirrorable(input.remoteUrl)) return;
+    if (input.repositoryAccess?.kind === "vault-github" || !mirrorable(input.remoteUrl)) return;
     const key = yield* mirrorKey(input.remoteUrl);
     yield* refreshMirror({
       key,
@@ -604,6 +601,7 @@ const make = Effect.gen(function* () {
 
   return LibraryGitFetch.of({
     cloneRepository,
+    preflightRepository,
     warmMirror,
     mirrorKey,
     mirrorLocations,

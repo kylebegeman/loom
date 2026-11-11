@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { githubTerminalArgs, VAULT_PUSH_REMOTE } from "./GitHubCommand.ts";
+import { githubCredentialHelper } from "./githubCredentialHelper.ts";
 
 type Output = { exitCode: number; stdout: string; stderr: string };
 export class GitHubTerminal extends Context.Service<
@@ -29,20 +30,6 @@ export class GitHubTerminal extends Context.Service<
     }) => Effect.Effect<Output, VaultGitHubError | VaultConnectionError>;
   }
 >()("t3/fork/vault/GitHubTerminal") {}
-const helper = `#!/bin/sh
-[ "$1" = get ] || exit 0
-protocol= host= path=
-while IFS= read -r line && [ -n "$line" ]; do
-  case "$line" in
-    protocol=*) protocol=\${line#protocol=} ;;
-    host=*) host=\${line#host=} ;;
-    path=*) path=\${line#path=} ;;
-  esac
-done
-[ "$protocol" = https ] && [ "$host" = github.com ] || exit 1
-[ "$path" = "$LOOM_GITHUB_REPOSITORY" ] || [ "$path" = "$LOOM_GITHUB_REPOSITORY.git" ] || exit 1
-printf 'username=x-access-token\\npassword=%s\\n\\n' "$LOOM_GITHUB_TOKEN"
-`;
 const fail = (reason: VaultGitHubError["reason"]) => new VaultGitHubError({ reason });
 // core.hooksPath is always overridden to /dev/null before credentials reach a child.
 const forbiddenConfig =
@@ -243,7 +230,7 @@ export const layer = Layer.effect(
         {
           const filename = NodePath.join(directory, "credential-helper");
           yield* Effect.tryPromise({
-            try: () => NodeFSP.writeFile(filename, helper, { mode: 0o700 }),
+            try: () => NodeFSP.writeFile(filename, githubCredentialHelper, { mode: 0o700 }),
             catch: () => fail("failed"),
           });
           const config = [

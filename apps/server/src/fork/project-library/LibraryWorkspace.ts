@@ -1,3 +1,4 @@
+import type { RepositoryAuthorizer } from "../vault/GitHubRepositoryTransport.ts";
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
 import { libraryCloneFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
@@ -109,6 +110,7 @@ export class LibraryWorkspace extends Context.Service<
     }) => Effect.Effect<LibraryPlacement, LibraryError>;
     readonly prepareCopy: (
       input: LibraryPrepareCopyRequest,
+      authorize?: RepositoryAuthorizer,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     /**
      * Makes a new copy's folders and local projects without downloading, so a conversation can
@@ -117,12 +119,16 @@ export class LibraryWorkspace extends Context.Service<
      */
     readonly reserveCopy: (
       input: LibraryPrepareCopyRequest,
+      authorize?: RepositoryAuthorizer,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     /** Downloads a reserved copy's files once, however many callers wait for them. */
-    readonly fillCopy: (input: {
-      readonly workingCopyId: string;
-      readonly operationId?: string | undefined;
-    }) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    readonly fillCopy: (
+      input: {
+        readonly workingCopyId: string;
+        readonly operationId?: string | undefined;
+      },
+      authorize?: RepositoryAuthorizer,
+    ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     readonly restoreCopy: (
       input: LibraryRestoreCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -1045,6 +1051,8 @@ const make = Effect.gen(function* () {
     rootPath: string,
     repositoryPath: string,
     report: FillReport | undefined,
+    input: LibraryPrepareCopyRequest,
+    authorize: RepositoryAuthorizer | undefined,
   ) {
     if (yield* fs.exists(path.join(repositoryPath, ".git"))) return;
     if (
@@ -1060,13 +1068,25 @@ const make = Effect.gen(function* () {
         reason: "blocked",
         detail: `${resource.relativePath} already exists and is not a Git repository, so Loom cannot download ${resource.title} there. Move that folder, or choose another location.`,
       });
+    const repositoryAccess = input.repositoryAccess?.find(
+      (entry) => entry.resourceId === resource.id,
+    )?.access;
     const cloned = yield* gitFetch.cloneRepository({
       remoteUrl: resource.remoteUrl,
+      repositoryAccess,
+      authorize,
       branch: resource.defaultBranch,
       path: repositoryPath,
       ...(report === undefined ? {} : { onProgress: (progress) => report(resource, progress) }),
     });
-    if (cloned.code !== 0)
+    if (cloned.code !== 0 || cloned.timedOut) {
+      if (repositoryAccess?.kind === "vault-github")
+        return yield* new LibraryError({
+          reason: "blocked",
+          detail: cloned.timedOut
+            ? "The selected Vault GitHub download timed out. Check this computer's network and retry."
+            : "The selected Vault GitHub connection could not download this repository. Review the connection and repository permissions, then retry.",
+        });
       return yield* libraryCloneFailure({
         stderr: cloned.stderr,
         timedOut: cloned.timedOut,
@@ -1074,6 +1094,7 @@ const make = Effect.gen(function* () {
         environmentId,
         computer: yield* HostProcess.Hostname,
       });
+    }
   });
   /**
    * Gives a new copy its folders and local projects before any download, or null when it cannot
@@ -1206,8 +1227,16 @@ const make = Effect.gen(function* () {
             .filter((resource) => resource.kind !== "link")
             .map((resource) => resource.id)
         : [...new Set(input.resourceIds)];
+    const repositoryAccess = input.repositoryAccess
+      ?.filter((entry) => entry.access.kind === "vault-github")
+      .toSorted((left, right) => left.resourceId.localeCompare(right.resourceId));
     return yield* digest(
-      yield* encodePreparation({ ...input, rootPath, resourceIds: requestedIds.toSorted() }),
+      yield* encodePreparation({
+        ...input,
+        rootPath,
+        resourceIds: requestedIds.toSorted(),
+        repositoryAccess: repositoryAccess?.length ? repositoryAccess : undefined,
+      }),
     );
   });
 
@@ -1216,6 +1245,7 @@ const make = Effect.gen(function* () {
     rootPath: string,
     reserve = false,
     report?: FillReport,
+    authorize?: RepositoryAuthorizer,
   ) {
     if (!supportsExecution)
       return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
@@ -1468,6 +1498,7 @@ const make = Effect.gen(function* () {
       receipt = {
         requestId: input.requestId,
         fingerprint,
+        repositoryAccess: input.repositoryAccess,
         project: input.project,
         copy: {
           id: `copy:${(yield* digest(`${environmentId}\0${input.requestId}`)).slice(0, 40)}`,
@@ -1515,7 +1546,14 @@ const make = Effect.gen(function* () {
           yield* Effect.forEach(
             outermost,
             (resource) =>
-              cloneResource(resource, rootPath, repositoryPathOf(resource), report).pipe(
+              cloneResource(
+                resource,
+                rootPath,
+                repositoryPathOf(resource),
+                report,
+                input,
+                authorize,
+              ).pipe(
                 Effect.catch((error) =>
                   Effect.sync(() => downloadFailures.set(resource.id, error)),
                 ),
@@ -1531,7 +1569,7 @@ const make = Effect.gen(function* () {
           if (input.strategy === "clone") {
             const failure = downloadFailures.get(resource.id);
             if (failure !== undefined) return yield* failure;
-            yield* cloneResource(resource, rootPath, repositoryPath, report);
+            yield* cloneResource(resource, rootPath, repositoryPath, report, input, authorize);
           }
           const inspected = yield* inspectRepository(rootPath, repositoryPath);
           if (
@@ -3491,6 +3529,7 @@ const make = Effect.gen(function* () {
     workingCopyId: string,
     operationId: string | undefined,
     fiber: Fiber.Fiber<unknown, unknown>,
+    authorize: RepositoryAuthorizer | undefined,
   ) {
     const receipt = yield* store.get(workingCopyId);
     if (receipt.copy.state === "ready") return receipt.copy;
@@ -3504,6 +3543,7 @@ const make = Effect.gen(function* () {
       rootPath: receipt.copy.rootPath,
       strategy: "clone",
       resourceIds: reservation.resourceIds,
+      repositoryAccess: receipt.repositoryAccess,
     };
     const threadIds = (yield* store.bindings)
       .filter((row) => row.resolved.binding.workingCopyId === workingCopyId)
@@ -3563,7 +3603,7 @@ const make = Effect.gen(function* () {
         if (finishFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
       }
     });
-    return yield* prepareCopy(request, receipt.copy.rootPath, false, report).pipe(
+    return yield* prepareCopy(request, receipt.copy.rootPath, false, report, authorize).pipe(
       Effect.tap((copy) => fillProfile(request, copy)),
       Effect.onExit((exit) =>
         Effect.forEach(
@@ -3585,10 +3625,13 @@ const make = Effect.gen(function* () {
   });
   // The download runs on its own, so a caller that stops waiting leaves it to finish for the rest.
   // The setup card's Cancel interrupts it, which every waiter sees as FILL_CANCELLED.
-  const fillCopy = (input: {
-    readonly workingCopyId: string;
-    readonly operationId?: string | undefined;
-  }): Effect.Effect<LibraryWorkingCopy, LibraryError> =>
+  const fillCopy = (
+    input: {
+      readonly workingCopyId: string;
+      readonly operationId?: string | undefined;
+    },
+    authorize?: RepositoryAuthorizer,
+  ): Effect.Effect<LibraryWorkingCopy, LibraryError> =>
     Effect.suspend(() => {
       const running = fills.get(input.workingCopyId);
       if (running !== undefined) return Deferred.await(running);
@@ -3598,7 +3641,7 @@ const make = Effect.gen(function* () {
         .withLock(
           copyKey(input.workingCopyId),
           Effect.withFiber((fiber) =>
-            mapIo(fillFiles(input.workingCopyId, input.operationId, fiber)),
+            mapIo(fillFiles(input.workingCopyId, input.operationId, fiber, authorize)),
           ),
         )
         .pipe(
@@ -4017,6 +4060,9 @@ const make = Effect.gen(function* () {
       (resource) =>
         resource.kind === "link" ||
         resource.remoteUrl === null ||
+        input.repositoryAccess?.some(
+          (entry) => entry.resourceId === resource.id && entry.access.kind === "vault-github",
+        ) ||
         (input.strategy === "clone" &&
           (input.resourceIds === undefined || input.resourceIds.includes(resource.id)))
           ? Effect.void
@@ -4255,13 +4301,140 @@ const make = Effect.gen(function* () {
     return { request: { ...request, rootPath }, claimed: true };
   });
 
-  // Only the overlap and takeover checks share one lock, so a download never holds up the rest.
-  const reserveCopy = (input: LibraryPrepareCopyRequest) =>
+  const preflightPreparation = Effect.fn("LibraryWorkspace.preflightPreparation")(function* (
+    input: LibraryPrepareCopyRequest,
+    authorize: RepositoryAuthorizer | undefined,
+  ) {
+    if (!supportsExecution)
+      return yield* new LibraryError({ reason: "blocked", detail: EXECUTION_DISABLED });
+    if (
+      input.project.archived ||
+      !validLibraryResources(input.project.resources, {
+        allowLocalRemotes: input.strategy === "reuse",
+      })
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    const requestedIds = input.resourceIds;
+    if (
+      requestedIds !== undefined &&
+      (new Set(requestedIds).size !== requestedIds.length ||
+        requestedIds.some(
+          (id) =>
+            !input.project.resources.some(
+              (resource) => resource.id === id && resource.kind !== "link",
+            ),
+        ))
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    const selected = input.project.resources.filter(
+      (resource) =>
+        resource.kind !== "link" &&
+        (input.resourceIds === undefined || input.resourceIds.includes(resource.id)),
+    );
+    const access = input.repositoryAccess ?? [];
+    if (
+      new Set(access.map((entry) => entry.resourceId)).size !== access.length ||
+      access.some(
+        (entry) =>
+          !input.project.resources.some(
+            (resource) => resource.id === entry.resourceId && resource.kind !== "link",
+          ),
+      )
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+    if (access.some((entry) => entry.access.kind === "vault-github") && authorize === undefined)
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: "Authorize the selected Vault GitHub connection before downloading project files.",
+      });
+    for (const entry of access) {
+      if (entry.access.kind !== "vault-github") continue;
+      const resource = input.project.resources.find((resource) => resource.id === entry.resourceId);
+      if (
+        resource?.remoteUrl == null ||
+        !LibraryGitFetch.matchesVaultGitHubRepository(resource.remoteUrl, entry.access.repository)
+      )
+        return yield* new LibraryError({ reason: "invalid" });
+      if (authorize === undefined) return yield* new LibraryError({ reason: "blocked" });
+      yield* authorize(entry.access).pipe(
+        Effect.mapError(
+          (cause) =>
+            new LibraryError({
+              reason: "blocked",
+              cause,
+              detail:
+                "Authorize the selected Vault GitHub connection before downloading project files.",
+            }),
+        ),
+      );
+    }
+    const earlier = (yield* store.receipts).find(
+      (receipt) =>
+        receipt.requestId === input.requestId ||
+        receipt.registrationRequests?.some((request) => request.requestId === input.requestId),
+    );
+    if (earlier !== undefined) {
+      const request = {
+        ...input,
+        rootPath: input.rootPath ?? earlier.copy.rootPath,
+        strategy:
+          input.rootPath === undefined
+            ? earlier.copy.ownership === "managed"
+              ? ("clone" as const)
+              : ("reuse" as const)
+            : input.strategy,
+      };
+      const fingerprint = yield* preparationFingerprint(request, request.rootPath);
+      const saved =
+        earlier.requestId === input.requestId
+          ? earlier.fingerprint
+          : earlier.registrationRequests?.find((entry) => entry.requestId === input.requestId)
+              ?.fingerprint;
+      if (fingerprint !== saved) return yield* new LibraryError({ reason: "request-conflict" });
+      if (earlier.copy.state === "ready" || earlier.copy.state === "released") return;
+    }
+    const cloning =
+      input.rootPath === undefined
+        ? (yield* findPlacement(input)).placement.action === "clone"
+        : input.strategy === "clone";
+    if (!cloning) return;
+    for (const resource of selected) {
+      if (resource.remoteUrl === null) return yield* new LibraryError({ reason: "invalid" });
+      const result = yield* gitFetch.preflightRepository({
+        remoteUrl: resource.remoteUrl,
+        repositoryAccess: access.find((entry) => entry.resourceId === resource.id)?.access,
+        authorize,
+      });
+      if (result.code !== 0 || result.timedOut) {
+        if (
+          access.some(
+            (entry) => entry.resourceId === resource.id && entry.access.kind === "vault-github",
+          )
+        )
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail:
+              "The selected Vault GitHub connection could not access this repository. Review the connection and repository permissions, then retry.",
+          });
+        return yield* libraryCloneFailure({
+          stderr: result.stderr,
+          timedOut: result.timedOut,
+          remoteUrl: resource.remoteUrl,
+          environmentId,
+          computer: yield* HostProcess.Hostname,
+        });
+      }
+    }
+  });
+
+  // Placement and registration share a lock; downloads run outside it.
+  const reserveCopy = (input: LibraryPrepareCopyRequest, authorize?: RepositoryAuthorizer) =>
     locks
       .withLock(
         "prepare",
         mapIo(
           Effect.gen(function* () {
+            yield* preflightPreparation(input, authorize);
             const placed: {
               readonly request: PlacedRequest;
               readonly claimed?: boolean;
@@ -4274,7 +4447,7 @@ const make = Effect.gen(function* () {
             const rootPath = yield* canonicalRoot(placed.request.rootPath);
             const copy = yield* withWorkspaceLease(
               rootPath,
-              prepareCopy(placed.request, rootPath, true),
+              prepareCopy(placed.request, rootPath, true, undefined, authorize),
             ).pipe(
               Effect.onError(() =>
                 placed.claimed === true ? releaseClaim(input.requestId, rootPath) : Effect.void,
@@ -4377,11 +4550,11 @@ const make = Effect.gen(function* () {
         ),
       );
     }),
-    prepareCopy: Effect.fnUntraced(function* (input) {
-      return yield* reserveCopy(input).pipe(
+    prepareCopy: Effect.fnUntraced(function* (input, authorize) {
+      return yield* reserveCopy(input, authorize).pipe(
         Effect.filterOrElse(
           (copy) => copy.state !== "preparing" && copy.state !== "failed",
-          (copy) => fillCopy({ workingCopyId: copy.id }),
+          (copy) => fillCopy({ workingCopyId: copy.id }, authorize),
         ),
       );
     }),

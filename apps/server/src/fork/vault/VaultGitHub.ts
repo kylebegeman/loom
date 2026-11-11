@@ -1,3 +1,5 @@
+import * as GitHubRepositoryTransport from "./GitHubRepositoryTransport.ts";
+import type * as ProcessRunner from "../../processRunner.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { isVaultRunRunning } from "./active-run.ts";
 import { admissionStamp } from "./admission-stamp.ts";
@@ -61,6 +63,11 @@ type ConnectionFailure = Failure | VaultConnectionError;
 export class VaultGitHub extends Context.Service<
   VaultGitHub,
   {
+    readonly repositoryOperation: (
+      input: VaultGitHubTarget,
+      operation: GitHubRepositoryTransport.RepositoryOperation,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<ProcessRunner.ProcessRunOutput, Failure>;
     readonly upstreamWorkflow: (
       input: VaultGitHubTarget,
       request:
@@ -184,6 +191,9 @@ const make = Effect.gen(function* () {
     threads = yield* ThreadManagementService,
     projects = yield* ProjectStoreV2,
     terminal = yield* GitHubTerminal.GitHubTerminal;
+  const repositoryTransport = yield* Effect.serviceOption(
+    GitHubRepositoryTransport.GitHubRepositoryTransport,
+  );
   const connections = yield* VaultConnections.VaultConnections;
   const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const health = yield* Effect.serviceOption(VaultHealth.VaultHealth);
@@ -549,6 +559,34 @@ const make = Effect.gen(function* () {
     permits.withPermits(1),
   );
   return VaultGitHub.of({
+    repositoryOperation: Effect.fn("VaultGitHub.repositoryOperation")(function* (
+      input,
+      operation,
+      authorize,
+    ) {
+      yield* authorize;
+      yield* check(input);
+      if (Option.isNone(repositoryTransport))
+        return yield* new VaultGitHubError({ reason: "unsupported" });
+      return yield* permits.withPermits(1)(
+        Effect.gen(function* () {
+          yield* authorize;
+          const record = yield* check(input);
+          yield* authorize;
+          const current = yield* session(record, input.repository);
+          const fresh = authorize.pipe(Effect.andThen(check(input)), Effect.asVoid);
+          yield* fresh;
+          const output = yield* repositoryTransport.value.execute({
+            repository: input.repository.toLowerCase(),
+            token: current.token,
+            operation,
+            authorize: fresh,
+          });
+          yield* fresh;
+          return output;
+        }),
+      );
+    }, Effect.scoped),
     upstreamWorkflow,
     admission: Effect.fn("VaultGitHub.admission")(
       function* (input, threadId) {

@@ -1,6 +1,7 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
+  LibraryPrepareCopyRequest,
   LibraryProject,
   LibraryThreadBinding,
   LibraryWorkingCopy,
@@ -25,6 +26,7 @@ const FilesystemIdentity = Schema.Struct({
   inode: Schema.NullOr(Schema.Number),
 });
 export const WorkspaceReceipt = Schema.Struct({
+  repositoryAccess: LibraryPrepareCopyRequest.fields.repositoryAccess,
   requestId: Schema.String,
   fingerprint: Schema.String,
   snapshotRequests: Schema.optional(

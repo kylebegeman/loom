@@ -73,6 +73,7 @@ export * from "./computer-naming.ts";
 export * from "./project-checkout.ts";
 
 export * from "./project-library.ts";
+export * from "./library-repository-access.ts";
 export * from "./project-library-health.ts";
 export * from "./project-library-profile.ts";
 export * from "./project-library-search.ts";

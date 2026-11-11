@@ -203,8 +203,35 @@ const gitFetchLayer = Layer.effect(
   Effect.gen(function* () {
     const runner = yield* ProcessRunner.ProcessRunner;
     return LibraryGitFetch.LibraryGitFetch.of({
+      preflightRepository: (input) =>
+        Effect.gen(function* () {
+          if (input.repositoryAccess?.kind === "vault-github") {
+            if (input.authorize === undefined)
+              return yield* new LibraryError({ reason: "blocked" });
+            yield* input
+              .authorize(input.repositoryAccess)
+              .pipe(Effect.mapError((cause) => new LibraryError({ reason: "blocked", cause })));
+          }
+          return {
+            code: cloneFailures.has(input.remoteUrl) ? 128 : 0,
+            stderr: cloneFailures.get(input.remoteUrl) ?? "",
+            stdout: "",
+            timedOut: false,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            stdoutInvalidUtf8: false,
+            stderrInvalidUtf8: false,
+          } as ProcessRunner.ProcessRunOutput;
+        }),
       cloneRepository: (input) =>
         Effect.gen(function* () {
+          if (input.repositoryAccess?.kind === "vault-github") {
+            if (input.authorize === undefined)
+              return yield* new LibraryError({ reason: "blocked" });
+            yield* input
+              .authorize(input.repositoryAccess)
+              .pipe(Effect.mapError((cause) => new LibraryError({ reason: "blocked", cause })));
+          }
           cloneCalls.push(input.remoteUrl);
           const started = cloneStarts.get(input.remoteUrl);
           if (started !== undefined) yield* Deferred.succeed(started, undefined);
@@ -459,11 +486,194 @@ const workspaceWithThreads = Effect.fnUntraced(function* (threads: Map<ThreadId,
 });
 
 it.layer(layerTest)("LibraryWorkspace", (it) => {
+  it.effect("refuses a selected Vault route before reserving a folder without authorization", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const project = makeProject(
+        projectFor()
+          .resources.slice(0, 1)
+          .map((resource) => ({ ...resource, remoteUrl: "https://github.com/owner/repo.git" })),
+      );
+      const rootPath = path.join(parent, "vault-refused");
+      const failure = yield* service
+        .reserveCopy({
+          requestId: "vault-refused",
+          project,
+          rootPath,
+          strategy: "clone",
+          repositoryAccess: [
+            {
+              resourceId: project.resources[0]!.id,
+              access: {
+                kind: "vault-github",
+                id: "1".repeat(32),
+                expectedVersion: 1,
+                repository: "owner/repo",
+              },
+            },
+          ],
+        })
+        .pipe(Effect.flip);
+      expect(failure.reason).toBe("blocked");
+      expect(yield* fs.exists(rootPath)).toBe(false);
+      expect(yield* service.preparation({ requestId: "vault-refused" })).toBe(null);
+    }),
+  );
+  it.effect(
+    "retains the selected route for reserved fills and rejects credential changes under the original request",
+    () =>
+      Effect.gen(function* () {
+        const parent = yield* makeTemp;
+        const path = yield* Path.Path;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const source = path.join(parent, "vault-source");
+        yield* initRepo(source);
+        const remoteUrl = "https://github.com/owner/vault-copy.git";
+        cloneSources.set(remoteUrl, source);
+        const project = makeProject(
+          projectFor()
+            .resources.slice(0, 1)
+            .map((resource) => ({ ...resource, remoteUrl })),
+        );
+        const repositoryAccess = [
+          {
+            resourceId: project.resources[0]!.id,
+            access: {
+              kind: "vault-github" as const,
+              id: "1".repeat(32),
+              expectedVersion: 1,
+              repository: "owner/vault-copy",
+            },
+          },
+        ];
+        const request = {
+          requestId: "reserved-vault-route",
+          project,
+          strategy: "clone" as const,
+          rootPath: path.join(parent, "vault-copy"),
+          repositoryAccess,
+        };
+        const reserved = yield* service.reserveCopy(request, () => Effect.void);
+        expect((yield* store.get(reserved.id)).repositoryAccess).toEqual(repositoryAccess);
+        expect(
+          (yield* service.fillCopy({ workingCopyId: reserved.id }).pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        expect(
+          (yield* service
+            .reserveCopy({
+              ...request,
+              repositoryAccess: [{ ...repositoryAccess[0]!, access: { kind: "host" } }],
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("request-conflict");
+        const ready = yield* service.prepareCopy(request, () => Effect.void);
+        expect(ready.id).toBe(reserved.id);
+        expect(ready.state).toBe("ready");
+        cloneSources.delete(remoteUrl);
+      }),
+  );
+  it.effect("keeps legacy host retry identity when access is explicitly selected", () =>
+    Effect.gen(function* () {
+      const parent = yield* makeTemp;
+      const path = yield* Path.Path;
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const source = path.join(parent, "legacy-host-source");
+      yield* initRepo(source);
+      const remoteUrl = "https://example.test/legacy/host.git";
+      cloneSources.set(remoteUrl, source);
+      const project = makeProject(
+        projectFor()
+          .resources.slice(0, 1)
+          .map((resource) => ({ ...resource, remoteUrl })),
+      );
+      const request = {
+        requestId: "legacy-host-retry",
+        project,
+        strategy: "clone" as const,
+        rootPath: path.join(parent, "legacy-host-copy"),
+      };
+      const reserved = yield* service.reserveCopy(request);
+      const repeated = yield* service.reserveCopy({
+        ...request,
+        repositoryAccess: [{ resourceId: project.resources[0]!.id, access: { kind: "host" } }],
+      });
+      expect(repeated.id).toBe(reserved.id);
+      cloneSources.delete(remoteUrl);
+    }),
+  );
+  it.effect(
+    "keeps clone failures on the selected Vault recovery route after successful preflight",
+    () =>
+      Effect.gen(function* () {
+        const parent = yield* makeTemp;
+        const path = yield* Path.Path;
+        const fetch = yield* LibraryGitFetch.LibraryGitFetch;
+        const context = yield* Layer.build(Layer.fresh(LibraryWorkspace.layer)).pipe(
+          Effect.provideService(LibraryGitFetch.LibraryGitFetch, {
+            ...fetch,
+            preflightRepository: () =>
+              Effect.succeed({
+                code: 0,
+                stdout: "",
+                stderr: "",
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+              } as ProcessRunner.ProcessRunOutput),
+          }),
+        );
+        const service = Context.get(context, LibraryWorkspace.LibraryWorkspace);
+        const remoteUrl = "https://github.com/owner/vault-clone-denied.git";
+        cloneFailures.set(
+          remoteUrl,
+          "fatal: Authentication failed for 'https://github.com/owner/vault-clone-denied.git'",
+        );
+        const project = makeProject(
+          projectFor()
+            .resources.slice(0, 1)
+            .map((resource) => ({ ...resource, remoteUrl })),
+        );
+        const failure = yield* service
+          .prepareCopy(
+            {
+              requestId: "vault-clone-denied",
+              project,
+              rootPath: path.join(parent, "vault-clone-denied"),
+              strategy: "clone",
+              repositoryAccess: [
+                {
+                  resourceId: project.resources[0]!.id,
+                  access: {
+                    kind: "vault-github",
+                    id: "1".repeat(32),
+                    expectedVersion: 1,
+                    repository: "owner/vault-clone-denied",
+                  },
+                },
+              ],
+            },
+            () => Effect.void,
+          )
+          .pipe(Effect.flip);
+        expect(failure.reason).toBe("blocked");
+        expect(failure.repair?.kind).not.toBe("github-host-setup");
+        expect(failure.message).toContain("Vault GitHub");
+        cloneFailures.delete(remoteUrl);
+      }),
+  );
   it.effect("reports clone authentication with a computer-specific setup repair", () =>
     Effect.gen(function* () {
       const parent = yield* makeTemp;
       const path = yield* Path.Path;
       const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const fs = yield* FileSystem.FileSystem;
+      const rootPath = path.join(parent, "clone-auth");
       const remoteUrl = "https://github.com/team/clone-auth-test.git";
       cloneFailures.set(
         remoteUrl,
@@ -478,7 +688,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         .prepareCopy({
           requestId: "clone-auth-failure",
           project,
-          rootPath: path.join(parent, "clone-auth"),
+          rootPath,
           strategy: "clone",
         })
         .pipe(Effect.flip);
@@ -486,6 +696,8 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       expect(failure.repair).toMatchObject({ kind: "github-host-setup", environmentId });
       expect(failure.message).toContain("Git authentication failed");
       expect(failure.message).not.toContain("private@");
+      expect(yield* fs.exists(rootPath)).toBe(false);
+      expect(yield* service.preparation({ requestId: "clone-auth-failure" })).toBe(null);
       cloneFailures.delete(remoteUrl);
     }),
   );
