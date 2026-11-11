@@ -14,7 +14,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { isProjectFaviconFallbackUrl } from "@t3tools/shared/projectFavicon";
 import { useAtomValue } from "@effect/atom-react";
-import { CheckIcon, CopyIcon, SparklesIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, WandIcon } from "lucide-react";
 import { EnvironmentMachineIcon } from "~/components/EnvironmentMachineIcon";
 import { ProjectFavicon } from "~/components/ProjectFavicon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -258,7 +258,7 @@ export function ProjectColorPicker({
               : "bg-muted text-muted-foreground dark:bg-accent",
           )}
         >
-          <SparklesIcon aria-hidden className="size-3" />
+          <WandIcon aria-hidden className="size-3" />
         </span>
       </button>
       <span aria-hidden className="mx-1 h-5 w-px bg-border" />

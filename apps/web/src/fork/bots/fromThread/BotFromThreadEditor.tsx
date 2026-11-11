@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { CircleAlertIcon, SparklesIcon } from "lucide-react";
+import { BotIcon, CircleAlertIcon } from "lucide-react";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { BotDraftResult } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -125,7 +125,7 @@ function FromThreadDraft({
             {loaded.message}
           </LibraryNotice>
         ) : (
-          <LibraryNotice icon={SparklesIcon}>
+          <LibraryNotice icon={BotIcon}>
             Drafting a bot from the thread's first message…
           </LibraryNotice>
         )}

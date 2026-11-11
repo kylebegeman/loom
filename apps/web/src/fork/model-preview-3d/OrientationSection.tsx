@@ -1,4 +1,4 @@
-import { Rotate3DIcon, Undo2Icon, WandSparklesIcon } from "lucide-react";
+import { BotIcon, Rotate3DIcon, Undo2Icon } from "lucide-react";
 import type { ModelOrientation } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import { Chip, SectionHead, Tip } from "./controls";
@@ -51,7 +51,7 @@ export function OrientationSection({
               <Undo2Icon /> Reset orientation
             </Button>
             <Button variant="ghost-muted" size="xs" disabled={disabled} onClick={onBake}>
-              <WandSparklesIcon /> Ask agent to bake this rotation
+              <BotIcon /> Ask agent to bake this rotation
             </Button>
           </>
         )}

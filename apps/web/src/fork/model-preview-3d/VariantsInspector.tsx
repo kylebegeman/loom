@@ -32,7 +32,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SlidersHorizontalIcon,
-  SparklesIcon,
+  BotIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -1510,7 +1510,7 @@ export function VariantsInspector({
                       <div className={styles["model-variant-name"]}>
                         {variant.origin === "agent" && (
                           <Tip label="Proposed by the agent">
-                            <SparklesIcon />
+                            <BotIcon />
                           </Tip>
                         )}
                         <span className="truncate">{variant.name}</span>
