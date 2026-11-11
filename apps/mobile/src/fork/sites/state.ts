@@ -14,13 +14,13 @@ import type {
 } from "@t3tools/contracts/fork";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useAtomCommand } from "../../state/use-atom-command";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import Storage from "expo-sqlite/kv-store";
 import * as Crypto from "expo-crypto";
 
 const writes = createSitesWriteGuard({
-  load: (key) => AsyncStorage.getItem(key),
-  save: (key, value) => AsyncStorage.setItem(key, value),
-  remove: (key) => AsyncStorage.removeItem(key),
+  load: (key) => Storage.getItem(key),
+  save: (key, value) => Storage.setItem(key, value),
+  remove: (key) => Storage.removeItem(key),
   newId: () => Crypto.randomUUID(),
   digest: (value) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value),
 });
