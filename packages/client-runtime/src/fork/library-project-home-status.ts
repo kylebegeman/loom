@@ -40,6 +40,24 @@ export function libraryProjectRequestHosts(
   return [...new Set([authorityId, ...connected, ...copies.map((copy) => copy.environmentId)])];
 }
 
+export function libraryProjectHomeHealthDeadline(
+  project: LibraryProject,
+  health: LibraryCopyHealth | null,
+) {
+  if (health === null) return null;
+  const resourceIds = new Set(
+    project.resources.filter((resource) => resource.kind !== "link").map((resource) => resource.id),
+  );
+  return (
+    Math.min(
+      Date.parse(health.checkedAt),
+      ...health.repositories
+        .filter((repository) => resourceIds.has(repository.resourceId))
+        .map((repository) => Date.parse(repository.checkedAt)),
+    ) + LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS
+  );
+}
+
 export function libraryProjectHomeLocation(input: {
   readonly project: LibraryProject;
   readonly copy: LibraryWorkingCopy;

@@ -175,12 +175,13 @@ export const LIBRARY_RESTORE_PATHS: Record<
 > = {
   "verified-archive": {
     label: "Recovery archive saved",
-    detail: "Everything on this computer can be restored, including local-only files.",
+    detail:
+      "A recovery archive is recorded for these files. Changes made after it was saved are not included.",
     tone: "success",
   },
   repository: {
     label: "Repository only",
-    detail: "A fresh clone restores committed work. Local-only files are not covered.",
+    detail: "A fresh clone restores pushed work. Local-only files and commits are not covered.",
     tone: "warning",
   },
   unverified: {

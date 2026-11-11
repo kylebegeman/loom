@@ -1,5 +1,9 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { type LibraryProject, type LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  type LibraryOperation,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { act, type ReactNode } from "react";
@@ -12,17 +16,24 @@ const state = vi.hoisted(() => ({
   register: vi.fn(),
   download: vi.fn(),
   openExternal: vi.fn(),
-  commands: { retain: {}, reopen: {}, register: {}, download: {} },
+  outcome: vi.fn(),
+  cancel: vi.fn(),
+  commands: { retain: {}, reopen: {}, register: {}, download: {}, outcome: {}, cancel: {} },
   authorityId: "authority",
   connected: true,
   supported: true,
   canRetain: true,
   canReopen: true,
   canRegister: true,
+  healthSupported: false,
+  healthQuery: vi.fn(),
   nextId: 0,
 }));
 vi.mock("./state", () => ({
   projectLibrary: {
+    copyHealth: () => "health",
+    operationOutcome: state.commands.outcome,
+    cancelOperation: state.commands.cancel,
     setCopyRetention: state.commands.retain,
     reopenCopy: state.commands.reopen,
     registerCopy: state.commands.register,
@@ -58,13 +69,30 @@ vi.mock("~/state/use-atom-command", () => ({
         ? state.reopen
         : command === state.commands.download
           ? state.download
-          : state.register,
+          : command === state.commands.outcome
+            ? state.outcome
+            : command === state.commands.cancel
+              ? state.cancel
+              : state.register,
 }));
 vi.mock("~/rpc/libraryAssets", () => ({ libraryRecoveryAccess: state.commands.download }));
 vi.mock("~/env", () => ({ isElectron: true }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => true }));
-vi.mock("~/state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
-vi.mock("~/state/query", () => ({ useEnvironmentQuery: vi.fn() }));
+vi.mock("~/state/environments", () => ({
+  useEnvironments: () => ({
+    environments: state.healthSupported
+      ? [
+          {
+            environmentId: "host",
+            serverConfig: {
+              environment: { capabilities: { loomFeatures: ["library-copy-health"] } },
+            },
+          },
+        ]
+      : [],
+  }),
+}));
+vi.mock("~/state/query", () => ({ useEnvironmentQuery: state.healthQuery }));
 vi.mock("~/state/vcs", () => ({ vcsEnvironment: {} }));
 vi.mock("~/lib/utils", () => ({
   cn: (...values: unknown[]) => values.filter((value) => typeof value === "string").join(" "),
@@ -132,6 +160,20 @@ const changedCopy: LibraryWorkingCopy = {
   keepOnComputer: false,
   updatedAt: "2026-10-21T12:00:00.000Z",
 };
+const restoreOperation = (patch: Partial<LibraryOperation> = {}): LibraryOperation => ({
+  id: "saved-restore:reopen",
+  projectId: project.id,
+  environmentId,
+  kind: "reopen",
+  state: "failed",
+  phase: "Restoring files on this computer",
+  attempt: 1,
+  error: "Connection lost",
+  result: null,
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+  ...patch,
+});
 const attemptKey = `loom:library:file-change:${environmentId}:${copy.id}`;
 const onChanged = vi.fn();
 type Props = Parameters<typeof ProjectCopies>[0];
@@ -221,11 +263,23 @@ beforeEach(() => {
   state.canReopen = true;
   state.canRegister = true;
   state.nextId = 0;
+  state.healthSupported = false;
+  state.healthQuery.mockReset().mockReturnValue({
+    data: null,
+    isSuccess: false,
+    isPending: false,
+    error: null,
+    refresh: vi.fn(),
+  });
   state.retain.mockReset().mockResolvedValue(AsyncResult.success(changedCopy));
   state.reopen.mockReset().mockResolvedValue(AsyncResult.success(copy));
   state.register.mockReset().mockResolvedValue(AsyncResult.success(changedCopy));
   state.download.mockReset().mockResolvedValue(AsyncResult.success("https://files.test/recovery"));
   state.openExternal.mockReset().mockResolvedValue(true);
+  state.outcome.mockReset().mockResolvedValue(AsyncResult.success(restoreOperation()));
+  state.cancel
+    .mockReset()
+    .mockResolvedValue(AsyncResult.success(restoreOperation({ state: "cancelled" })));
   onChanged.mockReset();
 });
 afterEach(async () => {
@@ -355,6 +409,68 @@ describe("project file changes", () => {
     expect(state.register.mock.calls[0]![0].input.requestId).toBe("file-update-2:publish");
   });
 
+  it("cancels a paused restore on its computer before dropping the saved request", async () => {
+    state.reopen.mockResolvedValueOnce(failure("Connection lost"));
+    await mount({ copies: [{ ...copy, state: "released" }] });
+    await click("Restore files");
+    state.cancel.mockImplementationOnce(async () => {
+      expect(savedAttempt()).toMatchObject({ requestId: "file-update-1", copy: null });
+      return AsyncResult.success(restoreOperation({ state: "cancelled" }));
+    });
+    await click("Cancel update");
+    expect(state.outcome).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { requestId: "file-update-1", kind: "reopen" },
+    });
+    expect(state.cancel).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { operationId: "saved-restore:reopen" },
+    });
+    expect(savedAttempt()).toBeNull();
+  });
+
+  it.each(["missing", "running", "read-failed"] as const)(
+    "keeps the restore identity when cancellation is %s",
+    async (condition) => {
+      state.reopen.mockResolvedValueOnce(failure("Connection lost"));
+      if (condition === "missing") state.outcome.mockResolvedValueOnce(AsyncResult.success(null));
+      else if (condition === "read-failed")
+        state.outcome.mockResolvedValueOnce(failure("Could not read request"));
+      else {
+        state.outcome.mockResolvedValueOnce(
+          AsyncResult.success(restoreOperation({ state: "running" })),
+        );
+        state.cancel.mockResolvedValueOnce(failure("The current step is already running."));
+      }
+      await mount({ copies: [{ ...copy, state: "released" }] });
+      await click("Restore files");
+      await click("Cancel update");
+      expect(savedAttempt()).toMatchObject({ requestId: "file-update-1", copy: null });
+      expect(state.cancel).toHaveBeenCalledTimes(condition === "running" ? 1 : 0);
+      expect(state.register).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a completed restore receipt when cancellation discovers it already finished", async () => {
+    state.reopen.mockResolvedValueOnce(failure("Connection lost"));
+    state.outcome.mockResolvedValueOnce(
+      AsyncResult.success(restoreOperation({ state: "succeeded", result: changedCopy })),
+    );
+    await mount({ copies: [{ ...copy, state: "released" }] });
+    await click("Restore files");
+    await click("Cancel update");
+    expect(savedAttempt()).toMatchObject({ requestId: "file-update-1", copy: changedCopy });
+    expect(state.cancel).not.toHaveBeenCalled();
+    expect(state.register).not.toHaveBeenCalled();
+    await click("Retry file update");
+    expect(state.reopen).toHaveBeenCalledOnce();
+    expect(state.register).toHaveBeenCalledExactlyOnceWith({
+      environmentId: authorityId,
+      input: { requestId: "file-update-1:publish", copy: changedCopy },
+    });
+    expect(savedAttempt()).toBeNull();
+  });
+
   it("rejects duplicate submissions before React commits the busy state", async () => {
     let resolveHost!: (result: AsyncResult.AsyncResult<LibraryWorkingCopy, Error>) => void;
     state.retain.mockImplementationOnce(
@@ -446,6 +562,85 @@ describe("project file changes", () => {
     expect(state.register).toHaveBeenCalledTimes(2);
     expect(state.retain).toHaveBeenCalledOnce();
   });
+
+  it("publishes a confirmed host receipt after that computer disconnects", async () => {
+    state.register.mockResolvedValueOnce(failure("Authority unavailable"));
+    await mount();
+    await retain(false);
+    const originalPublish = state.register.mock.calls[0];
+    state.supported = false;
+    state.canRetain = false;
+    await rerender({ hostConnected: () => false });
+    expect(button("Retry file update").props.disabled).toBe(false);
+    await click("Retry file update");
+    expect(state.register.mock.calls[1]).toEqual(originalPublish);
+    expect(state.retain).toHaveBeenCalledOnce();
+    expect(savedAttempt()).toBeNull();
+  });
+
+  it("checks repository health only while computer details are open", async () => {
+    state.healthSupported = true;
+    await mount();
+    expect(state.healthQuery).not.toHaveBeenCalled();
+    const details = renderer!.root.findByType("details");
+    await act(() => details.props.onToggle({ currentTarget: { open: true } }));
+    expect(state.healthQuery).toHaveBeenCalledWith("health");
+    await act(() => details.props.onToggle({ currentTarget: { open: false } }));
+    state.healthQuery.mockClear();
+    await rerender();
+    expect(state.healthQuery).not.toHaveBeenCalled();
+  });
+
+  it.each(["failed", "refreshing"] as const)(
+    "keeps cached repository counts non-actionable after a %s check",
+    async (status) => {
+      state.healthSupported = true;
+      state.healthQuery.mockReturnValue({
+        data: {
+          copyId: copy.id,
+          environmentId,
+          checkedAt: project.updatedAt,
+          repositories: [
+            {
+              resourceId: "repository",
+              branch: "main",
+              ahead: 0,
+              behind: 1,
+              uncommittedFiles: 0,
+              unpushedCommits: 0,
+              checkedAt: project.updatedAt,
+            },
+          ],
+        },
+        isSuccess: status !== "failed",
+        isPending: status === "refreshing",
+        error: status === "failed" ? "Status read failed" : null,
+        refresh: vi.fn(),
+      });
+      await mount({
+        copies: [
+          {
+            ...copy,
+            repositories: [
+              {
+                resourceId: "repository",
+                path: copy.rootPath,
+                localProjectId: ProjectId.make("local"),
+                head: null,
+                branch: "main",
+              },
+            ],
+          },
+        ],
+      });
+      await act(() =>
+        renderer!.root.findByType("details").props.onToggle({ currentTarget: { open: true } }),
+      );
+      expect(buttons("Pull")).toHaveLength(0);
+      if (status === "failed")
+        expect(JSON.stringify(renderer!.toJSON())).toContain("Status read failed");
+    },
+  );
 
   it("does not publish a pending host receipt to a newly selected authority", async () => {
     state.register.mockResolvedValueOnce(failure("Authority unavailable"));

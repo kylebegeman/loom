@@ -18,7 +18,7 @@ import {
   filterProjectEntries,
   libraryActiveCopies,
   libraryProjectHomeLocation,
-  LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS,
+  libraryProjectHomeHealthDeadline,
   libraryProjectRequestHosts,
   selectLibraryProjectHomeCopies,
   libraryStartIntent,
@@ -92,9 +92,7 @@ function LibraryHomeLocation({
       ? library.copyHealth({ environmentId: copy.environmentId, input: { workingCopyId: copy.id } })
       : null,
   );
-  const healthDeadline = health.data
-    ? Date.parse(health.data.checkedAt) + LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS
-    : null;
+  const healthDeadline = libraryProjectHomeHealthDeadline(project, health.data);
   const now = useNowAfter(healthDeadline);
   const location = libraryProjectHomeLocation({
     project,

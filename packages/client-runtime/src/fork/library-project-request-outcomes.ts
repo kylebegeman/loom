@@ -36,10 +36,14 @@ export function libraryProjectRequestOutcome(operation: LibraryOperation) {
   if (threadId) completed.push("Conversation created");
   if (operation.state === "succeeded" && !completed.includes(COMPLETED[operation.kind]))
     completed.push(COMPLETED[operation.kind]);
+  const needsRepair = operation.state === "failed" || operation.state === "needs-input";
   const cancelled = operation.state === "cancelled";
   const finished = cancelled || operation.state === "succeeded";
   return {
     requestId: operation.id,
+    error: needsRepair ? operation.error : null,
+    accessRepair: needsRepair ? operation.accessRepair : undefined,
+    repair: needsRepair ? operation.repair : undefined,
     completed,
     remaining: finished ? [] : [REMAINING[operation.kind]],
     conversation:

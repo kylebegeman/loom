@@ -49,7 +49,7 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import {
   libraryActiveCopies,
   libraryProjectHomeLocation,
-  LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS,
+  libraryProjectHomeHealthDeadline,
   libraryProjectRequestHosts,
   libraryResourceLocation,
   selectLibraryProjectHomeCopies,
@@ -138,9 +138,7 @@ function ProjectHomeLocation({
         })
       : null,
   );
-  const healthDeadline = health.data
-    ? Date.parse(health.data.checkedAt) + LIBRARY_PROJECT_HOME_HEALTH_MAX_AGE_MS
-    : null;
+  const healthDeadline = libraryProjectHomeHealthDeadline(project, health.data);
   const now = useNowAfter(healthDeadline);
   const location = libraryProjectHomeLocation({
     project,

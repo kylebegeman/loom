@@ -34,7 +34,15 @@ const project: LibraryProject = {
 
 describe("Library user request outcomes", () => {
   it("retains confirmed partial outcomes and original identity across resume and cancellation", () => {
-    const partial = operation({ result: project });
+    const repair = {
+      kind: "github-host-setup" as const,
+      environmentId: EnvironmentId.make("computer"),
+      label: "Computer",
+      agentTool: "loom_github_host_setup" as const,
+      action: "start" as const,
+    };
+    const accessRepair = { kind: "sign-in" as const };
+    const partial = operation({ result: project, repair, accessRepair });
     const outcome = libraryProjectRequestOutcome(partial);
     expect(outcome).toMatchObject({
       requestId: partial.id,
@@ -42,6 +50,9 @@ describe("Library user request outcomes", () => {
       remaining: ["Finish registering existing files"],
       canResume: true,
       canCancel: true,
+      repair,
+      accessRepair,
+      error: "Connection lost",
     });
     expect(libraryProjectRequestOutcome({ ...partial, attempt: 3 }).requestId).toBe(
       outcome.requestId,
@@ -52,6 +63,9 @@ describe("Library user request outcomes", () => {
       remaining: [],
       canResume: false,
       canCancel: false,
+      repair: undefined,
+      accessRepair: undefined,
+      error: null,
     });
     expect(cancelled.detail).toContain("Completed steps were kept");
     expect(
