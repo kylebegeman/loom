@@ -205,7 +205,7 @@ function DisabledCommandPaletteResultRow(props: {
           ) : props.item.matchHint ? (
             <SearchMatchHintLine hint={props.item.matchHint} />
           ) : props.item.description ? (
-            <span className="min-w-0 text-muted-foreground/70 text-xs">
+            <span className="line-clamp-2 min-w-0 break-words text-muted-foreground/70 text-xs">
               {props.item.description}
             </span>
           ) : null}
@@ -257,7 +257,7 @@ function CommandPaletteResultRow(props: {
           ) : props.item.matchHint ? (
             <SearchMatchHintLine hint={props.item.matchHint} />
           ) : props.item.description ? (
-            <span className="min-w-0 text-muted-foreground/70 text-xs">
+            <span className="line-clamp-2 min-w-0 break-words text-muted-foreground/70 text-xs">
               {props.item.description}
             </span>
           ) : null}
