@@ -1,4 +1,4 @@
-import { validateResources } from "@t3tools/client-runtime/fork";
+import { validateResources, squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import * as Schema from "effect/Schema";
 import { useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -9,7 +9,6 @@ import {
   type LibraryProjectColor,
   type LibraryProjectProfileInput,
 } from "@t3tools/contracts/fork";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { randomUUID } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission } from "./state";
@@ -123,7 +122,7 @@ export function useProjectUpdate({
         input,
       });
       if (result._tag === "Failure") {
-        const cause = squashAtomCommandFailure(result);
+        const cause = squashLibraryCommandFailure(result);
         if (isLibraryError(cause) && cause.reason !== "io") pending.current = null;
         throw cause;
       }

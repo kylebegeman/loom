@@ -355,7 +355,7 @@ it("offers repository resources for workstreams without turning ordinary links i
 
 it("retries a small project edit with its original revision and receipt after a lost response", async () => {
   state.update
-    .mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))))
+    .mockResolvedValueOnce(AsyncResult.failure(Cause.interrupt(0)))
     .mockResolvedValueOnce(AsyncResult.success(project));
   const onSaved = vi.fn();
   function Editor({ revision }: { revision: number }) {
@@ -365,10 +365,16 @@ it("retries a small project edit with its original revision and receipt after a 
       connected: true,
       onSaved,
     });
-    return <button onClick={() => void update.save({ brief: "New brief" })}>Save brief</button>;
+    return (
+      <>
+        <button onClick={() => void update.save({ brief: "New brief" })}>Save brief</button>
+        <p role="alert">{update.error}</p>
+      </>
+    );
   }
   await act(async () => root.render(<Editor revision={1} />));
   await act(async () => button("Save brief").click());
+  expect(container.textContent).toContain("Check the saved request before retrying");
   await act(async () => root.render(<Editor revision={2} />));
   await act(async () => button("Save brief").click());
   const first = state.update.mock.calls[0]![0];
