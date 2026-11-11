@@ -1605,7 +1605,7 @@ apps/desktop/src/telemetry/DesktopTelemetryPublisher.test.ts	machine-updates	3
 apps/web/src/components/settings/LabsSettingsPanel.tsx	brand	1
 apps/server/package.json	-	"access:pilot"
 apps/desktop/src/app/DesktopApp.ts	cloudflare-access	1
-apps/desktop/src/app/DesktopApp.test.ts	restart-compaction	3
+apps/desktop/src/app/DesktopApp.test.ts	restart-compaction	1
 apps/desktop/src/app/DesktopApp.test.ts	rollback-snapshot	1
 apps/desktop/src/app/DesktopApp.test.ts	cloudflare-access	5
 apps/desktop/src/app/DesktopApp.test.ts	identity-renewal	2

@@ -13,7 +13,6 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"; // fork: restart-compaction
 import { vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({}));
@@ -249,7 +248,6 @@ it.effect.each([false, true])(
             }), // fork: cloudflare-access
             Layer.mock(DesktopIdentityRenewal.DesktopIdentityRenewal, {}), // fork: identity-renewal
             Layer.mock(OpenAtLogin.OpenAtLogin, { reconcile: Effect.void }), // fork: open-at-login
-            Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {}), // fork: restart-compaction
             Layer.mock(PreviewManager.PreviewManager, {
               isBrowserPartition: () => {
                 throw new Error("unexpected browser partition lookup");
