@@ -13,6 +13,7 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
+import * as TextGenerators from "./TextGenerators.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
 
@@ -92,6 +93,9 @@ describe("TextGeneration.make", () => {
               resolveLink: () => Effect.die("Unauthenticated generation must not resolve links"),
             }),
             ServerSettings.ServerSettingsService.layerTest(),
+            Layer.mock(TextGenerators.TextGenerators)({
+              runner: () => Effect.undefined,
+            }),
           ),
         ),
       );

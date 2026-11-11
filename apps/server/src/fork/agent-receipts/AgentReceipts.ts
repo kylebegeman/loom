@@ -207,7 +207,14 @@ const make = Effect.gen(function* () {
     threadId === null
       ? Effect.succeed(null)
       : projections
-          .getThreadRecords(threadId, ["runs", "messages", "turnItems", "checkpoints", "subagents"])
+          .getThreadRecords(threadId, [
+            "runs",
+            "messages",
+            "turnItems",
+            "checkpoints",
+            "providerTurns",
+            "subagents",
+          ])
           .pipe(Effect.orElseSucceed(() => null));
 
   const lineageOf = Effect.fnUntraced(function* (parent: Parent, fallbackSubject: string | null) {
@@ -393,6 +400,7 @@ const make = Effect.gen(function* () {
       "messages",
       "turnItems",
       "checkpoints",
+      "providerTurns",
       "subagents",
       "providerThreads",
       "providerSessions",

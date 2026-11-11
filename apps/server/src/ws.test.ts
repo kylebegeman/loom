@@ -84,6 +84,8 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as ProjectPlacement from "./project/ProjectPlacement.ts"; // fork: file-placement
+// fork: file-placement
+import * as LibraryWorkspaceStore from "./fork/project-library/LibraryWorkspaceStore.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
@@ -1472,6 +1474,11 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
             IdAllocator.layer,
             Layer.mock(LegacyV1ThreadImporter.LegacyV1ThreadImporter)({}),
             Layer.mock(ThreadCommandExecutor.ThreadCommandExecutor)({}),
+            // fork: file-placement
+            Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
+              receipts: Effect.succeed([]),
+            }),
+            Layer.mock(ProjectPlacement.ProjectPlacement)({}), // fork: file-placement
           ),
         ),
       ),
@@ -1481,7 +1488,10 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
       Layer.mock(DirectEndpoints.DirectEndpoints)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         scratchRoot: Effect.succeedNone,
-        namedProjectsRoot: process.cwd(),
+      }),
+      // fork: file-placement -- ProjectPlacement supplies the folders namedProjectsRoot did
+      Layer.mock(ProjectPlacement.ProjectPlacement)({
+        folders: Effect.succeed({ projects: process.cwd(), worktrees: serverConfig.worktreesDir }),
       }),
       Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
