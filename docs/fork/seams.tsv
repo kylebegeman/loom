@@ -1412,6 +1412,7 @@ apps/web/src/components/ui/toggle.tsx	iris-pill	4
 apps/web/src/connection/storage.ts	library	3
 apps/web/src/diffPanelStore.test.ts	checkpoint-capable	3
 apps/web/src/diffPanelStore.ts	checkpoint-capable	1
+apps/web/src/state/vcs.ts	checkpoint-capable	2
 apps/web/src/hooks/useThreadActionMenu.test.ts	bots	1
 apps/web/src/hooks/useThreadActionMenu.test.ts	library-projects	9
 apps/web/src/hooks/useThreadActionMenu.test.ts	workspace-handoff	4
