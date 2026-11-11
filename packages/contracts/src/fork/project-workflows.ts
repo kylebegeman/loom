@@ -192,6 +192,7 @@ export const LibraryOperation = Schema.Struct({
   error: Schema.NullOr(Schema.String),
   failureReason: Schema.optional(LibraryError.fields.reason),
   repair: LibraryError.fields.repair,
+  accessRepair: LibraryError.fields.accessRepair,
   result: Schema.NullOr(
     Schema.Union([LibraryProject, LibraryWorkingCopy, Schema.Struct({ threadId: ThreadId })]),
   ),
@@ -199,6 +200,11 @@ export const LibraryOperation = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 export type LibraryOperation = typeof LibraryOperation.Type;
+export const LibraryOperationOutcomeRequest = Schema.Struct({
+  requestId: LibraryRequestId,
+  kind: LibraryOperation.fields.kind,
+});
+export type LibraryOperationOutcomeRequest = typeof LibraryOperationOutcomeRequest.Type;
 export const LibraryPreservationEntry = Schema.Struct({
   project: LibraryProject,
   copy: LibraryWorkingCopy,
@@ -215,6 +221,7 @@ export const PROJECT_WORKFLOW_WS_METHODS = {
   applyBlueprint: "loom.project-workflows.apply-blueprint",
   preservation: "loom.project-workflows.preservation",
   operations: "loom.project-workflows.operations",
+  operationOutcome: "loom.project-workflows.operation-outcome",
   run: "loom.project-workflows.run",
   cancel: "loom.project-workflows.cancel",
   execute: "loom.project-workflows.execute",
@@ -247,6 +254,11 @@ export const ProjectWorkflowsRpcGroup = RpcGroup.make(
       includeFolderImports: Schema.optionalKey(Schema.Boolean),
     },
     success: Schema.Array(LibraryOperation),
+    error,
+  }),
+  Rpc.make(W.operationOutcome, {
+    payload: LibraryOperationOutcomeRequest,
+    success: Schema.NullOr(LibraryOperation),
     error,
   }),
   Rpc.make(W.run, {

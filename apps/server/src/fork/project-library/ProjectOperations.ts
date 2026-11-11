@@ -1,3 +1,9 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import {
+  identityOwnershipSubject,
+  identitySessionPrefix,
+  isCurrentIdentitySession,
+} from "../../auth/identityPolicy.ts";
 import { ProjectWorkflows } from "./ProjectWorkflows.ts";
 import {
   AuthOrchestrationOperateScope,
@@ -26,6 +32,7 @@ import {
   LibraryRegisterCopyRequest,
   type LibraryRecoveryGrant,
   type LibraryResolvedBinding,
+  type LibraryOperationOutcomeRequest,
 } from "@t3tools/contracts/fork";
 import {
   buildTemporaryWorktreeBranchName,
@@ -46,6 +53,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
@@ -66,6 +74,7 @@ const io = (cause: unknown) =>
 const denied = (reason: "session" | "access" | "outside" | "turn" | "workload" = "session") =>
   new LibraryError({
     reason: "blocked",
+    accessRepair: { kind: reason === "session" ? "sign-in" : "permission" },
     detail:
       reason === "turn"
         ? "The conversation that started this operation is no longer running a turn. Resume it from that conversation with loom_library_operation_control."
@@ -84,12 +93,10 @@ const OUTSIDE_CREATE =
 type OperationActor = { readonly subject: string; readonly sessionId: string };
 // In-app agents act as their conversation; every outside agent's MCP session shares one subject.
 const isAgent = (subject: string) => subject.startsWith("workload:") || subject === "mcp-client";
-// A signed-in person may take over what any agent started; otherwise only the owner may.
-const mayControl = (owner: string, actor: OperationActor) =>
-  owner === actor.subject || (isAgent(owner) && !isAgent(actor.subject));
 const ownedElsewhere = (owner: string) =>
   new LibraryError({
     reason: "blocked",
+    accessRepair: { kind: "ownership" },
     detail: owner.startsWith("workload:")
       ? `This operation was started by an agent in conversation ${owner.slice(9)}. Resume or cancel it from that conversation with loom_library_operation_control.`
       : owner === "mcp-client"
@@ -165,6 +172,10 @@ export class ProjectOperations extends Context.Service<
       requestId: string,
       kind: LibraryOperationInput["kind"],
     ) => Effect.Effect<string, LibraryError>;
+    readonly outcomeClient: (
+      input: LibraryOperationOutcomeRequest,
+      sessionId: string,
+    ) => Effect.Effect<LibraryOperation | null, LibraryError>;
     readonly executeClient: (
       id: string,
       request: LibraryOperationInput,
@@ -237,6 +248,13 @@ const make = Effect.gen(function* () {
   const workspaceStore = yield* LibraryWorkspaceStore;
   const threads = yield* ThreadManagementService;
   const sessions = yield* SessionStore;
+  const environment = yield* HostProcess.Environment;
+  const sessionPrefix = identitySessionPrefix(environment);
+  const ownershipSubject = (subject: string) => identityOwnershipSubject(subject, environment);
+  // A signed-in person may take over what any agent started; otherwise only the owner may.
+  const mayControl = (owner: string, actor: OperationActor) =>
+    ownershipSubject(owner) === ownershipSubject(actor.subject) ||
+    (isAgent(owner) && !isAgent(actor.subject));
   const git = yield* GitWorkflowService;
   const fs = yield* FileSystem.FileSystem;
   const markerServices = yield* Effect.context<SetupMarker.Services>();
@@ -274,7 +292,13 @@ const make = Effect.gen(function* () {
     sessionId: string,
   ) {
     const chain = yield* sessions.renewalsOf(AuthSessionId.make(sessionId));
-    const active = (yield* sessions.listActive()).filter((session) => chain.has(session.sessionId));
+    const observedAt = yield* DateTime.now;
+    const active = (yield* sessions.listActive()).filter(
+      (session) =>
+        chain.has(session.sessionId) &&
+        session.expiresAt.epochMilliseconds > observedAt.epochMilliseconds &&
+        isCurrentIdentitySession(session.subject, sessionPrefix),
+    );
     return active.find((session) => session.sessionId === sessionId) ?? active[0];
   });
   const authorize = Effect.fn("ProjectOperations.authorize")(function* (
@@ -306,7 +330,8 @@ const make = Effect.gen(function* () {
       return;
     }
     const active = yield* currentSession(sessionId);
-    if (active?.subject !== subject) return yield* denied();
+    if (!active || ownershipSubject(active.subject) !== ownershipSubject(subject))
+      return yield* denied();
     const outside = subject === "mcp-client";
     // Outside agents never get terminal:operate; settings:write marks their Full access grant.
     const required = operationScopes(request.kind).map((permission) =>
@@ -422,7 +447,7 @@ const make = Effect.gen(function* () {
     const phase = Effect.fn("ProjectOperations.phase")(function* (name: string) {
       if (!launched) yield* authorize(row.session_id, row.subject, request);
       operation = yield* save({
-        ...operation,
+        ...Struct.omit(operation, ["accessRepair"]),
         phase: name,
         state: "running",
         error: null,
@@ -890,6 +915,7 @@ const make = Effect.gen(function* () {
             error: error.message,
             failureReason: error.reason,
             ...(error.repair ? { repair: error.repair } : {}),
+            ...(error.accessRepair ? { accessRepair: error.accessRepair } : {}),
             updatedAt: yield* now,
           });
         }),
@@ -993,7 +1019,7 @@ const make = Effect.gen(function* () {
         updatedAt: timestamp,
       };
       const payload = yield* Schema.encodeEffect(operationCodec)(value).pipe(Effect.mapError(io));
-      yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${actor.subject},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
+      yield* sql`INSERT INTO fork_library_operations (id,subject,session_id,request_json,payload_json,state,project_id,created_at) VALUES (${id},${ownershipSubject(actor.subject)},${actor.sessionId},${encoded},${payload},${value.state},${projectId},${value.createdAt}) ON CONFLICT(id) DO UPDATE SET subject=excluded.subject,session_id=excluded.session_id,payload_json=excluded.payload_json,state=excluded.state`.pipe(
         Effect.mapError(io),
       );
       yield* workflows.changed;
@@ -1026,6 +1052,7 @@ const make = Effect.gen(function* () {
         reason: result.failureReason ?? "blocked",
         detail: result.error ?? "Review the interrupted operation, then retry.",
         ...(result.repair ? { repair: result.repair } : {}),
+        ...(result.accessRepair ? { accessRepair: result.accessRepair } : {}),
       });
     return result;
   });
@@ -1077,6 +1104,39 @@ const make = Effect.gen(function* () {
     },
     (effect, id) => lock.withLock(id, effect),
   );
+  const outcomeClient = Effect.fn("ProjectOperations.outcomeClient")(function* (
+    input: LibraryOperationOutcomeRequest,
+    sessionId: string,
+  ) {
+    const actor = yield* currentSession(sessionId).pipe(Effect.mapError(io));
+    if (!actor) return yield* denied();
+    const id = yield* operationId(input.requestId, input.kind);
+    type Row = { subject: string; request_json: string; payload_json: string };
+    // Ordinary requests use the primary key; older workflow IDs need the original request payload.
+    for (const lookup of [
+      sql<Row>`SELECT subject,request_json,payload_json FROM fork_library_operations WHERE id=${id}`,
+      sql<Row>`SELECT subject,request_json,payload_json FROM fork_library_operations
+        WHERE id=${input.requestId}
+        OR (json_extract(request_json,'$.kind')=${input.kind}
+            AND json_extract(request_json,'$.input.requestId')=${input.requestId})`,
+    ]) {
+      const outcomes: LibraryOperation[] = [];
+      for (const row of yield* lookup) {
+        if (ownershipSubject(row.subject) !== ownershipSubject(actor.subject)) continue;
+        const request = yield* Schema.decodeEffect(requestCodec)(row.request_json).pipe(
+          Effect.mapError(io),
+        );
+        if (request.kind !== input.kind) continue;
+        if (request.kind !== "launch" && request.input.requestId !== input.requestId) continue;
+        outcomes.push(
+          yield* Schema.decodeEffect(operationCodec)(row.payload_json).pipe(Effect.mapError(io)),
+        );
+      }
+      if (outcomes.length > 1) return yield* new LibraryError({ reason: "request-conflict" });
+      if (outcomes[0]) return outcomes[0];
+    }
+    return null;
+  }, Effect.mapError(io));
   const executeClient = Effect.fn("ProjectOperations.executeClient")(function* (
     id: string,
     request: LibraryOperationInput,
@@ -1257,6 +1317,19 @@ const make = Effect.gen(function* () {
       sessionId: `workload:${claims}`,
     });
   });
+  const upgradeOwnership = Effect.fn("ProjectOperations.upgradeOwnership")(function* () {
+    if (sessionPrefix === null) return;
+    const rows = yield* sql<{
+      subject: string;
+    }>`SELECT DISTINCT subject FROM fork_library_operations
+      WHERE substr(subject,1,${sessionPrefix.length})=${sessionPrefix}`;
+    for (const row of rows) {
+      const principal = ownershipSubject(row.subject);
+      if (principal !== row.subject)
+        yield* sql`UPDATE fork_library_operations SET subject=${principal} WHERE subject=${row.subject}`;
+    }
+  }, Effect.mapError(io));
+  yield* upgradeOwnership();
   yield* forkParked(
     Effect.gen(function* () {
       const rows = yield* sql<{
@@ -1304,6 +1377,7 @@ const make = Effect.gen(function* () {
     execute,
     executeAgent,
     executeClient,
+    outcomeClient,
     cancel,
     resume,
     controlClient,

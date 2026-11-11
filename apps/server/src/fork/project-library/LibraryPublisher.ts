@@ -221,7 +221,11 @@ const decodeProposal = Schema.decodeUnknownEffect(LibraryBriefProposal);
 const encodePreviews = Schema.encodeEffect(Schema.fromJsonString(LibraryPreviewRegisterRequest));
 const decodePreviewAccess = Schema.decodeUnknownEffect(LibraryPreviewAccess);
 const decodeReason = Schema.decodeUnknownEffect(
-  Schema.Struct({ reason: LibraryError.fields.reason, detail: LibraryError.fields.detail }),
+  Schema.Struct({
+    reason: LibraryError.fields.reason,
+    detail: LibraryError.fields.detail,
+    accessRepair: LibraryError.fields.accessRepair,
+  }),
 );
 const encodePagePublish = Schema.encodeEffect(Schema.fromJsonString(LibraryPagePublishRequest));
 const encodePageUpdate = Schema.encodeEffect(Schema.fromJsonString(PreviewPageUpdateInput));
@@ -262,6 +266,7 @@ const make = Effect.gen(function* () {
       new LibraryError({
         reason: "blocked",
         detail: enabled ? LIBRARY_SIGN_IN_MISSING : LIBRARY_NOT_CONNECTED,
+        accessRepair: { kind: "connection" },
       }),
     );
     return LibraryPublisher.of({
@@ -506,6 +511,7 @@ const make = Effect.gen(function* () {
     if (response.status === 401 || response.status === 403)
       return yield* new LibraryError({
         reason: "blocked",
+        accessRepair: { kind: response.status === 401 ? "connection" : "permission" },
         detail:
           "Your Library refused this request from this computer. Reconnect this computer to your Library, then try again.",
       });

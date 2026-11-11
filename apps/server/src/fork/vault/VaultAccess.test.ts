@@ -1,3 +1,5 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { identitySessionPrefix } from "../../auth/identityPolicy.ts";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as ApprovalNotificationTransport from "./ApprovalNotificationTransport.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -2394,6 +2396,139 @@ const ownerChange = (
   expectedRevision,
   mode,
 });
+it.effect(
+  "keeps the same Vault owner across host policy changes without claiming other accounts",
+  () => {
+    const environment = {
+      LOOM_IDENTITY_ISSUER: "https://identity.test",
+      LOOM_IDENTITY_AUDIENCE: "host",
+      LOOM_IDENTITY_ALLOWED_SUBJECTS: "owner,other",
+    };
+    const actorFor = (env: NodeJS.ProcessEnv, account = "owner") =>
+      `${identitySessionPrefix(env)}${Buffer.from(account).toString("base64url")}`;
+    return withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        const enabled = yield* access.setOwnerPolicy(
+          ownerChange(0, "owner-trusted"),
+          actorFor(environment),
+          Effect.void,
+        );
+        const [policyPath, policyRecord] = [...fixture.records.entries()].find(([path]) =>
+          path.endsWith("/access-policy"),
+        )!;
+        const legacy = Option.getOrThrow(
+          AccessPolicy.decodePolicy(Redacted.value(policyRecord.value)),
+        );
+        fixture.records.set(policyPath, {
+          version: policyRecord.version,
+          value: Redacted.make(
+            yield* AccessPolicy.encodePolicy({
+              ...legacy,
+              ownerPolicy: {
+                ...legacy.ownerPolicy!,
+                ownerSubject: actorFor(environment),
+                updatedBy: actorFor(environment),
+              },
+            }),
+          ),
+        });
+        fixture.state.conflictNextPolicyWrite = true;
+        const upgraded = yield* VaultAccess.VaultAccess.pipe(
+          Effect.provide(Layer.fresh(fixture.layer)),
+        );
+        expect((yield* upgraded.snapshot).ownerPolicy).toMatchObject({
+          ownerId: enabled.ownerPolicy?.ownerId,
+          mode: "owner-trusted",
+          revision: 1,
+        });
+        expect(
+          Option.getOrThrow(
+            AccessPolicy.decodePolicy(Redacted.value(fixture.records.get(policyPath)!.value)),
+          ).ownerPolicy?.ownerSubject,
+        ).toMatch(/^identity-principal:v1:/);
+        const nextEnvironment = {
+          ...environment,
+          LOOM_IDENTITY_REQUIRE_PASSKEY: "true",
+          LOOM_IDENTITY_RESOURCE: "new-resource",
+        };
+        const restarted = yield* VaultAccess.VaultAccess.pipe(
+          Effect.provide(Layer.fresh(fixture.layer)),
+          Effect.provideService(HostProcess.Environment, nextEnvironment),
+        );
+        expect(
+          (yield* restarted.setOwnerPolicy(
+            ownerChange(1, "restricted", "2"),
+            actorFor(nextEnvironment),
+            Effect.void,
+          )).ownerPolicy,
+        ).toMatchObject({
+          ownerId: enabled.ownerPolicy?.ownerId,
+          mode: "restricted",
+        });
+        expect(
+          (yield* restarted.setOwnerPolicy(
+            ownerChange(0, "owner-trusted"),
+            actorFor(nextEnvironment),
+            Effect.void,
+          )).ownerPolicy?.mode,
+        ).toBe("restricted");
+        expect(
+          (yield* restarted
+            .setOwnerPolicy(
+              ownerChange(2, "owner-trusted", "3"),
+              actorFor(nextEnvironment, "other"),
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const foreignEnvironment = {
+          ...nextEnvironment,
+          LOOM_IDENTITY_ISSUER: "https://other-identity.test",
+        };
+        const foreign = yield* VaultAccess.VaultAccess.pipe(
+          Effect.provide(Layer.fresh(fixture.layer)),
+          Effect.provideService(HostProcess.Environment, foreignEnvironment),
+        );
+        expect(
+          (yield* foreign
+            .setOwnerPolicy(
+              ownerChange(2, "owner-trusted", "3"),
+              actorFor(foreignEnvironment),
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const current = fixture.records.get(policyPath)!;
+        const currentPolicy = Option.getOrThrow(
+          AccessPolicy.decodePolicy(Redacted.value(current.value)),
+        );
+        fixture.records.set(policyPath, {
+          version: current.version,
+          value: Redacted.make(
+            yield* AccessPolicy.encodePolicy({
+              ...currentPolicy,
+              ownerPolicy: {
+                ...currentPolicy.ownerPolicy!,
+                ownerSubject: actorFor(environment),
+                updatedBy: actorFor(environment),
+              },
+            }),
+          ),
+        });
+        expect(
+          (yield* restarted
+            .setOwnerPolicy(
+              ownerChange(2, "owner-trusted", "3"),
+              actorFor(nextEnvironment),
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ).pipe(Effect.provideService(HostProcess.Environment, environment));
+  },
+);
+
 it.effect("keeps legacy restricted without writes and binds explicit owner setup durably", () =>
   withAccess(({ access, fixture }) =>
     Effect.gen(function* () {

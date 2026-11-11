@@ -3,6 +3,9 @@ import * as NodeCrypto from "node:crypto";
 import { describe, expect, it } from "vite-plus/test";
 import {
   identityConfigured,
+  identityOwnershipSubject,
+  identityAccountFromSession,
+  isCurrentIdentitySession,
   identityResource,
   identitySessionPrefix,
   parseMaxSessionAge,
@@ -137,5 +140,35 @@ describe("environment helpers for reach warnings", () => {
       }),
     ).toBe("https://host.example.test");
     expect(identityResource({ LOOM_IDENTITY_RESOURCE: " " })).toBeNull();
+  });
+});
+
+describe("identityOwnershipSubject", () => {
+  it("separates issuer-bound ownership from current host policy and preserves unproven legacy subjects", () => {
+    const subjectFor = (environment: NodeJS.ProcessEnv, id = "owner-id") =>
+      `${identitySessionPrefix(environment)}${Buffer.from(id).toString("base64url")}`;
+    const original = subjectFor(ENVIRONMENT);
+    const owner = identityOwnershipSubject(original, ENVIRONMENT);
+    expect(owner).toMatch(/^identity-principal:v1:[A-Za-z0-9_-]{43}$/);
+    const changed = {
+      ...ENVIRONMENT,
+      LOOM_IDENTITY_RESOURCE: "different-resource",
+      LOOM_IDENTITY_REQUIRE_PASSKEY: "true",
+    };
+    expect(identityOwnershipSubject(subjectFor(changed), changed)).toBe(owner);
+    expect(isCurrentIdentitySession(original, identitySessionPrefix(changed))).toBe(false);
+    expect(identityOwnershipSubject(original, changed)).toBe(original);
+    const otherIssuer = { ...ENVIRONMENT, LOOM_IDENTITY_ISSUER: "https://other-issuer.test" };
+    expect(identityOwnershipSubject(subjectFor(otherIssuer), otherIssuer)).not.toBe(owner);
+    expect(
+      identityOwnershipSubject(subjectFor(ENVIRONMENT, "different-owner"), ENVIRONMENT),
+    ).not.toBe(owner);
+    expect(identityOwnershipSubject(owner, changed)).toBe(owner);
+    for (const suffix of ["", "!b3duZXItaWQ", "_w"]) {
+      const malformed = `${identitySessionPrefix(ENVIRONMENT)}${suffix}`;
+      expect(identityAccountFromSession(malformed, ENVIRONMENT)).toBeUndefined();
+      expect(identityOwnershipSubject(malformed, ENVIRONMENT)).toBe(malformed);
+    }
+    expect(identityOwnershipSubject("manual-pairing", ENVIRONMENT)).toBe("manual-pairing");
   });
 });

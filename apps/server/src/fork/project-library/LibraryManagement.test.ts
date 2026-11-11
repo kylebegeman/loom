@@ -228,7 +228,13 @@ const fixture = Effect.gen(function* () {
             result._tag === "Success"
               ? Response.json(result.success)
               : Response.json(
-                  { reason: result.failure.reason, detail: result.failure.detail },
+                  {
+                    reason: result.failure.reason,
+                    detail: result.failure.detail,
+                    ...(result.failure.accessRepair
+                      ? { accessRepair: result.failure.accessRepair }
+                      : {}),
+                  },
                   { status: 409 },
                 ),
           );
@@ -579,14 +585,14 @@ describe("authority-routed project management", () => {
             scopes: [AuthLibraryPublishScope, AuthSettingsWriteScope],
           };
           yield* Ref.set(f.active, [publisher]);
-          expect(
-            (yield* f.receiver
-              .issue(
-                { environmentId: source, keyFingerprint: f.first.delegation.keyFingerprint },
-                publisher,
-              )
-              .pipe(Effect.flip)).reason,
-          ).toBe("blocked");
+          const denied = yield* f.receiver
+            .issue(
+              { environmentId: source, keyFingerprint: f.first.delegation.keyFingerprint },
+              publisher,
+            )
+            .pipe(Effect.flip);
+          expect(denied.reason).toBe("blocked");
+          expect(denied.accessRepair?.kind).toBe("permission");
           yield* Ref.set(f.active, [f.owner]);
           yield* f.first.manager.execute(f.request, f.actor);
           const signed = (yield* Ref.get(f.sent))[0]!;
@@ -609,9 +615,11 @@ describe("authority-routed project management", () => {
               .reason,
           ).toBe("blocked");
           yield* Ref.set(f.active, [{ ...f.owner, expiresAt: DateTime.makeUnsafe(0) }]);
-          expect((yield* f.receiver.accept(signed, source).pipe(Effect.flip)).message).toContain(
-            "expired or been revoked",
-          );
+          const expired = yield* f.receiver.accept(signed, source).pipe(Effect.flip);
+          expect(expired.message).toContain("expired or been revoked");
+          expect(expired.accessRepair).toEqual({ kind: "sign-in", environmentId: authority });
+          const remote = yield* f.first.manager.execute(f.request, f.actor).pipe(Effect.flip);
+          expect(remote.accessRepair).toEqual(expired.accessRepair);
           yield* Ref.set(f.active, []);
           expect((yield* f.receiver.accept(signed, source).pipe(Effect.flip)).message).toContain(
             "expired or been revoked",

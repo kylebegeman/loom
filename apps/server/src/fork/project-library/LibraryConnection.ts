@@ -200,13 +200,21 @@ export const readLibraryConnection = Effect.gen(function* () {
       Option.isNone(token) ||
       (credential !== null && Date.parse(credential.expiresAt) <= (yield* Clock.currentTimeMillis))
     )
-      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_SIGN_IN_MISSING });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: LIBRARY_SIGN_IN_MISSING,
+        accessRepair: { kind: "connection" },
+      });
     const target = yield* Effect.try({
       try: () => new URL(request.url, base.origin),
       catch: () => new LibraryError({ reason: "invalid" }),
     });
     if (target.origin !== base.origin || target.username || target.password)
-      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_MISMATCH });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: LIBRARY_MISMATCH,
+        accessRepair: { kind: "connection" },
+      });
     let authenticated = request.pipe(
       HttpClientRequest.setUrl(target.toString()),
       HttpClientRequest.bearerToken(token.value),
@@ -480,14 +488,22 @@ const make = Effect.gen(function* () {
   ) {
     const connection = yield* current;
     if (connection.kind !== "remote")
-      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_SIGN_IN_MISSING });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: LIBRARY_SIGN_IN_MISSING,
+        accessRepair: { kind: "connection" },
+      });
     // Refuse absolute URLs outside the configured Library, including after a host config repair.
     const target = yield* Effect.try({
       try: () => new URL(request.url, connection.origin),
       catch: () => new LibraryError({ reason: "invalid" }),
     });
     if (target.origin !== connection.origin || target.username || target.password)
-      return yield* new LibraryError({ reason: "blocked", detail: LIBRARY_MISMATCH });
+      return yield* new LibraryError({
+        reason: "blocked",
+        detail: LIBRARY_MISMATCH,
+        accessRepair: { kind: "connection" },
+      });
     return yield* connection.send(HttpClientRequest.setUrl(request, target.toString()));
   });
   return LibraryConnectionService.of({ current, status, send });

@@ -26,6 +26,7 @@ import {
   type LibraryProjectManagementRequest,
   type LibraryManagementEnrollment,
   type LibraryManagementStatus,
+  type LibraryAccessRepair,
 } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
@@ -96,10 +97,22 @@ const decodeDelegationClaims = Schema.decodeUnknownEffect(DelegationClaims);
 const decodeRequestClaims = Schema.decodeUnknownEffect(RequestClaims);
 const isLibraryError = Schema.is(LibraryError);
 const decodeErrorResponse = Schema.decodeUnknownEffect(
-  Schema.Struct({ reason: LibraryError.fields.reason, detail: LibraryError.fields.detail }),
+  Schema.Struct({
+    reason: LibraryError.fields.reason,
+    detail: LibraryError.fields.detail,
+    accessRepair: LibraryError.fields.accessRepair,
+  }),
 );
-const deny = (detail = "This caller is not authorized to manage shared projects.") =>
-  new LibraryError({ reason: "blocked", detail });
+const deny = (
+  detail = "This caller is not authorized to manage shared projects.",
+  kind: LibraryAccessRepair["kind"] = "permission",
+  environmentId?: EnvironmentId,
+) =>
+  new LibraryError({
+    reason: "blocked",
+    detail,
+    accessRepair: { kind, ...(environmentId === undefined ? {} : { environmentId }) },
+  });
 const unavailable = () => new LibraryError({ reason: "io" });
 const unconfirmed = () =>
   new LibraryError({
@@ -232,7 +245,7 @@ const make = Effect.gen(function* () {
     id: AuthSessionId,
   ) {
     const session = yield* currentSession(id);
-    if (!session) return yield* deny(SIGN_IN_ENDED);
+    if (!session) return yield* deny(SIGN_IN_ENDED, "sign-in", environmentId);
     if (
       !(session.permissions ?? session.scopes).includes(AuthSettingsWriteScope) ||
       session.subject === "mcp-client" ||
@@ -491,6 +504,7 @@ const make = Effect.gen(function* () {
       }
       return yield* deny(
         "This computer's enrolled Library connection is unavailable. Project management has not been attempted.",
+        "connection",
       );
     }
     const info = yield* publisher.info;
@@ -505,7 +519,7 @@ const make = Effect.gen(function* () {
       );
     const delegation = yield* readDelegation;
     if (delegation === null || delegation.expiresAt <= (yield* Clock.currentTimeMillis))
-      return yield* deny(DELEGATION_MISSING);
+      return yield* deny(DELEGATION_MISSING, "connection");
     if (
       delegation.libraryEnvironmentId !== info.environmentId ||
       !fenceMatches(delegation, info) ||
@@ -556,6 +570,7 @@ const make = Effect.gen(function* () {
     if (response.status === 401)
       return yield* deny(
         "This computer's Library enrollment has expired or been revoked. Project management has not been authorized.",
+        "connection",
       );
     if (response.status === 403 && !response.headers["content-type"]?.includes("application/json"))
       return yield* deny();

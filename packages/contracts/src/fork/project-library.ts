@@ -303,9 +303,14 @@ export const LibraryInfo = Schema.Struct({
   features: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(64)))),
 });
 export type LibraryInfo = typeof LibraryInfo.Type;
-/** A "blocked" denial with no code of its own; clients match its "Sign in again" to offer the repair. */
+/** Retained as the message fallback for clients predating typed access repairs. */
 export const LIBRARY_SIGN_IN_NOT_CURRENT_TEXT =
   "This device's sign-in is no longer current. Sign in again from Connections in Settings, then retry.";
+export const LibraryAccessRepair = Schema.Struct({
+  kind: Schema.Literals(["sign-in", "permission", "ownership", "connection"]),
+  environmentId: Schema.optionalKey(EnvironmentId),
+});
+export type LibraryAccessRepair = typeof LibraryAccessRepair.Type;
 export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryError", {
   reason: Schema.Literals([
     "not-authority",
@@ -324,6 +329,7 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
     "not-managed",
     "io",
   ]),
+  accessRepair: Schema.optionalKey(LibraryAccessRepair),
   repair: Schema.optionalKey(
     Schema.Struct({
       kind: Schema.Literal("github-host-setup"),
