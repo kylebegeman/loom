@@ -151,7 +151,7 @@ read a deleted conversation. **Continue in a new conversation** starts a linked 
 it does not reopen the deleted thread. These controls require an updated Library.
 
 The Library keeps deleted conversations for 30 days by default. The owner can change
-**Erase deleted conversations after** in Settings → Library. **Erase now** permanently removes
+**Erase deleted conversations after** in Settings → Computers → Library. **Erase now** permanently removes
 the saved conversation and attachments that no remaining conversation uses. If storage cleanup
 fails, retry the action to finish it. Independently published pages keep their own lifecycle.
 

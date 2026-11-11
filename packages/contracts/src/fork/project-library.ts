@@ -314,7 +314,7 @@ export const LibraryInfo = Schema.Struct({
 export type LibraryInfo = typeof LibraryInfo.Type;
 /** Retained as the message fallback for clients predating typed access repairs. */
 export const LIBRARY_SIGN_IN_NOT_CURRENT_TEXT =
-  "This device's sign-in is no longer current. Sign in again from Connections in Settings, then retry.";
+  "This device's sign-in is no longer current. Sign in again from this computer's Library settings, then explicitly continue the saved request.";
 export const LibraryAccessRepair = Schema.Struct({
   vaultDeniedDetail: VaultError.fields.detail,
   repository: Schema.optionalKey(VaultGitHubTarget),
