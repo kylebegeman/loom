@@ -52,6 +52,8 @@ export * from "./project-library.ts";
 export * from "./library-preparation-recovery.ts";
 export * from "./library-save-state.ts";
 export * from "./library-copy-health.ts";
+export * from "./library-project-home-status.ts";
+export * from "./library-project-request-outcomes.ts";
 export {
   libraryProjectScopeKey,
   parseLibraryProjectScope,

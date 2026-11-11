@@ -2,9 +2,9 @@ import { useState } from "react";
 import {
   LIBRARY_OPERATION_LABELS,
   LIBRARY_OPERATION_STATES,
-  libraryOperationNeedsAction,
+  libraryProjectRequestOutcome,
+  selectLibraryProjectRequests,
   needsLibrarySignIn,
-  sortLibraryOperations,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { PROJECT_WORKFLOWS_FEATURE, type LibraryOperation } from "@t3tools/contracts/fork";
@@ -58,13 +58,17 @@ const SHOWN_OPERATIONS = 4;
 export function ProjectOperationHistory({
   environmentId,
   projectId,
+  computerLabel,
 }: {
   readonly environmentId: EnvironmentId;
   readonly projectId?: string;
+  readonly computerLabel?: string;
 }) {
   const { environments } = useEnvironments();
   const environment = environments.find((entry) => entry.environmentId === environmentId);
-  const label = environment?.label ?? "This computer";
+  const label = environment?.label ?? computerLabel ?? "Saved computer";
+  const connected =
+    environment?.entry.enabled === true && environment.connection.phase === "connected";
   const supported = supportsLoomFeature(
     environment?.serverConfig?.environment.capabilities,
     PROJECT_WORKFLOWS_FEATURE,
@@ -76,7 +80,8 @@ export function ProjectOperationHistory({
   );
   const resume = useAtomCommand(projectLibrary.resumeOperation, { reportFailure: false });
   const cancel = useAtomCommand(projectLibrary.cancelOperation, { reportFailure: false });
-  const allowed = useLibraryPermission(projectLibrary.resumeOperation, environmentId);
+  const canResume = useLibraryPermission(projectLibrary.resumeOperation, environmentId);
+  const canCancel = useLibraryPermission(projectLibrary.cancelOperation, environmentId);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -94,13 +99,12 @@ export function ProjectOperationHistory({
     query.refresh();
     setBusy(false);
   };
-  const operations = sortLibraryOperations(query.data ?? []);
-  const shown = showAll ? operations : operations.slice(0, SHOWN_OPERATIONS);
-  const unfinished = operations.some(
-    (operation) => libraryOperationNeedsAction(operation) || operation.state === "running",
+  const { shown, total, unfinished } = selectLibraryProjectRequests(
+    query.data ?? [],
+    showAll ? null : SHOWN_OPERATIONS,
   );
   return (
-    <section aria-label={`Activity on ${label}`} className="flex min-w-0 flex-col gap-1.5">
+    <section aria-label={`Request history on ${label}`} className="flex min-w-0 flex-col gap-1.5">
       <div className="flex min-h-7 items-center justify-between gap-3">
         <ComputerLabel
           environmentId={environmentId}
@@ -112,8 +116,8 @@ export function ProjectOperationHistory({
             shape="pill"
             size="icon-xs"
             variant="ghost"
-            aria-label={`Refresh activity on ${label}`}
-            disabled={query.isPending}
+            aria-label={`Check request outcomes on ${label}`}
+            disabled={!connected || query.isPending}
             onClick={query.refresh}
           >
             <RefreshCwIcon />
@@ -122,14 +126,23 @@ export function ProjectOperationHistory({
       </div>
       {!supported ? (
         <p className="text-xs text-muted-foreground">
-          Update Loom on {label} to see its file activity here.
+          {connected
+            ? `Update Loom on ${label} to see its saved requests here.`
+            : `${label} is offline. Reconnect to check saved requests.`}
         </p>
       ) : (
         <>
           <LibraryErrorNotice error={error ?? query.error} onRetry={query.refresh} />
-          {!operations.length ? (
+          {!connected ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              Computer offline. Saved receipts may be incomplete. Reconnect to check outcomes.
+            </p>
+          ) : null}
+          {!total ? (
             <p className="text-xs text-muted-foreground">
-              {query.isPending ? "Loading activity..." : `No file activity on ${label} yet.`}
+              {query.isPending
+                ? "Loading requests..."
+                : "No saved requests returned. This does not confirm that no work ran."}
             </p>
           ) : (
             <ul className="flex flex-col gap-0.5">
@@ -137,7 +150,10 @@ export function ProjectOperationHistory({
                 <OperationRow
                   key={operation.id}
                   operation={operation}
-                  disabled={!allowed || busy}
+                  canResume={connected && canResume && !busy}
+                  canCancel={connected && canCancel && !busy}
+                  canCheck={connected && !query.isPending}
+                  onCheck={query.refresh}
                   onResume={() =>
                     operation.kind === "restore"
                       ? openLibraryAction("new-conversation", operation.projectId ?? undefined, {
@@ -150,7 +166,7 @@ export function ProjectOperationHistory({
               ))}
             </ul>
           )}
-          {operations.length > SHOWN_OPERATIONS ? (
+          {total > shown.length || showAll ? (
             <div>
               <Button
                 shape="pill"
@@ -158,14 +174,14 @@ export function ProjectOperationHistory({
                 variant="ghost"
                 onClick={() => setShowAll((value) => !value)}
               >
-                {showAll ? "Show fewer" : `Show all ${operations.length}`}
+                {showAll ? "Show fewer" : `Show all ${total}`}
               </Button>
             </div>
           ) : null}
-          {unfinished ? (
+          {unfinished > 0 ? (
             <p className="text-xs text-muted-foreground">
-              Work keeps going when the window closes. After a restart, Loom resumes safe steps on
-              its own; file changes already running finish before they can be cancelled.
+              Resume continues the saved request. Cancel remaining steps keeps completed outcomes;
+              it does not undo file changes. A running step must finish before cancellation.
             </p>
           ) : null}
         </>
@@ -176,18 +192,24 @@ export function ProjectOperationHistory({
 
 function OperationRow({
   operation,
-  disabled,
+  canResume,
+  canCancel,
+  canCheck,
+  onCheck,
   onResume,
   onCancel,
 }: {
   readonly operation: LibraryOperation;
-  readonly disabled: boolean;
+  readonly canResume: boolean;
+  readonly canCancel: boolean;
+  readonly canCheck: boolean;
+  readonly onCheck: () => void;
   readonly onResume: () => void;
   readonly onCancel: () => void;
 }) {
   const Icon = OPERATION_ICONS[operation.kind];
   const state = LIBRARY_OPERATION_STATES[operation.state];
-  const actionable = libraryOperationNeedsAction(operation);
+  const outcome = libraryProjectRequestOutcome(operation);
   // The phase repeats the state once work ends; it only adds something while work is underway.
   const phase =
     operation.state === "succeeded" || operation.state === "cancelled" ? null : operation.phase;
@@ -214,6 +236,28 @@ function OperationRow({
         </div>
         <LibraryStateBadge tone={state.tone}>{state.label}</LibraryStateBadge>
       </div>
+      <div className="flex min-w-0 flex-col gap-1 ps-10 text-xs">
+        {outcome.completed.length ? (
+          <p className="text-foreground">{outcome.completed.join(". ")}.</p>
+        ) : null}
+        {outcome.remaining.length ? (
+          <p className="text-muted-foreground">Remaining: {outcome.remaining.join(". ")}.</p>
+        ) : null}
+        <p className="text-muted-foreground">{outcome.conversation}.</p>
+        {outcome.path ? <p className="break-all text-muted-foreground">{outcome.path}</p> : null}
+        {outcome.detail ? <p className="text-muted-foreground">{outcome.detail}</p> : null}
+        <details className="text-muted-foreground">
+          <summary className="cursor-pointer">Request reference</summary>
+          <p className="break-all select-text">{outcome.requestId}</p>
+          <p>
+            Requested{" "}
+            <time dateTime={operation.createdAt}>
+              {new Date(operation.createdAt).toLocaleString()}
+            </time>
+            . Resume keeps this reference.
+          </p>
+        </details>
+      </div>
       {operation.error ? (
         <div className="flex flex-wrap items-center gap-2 ps-10">
           <p role="status" className="text-xs text-destructive-foreground">
@@ -224,16 +268,27 @@ function OperationRow({
           ) : null}
         </div>
       ) : null}
-      {actionable ? (
-        <div className="flex gap-1.5 ps-10">
-          <Button shape="pill" size="xs" variant="outline" disabled={disabled} onClick={onResume}>
-            {operation.kind === "restore" ? "Restore from Start" : "Resume"}
-          </Button>
-          <Button shape="pill" size="xs" variant="ghost" disabled={disabled} onClick={onCancel}>
-            Cancel remaining steps
-          </Button>
-        </div>
-      ) : null}
+      <div className="flex flex-wrap gap-1.5 ps-10">
+        <Button shape="pill" size="xs" variant="ghost" disabled={!canCheck} onClick={onCheck}>
+          Check outcome
+        </Button>
+        {outcome.canResume ? (
+          <>
+            <Button
+              shape="pill"
+              size="xs"
+              variant="outline"
+              disabled={!canResume}
+              onClick={onResume}
+            >
+              {outcome.resumeLabel}
+            </Button>
+            <Button shape="pill" size="xs" variant="ghost" disabled={!canCancel} onClick={onCancel}>
+              Cancel remaining steps
+            </Button>
+          </>
+        ) : null}
+      </div>
     </li>
   );
 }

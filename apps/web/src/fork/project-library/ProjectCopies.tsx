@@ -21,7 +21,6 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import * as Schema from "effect/Schema";
 import { useRef, useState, type ReactNode } from "react";
 import {
-  ArrowRightIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   MessageSquarePlusIcon,
@@ -40,7 +39,6 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import {
   LIBRARY_SURFACE,
   LibraryErrorNotice,
-  LibraryPanel,
   LibrarySection,
   LibraryStateBadge,
 } from "./LibraryControls";
@@ -761,66 +759,6 @@ function CopyFileControls({
       ) : null}
       <LibraryErrorNotice error={error} />
     </div>
-  );
-}
-
-/** The overview's glance at where the project lives, with the way to manage each copy. */
-export function CopiesSummary({
-  copies,
-  loading,
-  canAct,
-  hostLabel,
-  hostConnected,
-  onGetCopy,
-  onShowAll,
-}: {
-  readonly copies: readonly LibraryWorkingCopy[];
-  readonly loading: boolean;
-  readonly canAct: boolean;
-  readonly hostLabel: (id: EnvironmentId) => string;
-  readonly hostConnected: (id: EnvironmentId) => boolean;
-  readonly onGetCopy: (request: CopyRequest) => void;
-  readonly onShowAll: () => void;
-}) {
-  const active = libraryActiveCopies(copies);
-  return (
-    <LibraryPanel
-      title="Library copies"
-      icon={MonitorIcon}
-      count={active.length}
-      action={
-        active.length ? (
-          <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
-            Manage
-            <ArrowRightIcon />
-          </Button>
-        ) : null
-      }
-    >
-      {active.length ? (
-        <ul className="divide-y divide-border border-t border-border">
-          {active.map((copy) => (
-            <li key={copy.id} className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-              <ComputerIcon environmentId={copy.environmentId} />
-              <span className="min-w-0 truncate text-sm font-medium">
-                {hostLabel(copy.environmentId)}
-              </span>
-              <span className="ms-auto">
-                <CopyStatusLabel status={copyStatus(copy, hostConnected(copy.environmentId))} />
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : loading ? (
-        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
-          Checking your computers...
-        </p>
-      ) : (
-        <div className="px-3.5 pb-3.5">
-          <NoCopies canAct={canAct} onGetCopy={onGetCopy} />
-        </div>
-      )}
-    </LibraryPanel>
   );
 }
 

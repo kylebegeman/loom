@@ -22,9 +22,9 @@ import {
   LIBRARY_WORKSTREAM_STATES,
   LIBRARY_WORKSTREAM_TYPED_KINDS,
   isWorkstreamReferenceDone,
-  libraryOperationNeedsAction,
+  libraryProjectRequestOutcome,
+  selectLibraryProjectRequests,
   libraryProjectAttention,
-  sortLibraryOperations,
   sortWorkstreams,
   workstreamLinkOptions,
   workstreamProgress,
@@ -36,6 +36,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { uuidv4 } from "../../lib/uuid";
@@ -570,18 +571,33 @@ export function LibraryPreservationCenter({
 
 export function LibraryOperationHistory({
   environmentId,
+  projectId,
+  computerLabel = "This computer",
 }: {
   readonly environmentId: EnvironmentId;
+  readonly projectId?: string;
+  readonly computerLabel?: string;
 }) {
   const navigation = useNavigation();
+  const { environments } = useEnvironments();
+  const connected = environments.some(
+    (entry) =>
+      entry.environmentId === environmentId &&
+      entry.entry.enabled &&
+      entry.connection.phase === "connected",
+  );
   const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const supported = useLoomFeature(environmentId, PROJECT_WORKFLOWS_FEATURE);
   const query = useEnvironmentQuery(
-    open && supported ? library.operations({ environmentId, input: {} }) : null,
+    open && supported
+      ? library.operations({ environmentId, input: projectId ? { projectId } : {} })
+      : null,
   );
   const resume = useAtomCommand(library.resumeOperation, { reportFailure: false });
   const cancel = useAtomCommand(library.cancelOperation, { reportFailure: false });
-  const allowed = useAtomValue(library.resumeOperation.permissionAtom(environmentId));
+  const canResume = useAtomValue(library.resumeOperation.permissionAtom(environmentId));
+  const canCancel = useAtomValue(library.cancelOperation.permissionAtom(environmentId));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const act = async (id: string, action: "resume" | "cancel") => {
@@ -598,79 +614,143 @@ export function LibraryOperationHistory({
     query.refresh();
     setBusy(false);
   };
+  const { shown, total, unfinished } = selectLibraryProjectRequests(
+    query.data ?? [],
+    showAll ? null : 4,
+  );
   if (!supported)
     return (
       <Text className="text-sm text-foreground-muted">
-        Update Loom on this computer to see its file activity.
+        {connected
+          ? `Update Loom on ${computerLabel} to see saved requests.`
+          : `${computerLabel} is offline. Reconnect to check saved requests.`}
       </Text>
     );
   return (
     <View className="gap-2">
       <Button
-        label={open ? "Hide activity" : "File activity on this computer"}
+        label={open ? `Hide requests on ${computerLabel}` : `Requests on ${computerLabel}`}
         tone="text"
         onPress={() => setOpen((previous) => !previous)}
       />
       {open ? (
         <>
-          <Button label="Refresh activity" tone="text" onPress={query.refresh} />
+          <Button
+            label="Check request outcomes"
+            tone="text"
+            disabled={!connected || query.isPending}
+            onPress={query.refresh}
+          />
+          {!connected ? (
+            <Text accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
+              Computer offline. Saved receipts may be incomplete. Reconnect to check outcomes.
+            </Text>
+          ) : null}
           {error || query.error ? (
             <Text accessibilityRole="alert">{error ?? query.error}</Text>
           ) : null}
           {!query.isPending && !query.data?.length ? (
-            <Text className="text-sm text-foreground-muted">No file activity yet.</Text>
+            <Text className="text-sm text-foreground-muted">
+              No saved requests returned. This does not confirm that no work ran.
+            </Text>
           ) : null}
-          {sortLibraryOperations(query.data ?? []).map((operation) => (
-            <View key={operation.id} className="gap-2">
-              <View className="flex-row items-center gap-2">
-                <View className="flex-1 gap-0.5">
-                  <Text className="text-sm text-foreground">
-                    {LIBRARY_OPERATION_LABELS[operation.kind]}
-                  </Text>
-                  <Text className="text-xs text-foreground-muted">
-                    {[
-                      operation.state === "succeeded" || operation.state === "cancelled"
-                        ? null
-                        : operation.phase,
-                      ago(operation.updatedAt),
-                      operation.attempt > 1 ? `attempt ${operation.attempt}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </Text>
+          {shown.map((operation) => {
+            const outcome = libraryProjectRequestOutcome(operation);
+            return (
+              <View key={operation.id} className="gap-2">
+                <View className="flex-row items-center gap-2">
+                  <View className="flex-1 gap-0.5">
+                    <Text className="text-sm text-foreground">
+                      {LIBRARY_OPERATION_LABELS[operation.kind]}
+                    </Text>
+                    <Text className="text-xs text-foreground-muted">
+                      {[
+                        operation.state === "succeeded" || operation.state === "cancelled"
+                          ? null
+                          : operation.phase,
+                        ago(operation.updatedAt),
+                        operation.attempt > 1 ? `attempt ${operation.attempt}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </Text>
+                  </View>
+                  <LibraryStateBadge
+                    tone={LIBRARY_OPERATION_STATES[operation.state].tone}
+                    label={LIBRARY_OPERATION_STATES[operation.state].label}
+                  />
                 </View>
-                <LibraryStateBadge
-                  tone={LIBRARY_OPERATION_STATES[operation.state].tone}
-                  label={LIBRARY_OPERATION_STATES[operation.state].label}
+                {outcome.completed.length ? (
+                  <Text className="text-sm text-foreground">{outcome.completed.join(". ")}.</Text>
+                ) : null}
+                {outcome.remaining.length ? (
+                  <Text className="text-sm text-foreground-muted">
+                    Remaining: {outcome.remaining.join(". ")}.
+                  </Text>
+                ) : null}
+                <Text className="text-xs text-foreground-muted">{outcome.conversation}.</Text>
+                {outcome.path ? (
+                  <Text selectable className="text-xs text-foreground-muted">
+                    {outcome.path}
+                  </Text>
+                ) : null}
+                {outcome.detail ? (
+                  <Text className="text-sm text-foreground-muted">{outcome.detail}</Text>
+                ) : null}
+                <Text selectable className="text-xs text-foreground-muted">
+                  Request reference: {outcome.requestId}
+                </Text>
+                <Text className="text-xs text-foreground-muted">
+                  Requested {new Date(operation.createdAt).toLocaleString()}. Resume keeps this
+                  reference.
+                </Text>
+                {operation.error ? (
+                  <Text className="text-sm text-danger">{operation.error}</Text>
+                ) : null}
+                <Button
+                  label="Check outcome"
+                  tone="text"
+                  disabled={!connected || query.isPending}
+                  onPress={query.refresh}
                 />
+                {outcome.canResume ? (
+                  <>
+                    <Button
+                      label={outcome.resumeLabel}
+                      disabled={!connected || !canResume || busy}
+                      onPress={() =>
+                        operation.kind === "restore" && operation.projectId
+                          ? navigation.navigate("LibraryStart", {
+                              projectId: operation.projectId,
+                              reuseEnvironmentId: environmentId,
+                            })
+                          : void act(operation.id, "resume")
+                      }
+                    />
+                    <Button
+                      label="Cancel remaining steps"
+                      disabled={!connected || !canCancel || busy}
+                      tone="text"
+                      onPress={() => void act(operation.id, "cancel")}
+                    />
+                  </>
+                ) : null}
               </View>
-              {operation.error ? (
-                <Text className="text-sm text-danger">{operation.error}</Text>
-              ) : null}
-              {libraryOperationNeedsAction(operation) ? (
-                <>
-                  <Button
-                    label={operation.kind === "restore" ? "Open Start to restore" : "Resume"}
-                    disabled={!allowed || busy}
-                    onPress={() =>
-                      operation.kind === "restore" && operation.projectId
-                        ? navigation.navigate("LibraryStart", {
-                            projectId: operation.projectId,
-                            reuseEnvironmentId: environmentId,
-                          })
-                        : void act(operation.id, "resume")
-                    }
-                  />
-                  <Button
-                    label="Cancel remaining steps"
-                    disabled={!allowed || busy}
-                    tone="text"
-                    onPress={() => void act(operation.id, "cancel")}
-                  />
-                </>
-              ) : null}
-            </View>
-          ))}
+            );
+          })}
+          {total > shown.length || showAll ? (
+            <Button
+              label={showAll ? "Show fewer requests" : `Show all ${total} requests`}
+              tone="text"
+              onPress={() => setShowAll((value) => !value)}
+            />
+          ) : null}
+          {unfinished > 0 ? (
+            <Text className="text-xs text-foreground-muted">
+              Resume continues the saved request. Cancel remaining steps keeps completed outcomes;
+              it does not undo file changes. A running step must finish before cancellation.
+            </Text>
+          ) : null}
         </>
       ) : null}
     </View>
