@@ -529,3 +529,77 @@ it.effect(
     }).pipe(Effect.provide(f.layer));
   },
 );
+
+it.effect(
+  "reads a check-run receipt with the manager and original identity without dispatching a run",
+  () => {
+    const receipt = { state: "completed", status: 200, body: snapshot };
+    const f = fixture({ manager: true, payload: receipt });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      expect(yield* service.checkRunReceipt({ requestId: "original-run" })).toEqual(receipt);
+      const request = f.requests.find((r) => r.url.endsWith("/checks/run/receipt"));
+      expect(request).toMatchObject({
+        method: "GET",
+        headers: { "idempotency-key": "original-run" },
+      });
+      expect(f.requests.some((r) => r.url.endsWith("/checks/run"))).toBe(false);
+    }).pipe(Effect.provide(f.layer));
+  },
+);
+
+it.effect.each([
+  [404, "unavailable"],
+  [401, "authentication"],
+  [403, "permission"],
+  [422, "request-conflict"],
+] as const)("keeps receipt HTTP %s distinct from an absent operation", ([readStatus, expected]) => {
+  const f = fixture({ manager: true, readStatus });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    if (readStatus === 404)
+      expect(yield* service.checkRunReceipt({ requestId: "original" })).toEqual({
+        state: expected,
+      });
+    else
+      expect(yield* Effect.flip(service.checkRunReceipt({ requestId: "original" }))).toMatchObject({
+        stage: expected,
+        requestId: "original",
+      });
+    expect(f.requests.some((r) => r.url.endsWith("/checks/run"))).toBe(false);
+  }).pipe(Effect.provide(f.layer));
+});
+it.effect(
+  "forwards receipt reads through the enrolled Library without local Sites credentials",
+  () => {
+    const receipt = { state: "pending" };
+    const f = fixture({ remote: true, env: {}, payload: receipt });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      expect(yield* service.checkRunReceipt({ requestId: "original" })).toEqual(receipt);
+      expect(f.requests.map((r) => [r.method, r.url])).toEqual([
+        ["POST", "https://library.example.test/api/loom/library/sites/read"],
+      ]);
+    }).pipe(Effect.provide(f.layer));
+  },
+);
+
+it.effect.each(["authentication", "permission", "request-conflict"] as const)(
+  "retains %s repair when a receipt is read through the Library",
+  (stage) => {
+    const f = fixture({
+      remote: true,
+      env: {},
+      readStatus: 503,
+      payload: { sitesError: { stage, requestId: "original" } },
+    });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      expect(yield* Effect.flip(service.checkRunReceipt({ requestId: "original" }))).toMatchObject({
+        stage,
+        requestId: "original",
+      });
+      expect(f.requests).toHaveLength(1);
+    }).pipe(Effect.provide(f.layer));
+  },
+);

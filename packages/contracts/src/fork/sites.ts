@@ -84,6 +84,22 @@ export const SitesSnapshot = Schema.Struct({
   ),
 });
 export type SitesSnapshot = typeof SitesSnapshot.Type;
+export const SiteChecksRunReceiptRequest = Schema.Struct({ requestId });
+export type SiteChecksRunReceiptRequest = typeof SiteChecksRunReceiptRequest.Type;
+export const SiteChecksRunReceipt = Schema.Union([
+  Schema.Struct({ state: Schema.Literals(["absent", "pending", "unavailable"]) }),
+  Schema.Struct({
+    state: Schema.Literal("completed"),
+    status: Schema.Number.check(
+      Schema.isInt(),
+      Schema.isGreaterThanOrEqualTo(200),
+      Schema.isLessThan(500),
+    ),
+    body: Schema.Unknown,
+  }),
+]);
+export type SiteChecksRunReceipt = typeof SiteChecksRunReceipt.Type;
+
 export const SiteAnalytics = Schema.Struct({
   product: Schema.optionalKey(
     Schema.Struct({
@@ -194,7 +210,10 @@ export const LibrarySitesMutation = Schema.Union([
   }),
 ]);
 export type LibrarySitesMutation = typeof LibrarySitesMutation.Type;
-export const LibrarySitesRead = Schema.Struct({ siteId: Schema.optionalKey(SiteId) });
+export const LibrarySitesRead = Schema.Union([
+  Schema.Struct({ checkRunRequestId: requestId }),
+  Schema.Struct({ siteId: Schema.optionalKey(SiteId) }),
+]);
 export const SitesState = Schema.Struct({
   configured: Schema.Boolean,
   snapshot: Schema.NullOr(SitesSnapshot),
@@ -256,6 +275,7 @@ export const SITES_WS_METHODS = {
   saveService: "loom.sites.saveService",
   saveCheck: "loom.sites.saveCheck",
   runChecks: "loom.sites.runChecks",
+  checkRunReceipt: "loom.sites.checkRunReceipt",
 } as const;
 const error = Schema.Union([SitesError, EnvironmentAuthorizationError]);
 export const SitesRpcGroup = RpcGroup.make(
@@ -273,6 +293,11 @@ export const SitesRpcGroup = RpcGroup.make(
   Rpc.make(SITES_WS_METHODS.runChecks, {
     payload: RunSiteChecksRequest,
     success: SitesSnapshot,
+    error,
+  }),
+  Rpc.make(SITES_WS_METHODS.checkRunReceipt, {
+    payload: SiteChecksRunReceiptRequest,
+    success: SiteChecksRunReceipt,
     error,
   }),
   Rpc.make(SITES_WS_METHODS.snapshot, { payload: Schema.Struct({}), success: SitesState, error }),

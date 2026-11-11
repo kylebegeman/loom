@@ -61,6 +61,7 @@ it.effect.each(cases)(
           saveService: (_, authorize) => write(authorize),
           saveCheck: (_, authorize) => write(authorize),
           runChecks: write,
+          checkRunReceipt: () => Effect.die("unused"),
         });
         const management = yield* LibraryManagement.pipe(
           Effect.provide(

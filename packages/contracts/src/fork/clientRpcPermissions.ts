@@ -145,6 +145,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,
   [S.runChecks]: AuthSettingsWriteScope,
+  [S.checkRunReceipt]: AuthSettingsWriteScope,
   [LIB.flushHistory]: AuthOrchestrationOperateScope,
   [LIB.setDeletedPreferences]: AuthSettingsWriteScope,
   [LIB.eraseConversation]: AuthSettingsWriteScope,

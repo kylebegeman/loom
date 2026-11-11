@@ -2,7 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   SitesError,
-  type SitesSnapshot,
+  SitesSnapshot,
+  type SiteChecksRunReceipt,
+  type SiteChecksRunReceiptRequest,
   type SaveSiteRequest,
   type SaveSiteServiceRequest,
   type SaveSiteCheckRequest,
@@ -39,6 +41,10 @@ export function createSitesAtoms<R, E>(
       tag: SITES_WS_METHODS.runChecks,
     }),
 
+    checkRunReceipt: createEnvironmentRpcCommand(runtime, {
+      label: "loom:sites:checkRunReceipt",
+      tag: SITES_WS_METHODS.checkRunReceipt,
+    }),
     snapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:sites:snapshot",
       tag: SITES_WS_METHODS.snapshot,
@@ -68,6 +74,7 @@ const PendingWrite = Schema.Struct({
 });
 const decodePending = Schema.decodeUnknownSync(Schema.fromJsonString(PendingWrite));
 const isSitesError = Schema.is(SitesError);
+const decodeSnapshot = Schema.decodeUnknownSync(SitesSnapshot);
 
 export function siteWritePrecondition(row?: { readonly etag?: string }) {
   return row ? (row.etag ? { expectedEtag: row.etag } : {}) : { expectedEtag: null };
@@ -110,6 +117,7 @@ export function createSitesWriteGuard(storage: {
       kind: WriteKind,
       input: T,
       send: (input: T & { readonly requestId: string }) => Promise<SitesSnapshot>,
+      lookup?: (input: SiteChecksRunReceiptRequest) => Promise<SiteChecksRunReceipt>,
     ): Promise<SitesSnapshot> {
       const id = "id" in input ? input.id : "all";
       const key = `loom.sites.write.v1:${encodeURIComponent(environmentId)}:${kind}:${id}`;
@@ -130,12 +138,45 @@ export function createSitesWriteGuard(storage: {
         if (previous) {
           const unknown = () =>
             new SitesError({ stage: "unknown-outcome", requestId: previous.requestId });
+          if (kind === "runChecks") {
+            if (!lookup || fingerprint !== previous.fingerprint) throw unknown();
+            let receipt: SiteChecksRunReceipt;
+            try {
+              receipt = await lookup({ requestId: previous.requestId });
+            } catch (cause) {
+              throw new SitesError({
+                stage: isSitesError(cause) ? cause.stage : "unknown-outcome",
+                requestId: previous.requestId,
+                cause,
+              });
+            }
+            if (receipt.state !== "completed") throw unknown();
+            if (receipt.status >= 300) {
+              if (receipt.status === 400 || receipt.status === 413) {
+                await storage.remove(key);
+                throw new SitesError({ stage: "validation", requestId: previous.requestId });
+              }
+              throw unknown();
+            }
+            let result: SitesSnapshot;
+            try {
+              result = decodeSnapshot(receipt.body);
+            } catch (cause) {
+              throw new SitesError({
+                stage: "unknown-outcome",
+                requestId: previous.requestId,
+                cause,
+              });
+            }
+            await storage.remove(key).catch(() => {});
+            latest.set(environmentId, result);
+            return result;
+          }
           if (
             !snapshot ||
             !Number.isFinite(Date.parse(snapshot.observedAt)) ||
             (previous.observedAt !== null &&
-              !(Date.parse(snapshot.observedAt) > Date.parse(previous.observedAt))) ||
-            kind === "runChecks"
+              !(Date.parse(snapshot.observedAt) > Date.parse(previous.observedAt)))
           )
             throw unknown();
           const rows =

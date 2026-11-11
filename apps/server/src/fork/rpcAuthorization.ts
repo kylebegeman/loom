@@ -219,6 +219,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,
   [S.runChecks]: AuthSettingsWriteScope,
+  [S.checkRunReceipt]: AuthSettingsWriteScope,
   [S.snapshot]: AuthOrchestrationReadScope,
   [S.analytics]: AuthOrchestrationReadScope,
   [LIB.subscribeRefreshes]: AuthOrchestrationReadScope,

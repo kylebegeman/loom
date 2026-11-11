@@ -7,6 +7,8 @@ import {
   SiteId,
   SitesError,
   SitesSnapshot,
+  SiteChecksRunReceipt,
+  SiteChecksRunReceiptRequest,
   SitesState,
   LibrarySitesRead,
   LIBRARY_SITES_READ_ROUTE,
@@ -57,6 +59,9 @@ export class SitesService extends Context.Service<
       authorize?: Effect.Effect<void, SitesError>,
       input?: RunSiteChecksRequest,
     ) => Effect.Effect<SitesSnapshot, SitesError>;
+    readonly checkRunReceipt: (
+      input: SiteChecksRunReceiptRequest,
+    ) => Effect.Effect<SiteChecksRunReceipt, SitesError>;
     readonly analytics: (input: {
       readonly siteId: string;
     }) => Effect.Effect<SiteAnalytics, SitesError>;
@@ -67,9 +72,20 @@ const decodeSaveSiteRequest = Schema.decodeUnknownEffect(SaveSiteRequest);
 const decodeSaveSiteServiceRequest = Schema.decodeUnknownEffect(SaveSiteServiceRequest);
 const decodeSaveSiteCheckRequest = Schema.decodeUnknownEffect(SaveSiteCheckRequest);
 const decodeRunSiteChecksRequest = Schema.decodeUnknownEffect(RunSiteChecksRequest);
+const decodeReceiptRequest = Schema.decodeEffect(SiteChecksRunReceiptRequest);
+const decodeReceipt = Schema.decodeUnknownEffect(SiteChecksRunReceipt);
+const decodeSnapshot = Schema.decodeUnknownEffect(SitesSnapshot);
 const Problem = Schema.Struct({
   error: Schema.optionalKey(Schema.Struct({ code: Schema.String })),
 });
+const decodeLibraryFailure = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    sitesError: Schema.Struct({
+      stage: SitesError.fields.stage,
+      requestId: SitesError.fields.requestId,
+    }),
+  }),
+);
 const decodeSiteId = Schema.decodeEffect(SiteId);
 const Token = Schema.Struct({
   access_token: Schema.String.check(Schema.isMinLength(1)),
@@ -189,6 +205,16 @@ const make = Effect.gen(function* () {
         Effect.timeout("30 seconds"),
         Effect.mapError((cause) => new SitesError({ stage: "library-connection", cause })),
       );
+    if (response.status === 503) {
+      const failure = yield* response.json.pipe(
+        Effect.flatMap(decodeLibraryFailure),
+        Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(32)),
+        Effect.timeout("15 seconds"),
+        Effect.orElseSucceed(() => null),
+      );
+      if (failure) return yield* new SitesError(failure.sitesError);
+      return yield* new SitesError({ stage: "read" });
+    }
     if (response.status === 401 || response.status === 403)
       return yield* new SitesError({ stage: "library-connection" });
     if (response.status === 404) return yield* new SitesError({ stage: "library-update" });
@@ -345,6 +371,55 @@ const make = Effect.gen(function* () {
         Effect.mapError((cause) => new SitesError({ stage: "validation", cause })),
       );
       return yield* write("/v1/integrations/sites/checks/run", undefined, input, authorize);
+    }),
+    checkRunReceipt: Effect.fn("SitesService.checkRunReceipt")(function* (raw) {
+      const input = yield* decodeReceiptRequest(raw).pipe(
+        Effect.mapError((cause) => new SitesError({ stage: "validation", cause })),
+      );
+      if (yield* isRemote)
+        return yield* readLibrary({ checkRunRequestId: input.requestId }, SiteChecksRunReceipt);
+      const credential = yield* token(true);
+      const response = yield* http
+        .execute(
+          HttpClientRequest.get(`${api}/v1/integrations/sites/checks/run/receipt`).pipe(
+            HttpClientRequest.bearerToken(credential),
+            HttpClientRequest.setHeader("idempotency-key", input.requestId),
+          ),
+        )
+        .pipe(
+          noRedirects,
+          Effect.timeout("15 seconds"),
+          Effect.mapError(
+            (cause) => new SitesError({ stage: "read", requestId: input.requestId, cause }),
+          ),
+        );
+      if (response.status === 401 || response.status === 403) {
+        cached.delete(true);
+        return yield* new SitesError({
+          stage: response.status === 401 ? "authentication" : "permission",
+          requestId: input.requestId,
+        });
+      }
+      if (response.status === 404) return { state: "unavailable" as const };
+      if (response.status === 422)
+        return yield* new SitesError({ stage: "request-conflict", requestId: input.requestId });
+      const receipt = yield* HttpClientResponse.filterStatusOk(response).pipe(
+        Effect.flatMap((response) => response.json),
+        Effect.flatMap(decodeReceipt),
+        Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(2)),
+        Effect.timeout("15 seconds"),
+        Effect.mapError(
+          (cause) => new SitesError({ stage: "read", requestId: input.requestId, cause }),
+        ),
+      );
+      if (receipt.state === "completed" && receipt.status < 300) {
+        yield* decodeSnapshot(receipt.body).pipe(
+          Effect.mapError(
+            (cause) => new SitesError({ stage: "read", requestId: input.requestId, cause }),
+          ),
+        );
+      }
+      return receipt;
     }),
     snapshot: Effect.gen(function* () {
       if (yield* isRemote) {

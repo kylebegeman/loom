@@ -7,9 +7,11 @@ import {
   AuthLibraryRecoveryReadScope,
   AuthOrchestrationOperateScope,
   AuthSessionId,
+  AuthSettingsWriteScope,
 } from "@t3tools/contracts";
 import {
   LibraryIngestHistoryRequest,
+  SitesError,
   type LibraryBriefProposalSource,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
@@ -33,6 +35,7 @@ const encodeIngest = Schema.encodeEffect(
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const fixture = Effect.gen(function* () {
   const calls = yield* Ref.make(0);
+  const sitesFailure = yield* Ref.make<SitesError | null>(null);
   const proposed = yield* Ref.make<LibraryBriefProposalSource | null>(null);
   const session = yield* Ref.make<EnvironmentAuth.AuthenticatedSession>({
     sessionId: AuthSessionId.make("session"),
@@ -113,6 +116,13 @@ const fixture = Effect.gen(function* () {
         snapshot: Ref.update(calls, (count) => count + 1).pipe(
           Effect.as({ configured: true, managementConfigured: true, snapshot: null }),
         ),
+        checkRunReceipt: () =>
+          Effect.gen(function* () {
+            const failure = yield* Ref.get(sitesFailure);
+            if (failure) return yield* failure;
+            yield* Ref.update(calls, (count) => count + 1);
+            return { state: "pending" as const };
+          }),
         analytics: () =>
           Ref.update(calls, (count) => count + 1).pipe(
             Effect.as({
@@ -178,7 +188,7 @@ const fixture = Effect.gen(function* () {
         }),
       ),
     );
-  return { calls, proposed, session, input, request };
+  return { calls, proposed, session, input, request, sitesFailure };
 });
 const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
@@ -204,6 +214,38 @@ describe("Library host HTTP publishing boundaries", () => {
           (yield* f.request("conversations/list", yield* encodeJson({ limit: 201 }))).status,
         ).toBe(400);
         expect(yield* Ref.get(f.calls)).toBe(9);
+        const receipt = yield* f.request(
+          "sites/read",
+          yield* encodeJson({ checkRunRequestId: "original" }),
+        );
+        expect(receipt.status).toBe(200);
+        expect(yield* Effect.promise(() => receipt.json())).toEqual({ state: "pending" });
+        for (const scopes of [
+          [AuthOrchestrationOperateScope],
+          [AuthOrchestrationOperateScope, AuthSettingsWriteScope],
+        ]) {
+          yield* Ref.update(f.session, (session) => ({ ...session, subject: "operator", scopes }));
+          expect(
+            (yield* f.request("sites/read", yield* encodeJson({ checkRunRequestId: "original" })))
+              .status,
+          ).toBe(scopes.includes(AuthSettingsWriteScope) ? 200 : 403);
+        }
+        yield* Ref.set(
+          f.sitesFailure,
+          new SitesError({ stage: "permission", requestId: "original", cause: "private detail" }),
+        );
+        const failedReceipt = yield* f.request(
+          "sites/read",
+          yield* encodeJson({ checkRunRequestId: "original" }),
+        );
+        expect(failedReceipt.status).toBe(503);
+        expect(yield* Effect.promise(() => failedReceipt.json())).toEqual({
+          sitesError: { stage: "permission", requestId: "original" },
+        });
+        yield* Ref.update(f.session, (session) => ({
+          ...session,
+          scopes: [AuthLibraryPublishScope],
+        }));
         for (const subject of ["mcp-client", "other-client"]) {
           yield* Ref.update(f.session, (session) => ({ ...session, subject }));
           expect((yield* f.request("projects/list", "{}")).status).toBe(403);
@@ -215,7 +257,7 @@ describe("Library host HTTP publishing boundaries", () => {
           scopes: [AuthLibraryRecoveryReadScope],
         }));
         expect((yield* f.request("projects/list", "{}")).status).toBe(403);
-        expect(yield* Ref.get(f.calls)).toBe(9);
+        expect(yield* Ref.get(f.calls)).toBe(11);
       }),
     ),
   );

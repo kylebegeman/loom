@@ -2,6 +2,8 @@ import { AuthSessionId, OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   SaveSiteRequest,
   RunSiteChecksRequest,
+  SiteChecksRunReceiptRequest,
+  SiteChecksRunReceipt,
   type LibrarySitesMutation,
   LibraryError,
   SaveSiteServiceRequest,
@@ -50,13 +52,20 @@ export const SitesToolkit = Toolkit.make(
   }),
   Tool.make("loom_site_checks_run", {
     description:
-      "Run registered endpoint checks now and return fresh status. This performs network requests. Supply a unique requestId and keep it if the reply is lost. No receipt lookup is available: do not repeat an uncertain run automatically.",
+      "Run registered endpoint checks now and return fresh status. This performs network requests. Supply a unique requestId and keep it if the reply is lost. After a lost reply, read loom_site_checks_run_receipt with the original requestId. Never repeat an uncertain run automatically.",
     parameters: RunSiteChecksRequest,
     success: SitesSnapshot,
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],
   }),
 
+  Tool.make("loom_site_checks_run_receipt", {
+    description:
+      "Read the retained receipt of one check run by its original requestId. This never runs checks. Completed contains the original HTTP status and body. Pending, absent and unavailable do not prove the run never executed; keep it paused and do not retry automatically. Receipts are manager-scoped and expire, and older Sites services may not support lookup.",
+    parameters: SiteChecksRunReceiptRequest,
+    success: SiteChecksRunReceipt,
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_sites", {
     description:
       "Read sites, services and endpoint status through this computer's enrolled Library. Sites credentials stay on the Library. If an older work computer reports unconfigured, check its Loom version before changing the existing Library connections. Rows with etag support conditional saves. Missing etags mean stale-write protection is unavailable. After an uncertain save, read current settings first; a matching snapshot confirms state, not an operation receipt. Do not retry writes automatically, including after sign-in or permission repair. A retry needs an explicit decision and the original requestId; retain the original precondition. For revision conflicts, review the new settings and create a new intent. Idempotency replay depends on API configuration and retention, so a key alone does not make retries safe.",
@@ -113,6 +122,11 @@ export const sitesHandlers = McpToolAccess.toLayer(
       ),
       loom_site_checks_run: McpToolAccess.writesEnvironment((input, check) =>
         mutate({ action: "runChecks", input }, check),
+      ),
+      loom_site_checks_run_receipt: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(SitesService.SitesService, (service) => service.checkRunReceipt(input)),
+        ),
       ),
       loom_sites: McpToolAccess.reads(() =>
         onHost(Effect.flatMap(SitesService.SitesService, (service) => service.snapshot)),

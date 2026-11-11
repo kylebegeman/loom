@@ -331,6 +331,8 @@ export const makeForkRpcLayer = (
           [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
           [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),
           [S.runChecks]: (input) => auth.effect(S.runChecks, sites.runChecks(undefined, input)),
+          [S.checkRunReceipt]: (input) =>
+            auth.effect(S.checkRunReceipt, sites.checkRunReceipt(input)),
           [S.snapshot]: () => auth.effect(S.snapshot, sites.snapshot),
           [S.analytics]: (input) => auth.effect(S.analytics, sites.analytics(input)),
           [N.get]: () => auth.effect(N.get, naming.current),

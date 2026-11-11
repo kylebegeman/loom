@@ -157,3 +157,46 @@ it("requires a newer observation, then treats an explicitly reviewed revision as
   expect(send.mock.calls[0]?.[0]).toMatchObject({ requestId: "request-2", expectedEtag: '"new"' });
   expect(lost).toHaveBeenCalledTimes(1);
 });
+
+it("recovers a check run from its exact receipt without repeating the run", async () => {
+  const f = fixture();
+  const send = vi.fn(async () => {
+    throw new Error("reply lost");
+  });
+  await expect(f.guard.execute("library", "runChecks", {}, send)).rejects.toMatchObject({
+    requestId: "request-1",
+  });
+  const reopened = createSitesWriteGuard(f.options);
+  await expect(
+    reopened.execute("library", "runChecks", {}, send, async () => {
+      throw new SitesError({ stage: "authentication" });
+    }),
+  ).rejects.toMatchObject({ stage: "authentication", requestId: "request-1" });
+  expect(f.data.size).toBe(1);
+  const result = snapshot("2026-11-11T12:03:00Z");
+  const lookup = vi.fn(async () => ({ state: "completed" as const, status: 200, body: result }));
+  expect(await reopened.execute("library", "runChecks", {}, send, lookup)).toEqual(result);
+  expect(lookup).toHaveBeenCalledExactlyOnceWith({ requestId: "request-1" });
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(f.data.size).toBe(0);
+});
+it.each(["absent", "pending", "unavailable"] as const)(
+  "keeps a %s check receipt paused without replay",
+  async (state) => {
+    const f = fixture();
+    const send = vi.fn(async () => {
+      throw new Error("reply lost");
+    });
+    await expect(f.guard.execute("library", "runChecks", {}, send)).rejects.toMatchObject({
+      requestId: "request-1",
+    });
+    await expect(
+      f.guard.execute("library", "runChecks", {}, send, async () => ({ state })),
+    ).rejects.toMatchObject({
+      stage: "unknown-outcome",
+      requestId: "request-1",
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(f.data.size).toBe(1);
+  },
+);

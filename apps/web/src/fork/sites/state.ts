@@ -34,6 +34,7 @@ export function useSitesWrites() {
   const service = useAtomCommand(sites.saveService, { reportFailure: false });
   const check = useAtomCommand(sites.saveCheck, { reportFailure: false });
   const run = useAtomCommand(sites.runChecks, { reportFailure: false });
+  const receipt = useAtomCommand(sites.checkRunReceipt, { reportFailure: false });
   const send = async <
     T extends
       | SaveSiteRequest
@@ -49,11 +50,21 @@ export function useSitesWrites() {
     }) => Promise<AtomCommandResult<SitesSnapshot, unknown>>,
   ): Promise<AtomCommandResult<SitesSnapshot, unknown>> =>
     AsyncResult.success(
-      await writes.execute(args.environmentId, kind, args.input, async (input) => {
-        const result = await execute({ ...args, input });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        return result.value;
-      }),
+      await writes.execute(
+        args.environmentId,
+        kind,
+        args.input,
+        async (input) => {
+          const result = await execute({ ...args, input });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          return result.value;
+        },
+        async (input) => {
+          const result = await receipt({ environmentId: args.environmentId, input });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          return result.value;
+        },
+      ),
     );
   return {
     saveSite: (args: Parameters<typeof site>[0]) => send("site", args, site),

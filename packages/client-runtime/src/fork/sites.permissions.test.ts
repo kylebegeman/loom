@@ -39,7 +39,7 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect.each(["saveSite", "saveService", "saveCheck", "runChecks"] as const)(
+it.effect.each(["saveSite", "saveService", "saveCheck", "runChecks", "checkRunReceipt"] as const)(
   "Sites %s requires its destination's settings:write grant and observes revocation",
   (method) =>
     Effect.scoped(

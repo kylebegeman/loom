@@ -9,6 +9,7 @@ const actions = {
   "save-service": "loom_site_service_save",
   "save-check": "loom_site_check_save",
   "run-checks": "loom_site_checks_run",
+  "check-run-receipt": "loom_site_checks_run_receipt",
 } as const;
 export const sitesCommand = Command.make("sites").pipe(
   Command.withDescription(

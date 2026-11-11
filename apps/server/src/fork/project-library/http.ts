@@ -178,11 +178,19 @@ const handler = (
         const input = yield* decodeSitesRead(body).pipe(
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
         );
+        if (
+          "checkRunRequestId" in input &&
+          !publisher &&
+          !session.scopes.includes(AuthSettingsWriteScope)
+        )
+          return HttpServerResponse.empty({ status: 403 });
         const sites = yield* SitesService.SitesService;
         const result = yield* Effect.gen(function* () {
+          if ("checkRunRequestId" in input)
+            return yield* sites.checkRunReceipt({ requestId: input.checkRunRequestId });
           if (input.siteId === undefined) return yield* sites.snapshot;
           return yield* sites.analytics({ siteId: input.siteId });
-        }).pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause })));
+        });
         return HttpServerResponse.jsonUnsafe(result, { headers: { "cache-control": "no-store" } });
       }
       if (operation === "manage") {
@@ -400,6 +408,18 @@ const handler = (
     }),
   ).pipe(
     Effect.catchTags({
+      SitesError: (error) =>
+        Effect.succeed(
+          HttpServerResponse.jsonUnsafe(
+            {
+              sitesError: {
+                stage: error.stage,
+                ...(error.requestId ? { requestId: error.requestId } : {}),
+              },
+            },
+            { status: 503, headers: { "cache-control": "no-store" } },
+          ),
+        ),
       LibraryError: (error) =>
         Effect.succeed(
           HttpServerResponse.jsonUnsafe(
