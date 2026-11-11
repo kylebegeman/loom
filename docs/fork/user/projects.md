@@ -76,6 +76,17 @@ commits and running work, then offers your most recent unfinished conversation. 
 entry shows when it was observed. Saved observations are not a live connection check.
 Use **Files** to refresh a connected computer and its remotes.
 
+## Understand project dependencies
+
+The project's **Ecosystem** shows the other projects it depends on and which projects
+use it. Declare dependencies by selecting existing projects from the same Library.
+Each project keeps its own repositories and releases; a dependency does not grant access
+or start work. Archived dependencies stay visible.
+
+Registered services come from Sites links for the project and its dependencies. Their
+endpoint and last observed health help identify the affected service. An old or unavailable
+observation cannot confirm that a service is working or that its sign-in is ready.
+
 ## Group a larger goal
 
 Open a project's **Workstreams** to group conversations, copies, repositories, branches,

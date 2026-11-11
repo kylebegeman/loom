@@ -6,6 +6,7 @@ import {
   LibraryBlueprint,
   LibraryError,
   PROJECT_WORKFLOWS_FEATURE,
+  PROJECT_ECOSYSTEM_FEATURE,
   type LibraryProject,
   type LibraryProjectColor,
   type LibraryResource,
@@ -16,6 +17,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
+import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
@@ -211,6 +213,18 @@ function LibraryProjectFormContent({
   const [profile, setProfile] = useState<LibraryProfileDraft>(() => ({
     ...(savedInput?.profile ?? initial?.profile),
   }));
+  const editsDependencies = useLoomFeature(authority.environmentId, PROJECT_ECOSYSTEM_FEATURE);
+  const [dependencies, setDependencies] = useState<readonly string[]>(
+    savedInput?.dependencies ?? initial?.dependencies ?? [],
+  );
+  const dependencyCatalog = useEnvironmentQuery(
+    editsDependencies && authority.environmentId && initial
+      ? library.projects({
+          environmentId: authority.environmentId,
+          input: { includeArchived: true },
+        })
+      : null,
+  );
   const supportsBlueprint = useLoomFeature(authority.environmentId, PROJECT_WORKFLOWS_FEATURE);
   const [blueprintText, setBlueprintText] = useState<string | null>(null);
   const [importedBlueprint, setImportedBlueprint] = useState(false);
@@ -406,6 +420,10 @@ function LibraryProjectFormContent({
               resources: parsed,
               ...((initial.color ?? null) !== color ? { color } : {}),
               ...(profileChange === undefined ? {} : { profile: profileChange }),
+              ...(editsDependencies &&
+              JSON.stringify(dependencies) !== JSON.stringify(initial.dependencies ?? [])
+                ? { dependencies }
+                : {}),
             },
           }
         : {
@@ -867,6 +885,37 @@ function LibraryProjectFormContent({
       </SettingsSection>
       {lead !== "repository" ? repositorySections : null}
       {lead !== "folder" ? folderSection : null}
+      {initial && editsDependencies ? (
+        <SettingsSection
+          title="Depends on"
+          footer="Declare other Library projects this one uses. Each project keeps its repositories and releases."
+        >
+          {(dependencyCatalog.data ?? [])
+            .filter((entry) => entry.id !== initial.id)
+            .map((entry) => (
+              <SettingsSwitchRow
+                key={entry.id}
+                label={entry.title}
+                subtitle={entry.archived ? "Archived project" : undefined}
+                value={dependencies.includes(entry.id)}
+                disabled={
+                  pending || awaitingResult || (entry.archived && !dependencies.includes(entry.id))
+                }
+                onValueChange={(selected) =>
+                  setDependencies((ids) =>
+                    selected ? [...ids, entry.id] : ids.filter((id) => id !== entry.id),
+                  )
+                }
+              />
+            ))}
+          {!dependencyCatalog.data ? (
+            <LibraryNotice
+              detail={dependencyCatalog.error ?? "Loading projects..."}
+              onRetry={dependencyCatalog.refresh}
+            />
+          ) : null}
+        </SettingsSection>
+      ) : null}
       {editsProfile ? (
         <View className="gap-2">
           <Button

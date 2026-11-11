@@ -1,0 +1,245 @@
+import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  PROJECT_ECOSYSTEM_FEATURE,
+  SITES_FEATURE,
+  type LibraryProject,
+} from "@t3tools/contracts/fork";
+import {
+  projectRelationships,
+  projectServices,
+} from "@t3tools/client-runtime/fork/project-ecosystem";
+import { SITE_HEALTH_STATES, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { NetworkIcon } from "lucide-react";
+import { Button } from "~/components/ui/button";
+import { Checkbox } from "~/components/ui/checkbox";
+import { useEnvironments } from "~/state/environments";
+import { useEnvironmentQuery } from "~/state/query";
+import { sites } from "../sites/state";
+import { useSiteCheckClock } from "../sites/use-site-check-clock";
+import {
+  LibraryDialog,
+  LibraryErrorNotice,
+  LibraryPanel,
+  LibraryStateBadge,
+} from "./LibraryControls";
+import { useLibraryProjects } from "./state";
+import { useProjectUpdate } from "./useProjectUpdate";
+
+export function ProjectEcosystem({
+  project,
+  authorityId,
+  connected,
+  onChanged,
+}: {
+  readonly project: LibraryProject;
+  readonly authorityId: EnvironmentId;
+  readonly connected: boolean;
+  readonly onChanged: () => void;
+}) {
+  const catalog = useLibraryProjects(true);
+  const { environments } = useEnvironments();
+  const host = environments.find((entry) => entry.environmentId === authorityId);
+  const capabilities = host?.serverConfig?.environment.capabilities;
+  const supported = supportsLoomFeature(capabilities, PROJECT_ECOSYSTEM_FEATURE);
+  const sitesSupported = supportsLoomFeature(capabilities, SITES_FEATURE);
+  const inventory = useEnvironmentQuery(
+    supportsLoomFeature(capabilities, SITES_FEATURE)
+      ? sites.snapshot({ environmentId: authorityId, input: {} })
+      : null,
+  );
+  const snapshot = inventory.data?.snapshot;
+  const now = useSiteCheckClock(snapshot);
+  const relationships = projectRelationships(project, catalog.query.data ?? []);
+  const services = snapshot
+    ? projectServices([project.id, ...(project.dependencies ?? [])], snapshot, now)
+    : [];
+  const update = useProjectUpdate({ project, authorityId, connected, onSaved: onChanged });
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<readonly string[]>([]);
+  const open = () => {
+    if (!update.needsRecovery) setDraft(project.dependencies ?? []);
+    update.clearError();
+    setEditing(true);
+  };
+  return (
+    <LibraryPanel
+      title="Ecosystem"
+      icon={NetworkIcon}
+      action={
+        <Button size="xs" variant="ghost" disabled={!supported || !update.canEdit} onClick={open}>
+          Edit dependencies
+        </Button>
+      }
+    >
+      <div className="space-y-4 px-3.5 pb-4">
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Depends on</h3>
+          {relationships.dependencies.length ? (
+            <ul className="space-y-1.5">
+              {relationships.dependencies.map(({ id, project: dependency }) => (
+                <li key={id} className="flex items-center gap-2 text-sm">
+                  {dependency ? (
+                    <Link
+                      to="/library/$projectId"
+                      params={{ projectId: id }}
+                      className="underline decoration-border underline-offset-4"
+                    >
+                      {dependency.title}
+                    </Link>
+                  ) : (
+                    <span>Project unavailable</span>
+                  )}
+                  {dependency?.archived ? (
+                    <LibraryStateBadge tone="neutral">Archived</LibraryStateBadge>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No project dependencies declared.</p>
+          )}
+        </div>
+        {relationships.dependents.length ? (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Used by</h3>
+            <ul className="flex flex-wrap gap-x-4 gap-y-2">
+              {relationships.dependents.map((entry) => (
+                <li key={entry.id}>
+                  <Link
+                    className="text-sm underline decoration-border underline-offset-4"
+                    to="/library/$projectId"
+                    params={{ projectId: entry.id }}
+                  >
+                    {entry.title}
+                    {entry.archived ? " (archived)" : ""}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Registered services</h3>
+          <p className="text-xs text-muted-foreground">
+            Linked in Sites to this project and its dependencies. Observations do not grant access
+            or prove sign-in works.
+          </p>
+          {services.length ? (
+            <ul className="space-y-3">
+              {services.map(({ service, linkedProjectIds, health }) => (
+                <li key={service.id} className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 space-y-0.5">
+                    <a
+                      className="text-sm underline decoration-border underline-offset-4"
+                      href={service.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {service.name}
+                    </a>
+                    <p className="break-all text-xs text-muted-foreground">{service.url}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {linkedProjectIds
+                        .map(
+                          (id) =>
+                            catalog.query.data?.find((entry) => entry.id === id)?.title ??
+                            "Project unavailable",
+                        )
+                        .join(", ")}
+                    </p>
+                  </div>
+                  <LibraryStateBadge tone={SITE_HEALTH_STATES[health.state].tone}>
+                    {SITE_HEALTH_STATES[health.state].label}
+                  </LibraryStateBadge>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {!sitesSupported
+                ? "Update the Library to read service inventory."
+                : inventory.error
+                  ? "Service inventory could not be read."
+                  : inventory.data?.configured === false
+                    ? "Sites is not configured on this Library."
+                    : inventory.isPending
+                      ? "Reading service inventory..."
+                      : "No services registered for these projects."}
+            </p>
+          )}
+          {snapshot ? (
+            <p className="text-xs text-muted-foreground">
+              {connected ? "Observed" : "Saved observation"}: {snapshot.observedAt}
+            </p>
+          ) : null}
+          <Button size="xs" variant="ghost" render={<Link to="/sites" />}>
+            Open Sites
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Library: {host?.label ?? "selected computer"}
+          {host?.serverConfig
+            ? `, Loom ${host.serverConfig.environment.serverVersion}`
+            : ", version not checked"}
+          .{!supported ? " Update the Library to edit project dependencies." : ""}
+        </p>
+      </div>
+      <LibraryDialog
+        open={editing}
+        onOpenChange={(open) => {
+          if (!update.busy) setEditing(open);
+        }}
+        title="Project dependencies"
+        description="Declare the other projects this one uses. Repositories and releases stay with their owning projects."
+        actions={
+          <>
+            <Button variant="ghost" disabled={update.busy} onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={update.busy || !update.canEdit}
+              onClick={async () => {
+                if (await update.save({ dependencies: draft })) setEditing(false);
+              }}
+            >
+              {update.busy
+                ? "Checking..."
+                : update.needsRecovery
+                  ? "Check result"
+                  : "Save dependencies"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {(catalog.query.data ?? [])
+            .filter((entry) => entry.id !== project.id)
+            .map((entry) => (
+              <label key={entry.id} className="flex items-start gap-3 text-sm">
+                <Checkbox
+                  checked={draft.includes(entry.id)}
+                  disabled={
+                    update.busy ||
+                    update.needsRecovery ||
+                    (entry.archived && !draft.includes(entry.id))
+                  }
+                  onCheckedChange={(checked) =>
+                    setDraft((ids) =>
+                      checked ? [...ids, entry.id] : ids.filter((id) => id !== entry.id),
+                    )
+                  }
+                />
+                <span>
+                  {entry.title}
+                  {entry.archived ? " (archived)" : ""}
+                </span>
+              </label>
+            ))}
+        </div>
+        <LibraryErrorNotice error={update.error} />
+      </LibraryDialog>
+    </LibraryPanel>
+  );
+}

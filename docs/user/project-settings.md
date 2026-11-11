@@ -60,15 +60,15 @@ sets a sign-in limit; otherwise, sign in again when it expires. Existing pairing
 Connect remain available. Changing your Library selection does not move records from the
 previous Library.
 
-On web and desktop, **New project** creates a repository and opens a new thread on the selected
-computer. **Add project** opens an existing folder or clones a Git URL there. Creating and
-opening this work does not require a Library connection. The Projects page lists these folders
-under **On your computers**, with **New thread** available directly.
+On web, desktop and mobile, **New project** can start empty, use an existing folder,
+or use a Git repository. Git creation saves the project and continues to a reviewed
+computer and destination for its working copy. Once the files are ready, open the project
+or start a conversation separately. If preparation stops, the project remains saved.
 
 Use **Add to Library** to connect an existing folder to a shared project. Loom can suggest an
-existing shared project when the repository origins and layout match, and leaves your files in
-place. Shared projects can also hold repositories, reference links, a brief, and a blueprint.
-On mobile, project creation uses the shared Library and prepares repository files when work starts.
+existing shared project when repository origins and layout match, and leaves your files in
+place. Shared projects can hold repositories, reference links, a brief, and a blueprint.
+See [Projects and starting work](../fork/user/projects.md) for recovery and preparation.
 
 A folder that already belongs to a current shared project is added to that project instead of a
 new one. A folder held by an archived project moves to the new project, and the archived

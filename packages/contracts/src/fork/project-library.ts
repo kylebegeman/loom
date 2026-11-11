@@ -22,6 +22,7 @@ import { LibraryCopyHealth } from "./project-library-health-schema.ts";
 import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-library-profile.ts";
 
 export const PROJECT_LIBRARY_FEATURE = "project-library";
+export const PROJECT_ECOSYSTEM_FEATURE = "project-ecosystem";
 export const LIBRARY_MANAGEMENT_FEATURE = "library-project-management";
 export const LIBRARY_FILE_LIFECYCLE_FEATURE = "library-file-lifecycle";
 export const LIBRARY_PORTABLE_RECOVERY_FEATURE = "library-portable-recovery";
@@ -58,6 +59,7 @@ export const isDefaultThreadTitle = (title: string) => DEFAULT_THREAD_TITLES.has
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
 export const LibraryTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
 export const LibraryRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
+const projectDependencies = Schema.Array(LibraryId).check(Schema.isMaxLength(32));
 export function isLibraryBranchName(branch: string): boolean {
   return (
     branch.length > 0 &&
@@ -105,6 +107,7 @@ export const LibraryProject = Schema.Struct({
   resources: Schema.Array(LibraryResource).check(Schema.isMaxLength(64)),
   /** Absent until someone picks one; clients then show a stable automatic color. */
   color: Schema.optional(LibraryProjectColor),
+  dependencies: Schema.optional(projectDependencies),
   /** Setup, defaults and requirements. Absent until someone saves one; older hosts drop it. */
   profile: Schema.optional(LibraryProjectProfile),
   archived: Schema.Boolean,
@@ -386,6 +389,7 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
 export const LibraryCreateProjectRequest = Schema.Struct({
   requestId: LibraryRequestId,
   title: LibraryTitle,
+  dependencies: Schema.optional(projectDependencies),
   brief: Schema.optional(Schema.String.check(Schema.isMaxLength(65536))),
   resources: Schema.optional(Schema.Array(LibraryResource)),
   color: Schema.optional(LibraryProjectColor),
@@ -396,6 +400,7 @@ export const LibraryUpdateProjectRequest = Schema.Struct({
   requestId: LibraryRequestId,
   projectId: LibraryId,
   expectedRevision: PositiveInt,
+  dependencies: Schema.optional(projectDependencies),
   title: Schema.optional(LibraryTitle),
   brief: Schema.optional(Schema.String.check(Schema.isMaxLength(65536))),
   resources: Schema.optional(Schema.Array(LibraryResource)),

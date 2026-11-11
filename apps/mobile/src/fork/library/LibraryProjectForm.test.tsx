@@ -83,6 +83,27 @@ vi.mock("../../lib/uuid", () => {
 });
 vi.mock("./libraryProjectColors", () => ({ useLibraryProjectColorValue: () => () => "#000" }));
 vi.mock("./LibraryProfileSection", () => ({ LibraryProfileSection: () => null }));
+vi.mock("../../features/settings/components/SettingsSwitchRow", () => ({
+  SettingsSwitchRow: ({
+    label,
+    value,
+    disabled,
+    onValueChange,
+  }: {
+    label: string;
+    value: boolean;
+    disabled?: boolean;
+    onValueChange: (value: boolean) => void;
+  }) => (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={value}
+      disabled={disabled}
+      onChange={(event) => onValueChange(event.target.checked)}
+    />
+  ),
+}));
 vi.mock("./LibraryFolderPicker", () => ({ LibraryFolderPicker: () => null }));
 vi.mock("./LibraryBriefSuggestions", () => ({ LibraryBriefSuggestionsSetting: () => null }));
 vi.mock("./LibraryPage", () => ({

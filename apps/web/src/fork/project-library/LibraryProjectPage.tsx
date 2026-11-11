@@ -6,6 +6,7 @@ import { ProjectBlueprint } from "./ProjectBlueprint";
 import { ProjectAttention } from "./ProjectAttention";
 import { ProjectOperationHistory } from "./ProjectOperations";
 import { ProjectPreservationCenter } from "./ProjectPreservation";
+import { ProjectEcosystem } from "./ProjectEcosystem";
 import { SitesSummary } from "../sites/ProjectSites";
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState } from "react";
@@ -401,6 +402,12 @@ function ProjectView({
                 onShowAll={() => show("computers")}
               />
               <SitesSummary environmentId={authorityId} projectId={project.id} />
+              <ProjectEcosystem
+                project={project}
+                authorityId={authorityId}
+                connected={library.connected}
+                onChanged={library.refresh}
+              />
             </aside>
             {/* Below both columns, so the side cards never leave it a narrow strip. */}
             <TimelinePreview

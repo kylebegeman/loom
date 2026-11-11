@@ -856,6 +856,17 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "archive-unverified" });
     return archive;
   });
+  const validateDependencies = Effect.fn("LibraryService.validateDependencies")(function* (
+    ids: readonly string[],
+    projectId?: string,
+  ) {
+    if (new Set(ids).size !== ids.length || (projectId !== undefined && ids.includes(projectId)))
+      return yield* invalid("Choose each other project once as a dependency.");
+    for (const id of ids) {
+      if ((yield* store.project(id)) === null)
+        return yield* invalid("Choose dependencies from this Library's projects.");
+    }
+  });
   const createProject = (input: LibraryCreateProjectRequest) =>
     mutation(
       "create-project",
@@ -864,6 +875,7 @@ const make = Effect.gen(function* () {
       codecs.project,
       Effect.gen(function* () {
         const timestamp = yield* now;
+        if (input.dependencies) yield* validateDependencies(input.dependencies);
         const resources = input.resources ?? [];
         if (!validLibraryResources(resources)) return yield* invalid();
         if (
@@ -890,6 +902,7 @@ const make = Effect.gen(function* () {
           brief: input.brief ?? "",
           resources,
           ...(input.color ? { color: input.color } : {}),
+          ...(input.dependencies ? { dependencies: input.dependencies } : {}),
           ...(input.profile ? { profile: input.profile } : {}),
           archived: false,
           revision: 1,
@@ -904,6 +917,8 @@ const make = Effect.gen(function* () {
     const current = yield* getProject(input.projectId);
     if (current.revision !== input.expectedRevision)
       return yield* new LibraryError({ reason: "revision-conflict" });
+    if (input.dependencies !== undefined)
+      yield* validateDependencies(input.dependencies, current.id);
     if (input.resources !== undefined && input.resourceUpdates !== undefined)
       return yield* invalid();
     const updates = new Map(input.resourceUpdates?.map((update) => [update.id, update]));
@@ -956,6 +971,7 @@ const make = Effect.gen(function* () {
       ...rest,
       ...(color ? { color } : {}),
       ...(profile ? { profile } : {}),
+      ...(input.dependencies === undefined ? {} : { dependencies: input.dependencies }),
       title: input.title?.trim() ?? current.title,
       brief: input.brief ?? current.brief,
       resources,

@@ -1509,6 +1509,63 @@ describe("independent Library catalog and durable history", () => {
       ),
   );
   it.effect(
+    "keeps explicit project dependencies across legacy edits and validates their targets",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const dependency = yield* service.createProject({
+            requestId: "dependency",
+            title: "Identity",
+          });
+          const project = yield* service.createProject({
+            requestId: "consumer",
+            title: "App",
+            dependencies: [dependency.id],
+          });
+          expect(project.dependencies).toEqual([dependency.id]);
+          const kept = yield* service.updateProject({
+            requestId: "legacy-edit",
+            projectId: project.id,
+            expectedRevision: 1,
+            brief: "Updated brief",
+          });
+          expect(kept.dependencies).toEqual([dependency.id]);
+          for (const dependencies of [
+            [project.id],
+            ["unknown-project"],
+            [dependency.id, dependency.id],
+          ]) {
+            expect(
+              yield* service
+                .updateProject({
+                  requestId: `invalid-${dependencies.join("-")}`,
+                  projectId: project.id,
+                  expectedRevision: kept.revision,
+                  dependencies,
+                })
+                .pipe(Effect.flip),
+            ).toMatchObject({ reason: "invalid" });
+          }
+          expect((yield* service.project({ projectId: project.id })).revision).toBe(kept.revision);
+          const input = {
+            requestId: "clear-dependencies",
+            projectId: project.id,
+            expectedRevision: kept.revision,
+            dependencies: [],
+          };
+          const cleared = yield* service.updateProject(input);
+          expect(cleared.dependencies).toEqual([]);
+          expect(yield* service.updateProject(input)).toEqual(cleared);
+          expect(
+            yield* service
+              .updateProject({ ...input, requestId: "stale", dependencies: [dependency.id] })
+              .pipe(Effect.flip),
+          ).toMatchObject({ reason: "revision-conflict" });
+        }),
+      ),
+  );
+
+  it.effect(
     "saves a project profile as a new revision, keeps it when an edit omits it, and removes it on null",
     () =>
       run((service) =>

@@ -1,3 +1,4 @@
+import { LibraryProjectEcosystem } from "./LibraryProjectEcosystem";
 import { useNewTaskLibraryProjects, useLibraryProjectStarts } from "./NewTaskLibraryProjects";
 import {
   useLibraryStartProjects,
@@ -548,6 +549,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           </View>
         ) : null}
       </SettingsSection>
+      {target ? (
+        <LibraryProjectEcosystem project={p} authorityId={target} connected={authority.connected} />
+      ) : null}
       <LibraryHistorySearchEntry projectId={p.id} />
       <View className="gap-3">
         <Text textRole="body" className="font-t3-semibold text-foreground">

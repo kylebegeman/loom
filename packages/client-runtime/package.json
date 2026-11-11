@@ -546,6 +546,10 @@
     "./provider-instance-ids": {
       "types": "./src/providerInstanceIds.ts",
       "default": "./src/providerInstanceIds.ts"
+    },
+    "./fork/project-ecosystem": {
+      "types": "./src/fork/project-ecosystem.ts",
+      "default": "./src/fork/project-ecosystem.ts"
     }
   },
   "scripts": {

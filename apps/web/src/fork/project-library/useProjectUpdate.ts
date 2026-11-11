@@ -15,7 +15,9 @@ import { projectLibrary, useLibraryPermission } from "./state";
 
 const isProject = Schema.is(LibraryProject);
 
-type ProjectChange = Partial<Pick<LibraryProject, "title" | "brief" | "resources">> & {
+type ProjectChange = Partial<
+  Pick<LibraryProject, "title" | "brief" | "resources" | "dependencies">
+> & {
   /** Null returns the project to its automatic color. */
   readonly color?: LibraryProjectColor | null;
   /** Null removes the profile. */
