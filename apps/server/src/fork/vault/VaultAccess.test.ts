@@ -28,6 +28,8 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Clock from "effect/Clock";
+import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import * as Layer from "effect/Layer";
@@ -2424,6 +2426,22 @@ it.effect(
           value: Redacted.make(
             yield* AccessPolicy.encodePolicy({
               ...legacy,
+              ownerReceipts: [
+                {
+                  ...legacy.ownerReceipts![0]!,
+                  fingerprint: Hex.encode(
+                    yield* (yield* Digest.Digest).digest(
+                      Digest.sha256,
+                      new TextEncoder().encode(
+                        JSON.stringify({
+                          input: ownerChange(0, "owner-trusted"),
+                          actor: actorFor(environment),
+                        }),
+                      ),
+                    ),
+                  ),
+                },
+              ],
               ownerPolicy: {
                 ...legacy.ownerPolicy!,
                 ownerSubject: actorFor(environment),
@@ -2524,7 +2542,7 @@ it.effect(
             )
             .pipe(Effect.flip)).reason,
         ).toBe("denied");
-      }),
+      }).pipe(Effect.provide(NodeCrypto.layer)),
     ).pipe(Effect.provideService(HostProcess.Environment, environment));
   },
 );

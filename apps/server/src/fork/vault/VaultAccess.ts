@@ -342,6 +342,17 @@ const make = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
     );
+  // Internal fingerprints share the enclosing policy operation's span.
+  const ownerFingerprint = Effect.fnUntraced(function* (
+    input: VaultOwnerPolicyChange,
+    actor: string,
+  ) {
+    return yield* hash(
+      yield* encodeOwnerPolicyChange({ input, actor }).pipe(
+        Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+      ),
+    );
+  });
   const path = `environments/${yield* hash(environmentId)}/access-policy`;
   const eventId = secureRandom.uuidV4().pipe(
     Effect.map((value) => value.replaceAll("-", "")),
@@ -367,9 +378,24 @@ const make = Effect.gen(function* () {
       if (owner) {
         const ownerSubject = identityOwnershipSubject(owner.ownerSubject, environment);
         if (ownerSubject !== owner.ownerSubject) {
+          const ownerReceipts = yield* Effect.forEach(value.value.ownerReceipts ?? [], (receipt) =>
+            Effect.gen(function* () {
+              for (const mode of VaultOwnerPolicyChange.fields.mode.literals) {
+                const input = {
+                  operationId: receipt.id,
+                  expectedRevision: receipt.revision - 1,
+                  mode,
+                };
+                if (receipt.fingerprint === (yield* ownerFingerprint(input, owner.ownerSubject)))
+                  return { ...receipt, fingerprint: yield* ownerFingerprint(input, ownerSubject) };
+              }
+              return receipt;
+            }),
+          );
           const policy = {
             ...value.value,
             ownerPolicy: { ...owner, ownerSubject, updatedBy: ownerSubject },
+            ownerReceipts,
           };
           const encoded = yield* encodePolicy(policy).pipe(
             Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
@@ -1916,11 +1942,7 @@ const make = Effect.gen(function* () {
       )
         return yield* new VaultError({ reason: "denied" });
       const ownerSubject = identityOwnershipSubject(actor, environment);
-      const fingerprint = yield* hash(
-        yield* encodeOwnerPolicyChange({ input, actor: ownerSubject }).pipe(
-          Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
-        ),
-      );
+      const fingerprint = yield* ownerFingerprint(input, ownerSubject);
       for (let attempt = 0; attempt < 4; attempt++) {
         yield* authorize;
         const { policy, version } = yield* load();
@@ -1936,11 +1958,7 @@ const make = Effect.gen(function* () {
           return yield* new VaultError({ reason: "conflict" });
         const receipt = policy.ownerReceipts?.find((entry) => entry.id === input.operationId);
         if (receipt) {
-          const legacyFingerprint = yield* hash(
-            yield* encodeOwnerPolicyChange({ input, actor }).pipe(
-              Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
-            ),
-          );
+          const legacyFingerprint = yield* ownerFingerprint(input, actor);
           if (receipt.fingerprint !== fingerprint && receipt.fingerprint !== legacyFingerprint)
             return yield* new VaultError({ reason: "conflict" });
           yield* authorize;
