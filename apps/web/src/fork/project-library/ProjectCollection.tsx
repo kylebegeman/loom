@@ -161,7 +161,7 @@ function ProjectCard({
             <p className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
               <HardDriveDownloadIcon aria-hidden className="size-3.5" />
               {repositories.length
-                ? "Not on a computer yet. Start a conversation to clone it."
+                ? "Not on a computer yet. Prepare its files to start work."
                 : "Not on a computer yet"}
             </p>
           )}
