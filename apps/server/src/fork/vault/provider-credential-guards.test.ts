@@ -172,7 +172,7 @@ describe("Vault provider credential guards", () => {
         yield* instance.textGeneration.generateTranscriptionPostProcessing({} as never);
         yield* instance.snapshot.refresh;
         yield* instance.snapshotForCwd!("/fixture");
-        yield* instance.consumeResetCredit!();
+        yield* instance.consumeResetCredit!(undefined);
         yield* instance.auth!.start("owner");
         const before = [...fixture.calls];
         fixture.refuse(reason);
@@ -204,7 +204,7 @@ describe("Vault provider credential guards", () => {
           instance.textGeneration.generateReviewGuide({} as never),
           instance.textGeneration.generateTranscriptionPostProcessing({} as never),
           instance.snapshotForCwd!("/fixture"),
-          instance.consumeResetCredit!(),
+          instance.consumeResetCredit!(undefined),
           instance.auth!.start("owner"),
           instance.auth!.complete("owner", { flowId: "flow", callbackUrl: "https://example.test" }),
           instance.auth!.respond!("owner", {} as never),
