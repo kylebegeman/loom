@@ -4,6 +4,7 @@ import {
   codexAdvertisesUltrafast,
   makeSwitchboardCodexArgs,
 } from "../../fork/switchboard/serviceTier.ts";
+import { switchboardRefusedModel } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
 import { trackProviderProcess } from "@t3tools/shared/AgentScope";
 import { pipe } from "effect/Function";
 import * as DocumentText from "../../provider/DocumentText.ts";
@@ -1712,7 +1713,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
   hooks: Pick<
     CodexAdapterV2Options,
-    "onUsageLimits" | "resolveRuntime" | "compatibility" | "readServiceTier"
+    "onUsageLimits" | "resolveRuntime" | "compatibility" | "readServiceTier" | "explainFailure" // fork: switchboard
   > = {},
 ) {
   const clientFactory = yield* CodexAppServerClientFactory;
@@ -1768,6 +1769,9 @@ export interface CodexAdapterV2Options {
     since: number,
     selection: ModelSelection,
   ) => Effect.Effect<ModelSelection | null>;
+  readonly explainFailure?: (
+    failure: OrchestrationV2ProviderFailure,
+  ) => Effect.Effect<OrchestrationV2ProviderFailure>; // fork: switchboard
   readonly resolveRuntime?: Effect.Effect<CodexEffectiveRuntime, ProviderSetupError, Scope.Scope>;
   readonly compatibility?: (
     version: string,
@@ -6180,18 +6184,42 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }
         });
 
-        const emitRootTerminal = Effect.fnUntraced(function* (
-          context: ActiveCodexTurnContext,
-          event: CodexRootTerminalEvent,
-        ) {
-          const awaitsReset =
+        const awaitsUsageLimitReset = Effect.fnUntraced(function* (event: CodexRootTerminalEvent) {
+          return (
             event.status === "failed" &&
             event.failure.class === "usage_limit" &&
             event.failure.resetAt == null &&
             // The account read only reports the ordinary allowance, never a sharing cap's reset.
             !classifyCodexManagedError(event.failure.code)?.usageLimit &&
-            codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot)) === null;
-          if (!awaitsReset) yield* publishRootTerminal(context, event);
+            codexUsageLimitResetAt(yield* Ref.get(rateLimitSnapshot)) === null
+          );
+        });
+
+        // fork: switchboard -- a hub refusal is explained from the controller's reading first.
+        const publishExplainedRootTerminal = Effect.fnUntraced(function* (
+          context: ActiveCodexTurnContext,
+          event: CodexRootTerminalEvent,
+          explainFailure: NonNullable<CodexAdapterV2Options["explainFailure"]>,
+        ) {
+          const explained =
+            event.status === "failed"
+              ? { ...event, failure: yield* explainFailure(event.failure) }
+              : event;
+          if (yield* awaitsUsageLimitReset(explained)) yield* readUsageLimitReset;
+          yield* turnTerminalizationPermit.withPermits(1)(publishRootTerminal(context, explained));
+        });
+
+        const emitRootTerminal = Effect.fnUntraced(function* (
+          context: ActiveCodexTurnContext,
+          event: CodexRootTerminalEvent,
+        ) {
+          const explainFailure =
+            event.status === "failed" && switchboardRefusedModel(event.failure.message) !== null
+              ? adapterOptions.explainFailure
+              : undefined; // fork: switchboard
+          const awaitsReset = yield* awaitsUsageLimitReset(event);
+          if (!awaitsReset && explainFailure === undefined)
+            yield* publishRootTerminal(context, event); // fork: switchboard
           const continued = continuedRuns.get(context.providerTurnId) ?? [context];
           if (event.status !== "completed") {
             yield* Ref.update(
@@ -6210,7 +6238,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             rootProviderThreads.set(nativeThreadId, { ...rootProviderThread, status: "idle" });
           }
           // Notification handlers block response routing, so the read and terminal get a fiber.
-          if (awaitsReset) {
+          if (explainFailure !== undefined) {
+            yield* publishExplainedRootTerminal(context, event, explainFailure).pipe(
+              Effect.forkIn(scope, { startImmediately: true }),
+            ); // fork: switchboard
+          } else if (awaitsReset) {
             yield* readUsageLimitReset.pipe(
               Effect.andThen(
                 turnTerminalizationPermit.withPermits(1)(publishRootTerminal(context, event)),

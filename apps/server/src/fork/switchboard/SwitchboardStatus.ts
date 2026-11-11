@@ -1,3 +1,4 @@
+import type { ServerSettings } from "@t3tools/contracts";
 import type { SwitchboardLimits } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
@@ -33,38 +34,48 @@ const UNCONFIGURED: SwitchboardLimits = { limits: [], availability: "unconfigure
 const DISABLED: SwitchboardLimits = { limits: [], availability: "disabled" };
 const decodeAvailability = Schema.decodeUnknownEffect(SwitchboardAvailability);
 
+/**
+ * Builds the availability read from any source of server settings, so provider drivers can read it
+ * without the fork runtime.
+ */
+export const makeSwitchboardLimitsReader = Effect.fn("SwitchboardStatus.makeLimitsReader")(
+  function* <E>(getSettings: Effect.Effect<ServerSettings, E>) {
+    const http = yield* HttpClient.HttpClient;
+    const hostEnvironment = yield* HostProcess.Environment;
+    const environment = {
+      LOOM_SWITCHBOARD_URL: hostEnvironment.LOOM_SWITCHBOARD_URL,
+      LOOM_SWITCHBOARD_CONTROLLER_URL: hostEnvironment.LOOM_SWITCHBOARD_CONTROLLER_URL,
+    };
+
+    // Switchboard caches account readings; Loom never probes subscriptions for this.
+    // Any failure reports availability as unknown and blocks nothing: the proxy
+    // still enforces each account's limits, and a turn reports the real error.
+    return Effect.gen(function* () {
+      const current = yield* getSettings;
+      if (!current.switchboardEnabled) return DISABLED;
+      // A remote hub with no controller setting, or an invalid one, is a setup gap
+      // the picker can name, not an outage.
+      const controller = yield* Effect.try({
+        try: () => resolveSwitchboardController(environment),
+        catch: (cause) => new SwitchboardStatusOperationError({ cause }),
+      }).pipe(Effect.orElseSucceed(() => null));
+      if (controller === null) return UNCONFIGURED;
+      const response = yield* http.get(`${controller}/api/v1/availability`);
+      if (response.status !== 200) return UNAVAILABLE;
+      const snapshot = yield* response.json.pipe(Effect.flatMap(decodeAvailability));
+      return switchboardLimits(snapshot, yield* Clock.currentTimeMillis);
+    }).pipe(
+      Effect.timeout("2 seconds"),
+      Effect.orElseSucceed(() => UNAVAILABLE),
+    );
+  },
+);
+
 const make = Effect.gen(function* () {
-  const http = yield* HttpClient.HttpClient;
   const settings = yield* ServerSettingsService;
-  const hostEnvironment = yield* HostProcess.Environment;
-  const environment = {
-    LOOM_SWITCHBOARD_URL: hostEnvironment.LOOM_SWITCHBOARD_URL,
-    LOOM_SWITCHBOARD_CONTROLLER_URL: hostEnvironment.LOOM_SWITCHBOARD_CONTROLLER_URL,
-  };
-
-  // Switchboard caches account readings; Loom never probes subscriptions for this.
-  // Any failure reports availability as unknown and blocks nothing: the proxy
-  // still enforces each account's limits, and a turn reports the real error.
-  const readLimits = Effect.gen(function* () {
-    const current = yield* settings.getSettings;
-    if (!current.switchboardEnabled) return DISABLED;
-    // A remote hub with no controller setting, or an invalid one, is a setup gap
-    // the picker can name, not an outage.
-    const controller = yield* Effect.try({
-      try: () => resolveSwitchboardController(environment),
-      catch: (cause) => new SwitchboardStatusOperationError({ cause }),
-    }).pipe(Effect.orElseSucceed(() => null));
-    if (controller === null) return UNCONFIGURED;
-    const response = yield* http.get(`${controller}/api/v1/availability`);
-    if (response.status !== 200) return UNAVAILABLE;
-    const snapshot = yield* response.json.pipe(Effect.flatMap(decodeAvailability));
-    return switchboardLimits(snapshot, yield* Clock.currentTimeMillis);
-  }).pipe(
-    Effect.timeout("2 seconds"),
-    Effect.orElseSucceed(() => UNAVAILABLE),
-  );
-
-  return SwitchboardStatus.of({ readLimits });
+  return SwitchboardStatus.of({
+    readLimits: yield* makeSwitchboardLimitsReader(settings.getSettings),
+  });
 });
 
 export const layer = Layer.effect(SwitchboardStatus, make);

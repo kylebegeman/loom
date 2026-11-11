@@ -2,6 +2,7 @@ import {
   makeSwitchboardTierReader,
   withSwitchboardServiceTiers,
 } from "../../fork/switchboard/serviceTier.ts";
+import { makeSwitchboardLimitFailures } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
 import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -222,6 +223,7 @@ export const CodexDriver: ProviderDriver<
       {
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         readServiceTier,
+        explainFailure: yield* makeSwitchboardLimitFailures("codex"), // fork: switchboard
         compatibility: installation.compatibility,
       },
     ).pipe(

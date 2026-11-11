@@ -180,6 +180,7 @@ import {
   type CompiledClaudeModelSelection,
 } from "../../claudeModelOptions.ts";
 import { switchboardClaudeQueryOptions } from "../../fork/switchboard/switchboard.ts"; // fork: switchboard
+import { switchboardRefusedModel } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
 import * as ServerConfig from "../../config.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -4949,6 +4950,9 @@ export interface ClaudeAdapterV2Options {
   readonly queryRunner: ClaudeAgentSdkQueryRunnerShape;
   readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
   readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
+  readonly explainFailure?: (
+    failure: OrchestrationV2ProviderFailure,
+  ) => Effect.Effect<OrchestrationV2ProviderFailure>; // fork: switchboard
   readonly continuationRequests?: {
     readonly offer: (
       request: ProviderContinuationRequests.ProviderContinuationRequest,
@@ -10256,6 +10260,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       null,
                   }
                 : resultFailure;
+            const explainedFailure =
+              terminalFailure !== null &&
+              adapterOptions.explainFailure !== undefined &&
+              switchboardRefusedModel(terminalFailure.message) !== null
+                ? yield* adapterOptions.explainFailure(terminalFailure)
+                : terminalFailure; // fork: switchboard
             yield* finalizeActiveTurn({
               context,
               status: interrupted
@@ -10265,7 +10275,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   : terminalStatusFromResult(message, failureHint),
               completedAt,
               result: message,
-              ...(terminalFailure === null ? {} : { failure: terminalFailure }),
+              ...(explainedFailure === null ? {} : { failure: explainedFailure }), // fork: switchboard
             });
           }
         });
@@ -12592,7 +12602,10 @@ export type ClaudeAdapterV2DriverEnv =
 export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
   function* (
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
-    hooks: Pick<ClaudeAdapterV2Options, "scopedLimitNames" | "onUsageLimits" | "modelCatalog"> = {},
+    hooks: Pick<
+      ClaudeAdapterV2Options,
+      "scopedLimitNames" | "onUsageLimits" | "modelCatalog" | "explainFailure" // fork: switchboard
+    > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
     const fileSystem = yield* FileSystem.FileSystem;

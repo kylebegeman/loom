@@ -22,6 +22,7 @@ import {
   type ClaudeAdapterV2DriverEnv,
 } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { ProviderDriverError } from "../Errors.ts";
+import { makeSwitchboardLimitFailures } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
 import { claudeUsageReader } from "./claudeUsage.ts";
 import { makeClaudeScopedLimitNames } from "../claudeUsageLimits.ts";
 import * as ClaudeResetCredits from "../claudeResetCredits.ts";
@@ -162,6 +163,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         scopedLimitNames,
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         modelCatalog,
+        explainFailure: yield* makeSwitchboardLimitFailures("claudeAgent"), // fork: switchboard
       },
     ).pipe(
       Effect.mapError(
