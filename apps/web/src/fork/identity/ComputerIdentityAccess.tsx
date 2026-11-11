@@ -4,6 +4,7 @@ import type {
   EnvironmentConnectionPhase,
 } from "@t3tools/client-runtime/connection";
 import { DIRECTORY_PAIRING_REASON_TEXT, savedIdentitySignIn } from "@t3tools/client-runtime/fork";
+import type { LoomIdentityAccount } from "@t3tools/contracts/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
@@ -34,11 +35,13 @@ export function SavedIdentitySignIn({
   renewal = false,
   actionLabel,
   actionVariant,
+  expectedIdentity,
 }: {
   readonly entry: ConnectionCatalogEntry;
   readonly renewal?: boolean;
   readonly actionLabel?: string;
   readonly actionVariant?: "default" | "outline";
+  readonly expectedIdentity?: LoomIdentityAccount | undefined;
 }) {
   const saved = savedIdentitySignIn(entry, isElectron ? "native" : "browser");
   if (saved === null)
@@ -51,7 +54,7 @@ export function SavedIdentitySignIn({
     <LoomSignIn
       baseUrl={saved.httpBaseUrl}
       expectedEnvironmentId={entry.target.environmentId}
-      expectedIdentity={saved.expectedIdentity}
+      expectedIdentity={expectedIdentity ?? saved.expectedIdentity}
       description={false}
       showUnavailable
       renewal={renewal}

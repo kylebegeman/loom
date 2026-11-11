@@ -1,3 +1,4 @@
+import type { LibraryAccessRepair } from "@t3tools/contracts/fork";
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -76,6 +77,7 @@ export function LibraryFolderPalette({
   onClose,
   busy = false,
   error,
+  accessRepair,
   children,
   files = false,
   showHidden = false,
@@ -101,6 +103,7 @@ export function LibraryFolderPalette({
   readonly onClose: () => void;
   readonly busy?: boolean | undefined;
   readonly error?: string | null | undefined;
+  readonly accessRepair?: LibraryAccessRepair | undefined;
   readonly children?: ReactNode;
 }) {
   const [path, setPath] = useState(ensureBrowseDirectoryPath(initialPath.trim() || "~/"));
@@ -212,6 +215,8 @@ export function LibraryFolderPalette({
           ? `Loading ${files ? "files" : "folders"}...`
           : `${computerName}: ${currentPath ?? browsePath}`
       }
+      accessRepair={accessRepair}
+      accessContext={{ environmentId, computerLabel: computerName }}
       error={
         error ??
         access.error ??

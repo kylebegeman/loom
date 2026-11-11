@@ -56,7 +56,8 @@ export function VaultGitHubConnectionPicker({
       />
       {page?.items.length === 0 ? (
         <LoomSettingsNotice>
-          No GitHub connections on this page. Continue if more pages are available.
+          No GitHub connections are visible on this page. Policy may hide existing connections.
+          Check access or continue to more pages.
         </LoomSettingsNotice>
       ) : null}
       {page?.items.map((info) => (

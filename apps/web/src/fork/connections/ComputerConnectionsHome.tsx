@@ -1,3 +1,4 @@
+import { useOptionalSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
 import { ArrowLeftIcon, ArrowUpRightIcon, ChevronRightIcon, NetworkIcon } from "lucide-react";
@@ -58,14 +59,20 @@ export function ComputerConnectionsHome({
   readonly isReady: boolean;
 }) {
   const [layout, setLayout] = useLocalStorage(LAYOUT_KEY, "cards", ComputersLayout);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const repairComputer = useOptionalSettingsScope()?.search.machine;
+  const [seenRepairComputer, setSeenRepairComputer] = useState(repairComputer);
+  const [selectedId, setSelectedId] = useState<string | null>(repairComputer ?? null);
+  if (repairComputer !== seenRepairComputer) {
+    setSeenRepairComputer(repairComputer);
+    if (repairComputer) setSelectedId(repairComputer);
+  }
   const [returnFocusId, setReturnFocusId] = useState<string | null>(null);
   const searchTarget = useSettingsSearchTargetId();
   const [seenTarget, setSeenTarget] = useState<string | null>(null);
   const [routingOpen, setRoutingOpen] = useState(false);
   if (searchTarget !== seenTarget) {
     setSeenTarget(searchTarget);
-    if (searchTarget === "remote-environments") setSelectedId(null);
+    if (searchTarget === "remote-environments" && !repairComputer) setSelectedId(null);
     if (searchTarget === "local-environment" || searchTarget === "this-app") {
       setSelectedId(primaryEnvironment?.environmentId ?? null);
       if (!primaryEnvironment) setRoutingOpen(true);

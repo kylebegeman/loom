@@ -36,6 +36,7 @@ vi.mock("./state", () => ({
   }),
 }));
 vi.mock("./LibraryAccessNotice", () => ({
+  LibraryAccessRepairNotice: () => null,
   LibraryAccessNotice: ({ block }: { block: { message: string } | null }) => (
     <p role="status">{block?.message}</p>
   ),

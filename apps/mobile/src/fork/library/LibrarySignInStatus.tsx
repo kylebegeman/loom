@@ -9,7 +9,7 @@ import {
   loomIdentityAccountLabel,
 } from "@t3tools/client-runtime/fork";
 import { EnvironmentId } from "@t3tools/contracts";
-import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
+import type { LoomIdentityAccount, LoomIdentityMetadata } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -148,14 +148,33 @@ export function LibrarySignInSection() {
 }
 
 /** The repair for a Library denial that says to sign in again. */
-export function LibrarySignInAgainButton() {
+export function LibrarySignInAgainButton({
+  environmentId: requestedEnvironmentId,
+  expectedIdentity,
+  label = "Sign in to Loom",
+  kind,
+}: {
+  readonly environmentId?: EnvironmentId | null;
+  readonly expectedIdentity?: LoomIdentityAccount | undefined;
+  readonly label?: string;
+  readonly kind?: "library-sign-in" | "computer-sign-in";
+} = {}) {
   const navigation = useNavigation();
-  const environmentId = useLibraryAuthorityId();
+  const libraryId = useLibraryAuthorityId();
+  const environmentId = requestedEnvironmentId ?? libraryId;
+  const params = {
+    ...(environmentId ? { environmentId } : {}),
+    ...(expectedIdentity ? { expectedIdentity } : {}),
+  };
   return (
     <Button
-      label="Sign in again"
+      label={label}
       tone="secondary"
-      onPress={() => navigation.navigate("LibrarySignIn", environmentId ? { environmentId } : {})}
+      onPress={() =>
+        kind === "computer-sign-in" || (!kind && environmentId && environmentId !== libraryId)
+          ? navigation.navigate("IdentitySignIn", params)
+          : navigation.navigate("LibrarySignIn", params)
+      }
     />
   );
 }

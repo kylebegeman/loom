@@ -27,7 +27,10 @@ vi.mock("./state", () => ({
   useLibraryAuthority: () => ({ authorityId: state.authorityId, connected: state.connected }),
   useLibraryAccessBlock: () => state.access,
 }));
-vi.mock("./LibraryAccessNotice", () => ({ LibraryAccessNotice: () => null }));
+vi.mock("./LibraryAccessNotice", () => ({
+  LibraryAccessRepairNotice: () => null,
+  LibraryAccessNotice: () => null,
+}));
 vi.mock("~/state/query", () => ({
   useEnvironmentQuery: () => ({
     data: state.copies,

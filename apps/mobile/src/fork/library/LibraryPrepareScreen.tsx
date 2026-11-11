@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { getNewProjectPathPreview } from "@t3tools/client-runtime/operations/projects";
 import {
+  libraryAccessRepairFromFailure,
   libraryPlacementReuses,
   libraryPlacementStrategy,
   serverChoosesFolders,
@@ -91,6 +92,7 @@ function LibraryPrepareContent({
   const [browse, setBrowse] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [repair, setRepair] = useState<LibraryError["repair"]>(undefined);
   const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const busy = useRef(false);
   const execution = attempt?.environmentId ?? selected;
@@ -213,6 +215,8 @@ function LibraryPrepareContent({
     setPending(true);
     setError(null);
     setAccessRepair(undefined);
+    setRepair(undefined);
+    let requestEnvironmentId = execution;
     const prepareFiles = async () => {
       const submitted: SubmittedLibraryProjectRequest = attempt ?? {
         authorityId: authorityEnvironmentId,
@@ -253,21 +257,26 @@ function LibraryPrepareContent({
       if (complete.state === "succeeded" && !checking) {
         await registerSubmittedLibraryProjectCopy(complete, authorityEnvironmentId, {
           persist: requests.persist,
-          copies: async () =>
-            unwrap(
+          copies: async () => {
+            requestEnvironmentId = authorityEnvironmentId;
+            return unwrap(
               await readCopies({ environmentId: authorityEnvironmentId, input: { projectId } }),
-            ),
+            );
+          },
           register: async (input) => {
+            requestEnvironmentId = authorityEnvironmentId;
             unwrap(await register({ environmentId: authorityEnvironmentId, input }));
           },
         });
       } else if (complete.registration === "unknown") {
         await registerSubmittedLibraryProjectCopy(complete, authorityEnvironmentId, {
           persist: requests.persist,
-          copies: async () =>
-            unwrap(
+          copies: async () => {
+            requestEnvironmentId = authorityEnvironmentId;
+            return unwrap(
               await readCopies({ environmentId: authorityEnvironmentId, input: { projectId } }),
-            ),
+            );
+          },
           register: async () => {
             throw new Error("Check the saved file location before retrying.");
           },
@@ -276,7 +285,8 @@ function LibraryPrepareContent({
       refreshLibraryWork(authorityEnvironmentId, projectId);
     };
     await prepareFiles().catch((cause: unknown) => {
-      setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
+      setAccessRepair(libraryAccessRepairFromFailure(cause, requestEnvironmentId));
+      setRepair(isLibraryError(cause) ? cause.repair : undefined);
       setError(cause instanceof Error ? cause.message : "The files could not be prepared.");
     });
     busy.current = false;
@@ -292,10 +302,21 @@ function LibraryPrepareContent({
         }
       />
       {!accountMatches ? (
-        <LibraryNotice error="Sign in with the account that started this request before continuing." />
+        <LibraryNotice
+          error="Sign in with the account that started this request before continuing."
+          accessRepair={{ kind: "ownership" }}
+          accessContext={{
+            environmentId: execution,
+            authorityEnvironmentId,
+            originalAccount: attempt?.initiator,
+          }}
+        />
       ) : null}
       {!correctAuthority ? (
-        <LibraryNotice error="Reconnect the Library used to create this project before continuing." />
+        <LibraryNotice
+          error="Reconnect the Library used to create this project before continuing."
+          accessRepair={{ kind: "connection", environmentId: authorityEnvironmentId }}
+        />
       ) : null}
       {!requests.loaded ? <LibraryNotice detail="Loading the saved file request…" /> : null}
       {requests.attempt === false ? (
@@ -489,21 +510,46 @@ function LibraryPrepareContent({
         <LibraryNotice detail="Reopen this project before preparing its files." />
       ) : null}
       {!canRegister ? (
-        <LibraryNotice detail="Library access to save file locations is required to finish preparation." />
+        <LibraryNotice
+          detail="Library access to save file locations is required to finish preparation."
+          accessRepair={{ kind: "permission", environmentId: authorityEnvironmentId }}
+        />
       ) : null}
       {!authority.ready ? (
-        <LibraryNotice detail="Reconnect your Library, then explicitly continue this preparation." />
+        <LibraryNotice
+          detail="Reconnect your Library, then explicitly continue this preparation."
+          accessRepair={{ kind: "connection", environmentId: authorityEnvironmentId }}
+        />
       ) : null}
       {!copy &&
       execution &&
       (!connected || !supported || !canPrepare || !writable.has(execution)) ? (
-        <LibraryNotice detail="Connect the selected computer with permission to prepare project files and use Git." />
+        <LibraryNotice
+          detail="Connect the selected computer with permission to prepare project files and use Git."
+          accessRepair={{ kind: connected ? "permission" : "connection", environmentId: execution }}
+          accessContext={{ environmentId: execution, computerLabel: computer?.label }}
+        />
       ) : null}
       {placement.error ? (
         <LibraryNotice error={placement.error} onRetry={placement.refresh} />
       ) : null}
       {project.error ? <LibraryNotice error={project.error} onRetry={project.refresh} /> : null}
-      {error ? <LibraryNotice accessRepair={accessRepair} error={error} /> : null}
+      {error ? (
+        <LibraryNotice
+          accessRepair={accessRepair}
+          accessContext={{
+            environmentId: execution,
+            authorityEnvironmentId,
+            computerLabel: computer?.label,
+            originalAccount:
+              accessRepair?.environmentId === authorityEnvironmentId
+                ? undefined
+                : attempt?.initiator,
+          }}
+          repair={repair}
+          error={error}
+        />
+      ) : null}
       {finished ? (
         <>
           <Button

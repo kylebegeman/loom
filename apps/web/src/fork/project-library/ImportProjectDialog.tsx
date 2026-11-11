@@ -16,6 +16,7 @@ import {
   LibraryCreateProjectRequest,
   type LibraryFolderInspection,
 } from "@t3tools/contracts/fork";
+import { libraryAccessRepairFromFailure } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 
@@ -201,6 +202,7 @@ export function ImportProjectDialog({
     return exact.length ? exact : folderProjectMatches(library.query.data ?? [], inspection);
   };
   const [error, setError] = useState<string | null>(null);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
   const prepare = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
@@ -344,6 +346,8 @@ export function ImportProjectDialog({
     setBusy(true);
     setError(null);
     let submitted = saved;
+    let requestEnvironmentId = authorityId;
+    setAccessRepair(undefined);
     const importFolder = async () => {
       let next = saved ?? {
         environmentId: hostId,
@@ -392,6 +396,7 @@ export function ImportProjectDialog({
         submitted = next;
       }
       if (!next.copy || next.copy.state !== "ready") {
+        requestEnvironmentId = next.environmentId;
         const result = await prepare({
           environmentId: next.environmentId,
           input: {
@@ -405,6 +410,7 @@ export function ImportProjectDialog({
         next = { ...next, copy: result.value };
         saveAttempt(next);
       }
+      requestEnvironmentId = authorityId;
       const result = await register({
         environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
@@ -416,6 +422,7 @@ export function ImportProjectDialog({
     try {
       await importFolder();
     } catch (cause) {
+      setAccessRepair(libraryAccessRepairFromFailure(cause, requestEnvironmentId));
       const handleFailure = async () => {
         if (submitted?.project) {
           const receipt = await recover({
@@ -426,6 +433,7 @@ export function ImportProjectDialog({
             if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
             else if (
               isLibraryError(cause) &&
+              !cause.accessRepair &&
               ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
             ) {
               // The project already exists, so a retry adds the folder to it. An import saved by
@@ -780,6 +788,7 @@ export function ImportProjectDialog({
         onClose={close}
         busy={busy}
         error={error}
+        accessRepair={accessRepair}
         actions={folderActions}
         onFolderChange={(folder) => void lookUpFolder(folder)}
       >
@@ -817,6 +826,12 @@ export function ImportProjectDialog({
         busy={busy}
         filter={page !== "name"}
         error={error ?? library.query.error}
+        accessRepair={accessRepair}
+        accessContext={{
+          environmentId: hostId,
+          authorityEnvironmentId: library.authorityId,
+          computerLabel: host?.label,
+        }}
         message={
           progress ??
           (saved

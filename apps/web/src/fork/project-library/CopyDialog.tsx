@@ -1,5 +1,5 @@
 import { VaultGitHubConnectionPicker } from "../vault/GitHubConnectionPicker";
-import { LibraryAccessNotice } from "./LibraryAccessNotice";
+import { LibraryAccessNotice, LibraryAccessRepairNotice } from "./LibraryAccessNotice";
 import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import {
+  libraryAccessRepairFromFailure,
   supportsLoomFeature,
   libraryGitHubRepository,
   cancelEmptyLibraryPreparation,
@@ -283,6 +284,7 @@ export function CopyDialog({
     setRepair(undefined);
     setAccessRepair(undefined);
     let submitted = attempt;
+    let requestEnvironmentId = hostId;
     const prepareCopy = async () => {
       let next = attempt ?? {
         environmentId: hostId,
@@ -347,6 +349,7 @@ export function CopyDialog({
         saveAttempt(next);
       }
       if (!activeAccount()) return;
+      requestEnvironmentId = authorityId;
       const result = await register({
         environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
@@ -361,7 +364,7 @@ export function CopyDialog({
       await prepareCopy();
     } catch (cause) {
       setRepair(isLibraryError(cause) ? cause.repair : undefined);
-      setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
+      setAccessRepair(libraryAccessRepairFromFailure(cause, requestEnvironmentId));
       const handleFailure = async () => {
         if (submitted) {
           const receipt = await recover({
@@ -777,16 +780,36 @@ export function CopyDialog({
           </p>
         ) : null}
         {hostId && !connected ? (
-          <p className="text-xs text-muted-foreground">
-            Reconnect this computer before preparing files.
-          </p>
+          <LibraryAccessRepairNotice
+            accessRepair={{ kind: "connection", environmentId: hostId }}
+            onLeave={onClose}
+          />
+        ) : null}
+        {!accountMatches && hostId ? (
+          <LibraryAccessRepairNotice
+            accessRepair={{ kind: "ownership", environmentId: hostId }}
+            context={{ environmentId: hostId, originalAccount: attempt?.initiator }}
+            onLeave={onClose}
+          />
         ) : null}
         {hostId && connected && !supported ? (
           <p className="text-xs text-muted-foreground">
             Update Loom on this computer to prepare project files.
           </p>
         ) : null}
-        <LibraryErrorNotice accessRepair={accessRepair} error={error} onLeave={onClose} />
+        <LibraryErrorNotice
+          accessRepair={accessRepair}
+          accessContext={{
+            environmentId: hostId,
+            authorityEnvironmentId: authority.authorityId,
+            originalAccount:
+              accessRepair?.environmentId === authority.authorityId
+                ? undefined
+                : attempt?.initiator,
+          }}
+          error={error}
+          onLeave={onClose}
+        />
         {repair && repair.environmentId === hostId ? (
           <LibraryCloneRepair key={repair.environmentId} repair={repair} />
         ) : null}

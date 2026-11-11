@@ -1,6 +1,6 @@
 import type { RepositoryAuthorizer } from "../vault/GitHubRepositoryTransport.ts";
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
-import { libraryCloneFailure } from "./clone-failure.ts";
+import { libraryCloneFailure, libraryVaultRepositoryFailure } from "./clone-failure.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
 import {
   CommandId,
@@ -12,6 +12,7 @@ import {
 import {
   type LibraryApplyProfileRequest,
   LibraryError,
+  VaultError,
   type LibraryCopyHealth,
   type LibraryCopyHealthRequest,
   type LibraryCopyStatus,
@@ -1080,15 +1081,9 @@ const make = Effect.gen(function* () {
       ...(report === undefined ? {} : { onProgress: (progress) => report(resource, progress) }),
     });
     if (cloned.code !== 0 || cloned.timedOut) {
-      if (repositoryAccess?.kind === "vault-github")
-        return yield* new LibraryError({
-          reason: "blocked",
-          detail: cloned.timedOut
-            ? "The selected Vault GitHub download timed out. Check this computer's network and retry."
-            : "The selected Vault GitHub connection could not download this repository. Review the connection and repository permissions, then retry.",
-        });
       return yield* libraryCloneFailure({
         stderr: cloned.stderr,
+        repositoryAccess,
         timedOut: cloned.timedOut,
         remoteUrl: resource.remoteUrl,
         environmentId,
@@ -4342,11 +4337,6 @@ const make = Effect.gen(function* () {
       )
     )
       return yield* new LibraryError({ reason: "invalid" });
-    if (access.some((entry) => entry.access.kind === "vault-github") && authorize === undefined)
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: "Authorize the selected Vault GitHub connection before downloading project files.",
-      });
     for (const entry of access) {
       if (entry.access.kind !== "vault-github") continue;
       const resource = input.project.resources.find((resource) => resource.id === entry.resourceId);
@@ -4355,16 +4345,16 @@ const make = Effect.gen(function* () {
         !LibraryGitFetch.matchesVaultGitHubRepository(resource.remoteUrl, entry.access.repository)
       )
         return yield* new LibraryError({ reason: "invalid" });
-      if (authorize === undefined) return yield* new LibraryError({ reason: "blocked" });
-      yield* authorize(entry.access).pipe(
-        Effect.mapError(
-          (cause) =>
-            new LibraryError({
-              reason: "blocked",
-              cause,
-              detail:
-                "Authorize the selected Vault GitHub connection before downloading project files.",
-            }),
+      const selectedAccess = entry.access;
+      if (authorize === undefined)
+        return yield* libraryVaultRepositoryFailure(
+          selectedAccess,
+          new VaultError({ reason: "denied" }),
+          environmentId,
+        );
+      yield* authorize(selectedAccess).pipe(
+        Effect.mapError((cause) =>
+          libraryVaultRepositoryFailure(selectedAccess, cause, environmentId),
         ),
       );
     }
@@ -4406,18 +4396,10 @@ const make = Effect.gen(function* () {
         authorize,
       });
       if (result.code !== 0 || result.timedOut) {
-        if (
-          access.some(
-            (entry) => entry.resourceId === resource.id && entry.access.kind === "vault-github",
-          )
-        )
-          return yield* new LibraryError({
-            reason: "blocked",
-            detail:
-              "The selected Vault GitHub connection could not access this repository. Review the connection and repository permissions, then retry.",
-          });
+        const selectedAccess = access.find((entry) => entry.resourceId === resource.id)?.access;
         return yield* libraryCloneFailure({
           stderr: result.stderr,
+          repositoryAccess: selectedAccess,
           timedOut: result.timedOut,
           remoteUrl: resource.remoteUrl,
           environmentId,

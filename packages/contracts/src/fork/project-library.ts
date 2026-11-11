@@ -1,3 +1,5 @@
+import { VaultGitHubTarget, VaultGitHubError } from "./vault-github.ts";
+import { VaultError } from "./vault-core.ts";
 import { LibraryResourceRepositoryAccess } from "./library-repository-access.ts";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -308,6 +310,11 @@ export type LibraryInfo = typeof LibraryInfo.Type;
 export const LIBRARY_SIGN_IN_NOT_CURRENT_TEXT =
   "This device's sign-in is no longer current. Sign in again from Connections in Settings, then retry.";
 export const LibraryAccessRepair = Schema.Struct({
+  vaultDeniedDetail: VaultError.fields.detail,
+  repository: Schema.optionalKey(VaultGitHubTarget),
+  vaultReason: Schema.optionalKey(
+    Schema.Union([VaultError.fields.reason, VaultGitHubError.fields.reason]),
+  ),
   kind: Schema.Literals(["sign-in", "permission", "ownership", "connection"]),
   environmentId: Schema.optionalKey(EnvironmentId),
 });
@@ -334,6 +341,7 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
   repair: Schema.optionalKey(
     Schema.Struct({
       kind: Schema.Literal("github-host-setup"),
+      repository: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
       environmentId: EnvironmentId,
       label: Schema.String,
       agentTool: Schema.Literal("loom_github_host_setup"),

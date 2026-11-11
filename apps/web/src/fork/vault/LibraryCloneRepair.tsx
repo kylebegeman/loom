@@ -1,3 +1,4 @@
+import { LIBRARY_ACCESS_REPAIR_RETURN_TEXT } from "@t3tools/client-runtime/fork";
 import { useState } from "react";
 import type { LibraryError } from "@t3tools/contracts/fork";
 import { GitHubHostSetupSettings } from "~/components/settings/GitHubHostSetupSettings";
@@ -9,6 +10,10 @@ export function LibraryCloneRepair({ repair }: { repair: NonNullable<LibraryErro
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col gap-3 p-4">
+      <p className="text-xs text-muted-foreground">
+        Host GitHub login is required on {repair.label}
+        {repair.repository ? ` for ${repair.repository}` : ""}. {LIBRARY_ACCESS_REPAIR_RETURN_TEXT}
+      </p>
       <Button variant="outline" onClick={() => setOpen(true)}>
         Set up GitHub on {repair.label}
       </Button>
@@ -17,7 +22,7 @@ export function LibraryCloneRepair({ repair }: { repair: NonNullable<LibraryErro
           open
           onOpenChange={setOpen}
           title={`Set up GitHub on ${repair.label}`}
-          description="Cloning needs GitHub access on that computer. Set it up here, then try again."
+          description={`Set up host GitHub login on ${repair.label}. ${LIBRARY_ACCESS_REPAIR_RETURN_TEXT}`}
           actions={
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Done

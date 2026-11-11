@@ -64,6 +64,7 @@ vi.mock("./state", () => ({
   }),
 }));
 vi.mock("./LibraryAccessNotice", () => ({
+  LibraryAccessRepairNotice: () => null,
   LibraryAccessNotice: ({
     block,
     onLeave,
@@ -543,24 +544,41 @@ it("offers the repair in place when an expired Library sign-in blocks adding", a
   expect(onClose).toHaveBeenCalled();
 });
 
-it("keeps the project it created when a later step fails, so a retry adds the folder to it", async () => {
-  const onSaved = vi.fn();
-  const detail =
-    "Loom could not check which project owns this folder. Reconnect your Library and try again.";
-  state.prepare
-    .mockResolvedValueOnce(
-      AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked", detail }))),
-    )
-    .mockResolvedValueOnce(AsyncResult.success(copyOf(created)));
-  await mount({ onSaved });
-  await act(async () => button("Create project kyle").click());
-  expect(container.textContent).toContain(detail);
-  await act(async () => button("Add folder to kyle").click());
-  expect(state.create).toHaveBeenCalledOnce();
-  expect(state.prepare).toHaveBeenCalledTimes(2);
-  expect(state.prepare.mock.calls[1]![0].input.project.id).toBe("created");
-  expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
-});
+it.each([false, true])(
+  "keeps the created project and preserves access-denied request identity: %s",
+  async (accessDenied) => {
+    const onSaved = vi.fn();
+    const detail =
+      "Loom could not check which project owns this folder. Reconnect your Library and try again.";
+    state.prepare
+      .mockResolvedValueOnce(
+        AsyncResult.failure(
+          Cause.fail(
+            new LibraryError({
+              reason: "blocked",
+              detail,
+              ...(accessDenied ? { accessRepair: { kind: "permission" as const } } : {}),
+            }),
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(AsyncResult.success(copyOf(created)));
+    await mount({ onSaved });
+    await act(async () => button("Create project kyle").click());
+    expect(container.textContent).toContain(detail);
+    const request = state.prepare.mock.calls[0]![0];
+    await mount({ onSaved });
+    expect(state.prepare).toHaveBeenCalledTimes(1);
+    const retry = button(accessDenied ? "Retry import" : "Add folder to kyle");
+    expect(retry).toBeDefined();
+    await act(async () => retry.click());
+    if (accessDenied) expect(state.prepare.mock.calls[1]![0]).toEqual(request);
+    expect(state.create).toHaveBeenCalledOnce();
+    expect(state.prepare).toHaveBeenCalledTimes(2);
+    expect(state.prepare.mock.calls[1]![0].input.project.id).toBe("created");
+    expect(onSaved).toHaveBeenCalledWith(created, copyOf(created));
+  },
+);
 
 it("still adds the folder to the project it created after returning to the browser", async () => {
   state.prepare.mockResolvedValueOnce(

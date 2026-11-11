@@ -1,6 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import { EnvironmentId } from "@t3tools/contracts";
-import { libraryCloneFailure } from "./clone-failure.ts";
+import { VaultError } from "@t3tools/contracts/fork";
+import { libraryCloneFailure, libraryVaultRepositoryFailure } from "./clone-failure.ts";
 const input = {
   environmentId: EnvironmentId.make("test-host"),
   computer: "Build computer",
@@ -26,10 +27,28 @@ it.each([
   expect(JSON.stringify(error)).not.toContain("secret@");
   expect(error.repair).toMatchObject({
     kind: "github-host-setup",
+    repository: "team/repo",
     environmentId: input.environmentId,
     agentTool: "loom_github_host_setup",
     action: "start",
   });
+  const vault = libraryCloneFailure({
+    ...input,
+    stderr,
+    repositoryAccess: {
+      kind: "vault-github",
+      id: "1".repeat(32),
+      expectedVersion: 4,
+      repository: "team/repo",
+    },
+  });
+  expect(vault.repair).toBeUndefined();
+  expect(vault.accessRepair?.repository).toEqual({
+    id: "1".repeat(32),
+    expectedVersion: 4,
+    repository: "team/repo",
+  });
+  expect(JSON.stringify(vault)).not.toContain("secret@");
 });
 it("keeps unrelated errors generic and does not suggest GitHub for other hosts", () => {
   expect(libraryCloneFailure({ ...input, stderr: "fatal: no space left on device" }).reason).toBe(
@@ -49,3 +68,28 @@ it("keeps unrelated errors generic and does not suggest GitHub for other hosts",
     "timed out on Build computer",
   );
 });
+
+it.each(["denied", "not-found", "locked", "conflict"] as const)(
+  "preserves selected Vault repair for %s without serializing the cause",
+  (reason) => {
+    const access = {
+      kind: "vault-github" as const,
+      id: "1".repeat(32),
+      expectedVersion: 4,
+      repository: "team/repo",
+    };
+    const error = libraryVaultRepositoryFailure(
+      access,
+      new VaultError({ reason }),
+      input.environmentId,
+    );
+    expect(error.accessRepair).toEqual({
+      kind: "permission",
+      environmentId: input.environmentId,
+      repository: { id: access.id, expectedVersion: 4, repository: access.repository },
+      vaultReason: reason,
+    });
+    expect(error.cause).toBeUndefined();
+    expect(error.repair).toBeUndefined();
+  },
+);

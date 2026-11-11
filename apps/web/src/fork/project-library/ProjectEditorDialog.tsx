@@ -16,6 +16,7 @@ import { randomUUID } from "~/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import { libraryAccessRepairFromFailure } from "@t3tools/client-runtime/fork";
 import { LibraryErrorNotice, LibraryField } from "./LibraryControls";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import {
@@ -36,7 +37,7 @@ import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useEnvironmentSessionState } from "~/state/session";
-import { LibraryAccessNotice } from "./LibraryAccessNotice";
+import { LibraryAccessNotice, LibraryAccessRepairNotice } from "./LibraryAccessNotice";
 import {
   projectLibrary,
   useLibraryAccessBlock,
@@ -225,7 +226,7 @@ export function ProjectEditorDialog({
         onSaved(result.value);
       } else {
         const cause = squashLibraryCommandFailure(result);
-        setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
+        setAccessRepair(libraryAccessRepairFromFailure(cause, authorityId));
         if (isLibraryError(cause) && ["invalid", "not-found"].includes(cause.reason))
           saveAttempt(null, (latest) => latest?.requestId === input.requestId);
         setError(
@@ -471,7 +472,19 @@ export function ProjectEditorDialog({
                 : "Sign in with the account that started creation to recover this request."}
             </p>
           ) : null}
-          <LibraryErrorNotice error={error} accessRepair={accessRepair} onLeave={onClose} />
+          {!accountMatches ? (
+            <LibraryAccessRepairNotice
+              accessRepair={{ kind: "ownership", environmentId: authorityId }}
+              context={{ environmentId: authorityId, originalAccount: saved?.initiator }}
+              onLeave={onClose}
+            />
+          ) : null}
+          <LibraryErrorNotice
+            error={error}
+            accessRepair={accessRepair}
+            accessContext={{ environmentId: authorityId, originalAccount: saved?.initiator }}
+            onLeave={onClose}
+          />
           {access ? <LibraryAccessNotice block={access} onLeave={onClose} /> : null}
           {saved && !working ? (
             <Button

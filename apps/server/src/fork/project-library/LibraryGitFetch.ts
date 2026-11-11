@@ -3,10 +3,11 @@ import type {
   RepositoryAuthorizer,
   RepositoryOperation,
 } from "../vault/GitHubRepositoryTransport.ts";
+import { libraryVaultRepositoryFailure } from "./clone-failure.ts";
 import { runRepositoryGit } from "./runRepositoryGit.ts";
 import { measureStoragePath } from "../project-lifecycle/storageMeasurement.ts";
 import { makeStorageRemovalRecorder } from "../project-lifecycle/StorageCleanupAccounting.ts";
-import { LibraryError, type LibraryRepositoryAccess } from "@t3tools/contracts/fork";
+import { VaultError, LibraryError, type LibraryRepositoryAccess } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { normalizeGitRemoteUrl, parseRemoteDefaultBranch } from "@t3tools/shared/git";
@@ -420,25 +421,20 @@ const make = Effect.gen(function* () {
     // Shared mirror services may start before Vault; the human operation supplies its context.
     const operationVault = yield* Effect.serviceOption(VaultGitHub.VaultGitHub);
     const vault = Option.isSome(configuredVault) ? configuredVault : operationVault;
-    if (access?.kind !== "vault-github" || input.authorize === undefined || Option.isNone(vault))
-      return yield* new LibraryError({
-        reason: "blocked",
-        detail: "Authorize the selected Vault GitHub connection before downloading project files.",
-      });
+    if (access?.kind !== "vault-github") return yield* new LibraryError({ reason: "invalid" });
+    if (input.authorize === undefined || Option.isNone(vault))
+      return yield* libraryVaultRepositoryFailure(
+        access,
+        new VaultError({
+          reason: input.authorize === undefined ? "denied" : "configuration",
+        }),
+      );
     const repository = access.repository.toLowerCase();
     if (!matchesVaultGitHubRepository(input.remoteUrl, repository))
       return yield* new LibraryError({ reason: "invalid" });
-    return yield* vault.value.repositoryOperation(access, operation, input.authorize(access)).pipe(
-      Effect.mapError(
-        (cause) =>
-          new LibraryError({
-            reason: "blocked",
-            cause,
-            detail:
-              "The selected Vault GitHub connection could not access this repository. Review the connection and repository permissions, then retry.",
-          }),
-      ),
-    );
+    return yield* vault.value
+      .repositoryOperation(access, operation, input.authorize(access))
+      .pipe(Effect.mapError((cause) => libraryVaultRepositoryFailure(access, cause)));
   });
   const preflightRepository: LibraryGitFetch["Service"]["preflightRepository"] = Effect.fn(
     "LibraryGitFetch.preflightRepository",

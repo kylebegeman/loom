@@ -1,6 +1,6 @@
 import { useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
-import type { LibraryAccessRepair } from "@t3tools/contracts/fork";
-import { needsLibrarySignIn, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import type { LibraryAccessRepair, LibraryError } from "@t3tools/contracts/fork";
+import { type LibraryAccessRepairContext, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState, type ReactNode } from "react";
@@ -28,7 +28,8 @@ import { useDeviceType } from "../../native/native-layout-metrics";
 import { useEnvironments } from "../../state/environments";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { library, useLibraryAuthority } from "./libraryState";
-import { LibrarySignInAgainButton, LibrarySignInSection } from "./LibrarySignInStatus";
+import { LibrarySignInSection } from "./LibrarySignInStatus";
+import { LibraryAccessBlock } from "./LibraryAccessBlock";
 import { LibraryDeletedSettings } from "./LibraryDeletedSettings";
 import { useWorkspacePageBack } from "./workspacePageBack";
 
@@ -103,6 +104,8 @@ export function LibraryPage(props: {
 export function LibraryNotice(props: {
   error?: string | null;
   accessRepair?: LibraryAccessRepair | undefined;
+  accessContext?: LibraryAccessRepairContext | undefined;
+  repair?: LibraryError["repair"] | undefined;
   detail?: string | null;
   onRetry?: () => void;
 }) {
@@ -114,7 +117,12 @@ export function LibraryNotice(props: {
           {props.error}
         </Text>
       ) : null}
-      {needsLibrarySignIn(props.error, props.accessRepair) ? <LibrarySignInAgainButton /> : null}
+      <LibraryAccessBlock
+        accessRepair={props.accessRepair}
+        accessContext={props.accessContext}
+        error={props.error}
+        repair={props.repair}
+      />
       {props.onRetry ? <Button label="Reload library" tone="text" onPress={props.onRetry} /> : null}
     </View>
   );
