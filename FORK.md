@@ -283,7 +283,7 @@ The renderer follows the web app's React version, which comes from the workspace
 | `apps/mobile/src/features/threads/ThreadMarkdownImage.test.tsx` | `cloudflare-access`   | Keep the native Access keychain out of markdown image tests.                 |
 | `apps/server/src/orchestration-v2/ThreadFork.execution.test.ts` | `deleted-history`     | Expect the deleted-source refusal that rejects a side chat first.            |
 | `apps/server/src/process/externalLauncher.test.ts`              | `hermetic-tests`      | Keep the host's installed editors out of the Insiders bundle case.           |
-| `apps/desktop/src/app/DesktopApp.test.ts`                       | `restart-compaction`  | Stub the startup repair and provide its process spawner in the startup test. |
+| `apps/desktop/src/app/DesktopApp.test.ts`                       | `restart-compaction`  | Stub the startup repair in the desktop startup test.                         |
 | `apps/desktop/src/app/DesktopApp.test.ts`                       | `rollback-snapshot`   | Stub the startup install-marker rewrite in the desktop startup test.         |
 | `apps/desktop/src/app/DesktopApp.test.ts`                       | `cloudflare-access`   | Mock the desktop Access service the startup program installs.                |
 | `apps/desktop/src/app/DesktopApp.test.ts`                       | `identity-renewal`    | Mock the renewal service the Identity IPC handlers require.                  |
