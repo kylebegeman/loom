@@ -107,8 +107,14 @@ describe("CommandPalette open intents", () => {
     await expect
       .element(page.getByPlaceholder("Search commands, projects, and threads..."))
       .toHaveFocus();
-    // fork: library-palette: attention, Projects and Sites rows lead the root list
-    await userEvent.keyboard("{ArrowDown>4/}");
+    // fork: library-palette: Loom's rows lead the root list, so wait for it to render
+    await expect.element(page.getByRole("option", { name: /^New thread in\.\.\./ })).toBeVisible();
+    // fork: library-palette: step down to the row, whether or not New thread in <project> shows
+    for (const option of page.getByRole("option").elements()) {
+      if (option.textContent?.startsWith("New thread in...")) break;
+      await expect.element(option).toHaveAttribute("data-highlighted");
+      await userEvent.keyboard("{ArrowDown}");
+    }
     await expect
       .element(page.getByRole("option", { name: /^New thread in\.\.\./ }))
       .toHaveAttribute("data-highlighted");

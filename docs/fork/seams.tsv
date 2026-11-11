@@ -1771,7 +1771,7 @@ apps/server/src/device/DeviceService.test.ts	brand	2
 apps/web/src/connection/storage.browser.test.ts	library	1
 apps/web/src/components/CommandPalette.composition.browser.test.tsx	file-placement	1
 apps/web/src/components/CommandPalette.composition.browser.test.tsx	fleet-connections	2
-apps/web/src/components/CommandPalette.browser.test.tsx	library-palette	1
+apps/web/src/components/CommandPalette.browser.test.tsx	library-palette	2
 apps/mobile/src/features/threads/ThreadHeader.tsx	native-menus	1
 apps/mobile/src/features/threads/ThreadHeader.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceListHeader.tsx	mobile-navigation	1
