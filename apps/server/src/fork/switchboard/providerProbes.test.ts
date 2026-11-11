@@ -448,7 +448,11 @@ it.layer(NodeServices.layer)("Codex allowance probe policy", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-codex-native-allowance-" });
-      const peer = yield* makeAllowanceProbePeer(chatgptAccount, home);
+      // Codex only reads native quota for a login its active provider needs.
+      const peer = yield* makeAllowanceProbePeer(
+        { ...chatgptAccount, requiresOpenaiAuth: true },
+        home,
+      );
       const settings = decodeCodexSettings({
         binaryPath: "/fixture/codex",
         homePath: home,
