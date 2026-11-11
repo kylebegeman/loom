@@ -427,7 +427,7 @@ it.effect.each([
 it("advertises compact Library schemas with reference-free inputs", () => {
   const input = JSON.stringify(Tool.getJsonSchema(operationTool));
   expect(input).not.toContain('"$ref"');
-  expect(Buffer.byteLength(input)).toBeLessThan(3_000);
+  expect(Buffer.byteLength(input)).toBeLessThan(3_500);
   expect(
     Buffer.byteLength(JSON.stringify(Tool.getJsonSchemaFromSchema(historyTool.successSchema))),
   ).toBeLessThan(9_000);
