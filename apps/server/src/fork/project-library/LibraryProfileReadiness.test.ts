@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { describe, expect } from "vite-plus/test";
 import * as ProcessRunner from "../../processRunner.ts";
@@ -155,6 +156,127 @@ describe("catalog checks", () => {
 });
 
 describe("makeProfileReadinessReader", () => {
+  it.effect(
+    "isolates fixed version probes from project code, credentials and automatic downloads",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const bin = yield* fs.makeTempDirectoryScoped({ prefix: "loom-readiness-safe-" });
+        yield* fs.writeFileString(path.join(bin, "pnpm"), "#!/bin/sh\nexit 0\n");
+        yield* fs.chmod(path.join(bin, "pnpm"), 0o755);
+        const calls: ProcessRunner.ProcessRunInput[] = [];
+        const read = yield* makeProfileReadinessReader.pipe(
+          Effect.provideService(
+            ProcessRunner.ProcessRunner,
+            ProcessRunner.ProcessRunner.of({
+              run: (input) => {
+                calls.push(input);
+                return Effect.succeed({
+                  code: ChildProcessSpawner.ExitCode(0),
+                  stdout: "12.0.0",
+                  stderr: "",
+                  timedOut: false,
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                  stdoutInvalidUtf8: false,
+                  stderrInvalidUtf8: false,
+                });
+              },
+            }),
+          ),
+        );
+        yield* read({
+          projectId: "project",
+          environmentId: EnvironmentId.make("computer"),
+          profile: {
+            requiredTools: [{ id: "pnpm" }],
+            scripts: [
+              {
+                id: "setup",
+                name: "Setup",
+                command: "touch do-not-run",
+                icon: "play",
+                runOnWorktreeCreate: true,
+              },
+            ],
+            secretNames: ["PROJECT_API_KEY"],
+          },
+        }).pipe(
+          Effect.provideService(HostProcess.Environment, {
+            PATH: `.:relative-bin:${bin}`,
+            get PROJECT_API_KEY(): string {
+              throw new Error("Credential values must not be read by a readiness probe.");
+            },
+            NODE_OPTIONS: "--require ./project-code.cjs",
+          }),
+        );
+        expect(calls).toHaveLength(1);
+        expect(calls[0]).toMatchObject({
+          command: path.join(bin, "pnpm"),
+          args: ["--version"],
+          cwd: path.parse(bin).root,
+          extendEnv: false,
+          env: {
+            PATH: bin,
+            COREPACK_ENABLE_NETWORK: "0",
+            COREPACK_ENABLE_AUTO_PIN: "0",
+            COREPACK_ENABLE_PROJECT_SPEC: "0",
+            GOTOOLCHAIN: "local",
+            RUSTUP_AUTO_INSTALL: "0",
+          },
+        });
+        expect(calls[0]?.env).not.toHaveProperty("PROJECT_API_KEY");
+        expect(calls[0]?.env).not.toHaveProperty("NODE_OPTIONS");
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.each([
+    "timedOut",
+    "stdoutTruncated",
+    "stderrTruncated",
+    "stdoutInvalidUtf8",
+    "stderrInvalidUtf8",
+  ] as const)("keeps a %s probe unknown even when its output contains a version", (flag) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const bin = yield* fs.makeTempDirectoryScoped({ prefix: "loom-readiness-unknown-" });
+      yield* fs.writeFileString(path.join(bin, "node"), "#!/bin/sh\nexit 0\n");
+      yield* fs.chmod(path.join(bin, "node"), 0o755);
+      const read = yield* makeProfileReadinessReader.pipe(
+        Effect.provideService(
+          ProcessRunner.ProcessRunner,
+          ProcessRunner.ProcessRunner.of({
+            run: () =>
+              Effect.succeed({
+                code: ChildProcessSpawner.ExitCode(0),
+                stdout: "v24.1.0",
+                stderr: "",
+                timedOut: false,
+                stdoutTruncated: false,
+                stderrTruncated: false,
+                stdoutInvalidUtf8: false,
+                stderrInvalidUtf8: false,
+                [flag]: true,
+              }),
+          }),
+        ),
+      );
+      const report = yield* read({
+        projectId: "project",
+        environmentId: EnvironmentId.make("computer"),
+        profile: { requiredTools: [{ id: "node", minimumVersion: "24" }] },
+      }).pipe(
+        Effect.provideService(HostProcess.Environment, { PATH: bin }),
+        Effect.provideService(HostProcess.Platform, "linux"),
+      );
+      expect(report.checks).toEqual([
+        { id: "node", label: "Node.js", minimumVersion: "24", status: "unknown" },
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("runs each required tool's check and lists secret names", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

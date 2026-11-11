@@ -2,10 +2,23 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
-import { EnvironmentId, IsoDateTime, ProjectId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import {
+  EnvironmentId,
+  IsoDateTime,
+  PositiveInt,
+  ProjectId,
+  TrimmedNonEmptyString,
+} from "../baseSchemas.ts";
 import { ModelSelection } from "../modelSelection.ts";
 import { ProjectScript } from "../project.ts";
-import { LibraryError, LibraryId } from "./project-library.ts";
+import {
+  LibraryError,
+  LibraryId,
+  LibraryPlacement,
+  LibraryProject,
+  LibraryResource,
+  LibraryTitle,
+} from "./project-library.ts";
 import {
   LibraryProjectProfile,
   LibrarySecretName,
@@ -17,9 +30,11 @@ import {
  * Clients read it from the copy's computer, not from the Library.
  */
 export const LIBRARY_PROFILE_READINESS_FEATURE = "library-profile-readiness";
+export const LIBRARY_PREPARATION_PLAN_FEATURE = "library-preparation-plan";
 
 export const LIBRARY_READINESS_WS_METHODS = {
   readiness: "loom.library.profile-readiness",
+  preparationPlan: "loom.library.preparation-plan",
   profileSettings: "loom.library.profile-settings",
   applyProfile: "loom.library.apply-profile",
 } as const;
@@ -57,6 +72,40 @@ export const LibraryProfileReadinessRequest = Schema.Struct({
   profile: Schema.optional(LibraryProjectProfile),
 });
 export type LibraryProfileReadinessRequest = typeof LibraryProfileReadinessRequest.Type;
+
+/** A pinned project snapshot, checked only on the explicitly selected computer. */
+export const LibraryPreparationPlanRequest = Schema.Struct({
+  project: LibraryProject,
+  environmentId: EnvironmentId,
+  resourceIds: Schema.optional(Schema.Array(LibraryId).check(Schema.isMaxLength(64))),
+});
+export type LibraryPreparationPlanRequest = typeof LibraryPreparationPlanRequest.Type;
+
+/** Reading this plan never prepares files or executes scripts. Placement is a preview. */
+export const LibraryPreparationPlan = Schema.Struct({
+  projectId: LibraryId,
+  projectRevision: PositiveInt,
+  projectTitle: LibraryTitle,
+  environmentId: EnvironmentId,
+  execution: Schema.Literal("review-only"),
+  placement: LibraryPlacement,
+  repositories: Schema.Array(Schema.Struct({ resource: LibraryResource, path: Schema.String })),
+  links: Schema.Array(LibraryResource),
+  checks: Schema.Array(LibraryToolCheck),
+  /** Names only. Neither presence nor access is inferred from a saved requirement. */
+  secrets: Schema.Array(
+    Schema.Struct({ name: LibrarySecretName, status: Schema.Literal("unknown") }),
+  ),
+  connections: Schema.Array(
+    Schema.Struct({
+      name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+      status: Schema.Literal("unknown"),
+    }),
+  ),
+  scripts: Schema.Array(ProjectScript),
+  checkedAt: IsoDateTime,
+});
+export type LibraryPreparationPlan = typeof LibraryPreparationPlan.Type;
 
 /** A local setting that differs from the project's setup. Applying replaces `local`. */
 export const LibraryProfileDifference = Schema.Union([
@@ -104,6 +153,11 @@ export type LibraryApplyProfileRequest = typeof LibraryApplyProfileRequest.Type;
 const ReadinessError = Schema.Union([LibraryError, EnvironmentAuthorizationError]);
 
 export const ProjectLibraryReadinessRpcGroup = RpcGroup.make(
+  Rpc.make(LIBRARY_READINESS_WS_METHODS.preparationPlan, {
+    payload: LibraryPreparationPlanRequest,
+    success: LibraryPreparationPlan,
+    error: ReadinessError,
+  }),
   Rpc.make(LIBRARY_READINESS_WS_METHODS.readiness, {
     payload: LibraryProfileReadinessRequest,
     success: LibraryProfileReadiness,

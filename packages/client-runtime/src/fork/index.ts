@@ -80,6 +80,7 @@ export * from "./library-brief-diff.ts";
 export * from "./library-brief-review.ts";
 export * from "./library-brief-suggestions.ts";
 export * from "./library-profile-readiness.ts";
+export * from "./library-preparation-plan.ts";
 export * from "./library-launch-choice.ts";
 export * from "./library-launch-defaults.ts";
 export * from "./library-empty-conversation.ts";

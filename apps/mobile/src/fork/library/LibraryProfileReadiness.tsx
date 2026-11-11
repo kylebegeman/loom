@@ -23,6 +23,7 @@ import { cn } from "../../lib/cn";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LibraryPreparationPlan } from "./LibraryPreparationPlan";
 import { LibraryReadFailure } from "./LibraryCopyHealth";
 import { library, useRefreshOnRefocus } from "./libraryState";
 
@@ -44,16 +45,21 @@ const requiresSomething = (project: LibraryProject) =>
 
 /**
  * The project's required tools as checked on one computer, plus the secret names to set there.
- * Shows nothing when the project requires nothing or the computer cannot check.
+ * The preparation plan opens separately and gates its query on computer support.
  */
 export function LibraryProfileReadiness(props: {
   environmentId: EnvironmentId;
   project: LibraryProject;
 }) {
   const supported = useSupportsReadiness(props.environmentId);
-  return supported && requiresSomething(props.project) ? (
-    <ReadinessChecklist environmentId={props.environmentId} project={props.project} />
-  ) : null;
+  return (
+    <View className="gap-2">
+      {supported && requiresSomething(props.project) ? (
+        <ReadinessChecklist environmentId={props.environmentId} project={props.project} />
+      ) : null}
+      <LibraryPreparationPlan environmentId={props.environmentId} project={props.project} />
+    </View>
+  );
 }
 
 /**
@@ -70,9 +76,7 @@ export function LibraryCopyProfileSetup(props: {
   if (!supported) return null;
   return (
     <>
-      {requiresSomething(props.project) ? (
-        <ReadinessChecklist environmentId={props.copy.environmentId} project={props.project} />
-      ) : null}
+      <LibraryProfileReadiness environmentId={props.copy.environmentId} project={props.project} />
       {profile?.scripts?.length || profile?.defaultModelSelection ? (
         <SettingsDifferences project={props.project} copy={props.copy} />
       ) : null}

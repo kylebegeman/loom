@@ -172,11 +172,52 @@ export const makeProfileReadinessReader = Effect.gen(function* () {
   const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const cache = new Map<LibraryToolId, { readonly at: number; readonly result: ToolProbeResult }>();
 
-  const run = (command: string, args: readonly string[]) =>
-    runner
+  const probeEnvironment = Effect.gen(function* () {
+    const host = yield* HostProcess.Environment;
+    const platform = yield* HostProcess.Platform;
+    const delimiter = platform === "win32" ? ";" : ":";
+    const entries = (host.PATH ?? host.Path ?? "")
+      .split(delimiter)
+      .filter(
+        (entry) =>
+          path.isAbsolute(entry) &&
+          !/(?:^|[/\\])(?:node_modules|\.venv|\.yarn)(?:[/\\]|$)/.test(entry),
+      );
+    return {
+      HOME: host.HOME,
+      USERPROFILE: host.USERPROFILE,
+      SystemRoot: host.SystemRoot,
+      SYSTEMROOT: host.SYSTEMROOT,
+      WINDIR: host.WINDIR,
+      PATHEXT: host.PATHEXT,
+      TMP: host.TMP,
+      TEMP: host.TEMP,
+      TMPDIR: host.TMPDIR,
+      PATH: entries.join(delimiter),
+      COREPACK_ENABLE_NETWORK: "0",
+      COREPACK_ENABLE_AUTO_PIN: "0",
+      COREPACK_ENABLE_PROJECT_SPEC: "0",
+      COREPACK_DEFAULT_TO_LATEST: "0",
+      GOTOOLCHAIN: "local",
+      RUSTUP_AUTO_INSTALL: "0",
+      UV_OFFLINE: "1",
+      YARN_ENABLE_NETWORK: "0",
+      npm_config_update_notifier: "false",
+    };
+  });
+
+  const run = Effect.fn("LibraryProfileReadiness.runProbe")(function* (
+    command: string,
+    args: readonly string[],
+  ) {
+    // Package-manager shims must not bootstrap tools or load the current project's config.
+    return yield* runner
       .run({
         command,
         args,
+        cwd: path.parse(yield* HostProcess.WorkingDirectory).root,
+        env: yield* probeEnvironment,
+        extendEnv: false,
         timeout: "10 seconds",
         timeoutBehavior: "timedOutResult",
         maxOutputBytes: 64 * 1024,
@@ -184,7 +225,12 @@ export const makeProfileReadinessReader = Effect.gen(function* () {
       })
       .pipe(
         Effect.map((output): ToolProbeResult =>
-          output.timedOut || output.code === null
+          output.timedOut ||
+          output.code === null ||
+          output.stdoutTruncated ||
+          output.stderrTruncated ||
+          output.stdoutInvalidUtf8 ||
+          output.stderrInvalidUtf8
             ? { kind: "failed" }
             : {
                 kind: "ran",
@@ -194,10 +240,11 @@ export const makeProfileReadinessReader = Effect.gen(function* () {
         ),
         Effect.orElseSucceed((): ToolProbeResult => ({ kind: "failed" })),
       );
+  });
 
   const locate = Effect.fn("LibraryProfileReadiness.locate")(function* (probe: ToolProbe) {
     for (const command of probe.commands) {
-      const found = yield* resolveCommandPath(command).pipe(
+      const found = yield* resolveCommandPath(command, { env: yield* probeEnvironment }).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
         Effect.provideService(Path.Path, path),
       );

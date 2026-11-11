@@ -161,7 +161,7 @@ computer is offline. Press `Cmd/Ctrl+Alt+P` for **Go to project** and `Cmd/Ctrl+
 for **New conversation in**. To change them, rebind `loom.library.goToProject` or
 `loom.library.newConversationIn` in **Settings → Keybindings**.
 
-**Preferences** on the project page records how work gets going on any computer, and it is saved
+**Setup** on the project page records how work gets going on any computer, and it is saved
 with the brief. **Use this copy's scripts** brings in the scripts a working copy's local
 project already has. Required tools are picked from a fixed list, with an optional minimum
 version, so a setup never asks a computer to run an arbitrary command. Secret names list the
@@ -181,6 +181,17 @@ get a copy, also checks the required tools on that computer, showing each tool's
 older than the minimum. A check that fails shows the tool as not checked rather than ready. The
 secret names are listed as a reminder; their values are never read. Agents can run the same
 check with `loom_library_profile_readiness`. Computers on an older version show neither.
+
+To prepare on another computer, choose it under **Setup** and review its preparation plan.
+On mobile, open the saved project's setup in **Edit project**, or use **Review preparation
+plan** while choosing a conversation computer. The plan names the project revision and computer,
+proposed repository folders, required and observed tool versions, connection and secret names,
+and full script commands, including saved automation. Unknown tools, connection access and
+secret availability remain unverified. Reading the plan installs nothing and never runs project
+scripts, retrieves credentials or changes files. Use the existing file preparation and project
+setup actions separately after review. Agents can request the same read-only plan through
+`loom_library_preparation_plan`, binding `expectedEnvironmentId` to the selected computer and
+using `environmentId` to route to a linked computer. Older computers need an update to provide one.
 
 New conversation also uses those checks to choose a computer. A computer that is missing a
 required tool, or has one older than the minimum, is listed after the ready ones with the

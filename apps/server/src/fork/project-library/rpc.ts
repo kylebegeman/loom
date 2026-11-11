@@ -158,6 +158,8 @@ export const makeProjectLibraryRpcHandlers = Effect.fn("ProjectLibrary.makeRpcHa
       auth.effect(L.copyStatus, workspace.status(input)),
     [LH.copyHealth]: (input: Parameters<typeof workspace.health>[0]) =>
       auth.effect(LH.copyHealth, workspace.health(input)),
+    [LR.preparationPlan]: (input: Parameters<typeof workspace.preparationPlan>[0]) =>
+      auth.effect(LR.preparationPlan, workspace.preparationPlan(input)),
     [LR.readiness]: (input: Parameters<typeof workspace.readiness>[0]) =>
       auth.effect(LR.readiness, workspace.readiness(input)),
     [LR.profileSettings]: (input: Parameters<typeof workspace.profileSettings>[0]) =>
