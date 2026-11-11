@@ -74,6 +74,7 @@ vi.mock("~/state/entities", async (original) => {
     runtime: null,
     session: null,
     latestTurn: null,
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: "delete-thread" },
   });
   return {
     ...(await original<typeof import("~/state/entities")>()),
