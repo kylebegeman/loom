@@ -350,7 +350,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
           serverPage("SettingsWorktrees", "square.on.square", "Worktrees"),
           page("SettingsPreviewLinks", "globe", "Previews"),
           serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
-          page("SettingsLabs", "sparkles", "Labs"),
+          page("SettingsLabs", "flask", "Labs"),
         ],
       },
     ];
@@ -365,6 +365,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         ...(navigationCustomizationAvailable()
           ? [page("SettingsNavigation", "line.3.horizontal", "Navigation tabs")]
           : []),
+        page("SettingsKeyboard", "keyboard", "Keyboard"),
         page("SettingsVoice", "mic", "Voice"),
       ],
     },
@@ -400,7 +401,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
     {
       rows: [
         serverPage("SettingsEnvironmentMaintenance", "arrow.clockwise", "Maintenance"),
-        page("SettingsLabs", "sparkles", "Labs"),
+        page("SettingsLabs", "flask", "Labs"),
         page("SettingsAbout", "info.circle", `About ${BRAND_NAME}`), // fork: brand
         page("SettingsArchive", "archivebox", "Archive"),
       ],

@@ -3,7 +3,7 @@ import { View } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
 import { PullRequestsScreen } from "../../features/pull-requests/PullRequestsScreen";
-import { WorkspaceToolbar } from "../../features/layout/workspace/WorkspaceToolbar.ios";
+import { WorkspaceToolbar } from "../../features/layout/workspace/WorkspaceToolbar";
 
 export function PullRequestsRouteScreen() {
   const navigation = useNavigation();

@@ -960,7 +960,7 @@ this task. Package-runner examples keep the actual upstream npm package name; do
 | ---------------------------------------------------------------------- | ----------- | --------------------------------------------------------------------- |
 | `apps/mobile/src/features/layout/workspace/WorkspaceThreadSidebar.tsx` | `library`   | Route sidebar source actions through the Library project launch flow. |
 | `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx`    | `brand`     | Loom pairing instructions in the scanner.                             |
-| `apps/web/src/components/onboarding/WelcomeWizard.tsx`                 | `brand`     | Loom CLI pairing/start examples.                                      |
+| `apps/web/src/components/onboarding/WelcomePage.tsx`                   | `brand`     | Loom welcome title and telemetry notice.                              |
 | `apps/server/src/binCli.ts`                                            | `brand`     | Loom CLI root/help naming.                                            |
 | `apps/server/src/cli/pair.ts`, `pair.test.ts`, `app.test.ts`           | `brand`     | Loom server errors and new credential labels.                         |
 | `apps/server/package.json`                                             | (no marker) | Add the `loom` executable alias.                                      |

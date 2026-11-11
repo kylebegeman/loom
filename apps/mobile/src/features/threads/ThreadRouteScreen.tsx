@@ -108,7 +108,11 @@ import { threadEnvironment } from "../../state/threads";
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import { useProjects } from "../../state/entities";
 import { projectThreadContentPresentation } from "./threadContentPresentation";
-import { Inspector, useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
+import {
+  Inspector,
+  useAdaptiveWorkspaceLayout,
+  useWorkspacePaneState,
+} from "../layout/AdaptiveWorkspaceLayout";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
 import { InspectorSheetContext } from "../layout/workspace-inspector-sheet";
 import type { InspectorContent } from "../layout/inspector-panes";
@@ -384,8 +388,7 @@ function ThreadRouteContent(
   },
 ) {
   const releasedCheckoutIds = useReleasedCheckoutIds(); // fork: project-lifecycle
-  const { fileInspector, layout, panes, showInspector, toggleAuxiliaryPane } =
-    useAdaptiveWorkspaceLayout();
+  const { layout, showInspector, toggleAuxiliaryPane } = useAdaptiveWorkspaceLayout();
   const { connectionState } = useRemoteConnectionStatus();
   const { onReconnectEnvironment } = useRemoteConnections();
   const {
@@ -634,13 +637,6 @@ function ThreadRouteContent(
     setChosenInspectorMode(props.renderInspector === undefined ? "files" : "route");
     showInspector();
   };
-  const handleToggleInspector = () => {
-    if (inspectorMode === null) {
-      handleOpenFilesInspector();
-      return;
-    }
-    toggleAuxiliaryPane();
-  };
   const handleSelectInspectorFile = (path: string) => {
     if (selectedThread === null) {
       return;
@@ -677,8 +673,8 @@ function ThreadRouteContent(
       </InspectorSheetContext.Consumer>
     ) : null;
   const renderPreviewInspector = () =>
-    previewTarget && panes.auxiliaryPaneVisible ? (
-      <ThreadInspectorPreview
+    previewTarget ? (
+      <ThreadInspectorPreviewWhileVisible
         target={previewTarget}
         renderThread={(screen) => <ThreadRouteScreen {...screen} />}
         onClose={toggleAuxiliaryPane}
@@ -1125,9 +1121,7 @@ function ThreadRouteContent(
                 }
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}
-                fileInspectorSupported={fileInspector.supported}
                 inspectorMode={inspectorMode}
-                onToggleInspector={handleToggleInspector}
                 onOpenFilesInspector={handleOpenFilesInspector}
                 onReturnToThread={props.onReturnToThread}
               />
@@ -1281,4 +1275,10 @@ export function FullscreenThreadRouteScreen(
       />
     </InspectorContentScope>
   );
+}
+
+/** Reads the pane state itself, so a sidebar toggle doesn't re-render the whole thread screen. */
+function ThreadInspectorPreviewWhileVisible(props: Parameters<typeof ThreadInspectorPreview>[0]) {
+  const { panes } = useWorkspacePaneState();
+  return panes.auxiliaryPaneVisible ? <ThreadInspectorPreview {...props} /> : null;
 }

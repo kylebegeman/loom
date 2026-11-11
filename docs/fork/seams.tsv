@@ -396,7 +396,7 @@ apps/server/src/secrets/SecretRequests.test.ts	ext-vault	2
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	vault-core	2
 apps/server/scripts/seed-dev-db.ts	dev-fixtures	8
 apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx	brand	2
-apps/web/src/components/onboarding/WelcomeWizard.tsx	brand	9
+apps/web/src/components/onboarding/WelcomePage.tsx	brand	2
 apps/server/src/binCli.ts	brand	6
 apps/server/src/binCli.ts	github-host-setup	2
 apps/server/src/cli/pair.ts	brand	6
@@ -1502,7 +1502,7 @@ apps/desktop/src/window/DesktopApplicationMenu.ts	client-computer	5
 apps/desktop/src/window/DesktopApplicationMenu.test.ts	client-computer	19
 apps/desktop/src/ipc/methods/localEnvironment.ts	client-computer	1
 apps/web/src/components/HostedEmptyState.tsx	fleet-connections	4
-apps/web/src/components/onboarding/WelcomeWizard.tsx	fleet-connections	5
+apps/web/src/components/onboarding/WelcomePage.tsx	fleet-connections	5
 apps/web/src/hooks/useAddProjectTargets.ts	library-only	1
 apps/web/src/components/CommandPalette.tsx	library-only	1
 apps/web/src/components/desktop/DesktopWebLinkCoordinator.tsx	client-computer	5
@@ -1729,7 +1729,7 @@ apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	mobile-navigat
 apps/mobile/src/features/layout/workspace/WorkspaceSectionToolbar.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceSidebarTabs.ios.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/WorkspaceTabsContext.tsx	mobile-navigation	2
-apps/mobile/src/features/layout/workspace/WorkspaceToolbar.ios.tsx	mobile-navigation	1
+apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/navigation-tab-order.ts	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/navigation-tabs.ts	mobile-navigation	1
 apps/mobile/src/features/layout/workspace/useSelectWorkspaceTab.ts	mobile-navigation	1
@@ -1750,9 +1750,9 @@ apps/mobile/src/features/layout/workspace/WorkspaceListHeader.tsx	project-naviga
 apps/mobile/src/features/layout/workspace/WorkspaceListEmptyDetail.tsx	project-navigation	3
 apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	project-navigation	3
 apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx	library	5
-apps/mobile/src/features/layout/workspace/WorkspaceToolbar.ios.tsx	project-navigation	3
+apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx	project-navigation	3
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	brand	2
-apps/mobile/src/components/FilePreviewModal.test.tsx	cloudflare-access	4
+apps/mobile/src/components/ui/FilePreviewSession.test.tsx	cloudflare-access	4
 apps/mobile/src/features/settings/VoiceModelSection.tsx	brand	1
 apps/mobile/src/features/voice-input/voiceDestination.ts	brand	1
 apps/mobile/src/state/use-thread-composer-state.ts	brand	1

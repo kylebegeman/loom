@@ -46,10 +46,8 @@ vi.mock("../../keyboard/hardwareKeyboardCommands", () => ({
   useHardwareKeyboardCommand: () => undefined,
 }));
 vi.mock("../AdaptiveWorkspaceLayout", () => ({
-  useAdaptiveWorkspaceLayout: () => ({
-    panes: { primarySidebarVisible: true },
-    togglePrimarySidebar: () => undefined,
-  }),
+  useAdaptiveWorkspaceLayout: () => ({ togglePrimarySidebar: () => undefined }),
+  useWorkspacePaneState: () => ({ panes: { primarySidebarVisible: true } }),
 }));
 vi.mock("./WorkspaceTabsContext", () => ({ useWorkspaceTabs: () => harness.workspace }));
 vi.mock("./useSystemWorkspaceTabBar", () => ({ useSidebarWorkspaceTabs: () => null }));
@@ -60,7 +58,7 @@ vi.mock("./useSelectWorkspaceTab", () => ({
   },
 }));
 
-import { WorkspaceToolbar } from "./WorkspaceToolbar.ios";
+import { WorkspaceToolbar } from "./WorkspaceToolbar";
 import { initialWorkspaceTabsState, workspaceTabsReducer } from "./workspace-tabs-state";
 
 it.each([

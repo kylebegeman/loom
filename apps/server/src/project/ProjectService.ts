@@ -25,7 +25,7 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem"; // fork: file-placement
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path"; // fork: file-placement
@@ -48,6 +48,7 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as ServerConfig from "../config.ts"; // fork: file-placement
 import * as ServerSettings from "../serverSettings.ts";
+import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 // fork: file-placement
 import {
   readManagedProjectCheckout,
@@ -195,6 +196,11 @@ export class ProjectService extends Context.Service<
       // fork: library-projects
       options?: { readonly includeDeleted?: boolean; readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
+    /**
+     * Where to scan `cwd`'s workspace inventory. A thread's removed managed worktree scans its
+     * project, which turn start recreates the worktree from; anything else, or a failure, is `cwd`.
+     */
+    readonly workspaceScanDirectory: (cwd: string) => Effect.Effect<string>;
     readonly snapshot: Effect.Effect<ProjectSnapshot, ProjectOperationError>;
     /**
      * A page of active projects in creation order, each with its repository
@@ -230,12 +236,13 @@ export const make = Effect.gen(function* () {
   const projectFiles = yield* T3ProjectFileLoader.T3ProjectFileLoader.pipe(
     Effect.provide(T3ProjectFileLoader.layer),
   );
+  const fileSystem = yield* FileSystem.FileSystem;
+  const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
   // fork: file-placement
   const libraryCheckoutOwners = yield* makeLibraryCheckoutOwners;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
+  const path = yield* Path.Path; // fork: file-placement
   const serverConfig = yield* ServerConfig.ServerConfig; // fork: file-placement
   const placement = yield* ProjectPlacement.ProjectPlacement; // fork: file-placement
   const platform = yield* HostProcess.Platform; // fork: file-placement
@@ -413,6 +420,22 @@ export const make = Effect.gen(function* () {
       const row = yield* readRow(projectId, options);
       return Option.isNone(row) ? Option.none() : Option.some(yield* hydrate(row.value));
     },
+  );
+
+  const workspaceScanDirectory = Effect.fn("ProjectService.workspaceScanDirectory")(
+    function* (cwd: string) {
+      if (yield* fileSystem.exists(cwd).pipe(Effect.orElseSucceed(() => true))) return cwd;
+      if (!(yield* isManagedWorktreePath(cwd))) return cwd;
+      const snapshot = yield* Effect.flatten(
+        threadProjections.readShellSnapshot({ worktreePath: cwd }),
+      );
+      const thread = [...snapshot.threads, ...snapshot.archivedThreads].find(
+        (candidate) => candidate.branch !== null,
+      );
+      if (thread === undefined) return cwd;
+      return Option.getOrUndefined(yield* readRow(thread.projectId))?.workspaceRoot ?? cwd;
+    },
+    (effect, cwd) => Effect.orElseSucceed(effect, () => cwd),
   );
 
   const getByWorkspaceRoot: ProjectService["Service"]["getByWorkspaceRoot"] = Effect.fn(
@@ -861,6 +884,7 @@ export const make = Effect.gen(function* () {
     delete: deleteProject,
     getById,
     getByWorkspaceRoot,
+    workspaceScanDirectory,
     snapshot,
     listPage,
     getShell,

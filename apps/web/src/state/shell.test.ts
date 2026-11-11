@@ -1,5 +1,5 @@
 import {
-  AVAILABLE_CONNECTION_STATE, // fork: client-computer
+  AVAILABLE_CONNECTION_STATE,
   BearerConnectionTarget,
   PrimaryConnectionTarget,
   type SupervisorConnectionState, // fork: client-computer
@@ -8,14 +8,17 @@ import type { EnvironmentCatalogState } from "@t3tools/client-runtime/state/conn
 import { EMPTY_SHELL_STATE, type EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity"; // fork: client-computer
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createAllEnvironmentProjectSnapshotsReadyAtom,
   createAllReachableShellsLiveAtom, // fork: client-computer
   expectsPrimaryEnvironment,
+  environmentShell,
 } from "./shell";
+import { environmentCatalog } from "../connection/catalog";
+import { defaultProjectFallbackReadyAtom } from "./projects";
 
 const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
@@ -222,3 +225,29 @@ it("expects a primary environment only on desktops with the local environment en
   expect(desktop(true)).toBe(true);
   expect(desktop(false)).toBe(false);
 });
+
+it.each([undefined, "", "Server update required"])(
+  "settles fallback for an unsupported remembered environment: %s",
+  (unsupportedReason) => {
+    const catalog = catalogState([LOCAL, REMOTE]);
+    const entries = new Map(catalog.entries);
+    entries.set(REMOTE, {
+      ...entries.get(REMOTE)!,
+      ...(unsupportedReason === undefined ? {} : { unsupportedReason }),
+    });
+    const registry = AtomRegistry.make({
+      initialValues: [
+        [environmentCatalog.catalogValueAtom, { ...catalog, entries }],
+        [environmentShell.statusAtom(REMOTE), "empty"],
+        [environmentCatalog.stateAtom(REMOTE), AsyncResult.success(AVAILABLE_CONNECTION_STATE)],
+      ],
+    });
+    try {
+      expect(registry.get(defaultProjectFallbackReadyAtom("remote:project"))).toBe(
+        unsupportedReason !== undefined,
+      );
+    } finally {
+      registry.dispose();
+    }
+  },
+);

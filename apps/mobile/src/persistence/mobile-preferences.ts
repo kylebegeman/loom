@@ -132,7 +132,7 @@ export interface Preferences {
   readonly "loom.library.authorityEnvironmentId"?: string | null;
   readonly "loom.library.savedExpanded"?: boolean;
   readonly "loom.library.deletedExpanded"?: boolean;
-  /** Hardware Return behavior is iOS-only. */
+  /** Hardware-keyboard Return behavior in the composer. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   readonly followUpBehavior?: FollowUpBehavior;
   readonly microphones?: ReadonlyArray<MicrophoneEntry>;
