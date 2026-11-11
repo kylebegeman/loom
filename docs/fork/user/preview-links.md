@@ -178,9 +178,9 @@ A browser stays signed in to a link, or to your pages, for up to 12 hours. After
 the link from Loom or sign in again.
 
 Signing in works for every computer connected to your Library, and for the computer your
-Library runs on. After your Library is updated, signing in to a computer's links can fail for
-up to 30 minutes, until that computer checks in again. Opening links from Loom still works,
-and restarting Loom on that computer is quicker. Removing a computer's access to your Library
+Library runs on. Opening a sign-in page refreshes that computer's registration with the
+Library. If sign-in fails just after a Library update, reopen the preview and try **Sign in
+with Loom** again. An expired browser-entry link also offers sign-in when a Library is available. Removing a computer's access to your Library
 stops sign-in to its links at once. Computers that connected with one shared Library token
 lose it together. **Library** under Connection status in Settings > Sharing & access > Preview links, and
 on the computer's previews screen in the mobile app, shows whether your Library can sign

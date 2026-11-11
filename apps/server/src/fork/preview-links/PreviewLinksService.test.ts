@@ -1528,6 +1528,31 @@ it.layer(NodeServices.layer)("PreviewLinksService", (it) => {
     }),
   );
 
+  it.effect(
+    "refreshes Library registration when a browser needs sign-in without waiting half an hour",
+    () =>
+      Effect.gen(function* () {
+        const library = yield* makeLibrary;
+        const harness = yield* makeHarness({ library });
+        yield* harness.service.configure({ settings: ready });
+        const view = yield* harness.view;
+        yield* Queue.clear(library.calls);
+        view.libraryAccess();
+        expect(yield* Queue.take(library.calls)).toEqual({
+          machine: "dorothy",
+          suffix: "bagels.top",
+        });
+        for (let index = 0; index < 10; index += 1) view.libraryAccess();
+        expect(yield* Queue.clear(library.calls)).toEqual([]);
+        yield* TestClock.adjust("30 seconds");
+        view.libraryAccess();
+        expect(yield* Queue.take(library.calls)).toEqual({
+          machine: "dorothy",
+          suffix: "bagels.top",
+        });
+      }),
+  );
+
   it.effect("shows whether the Library registered this computer's preview hosts", () =>
     Effect.gen(function* () {
       const library = yield* makeLibrary;

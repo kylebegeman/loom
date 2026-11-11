@@ -27,6 +27,7 @@ vi.mock("@effect/atom-react", () => ({
     atom === "snapshot" ? AsyncResult.success(state.snapshot) : true,
 }));
 vi.mock("@t3tools/client-runtime/fork", () => ({
+  previewLinkSetupStatus: () => ({ label: "Not ready", detail: null, ready: false }),
   supportsLoomFeature: (_capabilities: unknown, feature: string) => feature === "preview-links",
   previewLibraryStatus: () => null,
 }));

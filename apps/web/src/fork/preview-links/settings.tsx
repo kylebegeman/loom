@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { previewLibraryStatus, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  previewLibraryStatus,
+  previewLinkSetupStatus,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIMES,
@@ -39,7 +43,6 @@ import {
   draftFromSettings,
   gatewayStatus,
   settingsFromDraft,
-  setupStatus,
   tunnelStatus,
   type SettingsDraft,
 } from "./links";
@@ -90,7 +93,7 @@ function EnvironmentPreviewLinks({
     JSON.stringify("settings" in parsed ? draftFromSettings(parsed.settings) : shown) !==
       JSON.stringify(draftFromSettings(setup.settings)) || trimmedToken.length > 0;
   const disabled = !canSave || action.busy;
-  const status = setupStatus(setup);
+  const status = previewLinkSetupStatus(setup);
   const library = previewLibraryStatus(setup);
   const openCount = links.filter((link) => link.state === "open").length;
   // Ending a container link removes its container, so only the other links can come back.

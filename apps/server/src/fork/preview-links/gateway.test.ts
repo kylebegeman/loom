@@ -71,6 +71,13 @@ const upstreamServer = Effect.acquireRelease(
         response.end();
         return;
       }
+      if (request.url === "/relative-redirect") {
+        response.writeHead(302, {
+          location: `//localhost:${boundPort(server)}/next?step=2#details`,
+        });
+        response.end();
+        return;
+      }
       if (request.url === "/elsewhere") {
         response.writeHead(302, { location: "http://127.0.0.1:1/away" });
         response.end();
@@ -464,6 +471,34 @@ describe("preview gateway", () => {
     }),
   );
 
+  it.live(
+    "recovers an expired browser entry through Library sign-in without authorizing the app",
+    () =>
+      Effect.gen(function* () {
+        const { gateway, upstream } = yield* setupLibrary(LIBRARY);
+        const expired = yield* send(gateway.port, {
+          host: LINK_HOST,
+          path: "/__loom/enter?code=expired",
+          headers: navigation,
+        });
+        expect(expired.status).toBe(401);
+        expect(signInLink(expired.body)?.origin).toBe(LIBRARY.origin);
+        expect(Object.fromEntries(signInLink(expired.body)?.searchParams ?? [])).toEqual({
+          host: LINK_HOST,
+          nonce: issuedNonce(expired),
+          path: "/",
+        });
+        expect(upstream.requests).toHaveLength(0);
+        const image = yield* send(gateway.port, {
+          host: LINK_HOST,
+          path: "/__loom/enter?code=expired",
+          headers: { "sec-fetch-mode": "no-cors", accept: "image/*" },
+        });
+        expect(image.status).toBe(401);
+        expect(image.headers["set-cookie"]).toBeUndefined();
+      }),
+  );
+
   it.live("offers no sign-in link while no Library has said where to sign in", () =>
     Effect.gen(function* () {
       const { gateway } = yield* setupLibrary(null);
@@ -503,7 +538,7 @@ describe("preview gateway", () => {
       const refused = yield* send(gateway.port, {
         host: LINK_HOST,
         path: "/__loom/ticket?ticket=spent&path=%2Fdeep",
-        headers: nonceCookie,
+        headers: { ...navigation, ...nonceCookie },
       });
       expect(refused.status).toBe(401);
       expect(refused.body).toContain("This sign-in expired or was already used");
@@ -527,6 +562,12 @@ describe("preview gateway", () => {
         });
         expect(reply.status).toBe(401);
       }
+      const subresource = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/__loom/ticket?ticket=spent",
+        headers: { "sec-fetch-mode": "no-cors", accept: "image/*" },
+      });
+      expect(subresource.headers["set-cookie"]).toBeUndefined();
       const missing = yield* send(gateway.port, { host: LINK_HOST, path: "/__loom/ticket" });
       expect(missing.status).toBe(400);
       expect(tickets.map((call) => call.ticket)).toEqual(["spent"]);
@@ -683,6 +724,13 @@ describe("preview gateway", () => {
       expect(reply.headers["cdn-cache-control"]).toBeUndefined();
       expect(reply.headers["cloudflare-cdn-cache-control"]).toBeUndefined();
       expect(reply.headers["surrogate-control"]).toBeUndefined();
+
+      const relative = yield* send(gateway.port, {
+        host: LINK_HOST,
+        path: "/relative-redirect",
+        headers: signedIn,
+      });
+      expect(relative.headers.location).toBe(`${ORIGIN}/next?step=2#details`);
 
       const elsewhere = yield* send(gateway.port, {
         host: LINK_HOST,

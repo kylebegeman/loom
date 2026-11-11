@@ -18,33 +18,6 @@ export const LIFETIME_LABELS: Record<PreviewLinkLifetime, string> = {
   "24h": "24 hours",
 };
 
-export interface SetupStatus {
-  readonly label: string;
-  readonly detail: string | null;
-  readonly ready: boolean;
-}
-
-export function setupStatus(setup: PreviewLinksSetup): SetupStatus {
-  const { settings, tunnel, gateway } = setup;
-  if (!settings.enabled) return { label: "Previews off", detail: null, ready: false };
-  if (settings.suffix === null) return { label: "Needs a domain", detail: null, ready: false };
-  if (gateway.state === "error") {
-    return { label: "Gateway error", detail: gateway.message, ready: false };
-  }
-  switch (tunnel.state) {
-    case "connected":
-      return { label: `Ready on ${settings.suffix}`, detail: null, ready: true };
-    case "needs-token":
-      return { label: "Needs a tunnel token", detail: tunnel.message, ready: false };
-    case "starting":
-      return { label: "Tunnel starting", detail: tunnel.message, ready: false };
-    case "error":
-      return { label: "Tunnel error", detail: tunnel.message, ready: false };
-    case "off":
-      return { label: "Tunnel off", detail: tunnel.message, ready: false };
-  }
-}
-
 export function gatewayStatus(setup: PreviewLinksSetup): string {
   const { gateway, settings } = setup;
   switch (gateway.state) {

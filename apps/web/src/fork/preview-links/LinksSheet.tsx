@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { previewLinkBackingLabel, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  previewLinkBackingLabel,
+  previewLinkSetupStatus,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PREVIEW_LINK_LIFETIMES,
@@ -38,7 +42,7 @@ import {
 import { useNowMinute } from "~/hooks/useNowMinute";
 import { useServerConfigs } from "~/state/entities";
 import { usePreparedConnection } from "~/state/session";
-import { LIFETIME_LABELS, linkSummary, setupStatus, visibleLinks } from "./links";
+import { LIFETIME_LABELS, linkSummary, visibleLinks } from "./links";
 import { Alert, Muted, copyPreviewLink, failureOf, toastFailure, useAction } from "./parts";
 import {
   FEATURE,
@@ -160,7 +164,7 @@ function EnvironmentLinks({
   const snapshot = Option.getOrNull(AsyncResult.value(result));
   const failure = failureOf(result);
   if (!snapshot) return failure ? <Alert>{failure}</Alert> : <Muted>Loading links...</Muted>;
-  const status = setupStatus(snapshot.setup);
+  const status = previewLinkSetupStatus(snapshot.setup);
   // Ended links listed here can all be restored.
   const links = visibleLinks(snapshot.links, snapshot.setup.settings, now);
   return (

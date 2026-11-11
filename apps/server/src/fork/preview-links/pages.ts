@@ -63,10 +63,17 @@ export const ticketFailedPage = (href: string | null) =>
         label: SIGN_IN_LABEL,
       });
 
-export const entryUsedPage = page(
-  "Open the preview again from Loom",
-  "This sign-in link was already used or has expired. Open the preview again from the Loom app.",
-);
+export const entryUsedPage = (href: string | null = null) =>
+  href === null
+    ? page(
+        "Open the preview again from Loom",
+        "This sign-in link was already used or has expired. Open the preview again from the Loom app.",
+      )
+    : page(
+        "Open the preview again",
+        "This sign-in link was already used or has expired. Sign in again, or open the preview from Loom.",
+        { href, label: SIGN_IN_LABEL },
+      );
 
 export const portDeniedPage = page(
   "This port can't be previewed",

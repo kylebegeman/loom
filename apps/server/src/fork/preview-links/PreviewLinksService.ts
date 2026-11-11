@@ -209,6 +209,7 @@ const SESSION_RELIST_INTERVAL = Duration.minutes(1);
 const LIBRARY_KEY_PREFIX = "library:";
 // The Library's key or origin may change, and a computer offline at startup should still learn it.
 const LIBRARY_ACCESS_REFRESH_INTERVAL = Duration.minutes(30);
+const LIBRARY_SIGN_IN_REFRESH_INTERVAL_MS = 30_000;
 /** How long saving settings waits on the Library before leaving the rest to the background. */
 const LIBRARY_ACCESS_SAVE_WAIT = Duration.seconds(5);
 /** The hosts one registration asks the Library to sign browsers in for. */
@@ -389,6 +390,8 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     if (key.startsWith(LIBRARY_KEY_PREFIX) && untilMs > now()) libraryKeys.set(key, untilMs);
   }
   let libraryKeysDirty = false;
+  const libraryRefreshWake = yield* Latch.make(false);
+  let nextLibrarySignInRefreshMs = 0;
   /** Ticket ids and nonces already traded for a cookie, each until it could no longer verify. */
   const spentTickets = new Map<string, number>();
   /** The Library that signs cold browsers in, or null while none has said it will. */
@@ -489,10 +492,15 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
       return { key: cookie.key, sub: cookie.sub };
     },
     portAllowed: (port) => !isPreviewPortDenied(port, ownPorts()),
-    libraryAccess: () =>
-      libraryIssuer === null
+    libraryAccess: () => {
+      if (publisher.enabled && now() >= nextLibrarySignInRefreshMs) {
+        nextLibrarySignInRefreshMs = now() + LIBRARY_SIGN_IN_REFRESH_INTERVAL_MS;
+        libraryRefreshWake.openUnsafe();
+      }
+      return libraryIssuer === null
         ? null
-        : { origin: libraryIssuer.origin, ticketPath: libraryIssuer.ticketPath },
+        : { origin: libraryIssuer.origin, ticketPath: libraryIssuer.ticketPath };
+    },
     redeemTicket: (host, ticket, nonce, path) => {
       const issuer = libraryIssuer;
       if (issuer === null || !isPreviewNonce(nonce)) return null;
@@ -1850,8 +1858,14 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
     yield* forkParked(
       Effect.gen(function* () {
         for (;;) {
+          yield* libraryRefreshWake.close;
           yield* refreshLibraryAccess;
-          yield* Effect.sleep(LIBRARY_ACCESS_REFRESH_INTERVAL);
+          yield* libraryRefreshWake.await.pipe(
+            Effect.timeoutOrElse({
+              duration: LIBRARY_ACCESS_REFRESH_INTERVAL,
+              orElse: () => Effect.void,
+            }),
+          );
         }
       }),
     );

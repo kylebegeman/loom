@@ -6,6 +6,7 @@ import {
   canRestorePreviewPage,
   formatPreviewDuration,
   previewLibraryStatus,
+  previewLinkSetupStatus,
   previewLinkBackingLabel,
   previewPageControls,
   previewPageSummary,
@@ -265,5 +266,57 @@ describe("previewLinkBackingLabel", () => {
         afternoon,
       ),
     ).toBe("Container nginx:alpine");
+  });
+});
+
+describe("previewLinkSetupStatus", () => {
+  function setup(overrides: {
+    readonly enabled?: boolean;
+    readonly suffix?: string | null;
+    readonly tunnel?: PreviewLinksSetup["tunnel"];
+    readonly gateway?: PreviewLinksSetup["gateway"];
+  }): PreviewLinksSetup {
+    const enabled = overrides.enabled ?? true;
+    const suffix = overrides.suffix === undefined ? "bagels.top" : overrides.suffix;
+    return {
+      settings: { enabled, suffix, machine: "dorothy", defaultLifetime: "12h", gatewayPort: 3779 },
+      tokenStored: true,
+      ready: enabled && suffix !== null,
+      tunnel: overrides.tunnel ?? { state: "connected", message: null },
+      gateway: overrides.gateway ?? { state: "listening", message: null },
+    };
+  }
+
+  it("reports why links cannot be shared yet", () => {
+    expect(previewLinkSetupStatus(setup({ enabled: false })).label).toBe("Previews off");
+    expect(previewLinkSetupStatus(setup({ suffix: null })).label).toBe("Needs a domain");
+    expect(
+      previewLinkSetupStatus(setup({ tunnel: { state: "needs-token", message: null } })).label,
+    ).toBe("Needs a tunnel token");
+  });
+
+  it("surfaces gateway errors before tunnel state, with their message", () => {
+    expect(
+      previewLinkSetupStatus(
+        setup({
+          tunnel: { state: "error", message: "Tunnel exited." },
+          gateway: { state: "error", message: "Port 3779 is in use." },
+        }),
+      ),
+    ).toEqual({ label: "Gateway error", detail: "Port 3779 is in use.", ready: false });
+  });
+
+  it("is ready only once both the tunnel and gateway are running", () => {
+    expect(
+      previewLinkSetupStatus(setup({ gateway: { state: "off", message: "Starting." } })).ready,
+    ).toBe(false);
+    expect(previewLinkSetupStatus(setup({}))).toEqual({
+      label: "Ready on bagels.top",
+      detail: null,
+      ready: true,
+    });
+    expect(
+      previewLinkSetupStatus(setup({ tunnel: { state: "starting", message: null } })).ready,
+    ).toBe(false);
   });
 });

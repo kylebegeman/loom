@@ -6,7 +6,6 @@ import {
   previewComputers,
   previewLinkActions,
   previewLinkTiming,
-  previewSetupStatus,
   privateNetworkPortUrl,
   visiblePreviewLinks,
   type PreviewComputerSource,
@@ -97,38 +96,6 @@ describe("previewComputers", () => {
       computer("b", "Zelda"),
     ]);
     expect(result.map((entry) => entry.pages)).toEqual([true, false]);
-  });
-});
-
-describe("previewSetupStatus", () => {
-  it("reports why links cannot be shared yet", () => {
-    expect(previewSetupStatus(setup({ enabled: false })).label).toBe("Previews off");
-    expect(previewSetupStatus(setup({ suffix: null })).label).toBe("Needs a domain");
-    expect(
-      previewSetupStatus(setup({ tunnel: { state: "needs-token", message: null } })).label,
-    ).toBe("Needs a tunnel token");
-  });
-
-  it("surfaces gateway errors before tunnel state, with their message", () => {
-    expect(
-      previewSetupStatus(
-        setup({
-          tunnel: { state: "error", message: "Tunnel exited." },
-          gateway: { state: "error", message: "Port 3779 is in use." },
-        }),
-      ),
-    ).toEqual({ label: "Gateway error", detail: "Port 3779 is in use.", ready: false });
-  });
-
-  it("is ready only once the tunnel connects", () => {
-    expect(previewSetupStatus(setup({}))).toEqual({
-      label: "Ready on bagels.top",
-      detail: null,
-      ready: true,
-    });
-    expect(previewSetupStatus(setup({ tunnel: { state: "starting", message: null } })).ready).toBe(
-      false,
-    );
   });
 });
 

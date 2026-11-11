@@ -4,7 +4,11 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { previewLibraryStatus, previewLinkBackingLabel } from "@t3tools/client-runtime/fork";
+import {
+  previewLibraryStatus,
+  previewLinkBackingLabel,
+  previewLinkSetupStatus,
+} from "@t3tools/client-runtime/fork";
 import {
   PREVIEW_LINK_LIFETIMES,
   type PreviewLink,
@@ -34,7 +38,6 @@ import {
   previewComputers,
   previewLinkActions,
   previewLinkSummary,
-  previewSetupStatus,
   visiblePreviewLinks,
   type PreviewComputer,
   type PreviewLinkAction,
@@ -123,7 +126,7 @@ function ComputerPreviewLinks(props: { readonly computer: PreviewComputer; reado
   const pendingRef = useRef(false);
   const [failure, setFailure] = useState<LinkFailure | null>(null);
   const snapshot = query.data;
-  const status = snapshot ? previewSetupStatus(snapshot.setup) : null;
+  const status = snapshot ? previewLinkSetupStatus(snapshot.setup) : null;
   const library = snapshot ? previewLibraryStatus(snapshot.setup) : null;
   const links = snapshot
     ? visiblePreviewLinks(snapshot.links, snapshot.setup.settings, props.now)

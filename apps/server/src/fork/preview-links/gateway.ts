@@ -95,7 +95,7 @@ const PLAIN_TEXT: Partial<Record<number, string>> = {
   500: "Internal server error",
 };
 
-const LOCAL_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):(\d{1,5})(?=[/?#]|$)/i;
+const LOCAL_ORIGIN = /^(?:https?:)?\/\/(?:localhost|127\.0\.0\.1|\[::1\]):(\d{1,5})(?=[/?#]|$)/i;
 
 // Cookie names compare byte for byte, so only HTTP whitespace is trimmed, never Unicode spaces.
 const trimHttpWhitespace = (value: string) => value.replace(/^[ \t]+|[ \t]+$/g, "");
@@ -442,7 +442,15 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
   ) => {
     const code = new URL(request.url ?? "/", "http://gateway.invalid").searchParams.get("code");
     const entry = code === null ? null : view.redeem(host, code);
-    if (entry === null) return sendPage(response, 401, entryUsedPage);
+    if (entry === null)
+      return sendSignInPage(
+        response,
+        401,
+        host,
+        "/",
+        isDocumentNavigation(request) ? view.libraryAccess() : null,
+        entryUsedPage,
+      );
     response.writeHead(303, {
       ...PRIVATE_HEADERS,
       location: entry.path,
@@ -489,7 +497,7 @@ const makeGatewayServer = (view: PreviewGatewayView) => {
         ticket === null ? 400 : 401,
         host,
         query.get("path") ?? "/",
-        view.libraryAccess(),
+        isDocumentNavigation(request) ? view.libraryAccess() : null,
         ticketFailedPage,
       );
     }
