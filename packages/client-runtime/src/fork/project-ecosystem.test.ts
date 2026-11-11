@@ -1,6 +1,10 @@
 import { expect, it } from "vite-plus/test";
 import type { LibraryProject, SitesSnapshot } from "@t3tools/contracts/fork";
-import { projectRelationships, projectServices } from "./project-ecosystem.ts";
+import {
+  projectRelationships,
+  projectServices,
+  projectComputerCapabilities,
+} from "./project-ecosystem.ts";
 
 const project = (id: string, dependencies?: readonly string[]): LibraryProject => ({
   id,
@@ -90,4 +94,17 @@ it("uses registered project links and preserves stale and unknown service observ
     projectServices(["identity"], { ...snapshot, observedAt: "2026-11-12T12:00:00Z" }, now)[0]
       ?.health.state,
   ).toBe("unchecked");
+});
+
+it("distinguishes an unknown computer version from a host lacking a lifecycle capability", () => {
+  expect(projectComputerCapabilities(undefined).every((entry) => entry.supported === null)).toBe(
+    true,
+  );
+  expect(
+    projectComputerCapabilities(["project-workflows"]).map((entry) => [entry.id, entry.supported]),
+  ).toEqual([
+    ["library-repository-access", false],
+    ["library-profile-readiness", false],
+    ["project-workflows", true],
+  ]);
 });

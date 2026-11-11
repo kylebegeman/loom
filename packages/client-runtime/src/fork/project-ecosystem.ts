@@ -55,3 +55,14 @@ export function projectServices(
       };
     });
 }
+
+export function projectComputerCapabilities(features: readonly string[] | undefined) {
+  return [
+    { id: "library-repository-access", label: "Reviewed repository access" },
+    { id: "library-profile-readiness", label: "Tool readiness checks" },
+    { id: "project-workflows", label: "Recoverable project requests" },
+  ].map((feature) => ({
+    ...feature,
+    supported: features === undefined ? null : features.includes(feature.id),
+  }));
+}

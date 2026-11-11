@@ -6,11 +6,13 @@ import { SITES_FEATURE, type LibraryProject } from "@t3tools/contracts/fork";
 import {
   projectRelationships,
   projectServices,
+  projectComputerCapabilities,
 } from "@t3tools/client-runtime/fork/project-ecosystem";
 import { SITE_HEALTH_STATES, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { useEnvironments } from "../../state/environments";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { sites } from "../sites/state";
@@ -28,6 +30,7 @@ export function LibraryProjectEcosystem({
   readonly connected: boolean;
 }) {
   const navigation = useNavigation();
+  const { environments } = useEnvironments();
   const config = useEnvironmentServerConfig(authorityId);
   const catalog = useEnvironmentQuery(
     library.projects({ environmentId: authorityId, input: { includeArchived: true } }),
@@ -122,6 +125,36 @@ export function LibraryProjectEcosystem({
         <Button label="Open Sites" tone="text" onPress={() => navigation.navigate("Sites")} />
         <Text className="text-xs text-foreground-muted">
           Library Loom version: {config?.environment.serverVersion ?? "not checked"}
+        </Text>
+        <Text className="font-t3-medium text-sm text-foreground">Computers and compatibility</Text>
+        {environments
+          .filter((entry) => entry.entry.enabled)
+          .map((entry) => (
+            <View key={entry.environmentId} className="gap-1">
+              <Text className="text-sm text-foreground">
+                {entry.label}
+                {entry.connection.phase !== "connected" ? " (offline)" : ""}
+              </Text>
+              <Text className="text-xs text-foreground-muted">
+                {entry.connection.phase === "connected" ? "Reported" : "Last reported"} Loom:{" "}
+                {entry.serverConfig?.environment.serverVersion ?? "not checked"}
+              </Text>
+              {projectComputerCapabilities(
+                entry.serverConfig?.environment.capabilities.loomFeatures,
+              ).map((feature) => (
+                <Text key={feature.id} className="text-xs text-foreground-muted">
+                  {feature.label}:{" "}
+                  {feature.supported === null
+                    ? "Not checked"
+                    : feature.supported
+                      ? "Supported"
+                      : "Needs update"}
+                </Text>
+              ))}
+            </View>
+          ))}
+        <Text className="text-xs text-foreground-muted">
+          Version support does not prove current account access or tool readiness.
         </Text>
         {error ? <LibraryNotice error={error} /> : null}
       </View>

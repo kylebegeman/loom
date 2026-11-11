@@ -9,6 +9,7 @@ import {
 import {
   projectRelationships,
   projectServices,
+  projectComputerCapabilities,
 } from "@t3tools/client-runtime/fork/project-ecosystem";
 import { SITE_HEALTH_STATES, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { NetworkIcon } from "lucide-react";
@@ -186,6 +187,53 @@ export function ProjectEcosystem({
           .{!supported ? " Update the Library to edit project dependencies." : ""}
         </p>
       </div>
+      <details className="px-3.5 pb-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          Computers and compatibility
+        </summary>
+        <ul className="mt-3 space-y-3">
+          {environments
+            .filter((entry) => entry.entry.enabled)
+            .map((entry) => (
+              <li key={entry.environmentId} className="space-y-1">
+                <p className="text-sm font-medium">
+                  {entry.label}
+                  {entry.connection.phase !== "connected" ? " (offline)" : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {entry.connection.phase === "connected" ? "Reported" : "Last reported"} Loom
+                  version: {entry.serverConfig?.environment.serverVersion ?? "not checked"}
+                </p>
+                <ul className="space-y-1">
+                  {projectComputerCapabilities(
+                    entry.serverConfig?.environment.capabilities.loomFeatures,
+                  ).map((feature) => (
+                    <li
+                      key={feature.id}
+                      className="flex items-center justify-between gap-3 text-xs"
+                    >
+                      <span>{feature.label}</span>
+                      <span className="text-muted-foreground">
+                        {feature.supported === null
+                          ? "Not checked"
+                          : feature.supported
+                            ? "Supported"
+                            : "Needs update"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+        </ul>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Support describes the reported Loom version. Check the selected computer's current access
+          and tools before preparing files.
+        </p>
+        <Button size="xs" variant="ghost" render={<Link to="/settings/connections" />}>
+          Open connections
+        </Button>
+      </details>
       <LibraryDialog
         open={editing}
         onOpenChange={(open) => {
