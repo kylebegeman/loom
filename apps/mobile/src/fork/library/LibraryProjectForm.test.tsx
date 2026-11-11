@@ -482,3 +482,20 @@ it("keeps unavailable dependencies removable and stops adding at the wire limit"
     "candidate",
   ]);
 });
+
+it("unlocks a saved form after checking a server-confirmed cancellation", async () => {
+  await render({ start: "empty" });
+  await input("Project name", "Cancelled fixture");
+  state.create.mockResolvedValueOnce(
+    AsyncResult.failure(Cause.fail(new LibraryError({ reason: "blocked" }))),
+  );
+  await click("Create project");
+  const original = state.create.mock.calls[0]![0].input;
+  state.outcome.mockResolvedValueOnce(AsyncResult.success({ state: "cancelled", result: null }));
+  await click("Edit saved request");
+  expect(button("Create project")!.disabled).toBe(false);
+  await input("Project name", "Reviewed fixture");
+  await click("Create project");
+  expect(state.create.mock.calls[1]![0].input.requestId).not.toBe(original.requestId);
+  expect(state.create.mock.calls[1]![0].input.title).toBe("Reviewed fixture");
+});

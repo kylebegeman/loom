@@ -28,6 +28,7 @@ import {
 } from "./LibraryControls";
 import { projectLibrary } from "./state";
 import { useProjectUpdate } from "./useProjectUpdate";
+import { ProjectUpdateRecovery } from "./ProjectUpdateRecovery";
 
 export function ProjectEcosystem({
   project,
@@ -72,7 +73,7 @@ export function ProjectEcosystem({
       })),
   ];
   const open = () => {
-    if (!update.needsRecovery) setDraft(project.dependencies ?? []);
+    setDraft(update.pendingInput?.dependencies ?? project.dependencies ?? []);
     update.clearError();
     setEditing(true);
   };
@@ -81,8 +82,13 @@ export function ProjectEcosystem({
       title="Ecosystem"
       icon={NetworkIcon}
       action={
-        <Button size="xs" variant="ghost" disabled={!supported || !update.canEdit} onClick={open}>
-          Edit dependencies
+        <Button
+          size="xs"
+          variant="ghost"
+          disabled={!update.hasPendingRequest && (!supported || !update.canEdit)}
+          onClick={open}
+        >
+          {update.hasPendingRequest ? "Review saved update" : "Edit dependencies"}
         </Button>
       }
     >
@@ -287,16 +293,12 @@ export function ProjectEcosystem({
               Cancel
             </Button>
             <Button
-              disabled={update.busy || !update.canEdit}
+              disabled={update.busy || !update.canEdit || update.hasPendingRequest}
               onClick={async () => {
                 if (await update.save({ dependencies: draft })) setEditing(false);
               }}
             >
-              {update.busy
-                ? "Checking..."
-                : update.needsRecovery
-                  ? "Check result"
-                  : "Save dependencies"}
+              {update.busy ? "Saving..." : "Save dependencies"}
             </Button>
           </>
         }
@@ -311,7 +313,7 @@ export function ProjectEcosystem({
                 checked={draft.includes(entry.id)}
                 disabled={
                   update.busy ||
-                  update.needsRecovery ||
+                  update.hasPendingRequest ||
                   (!draft.includes(entry.id) &&
                     (entry.archived || draft.length >= LIBRARY_PROJECT_DEPENDENCY_LIMIT))
                 }
@@ -345,7 +347,7 @@ export function ProjectEcosystem({
           onRetry={catalog.refresh}
           accessContext={{ environmentId: authorityId }}
         />
-        <LibraryErrorNotice error={update.error} accessContext={{ environmentId: authorityId }} />
+        <ProjectUpdateRecovery update={update} />
       </LibraryDialog>
     </LibraryPanel>
   );

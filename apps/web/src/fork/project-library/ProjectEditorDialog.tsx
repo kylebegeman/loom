@@ -516,9 +516,9 @@ export function ProjectEditorDialog({
               onClick={async () => {
                 const operation = await reconcile(saved);
                 if (operation === undefined) return;
-                if (operation !== null) {
+                if (operation !== null && operation.state !== "cancelled") {
                   setError(
-                    "This request was already accepted. Resume it with its original details before starting another.",
+                    "This request was already accepted. Resume it, or cancel its remaining steps in request history before editing these details.",
                   );
                   return;
                 }

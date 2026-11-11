@@ -1078,7 +1078,7 @@ function LibraryProjectFormContent({
           error={error}
         />
       ) : null}
-      {submitted?.state === "ready" ? (
+      {submitted && submitted.state !== "succeeded" ? (
         <Button
           label="Edit saved request"
           tone="text"
@@ -1096,9 +1096,9 @@ function LibraryProjectFormContent({
                 },
               });
               if (AsyncResult.isFailure(result)) throw squashLibraryCommandFailure(result);
-              if (result.value !== null)
+              if (result.value !== null && result.value.state !== "cancelled")
                 throw new Error(
-                  "This request was already accepted. Continue it with its original details before starting another.",
+                  "This request was already accepted. Continue it, or cancel its remaining steps in request history before editing these details.",
                 );
               await saveAttempt(null);
             };

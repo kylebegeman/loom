@@ -752,11 +752,8 @@ export function LibraryOperationHistory({
                       label={outcome.resumeLabel}
                       disabled={!connected || !canResume || busy}
                       onPress={() =>
-                        operation.kind === "restore" && operation.projectId
-                          ? navigation.navigate("LibraryStart", {
-                              projectId: operation.projectId,
-                              reuseEnvironmentId: environmentId,
-                            })
+                        operation.kind === "restore"
+                          ? navigation.navigate("LibraryRestore", { operation })
                           : void act(operation.id, "resume")
                       }
                     />

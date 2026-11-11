@@ -54,6 +54,8 @@ export function useProjectUpdate({
 }) {
   const update = useAtomCommand(projectLibrary.updateProject, { reportFailure: false });
   const outcome = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
+  const cancelOperation = useAtomCommand(projectLibrary.cancelOperation, { reportFailure: false });
+  const canCancelOperation = useLibraryPermission(projectLibrary.cancelOperation, authorityId);
   const allowed = useLibraryPermission(projectLibrary.updateProject, authorityId);
   const canReadOutcome = useLibraryPermission(projectLibrary.operationOutcome, authorityId);
   const identity = useEnvironmentSessionState(authorityId).data?.identity;
@@ -88,7 +90,11 @@ export function useProjectUpdate({
   );
   const canEdit = allowed && connected && !project.archived;
   const needsRecovery = pending?.state === "unknown";
-  const perform = async (attempt: typeof UpdateAttempt.Type, check: boolean) => {
+  const perform = async (
+    attempt: typeof UpdateAttempt.Type,
+    action: "save" | "check" | "cancel",
+  ) => {
+    const check = action !== "save";
     if (!authorityId || unreadable || saving.current) return false;
     if (!accountMatches) {
       setError("Sign in with the account that started this update before continuing.");
@@ -109,7 +115,7 @@ export function useProjectUpdate({
           input: { requestId: input.requestId, kind: "update" },
         });
         if (answer._tag === "Failure") throw squashLibraryCommandFailure(answer);
-        const operation = answer.value;
+        let operation = answer.value;
         if (
           operation &&
           (operation.kind !== "update" ||
@@ -117,6 +123,39 @@ export function useProjectUpdate({
             operation.projectId !== input.projectId)
         )
           throw new Error("The receipt belongs to another project or computer.");
+        if (
+          action === "cancel" &&
+          operation &&
+          (operation.state === "failed" || operation.state === "needs-input")
+        ) {
+          if (!current(authorityId, input.projectId, attempt)) return false;
+          if (!canCancelOperation)
+            throw new LibraryError({
+              reason: "blocked",
+              detail: "Permission is needed to cancel this saved update.",
+              accessRepair: { kind: "permission", environmentId: authorityId },
+            });
+          saveAttempt({ ...attempt, state: "unknown" }, onlyOriginal);
+          const cancelled = await cancelOperation({
+            environmentId: authorityId,
+            input: { operationId: operation.id },
+          });
+          if (cancelled._tag === "Failure") throw squashLibraryCommandFailure(cancelled);
+          if (
+            cancelled.value.id !== operation.id ||
+            cancelled.value.kind !== "update" ||
+            cancelled.value.projectId !== input.projectId ||
+            cancelled.value.environmentId !== authorityId
+          )
+            throw new Error("The cancellation receipt does not match the saved update.");
+          operation = cancelled.value;
+        }
+        if (action === "cancel" && operation === null)
+          throw new LibraryError({
+            reason: "blocked",
+            detail:
+              "No receipt is available to confirm cancellation. Keep this request and check again, or resume the original update before starting another.",
+          });
         if (operation?.state === "succeeded") {
           if (!isProject(operation.result) || operation.result.id !== input.projectId)
             throw new Error("The saved update did not return this project.");
@@ -125,6 +164,21 @@ export function useProjectUpdate({
           onSaved();
           return true;
         }
+        if (operation?.state === "cancelled") {
+          saveAttempt(null, onlyOriginal);
+          if (!current(authorityId, input.projectId, attempt)) return false;
+          setError(
+            "The saved update was cancelled. Its completed steps remain in request history. Review your changes before saving again.",
+          );
+          onSaved();
+          return true;
+        }
+        if (action === "cancel")
+          throw new LibraryError({
+            reason: "blocked",
+            detail:
+              "This update is still running. Keep its request and check again before cancelling.",
+          });
         if (
           operation === null ||
           operation.state === "needs-input" ||
@@ -142,10 +196,7 @@ export function useProjectUpdate({
         }
         throw new LibraryError({
           reason: "blocked",
-          detail:
-            operation.state === "cancelled"
-              ? "This update was cancelled. Review its completed steps before starting another."
-              : "This update is still running. Check its result again.",
+          detail: "This update is still running. Check its result again.",
           ...(operation.accessRepair ? { accessRepair: operation.accessRepair } : {}),
         });
       }
@@ -175,9 +226,11 @@ export function useProjectUpdate({
         if (mounted.current) setBusy(false);
       });
   };
-  const recover = () => (pending ? perform(pending, true) : Promise.resolve(false));
+  const recover = () => (pending ? perform(pending, "check") : Promise.resolve(false));
   const resume = () =>
-    pending ? perform(pending, pending.state === "unknown") : Promise.resolve(false);
+    pending
+      ? perform(pending, pending.state === "unknown" ? "check" : "save")
+      : Promise.resolve(false);
   const save = async (change: ProjectChange) => {
     if (!authorityId || unreadable || saving.current) return false;
     if (pending?.state === "unknown") return recover();
@@ -254,12 +307,13 @@ export function useProjectUpdate({
         ...(change.title === undefined ? {} : { title: next.title }),
       },
     };
-    return perform(attempt, false);
+    return perform(attempt, "save");
   };
   return {
     save,
     recover,
     resume,
+    cancel: () => (pending ? perform(pending, "cancel") : Promise.resolve(false)),
     busy,
     needsRecovery,
     hasPendingRequest: pending !== null,

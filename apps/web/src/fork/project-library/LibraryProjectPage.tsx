@@ -83,6 +83,7 @@ import { NewConversationDialog } from "./NewConversationDialog";
 import { useQuickStarts } from "./LibraryActionHost";
 import { ConversationAutoStartContext, type ConversationQuickStart } from "./ConversationPalette";
 import { useProjectUpdate } from "./useProjectUpdate";
+import { ProjectUpdateRecovery } from "./ProjectUpdateRecovery";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
 import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
@@ -532,7 +533,7 @@ function ProjectView({
                 <ProjectSetup
                   project={project}
                   hasCopy={activeCopies.length > 0}
-                  canEdit={update.canEdit}
+                  canEdit={update.canEdit && !update.hasPendingRequest}
                   canWork={canWork}
                   canStart={canStart}
                   onWriteBrief={() => setEditingBrief(true)}
@@ -689,7 +690,7 @@ function ProjectView({
               resources={project.resources}
               copies={copies}
               hostLabel={hostLabel}
-              canEdit={update.canEdit}
+              canEdit={update.canEdit && !update.hasPendingRequest}
               busy={update.busy}
               adding={addingResource}
               canStart={canStart}
@@ -757,7 +758,7 @@ function ProjectView({
             project={project}
             copies={activeCopies}
             computers={library.computers}
-            canEdit={update.canEdit}
+            canEdit={update.canEdit && !update.hasPendingRequest}
             keepsBriefSuggestions={keepsBriefSuggestions}
             busy={update.busy}
             error={update.error}
@@ -904,7 +905,7 @@ function ProjectHero({
         <div className="flex flex-wrap items-start gap-x-5 gap-y-4">
           <Popover>
             <PopoverTrigger
-              disabled={!update.canEdit || update.busy}
+              disabled={!update.canEdit || update.busy || update.hasPendingRequest}
               aria-label="Change project color"
               render={
                 <button
@@ -920,7 +921,7 @@ function ProjectHero({
               <ProjectColorPicker
                 value={project.color}
                 automatic={libraryProjectColor({ id: project.id })}
-                disabled={update.busy}
+                disabled={update.busy || update.hasPendingRequest}
                 onChange={(color) => {
                   if ((project.color ?? null) !== color) void update.save({ color });
                 }}
@@ -932,8 +933,8 @@ function ProjectHero({
               <TitleEditor
                 title={project.title}
                 busy={update.busy}
-                canSave={update.canEdit}
-                needsRecovery={update.needsRecovery}
+                canSave={update.canEdit && !update.hasPendingRequest}
+                needsRecovery={update.hasPendingRequest}
                 onCancel={() => setRenaming(false)}
                 onSave={async (title) => {
                   if (await update.save({ title })) setRenaming(false);
@@ -978,10 +979,16 @@ function ProjectHero({
                 <EllipsisIcon />
               </MenuTrigger>
               <MenuPopup side="bottom" align="end">
-                <MenuItem disabled={!update.canEdit} onClick={() => setRenaming(true)}>
+                <MenuItem
+                  disabled={!update.canEdit || update.hasPendingRequest}
+                  onClick={() => setRenaming(true)}
+                >
                   Rename
                 </MenuItem>
-                <MenuItem disabled={!update.canEdit} onClick={() => onEditingBriefChange(true)}>
+                <MenuItem
+                  disabled={!update.canEdit || update.hasPendingRequest}
+                  onClick={() => onEditingBriefChange(true)}
+                >
                   Edit brief
                 </MenuItem>
                 <MenuItem onClick={onTidy}>Tidy...</MenuItem>
@@ -999,9 +1006,9 @@ function ProjectHero({
         <div className="mt-5 space-y-2 sm:ps-21">
           <ProjectBrief
             brief={project.brief}
-            canEdit={update.canEdit}
+            canEdit={update.canEdit && !update.hasPendingRequest}
             busy={update.busy}
-            needsRecovery={update.needsRecovery}
+            needsRecovery={update.hasPendingRequest}
             editing={editingBrief}
             showEmpty={showEmptyBrief}
             onEditingChange={onEditingBriefChange}
@@ -1037,7 +1044,7 @@ function ProjectHero({
         </div>
       ) : null}
       <LibraryErrorNotice error={archiveError} />
-      <LibraryErrorNotice error={update.error} />
+      <ProjectUpdateRecovery update={update} />
     </header>
   );
 }
@@ -1103,7 +1110,7 @@ function TitleEditor({
         }}
       />
       <Button shape="pill" type="submit" disabled={!canSave || busy || !draft.trim()}>
-        {needsRecovery ? "Check result" : "Save"}
+        {needsRecovery ? "Saved update pending" : "Save"}
       </Button>
       <Button shape="pill" type="button" variant="ghost" disabled={busy} onClick={onCancel}>
         Cancel
@@ -1160,7 +1167,7 @@ function ProjectBrief({
           aria-label="Project brief"
           placeholder="What are we making, and what matters?"
           value={draft}
-          disabled={busy}
+          disabled={busy || needsRecovery}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") onEditingChange(false);
@@ -1173,7 +1180,7 @@ function ProjectBrief({
             size="sm"
             disabled={!canEdit || busy || (!needsRecovery && draft === brief)}
           >
-            {needsRecovery ? "Check result" : busy ? "Saving..." : "Save brief"}
+            {needsRecovery ? "Saved update pending" : busy ? "Saving..." : "Save brief"}
           </Button>
           <Button
             shape="pill"

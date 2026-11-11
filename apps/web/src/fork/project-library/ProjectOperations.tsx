@@ -30,7 +30,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { projectLibrary, useLibraryPermission } from "./state";
-import { openLibraryAction } from "./actions";
+import { LibraryRestoreRequestDialog } from "./LibraryRestoreRequestDialog";
 import { LIBRARY_ROW, LibraryErrorNotice, LibraryStateBadge } from "./LibraryControls";
 import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import { ComputerLabel } from "./ProjectIdentity";
@@ -85,6 +85,7 @@ export function ProjectOperationHistory({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [restoring, setRestoring] = useState<LibraryOperation | null>(null);
   const act = async (id: string, kind: "resume" | "cancel") => {
     setBusy(true);
     setError(null);
@@ -157,9 +158,7 @@ export function ProjectOperationHistory({
                   onCheck={query.refresh}
                   onResume={() =>
                     operation.kind === "restore"
-                      ? openLibraryAction("new-conversation", operation.projectId ?? undefined, {
-                          environmentId,
-                        })
+                      ? setRestoring(operation)
                       : void act(operation.id, "resume")
                   }
                   onCancel={() => void act(operation.id, "cancel")}
@@ -187,6 +186,13 @@ export function ProjectOperationHistory({
           ) : null}
         </>
       )}
+      {restoring ? (
+        <LibraryRestoreRequestDialog
+          operation={restoring}
+          onChanged={query.refresh}
+          onClose={() => setRestoring(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -282,10 +288,10 @@ function OperationRow({
             shape="pill"
             size="xs"
             variant="outline"
+            disabled={!connected}
             render={
               <Link
                 to="/$environmentId/$threadId"
-                disabled={!connected}
                 params={{ environmentId: operation.environmentId, threadId: outcome.threadId }}
               />
             }

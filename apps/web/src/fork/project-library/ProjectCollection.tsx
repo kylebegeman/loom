@@ -493,8 +493,13 @@ function ProjectMenu({
         <MenuItem render={<Link to="/library/$projectId" params={{ projectId: project.id }} />}>
           Open project
         </MenuItem>
+        {update.hasPendingRequest ? (
+          <MenuItem render={<Link to="/library/$projectId" params={{ projectId: project.id }} />}>
+            Review saved update
+          </MenuItem>
+        ) : null}
         <MenuSub>
-          <MenuSubTrigger disabled={!update.canEdit || update.busy}>
+          <MenuSubTrigger disabled={!update.canEdit || update.busy || update.hasPendingRequest}>
             <ProjectColorDot color={entry.color} className="mx-1" />
             Color
           </MenuSubTrigger>

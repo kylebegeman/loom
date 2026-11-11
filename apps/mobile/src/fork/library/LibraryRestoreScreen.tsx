@@ -38,6 +38,9 @@ function RestoreRequestContent({ operation: original }: { operation: LibraryOper
   )?.identity;
   const { environments } = useEnvironments();
   const computer = environments.find((entry) => entry.environmentId === original.environmentId);
+  const sourceComputer = environments.find(
+    (entry) => entry.environmentId === context?.sourceCopy.environmentId,
+  );
   const connected = computer?.entry.enabled === true && computer.connection.phase === "connected";
   const correctAuthority = context !== undefined && authorityId === context.libraryEnvironmentId;
   const canRead = useAtomValue(library.operationOutcome.permissionAtom(original.environmentId));
@@ -180,10 +183,11 @@ function RestoreRequestContent({ operation: original }: { operation: LibraryOper
           <>
             <Text className="font-semibold">{context.project.title}</Text>
             <Text>
-              Source: {context.sourceCopy.environmentId} · {context.sourceCopy.rootPath}
+              Source: {sourceComputer?.label ?? context.sourceCopy.environmentId} ·{" "}
+              {context.sourceCopy.rootPath}
             </Text>
             <Text>
-              Destination: {original.environmentId} ·{" "}
+              Destination: {computer?.label ?? original.environmentId} ·{" "}
               {context.rootPath ?? "Original computer-selected folder"}
             </Text>
             <Text className="text-sm text-foreground-muted">

@@ -320,18 +320,25 @@ it("does not clear a newer persisted creation when an older response arrives", a
   expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual(newer);
 });
 
-it("starts over only after confirming that the original creation was never accepted", async () => {
-  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
-  await choose("Create project");
-  await choose("Start over");
-  expect(input().readOnly).toBe(false);
-  expect(input().value).toBe("Coast");
-  expect(container.textContent).not.toContain("Response lost");
-  await choose("Create project");
-  const [first, second] = state.create.mock.calls.map(([call]) => call.input);
-  expect(second).toEqual({ ...first, requestId: expect.any(String) });
-  expect(second.requestId).not.toBe(first.requestId);
-});
+it.each(["absent", "cancelled"])(
+  "starts over only after confirming the original creation is %s",
+  async (outcome) => {
+    state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
+    await choose("Create project");
+    if (outcome === "cancelled")
+      state.outcome.mockResolvedValueOnce(
+        AsyncResult.success({ state: "cancelled", result: null }),
+      );
+    await choose("Start over");
+    expect(input().readOnly).toBe(false);
+    expect(input().value).toBe("Coast");
+    expect(container.textContent).not.toContain("Response lost");
+    await choose("Create project");
+    const [first, second] = state.create.mock.calls.map(([call]) => call.input);
+    expect(second).toEqual({ ...first, requestId: expect.any(String) });
+    expect(second.requestId).not.toBe(first.requestId);
+  },
+);
 
 it("reconciles a lost success before resuming without submitting the project again", async () => {
   state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));

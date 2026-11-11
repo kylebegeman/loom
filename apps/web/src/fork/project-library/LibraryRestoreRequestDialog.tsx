@@ -44,6 +44,7 @@ function RestoreRequestContent({
   const authorityIdentity = useEnvironmentSessionState(context?.libraryEnvironmentId ?? null).data
     ?.identity;
   const computer = useEnvironment(original.environmentId);
+  const sourceComputer = useEnvironment(context?.sourceCopy.environmentId ?? null);
   const connected = computer?.entry.enabled === true && computer.connection.phase === "connected";
   const correctAuthority = context !== undefined && authorityId === context.libraryEnvironmentId;
   const canRead = useLibraryPermission(projectLibrary.operationOutcome, original.environmentId);
@@ -219,14 +220,15 @@ function RestoreRequestContent({
       {context ? (
         <div className="space-y-2 text-sm">
           <p>{context.project.title}</p>
-          <p>
-            Source: {context.sourceCopy.environmentId} · {context.sourceCopy.rootPath}
+          <p className="break-all select-text">
+            Source: {sourceComputer?.label ?? context.sourceCopy.environmentId} ·{" "}
+            {context.sourceCopy.rootPath}
           </p>
-          <p>
-            Destination: {original.environmentId} ·{" "}
+          <p className="break-all select-text">
+            Destination: {computer?.label ?? original.environmentId} ·{" "}
             {context.rootPath ?? "Original computer-selected folder"}
           </p>
-          <p className="text-muted-foreground">
+          <p className="break-all text-muted-foreground select-text">
             Request {context.requestId}. Renewing authorization keeps this selection and does not
             restore files.
           </p>
