@@ -415,6 +415,9 @@ describe("DesktopBrowserHost", () => {
       // Playwright re-enabling a domain after a reload is not the agent using the tab.
       yield* command(host, 1, "Runtime.enable");
       yield* settle;
+      const enabled = debuggee.nextSend();
+      debuggee.release();
+      yield* Effect.promise(() => enabled);
       debuggee.release();
       yield* settle;
       yield* TestClock.adjust("1 minute");
