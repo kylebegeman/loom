@@ -108,7 +108,11 @@ export async function runSubmittedLibraryProjectRequest(
     return attempt;
   }
   if (attempt.state === "unknown") {
-    if (!ports.lookup || attempt.request.kind === "update")
+    if (attempt.request.kind === "update")
+      throw new Error(
+        "Loom cannot confirm this project's saved changes. Keep this request and review the project in another view before changing it again.",
+      );
+    if (!ports.lookup)
       throw new Error(
         "This server cannot check the saved result yet. Keep the request for recovery and update Loom before retrying.",
       );
