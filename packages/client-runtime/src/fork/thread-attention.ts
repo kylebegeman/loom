@@ -1,41 +1,31 @@
 import {
   attentionThreadTimestamp,
-  selectAttentionThreadShells,
-  pendingSubagentAttentionRequests,
+  isBotRunThreadId,
+  threadAttentionKind,
 } from "@t3tools/contracts/fork";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { isListedThreadLineage, type ScopedThreadRef } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import type { EnvironmentThreadShell } from "../state/models.ts";
+import { effectiveSnoozed } from "../state/threadSettled.ts";
 
 export function attentionThreads(
   threads: readonly EnvironmentThreadShell[],
   nowMs: number,
 ): EnvironmentThreadShell[] {
-  const byEnvironment = new Map<EnvironmentId, EnvironmentThreadShell[]>();
-  for (const thread of threads) {
-    const group = byEnvironment.get(thread.environmentId);
-    if (group) group.push(thread);
-    else byEnvironment.set(thread.environmentId, [thread]);
-  }
-  const attentionTimes = new Map<EnvironmentThreadShell, number>();
-  return [...byEnvironment.values()]
-    .flatMap((group) => {
-      const childRequests = pendingSubagentAttentionRequests(group.map((thread) => thread.source));
-      for (const thread of group)
-        attentionTimes.set(
-          thread,
-          attentionThreadTimestamp(thread.source, childRequests.get(thread.id)),
-        );
-      const selected = new Set(
-        selectAttentionThreadShells(
-          group.map((thread) => thread.source),
-          nowMs,
-        ).map((thread) => thread.id),
-      );
-      return group.filter((thread) => selected.has(thread.id));
-    })
+  const now = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
+  return threads
+    .filter(
+      (thread) =>
+        thread.archivedAt === null &&
+        thread.deletedAt === null &&
+        isListedThreadLineage(thread.lineage) &&
+        !isBotRunThreadId(thread.id) &&
+        (thread.pendingSubagentRequest != null || threadAttentionKind(thread.source) !== null) &&
+        !effectiveSnoozed(thread, { now }),
+    )
     .sort(
       (a, b) =>
-        attentionTimes.get(a)! - attentionTimes.get(b)! ||
+        attentionThreadTimestamp(a.source) - attentionThreadTimestamp(b.source) ||
         a.environmentId.localeCompare(b.environmentId) ||
         a.id.localeCompare(b.id),
     );

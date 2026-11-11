@@ -41,7 +41,10 @@ in the command palette or `Cmd+Shift+U` on macOS (`Ctrl+Shift+U` on Windows and 
 The palette's **Waiting on you** group lists questions and approvals. On mobile, the status
 filter offers **Needs you** and **Waiting on you**. Snoozed work stays out until it wakes.
 The desktop badge follows this count, so focusing Loom does not clear unresolved work.
-Offline rows show their last known status.
+Hidden threads stay out. Subagent and delegated approvals appear once on their visible parent;
+questions to a coordinating agent stay with that agent. Side-chat questions appear on their parent.
+Bot runs use the **Bots** queue and its own badge. Answer a request, resume or retry the work,
+or snooze or archive the thread to remove it from this list. Offline rows show their last known status.
 
 A **Paused** thread has queued messages waiting to run. Choose **Resume queue** from the
 thread's menu after a restart, stop or run failure. You can also ask an agent to find paused

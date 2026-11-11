@@ -9,5 +9,11 @@ const attentionCountAtom = Atom.map(
 
 /** Keeps the dock badge on the number of threads that need the user. */
 export function startAttentionBadge(registry: AtomRegistry.AtomRegistry): () => void {
-  return registry.subscribe(attentionCountAtom, setNotificationBadge, { immediate: true });
+  const unsubscribe = registry.subscribe(attentionCountAtom, setNotificationBadge, {
+    immediate: true,
+  });
+  return () => {
+    unsubscribe();
+    setNotificationBadge(0);
+  };
 }
