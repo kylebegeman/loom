@@ -1,4 +1,11 @@
-import type { LibraryProject, SitesSnapshot } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_REPOSITORY_ACCESS_FEATURE,
+  LIBRARY_PROFILE_READINESS_FEATURE,
+  LIBRARY_PREPARATION_PLAN_FEATURE,
+  PROJECT_WORKFLOWS_FEATURE,
+  type LibraryProject,
+  type SitesSnapshot,
+} from "@t3tools/contracts/fork";
 import { siteChecksHealth } from "./sites-presentation.ts";
 
 export function projectRelationships(project: LibraryProject, catalog: readonly LibraryProject[]) {
@@ -58,9 +65,10 @@ export function projectServices(
 
 export function projectComputerCapabilities(features: readonly string[] | undefined) {
   return [
-    { id: "library-repository-access", label: "Reviewed repository access" },
-    { id: "library-profile-readiness", label: "Tool readiness checks" },
-    { id: "project-workflows", label: "Recoverable project requests" },
+    { id: LIBRARY_REPOSITORY_ACCESS_FEATURE, label: "Reviewed repository access" },
+    { id: LIBRARY_PROFILE_READINESS_FEATURE, label: "Tool readiness checks" },
+    { id: LIBRARY_PREPARATION_PLAN_FEATURE, label: "Reviewed preparation plans" },
+    { id: PROJECT_WORKFLOWS_FEATURE, label: "Recoverable project requests" },
   ].map((feature) => ({
     ...feature,
     supported: features === undefined ? null : features.includes(feature.id),

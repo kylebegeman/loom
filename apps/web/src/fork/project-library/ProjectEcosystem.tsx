@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   PROJECT_ECOSYSTEM_FEATURE,
+  LIBRARY_PROJECT_DEPENDENCY_LIMIT,
   SITES_FEATURE,
   type LibraryProject,
 } from "@t3tools/contracts/fork";
@@ -25,7 +26,7 @@ import {
   LibraryPanel,
   LibraryStateBadge,
 } from "./LibraryControls";
-import { useLibraryProjects } from "./state";
+import { projectLibrary } from "./state";
 import { useProjectUpdate } from "./useProjectUpdate";
 
 export function ProjectEcosystem({
@@ -39,26 +40,37 @@ export function ProjectEcosystem({
   readonly connected: boolean;
   readonly onChanged: () => void;
 }) {
-  const catalog = useLibraryProjects(true);
+  const catalog = useEnvironmentQuery(
+    projectLibrary.projects({ environmentId: authorityId, input: { includeArchived: true } }),
+  );
   const { environments } = useEnvironments();
   const host = environments.find((entry) => entry.environmentId === authorityId);
   const capabilities = host?.serverConfig?.environment.capabilities;
   const supported = supportsLoomFeature(capabilities, PROJECT_ECOSYSTEM_FEATURE);
   const sitesSupported = supportsLoomFeature(capabilities, SITES_FEATURE);
   const inventory = useEnvironmentQuery(
-    supportsLoomFeature(capabilities, SITES_FEATURE)
-      ? sites.snapshot({ environmentId: authorityId, input: {} })
-      : null,
+    sitesSupported ? sites.snapshot({ environmentId: authorityId, input: {} }) : null,
   );
   const snapshot = inventory.data?.snapshot;
   const now = useSiteCheckClock(snapshot);
-  const relationships = projectRelationships(project, catalog.query.data ?? []);
+  const relationships = projectRelationships(project, catalog.data ?? []);
   const services = snapshot
     ? projectServices([project.id, ...(project.dependencies ?? [])], snapshot, now)
     : [];
   const update = useProjectUpdate({ project, authorityId, connected, onSaved: onChanged });
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<readonly string[]>([]);
+  const projectsById = new Map((catalog.data ?? []).map((entry) => [entry.id, entry]));
+  const choices = [
+    ...(catalog.data ?? []).filter((entry) => entry.id !== project.id),
+    ...draft
+      .filter((id) => !projectsById.has(id))
+      .map((id) => ({
+        id,
+        title: `Project unavailable (${id})`,
+        archived: false,
+      })),
+  ];
   const open = () => {
     if (!update.needsRecovery) setDraft(project.dependencies ?? []);
     update.clearError();
@@ -77,6 +89,16 @@ export function ProjectEcosystem({
       <div className="space-y-4 px-3.5 pb-4">
         <div className="space-y-2">
           <h3 className="text-sm font-medium">Depends on</h3>
+          {catalog.isPending ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              Reading project relationships...
+            </p>
+          ) : null}
+          <LibraryErrorNotice
+            error={catalog.error}
+            onRetry={catalog.refresh}
+            accessContext={{ environmentId: authorityId }}
+          />
           {relationships.dependencies.length ? (
             <ul className="space-y-1.5">
               {relationships.dependencies.map(({ id, project: dependency }) => (
@@ -143,11 +165,7 @@ export function ProjectEcosystem({
                     <p className="break-all text-xs text-muted-foreground">{service.url}</p>
                     <p className="text-xs text-muted-foreground">
                       {linkedProjectIds
-                        .map(
-                          (id) =>
-                            catalog.query.data?.find((entry) => entry.id === id)?.title ??
-                            "Project unavailable",
-                        )
+                        .map((id) => projectsById.get(id)?.title ?? "Project unavailable")
                         .join(", ")}
                     </p>
                   </div>
@@ -159,15 +177,19 @@ export function ProjectEcosystem({
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              {!sitesSupported
-                ? "Update the Library to read service inventory."
-                : inventory.error
-                  ? "Service inventory could not be read."
-                  : inventory.data?.configured === false
-                    ? "Sites is not configured on this Library."
-                    : inventory.isPending
-                      ? "Reading service inventory..."
-                      : "No services registered for these projects."}
+              {!connected
+                ? "Reconnect the Library to read service inventory."
+                : capabilities === undefined
+                  ? "Checking Library capabilities..."
+                  : !sitesSupported
+                    ? "Update the Library to read service inventory."
+                    : inventory.error
+                      ? "Service inventory could not be read."
+                      : inventory.data?.configured === false
+                        ? "Sites is not configured on this Library."
+                        : inventory.isPending
+                          ? "Reading service inventory..."
+                          : "No services registered for these projects."}
             </p>
           )}
           {snapshot ? (
@@ -175,16 +197,34 @@ export function ProjectEcosystem({
               {connected ? "Observed" : "Saved observation"}: {snapshot.observedAt}
             </p>
           ) : null}
-          <Button size="xs" variant="ghost" render={<Link to="/sites" />}>
-            Open Sites
-          </Button>
+          <LibraryErrorNotice
+            error={inventory.error}
+            onRetry={inventory.refresh}
+            accessContext={{ environmentId: authorityId }}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button size="xs" variant="ghost" render={<Link to="/sites" />}>
+              Open Sites
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={!connected || !sitesSupported || inventory.isPending}
+              onClick={inventory.refresh}
+            >
+              Refresh services
+            </Button>
+          </div>
         </div>
         <p className="text-xs text-muted-foreground">
           Library: {host?.label ?? "selected computer"}
           {host?.serverConfig
             ? `, Loom ${host.serverConfig.environment.serverVersion}`
             : ", version not checked"}
-          .{!supported ? " Update the Library to edit project dependencies." : ""}
+          .
+          {connected && capabilities !== undefined && !supported
+            ? " Update the Library to edit project dependencies."
+            : ""}
         </p>
       </div>
       <details className="px-3.5 pb-4">
@@ -261,32 +301,51 @@ export function ProjectEcosystem({
           </>
         }
       >
+        <p className="text-sm text-muted-foreground">
+          {draft.length} of {LIBRARY_PROJECT_DEPENDENCY_LIMIT} dependencies selected.
+        </p>
         <div className="space-y-3">
-          {(catalog.query.data ?? [])
-            .filter((entry) => entry.id !== project.id)
-            .map((entry) => (
-              <label key={entry.id} className="flex items-start gap-3 text-sm">
-                <Checkbox
-                  checked={draft.includes(entry.id)}
-                  disabled={
-                    update.busy ||
-                    update.needsRecovery ||
-                    (entry.archived && !draft.includes(entry.id))
-                  }
-                  onCheckedChange={(checked) =>
-                    setDraft((ids) =>
-                      checked ? [...ids, entry.id] : ids.filter((id) => id !== entry.id),
-                    )
-                  }
-                />
-                <span>
-                  {entry.title}
-                  {entry.archived ? " (archived)" : ""}
-                </span>
-              </label>
-            ))}
+          {choices.map((entry) => (
+            <label key={entry.id} className="flex items-start gap-3 text-sm">
+              <Checkbox
+                checked={draft.includes(entry.id)}
+                disabled={
+                  update.busy ||
+                  update.needsRecovery ||
+                  (!draft.includes(entry.id) &&
+                    (entry.archived || draft.length >= LIBRARY_PROJECT_DEPENDENCY_LIMIT))
+                }
+                onCheckedChange={(checked) =>
+                  setDraft((ids) => {
+                    if (!checked) return ids.filter((id) => id !== entry.id);
+                    return ids.includes(entry.id) || ids.length >= LIBRARY_PROJECT_DEPENDENCY_LIMIT
+                      ? ids
+                      : [...ids, entry.id];
+                  })
+                }
+              />
+              <span className="min-w-0 break-words">
+                {entry.title}
+                {entry.archived ? " (archived)" : ""}
+              </span>
+            </label>
+          ))}
         </div>
-        <LibraryErrorNotice error={update.error} />
+        {!choices.length ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {catalog.isPending
+              ? "Reading projects..."
+              : catalog.error
+                ? "Projects could not be read."
+                : "No other projects in this Library."}
+          </p>
+        ) : null}
+        <LibraryErrorNotice
+          error={catalog.error}
+          onRetry={catalog.refresh}
+          accessContext={{ environmentId: authorityId }}
+        />
+        <LibraryErrorNotice error={update.error} accessContext={{ environmentId: authorityId }} />
       </LibraryDialog>
     </LibraryPanel>
   );

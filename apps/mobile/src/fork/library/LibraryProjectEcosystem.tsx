@@ -37,13 +37,12 @@ export function LibraryProjectEcosystem({
   );
   const sitesSupported = supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE);
   const inventory = useEnvironmentQuery(
-    supportsLoomFeature(config?.environment.capabilities, SITES_FEATURE)
-      ? sites.snapshot({ environmentId: authorityId, input: {} })
-      : null,
+    sitesSupported ? sites.snapshot({ environmentId: authorityId, input: {} }) : null,
   );
   const snapshot = inventory.data?.snapshot;
   const now = useSiteCheckClock(snapshot);
   const relationships = projectRelationships(project, catalog.data ?? []);
+  const projectsById = new Map((catalog.data ?? []).map((entry) => [entry.id, entry]));
   const services = snapshot
     ? projectServices([project.id, ...(project.dependencies ?? [])], snapshot, now)
     : [];
@@ -55,6 +54,18 @@ export function LibraryProjectEcosystem({
     >
       <View className="gap-3 p-4">
         <Text className="font-t3-medium text-sm text-foreground">Depends on</Text>
+        {catalog.isPending ? (
+          <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+            Reading project relationships...
+          </Text>
+        ) : null}
+        {catalog.error ? (
+          <LibraryNotice
+            error={catalog.error}
+            onRetry={catalog.refresh}
+            accessContext={{ environmentId: authorityId }}
+          />
+        ) : null}
         {relationships.dependencies.length ? (
           relationships.dependencies.map(({ id, project: dependency }) =>
             dependency ? (
@@ -80,7 +91,7 @@ export function LibraryProjectEcosystem({
               <Button
                 key={entry.id}
                 tone="text"
-                label={entry.title}
+                label={`${entry.title}${entry.archived ? " (archived)" : ""}`}
                 onPress={() => navigation.navigate("LibraryProject", { projectId: entry.id })}
               />
             ))}
@@ -88,10 +99,15 @@ export function LibraryProjectEcosystem({
         ) : null}
         <Text className="font-t3-medium text-sm text-foreground">Registered services</Text>
         {services.length ? (
-          services.map(({ service, health }) => (
+          services.map(({ service, linkedProjectIds, health }) => (
             <View key={service.id} className="gap-1">
               <Text className="text-sm text-foreground">
                 {service.name}: {SITE_HEALTH_STATES[health.state].label}
+              </Text>
+              <Text className="text-xs text-foreground-muted">
+                {linkedProjectIds
+                  .map((id) => projectsById.get(id)?.title ?? "Project unavailable")
+                  .join(", ")}
               </Text>
               <Button
                 label={service.url}
@@ -106,15 +122,19 @@ export function LibraryProjectEcosystem({
           ))
         ) : (
           <Text className="text-sm text-foreground-muted">
-            {!sitesSupported
-              ? "Update the Library to read service inventory."
-              : inventory.error
-                ? "Service inventory could not be read."
-                : inventory.data?.configured === false
-                  ? "Sites is not configured on this Library."
-                  : inventory.isPending
-                    ? "Reading service inventory..."
-                    : "No services registered for these projects."}
+            {!connected
+              ? "Reconnect the Library to read service inventory."
+              : config === null || config === undefined
+                ? "Checking Library capabilities..."
+                : !sitesSupported
+                  ? "Update the Library to read service inventory."
+                  : inventory.error
+                    ? "Service inventory could not be read."
+                    : inventory.data?.configured === false
+                      ? "Sites is not configured on this Library."
+                      : inventory.isPending
+                        ? "Reading service inventory..."
+                        : "No services registered for these projects."}
           </Text>
         )}
         {snapshot ? (
@@ -122,7 +142,20 @@ export function LibraryProjectEcosystem({
             {connected ? "Observed" : "Saved observation"}: {snapshot.observedAt}
           </Text>
         ) : null}
+        {inventory.error ? (
+          <LibraryNotice
+            error={inventory.error}
+            onRetry={inventory.refresh}
+            accessContext={{ environmentId: authorityId }}
+          />
+        ) : null}
         <Button label="Open Sites" tone="text" onPress={() => navigation.navigate("Sites")} />
+        <Button
+          label="Refresh services"
+          tone="text"
+          disabled={!connected || !sitesSupported || inventory.isPending}
+          onPress={inventory.refresh}
+        />
         <Text className="text-xs text-foreground-muted">
           Library Loom version: {config?.environment.serverVersion ?? "not checked"}
         </Text>

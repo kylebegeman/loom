@@ -105,6 +105,7 @@ it("distinguishes an unknown computer version from a host lacking a lifecycle ca
   ).toEqual([
     ["library-repository-access", false],
     ["library-profile-readiness", false],
+    ["library-preparation-plan", false],
     ["project-workflows", true],
   ]);
 });
