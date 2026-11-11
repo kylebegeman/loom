@@ -5,7 +5,9 @@ import { page, userEvent } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
-  commands: { prepare: {}, register: {}, inspect: {} },
+  commands: { prepare: {}, register: {}, inspect: {}, outcome: {} },
+  outcome: vi.fn(),
+  attempt: null as unknown,
   prepare: vi.fn(),
   register: vi.fn(),
   inspect: vi.fn(),
@@ -32,6 +34,7 @@ const computer = (environmentId: string, label: string) => ({
 });
 vi.mock("./state", () => ({
   projectLibrary: {
+    operationOutcome: state.commands.outcome,
     prepareCopy: state.commands.prepare,
     registerCopy: state.commands.register,
     inspectFolder: state.commands.inspect,
@@ -50,7 +53,7 @@ vi.mock("./state", () => ({
   }),
   useLibraryPermission: () => true,
 }));
-vi.mock("./attempts", () => ({ useLibraryAttempt: () => [null, vi.fn()] }));
+vi.mock("./attempts", () => ({ useLibraryAttempt: () => [state.attempt, vi.fn()] }));
 vi.mock("~/state/environments", async (original) => ({
   ...(await original<typeof import("~/state/environments")>()),
   usePrimaryEnvironmentId: () => "phone",
@@ -61,16 +64,20 @@ vi.mock("~/state/query", () => ({
       ? { data: placement, error: null, isPending: false }
       : { data: undefined, error: null, isPending: false },
 }));
-vi.mock("~/state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
+vi.mock("~/state/use-atom-query-runner", () => ({
+  useAtomQueryRunner: () => vi.fn(async () => ({ _tag: "Success", value: null })),
+}));
 vi.mock("~/state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) =>
-    command === state.commands.prepare
-      ? state.prepare
-      : command === state.commands.register
-        ? state.register
-        : command === state.commands.inspect
-          ? state.inspect
-          : vi.fn(),
+    command === state.commands.outcome
+      ? state.outcome
+      : command === state.commands.prepare
+        ? state.prepare
+        : command === state.commands.register
+          ? state.register
+          : command === state.commands.inspect
+            ? state.inspect
+            : vi.fn(),
 }));
 vi.mock("./LibraryFolderPalette", async (original) => ({
   ...(await original<typeof import("./LibraryFolderPalette")>()),
@@ -190,4 +197,39 @@ it("uses a browsed folder only when it holds the project, and downloads into a n
     environmentId: "air",
     input: { rootPath: "/Users/kyle/Developer/active/corbelo-2" },
   });
+});
+
+it("checks a persisted preparation before retrying and leaves running work alone", async () => {
+  state.prepare.mockReset();
+  state.register.mockReset();
+  state.outcome
+    .mockReset()
+    .mockResolvedValue({ _tag: "Success", value: { state: "running", result: null } });
+  state.attempt = {
+    environmentId: "air",
+    input: { requestId: "original", project, strategy: "clone" },
+    registerRequestId: "original-register",
+    copy: null,
+  };
+  try {
+    await using _screen = await render(
+      <CopyDialog project={project} strategy="clone" onSaved={vi.fn()} onClose={vi.fn()} />,
+    );
+    await press("Retry preparation");
+    await expect
+      .element(
+        page.getByText(
+          "This preparation is already in progress. Check its result before retrying.",
+        ),
+      )
+      .toBeVisible();
+    expect(state.outcome).toHaveBeenCalledExactlyOnceWith({
+      environmentId: "air",
+      input: { requestId: "original", kind: "prepare" },
+    });
+    expect(state.prepare).not.toHaveBeenCalled();
+    expect(state.register).not.toHaveBeenCalled();
+  } finally {
+    state.attempt = null;
+  }
 });

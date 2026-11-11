@@ -321,6 +321,7 @@ export function useAccessBlock(
         label: environment.label,
         phase: environment.entry.enabled ? environment.connection.phase : null,
         connectionError: environment.connection.error,
+        blockedReason: environment.connection.blockedReason,
         identity: identityProfile(environment.entry) !== undefined,
         session: session.data,
         sessionFailed: session.hasError,

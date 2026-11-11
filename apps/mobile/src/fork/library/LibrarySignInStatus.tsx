@@ -82,7 +82,11 @@ export function useLibrarySignInStatus() {
   const signIn = librarySignIn({
     connection:
       presentation?.entry.enabled === true
-        ? { phase: presentation.connection.phase, identity: connection?.identity !== undefined }
+        ? {
+            phase: presentation.connection.phase,
+            blockedReason: presentation.connection.blockedReason,
+            identity: connection?.identity !== undefined,
+          }
         : null,
     session: session
       ? {

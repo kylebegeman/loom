@@ -63,10 +63,10 @@ describe("library sign-in state", () => {
     ).toBe("expired");
   });
 
-  it("is expired when an Identity connection fails, and unreachable when a pairing does", () => {
+  it("keeps connection failures distinct from expired Identity access", () => {
     expect(
       librarySignIn(target({ connection: { phase: "error", identity: true }, session: null })),
-    ).toMatchObject({ state: "expired", canSignIn: true });
+    ).toMatchObject({ state: "unreachable", canSignIn: false });
     expect(
       librarySignIn(target({ connection: { phase: "error", identity: false }, session: null }))
         .state,
@@ -117,5 +117,8 @@ describe("library sign-in repair", () => {
     );
     expect(needsLibrarySignIn("This operation belongs to another signed-in session.")).toBe(false);
     expect(needsLibrarySignIn(null)).toBe(false);
+    expect(needsLibrarySignIn("Session expired", { kind: "sign-in" })).toBe(true);
+    for (const kind of ["permission", "ownership", "connection"] as const)
+      expect(needsLibrarySignIn("Sign in again", { kind })).toBe(false);
   });
 });

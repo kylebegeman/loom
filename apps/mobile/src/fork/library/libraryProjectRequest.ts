@@ -13,6 +13,7 @@ import { libraryLaunchCopyMatchesScope, libraryLaunchPathsEqual } from "./librar
 
 export const SubmittedLibraryProjectRequest = Schema.Struct({
   authorityId: EnvironmentId,
+  initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
   environmentId: EnvironmentId,
   request: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("create"), input: LibraryCreateProjectRequest }),
@@ -78,6 +79,7 @@ export async function runSubmittedLibraryProjectRequest(
   attempt: SubmittedLibraryProjectRequest,
   authorityId: EnvironmentId,
   ports: {
+    readonly identity?: { readonly issuer: string; readonly subject: string } | undefined;
     readonly persist: (next: SubmittedLibraryProjectRequest) => Promise<void>;
     readonly execute: (
       request: SubmittedLibraryProjectRequest,
@@ -88,6 +90,12 @@ export async function runSubmittedLibraryProjectRequest(
 ): Promise<SubmittedLibraryProjectRequest> {
   if (attempt.authorityId !== authorityId)
     throw new Error("Reconnect the Library used for this request before continuing.");
+  if (
+    attempt.initiator &&
+    (attempt.initiator.issuer !== ports.identity?.issuer ||
+      attempt.initiator.subject !== ports.identity?.subject)
+  )
+    throw new Error("Sign in with the account that started this request before continuing.");
   if (attempt.state === "succeeded") {
     checkedResult(attempt, attempt.result);
     return attempt;
@@ -110,6 +118,10 @@ export async function runSubmittedLibraryProjectRequest(
     if (operation?.state === "queued" || operation?.state === "running")
       throw new Error(
         `${operation.phase || "The saved request is still running"}. Check its result again.`,
+      );
+    if (operation?.state === "cancelled")
+      throw new Error(
+        "This request was cancelled. Review its completed steps before starting another.",
       );
     const next: SubmittedLibraryProjectRequest =
       operation?.state === "succeeded"

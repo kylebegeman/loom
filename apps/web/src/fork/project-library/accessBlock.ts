@@ -3,7 +3,10 @@ import {
   type AuthEnvironmentScope,
   type AuthSessionState,
 } from "@t3tools/contracts";
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type {
+  EnvironmentConnectionPhase,
+  EnvironmentConnectionPresentation,
+} from "@t3tools/client-runtime/connection";
 import { AUTH_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import type { SettingsSearchItemId } from "~/components/settings/settingsSearch";
 
@@ -13,6 +16,7 @@ export const LIBRARY_SIGN_IN_TARGET = "library-sign-in" satisfies SettingsSearch
 export interface AccessTarget {
   readonly label: string;
   readonly phase: EnvironmentConnectionPhase | null;
+  readonly blockedReason?: EnvironmentConnectionPresentation["blockedReason"];
   readonly connectionError: string | null;
   /** Identity connections recover by signing in; paired ones need a new pairing. */
   readonly identity: boolean;
@@ -45,7 +49,7 @@ function explain(target: AccessTarget): Omit<AccessBlock, "label"> | null {
   if (target.phase === "connecting")
     return { message: `Connecting to ${target.label}...`, repair: null };
   if (target.phase !== "connected") {
-    const signIn = target.identity && target.phase === "error";
+    const signIn = target.identity && target.blockedReason === "authentication";
     return {
       message: signIn
         ? `Your sign-in to ${target.label} expired. Sign in again to continue.`

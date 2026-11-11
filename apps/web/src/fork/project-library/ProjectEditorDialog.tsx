@@ -35,6 +35,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useEnvironmentSessionState } from "~/state/session";
 import { LibraryAccessNotice } from "./LibraryAccessNotice";
 import {
   projectLibrary,
@@ -44,10 +45,11 @@ import {
 } from "./state";
 
 import { libraryResourceFromInput, validateResources } from "@t3tools/client-runtime/fork";
-import { holdsGitRemote } from "./newProjectChoices";
+import { holdsGitRemote, newProjectDraftKey } from "./newProjectChoices";
 
 const decodeBlueprint = Schema.decodeUnknownOption(Schema.fromJsonString(LibraryBlueprint));
 const isLibraryError = Schema.is(LibraryError);
+const isProject = Schema.is(LibraryProject);
 const EditorAttempt = Schema.NullOr(
   Schema.Struct({
     requestId: Schema.String,
@@ -57,6 +59,7 @@ const EditorAttempt = Schema.NullOr(
     color: Schema.optional(LibraryProjectColor),
     profile: Schema.optional(LibraryProjectProfileInput),
     result: Schema.optional(LibraryProject),
+    initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
   }),
 );
 
@@ -86,20 +89,27 @@ export function ProjectEditorDialog({
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
 }) {
-  const [attempt, saveAttempt] = useLibraryAttempt(
-    `loom:library:editor:${authorityId}:new`,
-    EditorAttempt,
-  );
-  // A failed create belongs to its requested repository or name, not every new project.
-  const [resumed, setResumed] = useState(() =>
-    attempt &&
+  const legacyKey = `loom:library:editor:${authorityId}:new`;
+  const key = `${legacyKey}:${newProjectDraftKey({ step: "create", page: initialPage, repository: initialResource, title: initialTitle })}`;
+  const [scopedAttempt, saveAttempt] = useLibraryAttempt(key, EditorAttempt);
+  const [legacyAttempt, saveLegacyAttempt] = useLibraryAttempt(legacyKey, EditorAttempt);
+  const matchingLegacy =
     initialPage === "name" &&
+    legacyAttempt &&
     (initialResource
-      ? holdsGitRemote(attempt.resources, initialResource)
-      : !initialTitle || attempt.title === initialTitle)
-      ? attempt.requestId
-      : null,
-  );
+      ? holdsGitRemote(legacyAttempt.resources, initialResource)
+      : !initialTitle || legacyAttempt.title === initialTitle)
+      ? legacyAttempt
+      : null;
+  const attempt = scopedAttempt ?? matchingLegacy;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- migrates the matching saved request from the former single-slot browser key
+  useEffect(() => {
+    if (!scopedAttempt && matchingLegacy) {
+      saveAttempt(matchingLegacy);
+      saveLegacyAttempt(null, (latest) => latest?.requestId === matchingLegacy.requestId);
+    }
+  }, [scopedAttempt, matchingLegacy, saveAttempt, saveLegacyAttempt]);
+  const [resumed, setResumed] = useState(() => attempt?.requestId ?? null);
   const saved = attempt?.requestId === resumed ? attempt : null;
   const [title, setTitle] = useState(saved?.title ?? initialTitle);
   const [brief, setBrief] = useState(saved?.brief ?? "");
@@ -123,11 +133,19 @@ export function ProjectEditorDialog({
       (!initialResource || holdsGitRemote(entry.resources, initialResource)),
   );
   const [page, setPage] = useState<"name" | "repository" | "brief" | "color" | "blueprint">(
-    initialPage,
+    saved ? "name" : initialPage,
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
+  const lookup = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
+  const identity = useEnvironmentSessionState(authorityId).data?.identity;
+  const sameInitiator = (input: NonNullable<typeof EditorAttempt.Type>) =>
+    !input.initiator ||
+    (input.initiator.issuer === identity?.issuer && input.initiator.subject === identity?.subject);
+  const accountMatches = !saved || sameInitiator(saved);
+  const [checking, setChecking] = useState(false);
   const allowed = useLibraryPermission(projectLibrary.createProject, authorityId);
   const access = useLibraryAccessBlock(authorityId, [projectLibrary.createProject]);
   // Access is apart from the form: the notice on the name page says why and offers the repair.
@@ -141,17 +159,59 @@ export function ProjectEditorDialog({
       mounted.current = false;
     };
   }, []);
-  const current = useStableCallback(() => mounted.current && open);
-  const working = busy;
+  const current = useStableCallback(
+    (input: NonNullable<typeof EditorAttempt.Type>) =>
+      mounted.current && open && sameInitiator(input),
+  );
+  const checkingId = useRef<string | null>(null);
+  const working = busy || checking;
+  const reconcile = useStableCallback(async (input: NonNullable<typeof EditorAttempt.Type>) => {
+    if (checkingId.current || !sameInitiator(input)) return undefined;
+    checkingId.current = input.requestId;
+    setChecking(true);
+    const result = await lookup({
+      environmentId: authorityId,
+      input: { requestId: input.requestId, kind: "create" },
+    });
+    checkingId.current = null;
+    if (mounted.current) setChecking(false);
+    if (!current(input)) return undefined;
+    if (result._tag !== "Success") {
+      setError(
+        "Could not check the original creation result. Reconnect to this Library and check again before retrying.",
+      );
+      return undefined;
+    }
+    const operation = result.value;
+    if (operation?.state === "succeeded") {
+      if (isProject(operation.result))
+        saveAttempt(
+          { ...input, result: operation.result },
+          (latest) => latest?.requestId === input.requestId,
+        );
+      else
+        setError(
+          "The creation receipt does not contain a project. Keep these details and update Loom before retrying.",
+        );
+      return undefined;
+    }
+    if (operation?.state === "queued" || operation?.state === "running") {
+      setError(
+        "Project creation is already in progress. Check the result again before continuing.",
+      );
+      return undefined;
+    }
+    return operation;
+  });
   const locked = working || saved !== null;
   const completeCreation = useStableCallback(
     async (input: NonNullable<typeof EditorAttempt.Type>) => {
       if (inFlight.current === input.requestId) return;
       inFlight.current = input.requestId;
-      const { result: _result, ...request } = input;
+      const { result: _result, initiator: _initiator, ...request } = input;
       const result = await create({ environmentId: authorityId, input: request });
       inFlight.current = null;
-      if (!current()) {
+      if (!current(input)) {
         if (result._tag === "Success")
           saveAttempt(
             { ...input, result: result.value },
@@ -165,6 +225,7 @@ export function ProjectEditorDialog({
         onSaved(result.value);
       } else {
         const cause = squashAtomCommandFailure(result);
+        setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
         if (isLibraryError(cause) && ["invalid", "not-found"].includes(cause.reason))
           saveAttempt(null, (latest) => latest?.requestId === input.requestId);
         setError(
@@ -175,7 +236,15 @@ export function ProjectEditorDialog({
     },
   );
   const save = async () => {
-    if (!canSave || working) return;
+    if (!canSave || working || !accountMatches) return;
+    if (saved) {
+      const operation = await reconcile(saved);
+      if (operation === undefined) return;
+      if (operation?.state === "cancelled") {
+        setError("This creation was cancelled. Keep its receipt and start a different project.");
+        return;
+      }
+    }
     if (profile && !supportsBlueprint) {
       setError("Connect an updated Library before creating a project from this blueprint.");
       return;
@@ -187,6 +256,7 @@ export function ProjectEditorDialog({
     }
     setBusy(true);
     setError(null);
+    setAccessRepair(undefined);
     const input = saved ?? {
       requestId: randomUUID(),
       title: title.trim(),
@@ -194,6 +264,7 @@ export function ProjectEditorDialog({
       resources,
       ...(color ? { color } : {}),
       ...(profile ? { profile } : {}),
+      ...(identity ? { initiator: identity } : {}),
     };
     setResumed(input.requestId);
     saveAttempt(input);
@@ -201,10 +272,19 @@ export function ProjectEditorDialog({
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- delivers an already received creation result when its editor becomes visible
   useEffect(() => {
-    if (!open || !saved?.result) return;
+    if (!open || !saved?.result || !accountMatches) return;
     saveAttempt(null, (latest) => latest?.requestId === saved.requestId);
     onSaved(saved.result);
-  }, [open, saved, saveAttempt, onSaved]);
+  }, [open, saved, saveAttempt, onSaved, accountMatches]);
+
+  const savedRequestId = saved?.requestId;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reconciles a persisted request by reading its receipt when access or visibility returns
+  useEffect(() => {
+    if (open && canSave && accountMatches && savedRequestId && !inFlight.current) {
+      const input = attempt?.requestId === savedRequestId ? attempt : null;
+      if (input && !input.result) void reconcile(input);
+    }
+  }, [open, canSave, accountMatches, savedRequestId, attempt, reconcile]);
 
   // A form that opened on the blueprint leaves from it until a blueprint fills in the name page.
   const back = () => {
@@ -386,18 +466,30 @@ export function ProjectEditorDialog({
           </details>
           {saved ? (
             <p role="status" className="text-sm text-muted-foreground">
-              Your project details are saved. Resume creation when you are ready.
+              {accountMatches
+                ? "Your project details are saved. Resume creation when you are ready."
+                : "Sign in with the account that started creation to recover this request."}
             </p>
           ) : null}
-          <LibraryErrorNotice error={error} onLeave={onClose} />
+          <LibraryErrorNotice error={error} accessRepair={accessRepair} onLeave={onClose} />
           {access ? <LibraryAccessNotice block={access} onLeave={onClose} /> : null}
           {saved && !working ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => {
-                saveAttempt(null);
+              disabled={!canSave || !accountMatches}
+              onClick={async () => {
+                const operation = await reconcile(saved);
+                if (operation === undefined) return;
+                if (operation !== null) {
+                  setError(
+                    "This request was already accepted. Resume it with its original details before starting another.",
+                  );
+                  return;
+                }
+                saveAttempt(null, (latest) => latest?.requestId === saved.requestId);
+                setResumed(null);
                 setError(null);
               }}
             >
@@ -429,14 +521,16 @@ export function ProjectEditorDialog({
               </Button>
             ) : null}
           </span>
-          <Button type="submit" disabled={!canSave || !title.trim() || working}>
-            {busy
-              ? "Creating…"
-              : saved
-                ? "Resume creation"
-                : continueTo === "conversation"
-                  ? "Create and continue"
-                  : "Create project"}
+          <Button type="submit" disabled={!canSave || !accountMatches || !title.trim() || working}>
+            {checking
+              ? "Checking result…"
+              : busy
+                ? "Creating…"
+                : saved
+                  ? "Resume creation"
+                  : continueTo === "conversation"
+                    ? "Create and continue"
+                    : "Create project"}
           </Button>
         </footer>
       </form>

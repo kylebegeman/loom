@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
     serverConfig: ServerConfig;
   } | null,
   online: true,
+  outcome: vi.fn(),
   prepare: Object.assign(vi.fn(), { permissionAtom: () => true }),
   register: Object.assign(vi.fn(), { permissionAtom: () => true }),
   dispatch: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("./libraryState", () => ({
     project: () => "project",
     copies: () => "copies",
     placement: { resultAtom: () => "placement" },
+    operationOutcome: state.outcome,
     prepareCopy: state.prepare,
     registerCopy: state.register,
   },
@@ -72,6 +74,8 @@ vi.mock("../../state/environments", () => ({
   useEnvironments: () => ({ environments: state.computer ? [state.computer] : [] }),
 }));
 vi.mock("../../state/session", () => ({
+  useEnvironmentSessionState: () => null,
+  readEnvironmentSessionState: () => null,
   useEnvironmentsWithScope: () => new Set([state.computer?.environmentId]),
 }));
 vi.mock("../../lib/uuid", () => ({ uuidv4: () => "original-request" }));
@@ -145,6 +149,7 @@ import { LibraryPrepareRouteScreen } from "./LibraryPrepareScreen";
 
 function setup() {
   vi.clearAllMocks();
+  state.outcome.mockReset().mockRejectedValue(new Error("Could not check the saved result"));
   state.preferences = {};
   state.online = true;
   state.project = {
@@ -286,7 +291,7 @@ it("prepares and registers files on the reviewed computer without starting a con
 
 it("preserves the selected computer and destination after a lost reply and refreshes access without replay", async () => {
   using _act = allowReactUpdates();
-  setup();
+  const copy = setup();
   state.prepare.mockRejectedValueOnce(new Error("Lost reply"));
   {
     await using screen = await render();
@@ -306,4 +311,22 @@ it("preserves the selected computer and destination after a lost reply and refre
   expect(state.prepare).toHaveBeenCalledTimes(1);
   expect(state.register).not.toHaveBeenCalled();
   expect(recovered.container.textContent).toContain("saved result");
+  state.outcome.mockResolvedValueOnce(
+    AsyncResult.success({
+      kind: "prepare",
+      environmentId: "computer",
+      state: "succeeded",
+      result: copy,
+    }),
+  );
+  await recovered.click("Check preparation result");
+  expect(state.outcome).toHaveBeenLastCalledWith({
+    environmentId: "computer",
+    input: { requestId: "original-request", kind: "prepare" },
+  });
+  expect(state.prepare).toHaveBeenCalledTimes(1);
+  expect(state.register).not.toHaveBeenCalled();
+  await recovered.click("Save file location");
+  expect(state.register).toHaveBeenCalledTimes(1);
+  expect(recovered.container.textContent).toContain("No conversation has been started");
 });

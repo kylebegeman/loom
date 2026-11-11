@@ -259,6 +259,25 @@ describe("submitted mobile project requests", () => {
     expect(register).toHaveBeenLastCalledWith({ requestId: "original:prepare:copy", copy });
   });
 
+  it("keeps saved requests bound to their initiating account across recovery and completion", async () => {
+    const execute = vi.fn(async () => project);
+    const persist = vi.fn(async () => undefined);
+    const lookup = vi.fn(async () => receipt(create, project));
+    const initiator = { issuer: "https://id.test", subject: "kyle" };
+    for (const state of ["ready", "unknown", "succeeded"] as const) {
+      await expect(
+        runSubmittedLibraryProjectRequest(
+          { ...create, initiator, state, result: state === "succeeded" ? project : null },
+          authorityId,
+          { execute, persist, lookup, identity: { ...initiator, subject: "other" } },
+        ),
+      ).rejects.toThrow("account that started");
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+    expect(persist).not.toHaveBeenCalled();
+  });
+
   it("does not submit when the original request cannot be preserved", async () => {
     const execute = vi.fn(async () => project);
     await expect(

@@ -107,7 +107,11 @@ function LibrarySignInStatus({ environment }: { readonly environment: Environmen
   const now = Date.parse(`${minute}Z`);
   const signIn = librarySignIn({
     connection: environment.entry.enabled
-      ? { phase: environment.connection.phase, identity: account !== undefined }
+      ? {
+          phase: environment.connection.phase,
+          blockedReason: environment.connection.blockedReason,
+          identity: account !== undefined,
+        }
       : null,
     session: session.data
       ? {

@@ -1,4 +1,5 @@
 import { useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
+import type { LibraryAccessRepair } from "@t3tools/contracts/fork";
 import { needsLibrarySignIn, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
@@ -101,6 +102,7 @@ export function LibraryPage(props: {
 
 export function LibraryNotice(props: {
   error?: string | null;
+  accessRepair?: LibraryAccessRepair | undefined;
   detail?: string | null;
   onRetry?: () => void;
 }) {
@@ -112,7 +114,7 @@ export function LibraryNotice(props: {
           {props.error}
         </Text>
       ) : null}
-      {needsLibrarySignIn(props.error) ? <LibrarySignInAgainButton /> : null}
+      {needsLibrarySignIn(props.error, props.accessRepair) ? <LibrarySignInAgainButton /> : null}
       {props.onRetry ? <Button label="Reload library" tone="text" onPress={props.onRetry} /> : null}
     </View>
   );

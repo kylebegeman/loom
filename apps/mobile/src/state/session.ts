@@ -77,3 +77,19 @@ export function usePreparedConnection(environmentId: EnvironmentId | null) {
       : environmentSession.preparedConnectionValueAtom(environmentId),
   );
 }
+
+export function useEnvironmentSessionState(environmentId: EnvironmentId | null) {
+  const result = useAtomValue(
+    environmentId === null
+      ? EMPTY_SESSION_STATE_ATOM
+      : environmentSession.sessionStateAtom(environmentId),
+  );
+  return AsyncResult.getOrElse(result, () => null);
+}
+
+export function readEnvironmentSessionState(environmentId: EnvironmentId) {
+  return AsyncResult.getOrElse(
+    appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId)),
+    () => null,
+  );
+}

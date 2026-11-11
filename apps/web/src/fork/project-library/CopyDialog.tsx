@@ -1,6 +1,6 @@
 import { LibraryCloneRepair } from "../vault/LibraryCloneRepair";
 import { randomUUID } from "~/lib/utils";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   LibraryError,
@@ -32,6 +32,8 @@ import {
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useEnvironmentSessionState } from "~/state/session";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { useLibraryAttempt } from "./attempts";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { usePrimaryEnvironmentId } from "~/state/environments";
@@ -43,12 +45,15 @@ import { LibraryFolderPalette, libraryFolderActions } from "./LibraryFolderPalet
 import { LibraryPaletteDialog } from "./LibraryPalette";
 
 const isLibraryError = Schema.is(LibraryError);
+const isCopy = Schema.is(LibraryWorkingCopy);
 const PreparationAttempt = Schema.NullOr(
   Schema.Struct({
     environmentId: EnvironmentId,
     input: LibraryPrepareCopyRequest,
     registerRequestId: Schema.String,
     copy: Schema.NullOr(LibraryWorkingCopy),
+    registered: Schema.optionalKey(Schema.Boolean),
+    initiator: Schema.optionalKey(Schema.Struct({ issuer: Schema.String, subject: Schema.String })),
   }),
 );
 
@@ -97,6 +102,20 @@ export function CopyDialog({
     attempt?.environmentId ?? initialHostId ?? defaultHostId,
   );
   const host = authority.environments.find((entry) => entry.environmentId === hostId);
+  const identity = useEnvironmentSessionState(hostId).data?.identity;
+  const accountMatches =
+    !attempt?.initiator ||
+    (attempt.initiator.issuer === identity?.issuer &&
+      attempt.initiator.subject === identity?.subject);
+  const mounted = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prevents a late preparation reply from navigating after the dialog closes
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const activeAccount = useStableCallback(() => mounted.current && accountMatches);
   const [chosen, setChosen] = useState<ChosenFolder | null>(() => {
     const path = attempt ? attempt.input.rootPath : initialRootPath;
     return path ? { path, strategy: attempt?.input.strategy ?? strategy } : null;
@@ -155,8 +174,10 @@ export function CopyDialog({
   });
   const [error, setError] = useState<string | null>(null);
   const [repair, setRepair] = useState<LibraryError["repair"]>(undefined);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const [inspection, setInspection] = useState<string | null>(null);
   const prepare = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
+  const lookup = useAtomCommand(projectLibrary.operationOutcome, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
   const inspect = useAtomCommand(projectLibrary.inspectFolder, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.prepareCopy, hostId);
@@ -175,14 +196,17 @@ export function CopyDialog({
   );
   const submit = async () => {
     const authorityId = authority.authorityId;
-    if (!authorityId || !hostId || (!serverPlaces && !rootPath.trim()) || busy) return;
+    if (!authorityId || !hostId || !accountMatches || (!serverPlaces && !rootPath.trim()) || busy)
+      return;
     setBusy(true);
     setError(null);
     setRepair(undefined);
+    setAccessRepair(undefined);
     let submitted = attempt;
     const prepareCopy = async () => {
       let next = attempt ?? {
         environmentId: hostId,
+        ...(identity ? { initiator: identity } : {}),
         input: {
           requestId: randomUUID(),
           project,
@@ -197,24 +221,66 @@ export function CopyDialog({
       };
       saveAttempt(next);
       submitted = next;
+      if (next.registered && next.copy?.state === "ready") {
+        if (activeAccount()) {
+          saveAttempt(null);
+          onSaved(next.copy);
+        }
+        return;
+      }
+      if ((!next.copy || next.copy.state !== "ready") && attempt) {
+        const outcome = await lookup({
+          environmentId: next.environmentId,
+          input: { requestId: next.input.requestId, kind: "prepare" },
+        });
+        if (outcome._tag === "Failure") throw squashAtomCommandFailure(outcome);
+        if (!activeAccount()) return;
+        const operation = outcome.value;
+        if (operation?.state === "queued" || operation?.state === "running")
+          throw new Error(
+            "This preparation is already in progress. Check its result before retrying.",
+          );
+        if (operation?.state === "cancelled")
+          throw new Error(
+            "This preparation was cancelled. Review its completed steps before starting another.",
+          );
+        if (operation?.state === "succeeded") {
+          const copy = operation.result;
+          if (
+            !isCopy(copy) ||
+            copy.environmentId !== next.environmentId ||
+            copy.projectId !== next.input.project.id ||
+            copy.state !== "ready"
+          )
+            throw new Error(
+              "The preparation receipt does not match this project and computer. Keep the saved request for recovery.",
+            );
+          next = { ...next, copy };
+          saveAttempt(next);
+        }
+      }
       if (!next.copy || next.copy.state !== "ready") {
         const result = await prepare({ environmentId: next.environmentId, input: next.input });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         next = { ...next, copy: result.value };
         saveAttempt(next);
       }
+      if (!activeAccount()) return;
       const result = await register({
         environmentId: authorityId,
         input: { requestId: next.registerRequestId, copy: next.copy! },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      saveAttempt(null);
-      onSaved(result.value);
+      if (activeAccount()) {
+        saveAttempt(null);
+        onSaved(result.value);
+      } else saveAttempt({ ...next, copy: result.value, registered: true });
     };
     try {
       await prepareCopy();
     } catch (cause) {
       setRepair(isLibraryError(cause) ? cause.repair : undefined);
+      setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
       const handleFailure = async () => {
         if (submitted) {
           const receipt = await recover({
@@ -223,11 +289,6 @@ export function CopyDialog({
           });
           if (receipt._tag === "Success") {
             if (receipt.value) saveAttempt({ ...submitted, copy: receipt.value });
-            else if (
-              isLibraryError(cause) &&
-              ["invalid", "not-found", "blocked", "request-conflict"].includes(cause.reason)
-            )
-              saveAttempt(null);
           }
         }
         setError(
@@ -401,6 +462,7 @@ export function CopyDialog({
           <Button
             disabled={
               busy ||
+              !accountMatches ||
               !allowed ||
               !canRegister ||
               !connected ||
@@ -451,6 +513,11 @@ export function CopyDialog({
             </SelectPopup>
           </Select>
         </LibraryField>
+        {!accountMatches ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            Sign in with the account that started this preparation before continuing.
+          </p>
+        ) : null}
         {hostId ? (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
@@ -539,7 +606,7 @@ export function CopyDialog({
             Update Loom on this computer to prepare project files.
           </p>
         ) : null}
-        <LibraryErrorNotice error={error} onLeave={onClose} />
+        <LibraryErrorNotice accessRepair={accessRepair} error={error} onLeave={onClose} />
         {repair && repair.environmentId === hostId ? (
           <LibraryCloneRepair key={repair.environmentId} repair={repair} />
         ) : null}

@@ -4,6 +4,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   LIBRARY_PROJECT_COLORS,
   LibraryBlueprint,
+  LibraryError,
   PROJECT_WORKFLOWS_FEATURE,
   type LibraryProject,
   type LibraryProjectColor,
@@ -19,6 +20,7 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironments } from "../../state/environments";
+import { readEnvironmentSessionState, useEnvironmentSessionState } from "../../state/session";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryProfileSection } from "./LibraryProfileSection";
@@ -65,6 +67,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 
 const blueprintCodec = Schema.fromJsonString(LibraryBlueprint);
+const isLibraryError = Schema.is(LibraryError);
 
 type ResourceDraft = {
   id: string;
@@ -160,6 +163,8 @@ function LibraryProjectFormContent({
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
     { environments } = useEnvironments();
+  const identity = useEnvironmentSessionState(authority.environmentId)?.identity;
+  const lookup = useAtomCommand(library.operationOutcome, { reportFailure: false });
   const create = useAtomCommand(library.createProject, { reportFailure: false }),
     update = useAtomCommand(library.updateProject, { reportFailure: false });
   const canSave = useAtomValue(
@@ -226,8 +231,13 @@ function LibraryProjectFormContent({
     "Saved computer";
   const [pending, setPending] = useState(false),
     [error, setError] = useState<string | null>(null);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const [submitted, setSubmitted] = useState(saved);
   const awaitingResult = submitted !== null;
+  const accountMatches =
+    !submitted?.initiator ||
+    (submitted.initiator.issuer === identity?.issuer &&
+      submitted.initiator.subject === identity?.subject);
   const busy = useRef(false);
   const saveAttempt = async (next: SubmittedLibraryProjectRequest | null) => {
     await persist(next);
@@ -383,6 +393,7 @@ function LibraryProjectFormContent({
     const attempt: SubmittedLibraryProjectRequest = submitted ?? {
       authorityId: target,
       environmentId: target,
+      ...(identity ? { initiator: identity } : {}),
       request: initial
         ? {
             kind: "update",
@@ -424,9 +435,16 @@ function LibraryProjectFormContent({
     busy.current = true;
     setPending(true);
     setError(null);
+    setAccessRepair(undefined);
     try {
       const complete = await runSubmittedLibraryProjectRequest(attempt, target, {
         persist: saveAttempt,
+        identity,
+        lookup: async ({ environmentId, requestId, kind }) => {
+          const result = await lookup({ environmentId, input: { requestId, kind } });
+          if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+          return result.value;
+        },
         execute: async (submitted) => {
           if (submitted.request.kind === "prepare")
             throw new Error("Review the saved project request.");
@@ -449,7 +467,14 @@ function LibraryProjectFormContent({
       const project = complete.result;
       if (existingFolder && !initial) rememberLibraryFolderProject(target, existingFolder, project);
       refreshLibraryProject(target, project.id);
-      if (!navigation.isFocused()) return;
+      const currentIdentity = readEnvironmentSessionState(target)?.identity;
+      if (
+        !navigation.isFocused() ||
+        (complete.initiator &&
+          (complete.initiator.issuer !== currentIdentity?.issuer ||
+            complete.initiator.subject !== currentIdentity?.subject))
+      )
+        return;
       await saveAttempt(null);
       if (complete.folder && !initial) {
         navigation.dispatch(
@@ -471,6 +496,7 @@ function LibraryProjectFormContent({
         navigation.dispatch(StackActions.replace("LibraryProject", { projectId: project.id }));
       }
     } catch (cause) {
+      setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
       setError(cause instanceof Error ? cause.message : "The project could not be saved.");
     } finally {
       busy.current = false;
@@ -699,7 +725,9 @@ function LibraryProjectFormContent({
       }}
     >
       {savingFromFolder && pending ? <LibraryNotice detail="Creating project…" /> : null}
-      {savingFromFolder && error ? <LibraryNotice error={error} /> : null}
+      {savingFromFolder && error ? (
+        <LibraryNotice accessRepair={accessRepair} error={error} />
+      ) : null}
       {folderTarget && (folderTarget.error || folderTarget.detail) ? (
         <LibraryNotice
           error={folderTarget.error}
@@ -890,7 +918,12 @@ function LibraryProjectFormContent({
       ) : !canSave ? (
         <LibraryNotice detail="Project settings access is required to save this project." />
       ) : null}
-      {error && !savingFromFolder ? <LibraryNotice error={error} /> : null}
+      {!accountMatches ? (
+        <LibraryNotice error="Sign in with the account that started this request before continuing." />
+      ) : null}
+      {error && !savingFromFolder ? (
+        <LibraryNotice accessRepair={accessRepair} error={error} />
+      ) : null}
       {submitted?.state === "ready" ? (
         <Button
           label="Edit saved request"
@@ -921,6 +954,7 @@ function LibraryProjectFormContent({
         disabled={
           pending ||
           inspectingFolder ||
+          !accountMatches ||
           !authority.ready ||
           (submitted !== null && submitted.authorityId !== authority.environmentId) ||
           !canSave ||

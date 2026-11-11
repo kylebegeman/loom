@@ -8,12 +8,20 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   create: vi.fn(),
+  outcome: vi.fn(),
+  identity: { issuer: "https://id.test", subject: "kyle" },
   workflows: true,
   access: null as { readonly message: string } | null,
 }));
-vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => state.create }));
+vi.mock("~/state/use-atom-command", () => ({
+  useAtomCommand: (command: unknown) => (command === "outcome" ? state.outcome : state.create),
+}));
+vi.mock("~/state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/state/session")>()),
+  useEnvironmentSessionState: () => ({ data: { identity: state.identity } }),
+}));
 vi.mock("./state", () => ({
-  projectLibrary: { createProject: {} },
+  projectLibrary: { createProject: {}, operationOutcome: "outcome" },
   useLibraryPermission: () => true,
   useLibraryAccessBlock: () => state.access,
   useLibraryProjects: () => ({
@@ -55,9 +63,12 @@ vi.mock("./LibraryPalette", () => ({
     </>
   ),
 }));
+import { newProjectDraftKey } from "./newProjectChoices";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { readLibraryAttempt, saveLibraryAttempt } from "./attempts";
 
+const legacyKey = "loom:library:editor:library:new";
+const editorKey = `${legacyKey}:${newProjectDraftKey({ step: "create", page: "name", repository: "", title: "Coast" })}`;
 let root: Root;
 let container: HTMLDivElement;
 const onSaved = vi.fn();
@@ -87,8 +98,11 @@ async function type(value: string) {
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
-  saveLibraryAttempt("loom:library:editor:library:new", null, localStorage);
+  saveLibraryAttempt(editorKey, null, localStorage);
+  saveLibraryAttempt(legacyKey, null, localStorage);
   state.create.mockReset();
+  state.outcome.mockReset().mockResolvedValue(AsyncResult.success(null));
+  state.identity = { issuer: "https://id.test", subject: "kyle" };
   state.workflows = true;
   state.access = null;
   onSaved.mockClear();
@@ -215,6 +229,9 @@ it("waits for explicit resume after reopening without replacing another project'
     coastRequest?.[0].input.requestId,
   );
   expect(onSaved).toHaveBeenCalledOnce();
+  expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual(
+    expect.objectContaining(coastRequest?.[0].input),
+  );
 });
 
 it("resumes a submitted creation when its response arrived while the editor was hidden", async () => {
@@ -297,16 +314,12 @@ it("does not clear a newer persisted creation when an older response arrives", a
     requestId: "newer-project",
     title: "desk",
   };
-  await act(() =>
-    saveLibraryAttempt("loom:library:editor:library:new", JSON.stringify(newer), localStorage),
-  );
+  await act(() => saveLibraryAttempt(editorKey, JSON.stringify(newer), localStorage));
   await act(() => complete(AsyncResult.success(createdProject)));
-  expect(JSON.parse(readLibraryAttempt("loom:library:editor:library:new", localStorage)!)).toEqual(
-    newer,
-  );
+  expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual(newer);
 });
 
-it("starts over from an unfinished create with the draft editable and a new receipt", async () => {
+it("starts over only after confirming that the original creation was never accepted", async () => {
   state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
   await choose("Create project");
   await choose("Start over");
@@ -317,6 +330,59 @@ it("starts over from an unfinished create with the draft editable and a new rece
   const [first, second] = state.create.mock.calls.map(([call]) => call.input);
   expect(second).toEqual({ ...first, requestId: expect.any(String) });
   expect(second.requestId).not.toBe(first.requestId);
+});
+
+it("reconciles a lost success before resuming without submitting the project again", async () => {
+  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
+  await choose("Create project");
+  const requestId = state.create.mock.calls[0]?.[0].input.requestId;
+  state.outcome.mockResolvedValueOnce(
+    AsyncResult.success({ state: "succeeded", result: createdProject }),
+  );
+  await choose("Resume creation");
+  expect(state.outcome).toHaveBeenLastCalledWith({
+    environmentId: "library",
+    input: { requestId, kind: "create" },
+  });
+  expect(state.create).toHaveBeenCalledOnce();
+  expect(onSaved).toHaveBeenCalledExactlyOnceWith(createdProject);
+});
+
+it("keeps the original identity when a queued creation or failed status check prevents starting over", async () => {
+  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
+  await choose("Create project");
+  const request = state.create.mock.calls[0]?.[0];
+  state.outcome.mockResolvedValueOnce(AsyncResult.success({ state: "running", result: null }));
+  await choose("Start over");
+  expect(input().readOnly).toBe(true);
+  expect(container.textContent).toContain("already in progress");
+  expect(state.create).toHaveBeenCalledOnce();
+  state.outcome.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Offline"))));
+  await choose("Resume creation");
+  expect(input().readOnly).toBe(true);
+  expect(state.create).toHaveBeenCalledOnce();
+  expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual(
+    expect.objectContaining(request.input),
+  );
+});
+
+it("does not resume a saved creation under a different Identity account", async () => {
+  state.create.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("Response lost"))));
+  await choose("Create project");
+  state.identity = { ...state.identity, subject: "another-person" };
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(button("Resume creation").disabled).toBe(true);
+  expect(container.textContent).toContain("account that started");
+  expect(state.create).toHaveBeenCalledOnce();
 });
 
 it("keeps blueprint creation unavailable on older Library servers", async () => {
@@ -403,4 +469,24 @@ it("leaves a form opened on the blueprint from it until a blueprint fills in the
   await choose("Back");
   expect(onBack).toHaveBeenCalledOnce();
   expect(input().value).toBe("Harbor");
+});
+
+it("migrates a matching legacy saved creation without submitting it", async () => {
+  await act(() => root.render(null));
+  const legacy = { requestId: "legacy-create", title: "Coast", brief: "Saved", resources: [] };
+  saveLibraryAttempt(legacyKey, JSON.stringify(legacy), localStorage);
+  await act(() =>
+    root.render(
+      <ProjectEditorDialog
+        initialTitle="Coast"
+        authorityId={EnvironmentId.make("library")}
+        onSaved={onSaved}
+        onClose={vi.fn()}
+      />,
+    ),
+  );
+  expect(input().readOnly).toBe(true);
+  expect(state.create).not.toHaveBeenCalled();
+  expect(JSON.parse(readLibraryAttempt(editorKey, localStorage)!)).toEqual(legacy);
+  expect(readLibraryAttempt(legacyKey, localStorage)).toBeNull();
 });

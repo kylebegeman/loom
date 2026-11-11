@@ -217,7 +217,9 @@ function OperationRow({
           <p role="status" className="text-xs text-destructive-foreground">
             {operation.error}
           </p>
-          {needsLibrarySignIn(operation.error) ? <LibrarySignInLink /> : null}
+          {needsLibrarySignIn(operation.error, operation.accessRepair) ? (
+            <LibrarySignInLink />
+          ) : null}
         </div>
       ) : null}
       {actionable ? (

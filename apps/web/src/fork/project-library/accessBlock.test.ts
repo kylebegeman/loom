@@ -61,10 +61,21 @@ it("names the missing permission", () => {
   ).toContain("Change environment settings");
 });
 
-it("treats a blocked Identity connection as an expired sign-in", () => {
+it("distinguishes blocked authentication from other connection failures", () => {
   expect(
-    accessBlock({ ...library, phase: "error", connectionError: "Identity access expired." }),
+    accessBlock({
+      ...library,
+      phase: "error",
+      blockedReason: "authentication",
+      connectionError: "Identity access expired.",
+    }),
   ).toMatchObject({ repair: "sign-in" });
+  expect(
+    accessBlock({ ...library, phase: "error", connectionError: "Network down." }),
+  ).toMatchObject({
+    repair: "connection",
+    message: "Library is not connected. Network down.",
+  });
   expect(
     accessBlock({ ...library, phase: "reconnecting", connectionError: "Network down." }),
   ).toMatchObject({ repair: "connection", message: "Library is not connected. Network down." });

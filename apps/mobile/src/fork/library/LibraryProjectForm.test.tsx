@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   online: true,
   focused: true,
   authorityId: "library",
+  outcome: vi.fn(),
   create: Object.assign(vi.fn(), { permissionAtom: () => true }),
   update: Object.assign(vi.fn(), { permissionAtom: () => true }),
   queries: {} as Record<string, unknown>,
@@ -49,6 +50,7 @@ vi.mock("./libraryState", () => ({
   useLoomFeature: () => false,
   refreshLibraryProject: vi.fn(),
   library: {
+    operationOutcome: state.outcome,
     createProject: state.create,
     updateProject: state.update,
     inspectFolder: Object.assign(vi.fn(), { permissionAtom: () => true }),
@@ -68,6 +70,10 @@ vi.mock("../../state/query", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => command,
+}));
+vi.mock("../../state/session", () => ({
+  useEnvironmentSessionState: () => null,
+  readEnvironmentSessionState: () => null,
 }));
 vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
 vi.mock("../../state/entities", () => ({ useProjects: () => [] }));
@@ -169,6 +175,7 @@ beforeEach(() => {
   state.focused = true;
   state.authorityId = "library";
   state.preferences = {};
+  state.outcome.mockReset().mockRejectedValue(new Error("Could not check the saved result"));
   state.savePreferences.mockImplementation(
     async ({
       transform,
@@ -272,6 +279,34 @@ describe("New project", () => {
     await click("Check save result");
     expect(state.create).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("saved result");
+    const submitted = state.create.mock.calls[0]![0].input;
+    state.outcome.mockResolvedValueOnce(
+      AsyncResult.success({
+        kind: "create",
+        environmentId: "library",
+        state: "succeeded",
+        result: {
+          id: "created",
+          title: submitted.title,
+          brief: submitted.brief,
+          resources: submitted.resources,
+          archived: false,
+          revision: 1,
+          createdAt: "2026-11-11T00:00:00Z",
+          updatedAt: "2026-11-11T00:00:00Z",
+        },
+      }),
+    );
+    await click("Check save result");
+    expect(state.outcome).toHaveBeenLastCalledWith({
+      environmentId: "library",
+      input: { requestId: submitted.requestId, kind: "create" },
+    });
+    expect(state.create).toHaveBeenCalledTimes(1);
+    expect(state.dispatch).toHaveBeenCalledExactlyOnceWith({
+      name: "LibraryPrepare",
+      params: { projectId: "created", authorityEnvironmentId: "library" },
+    });
   });
 
   it("keeps an accepted result after the form closes without replacing another screen", async () => {

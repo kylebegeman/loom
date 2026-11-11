@@ -1,3 +1,4 @@
+import type { LibraryAccessRepair } from "@t3tools/contracts/fork";
 import type { CSSProperties, ReactNode, Ref } from "react";
 import { SearchIcon, XIcon, type LucideIcon } from "lucide-react";
 import { Alert, AlertAction, AlertDescription } from "~/components/ui/alert";
@@ -136,16 +137,18 @@ export function LibrarySearch({
 
 export function LibraryErrorNotice({
   error,
+  accessRepair,
   onRetry,
   onLeave,
 }: {
   readonly error: string | null;
+  readonly accessRepair?: LibraryAccessRepair | undefined;
   readonly onRetry?: () => void;
   /** Runs before opening the Library sign-in, so a dialog can close first. */
   readonly onLeave?: () => void;
 }) {
   if (!error) return null;
-  const signIn = needsLibrarySignIn(error);
+  const signIn = needsLibrarySignIn(error, accessRepair);
   return (
     <Alert variant="error">
       <AlertDescription>

@@ -1,6 +1,9 @@
-import type { LoomIdentityAccount } from "@t3tools/contracts/fork";
+import type { LibraryAccessRepair, LoomIdentityAccount } from "@t3tools/contracts/fork";
 
-import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
+import type {
+  EnvironmentConnectionPhase,
+  EnvironmentConnectionPresentation,
+} from "../connection/presentation.ts";
 import { connectionFailingSinceText } from "./connection-health.ts";
 import { IDENTITY_RENEWAL_MAX_LEAD_MS } from "./identity-renewal-worker.ts";
 
@@ -16,6 +19,7 @@ export interface LibrarySignInTarget {
   /** Null when this device has no enabled connection to its Library. */
   readonly connection: {
     readonly phase: EnvironmentConnectionPhase;
+    readonly blockedReason?: EnvironmentConnectionPresentation["blockedReason"];
     /** Signs in with an Identity account rather than a pairing link. */
     readonly identity: boolean;
   } | null;
@@ -55,7 +59,7 @@ export function librarySignIn(target: LibrarySignInTarget): LibrarySignIn {
     canSignIn: state === "signed-out" || (identity && state === "expired"),
   });
   if (connection === null) return result("signed-out");
-  if (connection.phase === "error" && identity) return result("expired");
+  if (connection.blockedReason === "authentication" && identity) return result("expired");
   if (connection.phase === "connecting") return result("checking");
   if (connection.phase !== "connected") return result("unreachable");
   if (session === null) return result(target.sessionFailed ? "unreachable" : "checking");
@@ -70,11 +74,12 @@ export function librarySignIn(target: LibrarySignInTarget): LibrarySignIn {
   return result("current");
 }
 
-/**
- * Library denials carry no code, so their wording is the only sign that signing in repairs them.
- * The server's own denial is `LIBRARY_SIGN_IN_NOT_CURRENT_TEXT`.
- */
-export function needsLibrarySignIn(message: string | null | undefined): boolean {
+/** Typed repair wins; wording is only a fallback for older Library servers. */
+export function needsLibrarySignIn(
+  message: string | null | undefined,
+  accessRepair?: LibraryAccessRepair,
+): boolean {
+  if (accessRepair) return accessRepair.kind === "sign-in";
   return typeof message === "string" && /\bsign in again\b/i.test(message);
 }
 

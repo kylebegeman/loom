@@ -12,7 +12,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { AuthSourceControlWriteScope, EnvironmentId } from "@t3tools/contracts";
-import { LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import { LibraryError, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { useRef, useState } from "react";
@@ -24,7 +24,11 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
-import { useEnvironmentsWithScope } from "../../state/session";
+import {
+  readEnvironmentSessionState,
+  useEnvironmentsWithScope,
+  useEnvironmentSessionState,
+} from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { LibraryFolderPicker } from "./LibraryFolderPicker";
@@ -38,6 +42,7 @@ import { library, refreshLibraryWork, useLibraryAuthority } from "./libraryState
 import { useLibraryProjectRequest } from "./useLibraryProjectRequest";
 
 const isCopy = Schema.is(LibraryWorkingCopy);
+const isLibraryError = Schema.is(LibraryError);
 function unwrap<A, E>(result: AtomCommandResult<A, E>) {
   if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
   return result.value;
@@ -79,14 +84,17 @@ function LibraryPrepareContent({
   const [browse, setBrowse] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accessRepair, setAccessRepair] = useState<LibraryError["accessRepair"]>(undefined);
   const busy = useRef(false);
   const execution = attempt?.environmentId ?? selected;
   const computer = environments.find((entry) => entry.environmentId === execution);
   const config = computer?.serverConfig;
+  const identity = useEnvironmentSessionState(execution)?.identity;
   const writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const canPrepare = useAtomValue(library.prepareCopy.permissionAtom(execution));
   const canRegister = useAtomValue(library.registerCopy.permissionAtom(authorityEnvironmentId));
   const prepare = useAtomCommand(library.prepareCopy, { reportFailure: false });
+  const lookup = useAtomCommand(library.operationOutcome, { reportFailure: false });
   const register = useAtomCommand(library.registerCopy, { reportFailure: false });
   const readCopies = useAtomQueryRunner(library.copies, { refresh: true, reportFailure: false });
   const places = serverChoosesFolders(config);
@@ -111,7 +119,11 @@ function LibraryPrepareContent({
   const computerLabel = computer?.label ?? execution ?? "Selected computer";
   const connected = computer?.entry.enabled === true && computer.connection.phase === "connected";
   const correctAuthority = authority.environmentId === authorityEnvironmentId;
-  const ready = authority.ready && correctAuthority;
+  const accountMatches =
+    !attempt?.initiator ||
+    (attempt.initiator.issuer === identity?.issuer &&
+      attempt.initiator.subject === identity?.subject);
+  const ready = authority.ready && correctAuthority && accountMatches;
   const finished = copy !== null && attempt?.registration === "succeeded";
   const destinationReady =
     attempt !== null ||
@@ -140,10 +152,12 @@ function LibraryPrepareContent({
     busy.current = true;
     setPending(true);
     setError(null);
+    setAccessRepair(undefined);
     try {
       const submitted: SubmittedLibraryProjectRequest = attempt ?? {
         authorityId: authorityEnvironmentId,
         environmentId: execution,
+        ...(identity ? { initiator: identity } : {}),
         state: "ready",
         result: null,
         prepareFiles: true,
@@ -163,6 +177,9 @@ function LibraryPrepareContent({
       const checking = submitted.state === "unknown" || submitted.registration === "unknown";
       const complete = await runSubmittedLibraryProjectRequest(submitted, authorityEnvironmentId, {
         persist: requests.persist,
+        identity,
+        lookup: async ({ environmentId, requestId, kind }) =>
+          unwrap(await lookup({ environmentId, input: { requestId, kind } })),
         execute: async (saved) => {
           if (saved.request.kind !== "prepare") throw new Error("Review the saved file request.");
           return unwrap(
@@ -170,6 +187,13 @@ function LibraryPrepareContent({
           );
         },
       });
+      const currentIdentity = readEnvironmentSessionState(execution)?.identity;
+      if (
+        complete.initiator &&
+        (complete.initiator.issuer !== currentIdentity?.issuer ||
+          complete.initiator.subject !== currentIdentity?.subject)
+      )
+        throw new Error("Sign in with the account that started this request before continuing.");
       if (complete.state === "succeeded" && !checking) {
         await registerSubmittedLibraryProjectCopy(complete, authorityEnvironmentId, {
           persist: requests.persist,
@@ -195,6 +219,7 @@ function LibraryPrepareContent({
       }
       refreshLibraryWork(authorityEnvironmentId, projectId);
     } catch (cause) {
+      setAccessRepair(isLibraryError(cause) ? cause.accessRepair : undefined);
       setError(cause instanceof Error ? cause.message : "The files could not be prepared.");
     } finally {
       busy.current = false;
@@ -210,6 +235,9 @@ function LibraryPrepareContent({
             : `${chosenProject?.title ?? "Project"} is saved in your Library. Choose where its files belong. Start a conversation separately.`
         }
       />
+      {!accountMatches ? (
+        <LibraryNotice error="Sign in with the account that started this request before continuing." />
+      ) : null}
       {!correctAuthority ? (
         <LibraryNotice error="Reconnect the Library used to create this project before continuing." />
       ) : null}
@@ -323,7 +351,7 @@ function LibraryPrepareContent({
         <LibraryNotice error={placement.error} onRetry={placement.refresh} />
       ) : null}
       {project.error ? <LibraryNotice error={project.error} onRetry={project.refresh} /> : null}
-      {error ? <LibraryNotice error={error} /> : null}
+      {error ? <LibraryNotice accessRepair={accessRepair} error={error} /> : null}
       {finished ? (
         <>
           <Button
