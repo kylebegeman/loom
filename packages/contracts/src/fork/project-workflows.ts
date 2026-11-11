@@ -173,6 +173,18 @@ export const LibraryOperationInput = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("launch"), input: LibraryLaunchOperation }),
 ]);
 export type LibraryOperationInput = typeof LibraryOperationInput.Type;
+/** The exact restore selection, without the short-lived recovery authorization. */
+export const LibraryRestoreRequestContext = Schema.Struct({
+  requestId: LibraryRestoreCopyRequest.fields.requestId,
+  project: LibraryRestoreCopyRequest.fields.project,
+  rootPath: LibraryRestoreCopyRequest.fields.rootPath,
+  resourceIds: LibraryRestoreCopyRequest.fields.resourceIds,
+  sourceCopy: LibraryWorkingCopy,
+  destinationEnvironmentId: EnvironmentId,
+  libraryEnvironmentId: EnvironmentId,
+});
+export type LibraryRestoreRequestContext = typeof LibraryRestoreRequestContext.Type;
+
 export const LibraryOperation = Schema.Struct({
   id: LibraryId,
   kind: Schema.Literals([
@@ -196,6 +208,7 @@ export const LibraryOperation = Schema.Struct({
   failureReason: Schema.optional(LibraryError.fields.reason),
   repair: LibraryError.fields.repair,
   accessRepair: LibraryError.fields.accessRepair,
+  restoreRequest: Schema.optional(LibraryRestoreRequestContext),
   result: Schema.NullOr(
     Schema.Union([LibraryProject, LibraryWorkingCopy, Schema.Struct({ threadId: ThreadId })]),
   ),

@@ -45,7 +45,8 @@ export function libraryPreparationPlanMatches(
     plan.environmentId === environmentId &&
     plan.projectTitle === project.title &&
     (resourceIds === undefined ||
-      resourceIds.every((id) => repositories.some((resource) => resource.id === id))) &&
+      (new Set(resourceIds).size === resourceIds.length &&
+        resourceIds.every((id) => repositories.some((resource) => resource.id === id)))) &&
     JSON.stringify(plan.repositories.map(({ resource }) => resourceIdentity(resource))) ===
       JSON.stringify(repositories.map(resourceIdentity)) &&
     JSON.stringify(plan.links.map(resourceIdentity)) ===

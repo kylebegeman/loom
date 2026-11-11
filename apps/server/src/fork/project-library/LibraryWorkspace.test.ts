@@ -566,6 +566,41 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
       }),
   );
 
+  it.effect("reviews the selected repository at its recorded path in a multi-repository copy", () =>
+    Effect.gen(function* () {
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const path = yield* Path.Path;
+      const rootPath = path.join(yield* makeTemp, "plan-existing");
+      const project = { ...projectFor(), id: "project:plan-existing" };
+      yield* (yield* FileSystem.FileSystem).makeDirectory(rootPath);
+      const copy = yield* service.prepareCopy({
+        requestId: "plan-existing",
+        project,
+        rootPath,
+        strategy: "reuse",
+        resourceIds: [],
+      });
+      const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+      const receipt = yield* store.get(copy.id);
+      const repositories = project.resources.map((resource) => ({
+        resourceId: resource.id,
+        path: path.join(rootPath, resource.relativePath),
+        localProjectId: ProjectId.make(`plan:${resource.id}`),
+        head: null,
+        branch: null,
+      }));
+      yield* store.put({ ...receipt, copy: { ...copy, repositories } });
+      const selected = project.resources[1]!;
+      const plan = yield* service.preparationPlan({
+        project,
+        environmentId,
+        resourceIds: [selected.id],
+      });
+      expect(plan.placement.action).toBe("use");
+      expect(plan.repositories).toEqual([{ resource: selected, path: repositories[1]!.path }]);
+    }),
+  );
+
   it.effect("refuses a selected Vault route before reserving a folder without authorization", () =>
     Effect.gen(function* () {
       const parent = yield* makeTemp;
