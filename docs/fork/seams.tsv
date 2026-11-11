@@ -765,9 +765,7 @@ apps/server/src/provider/EventNdjsonLogger.ts	retention-defaults	1
 apps/server/src/provider/EventNdjsonLogger.test.ts	retention-defaults	2
 apps/server/src/serverSettings.test.ts	retention-defaults	1
 apps/server/src/storageCleanup.test.ts	retention-defaults	2
-apps/server/src/usage/UsageService.ts	retention-defaults	3
-apps/server/src/usage/UsageService.test.ts	retention-defaults	2
-apps/server/src/usage/usageScanCache.ts	retention-defaults	1
+apps/server/src/usage/UsageService.test.ts	retention-defaults	1
 packages/contracts/src/settings.ts	retention-defaults	2
 packages/contracts/src/settings.test.ts	retention-defaults	3
 packages/shared/src/serverSettings.test.ts	retention-defaults	2
@@ -1166,7 +1164,7 @@ apps/desktop/src/backend/DesktopBackendConfiguration.test.ts	restart-continuity	
 apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-compaction	2
 apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-continuity	3
 apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	14
-apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	22
+apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	21
 apps/desktop/src/backend/DesktopBackendPool.test.ts	restart-compaction	1
 apps/desktop/src/ipc/DesktopIpc.test.ts	server-weight	4
 apps/desktop/src/ipc/DesktopIpc.ts	server-weight	5
@@ -1249,8 +1247,8 @@ apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	libra
 apps/web/src/components/settings/StorageSettings.tsx	file-placement	1
 apps/web/src/components/settings/settingsSearch.ts	file-placement	1
 apps/web/src/components/promptLinks/NewThreadLinkView.tsx	file-placement	10
-apps/web/src/components/AddProjectToMachineDialog.tsx	file-placement	10
-apps/web/src/lib/addProjectToMachine.ts	file-placement	14
+apps/web/src/components/AddProjectToMachineDialog.tsx	file-placement	8
+apps/web/src/lib/addProjectToMachine.ts	file-placement	7
 docs/user/project-settings.md	file-placement	1
 packages/shared/src/projectSettings.ts	file-placement	4
 packages/shared/src/projectSettings.test.ts	file-placement	2

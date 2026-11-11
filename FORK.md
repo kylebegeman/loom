@@ -556,11 +556,10 @@ each) and `packages/contracts/src/ipc.ts` (3); `apps/web/src/connection/platform
 The `retention-defaults` seams bound storage that otherwise grows without limit. Browser
 captures default to 14 days in `packages/contracts/src/settings.ts` (1 marker line), and
 `EventNdjsonLogger.ts` (1) halves the provider log cap to 256 MiB. `LocalDeviceHost.ts` (2)
-prunes device QA session folders idle for 14 days before it starts the device daemon, and
-`UsageService.ts` (3) deletes usage scan caches from older versions a week after their last
-write, with a pointer in `usageScanCache.ts` (1). Both helpers live in
-`apps/server/src/fork/retention/`. Tests carry the rest: `settings.test.ts` (3),
-`LocalDeviceHost.test.ts` (3), `UsageService.test.ts` (2, including canonical fixture paths),
+prunes device QA session folders idle for 14 days before it starts the device daemon, with its
+helper in `apps/server/src/fork/retention/`. Upstream now removes older usage scan caches itself
+once the current one saves. Tests carry the rest: `settings.test.ts` (3),
+`LocalDeviceHost.test.ts` (3), `UsageService.test.ts` (1, canonical fixture paths),
 and one each in `EventNdjsonLogger.test.ts`, `serverSettings.test.ts`, `storageCleanup.test.ts`
 and `packages/shared/src/serverSettings.test.ts`.
 
@@ -821,7 +820,7 @@ after revocation or once the window closes.
 
 The `restart-continuity` seams let Loom quit, restart and update without cutting off a busy
 backend, stop the agents a killed backend leaves behind, and make a slow or fatal start explain
-itself. `DesktopBackendManager.ts` (19 marker lines) raises the backend's SIGTERM grace from 5 s
+itself. `DesktopBackendManager.ts` (21 marker lines) raises the backend's SIGTERM grace from 5 s
 to 15 s, because three of four measured install stops hit the old cap while still stopping
 provider sessions. Its stop budget adds 2 s so a stop that returns has really ended the process,
 and 2 s more for the provider cleanup below. That budget is upstream's `BACKEND_QUIT_STOP_TIMEOUT`,
