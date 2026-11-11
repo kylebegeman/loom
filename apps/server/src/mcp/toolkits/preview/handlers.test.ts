@@ -24,8 +24,8 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { liveThreadsLayer } from "../../McpToolAccess.testkit.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
-import { claimPreviewRecording, layerStandard } from "./handlers.ts";
-import { PreviewStandardToolkit } from "./tools.ts";
+import { claimPreviewRecording, layerSnapshot, layerStandard } from "./handlers.ts";
+import { PreviewSnapshotToolkit, PreviewStandardToolkit } from "./tools.ts";
 
 it.effect("preview_open navigates the opened tab to a dev server in one tool call", () =>
   Effect.scoped(
@@ -82,6 +82,80 @@ it.effect("preview_open navigates the opened tab to a dev server in one tool cal
       ]);
       expect(requests[1]?.tabId).toBe(tabId);
       expect(requests[1]?.tabIdExplicit).toBe(true);
+    }).pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        environmentId: EnvironmentId.make("environment-1"),
+        requestNamespace: "provider-session-1",
+        thread: {
+          threadId: ThreadId.make("thread-1"),
+          providerSessionId: "provider-session-1",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        client: undefined,
+        capabilities: new Set(["preview"] as const),
+        issuedAt: 1,
+      }),
+      Effect.provide(
+        Layer.mergeAll(PreviewAutomationBroker.layer, liveThreadsLayer).pipe(
+          Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
+  ),
+);
+
+it.effect("preview_snapshot forwards text-only, image, and save preferences", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const scope = yield* McpInvocationContext.McpInvocationContext;
+      const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+      const connected = yield* Deferred.make<void>();
+      const requests: PreviewAutomationRequest[] = [];
+      const events = yield* broker.connect({
+        clientId: "client-1",
+        environmentId: scope.environmentId,
+      });
+      yield* Stream.runForEach(events, (event) => {
+        if (event.type === "connected") return Deferred.succeed(connected, undefined);
+        requests.push(event.request);
+        return broker.respond({
+          clientId: "client-1",
+          connectionId: event.connectionId,
+          requestId: event.request.requestId,
+          ok: true,
+          result: {
+            url: "about:blank",
+            title: "Page",
+            loading: false,
+            visibleText: "Page",
+            interactiveElements: [],
+            accessibilityTree: "",
+            consoleEntries: [],
+            networkEntries: [],
+            actionTimeline: [],
+          },
+        });
+      }).pipe(Effect.forkScoped);
+      yield* Deferred.await(connected);
+      const toolkit = yield* PreviewSnapshotToolkit.pipe(
+        Effect.provide(McpToolAccess.HandlersLayer.layer(layerSnapshot)),
+      );
+      for (const input of [
+        {},
+        { includeImage: false },
+        { includeImage: true },
+        { save: true },
+        { save: true, includeImage: false },
+      ]) {
+        yield* toolkit.handle("preview_snapshot", input).pipe(Stream.unwrap, Stream.runDrain);
+      }
+      expect(requests.map(({ operation, input }) => ({ operation, input }))).toEqual([
+        { operation: "snapshot", input: { includeImage: false } },
+        { operation: "snapshot", input: { includeImage: false } },
+        { operation: "snapshot", input: { includeImage: true } },
+        { operation: "snapshot", input: { includeImage: false, fullScreenshot: true } },
+        { operation: "snapshot", input: { includeImage: false, fullScreenshot: true } },
+      ]);
     }).pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment-1"),

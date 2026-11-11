@@ -219,7 +219,7 @@ const withoutTreeDataPayloads = (tree: string) =>
     })
     .join("\n");
 
-// The broker waits 15s for the host; a snapshot, retry included, answers well before.
+// Leave time for image work inside the broker's 15s request budget.
 const SNAPSHOT_TIMEOUT_MS = 10_000;
 const FRAME_ANSWER_MS = 1_000;
 
@@ -519,6 +519,7 @@ type SnapshotInput = {
   readonly cdp: CDPSession;
   /** Headless pages render at the scale the server set; a desktop page at its display's. */
   readonly renderScale: number | "display";
+  readonly includeImage?: boolean | undefined;
   readonly fullScreenshot?: boolean | undefined;
   readonly consoleEntries: ReadonlyArray<PreviewAutomationConsoleEntry>;
   readonly networkEntries: ReadonlyArray<PreviewAutomationNetworkEntry>;
@@ -546,33 +547,19 @@ const capture = async (
   input: SnapshotInput,
   deadline: number,
 ): Promise<PreviewAutomationSnapshot> => {
-  const { renderScale, viewport } = await renderingOf(input);
-  // A late metrics reply must not begin a capture after viewers have resumed.
-  if (Date.now() >= deadline) throw tooBusy();
-  const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
   const state = refsFor(input.page);
   invalidateRefs(input.page);
   const generation = state.generation;
   const { readers, read } = await openReaders(input.page, input.cdp);
   const before = await read();
   // Bracket the tree with value reads to detect changes; await tree completion before retrying failed captures.
-  const pageAndScreenshot = Promise.all([
-    input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
-      Pick<
-        PreviewAutomationSnapshot,
-        "url" | "title" | "loading" | "visibleText" | "interactiveElements"
-      >
-    >,
-    captureViewport(input.cdp, { format: "png" }).then(async (full) =>
-      scale < 1
-        ? {
-            data: await shrinkPng(input.cdp, full, scale),
-            full: input.fullScreenshot ? full : undefined,
-          }
-        : { data: full, full: undefined },
-    ),
-  ]);
-  void pageAndScreenshot.catch(constVoid);
+  const pageState = input.page.evaluate(SNAPSHOT_SCRIPT) as Promise<
+    Pick<
+      PreviewAutomationSnapshot,
+      "url" | "title" | "loading" | "visibleText" | "interactiveElements"
+    >
+  >;
+  void pageState.catch(constVoid);
   // Leaves time for the second read; a frame that never loads holds the tree until then.
   const tree = await input.page.ariaSnapshot({
     mode: "ai",
@@ -594,7 +581,7 @@ const capture = async (
     void iframe.dispose().catch(constVoid);
     if (frame && unread.includes(frame)) throw tooBusy();
   }
-  const [page, { full, data }] = await pageAndScreenshot;
+  const page = await pageState;
   if (state.generation !== generation) throw pageChanged();
   const mask = (text: string) => (dotted ? text.replace(dotted, MASKED_VALUE) : text);
   // Redacted before the cut, so a payload crossing it can't leave its start showing, and before
@@ -607,6 +594,19 @@ const capture = async (
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;
     });
+  let screenshot: PreviewAutomationSnapshot["screenshot"];
+  let fullScreenshot: PreviewAutomationSnapshot["fullScreenshot"];
+  if (input.includeImage !== false || input.fullScreenshot === true) {
+    const { renderScale, viewport } = await renderingOf(input);
+    // A late metrics reply must not begin a capture after the snapshot deadline.
+    if (Date.now() >= deadline) throw tooBusy();
+    const scale = Math.min(1, MAX_SCREENSHOT_WIDTH / (viewport.width * renderScale));
+    const full = await captureViewport(input.cdp, { format: "png" });
+    const data = scale < 1 ? await shrinkPng(input.cdp, full, scale) : full;
+    screenshot = { mimeType: "image/png", data, ...pngSize(data) };
+    if (input.fullScreenshot && scale < 1) fullScreenshot = { data: full, ...pngSize(full) };
+  }
+  if (state.generation !== generation) throw pageChanged();
   return {
     ...page,
     url: withoutDataPayload(page.url),
@@ -616,12 +616,8 @@ const capture = async (
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],
-    screenshot: {
-      mimeType: "image/png",
-      data,
-      ...pngSize(data),
-    },
-    ...(full !== undefined ? { fullScreenshot: { data: full, ...pngSize(full) } } : {}),
+    ...(screenshot === undefined ? {} : { screenshot }),
+    ...(fullScreenshot === undefined ? {} : { fullScreenshot }),
   };
 };
 
@@ -631,9 +627,13 @@ const snapshotTurns = new WeakMap<Page, number>();
 export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationSnapshot> => {
   const deadline = Date.now() + SNAPSHOT_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(tooBusy()), SNAPSHOT_TIMEOUT_MS);
-  });
+  // Image work keeps the host's capture lock until CDP settles; the host bounds the request.
+  const expired =
+    input.includeImage === false && input.fullScreenshot !== true
+      ? new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(tooBusy()), SNAPSHOT_TIMEOUT_MS);
+        })
+      : undefined;
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
   // Retry only before the deadline and the next snapshot, whose refs a later retry would revoke.
@@ -645,7 +645,7 @@ export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationS
       : Promise.reject(cause),
   );
   try {
-    return await Promise.race([captured, expired]);
+    return await (expired ? Promise.race([captured, expired]) : captured);
   } catch (cause) {
     throw cause instanceof Error && cause.name === "TimeoutError" ? tooBusy() : cause;
   } finally {

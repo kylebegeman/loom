@@ -5,7 +5,16 @@ import {
   type CDPSession,
   type Page,
 } from "playwright-core";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 
@@ -313,11 +322,13 @@ describe("server browser snapshot screenshot", () => {
       page,
       cdp: await context.newCDPSession(page),
       renderScale: 2,
+      includeImage: false,
       fullScreenshot: true,
       consoleEntries: [],
       networkEntries: [],
       actionTimeline: [],
     });
+    if (!screenshot) throw new Error("The default snapshot must include its screenshot.");
     // The server has no DOM types, so the decoder runs as page source.
     const points = [
       [0.15, 0.75],
@@ -340,6 +351,69 @@ describe("server browser snapshot screenshot", () => {
   };
   const colorOf = ([red, green, blue]: readonly [number, number, number, number]) =>
     blue - red > 100 ? "blue" : red - blue > 100 ? "red" : `rgb(${red}, ${green}, ${blue})`;
+
+  it("takes a text-only snapshot without image metrics, capture, or shrinking", async () => {
+    const page = await context.newPage();
+    await page.setContent("<title>Review</title><button>Save</button>");
+    const cdp = await context.newCDPSession(page);
+    const send = cdp.send.bind(cdp);
+    const commands: string[] = [];
+    using _send = vi.spyOn(cdp, "send").mockImplementation((method, ...args) => {
+      commands.push(method);
+      if (
+        ["Page.getLayoutMetrics", "Page.captureScreenshot", "Runtime.callFunctionOn"].includes(
+          method,
+        )
+      ) {
+        throw new Error("Image work is unavailable");
+      }
+      return send(method, ...args);
+    });
+    const snapshot = await ServerBrowserPage.snapshot({
+      page,
+      cdp,
+      renderScale: "display",
+      includeImage: false,
+      consoleEntries: [],
+      networkEntries: [],
+      actionTimeline: [],
+    });
+    expect(snapshot).toMatchObject({ title: "Review", visibleText: "Save" });
+    expect(snapshot.accessibilityTree).toContain('button "Save" [ref=t3-');
+    expect(snapshot).not.toHaveProperty("screenshot");
+    expect(snapshot).not.toHaveProperty("fullScreenshot");
+    expect(commands).not.toContain("Page.captureScreenshot");
+  });
+
+  it("retries changed page text before starting its screenshot", async () => {
+    const page = await context.newPage();
+    await page.setContent("<button>Save</button>");
+    const cdp = await context.newCDPSession(page);
+    using aria = vi.spyOn(page, "ariaSnapshot").mockRejectedValueOnce(new Error("Page changed"));
+    const original = cdp.send.bind(cdp);
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+    using send = vi
+      .spyOn(cdp, "send")
+      .mockImplementation((method, ...args) =>
+        method === "Page.captureScreenshot"
+          ? Promise.resolve({ data: png })
+          : original(method, ...args),
+      );
+    const snapshot = await ServerBrowserPage.snapshot({
+      page,
+      cdp,
+      renderScale: 1,
+      consoleEntries: [],
+      networkEntries: [],
+      actionTimeline: [],
+    });
+    expect(snapshot.screenshot).toMatchObject({ width: 1, height: 1 });
+    expect(aria).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.filter(([method]) => method === "Page.captureScreenshot")).toHaveLength(
+      1,
+    );
+  });
 
   it("captures a blurred backdrop-filter page as rendered, not mirrored", async () => {
     const { screenshot, pixels } = await screenshotOf(halves("backdrop-filter: blur(4px);"));
@@ -372,7 +446,7 @@ describe("server browser snapshot screenshot", () => {
       actionTimeline: [],
     });
 
-    expect([screenshot.width, screenshot.height]).toEqual([1280, 800]);
+    expect(screenshot).toMatchObject({ width: 1280, height: 800 });
   });
 });
 

@@ -101,6 +101,7 @@ const SCREENCAST_MOTION_QUALITY = 50;
 const HOST_RECONNECT_DELAY = "1 second";
 const DESKTOP_ATTACH_TIMEOUT = "10 seconds";
 const VIEWER_OUTPUT_LIMIT = 64;
+const SCREENCAST_COORDINATION_TIMEOUT_MS = 1000;
 const RECORDING_SCREENCAST = { format: "jpeg", quality: 90, everyNthFrame: 1 } as const;
 const decodeViewportSetting = Schema.decodeUnknownSync(PreviewViewportSettingSchema);
 const AGENT_CURSOR_MOVE_MS = 160;
@@ -793,6 +794,18 @@ const make = Effect.gen(function* () {
     if (closeSession) {
       runFork(manager.close({ threadId: tab.threadId, tabId: tab.tabId }).pipe(Effect.ignore));
     }
+  };
+
+  const recoverTab = (tab: ServerTab) => {
+    if (tab.closing) return;
+    if (!tab.desktop)
+      recoveryPages.set(tabKey(tab.threadId, tab.tabId), {
+        context: tab.page.context(),
+        isolated: tab.isolatedContext,
+        profileId: tab.profileId,
+        url: tab.page.url(),
+      });
+    dropTab(tab, false, !tab.desktop);
   };
 
   const desktopRenders = (snapshot: PreviewSessionSnapshot) =>
@@ -1894,25 +1907,56 @@ const make = Effect.gen(function* () {
     return started;
   };
 
-  const withScreencastsPaused = <A>(tab: ServerTab, capture: () => Promise<A>): Promise<A> =>
+  const coordinateScreencasts = async (
+    tab: ServerTab,
+    agentSessionId: string,
+    operation: () => Promise<unknown>,
+  ) => {
+    const settled = await runPromise(
+      Effect.promise(operation).pipe(Effect.timeoutOption(SCREENCAST_COORDINATION_TIMEOUT_MS)),
+    );
+    if (Option.isSome(settled)) return;
+    if (tab.control.agentCanActNow(agentSessionId) && !tab.recording && !tab.recordingStart)
+      recoverTab(tab);
+    const reason =
+      "The browser stream did not respond in time. Take another snapshot; if it repeats, close and reopen the Browser tab.";
+    throw new ServerBrowserPage.ServerBrowserOperationError({
+      tag: "PreviewAutomationTimeoutError",
+      message: reason,
+      detail: { timeoutMs: SCREENCAST_COORDINATION_TIMEOUT_MS, reason },
+    });
+  };
+
+  const withScreencastsPaused = <A>(
+    tab: ServerTab,
+    capture: () => Promise<A>,
+    agentSessionId: string,
+  ): Promise<A> =>
     withCaptureLock(tab, async () => {
       tab.capturing += 1;
       const recording = tab.recording;
       try {
-        await Promise.all([
-          ...[...tab.viewers].map((viewer) => viewer.pause()),
-          recording?.session.send("Page.stopScreencast").catch(constVoid),
-        ]);
+        await coordinateScreencasts(tab, agentSessionId, () =>
+          Promise.all([
+            ...[...tab.viewers].map((viewer) => viewer.pause()),
+            recording?.session.send("Page.stopScreencast").catch(constVoid),
+          ]),
+        );
+        if (tab.closing) throw new Error("The preview tab closed.");
         return await capture();
       } finally {
         tab.capturing -= 1;
-
-        await Promise.all([
-          ...[...tab.viewers].map((viewer) => viewer.resume()),
-          recording && tab.recording === recording
-            ? recording.session.send("Page.startScreencast", RECORDING_SCREENCAST).catch(constVoid)
-            : undefined,
-        ]);
+        if (!tab.closing)
+          await coordinateScreencasts(tab, agentSessionId, () =>
+            Promise.all([
+              ...[...tab.viewers].map((viewer) => viewer.resume()),
+              recording && tab.recording === recording
+                ? recording.session
+                    .send("Page.startScreencast", RECORDING_SCREENCAST)
+                    .catch(constVoid)
+                : undefined,
+            ]),
+          );
       }
     });
 
@@ -2364,13 +2408,17 @@ const make = Effect.gen(function* () {
         return { tabId: tab.tabId, colorScheme };
       }
       case "snapshot": {
-        return withScreencastsPaused(tab, () =>
+        const preferences = input as PreviewAutomationSnapshotInput;
+        const snapshot = () =>
           ServerBrowserPage.snapshot({
             ...tab,
             renderScale: tab.desktop ? "display" : RENDER_SCALE,
-            fullScreenshot: (input as PreviewAutomationSnapshotInput | undefined)?.fullScreenshot,
-          }),
-        );
+            includeImage: preferences.includeImage,
+            fullScreenshot: preferences.fullScreenshot,
+          });
+        return preferences.includeImage === false && preferences.fullScreenshot !== true
+          ? snapshot()
+          : withScreencastsPaused(tab, snapshot, request.agentSessionId ?? "");
       }
       case "click": {
         const clickInput = input as PreviewAutomationClickInput;
@@ -2464,15 +2512,8 @@ const make = Effect.gen(function* () {
                 };
                 pending.then(settle, settle);
               } else {
-                if (!tab.desktop)
-                  recoveryPages.set(tabKey(tab.threadId, tab.tabId), {
-                    context: tab.page.context(),
-                    isolated: tab.isolatedContext,
-                    profileId: tab.profileId,
-                    url: tab.page.url(),
-                  });
                 // Closing the old page cancels pending clicks; only its context and committed URL survive.
-                dropTab(tab, false, !tab.desktop);
+                recoverTab(tab);
               }
             }
             return Effect.fail(
@@ -2741,8 +2782,9 @@ const make = Effect.gen(function* () {
     const startScreencast = (scale: number) => {
       screencastScale = scale;
       screencastParams = screencastParams.then(async () => {
-        if (tab.capturing > 0) return;
+        if (tab.capturing > 0 || tab.closing) return;
         await session.send("Page.stopScreencast").catch(constVoid);
+        if (tab.capturing > 0 || tab.closing) return;
         await session
           .send("Page.startScreencast", {
             format: "jpeg",

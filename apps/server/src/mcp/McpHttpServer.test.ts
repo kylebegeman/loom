@@ -388,6 +388,7 @@ it.effect.each([
       };
       const screenshot = { mimeType: "image/png", width: 1, height: 1 };
       let requests = 0;
+      const inputs: unknown[] = [];
       const events = yield* broker.connect({ clientId: "mcp-image-option-client", environmentId });
       yield* Stream.runForEach(events, (event) => {
         if (event.type === "connected") return Deferred.succeed(connected, undefined);
@@ -397,7 +398,7 @@ it.effect.each([
           tabId: alternateTabId,
           threadId,
         });
-        expect(event.request.input).toEqual({});
+        inputs.push(event.request.input);
         return broker.respond({
           clientId: "mcp-image-option-client",
           connectionId: event.connectionId,
@@ -406,7 +407,7 @@ it.effect.each([
           result: {
             ...page,
             title: `Snapshot ${requests}`,
-            screenshot: { ...screenshot, data: png },
+            ...(images && requests !== 7 ? { screenshot: { ...screenshot, data: png } } : {}),
           },
         });
       }).pipe(Effect.forkScoped);
@@ -422,7 +423,8 @@ it.effect.each([
             Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
             Effect.provideService(McpSchema.McpServerClient, client),
           );
-        const metadata = { ...page, title: `Snapshot ${call}`, screenshot };
+        expect(inputs.at(-1)).toEqual({ includeImage: images });
+        const metadata = { ...page, title: `Snapshot ${call}`, ...(images ? { screenshot } : {}) };
         const { accessibilityTree: _tree, ...boundedMetadata } = metadata;
         expect(snapshot.isError).toBe(false);
         expect(snapshot.structuredContent).toEqual({
@@ -461,14 +463,15 @@ it.effect.each([
           Effect.provideService(McpSchema.McpServerClient, client),
         );
       expect(nextDefault.content.map((content) => content.type)).toEqual(["text", "text", "text"]);
-      expect(nextDefault.structuredContent).toMatchObject({ title: "Snapshot 7", screenshot });
+      expect(nextDefault.structuredContent).toMatchObject({ title: "Snapshot 7" });
+      expect(nextDefault.structuredContent).not.toHaveProperty("screenshot");
       expect(nextDefault.structuredContent).not.toHaveProperty("accessibilityTree");
       expect(requests).toBe(7);
     }),
   ).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("saves the uncapped screenshot while the agent sees the capped one", () =>
+it.effect.each([false, true])("saves the uncapped screenshot (includeImage=%s)", (includeImage) =>
   Effect.scoped(
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
@@ -481,7 +484,7 @@ it.effect("saves the uncapped screenshot while the agent sees the capped one", (
       const events = yield* broker.connect({ clientId: "mcp-save-client", environmentId });
       yield* Stream.runForEach(events, (event) => {
         if (event.type === "connected") return Deferred.succeed(connected, undefined);
-        expect(event.request.input).toEqual({ fullScreenshot: true });
+        expect(event.request.input).toEqual({ includeImage, fullScreenshot: true });
         return broker.respond({
           clientId: "mcp-save-client",
           connectionId: event.connectionId,
@@ -499,7 +502,7 @@ it.effect("saves the uncapped screenshot while the agent sees the capped one", (
       const snapshot = yield* server
         .callTool({
           name: "preview_snapshot",
-          arguments: { tabId: alternateTabId, save: true, includeImage: true },
+          arguments: { tabId: alternateTabId, save: true, includeImage },
         })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
@@ -510,13 +513,67 @@ it.effect("saves the uncapped screenshot while the agent sees the capped one", (
 
       expect(Buffer.from(saved).toString("base64")).toBe(full);
       expect(snapshot.structuredContent).not.toHaveProperty("fullScreenshot");
-      expect(snapshot.content.at(-1)).toEqual({
-        type: "image",
-        mimeType: "image/png",
-        data: new Uint8Array(Buffer.from(capped, "base64")),
-      });
+      expect(snapshot.content.filter((item) => item.type === "image")).toEqual(
+        includeImage
+          ? [
+              {
+                type: "image",
+                mimeType: "image/png",
+                data: new Uint8Array(Buffer.from(capped, "base64")),
+              },
+            ]
+          : [],
+      );
+      if (!includeImage)
+        expect(Object.keys(snapshot.structuredContent!)).toEqual(["url", "screenshotPath"]);
     }),
   ).pipe(Effect.provide(layerTest)),
+);
+
+it.effect.each([{ includeImage: true }, { save: true }])(
+  "reports an explicitly requested screenshot missing from the browser response %j",
+  (input) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+        const connected = yield* Deferred.make<void>();
+        const events = yield* broker.connect({
+          clientId: "mcp-missing-image-client",
+          environmentId,
+        });
+        yield* Stream.runForEach(events, (event) => {
+          if (event.type === "connected") return Deferred.succeed(connected, undefined);
+          const { screenshot: _screenshot, ...page } = snapshotResult;
+          return broker.respond({
+            clientId: "mcp-missing-image-client",
+            connectionId: event.connectionId,
+            requestId: event.request.requestId,
+            ok: true,
+            result: page,
+          });
+        }).pipe(Effect.forkScoped);
+        yield* Deferred.await(connected);
+        const snapshot = yield* server
+          .callTool({ name: "preview_snapshot", arguments: input })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        const message = "The browser snapshot did not return the requested screenshot.";
+        expect(snapshot.isError).toBe(true);
+        expect(snapshot.content).toEqual([
+          { type: "text", text: `Preview snapshot failed: ${message}` },
+        ]);
+        expect(snapshot.structuredContent).toMatchObject({
+          error: {
+            _tag: "PreviewSnapshotImageMissingError",
+            operation: "snapshot",
+            message,
+          },
+        });
+      }),
+    ).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("refuses preview tools to a client outside a thread before they run", () =>
