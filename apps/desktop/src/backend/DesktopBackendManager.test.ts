@@ -797,7 +797,7 @@ describe("DesktopBackendManager", () => {
   );
 
   // fork: restart-continuity: covers the fork's longer stop budget.
-  it.effect("stopAllPoolInstances bounds the quit finalizer when backends hang", () =>
+  it.effect("stopAllPoolInstances waits for every backend past the stop budget", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const teardownStarted = yield* Queue.unbounded<string>();
@@ -819,7 +819,11 @@ describe("DesktopBackendManager", () => {
                       Effect.asVoid,
                     ),
                   );
-                  return makeProcess({ exitCode: Effect.never });
+                  return makeProcess({
+                    exitCode: Deferred.await(allowTeardown).pipe(
+                      Effect.as(ChildProcessSpawner.ExitCode(0)),
+                    ),
+                  }); // fork: restart-continuity
                 }),
               ),
             ),
@@ -847,15 +851,13 @@ describe("DesktopBackendManager", () => {
         const started = yield* Queue.takeN(teardownStarted, 2);
         assert.deepEqual(started.toSorted(), ["instance1", "instance2"]);
 
-        // fork: restart-continuity: the force kill and provider cleanup are still
-        // in flight a moment before the budget runs out.
-        yield* TestClock.adjust(Duration.seconds(18));
+        // fork: restart-continuity: past the budget, quit still waits for both backends.
+        yield* TestClock.adjust(DesktopBackendManager.BACKEND_QUIT_STOP_TIMEOUT);
         assert.isUndefined(quitFiber.pollUnsafe());
-        yield* TestClock.adjust(Duration.seconds(1));
-        yield* Fiber.join(quitFiber);
         assert.equal(yield* Queue.size(teardownFinished), 0);
 
         yield* Deferred.succeed(allowTeardown, undefined);
+        yield* Fiber.join(quitFiber);
         const finished = yield* Queue.takeN(teardownFinished, 2);
         assert.deepEqual(finished.toSorted(), ["instance1", "instance2"]);
       }).pipe(Effect.provide(TestClock.layer())),

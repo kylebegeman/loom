@@ -1163,9 +1163,10 @@ apps/desktop/src/backend/DesktopBackendConfiguration.test.ts	restart-compaction	
 apps/desktop/src/backend/DesktopBackendConfiguration.test.ts	restart-continuity	3
 apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-compaction	2
 apps/desktop/src/backend/DesktopBackendConfiguration.ts	restart-continuity	3
-apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	14
+apps/desktop/src/backend/DesktopBackendManager.test.ts	restart-continuity	15
 apps/desktop/src/backend/DesktopBackendManager.ts	restart-continuity	21
 apps/desktop/src/backend/DesktopBackendPool.test.ts	restart-compaction	1
+apps/desktop/src/backend/DesktopBackendPool.test.ts	restart-continuity	1
 apps/desktop/src/ipc/DesktopIpc.test.ts	server-weight	4
 apps/desktop/src/ipc/DesktopIpc.ts	server-weight	5
 apps/desktop/src/ipc/methods/localEnvironment.ts	server-weight	1

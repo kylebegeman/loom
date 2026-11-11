@@ -221,7 +221,7 @@ describe("DesktopBackendPool", () => {
           yield* Deferred.await(siblingStarted);
           assert.equal(yield* Queue.take(backend.signals), "SIGTERM");
           const unregisterFiber = yield* pool.unregister(id).pipe(Effect.forkChild);
-          yield* TestClock.adjust(Duration.seconds(5));
+          yield* TestClock.adjust(Duration.seconds(15)); // fork: restart-continuity
           assert.equal(yield* Queue.take(backend.signals), "SIGKILL");
           assert.isUndefined(quitFiber.pollUnsafe());
           assert.isUndefined(unregisterFiber.pollUnsafe());
