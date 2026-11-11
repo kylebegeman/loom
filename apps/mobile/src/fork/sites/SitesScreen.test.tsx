@@ -56,6 +56,12 @@ vi.mock("@t3tools/client-runtime/fork", async (importOriginal) => ({
   supportsLoomFeature: (capabilities: unknown) => capabilities !== undefined,
 }));
 vi.mock("./state", () => ({
+  useSitesWrites: () => ({
+    saveSite: harness.run,
+    saveService: harness.run,
+    saveCheck: harness.run,
+    runChecks: harness.run,
+  }),
   sites: {
     snapshot: () => "snapshot",
     analytics: ({ input }: { input: { siteId: string } }) => `analytics:${input.siteId}`,

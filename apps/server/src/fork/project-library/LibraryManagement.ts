@@ -288,12 +288,12 @@ const make = Effect.gen(function* () {
         return yield* workflows.saveWorkstream(request.input);
       case "sites": {
         const check = authorize.pipe(
-          Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
+          Effect.mapError((cause) => new SitesError({ stage: "permission", cause })),
         );
         const input = request.input;
         const write =
           input.action === "runChecks"
-            ? sites.runChecks(check)
+            ? sites.runChecks(check, input.input)
             : input.action === "saveSite"
               ? sites.saveSite(input.input, check)
               : input.action === "saveService"
@@ -304,11 +304,15 @@ const make = Effect.gen(function* () {
             (cause) =>
               new LibraryError({
                 reason:
-                  cause.stage === "validation"
-                    ? "invalid"
-                    : cause.stage === "project"
-                      ? "not-found"
-                      : "io",
+                  cause.stage === "revision-conflict" || cause.stage === "request-conflict"
+                    ? cause.stage
+                    : cause.stage === "authentication" || cause.stage === "permission"
+                      ? "blocked"
+                      : cause.stage === "validation" || cause.stage === "revision-required"
+                        ? "invalid"
+                        : cause.stage === "project"
+                          ? "not-found"
+                          : "io",
                 detail: cause.message,
                 cause,
               }),
@@ -481,12 +485,14 @@ const make = Effect.gen(function* () {
     yield* authorize;
     const responseUnconfirmed =
       request.kind === "sites"
-        ? () =>
-            new LibraryError({
-              reason: "io",
-              detail:
-                "Loom could not confirm the Sites change. Refresh Sites before trying again; it may already have applied.",
-            })
+        ? () => {
+            const requestId = request.input.input?.requestId;
+            const cause = new SitesError({
+              stage: "unknown-outcome",
+              ...(requestId ? { requestId } : {}),
+            });
+            return new LibraryError({ reason: "io", detail: cause.message, cause });
+          }
         : unconfirmed;
     const destination = yield* connection.current;
     if (destination.kind === "authority")

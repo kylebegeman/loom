@@ -189,7 +189,8 @@ const fixture = Effect.gen(function* () {
             saveSite: (input, check) => siteWrite({ action: "saveSite", input }, check),
             saveService: (input, check) => siteWrite({ action: "saveService", input }, check),
             saveCheck: (input, check) => siteWrite({ action: "saveCheck", input }, check),
-            runChecks: (check) => siteWrite({ action: "runChecks" }, check),
+            runChecks: (check, input) =>
+              siteWrite({ action: "runChecks", ...(input ? { input } : {}) }, check),
           }),
         ),
         Layer.provide(memorySecrets()),
@@ -334,6 +335,8 @@ describe("authority-routed project management", () => {
           const input = {
             action: "saveSite" as const,
             input: {
+              requestId: "sites-intent",
+              expectedEtag: '"base"',
               id: "example",
               name: "Example",
               url: "https://example.test",
@@ -377,20 +380,27 @@ describe("authority-routed project management", () => {
             },
             f.actor,
           );
-          yield* f.first.manager.sites({ action: "runChecks" }, f.actor);
+          yield* f.first.manager.sites(
+            { action: "runChecks", input: { requestId: "run-checks" } },
+            f.actor,
+          );
           expect((yield* Ref.get(f.sitesWrites)).map((write) => write.action)).toEqual([
             "saveSite",
             "saveService",
             "saveCheck",
             "runChecks",
           ]);
+          expect((yield* Ref.get(f.sitesWrites))[3]).toEqual({
+            action: "runChecks",
+            input: { requestId: "run-checks" },
+          });
           expect((yield* Ref.get(f.sent))[0]?.request).toEqual({ kind: "sites", input });
           yield* Ref.set(f.pauseSites, true);
           const pending = yield* f.first.manager.sites(input, f.actor).pipe(Effect.forkChild);
           yield* Deferred.await(f.sitesEntered);
           yield* Ref.set(f.active, []);
           yield* Deferred.succeed(f.sitesRelease, undefined);
-          expect((yield* Fiber.join(pending).pipe(Effect.flip)).reason).toBe("io");
+          expect((yield* Fiber.join(pending).pipe(Effect.flip)).reason).toBe("blocked");
           expect(yield* Ref.get(f.sitesWrites)).toHaveLength(4);
         }),
       ),

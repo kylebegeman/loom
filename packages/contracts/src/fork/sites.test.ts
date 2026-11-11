@@ -28,16 +28,12 @@ const legacySnapshot = {
   checks: [],
 };
 
-it("preserves the canonical Sites response apart from unused backend write metadata", () => {
+it("preserves Sites ETags across the typed transport", () => {
   const body = fixture.responses["sites-list"].body;
   const decoded = decodeSnapshot(body);
   expect(decoded).toEqual({
     ...body,
-    sites: body.sites.map(({ etag: _etag, ...site }) => site),
-    services: body.services.map(({ etag: _etag, ...service }) => service),
-    checks: body.checks.map(
-      ({ etag: _etag, revision: _revision, updated_at: _updatedAt, ...check }) => check,
-    ),
+    checks: body.checks.map(({ revision: _revision, updated_at: _updatedAt, ...check }) => check),
   });
   expect(decoded.ownerAdmin).toEqual(body.ownerAdmin);
 });
@@ -133,4 +129,15 @@ it("accepts exact HTTPS origins and requires services to use an origin", () => {
       kind: "api",
     }),
   ).toBe(false);
+});
+
+it("validates write identity and strong revision preconditions without requiring new fields from old clients", () => {
+  expect(isSite({ ...site, requestId: "save-1", expectedEtag: '"revision-1"' })).toBe(true);
+  expect(isSite({ ...site, requestId: "create-1", expectedEtag: null })).toBe(true);
+  for (const requestId of ["", "bad\nheader", "valid\n", "x".repeat(256)]) {
+    expect(isSite({ ...site, requestId })).toBe(false);
+  }
+  for (const expectedEtag of ["*", 'W/"weak"', "unquoted", '"one", "two"', '"tag"\n']) {
+    expect(isSite({ ...site, expectedEtag })).toBe(false);
+  }
 });

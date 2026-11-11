@@ -1,5 +1,6 @@
 import {
   SaveSiteRequest,
+  RunSiteChecksRequest,
   SaveSiteServiceRequest,
   SaveSiteCheckRequest,
   SiteAnalytics,
@@ -14,6 +15,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ByteSize from "effect/ByteSize";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -53,6 +55,7 @@ export class SitesService extends Context.Service<
     ) => Effect.Effect<SitesSnapshot, SitesError>;
     readonly runChecks: (
       authorize?: Effect.Effect<void, SitesError>,
+      input?: RunSiteChecksRequest,
     ) => Effect.Effect<SitesSnapshot, SitesError>;
     readonly analytics: (input: {
       readonly siteId: string;
@@ -63,6 +66,10 @@ export class SitesService extends Context.Service<
 const decodeSaveSiteRequest = Schema.decodeUnknownEffect(SaveSiteRequest);
 const decodeSaveSiteServiceRequest = Schema.decodeUnknownEffect(SaveSiteServiceRequest);
 const decodeSaveSiteCheckRequest = Schema.decodeUnknownEffect(SaveSiteCheckRequest);
+const decodeRunSiteChecksRequest = Schema.decodeUnknownEffect(RunSiteChecksRequest);
+const Problem = Schema.Struct({
+  error: Schema.optionalKey(Schema.Struct({ code: Schema.String })),
+});
 const decodeSiteId = Schema.decodeEffect(SiteId);
 const Token = Schema.Struct({
   access_token: Schema.String.check(Schema.isMinLength(1)),
@@ -70,6 +77,7 @@ const Token = Schema.Struct({
   expires_in: Schema.Number.check(Schema.isGreaterThan(0)),
 });
 const make = Effect.gen(function* () {
+  const random = yield* SecureRandom.SecureRandom;
   const env = yield* HostProcess.Environment;
   const http = yield* HttpClient.HttpClient;
   const library = yield* LibraryService.LibraryService;
@@ -155,7 +163,9 @@ const make = Effect.gen(function* () {
       );
     if (response.status === 401 || response.status === 403) {
       cached.delete(false);
-      return yield* new SitesError({ stage: "authentication" });
+      return yield* new SitesError({
+        stage: response.status === 403 ? "permission" : "authentication",
+      });
     }
     return yield* HttpClientResponse.filterStatusOk(response).pipe(
       Effect.flatMap((response) => response.json),
@@ -200,9 +210,13 @@ const make = Effect.gen(function* () {
   const write = Effect.fn("SitesService.write")(function* (
     path: string,
     input: unknown,
+    metadata: { readonly requestId?: string; readonly expectedEtag?: string | null },
     authorize: Effect.Effect<void, SitesError> = Effect.void,
   ): Effect.fn.Return<SitesSnapshot, SitesError> {
-    const credential = yield* token(true);
+    const requestId = metadata.requestId ?? `loom-${yield* random.uuidV4()}`;
+    const credential = yield* token(true).pipe(
+      Effect.mapError((error) => new SitesError({ stage: error.stage, requestId, cause: error })),
+    );
     yield* authorize;
     const request =
       input === undefined
@@ -212,23 +226,94 @@ const make = Effect.gen(function* () {
             Effect.mapError((cause) => new SitesError({ stage: "validation", cause })),
           );
     const response = yield* http
-      .execute(request.pipe(HttpClientRequest.bearerToken(credential)))
+      .execute(
+        request.pipe(
+          HttpClientRequest.bearerToken(credential),
+          HttpClientRequest.setHeaders({
+            "idempotency-key": requestId,
+            ...(metadata.expectedEtag === null
+              ? { "if-none-match": "*" }
+              : metadata.expectedEtag !== undefined
+                ? { "if-match": metadata.expectedEtag }
+                : {}),
+          }),
+        ),
+      )
       .pipe(
         noRedirects,
         Effect.timeout("90 seconds"),
-        Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
+        Effect.mapError((cause) => new SitesError({ stage: "unknown-outcome", requestId, cause })),
       );
     if (response.status === 401 || response.status === 403) {
       cached.delete(true);
-      return yield* new SitesError({ stage: "authentication" });
+      return yield* new SitesError({
+        stage: response.status === 403 ? "permission" : "authentication",
+        requestId,
+      });
     }
-    if (response.status === 400) return yield* new SitesError({ stage: "validation" });
+    if (response.status === 412 || response.status === 428)
+      return yield* new SitesError({
+        stage: response.status === 412 ? "revision-conflict" : "revision-required",
+        requestId,
+      });
+    if (response.status === 409 || response.status === 422) {
+      const problem = yield* response.json.pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Problem)),
+        Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(32)),
+        Effect.timeout("15 seconds"),
+        Effect.orElseSucceed(() => null),
+      );
+      const code = problem?.error?.code;
+      return yield* new SitesError({
+        stage:
+          code === "conflict"
+            ? "revision-conflict"
+            : code === "idempotency_key_reused"
+              ? "request-conflict"
+              : response.status === 422
+                ? "validation"
+                : "unknown-outcome",
+        requestId,
+      });
+    }
+    if (response.status === 400 || response.status === 413)
+      return yield* new SitesError({ stage: "validation", requestId });
     return yield* HttpClientResponse.filterStatusOk(response).pipe(
       Effect.flatMap((response) => response.json),
       Effect.flatMap(Schema.decodeUnknownEffect(SitesSnapshot)),
       Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(2)),
       Effect.timeout("15 seconds"),
-      Effect.mapError((cause) => new SitesError({ stage: "write", cause })),
+      Effect.mapError((cause) => new SitesError({ stage: "unknown-outcome", requestId, cause })),
+    );
+  });
+  const save = Effect.fn("SitesService.save")(function* (
+    collection: "sites" | "services" | "checks",
+    input: SaveSiteRequest | SaveSiteServiceRequest | SaveSiteCheckRequest,
+    authorize?: Effect.Effect<void, SitesError>,
+  ) {
+    if (!managementConfigured || !configurationValid)
+      return yield* new SitesError({ stage: "configuration" });
+    const { requestId, expectedEtag, ...body } = input;
+    let revision = expectedEtag;
+    if (revision === undefined) {
+      const snapshot = yield* read("/v1/integrations/sites", SitesSnapshot);
+      const current = snapshot[collection].find((row) => row.id === input.id);
+      if (current?.etag !== undefined)
+        return yield* new SitesError({
+          stage: "revision-required",
+          ...(requestId ? { requestId } : {}),
+        });
+      if (!current) revision = null;
+    }
+    const prefix = collection === "sites" ? "" : `/${collection}`;
+    return yield* write(
+      `/v1/integrations/sites${prefix}/${encodeURIComponent(input.id)}`,
+      body,
+      {
+        ...(requestId ? { requestId } : {}),
+        ...(revision !== undefined ? { expectedEtag: revision } : {}),
+      },
+      authorize,
     );
   });
   return SitesService.of({
@@ -241,34 +326,25 @@ const make = Effect.gen(function* () {
           .project({ projectId })
           .pipe(Effect.mapError((cause) => new SitesError({ stage: "project", cause })));
       }
-      return yield* write(
-        `/v1/integrations/sites/${encodeURIComponent(input.id)}`,
-        input,
-        authorize,
-      );
+      return yield* save("sites", input, authorize);
     }),
     saveService: Effect.fn("SitesService.saveService")(function* (raw, authorize) {
       const input = yield* decodeSaveSiteServiceRequest(raw).pipe(
         Effect.mapError((cause) => new SitesError({ stage: "validation", cause })),
       );
-      return yield* write(
-        `/v1/integrations/sites/services/${encodeURIComponent(input.id)}`,
-        input,
-        authorize,
-      );
+      return yield* save("services", input, authorize);
     }),
     saveCheck: Effect.fn("SitesService.saveCheck")(function* (raw, authorize) {
       const input = yield* decodeSaveSiteCheckRequest(raw).pipe(
         Effect.mapError((cause) => new SitesError({ stage: "validation", cause })),
       );
-      return yield* write(
-        `/v1/integrations/sites/checks/${encodeURIComponent(input.id)}`,
-        input,
-        authorize,
-      );
+      return yield* save("checks", input, authorize);
     }),
-    runChecks: Effect.fn("SitesService.runChecks")(function (authorize) {
-      return write("/v1/integrations/sites/checks/run", undefined, authorize);
+    runChecks: Effect.fn("SitesService.runChecks")(function* (authorize, raw = {}) {
+      const input = yield* decodeRunSiteChecksRequest(raw).pipe(
+        Effect.mapError((cause) => new SitesError({ stage: "validation", cause })),
+      );
+      return yield* write("/v1/integrations/sites/checks/run", undefined, input, authorize);
     }),
     snapshot: Effect.gen(function* () {
       if (yield* isRemote) {
@@ -291,4 +367,6 @@ const make = Effect.gen(function* () {
     }),
   });
 });
-export const layer = Layer.effect(SitesService, make);
+export const layer = Layer.effect(SitesService, make).pipe(
+  Layer.provide(SecureRandom.layerWebCrypto),
+);

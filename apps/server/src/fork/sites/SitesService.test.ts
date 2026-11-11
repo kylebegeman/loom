@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { TestClock } from "effect/testing";
@@ -75,24 +76,48 @@ function fixture(
     missing?: boolean;
     remote?: boolean;
     unavailable?: boolean;
+    writeStatus?: number;
+    writePayload?: unknown;
+    dropWrite?: boolean;
   } = {},
 ) {
-  const requests: Array<{ url: string; method: string; authorization: string | undefined }> = [];
+  const requests: Array<{
+    url: string;
+    method: string;
+    authorization: string | undefined;
+    headers: Readonly<Record<string, string>>;
+  }> = [];
   const http = HttpClient.make((request) => {
     requests.push({
       url: request.url,
       method: request.method,
       authorization: request.headers.authorization,
+      headers: request.headers,
     });
     const token = request.url.endsWith("/token");
+    const write = request.method === "PUT" || request.url.endsWith("/checks/run");
+    if (write && options.dropWrite)
+      return Effect.fail(
+        new HttpClientError.HttpClientError({
+          reason: new HttpClientError.TransportError({ request }),
+        }),
+      );
     return Effect.succeed(
       HttpClientResponse.fromWeb(
         request,
         Response.json(
           token
             ? { access_token: "private-reader-token", token_type: "Bearer", expires_in: 300 }
-            : (options.payload ?? (request.url.endsWith("/analytics") ? analytics : snapshot)),
-          { status: token ? (options.tokenStatus ?? 200) : (options.readStatus ?? 200) },
+            : write
+              ? (options.writePayload ?? options.payload ?? snapshot)
+              : (options.payload ?? (request.url.endsWith("/analytics") ? analytics : snapshot)),
+          {
+            status: token
+              ? (options.tokenStatus ?? 200)
+              : write
+                ? (options.writeStatus ?? options.readStatus ?? 200)
+                : (options.readStatus ?? 200),
+          },
         ),
       ),
     );
@@ -290,7 +315,7 @@ it.effect.each([
     "configuration",
   ],
   ["token refusal", { tokenStatus: 401 }, "authentication"],
-  ["API refusal", { readStatus: 403 }, "authentication"],
+  ["API refusal", { readStatus: 403 }, "permission"],
   ["API failure", { readStatus: 503 }, "read"],
   ["older Library", { env: {}, remote: true, readStatus: 404 }, "library-update"],
   ["Library sign-in refused", { env: {}, remote: true, readStatus: 401 }, "library-connection"],
@@ -354,15 +379,15 @@ it.effect(
         "https://api.begam.in/v1/integrations/sites/checks/health",
       ]);
       expect(f.requests.filter((r) => r.url.endsWith("/checks/run"))).toHaveLength(1);
-      expect(f.requests.filter((r) => r.url.endsWith("/token"))).toHaveLength(1);
+      expect(f.requests.filter((r) => r.url.endsWith("/token"))).toHaveLength(2);
     }).pipe(Effect.provide(f.layer));
   },
 );
 it.effect.each([
   ["missing manager", {}, "configuration"],
   ["missing project", { manager: true, missing: true }, "project"],
-  ["API validation", { manager: true, readStatus: 400 }, "validation"],
-  ["API failure", { manager: true, readStatus: 503 }, "write"],
+  ["API validation", { manager: true, writeStatus: 400 }, "validation"],
+  ["API failure", { manager: true, writeStatus: 503 }, "unknown-outcome"],
 ] as const)("refuses %s", ([, options, stage]) => {
   const f = fixture(options);
   return Effect.gen(function* () {
@@ -376,8 +401,7 @@ it.effect("rechecks authorization after token acquisition and never sends a refu
   return Effect.gen(function* () {
     const service = yield* SitesService.SitesService;
     yield* Effect.flip(service.saveSite(site, Effect.fail(new SitesError({ stage: "write" }))));
-    expect(f.requests).toHaveLength(1);
-    expect(f.requests[0]?.url).toContain("/token");
+    expect(f.requests.every((request) => request.method !== "PUT")).toBe(true);
   }).pipe(Effect.provide(f.layer));
 });
 
@@ -388,3 +412,120 @@ it.effect("archived projects retain their site associations and do not prevent p
     expect(yield* service.saveSite({ ...site, active: false })).toEqual(snapshot);
   }).pipe(Effect.provide(f.layer));
 });
+
+it.effect("forwards stale revisions and stable write identity without retrying a conflict", () => {
+  const f = fixture({ manager: true, writeStatus: 412 });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    const error = yield* Effect.flip(
+      service.saveSite({ ...site, requestId: "save-1", expectedEtag: '"old"' }),
+    );
+    expect(error.stage).toBe("revision-conflict");
+    expect(error.requestId).toBe("save-1");
+    const writes = f.requests.filter((r) => r.method === "PUT");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.headers).toMatchObject({
+      "if-match": '"old"',
+      "idempotency-key": "save-1",
+    });
+  }).pipe(Effect.provide(f.layer));
+});
+it.effect("protects creation from another surface claiming the same ID", () => {
+  const f = fixture({ manager: true });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    yield* service.saveSite({ ...site, requestId: "create-1", expectedEtag: null });
+    expect(f.requests.find((r) => r.method === "PUT")?.headers).toMatchObject({
+      "if-none-match": "*",
+      "idempotency-key": "create-1",
+    });
+  }).pipe(Effect.provide(f.layer));
+});
+it.effect.each([
+  [401, "authentication"],
+  [403, "permission"],
+  [409, "unknown-outcome"],
+  [412, "revision-conflict"],
+  [428, "revision-required"],
+  [422, "request-conflict"],
+  [503, "unknown-outcome"],
+] as const)(
+  "separates write repair for HTTP %s and retains the original identity",
+  ([writeStatus, stage]) => {
+    const f = fixture({
+      manager: true,
+      writeStatus,
+      ...(writeStatus === 422
+        ? { writePayload: { error: { code: "idempotency_key_reused" } } }
+        : {}),
+    });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      const error = yield* Effect.flip(
+        service.saveSite({ ...site, requestId: "original", expectedEtag: '"base"' }),
+      );
+      expect(error.stage).toBe(stage);
+      expect(error.requestId).toBe("original");
+      expect(f.requests.filter((r) => r.method === "PUT")).toHaveLength(1);
+    }).pipe(Effect.provide(f.layer));
+  },
+);
+it.effect("does not turn a committed write with an unreadable reply into a new request", () => {
+  const f = fixture({ manager: true, writePayload: { invalid: true } });
+  return Effect.gen(function* () {
+    const service = yield* SitesService.SitesService;
+    const error = yield* Effect.flip(
+      service.saveSite({ ...site, requestId: "lost-reply", expectedEtag: '"base"' }),
+    );
+    expect(error.stage).toBe("unknown-outcome");
+    expect(error.requestId).toBe("lost-reply");
+    expect(f.requests.filter((r) => r.method === "PUT")).toHaveLength(1);
+  }).pipe(Effect.provide(f.layer));
+});
+
+it.effect(
+  "preserves identity when the API disconnects and refuses to infer a stale editor's revision",
+  () => {
+    const f = fixture({ manager: true, dropWrite: true });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      const error = yield* Effect.flip(
+        service.saveSite({ ...site, requestId: "disconnect", expectedEtag: '"base"' }),
+      );
+      expect(error.stage).toBe("unknown-outcome");
+      expect(error.requestId).toBe("disconnect");
+      expect(f.requests.filter((r) => r.method === "PUT")).toHaveLength(1);
+      const newer = fixture({
+        manager: true,
+        payload: { ...snapshot, sites: [{ ...site, active: 1, etag: '"newer"' }] },
+      });
+      yield* Effect.gen(function* () {
+        const current = yield* SitesService.SitesService;
+        expect(
+          (yield* Effect.flip(current.saveSite({ ...site, requestId: "old-client" }))).stage,
+        ).toBe("revision-required");
+        expect(newer.requests.every((r) => r.method !== "PUT")).toBe(true);
+      }).pipe(Effect.provide(Layer.fresh(newer.layer)));
+    }).pipe(Effect.provide(f.layer));
+  },
+);
+it.effect(
+  "keeps legacy snapshots usable without manufacturing an ETag or dropping request identity",
+  () => {
+    const f = fixture({ manager: true, payload: { ...snapshot, sites: [{ ...site, active: 1 }] } });
+    return Effect.gen(function* () {
+      const service = yield* SitesService.SitesService;
+      const state = yield* service.snapshot;
+      expect(state.snapshot?.sites[0]?.etag).toBeUndefined();
+      yield* service.saveSite({ ...site, requestId: "legacy-save" });
+      const headers = f.requests.find((r) => r.method === "PUT")?.headers;
+      expect(headers?.["idempotency-key"]).toBe("legacy-save");
+      expect(headers?.["if-match"]).toBeUndefined();
+      expect(headers?.["if-none-match"]).toBeUndefined();
+      yield* service.runChecks(undefined, { requestId: "checks-run" });
+      expect(
+        f.requests.find((r) => r.url.endsWith("/checks/run"))?.headers["idempotency-key"],
+      ).toBe("checks-run");
+    }).pipe(Effect.provide(f.layer));
+  },
+);

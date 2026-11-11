@@ -31,6 +31,12 @@ vi.mock("../project-library/state", async () => {
   };
 });
 vi.mock("./state", () => ({
+  useSitesWrites: () => ({
+    saveSite: harness.run,
+    saveService: harness.run,
+    saveCheck: harness.run,
+    runChecks: harness.run,
+  }),
   sites: { snapshot: () => "snapshot", analytics: () => "analytics", runChecks: {} },
 }));
 vi.mock("./use-site-check-clock", () => ({ useSiteCheckClock: () => 0 }));

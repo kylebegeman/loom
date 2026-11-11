@@ -1,6 +1,7 @@
 import { AuthSessionId, OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   SaveSiteRequest,
+  RunSiteChecksRequest,
   type LibrarySitesMutation,
   LibraryError,
   SaveSiteServiceRequest,
@@ -25,7 +26,7 @@ const isSitesError = Schema.is(SitesError);
 export const SitesToolkit = Toolkit.make(
   Tool.make("loom_site_save", {
     description:
-      "Register or update a site with at least one existing Library project. Full replacement: include origins, serviceIds, projectIds, and active. Pause with active:false; history is retained.",
+      "Register or update a site with at least one existing Library project. Read loom_sites first. For edits pass the row etag as expectedEtag; for a new ID pass expectedEtag:null. Supply a unique requestId for this exact intent and retain it after an uncertain reply. Full replacement: include origins, serviceIds, projectIds, and active. Pause with active:false; history is retained.",
     parameters: SaveSiteRequest,
     success: SitesSnapshot,
     failure,
@@ -33,7 +34,7 @@ export const SitesToolkit = Toolkit.make(
   }),
   Tool.make("loom_site_service_save", {
     description:
-      "Register or update a shared website, API or redirect service. Pause/resume with active. Sites link to services by serviceIds.",
+      "Register or update a shared website, API or redirect service. Pause/resume with active. Sites link to services by serviceIds. Read loom_sites first; pass the row etag as expectedEtag, or null for a new ID. Supply and retain requestId for this exact intent.",
     parameters: SaveSiteServiceRequest,
     success: SitesSnapshot,
     failure,
@@ -41,7 +42,7 @@ export const SitesToolkit = Toolkit.make(
   }),
   Tool.make("loom_site_check_save", {
     description:
-      "Register or update an HTTPS endpoint check on its registered service origin. Pause/resume with active. Expected status and optional content are checked.",
+      "Register or update an HTTPS endpoint check on its registered service origin. Pause/resume with active. Expected status and optional content are checked. Read loom_sites first; pass the row etag as expectedEtag, or null for a new ID. Supply and retain requestId for this exact intent.",
     parameters: SaveSiteCheckRequest,
     success: SitesSnapshot,
     failure,
@@ -49,7 +50,8 @@ export const SitesToolkit = Toolkit.make(
   }),
   Tool.make("loom_site_checks_run", {
     description:
-      "Run registered endpoint checks now and return fresh status. This performs network requests.",
+      "Run registered endpoint checks now and return fresh status. This performs network requests. Supply a unique requestId and keep it if the reply is lost. No receipt lookup is available: do not repeat an uncertain run automatically.",
+    parameters: RunSiteChecksRequest,
     success: SitesSnapshot,
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],
@@ -57,7 +59,7 @@ export const SitesToolkit = Toolkit.make(
 
   Tool.make("loom_sites", {
     description:
-      "Read sites, services and endpoint status through this computer's enrolled Library. Sites credentials stay on the Library. If an older work computer reports unconfigured, check its Loom version before changing the existing Library connections.",
+      "Read sites, services and endpoint status through this computer's enrolled Library. Sites credentials stay on the Library. If an older work computer reports unconfigured, check its Loom version before changing the existing Library connections. Rows with etag support conditional saves. Missing etags mean stale-write protection is unavailable. After an uncertain save, read current settings first; a matching snapshot confirms state, not an operation receipt. Do not retry writes automatically, including after sign-in or permission repair. A retry needs an explicit decision and the original requestId; retain the original precondition. For revision conflicts, review the new settings and create a new intent. Idempotency replay depends on API configuration and retention, so a key alone does not make retries safe.",
     success: SitesState,
     failure,
   }).annotate(Tool.Readonly, true),
@@ -109,8 +111,8 @@ export const sitesHandlers = McpToolAccess.toLayer(
       loom_site_check_save: McpToolAccess.writesEnvironment((input, check) =>
         mutate({ action: "saveCheck", input }, check),
       ),
-      loom_site_checks_run: McpToolAccess.writesEnvironment((_, check) =>
-        mutate({ action: "runChecks" }, check),
+      loom_site_checks_run: McpToolAccess.writesEnvironment((input, check) =>
+        mutate({ action: "runChecks", input }, check),
       ),
       loom_sites: McpToolAccess.reads(() =>
         onHost(Effect.flatMap(SitesService.SitesService, (service) => service.snapshot)),
