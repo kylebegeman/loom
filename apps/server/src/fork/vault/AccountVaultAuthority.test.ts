@@ -112,6 +112,14 @@ const fixture = Effect.gen(function* () {
 it.effect("brokers public SSH frames only for the enrolled run and current item version", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
+    const inventory = yield* f.call({
+      kind: "list",
+      input: { cursor: null, includeArchived: false },
+    });
+    expect(inventory).toMatchObject({
+      kind: "list",
+      page: { items: [{ id: f.itemId, label: f.key.item.label }] },
+    });
     const { session } = yield* f.open();
     expect(session.publicKey).toBe(f.key.publicKey);
     expect(Object.keys(session)).not.toContain("privateKey");
@@ -138,6 +146,11 @@ it.effect("brokers public SSH frames only for the enrolled run and current item 
       "invalid-operation",
     );
     f.state.revoked = true;
+    expect(
+      (yield* f
+        .call({ kind: "list", input: { cursor: null, includeArchived: false } })
+        .pipe(Effect.flip)).reason,
+    ).toBe("denied");
     expect(
       (yield* f.call({ kind: "frame", input: { ...input, sequence: 1 } }).pipe(Effect.flip)).reason,
     ).toBe("denied");

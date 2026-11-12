@@ -1,3 +1,4 @@
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -66,6 +67,9 @@ const dependencies = Layer.mergeAll(
 );
 const coreLayer = VaultCore.layer.pipe(Layer.provide(dependencies));
 const accessLayer = VaultAccess.layer.pipe(
+  Layer.provide(
+    Layer.mock(AccountVaultClient.AccountVaultClient)({ available: Effect.succeed(false) }),
+  ),
   Layer.provide(ApprovalNotifications.stub),
   Layer.provideMerge(coreLayer),
   Layer.provide(dependencies),

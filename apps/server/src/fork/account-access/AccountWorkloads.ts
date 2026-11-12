@@ -164,12 +164,13 @@ const make = Effect.gen(function* () {
       !thread ||
       thread.deletedAt !== null ||
       thread.archivedAt !== null ||
-      thread.activeRunId === null ||
-      thread.runtimeMode !== "full-access" ||
-      thread.interactionMode !== "default" ||
-      !(yield* isVaultRunRunning(threads, thread))
+      thread.activeRunId === null
     )
-      return yield* denied();
+      return yield* new VaultError({ reason: "denied", detail: "workload-inactive" });
+    if (thread.runtimeMode !== "full-access" || thread.interactionMode !== "default")
+      return yield* new VaultError({ reason: "denied", detail: "caller-permission" });
+    if (!(yield* isVaultRunRunning(threads, thread)))
+      return yield* new VaultError({ reason: "denied", detail: "workload-inactive" });
     const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
     const keys = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
       Effect.provideService(Signature.Signature, signature),
@@ -211,7 +212,7 @@ const make = Effect.gen(function* () {
       current.deletedAt !== null ||
       !(yield* isVaultRunRunning(threads, current))
     )
-      return yield* denied();
+      return yield* new VaultError({ reason: "denied", detail: "workload-inactive" });
     return proof;
   });
   const accept = Effect.fn("AccountWorkloads.accept")(function* (

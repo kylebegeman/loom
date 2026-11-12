@@ -37,6 +37,7 @@ import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultConnections from "./VaultConnections.ts";
 import * as AccountVaultSsh from "./AccountVaultSsh.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultBrokers from "./VaultBrokers.ts";
 import * as VaultWorkloads from "./VaultWorkloads.ts";
@@ -65,6 +66,7 @@ export const sshFixture = (
     };
     const dependencies = Layer.mergeAll(
       Layer.mock(AccountVaultSsh.AccountVaultSsh)({ available: Effect.succeed(false) }),
+      Layer.mock(AccountVaultClient.AccountVaultClient)({ available: Effect.succeed(false) }),
       Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
       Layer.mock(ThreadManagementService)({
         getThreadShell: (id) =>

@@ -131,12 +131,13 @@ const make = Effect.gen(function* () {
       !shell ||
       shell.deletedAt !== null ||
       shell.archivedAt !== null ||
-      shell.activeRunId === null ||
-      shell.runtimeMode !== "full-access" ||
-      shell.interactionMode !== "default" ||
-      !(yield* isVaultRunRunning(threads, shell))
+      shell.activeRunId === null
     )
-      return yield* denied();
+      return yield* new VaultError({ reason: "denied", detail: "workload-inactive" });
+    if (shell.runtimeMode !== "full-access" || shell.interactionMode !== "default")
+      return yield* new VaultError({ reason: "denied", detail: "caller-permission" });
+    if (!(yield* isVaultRunRunning(threads, shell)))
+      return yield* new VaultError({ reason: "denied", detail: "workload-inactive" });
     return shell;
   });
   const run = Effect.fn("AccountVaultSsh.run")(function* (

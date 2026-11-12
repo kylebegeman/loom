@@ -1,3 +1,4 @@
+import * as AccountVaultClient from "../vault/AccountVaultClient.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Disposable Git executables redirect only verified fixture destinations.
 import * as NodeProcess from "node:process";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -467,6 +468,7 @@ process.exit(result.status ?? 1);
       });
       const thread = liveThreadShell(ThreadId.make("repository-authorizer"));
       const vaultDependencies = Layer.mergeAll(
+        Layer.mock(AccountVaultClient.AccountVaultClient)({ available: Effect.succeed(false) }),
         authority,
         Layer.mock(ThreadManagementService)({
           getThreadShell: () => Effect.succeed(thread),

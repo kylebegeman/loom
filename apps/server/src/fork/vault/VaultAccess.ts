@@ -1,4 +1,5 @@
 import type { AccountWorkloads } from "../account-access/AccountWorkloads.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { identityOwnershipSubject } from "../../auth/identityPolicy.ts";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
@@ -340,6 +341,7 @@ export class VaultAccess extends Context.Service<
 >()("t3/fork/vault/VaultAccess") {}
 
 const make = Effect.gen(function* () {
+  const account = yield* AccountVaultClient.AccountVaultClient;
   const notifications = yield* ApprovalNotifications.ApprovalNotifications;
   const store = yield* OpenBaoStore.OpenBaoStore;
   const core = yield* VaultCore.VaultCore;
@@ -2170,6 +2172,15 @@ const make = Effect.gen(function* () {
       };
     }),
     listForThread: Effect.fn("VaultAccess.listForThread")(function* (input, threadId) {
+      if (yield* account.available) {
+        const result = yield* account.execute({ kind: "list", input }, threadId).pipe(
+          Effect.catchTags({
+            VaultSshError: () => Effect.fail(new VaultError({ reason: "unavailable" })),
+          }),
+        );
+        if (result.kind !== "list") return yield* new VaultError({ reason: "unavailable" });
+        return result.page;
+      }
       const { policy } = yield* load();
       const workload = yield* subject(threadId);
       // Owner access gates the caller, not the items. Fail with the cause rather than return an

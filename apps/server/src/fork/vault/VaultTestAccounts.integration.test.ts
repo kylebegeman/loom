@@ -1,3 +1,4 @@
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -50,6 +51,7 @@ const caller = {
 };
 const projectId = ProjectId.make("test-account-proof-project");
 const dependencies = Layer.mergeAll(
+  Layer.mock(AccountVaultClient.AccountVaultClient)({ available: Effect.succeed(false) }),
   Layer.mock(ThreadManagementService)({
     getThreadShell: (id) =>
       Effect.succeed({

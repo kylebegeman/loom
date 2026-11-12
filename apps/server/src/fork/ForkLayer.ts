@@ -201,6 +201,7 @@ const layerApprovalNotifications = ApprovalNotifications.layer.pipe(
   ),
 );
 const layerVaultAccess = VaultAccess.layer.pipe(
+  Layer.provide(Layer.suspend(() => layerAccountVaultClient)),
   Layer.provide(layerApprovalNotifications),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultStore, ProjectStore.layer)),
 );
@@ -222,6 +223,7 @@ const layerVaultTestAccountWorkloads = VaultTestAccountWorkloads.layer.pipe(
 );
 
 const layerVaultConnections = VaultConnections.layer.pipe(
+  Layer.provide(Layer.suspend(() => layerAccountVaultClient)),
   Layer.provide(Layer.mergeAll(layerVaultCore, layerVaultAccess, layerVaultStore)),
 );
 const layerVaultBrokers = VaultBrokers.layer.pipe(
@@ -384,6 +386,7 @@ const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
 );
 const layerAccountVaultClient = AccountVaultClient.layer.pipe(
   Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer)),
+  Layer.provide(FetchHttpClient.layer),
 );
 const layerAccountVaultSsh = AccountVaultSsh.layer.pipe(
   Layer.provide(

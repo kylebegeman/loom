@@ -319,7 +319,11 @@ it.effect.each(["restricted", "plan", "ended", "archived", "changed-during-signi
         if (change === "archived")
           f.state.thread = { ...f.state.thread, archivedAt: DateTime.makeUnsafe(NOW) };
         if (change === "changed-during-signing") f.state.stopAtKeyRead = true;
-        expect((yield* f.source.prepare(PAYLOAD, THREAD).pipe(Effect.flip)).reason).toBe("denied");
+        const refusal = yield* f.source.prepare(PAYLOAD, THREAD).pipe(Effect.flip);
+        expect(refusal.reason).toBe("denied");
+        expect(refusal.detail).toBe(
+          change === "restricted" || change === "plan" ? "caller-permission" : "workload-inactive",
+        );
       }),
     ),
 );

@@ -104,6 +104,22 @@ const make = Effect.gen(function* () {
       );
       const now = yield* Clock.currentTimeMillis;
       for (const [id, held] of sessions) if (held.session.expiresAt <= now) sessions.delete(id);
+      if (request.kind === "list") {
+        const authorize = access.authorizeAccount(
+          {
+            lease,
+            itemId: null,
+            expectedVersion: null,
+            action: "inspect",
+            destination: null,
+          },
+          workloads.revalidate(lease),
+        );
+        yield* authorize;
+        const page = yield* core.list(request.input);
+        yield* authorize;
+        return { kind: "list", page };
+      }
       if (request.kind === "sessions") {
         yield* workloads.revalidate(lease);
         return {

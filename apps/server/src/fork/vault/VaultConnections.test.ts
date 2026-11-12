@@ -18,6 +18,8 @@ import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import { VaultConnectionError, VaultError, vaultGitDestination } from "@t3tools/contracts/fork";
 import * as VaultConnections from "./VaultConnections.ts";
+import * as VaultCore from "./VaultCore.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as SshTransport from "./SshTransport.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
@@ -126,6 +128,48 @@ it.effect(
       );
       expect(remote.selected?.item.id).toBe(f.itemId);
       expect(JSON.stringify(remote)).not.toMatch(/privateKey|BEGIN|synthetic-private/);
+      let accountUnavailable = false;
+      const source = yield* VaultConnections.VaultConnections.pipe(
+        Effect.provide(
+          VaultConnections.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeedContext(f.context),
+                Layer.mock(VaultCore.VaultCore)({
+                  list: () => Effect.die("Source Vault must not be read"),
+                }),
+                Layer.mock(AccountVaultClient.AccountVaultClient)({
+                  available: Effect.succeed(true),
+                  execute: (request) =>
+                    Effect.gen(function* () {
+                      if (accountUnavailable)
+                        return yield* new VaultError({ reason: "unavailable" });
+                      if (request.kind !== "resolve")
+                        return yield* new VaultError({ reason: "invalid-input" });
+                      return {
+                        kind: "resolve" as const,
+                        report: yield* f.resolver.resolveForAccount(request.input, account),
+                      };
+                    }),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+        yield* source.resolve(
+          { kind: "ssh", connection: { resource: "example.test" } },
+          f.threadId,
+        ),
+      ).toEqual(remote);
+      accountUnavailable = true;
+      expect(
+        (yield* source.resolve(
+          { kind: "ssh", connection: { resource: "example.test" } },
+          f.threadId,
+        )).state,
+      ).toBe("backend-unavailable");
       const one = yield* f.resolver.require(
         { kind: "ssh", connection: { resource: "EXAMPLE.TEST" } },
         f.threadId,

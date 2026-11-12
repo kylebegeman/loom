@@ -20,6 +20,7 @@ import {
   type VaultApprovalRetryInput,
   type VaultOwnerPolicyChange,
   type VaultItemKind,
+  type VaultItemPage,
   type VaultGrantDefinition,
   type VaultGrantMutation,
   type VaultGrantBatchMutation,
@@ -43,6 +44,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultAccess from "./VaultAccess.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import { makeForkRpcAuth } from "../rpcAuthorization.ts";
 import { makeVaultCoreRpcHandlers } from "./rpc.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
@@ -103,6 +105,9 @@ const fixture = () => {
     auditConflicts: 0,
     auditWriteAttempts: 0,
     failReads: false,
+    accountAvailable: false,
+    accountDenied: false,
+    accountPage: { items: [], nextCursor: null } as VaultItemPage,
     readBarrier: null as {
       observed: Deferred.Deferred<void>;
       release: Deferred.Deferred<void>;
@@ -172,6 +177,15 @@ const fixture = () => {
       }),
   });
   const dependencies = Layer.mergeAll(
+    Layer.mock(AccountVaultClient.AccountVaultClient)({
+      available: Effect.sync(() => state.accountAvailable),
+      execute: () =>
+        Effect.suspend(() =>
+          state.accountDenied
+            ? Effect.fail(new VaultError({ reason: "denied" }))
+            : Effect.succeed({ kind: "list" as const, page: state.accountPage }),
+        ),
+    }),
     Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     Layer.mock(ProjectStoreV2)({
       // Mirrors ProjectStoreV2: a soft-deleted project is returned only with includeDeleted.
@@ -694,7 +708,7 @@ it.effect("fails closed when audit persistence fails or the workload is no longe
   ),
 );
 it.effect("filters metadata and does not disclose denied items in self explanations", () =>
-  withAccess(({ access, core }) =>
+  withAccess(({ access, core, fixture }) =>
     Effect.gen(function* () {
       const archivedId = "d".repeat(32);
       yield* core.save(
@@ -736,6 +750,17 @@ it.effect("filters metadata and does not disclose denied items in self explanati
           (item) => item.id,
         ),
       ).toEqual([itemId]);
+      fixture.state.accountAvailable = true;
+      fixture.state.accountPage = {
+        items: [{ ...visible.items[0]!, id: "9".repeat(32), label: "Library account" }],
+        nextCursor: "library-cursor",
+      };
+      fixture.state.failReads = true;
+      expect(yield* access.listForThread(query, threadId)).toEqual(fixture.state.accountPage);
+      fixture.state.accountDenied = true;
+      expect((yield* access.listForThread(query, threadId).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
     }),
   ),
 );
@@ -3033,6 +3058,7 @@ it.effect("owner-trusted checks read the thread on the reader while the writer i
         Layer.provide(
           Layer.mergeAll(
             memoryVault,
+            Layer.mock(AccountVaultClient.AccountVaultClient)({ available: Effect.succeed(false) }),
             projectionThreads,
             Layer.mock(ProjectStoreV2)({}),
             Layer.succeed(ServerEnvironmentIdentity, {

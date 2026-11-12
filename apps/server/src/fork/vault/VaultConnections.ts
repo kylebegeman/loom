@@ -1,4 +1,5 @@
 import type { ThreadId } from "@t3tools/contracts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import {
   VaultConnectionError,
   VaultConnectionPin,
@@ -152,6 +153,7 @@ const policyState = (reason: VaultAccessDecision["reason"]): VaultConnectionStat
         ? reason
         : "policy-denied";
 const make = Effect.gen(function* () {
+  const accountClient = yield* AccountVaultClient.AccountVaultClient;
   const core = yield* VaultCore.VaultCore,
     access = yield* VaultAccess.VaultAccess,
     store = yield* OpenBaoStore.OpenBaoStore,
@@ -552,7 +554,17 @@ const make = Effect.gen(function* () {
     return result.selected;
   });
   return VaultConnections.of({
-    resolve,
+    resolve: Effect.fn("VaultConnections.resolveClient")(
+      function* (input, threadId) {
+        if (!(yield* accountClient.available)) return yield* resolve(input, threadId);
+        const result = yield* accountClient.execute({ kind: "resolve", input }, threadId);
+        return result.kind === "resolve" ? result.report : report("backend-unavailable");
+      },
+      Effect.catchTags({
+        VaultError: (error) => Effect.succeed(backendFailure(error)),
+        VaultSshError: () => Effect.succeed(report("backend-unavailable")),
+      }),
+    ),
     resolveForAccount: Effect.fn("VaultConnections.resolveForAccount")(function* (input, account) {
       return yield* resolve(input, account.lease.workload.threadId, account);
     }),

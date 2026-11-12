@@ -1,3 +1,4 @@
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 // @effect-diagnostics nodeBuiltinImport:off - A bounded cancellable child joins the real synthetic Python inbox fixture.
 import * as NodeChildProcess from "node:child_process";
@@ -92,6 +93,7 @@ const fixture = () => {
     loseReply: false,
   };
   const dependencies = Layer.mergeAll(
+    Layer.mock(AccountVaultClient.AccountVaultClient)({ available: Effect.succeed(false) }),
     Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(caller.environmentId),
