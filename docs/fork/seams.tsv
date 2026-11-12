@@ -413,7 +413,7 @@ apps/server/src/cli/invocation.ts	brand	3
 apps/server/src/cli/invocation.ts	ext-vault	1
 apps/server/src/cli/automaticPort.ts	brand	1
 apps/server/src/policy/policyTemplates.ts	brand	12
-apps/server/src/cli/invocation.test.ts	brand	9
+apps/server/src/cli/invocation.test.ts	brand	11
 apps/server/src/cli/server.ts	brand	3
 apps/web/src/components/settings/CliCommandSettingsRow.tsx	brand	4
 apps/web/src/components/settings/settingsSearch.ts	brand	2
