@@ -6,7 +6,7 @@ import {
   ThreadConversationDetails,
   type ThreadConversationDetailsProps,
 } from "../../fork/library/ThreadConversationDetails";
-import { buildModelOptions, groupByProvider } from "../../lib/modelOptions";
+import { buildModelOptions, groupByProvider, serverConfigForCwd } from "../../lib/modelOptions";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import {
   getComposerDraftSnapshot,
@@ -108,7 +108,12 @@ export function useThreadConversationDetails(props: Props | null) {
   const nextSession = useMemo<ExistingThreadSettingsRouteSession | null>(() => {
     if (!environmentId || !threadId || !projectId || !selection || !ownerId) return null;
     const lockedProviderInstanceId = canSwitchProvider ? undefined : selection.instanceId;
-    const options = buildModelOptions(serverConfig, selection, lockedProviderInstanceId, projectId);
+    const options = buildModelOptions(
+      serverConfigForCwd(serverConfig, cwd),
+      selection,
+      lockedProviderInstanceId,
+      projectId,
+    );
     const current = options.find(
       (option) =>
         option.selection.instanceId === selection.instanceId &&
@@ -122,6 +127,7 @@ export function useThreadConversationDetails(props: Props | null) {
       ownerId,
       environmentId,
       projectId,
+      cwd,
       providerInstanceId: selection.instanceId,
       ...(lockedProviderInstanceId ? { lockedProviderInstanceId } : {}),
       providerGroups: groupByProvider(options),

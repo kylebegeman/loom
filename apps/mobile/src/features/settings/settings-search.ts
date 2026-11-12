@@ -174,6 +174,7 @@ const SETTINGS_PAGE_LABELS: Record<SettingsPageTarget, string> = {
   SettingsOpenSourceLicenses: "Open source licenses",
   SettingsUsage: "Usage & limits",
   SettingsPreviewLinks: "Previews",
+  SettingsLanguage: "Language", // fork: mobile-navigation
 };
 
 // fork: ext-settings

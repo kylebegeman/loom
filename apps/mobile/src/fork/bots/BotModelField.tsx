@@ -56,6 +56,7 @@ export function BotModelField({
             <ThreadSettingsPickerScreen
               environmentId={environmentId}
               projectId={projectId}
+              cwd={null}
               providerGroups={groups}
               selectedModel={value}
               // A bot's model sits apart from its instructions, so no prompt carries Ultrathink here.
