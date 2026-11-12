@@ -16,19 +16,17 @@ import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isTailnetHost } from "@t3tools/shared/hostClassification";
+import {
+  formatHostForUrl,
+  isTailnetHost,
+  isWildcardHost,
+} from "@t3tools/shared/hostClassification";
 
 import * as ServerConfig from "../config.ts";
 import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts"; // fork: directory-computers
 import { ReachPublicRoute, reachPublicEndpoints } from "../fork/reach/publicRoute.ts"; // fork: reach
 import * as BackgroundChecks from "../fork/background-checks/BackgroundChecks.ts"; // fork: background-check-health
-import {
-  formatHostForUrl,
-  isLoopbackHost,
-  isPrivateNetworkAddress,
-  isWildcardHost,
-  VIRTUAL_INTERFACE,
-} from "../startupAccess.ts";
+import { isLoopbackHost, isPrivateNetworkAddress, VIRTUAL_INTERFACE } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 

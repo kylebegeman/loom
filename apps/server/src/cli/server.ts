@@ -90,16 +90,22 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
-export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
+// Serve never bootstraps a project, so it does not offer the flag that asks for one.
+const { autoBootstrapProjectFromCwd: _, ...serveCommandFlags } = sharedServerCommandFlags;
+
+export const serveCommand = Command.make("serve", serveCommandFlags).pipe(
   Command.withShortDescription("Run Loom in this terminal, with no browser."), // fork: brand
   Command.withDescription(
     // fork: brand
     "Run Loom in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `loom up`.",
   ),
   Command.withHandler((flags) =>
-    runServerCommand(flags, {
-      startupPresentation: "headless",
-      forceAutoBootstrapProjectFromCwd: false,
-    }),
+    runServerCommand(
+      { ...flags, autoBootstrapProjectFromCwd: Option.none() },
+      {
+        startupPresentation: "headless",
+        forceAutoBootstrapProjectFromCwd: false,
+      },
+    ),
   ),
 );

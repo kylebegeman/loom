@@ -510,5 +510,9 @@ your Library, pairing, T3 Connect, or SSH. To connect your Library or add a comp
 computer** to pair another one. While this computer has no saved connections, the home screen
 also offers **Connect your Library** and **Add a computer**.
 
+If a [background service](./background-service.md) on this computer uses the same T3 home, the
+app still treats it as this computer: **Open in** and file reveal for its projects run here,
+whichever connection you reach it through.
+
 Turn **Run agents on this computer** back on in the same place to restart with your previous
 local settings.

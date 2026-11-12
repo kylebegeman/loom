@@ -75,6 +75,7 @@ import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
 
@@ -162,6 +163,7 @@ function startWithMissingWorktree(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
+        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         // fork: project-lifecycle: checkout restoration writes a setup marker and runs setup.
         ProviderTurnStartTestkit.layerWorkspacePreparation,
         Layer.succeed(FileSystem.FileSystem, {
@@ -1333,6 +1335,7 @@ function makeLocalCommandHarness(input: {
             }),
         }),
         IdAllocator.layer,
+        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         layerWorktreeLocation(input.worktreesDir, input.stateDir), // fork: project-lifecycle
         // fork: mini-native-retention
         input.restoredWorkspace

@@ -40,6 +40,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { ThreadSearchNotice } from "./ThreadSearchNotice"; // fork: everyday-workflows
+import { Button } from "../../components/ui/Button";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
@@ -684,38 +685,55 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       }}
     />
   );
+  const showAddEnvironment =
+    !catalogState.isLoadingConnections &&
+    !catalogState.hasReadyEnvironment &&
+    !catalogState.hasConnectingEnvironment;
   const listEmpty = (
-    <Text
-      className={
-        Platform.OS === "android"
-          ? "px-4 py-4 text-center text-sm text-drawer-foreground-muted"
-          : "px-2 py-4 text-sm text-drawer-foreground-muted"
-      }
-    >
-      {/* fork: project-navigation */}
-      {navigationView === "projects"
-        ? catalogState.isLoadingConnections ||
-          (catalogState.hasConnectingEnvironment && !catalogState.hasLoadedShellSnapshot)
-          ? "Loading projects…"
-          : !catalogState.hasConnections
-            ? "Connect a computer to see its projects"
-            : props.searchQuery.trim().length > 0
-              ? "No matching projects or threads"
-              : "No projects yet"
-        : catalogState.isLoadingConnections
-          ? "Loading threads…"
-          : Platform.OS === "android" && !catalogState.hasConnections
-            ? "No environments connected"
-            : props.searchQuery.trim().length > 0
-              ? threadSearch.isPending
-                ? "Searching thread messages…"
-                : threadSearch.failedEnvironmentIds.length > 0 // fork: everyday-workflows
-                  ? "Search incomplete"
-                  : "No matching threads"
-              : selectedProjectKey !== null // fork: library
-                ? `No threads in ${projectFilterOptions.find((option) => option.key === selectedProjectKey)?.label ?? "this project"}`
-                : "No threads yet"}
-    </Text>
+    <View>
+      <Text
+        className={
+          Platform.OS === "android"
+            ? "px-4 py-4 text-center text-sm text-drawer-foreground-muted"
+            : "px-2 py-4 text-sm text-drawer-foreground-muted"
+        }
+      >
+        {/* fork: project-navigation */}
+        {navigationView === "projects"
+          ? catalogState.isLoadingConnections ||
+            (catalogState.hasConnectingEnvironment && !catalogState.hasLoadedShellSnapshot)
+            ? "Loading projects…"
+            : !catalogState.hasConnections
+              ? "Connect a computer to see its projects"
+              : props.searchQuery.trim().length > 0
+                ? "No matching projects or threads"
+                : "No projects yet"
+          : catalogState.isLoadingConnections
+            ? "Loading threads…"
+            : showAddEnvironment
+              ? "No environments connected"
+              : props.searchQuery.trim().length > 0
+                ? threadSearch.isPending
+                  ? "Searching thread messages…"
+                  : threadSearch.failedEnvironmentIds.length > 0 // fork: everyday-workflows
+                    ? "Search incomplete"
+                    : "No matching threads"
+                : selectedProjectKey !== null // fork: library
+                  ? `No threads in ${projectFilterOptions.find((option) => option.key === selectedProjectKey)?.label ?? "this project"}`
+                  : "No threads yet"}
+      </Text>
+      {showAddEnvironment ? (
+        <View className={Platform.OS === "android" ? "self-center" : "px-2"}>
+          <Button
+            tone="primary"
+            size="compact"
+            icon="plus"
+            label="Add environment"
+            onPress={props.onOpenEnvironmentSettings}
+          />
+        </View>
+      ) : null}
+    </View>
   );
 
   if (Platform.OS === "ios") {

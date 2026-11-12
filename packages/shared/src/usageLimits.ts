@@ -28,7 +28,8 @@ export function exhaustedUsageWindow(
   now: number,
   model?: string,
 ) {
-  const exhausted = (provider?.usageLimits?.windows ?? []).filter(
+  const windows = provider?.usageLimits?.windows ?? [];
+  const exhausted = windows.filter(
     (window) =>
       (window.usedPercent ?? 0) >= 100 &&
       (!window.resetsAt ||
@@ -53,6 +54,13 @@ export function exhaustedUsageWindow(
           (pool === "3p" && (family === "claude" || family === "gpt"))
         );
       });
+    }
+    case "codex": {
+      // Seat-based plans spend credits only past their plan windows, so the credit cap blocks only plans without them.
+      const hasPlanWindows = windows.some(
+        (window) => window.id === "primary" || window.id === "secondary",
+      );
+      return exhausted.find((window) => window.id !== "individual" || !hasPlanWindows);
     }
     case "opencode":
       return exhausted.find(
@@ -398,7 +406,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
 export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
   const label = (environmentLabel: string, subject: string) =>
     presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
-  const notices: string[] = [];
+  const notices = new Set<string>();
   // fork: switchboard
   // A source account without a reading is left off the page, so it is named
   // here unless another login or source shows the same account.
@@ -424,16 +432,16 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
       if (provider.usageLimits?.unavailable?.reason === "unsupported") continue;
       const notice = provider.usageLimits ? limitsNotice(provider.usageLimits) : null;
       const name = provider.displayName?.trim() || String(provider.driver);
-      if (notice) notices.push(`${label(environmentLabel, name)}: ${notice}`);
+      if (notice) notices.add(`${label(environmentLabel, name)}: ${notice}`);
     }
     for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
       if (source.error) {
-        notices.push(`${label(environmentLabel, source.label)}: ${source.error}`);
+        notices.add(`${label(environmentLabel, source.label)}: ${source.error}`);
         // fork: switchboard
         continue;
       }
       if (source.accounts.length === 0) {
-        notices.push(`${label(environmentLabel, source.label)}: No accounts reported.`);
+        notices.add(`${label(environmentLabel, source.label)}: No accounts reported.`);
         // fork: switchboard
         continue;
       }
@@ -447,13 +455,13 @@ export function collectLimitNotices(presentations: LimitPresentations): readonly
         unread.set(notice, (unread.get(notice) ?? new Set()).add(name));
       }
       for (const [notice, names] of unread) {
-        notices.push(
+        notices.add(
           `${label(environmentLabel, `${source.label} · ${[...names].join(", ")}`)}: ${notice}`,
         );
       }
     }
   }
-  return notices;
+  return [...notices];
 }
 
 export interface LimitPoolMember {
