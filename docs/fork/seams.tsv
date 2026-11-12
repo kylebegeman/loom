@@ -598,7 +598,8 @@ apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts	brand	1
 apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
 apps/server/src/persistence/DatabaseStorage.ts	brand	1
-apps/server/src/persistence/Sqlite.ts	brand	1
+apps/server/src/persistence/Sqlite.ts	brand	2
+apps/desktop/src/preview/BrowserSession.ts	brand	1
 apps/web/src/components/settings/DatabaseStorageNotice.tsx	brand	3
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
