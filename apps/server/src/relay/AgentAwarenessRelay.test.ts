@@ -334,6 +334,83 @@ const makeTestRelay = Effect.fnUntraced(function* (
 });
 
 describe("AgentAwarenessRelay", () => {
+  it.effect("keeps hidden bot and remote delegated outcomes out of phone activity", () =>
+    Effect.gen(function* () {
+      for (const overrides of [
+        { id: ThreadId.make("bot-run-hidden") },
+        {
+          delegatedFrom: {
+            environmentId: EnvironmentId.make("caller-env"),
+            threadId: ThreadId.make("caller"),
+            title: "Caller",
+          },
+        },
+      ]) {
+        const { relay, currentShell, publications } = yield* makeTestRelay();
+        for (const status of ["running", "completed", "failed"] as const) {
+          yield* Ref.set(
+            currentShell,
+            shell({
+              ...overrides,
+              status,
+              latestRunCompletedAt: DateTime.makeUnsafe("2026-09-04T12:00:01.000Z"),
+            }),
+          );
+          yield* relay.publishThread(overrides.id ?? THREAD_ID);
+          yield* TestClock.adjust("5 seconds");
+          yield* relay.drain;
+        }
+        assert.deepStrictEqual(publications, []);
+        yield* Ref.set(
+          currentShell,
+          shell({
+            ...overrides,
+            pendingRuntimeRequest: {
+              id: RuntimeRequestId.make("human-approval"),
+              kind: "command",
+              createdAt: DateTime.makeUnsafe(NOW),
+            },
+          }),
+        );
+        yield* relay.publishThread(overrides.id ?? THREAD_ID);
+        assert.equal(publications.length, 1);
+        assert.equal(publications[0]?.state?.phase, "waiting_for_approval");
+        assert.equal(
+          publications[0]?.state?.deepLink,
+          overrides.id === undefined
+            ? `/threads/relay-environment/${THREAD_ID}`
+            : "/threads/relay-environment/bot-run-hidden",
+        );
+        yield* Ref.set(currentShell, shell({ ...overrides, status: "completed" }));
+        yield* relay.publishThread(overrides.id ?? THREAD_ID);
+        yield* TestClock.adjust("5 seconds");
+        yield* relay.drain;
+        assert.deepStrictEqual(
+          publications.map(({ state }) => state?.phase ?? null),
+          ["waiting_for_approval", null],
+        );
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("preserves a nested approval under a hidden bot without publishing its outcome", () =>
+    Effect.gen(function* () {
+      const botId = ThreadId.make("bot-run-parent");
+      const parent = shell({ id: botId });
+      const child = waitingChild({
+        lineage: { rootThreadId: botId, parentThreadId: botId, relationshipToParent: "subagent" },
+      });
+      const { relay, publications } = yield* makeTestRelay({
+        readShell: (id) => Effect.succeed(id === botId ? parent : child),
+      });
+      yield* relay.publishThread(child.id);
+      assert.deepStrictEqual(
+        publications.map(({ state }) => [state?.threadId, state?.phase, state?.deepLink]),
+        [[botId, "waiting_for_approval", `/threads/relay-environment/${botId}`]],
+      );
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("publishes the parent as needing approval while its subagent waits", () =>
     Effect.gen(function* () {
       const shells = yield* Ref.make(

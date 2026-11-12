@@ -73,11 +73,11 @@ describe("agentAlertRequest", () => {
     });
   });
 
-  it("opens the bot inbox and sends scheduled failures without a thread id", () => {
+  it("opens the requesting bot thread and sends scheduled failures without a thread id", () => {
     expect(
       agentAlertRequest({ environmentId, threadId: ThreadId.make("bot-run-1"), kind: "input" })
         .payload.body?.deepLink,
-    ).toBe("/bots/environment-1/inbox");
+    ).toBe("/threads/environment-1/bot-run-1");
     const scheduled = agentAlertRequest({
       environmentId,
       taskId: ScheduledTaskId.make("task-1"),

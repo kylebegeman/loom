@@ -15,7 +15,6 @@ import {
 } from "@t3tools/contracts/relay";
 import {
   type SubagentRequestAwareness,
-  projectThreadAwarenessV2,
   subagentAwaitsApproval,
 } from "@t3tools/shared/agentAwareness";
 import { turnItemUpdateCanEndBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
@@ -52,6 +51,10 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
+import {
+  isInternalNotificationThread,
+  projectThreadNotificationAwareness,
+} from "./agentNotificationPolicy.ts";
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
@@ -346,13 +349,13 @@ function resolveAgentAwarenessRelayPublishSnapshot(input: {
     project: input.project.value,
     thread: input.thread.value,
   };
-  const state = projectThreadAwarenessV2({
+  const state = projectThreadNotificationAwareness({
     ...awarenessInput,
     pendingSubagentRequest: input.pendingSubagentRequest,
   });
   const childDrivesWait =
     input.pendingSubagentRequest !== null &&
-    state?.phase !== projectThreadAwarenessV2(awarenessInput)?.phase;
+    state?.phase !== projectThreadNotificationAwareness(awarenessInput)?.phase;
   return {
     projectId: input.thread.value.projectId,
     state: sanitizeRelayAgentActivityState(state),
@@ -383,7 +386,7 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
       if (!project) {
         return false;
       }
-      const state = projectThreadAwarenessV2({
+      const state = projectThreadNotificationAwareness({
         environmentId: input.environmentId,
         project,
         thread,
@@ -580,6 +583,13 @@ export const make = Effect.gen(function* () {
     });
     const publishIdentity = agentAwarenessPublishIdentity(snapshot.state, snapshot.subagentWait);
     const publishedStateByThread = yield* Ref.get(publishedStateByThreadRef);
+    if (
+      snapshot.state === null &&
+      threadShell !== null &&
+      isInternalNotificationThread(threadShell) &&
+      !hasLivePublishedState(publishedStateByThread, threadId)
+    )
+      return;
     if (
       (snapshot.state?.phase === "completed" || snapshot.state?.phase === "failed") &&
       !hasLivePublishedState(publishedStateByThread, threadId)

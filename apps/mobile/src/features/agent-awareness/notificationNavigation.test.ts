@@ -1,11 +1,14 @@
 import type { NotificationResponse } from "expo-notifications";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { foregroundNotificationBehavior } from "./foregroundNotificationBehavior";
+
 import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";
 
 import {
   extractAgentNotificationDeepLink,
   routeAgentNotificationResponseOnce,
+  agentNotificationDeepLinkOnScreen,
 } from "./notificationPayload";
 
 function responseWithData(data: Record<string, unknown>, identifier = "notification-1") {
@@ -175,5 +178,27 @@ describe("routeAgentNotificationResponseOnce", () => {
     });
 
     expect(navigations).toEqual(["/threads/env/thread"]);
+  });
+});
+
+describe("foreground notification destinations", () => {
+  it.each([
+    "/threads/env/thread",
+    "/bots/env/inbox",
+    "/settings/environments/env",
+    "/settings/scheduled-tasks?environmentId=env&taskId=task",
+  ])("keeps alerts quiet when %s is already visible", (deepLink) => {
+    const { notification } = responseWithData({ deepLink });
+    expect(
+      foregroundNotificationBehavior(
+        notification as NotificationResponse["notification"],
+        agentNotificationDeepLinkOnScreen(deepLink),
+      ),
+    ).toMatchObject({
+      shouldShowBanner: false,
+      shouldShowList: false,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    });
   });
 });

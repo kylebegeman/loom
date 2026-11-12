@@ -185,6 +185,25 @@ describe("agentAlertStep", () => {
     ).toEqual([null, "approval", "input", null, null]);
   });
 
+  it("keeps remote delegated outcomes quiet while preserving their human requests", () => {
+    const delegated = {
+      delegatedFrom: {
+        environmentId: EnvironmentId.make("caller-env"),
+        threadId: ThreadId.make("caller"),
+        title: "Caller",
+      },
+    };
+    expect(
+      alertsFor([
+        running(delegated),
+        ended("completed", 0, delegated),
+        ended("failed", 0, delegated),
+        waitingOn("command", "approval", delegated),
+        waitingOn("user_input", "input", delegated),
+      ]),
+    ).toEqual([null, null, null, "approval", "input"]);
+  });
+
   it("leaves settled, archived and subagent threads alone", () => {
     const quiet: ReadonlyArray<Partial<OrchestrationV2ThreadShell>> = [
       { settledOverride: "settled" },
@@ -260,6 +279,37 @@ const harness = Effect.fn("test.harness")(function* (
 const posted = (threadId: ThreadId, kind: LibraryPushActivityKind) => ({ threadId, kind });
 
 describe("makeAgentAlerts", () => {
+  it.effect("announces nested delegated approvals on their visible parent once", () =>
+    Effect.gen(function* () {
+      const child = ThreadId.make("child");
+      const grandchild = ThreadId.make("grandchild");
+      const lineage = (parentThreadId: ThreadId) => ({
+        rootThreadId: THREAD_ID,
+        parentThreadId,
+        relationshipToParent: "subagent" as const,
+      });
+      const parent = ended("completed", 0);
+      const { posts, change } = yield* harness([
+        parent,
+        running({ id: child, lineage: lineage(THREAD_ID) }),
+        running({ id: grandchild, lineage: lineage(child) }),
+      ]);
+      const waiting = waitingOn("command", "nested-approval", {
+        id: grandchild,
+        lineage: lineage(child),
+      });
+      yield* change(waiting);
+      yield* change(waiting);
+      expect(posts).toEqual([posted(THREAD_ID, "approval")]);
+      yield* change(waitingOn("command", "parent-approval"));
+      yield* change(parent);
+      expect(posts).toEqual([posted(THREAD_ID, "approval"), posted(THREAD_ID, "approval")]);
+      yield* change(ended("completed", 0, { id: grandchild, lineage: lineage(child) }));
+      yield* change(parent);
+      expect(posts).toEqual([posted(THREAD_ID, "approval"), posted(THREAD_ID, "approval")]);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("posts each new transition once, and nothing the seed already saw", () =>
     Effect.gen(function* () {
       const waiting = waitingOn("command", "request-1");
