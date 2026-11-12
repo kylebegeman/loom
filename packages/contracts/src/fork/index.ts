@@ -112,3 +112,4 @@ export * from "./vault-provider-credentials.ts";
 export * from "./api-library.ts";
 
 export * from "./account-access.ts";
+export * from "./account-vault.ts";

@@ -1,4 +1,7 @@
 import * as AccountWorkloads from "./account-access/AccountWorkloads.ts";
+import * as AccountVaultAuthority from "./vault/AccountVaultAuthority.ts";
+import * as AccountVaultClient from "./vault/AccountVaultClient.ts";
+import { AccountVaultHttpRoutes } from "./vault/account-http.ts";
 import * as AccountEnrollment from "./account-access/AccountEnrollment.ts";
 import * as AccountJoin from "./account-access/AccountJoin.ts";
 import * as ComputerJoin from "./account-access/ComputerJoin.ts";
@@ -366,6 +369,20 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.merge(layerDirectory, layerReachStore)),
 );
+const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerAccountWorkloads,
+      layerVaultAccess,
+      layerVaultCore,
+      layerVaultConnections,
+      SshCrypto.layer,
+    ),
+  ),
+);
+const layerAccountVaultClient = AccountVaultClient.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer)),
+);
 const layerAccountGateway = AccountGateway.layer.pipe(
   Layer.provideMerge(layerAccountAccess),
   Layer.provide(NodeHttpClient.layerUndici),
@@ -551,6 +568,8 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryPublishingCredential.layer,
   layerAccountEnrollment,
   layerAccountWorkloads,
+  layerAccountVaultAuthority,
+  layerAccountVaultClient,
   layerAccountJoin,
   layerComputerJoin,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
@@ -800,6 +819,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   SessionToolContextRoutes,
   VaultBrokerHttpRoutes,
   VaultWorkloadHttpRoutes,
+  AccountVaultHttpRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,
