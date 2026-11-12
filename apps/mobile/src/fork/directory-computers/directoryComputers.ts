@@ -58,7 +58,7 @@ export function directoryComputerItem(
     health?.text ?? row.proof?.text,
     health?.attention ?? undefined,
     row.action === "pair"
-      ? `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair instead`
+      ? `Turn on Tailscale HTTPS or Loomhost on ${row.label}, or pair instead`
       : undefined,
   ].filter((part): part is string => part !== undefined);
   return { row, description: parts.join(" · "), connectable: row.action === "connect" };

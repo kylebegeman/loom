@@ -22,7 +22,7 @@ import { LibraryStateBadge } from "../library/LibraryStateBadge";
 import { REACH_INK, reach } from "./reach";
 
 const FOOTER =
-  "Addresses and Loom sign-in your Library set up for your computers. Retire a computer you lost or no longer use. Turn reach on or off in each computer's details.";
+  "Addresses and Loom sign-in your Library set up for your computers. Retire a computer you lost or no longer use. Turn Loomhost on or off in each computer's details.";
 
 /**
  * The Library's reach records for the Connections screen. It reads when the screen opens (if the
@@ -124,7 +124,7 @@ export function LibraryReachSection({ libraryReach }: { readonly libraryReach: L
   const setup = view.setup.filter((line) => line.tone === "warning" || line.tone === "danger");
   const retireNote = view.computers.length > 0 ? view.retireDisabledReason : null;
   return (
-    <SettingsSection title="Reach addresses" footer={FOOTER}>
+    <SettingsSection title="Loomhost addresses" footer={FOOTER}>
       {view.error !== null ? (
         <Text selectable className="p-4 text-sm text-danger-foreground">
           {view.error}

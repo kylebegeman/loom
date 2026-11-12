@@ -264,7 +264,7 @@ function LibraryComputersSection({
     const note =
       row.action === "pair"
         ? {
-            text: `Turn on Tailscale HTTPS or Reach on ${row.label}, or pair using an address this device can reach.`,
+            text: `Turn on Tailscale HTTPS or Loomhost on ${row.label}, or pair using an address this device can reach.`,
             error: false,
           }
         : state?.phase === "pairing"
@@ -395,8 +395,8 @@ function LibraryComputersSection({
       >
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
           Connect a computer to use it on this device. Reconnect with Library adds its current
-          address while keeping saved conversations and drafts. Access away from home needs Reach or
-          Tailscale HTTPS on that computer.
+          address while keeping saved conversations and drafts. Access away from home needs Loomhost
+          or Tailscale HTTPS on that computer.
         </p>
         {view.error ? (
           <p role="alert" className="text-sm text-destructive">

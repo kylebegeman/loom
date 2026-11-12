@@ -10,11 +10,11 @@ create no files in the repository. Selecting several checkouts lets you edit the
 unchanged fields keep each checkout's existing value. Offline checkouts do not receive
 changes.
 
-**Tools for agents** controls Hardware, Reach and Sites for the next agent session.
+**Tools for agents** controls Hardware, Loomhost and Sites for the next agent session.
 On mobile, open **Settings > Computer folders**, select the project, and choose the tools
 for each computer.
-**Automatic** shows hardware tools for tscircuit, KiCad or OpenSCAD projects, Reach tools
-when your Library has a Reach zone, and Sites tools when the project links a site.
+**Automatic** shows hardware tools for tscircuit, KiCad or OpenSCAD projects, Loomhost tools
+when your Library has a Loomhost zone, and Sites tools when the project links a site.
 Choose **Always** or **Never** to override a family, or return to **Automatic**.
 Resetting a profile also restores these choices to Automatic. The choices change which
 tools the agent sees; they do not grant permission to use them.

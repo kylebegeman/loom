@@ -40,10 +40,10 @@ your Library that this device has not connected yet, under **Settings > Computer
 On iPhone they are in its **From your Library** section. Choose **Connect** to sign in to
 one with Loom Identity, with no pairing code. In a browser, choose **Sign in**
 next, which opens the sign-in window. Loom reaches these computers over
-Tailscale, or at a computer's reach address once reach is on for it (see
-[Reach a computer from anywhere](#reach-a-computer-from-anywhere)). A computer
-without a reach address needs this device on your tailnet. A browser signs in
-over Tailscale; when only the reach address answers, Loom offers pairing instead.
+Tailscale, or at a computer's Loomhost address once Loomhost is on for it (see
+[Connect from anywhere with Loomhost](#connect-from-anywhere-with-loomhost)). A computer
+without a Loomhost address needs this device on your tailnet. A browser signs in
+over Tailscale; when only the Loomhost address answers, Loom offers pairing instead.
 
 If you joined your Library with Loom Identity, sign in to each computer with the
 same account. Loom only signs in to a computer that uses the same sign-in
@@ -70,7 +70,7 @@ If a computer has no published address, choose **Pair instead** and enter a
 reachable address and pairing code. Loom checks that it is the computer you
 selected. On that computer, **Connection details** shows the addresses it last
 reported to your Library. If there are none, enable **Tailscale HTTPS** on desktop
-or **Reach from anywhere** below the connection settings. **Tailscale HTTPS**
+or **Loomhost** below the connection settings. **Tailscale HTTPS**
 works with **Network access** off. If another app already serves its port, Loom
 names that app and asks for another port instead of replacing it.
 
@@ -111,7 +111,7 @@ offline, removal still finishes and the device's access ends on its own within
 the hour. Revoking a device's session from the computer's Connections settings
 also ends its renewals, so that device must sign in again.
 
-**Use these values** in a computer's Reach section turns on renewal for that
+**Use these values** in a computer's Loomhost section turns on renewal for that
 computer. Devices stay signed in for 7 days, or the number of days you enter
 there, up to 30. A device you don't use for a week signs in again either way.
 Update the desktop app and iPhone app on every device that signs in to that
@@ -127,17 +127,17 @@ seconds or a number with `s`, `m`, `h` or `d`, such as `7d`, between one hour
 and 365 days. The desktop app does not read it, so use **Use these values**
 there.
 
-## Reach a computer from anywhere
+## Connect from anywhere with Loomhost
 
-Reach gives a computer its own address, such as
+Loomhost gives a computer its own address, such as
 `https://studio-loom.example.com`, so your devices can connect to it from any
 network without Tailscale. Your Library sets the address up and the connection
 runs through Cloudflare. The address only opens the door to Loom: every device
 still signs in with Loom Identity or pairs before it can use the computer.
 
-Your Library needs a reach zone and a Cloudflare token before any computer can
-use reach. Set `LOOM_REACH_ZONE` and `LOOM_REACH_CLOUDFLARE_TOKEN_FILE` in the
-Library's server environment and restart it. Once both are set, a **Reach
+Your Library needs a Loomhost zone and a Cloudflare token before any computer can
+use Loomhost. Set `LOOM_REACH_ZONE` and `LOOM_REACH_CLOUDFLARE_TOKEN_FILE` in the
+Library's server environment and restart it. Once both are set, a **Loomhost
 addresses** section appears in the Library's Connections settings and shows
 whether the token can be read. If you change the zone later, each computer gets
 a new address at its next start, and the list shows anything the token could
@@ -145,12 +145,12 @@ not remove in the old zone. A Library with Loom sign-in and its Pocket ID key
 shows the section without a zone too, to list computers that prepared Loom
 sign-in.
 
-To turn reach on, open the computer's details in **Settings > Computers** and
-turn on **Reach from anywhere**. You can do this on the computer itself, or from
+To turn Loomhost on, open the computer's details in **Settings > Computers** and
+turn on **Loomhost**. You can do this on the computer itself, or from
 another device: in the computer's details on desktop or in a browser, or in the
-**Reach** section of the computer's details on iPhone. Another device needs a
-pairing with full access to change reach. The computer must be signed in to
-your Library, and your Library computer itself cannot use reach. Once the
+**Loomhost** section of the computer's details on iPhone. Another device needs a
+pairing with full access to change Loomhost. The computer must be signed in to
+your Library, and your Library computer itself cannot use Loomhost. Once the
 address appears, **Copy address** copies it.
 
 Other devices pick the address up the next time they connect to the computer.
@@ -161,8 +161,8 @@ open your computers in Settings or when a conversation on that computer can't
 connect. You never need to remove the computer to pick up a new address, and
 removing it deletes its drafts and unsent messages on that device.
 
-To get Loom sign-in for a computer without turning reach on, choose **Prepare
-sign-in** in the Reach section of that computer's own Connections settings.
+To get Loom sign-in for a computer without turning Loomhost on, choose **Prepare
+sign-in** in the Loomhost section of that computer's own Connections settings.
 When your Library has prepared Loom sign-in for the computer, open its own
 Connections settings and choose **Use these values**. The session must allow
 settings changes. Enter the allowed Loom account IDs if they are not already
@@ -175,41 +175,41 @@ saved values. Until sign-in is configured, devices that find the computer throug
 your Library pair instead. If passkey sign-in is refused, sign out of Loom
 Identity in your browser, then sign in with your passkey.
 
-Turning reach off and **Remove address** are different:
+Turning Loomhost off and **Remove address** are different:
 
-- Turning reach off stops the computer from using its address, but keeps the
+- Turning Loomhost off stops the computer from using its address, but keeps the
   address. Turning it on again brings it back.
 - **Remove address** deletes the computer's tunnel and address record, so devices
   away from your network lose this route. The address stays reserved for the
-  computer, and turning reach on again brings the same address back.
+  computer, and turning Loomhost on again brings the same address back.
 - If this device is connected through the address, Loom asks first, because
   turning it off or removing it disconnects this device.
 - If a removal cannot finish because your Library is gone or cannot be reached,
-  **Forget reach on this computer** ends it here. The tunnel and address stay
-  until you retire them in your Library's **Reach addresses** list.
+  **Forget Loomhost on this computer** ends it here. The tunnel and address stay
+  until you retire them in your Library's **Loomhost addresses** list.
 
 When your Library retires the computer's address, or another copy of the
-computer takes it over, reach turns off on its own and says so. Turn it on again
+computer takes it over, Loomhost turns off on its own and says so. Turn it on again
 to get an address.
 
 To clean up after a computer you no longer have, use **Retire** in your
-Library's **Reach addresses** list in **Settings > Computers**, on desktop, in a
+Library's **Loomhost addresses** list in **Settings > Computers**, on desktop, in a
 browser or on iPhone. **Also end Loom sign-in
 for this computer** ends its Loom sign-in too, and devices signed in to it lose
 access when their current sign-in ends. A retired computer that is still signed
-in to your Library sets reach up again on its next start, so revoke its Library
+in to your Library sets Loomhost up again on its next start, so revoke its Library
 sign-in as well. If your Library cannot read its Loom sign-in key, it refuses
 that option and changes nothing; retire without it, or fix the key and try
-again. Your Library asks you to retire a computer's reach address before you can
+again. Your Library asks you to retire a computer's Loomhost address before you can
 forget the computer.
 
-A computer that has Loom sign-in from your Library and no reach address shows
+A computer that has Loom sign-in from your Library and no Loomhost address shows
 as **Sign-in only**. To end its sign-in, retire it with **Also end Loom sign-in
 for this computer**, or **Retire and end sign-in** on iPhone. It then leaves the
 list. If preparing sign-in fails, nothing is listed; choose **Prepare sign-in**
 on that computer again.
 
-Agents can check reach from any computer signed in to the Library, including connector counts and sign-in state, and can turn reach off or remove an address. They cannot
+Agents can check Loomhost from any computer signed in to the Library, including connector counts and sign-in state, and can turn Loomhost off or remove an address. They cannot
 turn it on.
 
 ## Notifications from your Library
@@ -334,6 +334,6 @@ This includes your Library. The notice clears after the updated computer reports
 
 ### Forget an old computer
 
-In Settings > Computers, your Library's list offers **Forget** for computers and unattached machines. Computers that have not reported for 30 days appear under **Old machines**. Forget removes the Library entry and its pinned key; it does not remove your saved connection or files. A running computer returns when it reports again, usually within 15 minutes. Retire an active Reach address before forgetting its computer.
+In Settings > Computers, your Library's list offers **Forget** for computers and unattached machines. Computers that have not reported for 30 days appear under **Old machines**. Forget removes the Library entry and its pinned key; it does not remove your saved connection or files. A running computer returns when it reports again, usually within 15 minutes. Retire an active Loomhost address before forgetting its computer.
 
 When Library reporting says the signing key changed, use **Forget in your Library** there to accept the computer's next signed report. Agents connected to the Library can use `loom_directory_forget`.

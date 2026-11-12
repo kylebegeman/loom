@@ -54,7 +54,7 @@ credential: a pairing, a Loom Identity sign-in or a paired device's session.
 
 The operator runbook is [docs/fork/operations/reach.md](../../operations/reach.md). The user
 guide section is
-[Reach a computer from anywhere](../../user/connections.md#reach-a-computer-from-anywhere).
+[Connect from anywhere with Loomhost](../../user/connections.md#connect-from-anywhere-with-loomhost).
 
 ## Surfaces
 

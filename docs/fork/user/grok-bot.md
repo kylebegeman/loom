@@ -16,8 +16,8 @@ ending in `/mcp`. The address copied from Computers uses your current route; che
 that the hosted caller can reach it. The environment's
 `/.well-known/t3/environment` metadata must report
 `capabilities.supportsExecution: true` to run work. A Library-only server can supply
-history while refusing execution. Loom Reach currently blocks MCP, OAuth and sign-in
-routes; a working Reach connection is not an MCP endpoint. Use a dedicated Loom-owned
+history while refusing execution. Loomhost currently blocks MCP, OAuth and sign-in
+routes; a working Loomhost connection is not an MCP endpoint. Use a dedicated Loom-owned
 HTTPS route to the execution computer for hosted MCP access. Retired T3 Connect is not
 a fallback for this setup.
 

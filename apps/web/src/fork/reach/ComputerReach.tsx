@@ -33,7 +33,7 @@ import { useEnvironmentSessionState, usePreparedConnection } from "~/state/sessi
 import { useAtomCommand } from "~/state/use-atom-command";
 import { reach } from "./state";
 
-const TITLE = "Reach from anywhere";
+const TITLE = "Loomhost";
 
 type PendingChange = "on" | "off" | "remove" | "forget" | "identity" | "prepare";
 
@@ -266,7 +266,7 @@ function ComputerReachBody({
             {view.address.host}
           </code>
           {view.actions.copyAddress ? (
-            <CopyAction value={view.address.url} label="Copy address" target="reach address" />
+            <CopyAction value={view.address.url} label="Copy address" target="Loomhost address" />
           ) : null}
           {view.actions.remove ? (
             <Button
@@ -288,7 +288,7 @@ function ComputerReachBody({
           disabled={pending !== null}
           onClick={() => void forgetReach()}
         >
-          Forget reach on this computer
+          Forget Loomhost on this computer
         </Button>
       ) : null}
       {view.notes.map((note) => (

@@ -60,7 +60,7 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     description: "Keep private notes, command mappings, env metadata and advisory token budgets.",
     home: "/settings/projects",
     keywords:
-      "notes commands budgets tokens env schema varlock private agent tools hardware reach sites automatic always never",
+      "notes commands budgets tokens env schema varlock private agent tools hardware loomhost reach sites automatic always never",
     scope: "project",
   },
   {

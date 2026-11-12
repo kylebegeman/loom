@@ -68,21 +68,21 @@ const MESSAGES = {
   signedOut:
     "Your Library refused this computer's sign-in. Open Settings > Connections on this computer for the sign-in repair. Loom reloads a replaced credential automatically.",
   keyChanged:
-    "Your Library knows this computer by a different key. Retire this computer's reach address in the Library to start over.",
+    "Your Library knows this computer by a different key. Retire this computer's Loomhost address in the Library to start over.",
   notInDirectory: "Waiting for this computer to appear in your Library's directory.",
   limited: "Your Library is busy. Loom tries again shortly.",
   setup: "Your Library could not set up this address. Loom keeps trying.",
   unverified: "Your Library could not verify this computer's request. Loom keeps trying.",
   invalid: "Your Library sent an answer this computer cannot use. Loom keeps trying.",
-  storage: "This computer could not save its reach settings. Loom keeps trying.",
+  storage: "This computer could not save its Loomhost settings. Loom keeps trying.",
   noOrigin:
-    "Reach needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
+    "Loomhost needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
   removeSignedOut:
-    "Replace this computer's Library credential to finish removing reach. Loom reloads it automatically.",
-  removeOutdated: "Update Loom on your Library to finish removing reach.",
-  removeNotReady: "Your Library is not set up for reach, so it cannot remove this address yet.",
+    "Replace this computer's Library credential to finish removing its Loomhost address. Loom reloads it automatically.",
+  removeOutdated: "Update Loom on your Library to finish removing its Loomhost address.",
+  removeNotReady: "Your Library is not set up for Loomhost, so it cannot remove this address yet.",
   retired:
-    "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+    "Your Library retired this computer's address, or another copy of this computer took it over. Turn Loomhost on to get an address again.",
 } as const;
 
 /**

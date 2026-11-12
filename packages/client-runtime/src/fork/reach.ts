@@ -111,26 +111,26 @@ export interface ReachLine {
 
 /** D9 gates reach in the UI only, so this never claims the device cannot change it. */
 export const REACH_CHANGE_ELSEWHERE_TEXT =
-  "Turn reach on or off from the computer itself or from a device paired with full access.";
+  "Turn Loomhost on or off from the computer itself or from a device paired with full access.";
 const RETIRE_ELSEWHERE_TEXT =
-  "Retire reach addresses from your Library itself or from a device paired with full access.";
-const DISCONNECTED_TEXT = "Connect this computer to change reach.";
+  "Retire Loomhost addresses from your Library itself or from a device paired with full access.";
+const DISCONNECTED_TEXT = "Connect this computer to change Loomhost settings.";
 const UNSUPPORTED_TEXT = "Update Loom on this computer to turn this on.";
-const LOADING_TEXT = "Checking reach...";
-const READ_FAILED_TEXT = "Loom could not read reach on this computer.";
+const LOADING_TEXT = "Checking Loomhost...";
+const READ_FAILED_TEXT = "Loom could not read Loomhost settings on this computer.";
 const REFRESH_FAILED_TEXT =
-  "Loom could not refresh reach on this computer, so this is the last state it read.";
+  "Loom could not refresh Loomhost settings on this computer, so this is the last state it read.";
 /** Reading reach needs relay:read, which a narrowed pairing can lack; trying again never helps. */
 export const REACH_UNREADABLE_TEXT =
-  "Pair this device with full access to see reach on this computer.";
+  "Pair this device with full access to see Loomhost settings on this computer.";
 
 export const REACH_BLOCKED_TEXT: Readonly<Record<ReachBlocked, string>> = {
   "no-library": "Sign this computer in to your Library to turn this on.",
-  "is-library": "This computer is your Library. Turn reach on from your other computers.",
+  "is-library": "This computer is your Library. Turn Loomhost on from your other computers.",
   "library-signed-out":
     "This computer's Library sign-in ended. Open Settings > Connections on this computer for its sign-in repair. A replaced credential is picked up automatically.",
   "library-not-ready":
-    "Your Library is not set up for reach yet. It needs a reach zone and a Cloudflare token file. Turn this on again once it has them.",
+    "Your Library is not set up for Loomhost yet. It needs a Loomhost zone and a Cloudflare token file. Turn this on again once it has them.",
   "library-outdated": "Update Loom on your Library, then turn this on again.",
 };
 
@@ -143,8 +143,8 @@ type RetryableBlock = Extract<ReachBlocked, "library-not-ready" | "library-outda
  */
 const BLOCKED_WHILE_ON_TEXT: Readonly<Record<RetryableBlock, string>> = {
   "library-not-ready":
-    "Your Library is not set up for reach yet. It needs a reach zone and a Cloudflare token file. Turn reach off and on again once it has them.",
-  "library-outdated": "Update Loom on your Library, then turn reach off and on again.",
+    "Your Library is not set up for Loomhost yet. It needs a Loomhost zone and a Cloudflare token file. Turn Loomhost off and on again once it has them.",
+  "library-outdated": "Update Loom on your Library, then turn Loomhost off and on again.",
 };
 
 const isRetryable = (blocked: ReachBlocked): blocked is RetryableBlock =>
@@ -163,7 +163,7 @@ const PREPARED_HERE_TEXT =
 const PREPARED_ELSEWHERE_TEXT =
   "Your Library prepared Loom sign-in for this computer. Open its own Connections settings and choose Use these values.";
 const PREPARE_TEXT =
-  "Your Library can prepare Loom sign-in for this computer. Reach does not need to be on.";
+  "Your Library can prepare Loom sign-in for this computer. Loomhost does not need to be on.";
 /** Preparing asks the Library over this computer's own sign-in to it. */
 const NO_PREPARE_BLOCKS: ReadonlySet<ReachBlocked> = new Set([
   "no-library",
@@ -174,7 +174,7 @@ const NO_PREPARE_BLOCKS: ReadonlySet<ReachBlocked> = new Set([
 const WARNING_TEXT: Readonly<Record<Exclude<ReachWarning, "identity-off">, string>> = {
   "library-unreachable": "Your Library is not reachable right now. Loom keeps trying.",
   retired:
-    "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+    "Your Library retired this computer's address, or another copy of this computer took it over. Turn Loomhost on to get an address again.",
   "library-signed-out": REACH_BLOCKED_TEXT["library-signed-out"],
   "identity-resource-differs":
     "This computer's Loom sign-in differs from what your Library prepared, so devices that find it through your Library pair instead.",
@@ -308,7 +308,7 @@ function stateLine(status: ReachStatus, host: string | null): ReachLine {
     case "unavailable": {
       const { blocked } = status;
       if (blocked === null)
-        return { tone: "warning", text: "Reach is not available on this computer." };
+        return { tone: "warning", text: "Loomhost is not available on this computer." };
       return {
         tone: "warning",
         text:
@@ -338,7 +338,7 @@ function stateLine(status: ReachStatus, host: string | null): ReachLine {
         tone: "danger",
         text:
           host === null
-            ? "Reach could not set up an address yet."
+            ? "Loomhost could not set up an address yet."
             : `${host} is not answering right now.`,
       };
     case "removing":
@@ -447,7 +447,7 @@ export function reachView(input: ReachViewInput): ReachView {
     }
   }
   const removeEffect =
-    "Loom deletes its tunnel and DNS record. Turning reach on again brings the same address back.";
+    "Loom deletes its tunnel and DNS record. Turning Loomhost on again brings the same address back.";
   return {
     status: statusLine,
     detail:
@@ -472,7 +472,7 @@ export function reachView(input: ReachViewInput): ReachView {
     confirmOff:
       live && status.enabled && throughAddress
         ? {
-            title: "Turn reach off?",
+            title: "Turn Loomhost off?",
             message: `You are connected through ${host}, so this device disconnects.`,
             action: "Turn off",
           }
@@ -488,9 +488,9 @@ export function reachView(input: ReachViewInput): ReachView {
         },
     confirmForget: canForget
       ? {
-          title: "Forget reach on this computer?",
+          title: "Forget Loomhost on this computer?",
           message:
-            "Reach stops here without your Library. Its tunnel and address stay until you retire them in your Library under Reach addresses.",
+            "Loomhost stops here without your Library. Its tunnel and address stay until you retire them in your Library under Loomhost addresses.",
           action: "Forget",
         }
       : null,
@@ -535,7 +535,7 @@ export function reachChangeErrorText(
   if (isAuthorizationError(error)) return REACH_CHANGE_ELSEWHERE_TEXT;
   if (dropsRoute) return null;
   if (isUnreachable(error)) return DISCONNECTED_TEXT;
-  return "Loom could not change reach on this computer.";
+  return "Loom could not change Loomhost settings on this computer.";
 }
 
 /** One short line for a failed Library list read or retire. */
@@ -548,14 +548,14 @@ export function reachLibraryErrorText(
   if (isAuthorizationError(error))
     return action === "retire"
       ? RETIRE_ELSEWHERE_TEXT
-      : "This device is not allowed to read your Library's reach addresses.";
+      : "This device is not allowed to read your Library's Loomhost addresses.";
   // The Library stays chosen after this device removes its connection, which these run on.
   if (errorTag(error) === "EnvironmentNotRegisteredError")
     return "Your Library is not saved on this device.";
   if (isUnreachable(error)) return "Your Library is not reachable right now.";
   return action === "retire"
-    ? "Loom could not retire this reach address."
-    : "Loom could not load your Library's reach addresses.";
+    ? "Loom could not retire this Loomhost address."
+    : "Loom could not load your Library's Loomhost addresses.";
 }
 
 const CREDENTIAL_LINES = {
@@ -563,7 +563,7 @@ const CREDENTIAL_LINES = {
     ready: { tone: "success", text: "The Cloudflare token works." },
     missing: {
       tone: "warning",
-      text: "The Cloudflare token file is missing. Computers cannot turn reach on or be removed until it is back.",
+      text: "The Cloudflare token file is missing. Computers cannot turn Loomhost on or be removed until it is back.",
     },
     refused: { tone: "danger", text: "Cloudflare refused the token. Check its permissions." },
     unavailable: { tone: "warning", text: "Cloudflare did not answer the last check." },
@@ -572,7 +572,7 @@ const CREDENTIAL_LINES = {
     ready: { tone: "success", text: "The Pocket ID key works." },
     missing: {
       tone: "neutral",
-      text: "No Pocket ID key file is in place. Add one while a computer prepares Loom sign-in or sets up reach.",
+      text: "No Pocket ID key file is in place. Add one while a computer prepares Loom sign-in or sets up Loomhost.",
     },
     refused: { tone: "danger", text: "Pocket ID refused the admin key." },
     unavailable: { tone: "warning", text: "Pocket ID did not answer the last check." },
@@ -591,7 +591,7 @@ function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
     return [
       {
         tone: "neutral",
-        text: "No reach zone is set, so your Library prepares Loom sign-in only. Set LOOM_REACH_ZONE and LOOM_REACH_CLOUDFLARE_TOKEN_FILE on it to hand out addresses too.",
+        text: "No Loomhost zone is set, so your Library prepares Loom sign-in only. Set LOOM_REACH_ZONE and LOOM_REACH_CLOUDFLARE_TOKEN_FILE on it to hand out addresses too.",
       },
       CREDENTIAL_LINES.identity[setup.identity],
     ];
@@ -599,7 +599,7 @@ function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
     setup.zone === null
       ? {
           tone: "danger",
-          text: "No reach zone is set. Set LOOM_REACH_ZONE on your Library and restart it.",
+          text: "No Loomhost zone is set. Set LOOM_REACH_ZONE on your Library and restart it.",
         }
       : { tone: "neutral", text: `Computers get addresses like studio-loom.${setup.zone}.` },
     CREDENTIAL_LINES.cloudflare[setup.cloudflare],
@@ -609,7 +609,7 @@ function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
   if (edge === null) {
     lines.push({
       tone: "neutral",
-      text: "Edge rules are checked when the first computer turns reach on.",
+      text: "Edge rules are checked when the first computer turns Loomhost on.",
     });
     return lines;
   }
@@ -625,7 +625,7 @@ function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
   if (edge.rateLimit === "occupied")
     lines.push({
       tone: "warning",
-      text: "Another rate-limit rule holds the zone's only slot, so reach addresses have no rate limit.",
+      text: "Another rate-limit rule holds the zone's only slot, so Loomhost addresses have no rate limit.",
     });
   if (edge.rateLimit === "failed")
     lines.push({ tone: "warning", text: "The rate-limit rule could not be applied." });
@@ -641,7 +641,7 @@ const FAILURE_TEXT: Partial<Record<ReachFailureReason, string>> = {
   "cloudflare-unavailable": "Cloudflare did not answer.",
   "hostname-unavailable": "No free address was left for this computer's name.",
   "tunnel-busy": "The computer's connector was still attached.",
-  io: "Your Library could not store its reach records.",
+  io: "Your Library could not store its Loomhost records.",
 };
 
 const IDENTITY_FAILURE_TEXT: Readonly<Record<ReachIdentityFailure, string>> = {
@@ -736,7 +736,7 @@ function leftoverZoneText(
   ];
   if (left.length === 0) return undefined;
   const them = left.length === 1 ? "it" : "them";
-  return `Your earlier reach zone ${leftover.zone} may still hold this computer's ${left.join(" and ")}. The Library's token could not remove ${them}, so delete ${them} in Cloudflare.`;
+  return `Your earlier Loomhost zone ${leftover.zone} may still hold this computer's ${left.join(" and ")}. The Library's token could not remove ${them}, so delete ${them} in Cloudflare.`;
 }
 
 function computerView(
@@ -770,7 +770,7 @@ function computerView(
   const signInOnly = isSignInOnly(computer);
   const signedIn =
     computer.signIn === "active" && !signInOnly
-      ? " This computer is still signed in to your Library and sets reach up again on its next start, so revoke its Library sign-in too."
+      ? " This computer is still signed in to your Library and sets Loomhost up again on its next start, so revoke its Library sign-in too."
       : "";
   return {
     environmentId: computer.environmentId,
@@ -783,7 +783,7 @@ function computerView(
           confirm: {
             title: `Retire ${computer.hostname ?? title}?`,
             message: signInOnly
-              ? "This computer has Loom sign-in only, with no reach address to delete."
+              ? "This computer has Loom sign-in only, with no Loomhost address to delete."
               : `Loom deletes its tunnel and DNS record and forgets this computer's key.${signedIn}`,
             action: "Retire",
           },
@@ -844,14 +844,14 @@ export function reachLibraryView(input: ReachLibraryViewInput): ReachLibraryView
     return {
       ...empty,
       status: "no-library",
-      notice: "Choose your Library to see your computers' reach addresses.",
+      notice: "Choose your Library to see your computers' Loomhost addresses.",
     };
   if (input.supported === false)
     return {
       ...empty,
       status: "unsupported",
       notice:
-        "Your Library does not hand out reach addresses. It needs a current Loom, a reach zone and a Cloudflare token file.",
+        "Your Library does not hand out Loomhost addresses. It needs a current Loom, a Loomhost zone and a Cloudflare token file.",
     };
   const error = AsyncResult.isFailure(input.result)
     ? reachLibraryErrorText(input.result.cause, "list")
@@ -860,7 +860,7 @@ export function reachLibraryView(input: ReachLibraryViewInput): ReachLibraryView
   if (listing === null) {
     return error !== null
       ? { ...empty, status: "failed", notice: null, error, retry: true }
-      : { ...empty, status: "loading", notice: "Loading reach addresses..." };
+      : { ...empty, status: "loading", notice: "Loading Loomhost addresses..." };
   }
   const computers = [...listing.computers]
     .sort(
@@ -875,7 +875,7 @@ export function reachLibraryView(input: ReachLibraryViewInput): ReachLibraryView
       computers.length === 0
         ? isReachOff(listing.setup)
           ? "No computer has Loom sign-in from your Library yet. Choose Prepare sign-in in a computer's own Connections settings."
-          : "No computer has reach yet. Turn it on in a computer's Connections settings."
+          : "No computer has Loomhost yet. Turn it on in a computer's Connections settings."
         : null,
     error,
     setup: setupLines(listing.setup),

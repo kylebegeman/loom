@@ -26,7 +26,7 @@ import { SettingsRow } from "../../features/settings/components/SettingsRow";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 
 const profiles = createProjectProfilesAtoms(connectionAtomRuntime);
-const labels = { hardware: "Hardware", reach: "Reach", sites: "Sites" };
+const labels = { hardware: "Hardware", reach: "Loomhost", sites: "Sites" };
 const choices = { auto: "Automatic", always: "Always", never: "Never" };
 
 export function AgentToolFamiliesSection({
