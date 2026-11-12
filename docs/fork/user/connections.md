@@ -35,11 +35,15 @@ it. A privately configured account service follows its own supported domains.
 
 ## Connect computers from your Library
 
-Sign in to your Library, then choose a computer under **Settings > Computers**.
-On iPhone, use **From your Library**. With current Loom versions on both the Library
-and the computer, **Connect** uses your existing account sign-in. You do not need
-a second sign-in, pairing code or VPN on this device. The computer must be enrolled
-with your Library and have Loomhost enabled.
+Sign in to your Library to see your compatible computers automatically. With current
+Loom versions on both the Library and the computer, opening the Library also connects
+computers that are new to this device. You can open their live threads without another
+sign-in, pairing code or VPN. The computer must be enrolled with your Library and have
+Loomhost enabled.
+
+Your existing connections and computers you disabled stay as you left them. To move an
+existing connection to account access, choose **Connect** for it under **Settings > Computers**.
+On iPhone, use **From your Library**.
 
 If the computer is offline, its saved conversations remain in the Library. Loom
 reconnects live work when the computer becomes available. Signing out or revoking

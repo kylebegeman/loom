@@ -1,3 +1,6 @@
+import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { ACCOUNT_GATEWAY_FEATURE, DIRECTORY_WS_METHODS } from "@t3tools/contracts/fork";
+import { syncAccountComputers } from "./account-computers.ts";
 import { PROJECT_WORKFLOW_WS_METHODS as W } from "@t3tools/contracts/fork";
 import {
   LibraryInfo,
@@ -79,6 +82,26 @@ const prepareManagement = Effect.fn("ProjectLibrary.prepareManagement")(function
   return yield* requestGuarded(L.managementStatus, {});
 });
 
+const readLibraryInfo = Effect.fn("ProjectLibrary.readInfo")(function* () {
+  const info = yield* requestGuarded(L.info, {});
+  const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+  if (
+    info.isAuthority &&
+    info.environmentId === supervisor.target.environmentId &&
+    info.features?.includes(ACCOUNT_GATEWAY_FEATURE)
+  ) {
+    yield* requestGuarded(DIRECTORY_WS_METHODS.list, {}).pipe(
+      Effect.flatMap((listing) => syncAccountComputers(info.environmentId, listing)),
+      Effect.catch(() =>
+        Effect.logWarning(
+          "Loom could not refresh account computers. Saved history remains available.",
+        ),
+      ),
+    );
+  }
+  return info;
+});
+
 /** Catalog queries target the chosen authority; workspace commands target their actual host. */
 export function createProjectLibraryAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -100,6 +123,7 @@ export function createProjectLibraryAtoms<R, E>(
   const info = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "loom:library:info",
     tag: L.info,
+    execute: readLibraryInfo,
     refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     persistence: persistQuery(LibraryInfo),
   });

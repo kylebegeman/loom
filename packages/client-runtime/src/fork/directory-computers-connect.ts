@@ -1,10 +1,5 @@
-import {
-  ACCOUNT_ACCESS_FEATURE,
-  ACCOUNT_GATEWAY_FEATURE,
-  ACCOUNT_ACCESS_PREFIX,
-} from "@t3tools/contracts/fork";
-import { AccountConnectionRegistration, BearerConnectionProfile } from "../connection/catalog.ts";
-import { BearerConnectionTarget } from "../connection/model.ts";
+import { accountComputerRegistration } from "./account-computers.ts";
+import { ACCOUNT_ACCESS_FEATURE, ACCOUNT_GATEWAY_FEATURE } from "@t3tools/contracts/fork";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -238,62 +233,19 @@ export const planDirectoryConnect = Effect.fn("DirectoryComputers.planConnect")(
     entry !== undefined &&
     input.row.environmentId !== input.libraryEnvironmentId
   ) {
-    const source = connectionRoutes(entry).find(
-      (route) =>
-        route.target._tag === "PrimaryConnectionTarget" ||
-        (Option.isSome(route.profile) &&
-          route.profile.value._tag === "BearerConnectionProfile" &&
-          route.profile.value.account === undefined &&
-          route.profile.value.identity !== undefined),
-    );
-    if (source !== undefined) {
-      const sourceProfile = Option.getOrNull(source.profile);
-      const base =
-        source.target._tag === "PrimaryConnectionTarget"
-          ? source.target.httpBaseUrl
-          : sourceProfile?._tag === "BearerConnectionProfile"
-            ? sourceProfile.httpBaseUrl
-            : null;
-      if (base !== null) {
-        const descriptor = yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl: base }).pipe(
-          Effect.option,
-        );
-        if (
-          Option.isSome(descriptor) &&
-          descriptor.value.environmentId === input.libraryEnvironmentId &&
-          descriptor.value.capabilities.loomFeatures?.includes(ACCOUNT_GATEWAY_FEATURE)
-        ) {
-          const connectionId = `account:${input.libraryEnvironmentId}:${input.row.environmentId}`;
-          const httpBaseUrl = new URL(
-            `${ACCOUNT_ACCESS_PREFIX}${encodeURIComponent(input.row.environmentId)}/`,
-            base,
-          ).href;
-          yield* registry.register(
-            new AccountConnectionRegistration({
-              target: new BearerConnectionTarget({
-                environmentId: input.row.environmentId,
-                label: input.row.label,
-                connectionId,
-              }),
-              profile: new BearerConnectionProfile({
-                environmentId: input.row.environmentId,
-                label: input.row.label,
-                connectionId,
-                httpBaseUrl,
-                wsBaseUrl: `${httpBaseUrl.replace(/^http/u, "ws")}ws`,
-                account: {
-                  libraryEnvironmentId: input.libraryEnvironmentId,
-                  connectionId:
-                    source.target._tag === "PrimaryConnectionTarget"
-                      ? null
-                      : (sourceProfile?.connectionId ?? null),
-                },
-              }),
-            }),
-          );
-          yield* registry.run(input.row.environmentId, Effect.void);
-          return { kind: "connected", environmentId: input.row.environmentId } as const;
-        }
+    const registration = accountComputerRegistration(entry, input.row);
+    if (registration !== null) {
+      const descriptor = yield* fetchRemoteEnvironmentDescriptor({
+        httpBaseUrl: new URL(registration.profile.httpBaseUrl).origin,
+      }).pipe(Effect.option);
+      if (
+        Option.isSome(descriptor) &&
+        descriptor.value.environmentId === input.libraryEnvironmentId &&
+        descriptor.value.capabilities.loomFeatures?.includes(ACCOUNT_GATEWAY_FEATURE)
+      ) {
+        yield* registry.register(registration);
+        yield* registry.run(input.row.environmentId, Effect.void);
+        return { kind: "connected", environmentId: input.row.environmentId } as const;
       }
     }
   }
