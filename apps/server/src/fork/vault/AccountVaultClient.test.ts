@@ -126,3 +126,28 @@ it.effect(
       expect(f.sent).toHaveLength(2);
     }),
 );
+
+it.effect("preserves GitHub results and reports an interrupted write without replaying it", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const input = {
+      id: "a".repeat(32),
+      expectedVersion: 1,
+      repository: "owner/repo",
+      operation: { action: "issue-comment" as const, number: 1, body: "Requested comment" },
+    };
+    const result = {
+      account: "loom-bot",
+      repository: "owner/repo",
+      exitCode: 0,
+      stdout: "comment-url",
+    };
+    f.state.reply = { kind: "github", result };
+    expect(yield* f.service.github(input, THREAD)).toEqual(result);
+    f.state.unavailable = true;
+    const interrupted = yield* f.service.github(input, THREAD).pipe(Effect.flip);
+    expect(interrupted).toMatchObject({ _tag: "VaultGitHubError", reason: "failed" });
+    expect(interrupted.message).toContain("inspect GitHub before retrying a write");
+    expect(f.sent).toHaveLength(2);
+  }),
+);

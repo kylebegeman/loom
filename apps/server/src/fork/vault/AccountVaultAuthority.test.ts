@@ -274,9 +274,17 @@ it.effect(
             Layer.provide(
               Layer.mergeAll(
                 Layer.succeedContext(f.context),
-                Layer.succeed(AccountVaultClient.AccountVaultClient, {
+                Layer.mock(AccountVaultClient.AccountVaultClient)({
                   available: Effect.succeed(true),
-                  execute: (request) => f.call(request),
+                  execute: (request) =>
+                    f.call(request).pipe(
+                      Effect.catchTags({
+                        VaultGitHubError: () =>
+                          Effect.fail(new VaultError({ reason: "unavailable" })),
+                        VaultConnectionError: () =>
+                          Effect.fail(new VaultError({ reason: "unavailable" })),
+                      }),
+                    ),
                 }),
                 Layer.succeed(SshTransport.SshTransport, {
                   execute: (input) =>

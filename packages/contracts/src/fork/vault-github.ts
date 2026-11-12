@@ -157,6 +157,7 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
     "failed",
     "timeout",
     "unsupported",
+    "account-terminal-unavailable",
     "invalid-command",
     "unsafe-git-config",
   ]),
@@ -183,6 +184,8 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
         "The GH operation timed out. Its remote outcome may be unknown; inspect GitHub before retrying a write.",
       unsupported:
         "This connector supports github.com and documented GH/Git HTTPS commands on macOS and Linux.",
+      "account-terminal-unavailable":
+        "GitHub terminal commands are not available for account Vault connections. Use the GitHub tools for repository actions or an SSH connection for Git.",
     }[this.reason];
   }
 }

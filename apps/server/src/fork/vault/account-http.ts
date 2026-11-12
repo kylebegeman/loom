@@ -55,6 +55,21 @@ const handler = withForkRuntime(
           headers: { "cache-control": "no-store" },
         }),
       ),
+    VaultGitHubError: (error) =>
+      Effect.succeed(
+        HttpServerResponse.jsonUnsafe(error, {
+          status:
+            error.reason === "unauthorized" || error.reason === "repository-denied" ? 403 : 502,
+          headers: { "cache-control": "no-store" },
+        }),
+      ),
+    VaultConnectionError: (error) =>
+      Effect.succeed(
+        HttpServerResponse.jsonUnsafe(error, {
+          status: 409,
+          headers: { "cache-control": "no-store" },
+        }),
+      ),
     ServerAuthMissingCredentialError: () =>
       Effect.succeed(HttpServerResponse.empty({ status: 401 })),
     ServerAuthInvalidCredentialError: () =>

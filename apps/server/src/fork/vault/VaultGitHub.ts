@@ -55,6 +55,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import * as VaultConnections from "./VaultConnections.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
 import * as GitHubCli from "./GitHubCli.ts";
@@ -63,6 +64,15 @@ type ConnectionFailure = Failure | VaultConnectionError;
 export class VaultGitHub extends Context.Service<
   VaultGitHub,
   {
+    readonly runForAccount: (
+      input: VaultGitHubRun,
+      account: {
+        readonly lease: Parameters<
+          VaultAccess.VaultAccess["Service"]["authorizeAccount"]
+        >[0]["lease"];
+        readonly authorize: Effect.Effect<void, VaultError>;
+      },
+    ) => Effect.Effect<VaultGitHubResult, ConnectionFailure>;
     readonly repositoryOperation: (
       input: VaultGitHubTarget,
       operation: GitHubRepositoryTransport.RepositoryOperation,
@@ -184,6 +194,7 @@ const isUpstreamTag = Schema.is(UpstreamTargetTag);
 const isUpstreamSha = Schema.is(UpstreamCommitSha);
 const isUpstreamRequestId = Schema.is(UpstreamRequestId);
 const make = Effect.gen(function* () {
+  const accountClient = yield* AccountVaultClient.AccountVaultClient;
   const core = yield* VaultCore.VaultCore,
     access = yield* VaultAccess.VaultAccess,
     transport = yield* GitHubTransport.GitHubTransport,
@@ -558,7 +569,60 @@ const make = Effect.gen(function* () {
     Effect.scoped,
     permits.withPermits(1),
   );
+  const runAuthorized = Effect.fn("VaultGitHub.runAuthorized")(function* (
+    input: VaultGitHubRun,
+    authorize: Effect.Effect<void, ConnectionFailure>,
+  ) {
+    if (!isRun(input)) return yield* fail("invalid-input");
+    return yield* permits
+      .withPermits(1)(
+        Effect.gen(function* () {
+          yield* authorize;
+          const record = yield* check(input),
+            current = yield* session(record, input.repository);
+          yield* authorize;
+          const result = yield* cli.run({
+            token: current.token,
+            repository: input.repository.toLowerCase(),
+            operation: input.operation,
+            authorize: authorize.pipe(
+              Effect.mapError((error: VaultError | VaultGitHubError | VaultConnectionError) =>
+                error._tag === "VaultConnectionError"
+                  ? error
+                  : new VaultGitHubError({ reason: "unauthorized" }),
+              ),
+            ),
+          });
+          return {
+            account: current.account,
+            repository: input.repository.toLowerCase(),
+            ...result,
+          };
+        }),
+      )
+      .pipe((effect) =>
+        observeVaultHealth(effect, input.id, input.expectedVersion, { kind: "github" }),
+      );
+  }, Effect.scoped);
   return VaultGitHub.of({
+    runForAccount: Effect.fn("VaultGitHub.runForAccount")(function* (input, account) {
+      const authorize = access
+        .authorizeAccount(
+          {
+            lease: account.lease,
+            itemId: input.id,
+            expectedVersion: input.expectedVersion,
+            action: "use",
+            destination: vaultGitHubDestination(input.repository),
+          },
+          account.authorize,
+        )
+        .pipe(
+          Effect.andThen(() => check(input)),
+          Effect.asVoid,
+        );
+      return yield* runAuthorized(input, authorize);
+    }),
     repositoryOperation: Effect.fn("VaultGitHub.repositoryOperation")(function* (
       input,
       operation,
@@ -718,6 +782,8 @@ const make = Effect.gen(function* () {
     }),
     terminal: Effect.fn("VaultGitHub.terminal")(function* (raw, threadId) {
       if (!isTerminalInput(raw)) return yield* new VaultGitHubError({ reason: "invalid-command" });
+      if (yield* accountClient.available)
+        return yield* new VaultGitHubError({ reason: "account-terminal-unavailable" });
       const pin =
         !("id" in raw) && "connection" in raw
           ? yield* connections.require(
@@ -914,6 +980,10 @@ const make = Effect.gen(function* () {
     ),
     run: Effect.fn("VaultGitHub.run")(function* (raw, threadId, guard = Effect.void) {
       if (!isRunInput(raw)) return yield* fail("invalid-input");
+      if (yield* accountClient.available) {
+        yield* guard;
+        return yield* accountClient.github(raw, threadId);
+      }
       const pin =
         !("id" in raw) && "connection" in raw
           ? yield* connections.require(
@@ -929,35 +999,7 @@ const make = Effect.gen(function* () {
         threadId,
         pin ? guard.pipe(Effect.andThen(connections.revalidate(pin, threadId))) : guard,
       );
-      return yield* permits
-        .withPermits(1)(
-          Effect.gen(function* () {
-            yield* authorize;
-            const record = yield* check(input),
-              current = yield* session(record, input.repository);
-            yield* authorize;
-            const result = yield* cli.run({
-              token: current.token,
-              repository: input.repository.toLowerCase(),
-              operation: input.operation,
-              authorize: authorize.pipe(
-                Effect.mapError((error: VaultError | VaultGitHubError | VaultConnectionError) =>
-                  error._tag === "VaultConnectionError"
-                    ? error
-                    : new VaultGitHubError({ reason: "unauthorized" }),
-                ),
-              ),
-            });
-            return {
-              account: current.account,
-              repository: input.repository.toLowerCase(),
-              ...result,
-            };
-          }),
-        )
-        .pipe((effect) =>
-          observeVaultHealth(effect, input.id, input.expectedVersion, { kind: "github" }),
-        );
+      return yield* runAuthorized(input, authorize);
     }, Effect.scoped),
   });
 });

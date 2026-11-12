@@ -250,6 +250,7 @@ const layerVaultHealth = VaultHealth.layer.pipe(
 );
 
 const layerVaultGitHub = VaultGitHub.layer.pipe(
+  Layer.provide(Layer.suspend(() => layerAccountVaultClient)),
   Layer.provide(
     Layer.mergeAll(
       layerVaultCore,
@@ -381,6 +382,7 @@ const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
       layerVaultCore,
       layerVaultConnections,
       SshCrypto.layer,
+      layerVaultGitHub,
     ),
   ),
 );

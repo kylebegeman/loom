@@ -6,6 +6,8 @@ import {
   type VaultSshAgentSession,
   VaultError,
   VaultSshError,
+  VaultConnectionError,
+  type VaultGitHubError,
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -23,6 +25,7 @@ import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultConnections from "./VaultConnections.ts";
 import * as VaultCore from "./VaultCore.ts";
 import { StoredKey } from "./VaultSsh.ts";
+import * as VaultGitHub from "./VaultGitHub.ts";
 
 type Lease = Effect.Success<ReturnType<AccountWorkloads.AccountWorkloads["Service"]["accept"]>>;
 const SESSION_MS = 5 * 60_000;
@@ -49,7 +52,10 @@ export class AccountVaultAuthority extends Context.Service<
     readonly execute: (
       envelope: AccountVaultEnvelope,
       publisher: AuthenticatedSession,
-    ) => Effect.Effect<AccountVaultResponse, VaultError | VaultSshError>;
+    ) => Effect.Effect<
+      AccountVaultResponse,
+      VaultError | VaultSshError | VaultGitHubError | VaultConnectionError
+    >;
   }
 >()("t3/fork/vault/AccountVaultAuthority") {}
 
@@ -58,6 +64,7 @@ const make = Effect.gen(function* () {
   const access = yield* VaultAccess.VaultAccess;
   const connections = yield* VaultConnections.VaultConnections;
   const core = yield* VaultCore.VaultCore;
+  const github = yield* VaultGitHub.VaultGitHub;
   const crypto = yield* SshCrypto.SshCrypto;
   const random = yield* SecureRandom.SecureRandom;
   type Activation = {
@@ -104,6 +111,39 @@ const make = Effect.gen(function* () {
       );
       const now = yield* Clock.currentTimeMillis;
       for (const [id, held] of sessions) if (held.session.expiresAt <= now) sessions.delete(id);
+      if (request.kind === "github") {
+        const input = request.input;
+        const account = { lease, authorize: workloads.revalidate(lease) };
+        const report = yield* connections.resolveForAccount(
+          {
+            kind: "github",
+            connection:
+              "connection" in input
+                ? input.connection
+                : { id: input.id, expectedVersion: input.expectedVersion },
+            repository: input.repository,
+          },
+          account,
+        );
+        if (report.state !== "ready" || report.selected === null)
+          return yield* new VaultConnectionError({
+            state: report.state,
+            choices: report.choices,
+            repair: report.repair,
+          });
+        return {
+          kind: "github",
+          result: yield* github.runForAccount(
+            {
+              id: report.selected.item.id,
+              expectedVersion: report.selected.item.version,
+              repository: input.repository,
+              operation: input.operation,
+            },
+            account,
+          ),
+        };
+      }
       if (request.kind === "list") {
         const authorize = access.authorizeAccount(
           {

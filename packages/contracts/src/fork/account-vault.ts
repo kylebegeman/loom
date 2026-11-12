@@ -3,6 +3,7 @@ import {
   VaultConnectionReport,
   VaultConnectionRequest,
   VaultConnectionPin,
+  VaultConnectionError,
 } from "./vault-connections.ts";
 import {
   VaultSshAgentFrame,
@@ -12,9 +13,11 @@ import {
 } from "./vault-ssh-agent.ts";
 import { VaultError, VaultItemList, VaultItemPage } from "./vault-core.ts";
 import { VaultSshError } from "./vault-ssh.ts";
+import { VaultGitHubRunInput, VaultGitHubResult, VaultGitHubError } from "./vault-github.ts";
 
 export const ACCOUNT_VAULT_ROUTE = "/api/loom/account/vault";
 export const AccountVaultRequest = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("github"), input: VaultGitHubRunInput }),
   Schema.Struct({ kind: Schema.Literal("list"), input: VaultItemList }),
   Schema.Struct({ kind: Schema.Literal("sessions") }),
   Schema.Struct({ kind: Schema.Literal("resolve"), input: VaultConnectionRequest }),
@@ -29,6 +32,7 @@ export const AccountVaultEnvelope = Schema.Struct({
 });
 export type AccountVaultEnvelope = typeof AccountVaultEnvelope.Type;
 export const AccountVaultResponse = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("github"), result: VaultGitHubResult }),
   Schema.Struct({ kind: Schema.Literal("list"), page: VaultItemPage }),
   Schema.Struct({ kind: Schema.Literal("sessions"), sessions: Schema.Array(VaultSshAgentSession) }),
   Schema.Struct({ kind: Schema.Literal("resolve"), report: VaultConnectionReport }),
@@ -41,4 +45,9 @@ export const AccountVaultResponse = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("close"), closed: Schema.Literal(true) }),
 ]);
 export type AccountVaultResponse = typeof AccountVaultResponse.Type;
-export const AccountVaultFailure = Schema.Union([VaultError, VaultSshError]);
+export const AccountVaultFailure = Schema.Union([
+  VaultError,
+  VaultSshError,
+  VaultGitHubError,
+  VaultConnectionError,
+]);

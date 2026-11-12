@@ -13,7 +13,14 @@ import {
   type VaultGitHubSave,
   type VaultApprovalRetryInput,
 } from "@t3tools/contracts/fork";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import {
+  AuthSessionId,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -29,6 +36,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as VaultHealth from "./VaultHealth.ts";
 import * as GitHubTransport from "./GitHubTransport.ts";
 import * as GitHubCli from "./GitHubCli.ts";
@@ -168,12 +176,22 @@ const fixture = Effect.gen(function* () {
   const health = yield* VaultHealth.VaultHealth.pipe(
     Effect.provide(VaultHealth.layer.pipe(Layer.provide(Layer.succeedContext(f.context)))),
   );
+  let accountRun: AccountVaultClient.AccountVaultClient["Service"]["github"] | null = null;
   const service = yield* VaultGitHub.VaultGitHub.pipe(
     Effect.provide(
       VaultGitHub.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeedContext(f.context),
+            Layer.mock(AccountVaultClient.AccountVaultClient)({
+              available: Effect.sync(() => accountRun !== null),
+              github: (input, threadId) =>
+                Effect.suspend(() =>
+                  accountRun
+                    ? accountRun(input, threadId)
+                    : Effect.fail(new VaultError({ reason: "unavailable" })),
+                ),
+            }),
             Layer.succeed(VaultHealth.VaultHealth, health),
             transport,
             cli,
@@ -197,6 +215,9 @@ const fixture = Effect.gen(function* () {
   return {
     ...f,
     service,
+    routeAccount: (run: NonNullable<typeof accountRun>) => {
+      accountRun = run;
+    },
     health,
     upstreamRequests,
     setUpstreamMain: (sha: string) => {
@@ -1398,4 +1419,100 @@ it.effect(
           .pipe(Effect.flip)).reason,
       ).toBe("conflict");
     }).pipe(Effect.scoped, Effect.provide(deps)),
+);
+
+it.effect(
+  "brokers account GitHub actions with the enrolled owner and keeps tokens out of source execution",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* f.service.save(f.input, "admin", Effect.void);
+      yield* f.access.setOwnerPolicy(
+        {
+          operationId: yield* f.id,
+          expectedRevision: (yield* f.access.snapshot).revision,
+          mode: "owner-trusted",
+        },
+        "admin",
+        Effect.void,
+      );
+      let revoked = false;
+      const account = {
+        lease: {
+          sourceEnvironmentId: EnvironmentId.make("source"),
+          publisherSessionId: AuthSessionId.make("publisher"),
+          authorityId: "authority",
+          authorityEpoch: 1,
+          keyFingerprint: "a".repeat(64),
+          membershipRevision: 1,
+          membershipEpoch: 0,
+          ownerSubject: "admin",
+          expiresAt: Number.MAX_SAFE_INTEGER,
+          workload: {
+            threadId: ThreadId.make("foreign-thread"),
+            runId: RunId.make("foreign-run"),
+            projectId: ProjectId.make("foreign-project"),
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "full-access" as const,
+            interactionMode: "default" as const,
+          },
+        },
+        authorize: Effect.suspend(() =>
+          revoked ? Effect.fail(new VaultError({ reason: "denied" })) : Effect.void,
+        ),
+      };
+      const input = {
+        id: f.input.id,
+        expectedVersion: 1,
+        repository: "owner/repo",
+        operation: { action: "pr-list" as const },
+      };
+      f.state.thread = { ...f.state.thread, activeRunId: null };
+      f.routeAccount((raw) =>
+        "id" in raw
+          ? f.service.runForAccount(raw, account)
+          : Effect.fail(new VaultError({ reason: "invalid-input" })),
+      );
+      expect(yield* f.service.run(input, f.threadId)).toEqual({
+        account: "loom-bot",
+        repository: "owner/repo",
+        exitCode: 0,
+        stdout: "Synthetic GH result",
+      });
+      expect(
+        (yield* f.service
+          .runForAccount(input, { ...account, lease: { ...account.lease, ownerSubject: "other" } })
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(
+        (yield* f.service
+          .runForAccount({ ...input, expectedVersion: 2 }, account)
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      expect(
+        (yield* f.service
+          .runForAccount({ ...input, repository: "other/repo" }, account)
+          .pipe(Effect.flip)).reason,
+      ).toBe("repository-denied");
+      expect(
+        (yield* f.service
+          .terminal(
+            {
+              id: input.id,
+              expectedVersion: 1,
+              repository: input.repository,
+              command: { tool: "gh", argv: ["pr", "list"] },
+            },
+            f.threadId,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("account-terminal-unavailable");
+      f.onSession(() => {
+        revoked = true;
+      });
+      expect((yield* f.service.runForAccount(input, account).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      expect(f.calls()).toBe(1);
+    }).pipe(Effect.provide(deps)),
 );
