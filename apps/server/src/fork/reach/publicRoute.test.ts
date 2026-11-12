@@ -12,7 +12,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as ServerConfig from "../../config.ts";
 import * as DirectEndpoints from "../../environment/DirectEndpoints.ts";
-import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as ReachPublicRoute from "./publicRoute.ts";
 
 const REACH_URL = "https://studio-loom.example.com/";
@@ -59,14 +59,24 @@ const layerUpstream = Layer.mergeAll(
       ),
     ),
   ),
-  Layer.succeed(ServerEnvironmentIdentity, {
+  Layer.succeed(ServerEnvironment.ServerEnvironment, {
     getEnvironmentId: Effect.succeed(EnvironmentId.make(ENVIRONMENT_ID)),
+    getDescriptor: Effect.die("unused"),
   }),
   Layer.succeed(
     HttpClient.HttpClient,
     HttpClient.make((request) =>
       Effect.succeed(
-        HttpClientResponse.fromWeb(request, Response.json({ environmentId: ENVIRONMENT_ID })),
+        HttpClientResponse.fromWeb(
+          request,
+          Response.json({
+            environmentId: ENVIRONMENT_ID,
+            label: "Reach test",
+            platform: { os: "linux", arch: "x64" },
+            serverVersion: "0.0.0-test",
+            capabilities: { repositoryIdentity: true },
+          }),
+        ),
       ),
     ),
   ),
