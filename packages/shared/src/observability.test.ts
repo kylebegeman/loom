@@ -233,6 +233,7 @@ describe("observability", () => {
             if (record.type === "effect-span") records.push(record);
           },
           flush: Effect.void,
+          flushSync: () => {},
           close: () => Effect.void,
         },
       });
