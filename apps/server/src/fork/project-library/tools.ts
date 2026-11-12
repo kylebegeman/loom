@@ -5,6 +5,7 @@ import {
 } from "@t3tools/contracts";
 import * as Library from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import { Tool, Toolkit } from "effect/ai";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
@@ -12,6 +13,8 @@ import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 
 const failure = Schema.Union([Library.LibraryError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
+// Only the restore dialog reads restoreRequest; inlined into output schemas it costs ~7 KB per tool.
+const mcpOperation = Library.LibraryOperation.mapFields(Struct.omit(["restoreRequest"]));
 const colorNames = Library.LIBRARY_PROJECT_COLORS.join(", ");
 const createProjectParameters = Schema.Struct({
   ...Library.LibraryCreateProjectRequest.fields,
@@ -123,7 +126,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
       operationId: Library.LibraryRequestId,
       action: Schema.Literals(["resume", "cancel"]),
     }),
-    success: Library.LibraryOperation,
+    success: mcpOperation,
     failure,
     dependencies,
   }),
@@ -137,7 +140,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
         input: launchOperationParameters,
       }),
     }),
-    success: Library.LibraryOperation,
+    success: mcpOperation,
     failure,
     dependencies,
   }),
