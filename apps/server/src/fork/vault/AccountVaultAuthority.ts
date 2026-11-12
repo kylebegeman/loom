@@ -26,6 +26,7 @@ import * as VaultConnections from "./VaultConnections.ts";
 import * as VaultCore from "./VaultCore.ts";
 import { StoredKey } from "./VaultSsh.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
+import * as AccountGitHubJournal from "./AccountGitHubJournal.ts";
 
 type Lease = Effect.Success<ReturnType<AccountWorkloads.AccountWorkloads["Service"]["accept"]>>;
 const SESSION_MS = 5 * 60_000;
@@ -65,6 +66,7 @@ const make = Effect.gen(function* () {
   const connections = yield* VaultConnections.VaultConnections;
   const core = yield* VaultCore.VaultCore;
   const github = yield* VaultGitHub.VaultGitHub;
+  const journal = yield* AccountGitHubJournal.AccountGitHubJournal;
   const crypto = yield* SshCrypto.SshCrypto;
   const random = yield* SecureRandom.SecureRandom;
   type Activation = {
@@ -114,26 +116,25 @@ const make = Effect.gen(function* () {
       if (request.kind === "github") {
         const input = request.input;
         const account = { lease, authorize: workloads.revalidate(lease) };
-        const report = yield* connections.resolveForAccount(
-          {
-            kind: "github",
-            connection:
-              "connection" in input
-                ? input.connection
-                : { id: input.id, expectedVersion: input.expectedVersion },
-            repository: input.repository,
-          },
-          account,
-        );
-        if (report.state !== "ready" || report.selected === null)
-          return yield* new VaultConnectionError({
-            state: report.state,
-            choices: report.choices,
-            repair: report.repair,
-          });
-        return {
-          kind: "github",
-          result: yield* github.runForAccount(
+        const perform = Effect.gen(function* () {
+          const report = yield* connections.resolveForAccount(
+            {
+              kind: "github",
+              connection:
+                "connection" in input
+                  ? input.connection
+                  : { id: input.id, expectedVersion: input.expectedVersion },
+              repository: input.repository,
+            },
+            account,
+          );
+          if (report.state !== "ready" || report.selected === null)
+            return yield* new VaultConnectionError({
+              state: report.state,
+              choices: report.choices,
+              repair: report.repair,
+            });
+          return yield* github.runForAccount(
             {
               id: report.selected.item.id,
               expectedVersion: report.selected.item.version,
@@ -141,8 +142,35 @@ const make = Effect.gen(function* () {
               operation: input.operation,
             },
             account,
+          );
+        });
+        const tracked =
+          request.mode === "recover" ||
+          ["pr-comment", "issue-comment", "issue-create"].includes(input.operation.action);
+        if (!tracked) return { kind: "github", result: yield* perform };
+        if (!request.operationId || !request.mode)
+          return yield* new VaultError({ reason: "invalid-input" });
+        const result = yield* journal.run(
+          {
+            operationId: request.operationId,
+            mode: request.mode,
+            proposal: input,
+            scope: {
+              sourceEnvironmentId: lease.sourceEnvironmentId,
+              keyFingerprint: lease.keyFingerprint,
+              authorityId: lease.authorityId,
+              ownerSubject: lease.ownerSubject,
+              threadId: lease.workload.threadId,
+              projectId: lease.workload.projectId,
+            },
+          },
+          access.authorizeAccount(
+            { lease, itemId: null, expectedVersion: null, action: "inspect", destination: null },
+            account.authorize,
           ),
-        };
+          perform,
+        );
+        return { kind: "github", result };
       }
       if (request.kind === "list") {
         const authorize = access.authorizeAccount(
@@ -227,4 +255,6 @@ const make = Effect.gen(function* () {
     }),
   });
 });
-export const layer = Layer.effect(AccountVaultAuthority, make);
+export const layer = Layer.effect(AccountVaultAuthority, make).pipe(
+  Layer.provide(AccountGitHubJournal.layer),
+);

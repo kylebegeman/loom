@@ -12,6 +12,7 @@ import {
   type VaultConnectionError,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -41,12 +42,18 @@ export class AccountVaultClient extends Context.Service<
 const make = Effect.gen(function* () {
   const connection = yield* LibraryConnection.LibraryConnectionService;
   const workloads = yield* AccountWorkloads.AccountWorkloads;
+  const random = yield* SecureRandom.SecureRandom;
   const post = Effect.fn("AccountVaultClient.post")(function* (
     request: AccountVaultRequest,
     threadId: ThreadId,
   ) {
     const transportFailure = () =>
-      request.kind === "github" ? new VaultGitHubError({ reason: "failed" }) : unavailable();
+      request.kind === "github"
+        ? new VaultGitHubError({
+            reason: "failed",
+            ...(request.operationId ? { operationId: request.operationId } : {}),
+          })
+        : unavailable();
     const current = yield* connection.current.pipe(Effect.mapError(unavailable));
     if (current.kind !== "remote" || current.credential?.account === undefined)
       return yield* new VaultError({ reason: "denied" });
@@ -115,14 +122,37 @@ const make = Effect.gen(function* () {
       );
     }),
     github: Effect.fn("AccountVaultClient.github")(function* (input, threadId) {
-      const result = yield* post({ kind: "github", input }, threadId).pipe(
+      const tracked =
+        input.operationId !== undefined ||
+        ["pr-comment", "issue-comment", "issue-create"].includes(input.operation.action);
+      const operationId = tracked
+        ? (input.operationId ??
+          (yield* random.uuidV4().pipe(
+            Effect.map((id) => id.replaceAll("-", "")),
+            Effect.mapError(unavailable),
+          )))
+        : undefined;
+      const result = yield* post(
+        {
+          kind: "github",
+          input,
+          ...(operationId
+            ? { operationId, mode: input.operationId ? ("recover" as const) : ("start" as const) }
+            : {}),
+        },
+        threadId,
+      ).pipe(
         Effect.catchTags({
           VaultSshError: () => Effect.fail(unavailable()),
         }),
       );
       if (result.kind !== "github") return yield* unavailable();
+      if (operationId && result.result.operationId !== operationId)
+        return yield* new VaultGitHubError({ reason: "failed", operationId });
       return result.result;
     }),
   });
 });
-export const layer = Layer.effect(AccountVaultClient, make);
+export const layer = Layer.effect(AccountVaultClient, make).pipe(
+  Layer.provide(SecureRandom.layerWebCrypto),
+);

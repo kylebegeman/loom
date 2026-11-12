@@ -984,6 +984,11 @@ const make = Effect.gen(function* () {
         yield* guard;
         return yield* accountClient.github(raw, threadId);
       }
+      if (raw.operationId)
+        return yield* new VaultGitHubError({
+          reason: "receipt-unavailable",
+          operationId: raw.operationId,
+        });
       const pin =
         !("id" in raw) && "connection" in raw
           ? yield* connections.require(

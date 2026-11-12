@@ -3,7 +3,7 @@
 Vault stores development credentials and secure records separately from your personal accounts.
 SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub for agents**; the generic item editor can only rename them. Revealed values can be copied and clear when you leave the app or after one minute.
 
-Open **Account → Manage account Vault** to manage saved SSH and GitHub connections for your
+Open **Account → Manage account Vault** to manage saved connections and secrets for your
 approved computers. **Settings → Vault** also leads to the account Vault. Your Library must
 support account Vault and have its OpenBao connection configured; your phone, browser and
 enrolled execution computers do not need OpenBao credentials.
@@ -33,10 +33,14 @@ In web or desktop, open the selected computer's provider settings, find a sensit
 environment variable and choose **Use Vault**. On mobile, open that computer's provider
 settings and **Vault credentials**, select the provider and enter or choose its environment
 variable. Choose an active Secret item. The provider receives its value; settings retain
-only a reference to that computer, item and version. This requires provider-management and
-Vault-write access.
+only a reference to its Vault, item and version. Approved account computers choose secrets from
+the account Vault. This requires provider-management and Vault-write access on the computer,
+and read access to the selected Vault.
 
 Bindings authorize the selected provider to use a credential independently of thread grants.
+Account bindings also require current computer enrollment and enabled account access. The
+Library delivers the selected value when the provider launches; it does not copy the inventory
+or retain an offline credential cache on the computer.
 Changing the item requires selecting its new version again. Removing a binding, archiving or
 deleting its item, or protecting it against ordinary use blocks new credential use. Already
 running processes may retain values they received. Use **Refresh provider credentials** if
@@ -48,7 +52,9 @@ In the account Vault, confirm **This is my personal account** and choose **Enabl
 once to let agents on your approved computers use its saved SSH and GitHub connections. Each
 operation checks the computer's enrollment, active full-access/default run, selected item version
 and destination. SSH private keys and GitHub credentials stay at the Library; SSH and Git commands
-run on the execution computer. Structured GitHub actions run through the Library. Account GitHub
+run on the execution computer. Structured GitHub actions run through the Library. If a write loses its reply, its returned
+operation ID can recover the retained receipt without repeating the action. An unknown outcome
+still requires inspecting GitHub before another write. Account GitHub
 terminal commands are not supported; use the structured tools or SSH for Git.
 
 Choose **Turn off account access** to stop new account-authorized use while keeping saved items.
@@ -115,7 +121,9 @@ checked again with **Refresh**. Vault does not fall back to your personal passwo
 
 When answering a private secret request, you can select **Also save to Vault as** and enter a name.
 This saves a separate Vault item using your own write access before answering the request.
-If the save fails, retry or turn the option off to answer without a Vault copy.
+If the save fails, retry or turn the option off to answer without a Vault copy. Account computers
+save to the account Vault. **Use saved item** selects from that same Vault and delivers the
+chosen value only to the pending request. Protected records keep their release controls.
 
 Agents with a manage grant can save values using Loom's private secret prompt and a one-use reference. Never paste
 credentials into chat. Normal agent tools return metadata, not stored values. The authenticated

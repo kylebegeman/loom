@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { SecretRef } from "../baseSchemas.ts";
+import { SecretRef, EnvironmentId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { IsoDateTime, NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "../baseSchemas.ts";
 
@@ -27,6 +27,7 @@ export const VaultItemSummary = Schema.Struct({
 });
 export type VaultItemSummary = typeof VaultItemSummary.Type;
 export const VaultCoreStatus = Schema.Struct({
+  accountEnvironmentId: Schema.optionalKey(EnvironmentId),
   backend: Schema.Literal("openbao"),
   state: Schema.Literals([
     "unconfigured",

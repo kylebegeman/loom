@@ -306,6 +306,11 @@ pnpm mcp-tool-use --cases mcp-tool-use/cases/parallel-worktrees.ndjson --samples
 
 ## Where T3's text lives
 
+`cases/account-github-recovery.ndjson` checks receipt recovery after an account GitHub write
+loses its reply, plus an ordinary repository-read control. Run it when changing the Vault
+GitHub tool or its recovery input. The runner imports the shipped GitHub toolkit so recovery
+arguments pass through the same schema decoder as production.
+
 - `packages/provider-core/src/server/runtimeInstructions.ts`
 - `packages/provider-core/src/server/orchestrationInstructions.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`

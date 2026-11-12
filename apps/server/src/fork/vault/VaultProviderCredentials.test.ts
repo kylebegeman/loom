@@ -19,6 +19,7 @@ import * as Settings from "../../serverSettings.ts";
 import { decodePolicy, type Policy } from "./AccessPolicy.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
+import * as AccountProviderClient from "./AccountProviderClient.ts";
 import * as VaultProviderCredentials from "./VaultProviderCredentials.ts";
 
 const environmentId = EnvironmentId.make("provider-vault-environment");
@@ -27,7 +28,7 @@ const consumer = { instanceId: ProviderInstanceId.make("claudeWork"), variableNa
 const reference = vaultProviderReference({ environmentId, itemId, expectedVersion: 1 });
 const privateValue = "synthetic-provider-credential";
 
-const fixture = () => {
+const fixture = (client?: AccountProviderClient.AccountProviderClient["Service"]) => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const state = {
     failAudit: false,
@@ -81,6 +82,7 @@ const fixture = () => {
       }),
   });
   const dependencies = Layer.mergeAll(
+    client ? Layer.succeed(AccountProviderClient.AccountProviderClient, client) : Layer.empty,
     Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     Layer.succeed(OpenBaoStore.OpenBaoStore, store),
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
@@ -406,6 +408,138 @@ it.effect(
         expect(removedBeforeRelease).toBe(true);
         expect(result._tag).toBe("Failure");
         if (result._tag === "Failure") expect(result.failure.reason).toBe("denied");
+      }),
+    );
+  },
+);
+
+it.effect(
+  "routes saved provider bindings through the account and never falls back on a Library outage",
+  () => {
+    const calls: Array<unknown> = [];
+    let unavailable = false;
+    const f = fixture({
+      available: Effect.succeed(true),
+      request: (input) =>
+        Effect.suspend(() => {
+          calls.push(input);
+          return unavailable
+            ? Effect.fail(new VaultError({ reason: "unavailable" }))
+            : Effect.succeed({
+                value: input.mode === "read" ? Redacted.make("account-provider-key") : null,
+              });
+        }),
+    });
+    return f.use(({ service }) =>
+      Effect.gen(function* () {
+        yield* service.validate(reference, consumer);
+        expect(Redacted.value(yield* service.read(reference, consumer))).toBe(
+          "account-provider-key",
+        );
+        expect(calls).toEqual([
+          { mode: "validate", reference, consumer },
+          { mode: "read", reference, consumer },
+        ]);
+        expect(f.state.policyWrites).toBe(0);
+        unavailable = true;
+        expect((yield* service.read(reference, consumer).pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+        expect(f.state.policyWrites).toBe(0);
+        expect(
+          (yield* service
+            .read(reference, { ...consumer, variableName: "UNBOUND" })
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(calls).toHaveLength(3);
+      }),
+    );
+  },
+);
+
+it.effect(
+  "releases account provider credentials only for the current owner, binding version and ordinary protection",
+  () => {
+    const f = fixture();
+    return f.use(({ service, policyPath }) =>
+      Effect.gen(function* () {
+        const policy: Policy = {
+          schemaVersion: 4,
+          environmentId,
+          revision: 1,
+          grants: [],
+          audit: [],
+          omittedAuditEvents: 0,
+          receipts: [],
+          intents: [],
+          credentialModes: [
+            { itemId, mode: "ordinary", revision: 1, updatedBy: "human-owner", updatedAt: 0 },
+          ],
+        };
+        const ownerPolicy = {
+          environmentId,
+          ownerId: "d".repeat(32),
+          ownerSubject: "human-owner",
+          mode: "owner-trusted",
+          updatedBy: "human-owner",
+          updatedAt: 0,
+        };
+        f.records.set(policyPath, {
+          value: Redacted.make({
+            schemaVersion: 5,
+            environmentId,
+            ownerPolicy,
+            ownerReceipts: [],
+            policy,
+          }),
+          version: 1,
+        });
+        const input = { mode: "read" as const, reference, consumer };
+        expect(
+          (yield* service.forAccount(input, "another-owner", Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(
+          (yield* service
+            .forAccount(
+              {
+                ...input,
+                reference: vaultProviderReference({ environmentId, itemId, expectedVersion: 2 }),
+              },
+              "human-owner",
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect(
+          Redacted.value((yield* service.forAccount(input, "human-owner", Effect.void)).value!),
+        ).toBe(privateValue);
+        expect(f.state.policyWrites).toBe(1);
+        expect(
+          (yield* service
+            .forAccount(input, "human-owner", Effect.fail(new VaultError({ reason: "denied" })))
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        const current = decodePolicy(Redacted.value(f.records.get(policyPath)!.value));
+        if (Option.isNone(current)) throw new Error("Expected valid policy");
+        f.records.set(policyPath, {
+          value: Redacted.make({
+            schemaVersion: 5,
+            environmentId,
+            ownerPolicy,
+            ownerReceipts: [],
+            policy: {
+              ...policy,
+              credentialModes: [
+                { itemId, mode: "one-time", revision: 2, updatedBy: "human-owner", updatedAt: 0 },
+              ],
+            },
+          }),
+          version: 3,
+        });
+        expect(
+          (yield* service.forAccount(input, "human-owner", Effect.void).pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(f.state.policyWrites).toBe(1);
       }),
     );
   },

@@ -5,12 +5,21 @@ import {
   AuthSessionId,
   EnvironmentId,
   ThreadId,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import {
   directoryPublicKeyFromPem,
   decodeEd25519PublicKey,
   keyFingerprint,
 } from "@t3tools/shared/fork/directory";
+import {
+  AccountVaultEnvelope,
+  type LibraryError,
+  vaultProviderReference,
+} from "@t3tools/contracts/fork";
+import * as Schema from "effect/Schema";
+import { HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as AccountProviderClient from "../vault/AccountProviderClient.ts";
 import { signRelayJwt } from "@t3tools/shared/relayJwt";
 import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
@@ -40,6 +49,7 @@ const LIBRARY = EnvironmentId.make("library");
 const THREAD = ThreadId.make("thread");
 const PUBLISHER = AuthSessionId.make("publisher");
 const PAYLOAD = '{"kind":"inspect","itemId":"account-connection"}';
+const decodeEnvelope = Schema.decodeUnknownSync(Schema.fromJsonString(AccountVaultEnvelope));
 const publisher = {
   sessionId: PUBLISHER,
   subject: `loom-host:${SOURCE}`,
@@ -50,6 +60,10 @@ const publisher = {
 const fixture = Effect.gen(function* () {
   yield* TestClock.setTime(NOW);
   const state = {
+    send: (
+      _input: HttpClientRequest.HttpClientRequest,
+    ): Effect.Effect<HttpClientResponse.HttpClientResponse, LibraryError> =>
+      Effect.die("Unexpected send"),
     thread: liveThreadShell(THREAD),
     active: true,
     stopAtKeyRead: false,
@@ -103,7 +117,7 @@ const fixture = Effect.gen(function* () {
         kind: "remote" as const,
         origin: "https://library.example.test",
         endpoint: (path) => `https://library.example.test${path}`,
-        send: () => Effect.die("not used"),
+        send: (input) => state.send(input),
         credential: {
           version: 1 as const,
           account: state.binding,
@@ -189,7 +203,7 @@ const fixture = Effect.gen(function* () {
     );
   const source = yield* open(SOURCE);
   const authority = yield* open(LIBRARY);
-  const forgeCurrentAuthority = () =>
+  const forgeCurrentAuthority = (machine = false) =>
     Effect.gen(function* () {
       const crypto = yield* Digest.Digest;
       return yield* signRelayJwt({
@@ -208,18 +222,34 @@ const fixture = Effect.gen(function* () {
           digest: Hex.encode(
             yield* crypto.digest(Digest.sha256, new TextEncoder().encode(PAYLOAD)),
           ),
-          workload: {
-            threadId: THREAD,
-            runId: state.thread.activeRunId,
-            projectId: state.thread.projectId,
-            providerInstanceId: state.thread.providerInstanceId,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-          },
+          ...(machine
+            ? {}
+            : {
+                workload: {
+                  threadId: THREAD,
+                  runId: state.thread.activeRunId,
+                  projectId: state.thread.projectId,
+                  providerInstanceId: state.thread.providerInstanceId,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                },
+              }),
         },
       });
     });
-  return { source, authority, state, forgeCurrentAuthority };
+  const provider = yield* AccountProviderClient.AccountProviderClient.pipe(
+    Effect.provide(
+      AccountProviderClient.layer.pipe(
+        Layer.provide(
+          Layer.merge(
+            dependencies,
+            Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(SOURCE) }),
+          ),
+        ),
+      ),
+    ),
+  );
+  return { source, authority, provider, state, forgeCurrentAuthority };
 });
 const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provide(NodeCrypto.layer));
@@ -349,4 +379,72 @@ it.effect("requires explicit enrollment repair after a Library revision changes"
       expect(accepted.authorityEpoch).toBe(2);
     }),
   ),
+);
+
+it.effect("keeps provider machine proofs separate from active workload capabilities", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const machineProof = yield* f.forgeCurrentAuthority(true);
+      expect(
+        (yield* f.authority.accept(PAYLOAD, machineProof, publisher).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      const proof = yield* f.source.prepare(PAYLOAD, THREAD);
+      expect(
+        (yield* f.authority.acceptProvider(PAYLOAD, proof, publisher).pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      const g = yield* fixture;
+      const lease = yield* g.authority.acceptProvider(
+        PAYLOAD,
+        yield* g.forgeCurrentAuthority(true),
+        publisher,
+      );
+      expect(lease.ownerSubject).toBe("account-owner");
+      g.state.membershipState = "removed";
+      expect((yield* g.authority.revalidate(lease).pipe(Effect.flip)).reason).toBe("denied");
+    }),
+  ),
+);
+
+it.effect(
+  "authenticates provider credential launches without a run and discards replies after account rebinding",
+  () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        f.state.thread = { ...f.state.thread, activeRunId: null };
+        let calls = 0;
+        let rebind = false;
+        f.state.send = (request) =>
+          Effect.gen(function* () {
+            calls++;
+            if (request.body._tag !== "Uint8Array") throw new Error("Expected JSON request");
+            const envelope = decodeEnvelope(new TextDecoder().decode(request.body.body));
+            const lease = yield* f.authority
+              .acceptProvider(envelope.payload, envelope.proof, publisher)
+              .pipe(Effect.orDie);
+            expect(lease.ownerSubject).toBe("account-owner");
+            if (rebind) f.state.binding = { ...f.state.binding, authorityEpoch: 2 };
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({ value: "synthetic-launch-key" }),
+            );
+          });
+        const request = {
+          mode: "read" as const,
+          reference: vaultProviderReference({
+            environmentId: LIBRARY,
+            itemId: "b".repeat(32),
+            expectedVersion: 1,
+          }),
+          consumer: { instanceId: ProviderInstanceId.make("provider"), variableName: "API_KEY" },
+        };
+        const result = yield* f.provider.request(request);
+        expect(Redacted.value(result.value!)).toBe("synthetic-launch-key");
+        expect(JSON.stringify(result)).not.toContain("synthetic-launch-key");
+        rebind = true;
+        expect((yield* f.provider.request(request).pipe(Effect.flip)).reason).toBe("denied");
+        expect(calls).toBe(2);
+      }),
+    ),
 );

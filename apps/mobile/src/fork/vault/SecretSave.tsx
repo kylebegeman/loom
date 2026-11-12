@@ -1,3 +1,4 @@
+import { useVaultEnvironment } from "./useVaultEnvironment";
 import { useState } from "react";
 import { View, Switch } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
@@ -22,7 +23,8 @@ import { uuidv4 } from "../../lib/uuid";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 const vault = createVaultCoreAtoms(connectionAtomRuntime);
 const newId = () => uuidv4().replaceAll("-", "");
-export function useSecretVaultSave(environmentId: EnvironmentId, initialName: string) {
+export function useSecretVaultSave(sourceEnvironmentId: EnvironmentId, initialName: string) {
+  const { vaultEnvironmentId: environmentId } = useVaultEnvironment(sourceEnvironmentId);
   const config = useEnvironmentServerConfig(environmentId);
   const allowed = useAtomValue(vault.save.permissionAtom(environmentId));
   const supported = supportsLoomFeature(config?.environment.capabilities, "vault-core");

@@ -1,6 +1,11 @@
 import { expect, it } from "@effect/vitest";
 import { AuthSessionId, EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { AccountVaultEnvelope, LibraryError, VaultError } from "@t3tools/contracts/fork";
+import {
+  AccountVaultEnvelope,
+  AccountVaultRequest,
+  LibraryError,
+  VaultError,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -11,6 +16,7 @@ import { LibraryConnectionService } from "../project-library/LibraryConnection.t
 import * as Client from "./AccountVaultClient.ts";
 
 const decodeEnvelope = Schema.decodeUnknownSync(Schema.fromJsonString(AccountVaultEnvelope));
+const decodeRequest = Schema.decodeUnknownSync(Schema.fromJsonString(AccountVaultRequest));
 const THREAD = ThreadId.make("thread");
 const request = { kind: "close" as const, input: { sessionId: "a".repeat(32) } };
 const fixture = Effect.gen(function* () {
@@ -23,6 +29,7 @@ const fixture = Effect.gen(function* () {
     reply: { kind: "close", closed: true } as unknown,
     unavailable: false,
     proofs: 0,
+    duringSend: (_envelope: AccountVaultEnvelope) => {},
   };
   const sent: Array<{ payload: string; proof: string }> = [];
   const service = yield* Client.AccountVaultClient.pipe(
@@ -47,7 +54,9 @@ const fixture = Effect.gen(function* () {
                   Effect.suspend(() => {
                     if (input.body._tag !== "Uint8Array")
                       return Effect.die("Expected a JSON request");
-                    sent.push(decodeEnvelope(new TextDecoder().decode(input.body.body)));
+                    const envelope = decodeEnvelope(new TextDecoder().decode(input.body.body));
+                    sent.push(envelope);
+                    state.duringSend(envelope);
                     if (state.unavailable) return Effect.fail(new LibraryError({ reason: "io" }));
                     return Effect.succeed(
                       HttpClientResponse.fromWeb(
@@ -142,12 +151,29 @@ it.effect("preserves GitHub results and reports an interrupted write without rep
       exitCode: 0,
       stdout: "comment-url",
     };
-    f.state.reply = { kind: "github", result };
-    expect(yield* f.service.github(input, THREAD)).toEqual(result);
+    f.state.duringSend = ({ payload }) => {
+      const request = decodeRequest(payload);
+      if (request.kind === "github")
+        f.state.reply = { kind: "github", result: { ...result, operationId: request.operationId } };
+    };
+    expect(yield* f.service.github(input, THREAD)).toMatchObject(result);
     f.state.unavailable = true;
     const interrupted = yield* f.service.github(input, THREAD).pipe(Effect.flip);
     expect(interrupted).toMatchObject({ _tag: "VaultGitHubError", reason: "failed" });
+    expect(interrupted).toMatchObject({ operationId: expect.stringMatching(/^[a-f0-9]{32}$/u) });
     expect(interrupted.message).toContain("inspect GitHub before retrying a write");
     expect(f.sent).toHaveLength(2);
+    if (interrupted._tag !== "VaultGitHubError" || !interrupted.operationId)
+      throw new Error("Missing recovery operation ID");
+    f.state.unavailable = false;
+    expect(
+      yield* f.service.github({ ...input, operationId: interrupted.operationId }, THREAD),
+    ).toMatchObject(result);
+    const recovery = decodeRequest(f.sent[2]!.payload);
+    expect(recovery).toMatchObject({
+      kind: "github",
+      mode: "recover",
+      operationId: interrupted.operationId,
+    });
   }),
 );

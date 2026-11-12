@@ -1,3 +1,4 @@
+import * as AccountProviderAuthority from "./vault/AccountProviderAuthority.ts";
 import * as AccountWorkloads from "./account-access/AccountWorkloads.ts";
 import * as AccountVaultAuthority from "./vault/AccountVaultAuthority.ts";
 import * as AccountVaultClient from "./vault/AccountVaultClient.ts";
@@ -75,7 +76,11 @@ import * as VaultBrokers from "./vault/VaultBrokers.ts";
 import * as BrokerCrypto from "./vault/BrokerCrypto.ts";
 import * as VaultAccess from "./vault/VaultAccess.ts";
 import * as VaultPrivateInput from "./vault/VaultPrivateInput.ts";
-import { layerCore as layerVaultCore, layerStore as layerVaultStore } from "./vault/layers.ts";
+import {
+  layerCore as layerVaultCore,
+  layerStore as layerVaultStore,
+  layerProviderCredentials,
+} from "./vault/layers.ts";
 import * as VaultSecretRequests from "./vault/VaultSecretRequests.ts";
 import * as SitesService from "./sites/SitesService.ts";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
@@ -375,10 +380,14 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
 );
+const layerAccountProviderAuthority = AccountProviderAuthority.layer.pipe(
+  Layer.provide(Layer.merge(layerAccountWorkloads, layerProviderCredentials)),
+);
 const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
       layerAccountWorkloads,
+      layerVaultStore,
       layerVaultAccess,
       layerVaultCore,
       layerVaultConnections,
@@ -588,6 +597,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerAccountEnrollment,
   layerAccountWorkloads,
   layerAccountVaultAuthority,
+  layerAccountProviderAuthority,
   layerAccountVaultClient,
   layerAccountVaultSsh,
   layerAccountJoin,

@@ -106,6 +106,7 @@ function setup() {
     },
   };
   const credentials: VaultProviderCredentials.VaultProviderCredentials["Service"] = {
+    forAccount: () => Effect.die("Unexpected account credential request"),
     read: () => Effect.die("Guard must not resolve a new credential"),
     validate: (_reference, consumer) =>
       Effect.suspend(() => {

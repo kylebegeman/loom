@@ -48,7 +48,7 @@ const Claims = Schema.Struct({
   authorityEpoch: Schema.Number,
   nonce: Schema.String,
   digest: Schema.String,
-  workload: Workload,
+  workload: Schema.optionalKey(Workload),
   iat: Schema.Number,
   exp: Schema.Number,
 });
@@ -64,6 +64,7 @@ type Lease = {
   readonly workload: typeof Workload.Type;
   readonly expiresAt: number;
 };
+type MachineLease = Omit<Lease, "workload">;
 const denied = () => new VaultError({ reason: "denied" });
 const unavailable = () => new VaultError({ reason: "unavailable" });
 
@@ -76,7 +77,12 @@ export class AccountWorkloads extends Context.Service<
       proof: string,
       publisher: AuthenticatedSession,
     ) => Effect.Effect<Lease, VaultError>;
-    readonly revalidate: (lease: Lease) => Effect.Effect<void, VaultError>;
+    readonly acceptProvider: (
+      payload: string,
+      proof: string,
+      publisher: AuthenticatedSession,
+    ) => Effect.Effect<MachineLease, VaultError>;
+    readonly revalidate: (lease: MachineLease) => Effect.Effect<void, VaultError>;
   }
 >()("t3/fork/account-access/AccountWorkloads") {}
 
@@ -111,7 +117,7 @@ const make = Effect.gen(function* () {
     )
       return yield* denied();
   });
-  const revalidate = Effect.fn("AccountWorkloads.revalidate")(function* (lease: Lease) {
+  const revalidate = Effect.fn("AccountWorkloads.revalidate")(function* (lease: MachineLease) {
     if (lease.expiresAt <= (yield* Clock.currentTimeMillis)) return yield* denied();
     const info = yield* library.info.pipe(Effect.mapError(unavailable));
     if (
@@ -252,7 +258,7 @@ const make = Effect.gen(function* () {
       sourceEnvironmentId
     ];
     if (computer?.account?.state !== "active") return yield* denied();
-    const lease: Lease = {
+    const lease = {
       sourceEnvironmentId,
       publisherSessionId: claims.publisherSessionId,
       authorityId: claims.authorityId,
@@ -271,7 +277,22 @@ const make = Effect.gen(function* () {
     used.set(replayKey, lease.expiresAt);
     return lease;
   });
-  return AccountWorkloads.of({ prepare, accept, revalidate });
+  return AccountWorkloads.of({
+    prepare,
+    accept: Effect.fn("AccountWorkloads.acceptWorkload")(function* (payload, proof, publisher) {
+      const lease = yield* accept(payload, proof, publisher);
+      if (!lease.workload) return yield* denied();
+      return { ...lease, workload: lease.workload };
+    }),
+    acceptProvider: Effect.fn("AccountWorkloads.acceptProvider")(
+      function* (payload, proof, publisher) {
+        const lease = yield* accept(payload, proof, publisher);
+        if (lease.workload !== undefined) return yield* denied();
+        return lease;
+      },
+    ),
+    revalidate,
+  });
 });
 
 export const layer = Layer.effect(AccountWorkloads, make);

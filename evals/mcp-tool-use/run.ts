@@ -80,6 +80,7 @@ import { AttentionToolkit } from "../../apps/server/src/fork/attention/mcp.ts"; 
 import { ProjectLifecycleToolkit } from "../../apps/server/src/fork/project-lifecycle/mcp.ts"; // fork: project-lifecycle
 import { DirectoryToolkit } from "../../apps/server/src/fork/directory/mcp.ts"; // fork: directory-computers
 import { VaultCoreToolkit } from "../../apps/server/src/fork/vault/mcp.ts"; // fork: vault-core
+import { VaultGitHubToolkit } from "../../apps/server/src/fork/vault/github-mcp.ts";
 import { VaultProfileToolkit } from "../../apps/server/src/fork/vault/profile-mcp.ts"; // fork: vault-references
 import { VaultAccessToolkit } from "../../apps/server/src/fork/vault/access-mcp.ts"; // fork: vault-approvals
 import { ProjectLibraryToolkit } from "../../apps/server/src/fork/project-library/tools.ts"; // fork: library-projects
@@ -471,6 +472,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   BotsToolkit, // fork: bots-triggers
   UpstreamToolkit, // fork: upstream-supervisor
   VaultCoreToolkit, // fork: vault-core
+  VaultGitHubToolkit,
   VaultProfileToolkit, // fork: vault-references
   VaultAccessToolkit, // fork: vault-approvals
   ProjectLibraryToolkit, // fork: library-projects

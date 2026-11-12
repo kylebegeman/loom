@@ -83,6 +83,10 @@ export const VaultGitHubOperation = Schema.Union([
 export type VaultGitHubOperation = typeof VaultGitHubOperation.Type;
 export const VaultGitHubRun = Schema.Struct({
   ...VaultGitHubTarget.fields,
+  operationId: Schema.optionalKey(VaultItemId).annotate({
+    description:
+      "Recover an account operation's receipt using its returned operationId and identical original input. Never executes a new operation.",
+  }),
   operation: VaultGitHubOperation,
 });
 export type VaultGitHubRun = typeof VaultGitHubRun.Type;
@@ -126,6 +130,7 @@ export const VaultGitHubReadiness = Schema.Struct({
 });
 export type VaultGitHubReadiness = typeof VaultGitHubReadiness.Type;
 export const VaultGitHubResult = Schema.Struct({
+  operationId: Schema.optionalKey(VaultItemId),
   account: Schema.String,
   repository: VaultGitHubRepository,
   exitCode: Schema.Int,
@@ -140,6 +145,7 @@ export type VaultGitHubTerminalResult = typeof VaultGitHubTerminalResult.Type;
 export const vaultGitHubDestination = (repository: string) =>
   `https://github.com/${repository.toLowerCase()}`;
 export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("VaultGitHubError", {
+  operationId: Schema.optionalKey(VaultItemId),
   repair: Schema.optionalKey(
     Schema.Struct({
       id: VaultItemId,
@@ -158,12 +164,18 @@ export class VaultGitHubError extends Schema.TaggedError<VaultGitHubError>()("Va
     "timeout",
     "unsupported",
     "account-terminal-unavailable",
+    "receipt-unavailable",
+    "receipt-only",
     "invalid-command",
     "unsafe-git-config",
   ]),
 }) {
   override get message() {
     return {
+      "receipt-unavailable":
+        "No retained receipt is available for this operation. This does not prove it never ran. Inspect GitHub before starting another write.",
+      "receipt-only":
+        "This operation completed, but its output was too large to retain. Inspect GitHub for the result; do not repeat the write.",
       "invalid-command":
         "Use a supported noninteractive gh or Git HTTPS command for the selected repository.",
       "unsafe-git-config":
@@ -243,6 +255,10 @@ export const VaultGitHubRunInput = Schema.Union([
   VaultGitHubRun,
   Schema.Struct({
     connection: VaultConnectionSelector,
+    operationId: Schema.optionalKey(VaultItemId).annotate({
+      description:
+        "Recover an account operation's receipt using its returned operationId and identical original input. Never executes a new operation.",
+    }),
     repository: VaultGitHubRepository,
     operation: VaultGitHubOperation,
   }),

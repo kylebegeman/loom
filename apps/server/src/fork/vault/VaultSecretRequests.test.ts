@@ -69,7 +69,7 @@ const fixture = (
         } as never),
     }),
   );
-  return { reveals, answers, layer: VaultSecret.layer.pipe(Layer.provide(dependencies)) };
+  return { item, reveals, answers, layer: VaultSecret.layer.pipe(Layer.provide(dependencies)) };
 };
 
 it.effect.each(["secret", "account", "secure-note"] as const)(
@@ -148,3 +148,31 @@ it.effect("rejects malformed file envelopes without answering", () => {
     expect(f.answers).toEqual([]);
   }).pipe(Effect.provide(f.layer));
 });
+
+it.effect(
+  "delivers an account item to its pending request without consulting the computer Vault",
+  () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const service = yield* VaultSecret.VaultSecretRequests;
+      const accountItem = { item: f.item, value: Redacted.make("account-only-value") };
+      yield* service.answerFromItem({ ...input, accountItem }, "owner");
+      expect(f.reveals).toEqual([]);
+      expect(f.answers).toEqual([{ secret: "account-only-value", file: undefined }]);
+      expect(
+        (yield* service
+          .answerFromItem(
+            { ...input, accountItem: { ...accountItem, item: { ...f.item, id: "c".repeat(32) } } },
+            "owner",
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-input");
+      expect(
+        (yield* service
+          .answerFromItem({ ...input, expectedVersion: 1, accountItem }, "owner")
+          .pipe(Effect.flip)).reason,
+      ).toBe("conflict");
+      expect(f.answers).toHaveLength(1);
+    }).pipe(Effect.provide(f.layer));
+  },
+);

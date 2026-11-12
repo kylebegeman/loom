@@ -1,4 +1,9 @@
 import * as Schema from "effect/Schema";
+import { SecretReference } from "../secretReference.ts";
+import {
+  ProviderInstanceId,
+  ProviderInstanceEnvironmentVariableName,
+} from "../providerInstance.ts";
 import {
   VaultConnectionReport,
   VaultConnectionRequest,
@@ -11,14 +16,33 @@ import {
   VaultSshAgentResponse,
   VaultSshAgentSession,
 } from "./vault-ssh-agent.ts";
-import { VaultError, VaultItemList, VaultItemPage } from "./vault-core.ts";
+import { VaultError, VaultItemList, VaultItemPage, VaultItemId } from "./vault-core.ts";
 import { VaultSshError } from "./vault-ssh.ts";
 import { VaultGitHubRunInput, VaultGitHubResult, VaultGitHubError } from "./vault-github.ts";
 
 export const ACCOUNT_VAULT_ROUTE = "/api/loom/account/vault";
 export const ACCOUNT_VAULT_FEATURE = "account-vault";
+export const ACCOUNT_PROVIDER_CREDENTIAL_ROUTE = "/api/loom/account/provider-credential";
+export const AccountProviderConsumer = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  variableName: ProviderInstanceEnvironmentVariableName,
+});
+export const AccountProviderRequest = Schema.Struct({
+  mode: Schema.Literals(["validate", "read"]),
+  reference: SecretReference,
+  consumer: AccountProviderConsumer,
+});
+export type AccountProviderRequest = typeof AccountProviderRequest.Type;
+export const AccountProviderResponse = Schema.Struct({
+  value: Schema.NullOr(Schema.RedactedFromValue(Schema.String)),
+});
 export const AccountVaultRequest = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("github"), input: VaultGitHubRunInput }),
+  Schema.Struct({
+    kind: Schema.Literal("github"),
+    input: VaultGitHubRunInput,
+    operationId: Schema.optionalKey(VaultItemId),
+    mode: Schema.optionalKey(Schema.Literals(["start", "recover"])),
+  }),
   Schema.Struct({ kind: Schema.Literal("list"), input: VaultItemList }),
   Schema.Struct({ kind: Schema.Literal("sessions") }),
   Schema.Struct({ kind: Schema.Literal("resolve"), input: VaultConnectionRequest }),

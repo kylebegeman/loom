@@ -28,7 +28,7 @@ export class VaultSecretRequests extends Context.Service<
   }
 >()("t3/fork/vault/VaultSecretRequests") {}
 
-const decodeInput = Schema.decodeUnknownEffect(VaultSecretAnswer);
+const decodeInput = Schema.decodeUnknownEffect(Schema.toType(VaultSecretAnswer));
 const decodeFile = Schema.decodeUnknownEffect(Schema.fromJsonString(VaultFileContent));
 const MAX_FILE_BYTES = 512 * 1024;
 const make = Effect.gen(function* () {
@@ -55,7 +55,9 @@ const make = Effect.gen(function* () {
       const run = records.runs.find((entry) => entry.id === request.runId);
       if (!run || isTerminalRunStatus(run.status))
         return yield* new SecretRequestError({ reason: "agent_stopped" });
-      const item = yield* core.inspect(input.itemId);
+      const item = input.accountItem?.item ?? (yield* core.inspect(input.itemId));
+      if (item && item.id !== input.itemId)
+        return yield* new VaultError({ reason: "invalid-input" });
       if (!item || item.state !== "active") return yield* new VaultError({ reason: "not-found" });
       if (item.version !== input.expectedVersion)
         return yield* new VaultError({ reason: "conflict" });
@@ -64,11 +66,13 @@ const make = Effect.gen(function* () {
         return yield* new VaultSecretError({ reason: "secret-service-connection" });
       if (item.kind === "secure-file" && request.delivery !== "file")
         return yield* new VaultSecretError({ reason: "secret-file-required" });
-      const revealed = yield* access.reveal(
-        { id: item.id, expectedVersion: input.expectedVersion },
-        actor,
-        input.threadId,
-      );
+      const revealed =
+        input.accountItem ??
+        (yield* access.reveal(
+          { id: item.id, expectedVersion: input.expectedVersion },
+          actor,
+          input.threadId,
+        ));
       const value = Redacted.value(revealed.value);
       if (item.kind === "secure-file") {
         const file = yield* decodeFile(value).pipe(

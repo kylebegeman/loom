@@ -19,7 +19,7 @@ export function AccountVault() {
     <SettingsSection title="Account Vault" id="account-vault">
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
         <div className="max-w-prose space-y-1">
-          <p className="text-sm">SSH and GitHub connections for your approved computers.</p>
+          <p className="text-sm">Saved connections and secrets for your approved computers.</p>
           <p className="text-xs text-muted-foreground">
             {authority.connected
               ? `Managed by ${authority.environment?.label ?? "your Library"}.`

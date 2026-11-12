@@ -1,3 +1,4 @@
+import { useVaultEnvironment } from "./useVaultEnvironment";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthAccessReadScope,
@@ -118,11 +119,12 @@ function ProviderCredentialEditor({
   readonly connected: boolean;
   readonly onClose: () => void;
 }) {
+  const { vaultEnvironmentId, resolved } = useVaultEnvironment(environmentId);
   const config = useEnvironmentServerConfig(environmentId);
   const instance = config?.settings.providerInstances[instanceId];
   const canManage = useEnvironmentScope(environmentId, AuthProvidersManageScope);
   const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
-  const canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
+  const canRead = useEnvironmentScope(vaultEnvironmentId, AuthAccessReadScope);
   const canUpdate = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(environmentId, {
       patch: {},
@@ -164,15 +166,18 @@ function ProviderCredentialEditor({
   const binding = vaultProviderBinding(value);
   const bound = isVaultProviderReference(value);
   const item = useEnvironmentQuery(
-    connected && canRead && binding?.environmentId === environmentId
-      ? references.describe({ environmentId, input: { id: binding.itemId } })
+    connected &&
+      canRead &&
+      (binding?.environmentId === environmentId || binding?.environmentId === vaultEnvironmentId)
+      ? references.describe({ environmentId: vaultEnvironmentId, input: { id: binding.itemId } })
       : null,
   );
   const provider = config?.providers.find((entry) => entry.instanceId === instanceId);
   const providerName = instance?.displayName ?? provider?.displayName ?? instanceId;
   const providerError =
     provider?.unavailableReason ?? (provider?.status === "error" ? provider.message : null);
-  const disabled = !connected || !instance || !canManage || !canWrite || !canUpdate || pending;
+  const disabled =
+    !resolved || !connected || !instance || !canManage || !canWrite || !canUpdate || pending;
 
   function chooseVariable(next: string) {
     setName(next);
@@ -337,7 +342,9 @@ function ProviderCredentialEditor({
                 This item changed or is inactive. Choose an active version before using it again.
               </Text>
             ) : null}
-            {!binding || binding.environmentId !== environmentId ? (
+            {!binding ||
+            (binding.environmentId !== environmentId &&
+              binding.environmentId !== vaultEnvironmentId) ? (
               <Text accessibilityRole="alert">Choose a Vault item from this computer.</Text>
             ) : item.error ? (
               <Text accessibilityRole="alert">{item.error}</Text>
@@ -376,7 +383,7 @@ function ProviderCredentialEditor({
         {!canRead ? <Text>Vault inspection permission is required to choose a secret.</Text> : null}
         {picking ? (
           <VaultReferenceSearch
-            environmentId={environmentId}
+            environmentId={vaultEnvironmentId}
             connected={connected}
             kind="secret"
             disabled={disabled}
@@ -395,12 +402,12 @@ function ProviderCredentialEditor({
             <Button
               label="Save Vault credential"
               tone="primary"
-              disabled={disabled || !validName || selected.environmentId !== environmentId}
+              disabled={disabled || !validName || selected.environmentId !== vaultEnvironmentId}
               loading={pending}
               onPress={() =>
                 void save(
                   vaultProviderReference({
-                    environmentId,
+                    environmentId: vaultEnvironmentId,
                     itemId: selected.item.id,
                     expectedVersion: selected.item.version,
                   }),

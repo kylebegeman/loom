@@ -1,3 +1,4 @@
+import { useVaultEnvironment } from "./useVaultEnvironment";
 import { useId, useState } from "react";
 import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -23,7 +24,8 @@ import { Radio, RadioGroup } from "~/components/ui/radio-group";
 import { vault } from "./state";
 const EMPTY = Atom.make(AsyncResult.initial<VaultItemPage, VaultError>(false));
 const newId = () => randomUUID().replaceAll("-", "");
-export function useSecretVaultSave(environmentId: EnvironmentId, initialName: string) {
+export function useSecretVaultSave(sourceEnvironmentId: EnvironmentId, initialName: string) {
+  const { vaultEnvironmentId: environmentId } = useVaultEnvironment(sourceEnvironmentId);
   const configs = useServerConfigs();
   const allowed = useAtomValue(vault.save.permissionAtom(environmentId));
   const supported = supportsLoomFeature(

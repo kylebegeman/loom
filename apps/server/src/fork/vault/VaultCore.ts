@@ -22,6 +22,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
+import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { decodePolicy, credentialUseRefusal, type Policy } from "./AccessPolicy.ts";
 
 export class VaultCore extends Context.Service<
@@ -101,6 +102,7 @@ const summary = (item: StoredItem, version: number): VaultItemSummary => ({
 });
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
+  const library = yield* Effect.serviceOption(LibraryConnection.LibraryConnectionService);
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Digest.Digest;
   const hostEnvironmentId = yield* identity.getEnvironmentId;
@@ -146,7 +148,16 @@ const make = Effect.gen(function* () {
     return policy.value;
   });
   return VaultCore.of({
-    status: store.status,
+    status: Effect.gen(function* () {
+      const status = yield* store.status;
+      if (Option.isNone(library)) return status;
+      const current = yield* library.value.current.pipe(Effect.result);
+      return current._tag === "Success" &&
+        current.success.kind === "remote" &&
+        current.success.credential?.account
+        ? { ...status, accountEnvironmentId: current.success.credential.libraryEnvironmentId }
+        : status;
+    }),
     inspect: Effect.fn("VaultCore.inspect")(function* (id) {
       if (!/^[a-f0-9]{32}$/.test(id)) return yield* new VaultError({ reason: "invalid-input" });
       const record = yield* load(id);

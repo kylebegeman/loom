@@ -20,7 +20,7 @@ export function AccountVaultEntry() {
   return (
     <SettingsSection title="Account Vault">
       <View className="gap-3 p-4">
-        <Text>SSH and GitHub connections for your approved computers.</Text>
+        <Text>Saved connections and secrets for your approved computers.</Text>
         <Button label="Manage account Vault" onPress={() => navigation.navigate("AccountVault")} />
       </View>
     </SettingsSection>

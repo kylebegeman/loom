@@ -8,6 +8,7 @@ import { render } from "../../../test/render";
 import { VaultProviderCredential } from "./ProviderCredential";
 
 const state = vi.hoisted(() => ({
+  vaultEnvironmentId: "credential-computer" as EnvironmentId,
   supported: true,
   manage: true,
   write: null as unknown as Atom.Atom<boolean>,
@@ -29,6 +30,12 @@ vi.mock(import("~/state/session"), () => ({
 vi.mock(import("./state"), () => ({
   vault: { save: { permissionAtom: () => state.write } } as never,
 }));
+vi.mock(import("./useVaultEnvironment"), () => ({
+  useVaultEnvironment: () => ({
+    vaultEnvironmentId: state.vaultEnvironmentId,
+    resolved: true,
+  }),
+}));
 vi.mock(import("./ReferencePicker"), () => ({
   VaultReferencePicker: ({
     disabled,
@@ -45,12 +52,13 @@ vi.mock(import("./ReferencePicker"), () => ({
 
 const environmentId = EnvironmentId.make("credential-computer");
 
-function setup() {
+function setup(account = false) {
+  state.vaultEnvironmentId = account ? EnvironmentId.make("account-library") : environmentId;
   state.supported = true;
   state.manage = true;
   state.write = Atom.make(true);
   state.selected = {
-    environmentId,
+    environmentId: state.vaultEnvironmentId,
     reference: "metadata-only",
     item: {
       id: "a".repeat(32),
@@ -89,23 +97,28 @@ function CredentialEditor({
 }
 
 describe("Vault provider credential selection", () => {
-  it("replaces a literal with a pinned Vault source and clears it without restoring the old value", async () => {
-    setup();
-    await using screen = await render(<CredentialEditor />);
-    await expect
-      .element(screen.getByRole("textbox", { name: "Provider API key" }))
-      .toHaveValue("old-synthetic-key");
+  it.each([false, true])(
+    "replaces a literal with a pinned Vault source and clears it without restoring the old value (account: %s)",
+    async (account) => {
+      setup(account);
+      await using screen = await render(<CredentialEditor />);
+      await expect
+        .element(screen.getByRole("textbox", { name: "Provider API key" }))
+        .toHaveValue("old-synthetic-key");
 
-    await userEvent.click(screen.getByRole("button", { name: "Use Vault" }));
-    await userEvent.click(screen.getByRole("button", { name: "Select development API key" }));
-    await expect.element(screen.getByText("Development API key · Version 2")).toBeVisible();
-    await expect
-      .element(screen.getByRole("textbox", { name: "Provider API key" }))
-      .not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Use Vault" }));
+      await userEvent.click(screen.getByRole("button", { name: "Select development API key" }));
+      await expect.element(screen.getByText("Development API key · Version 2")).toBeVisible();
+      await expect
+        .element(screen.getByRole("textbox", { name: "Provider API key" }))
+        .not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Remove Vault item" }));
-    await expect.element(screen.getByRole("textbox", { name: "Provider API key" })).toHaveValue("");
-  });
+      await userEvent.click(screen.getByRole("button", { name: "Remove Vault item" }));
+      await expect
+        .element(screen.getByRole("textbox", { name: "Provider API key" }))
+        .toHaveValue("");
+    },
+  );
 
   it("keeps a saved Vault source out of the literal editor on an older server", async () => {
     setup();

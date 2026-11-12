@@ -1,3 +1,5 @@
+import { useVaultEnvironment } from "./useVaultEnvironment";
+import type { VaultItemValue } from "@t3tools/contracts/fork";
 import { useRef, useState } from "react";
 import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -52,9 +54,15 @@ export function SavedSecretAnswer({
     configs.get(environmentId)?.environment.capabilities,
     VAULT_SECRET_FEATURE,
   );
-  const allowed = useAtomValue(secret.answerFromItem.permissionAtom(environmentId));
+  const { vaultEnvironmentId, resolved } = useVaultEnvironment(environmentId);
+  const sourceAllowed = useAtomValue(secret.answerFromItem.permissionAtom(environmentId));
+  const canReveal = useAtomValue(vault.reveal.permissionAtom(vaultEnvironmentId));
+  const allowed = sourceAllowed && (vaultEnvironmentId === environmentId || canReveal);
+  const reveal = useAtomCommand(vault.reveal, { reportFailure: false, reportDefect: false });
   const status = useEnvironmentQuery(
-    supported && allowed ? vault.status({ environmentId, input: {} }) : null,
+    supported && allowed && resolved
+      ? vault.status({ environmentId: vaultEnvironmentId, input: {} })
+      : null,
   );
   const ready = status.data?.state === "ready";
   const answer = useAtomCommand(secret.answerFromItem, {
@@ -69,7 +77,7 @@ export function SavedSecretAnswer({
   const search = useDebouncedValue(query.trim(), VAULT_SEARCH_DEBOUNCE_MS);
   const listAtom = ready
     ? vault.list({
-        environmentId,
+        environmentId: vaultEnvironmentId,
         input: { cursor, includeArchived: false, query: search, sort: "label" },
       })
     : EMPTY;
@@ -84,20 +92,37 @@ export function SavedSecretAnswer({
     busy.current = true;
     onBusyChange(true);
     setError(null);
-    const response = await answer({
-      environmentId,
-      input: {
-        threadId: request.threadId,
-        turnItemId: request.id,
-        itemId: item.id,
-        expectedVersion: item.version,
-      },
-    }).finally(() => {
-      busy.current = false;
-      onBusyChange(false);
-    });
-    if (response._tag === "Success") onAnswered();
-    else setError(message(squashAtomCommandFailure(response)));
+    await (async () => {
+      let accountItem: VaultItemValue | undefined;
+      if (vaultEnvironmentId !== environmentId) {
+        const revealed = await reveal({
+          environmentId: vaultEnvironmentId,
+          input: { id: item.id, expectedVersion: item.version },
+        });
+        if (revealed._tag === "Failure") {
+          setError(message(squashAtomCommandFailure(revealed)));
+          return;
+        }
+        accountItem = revealed.value;
+      }
+      const response = await answer({
+        environmentId,
+        input: {
+          threadId: request.threadId,
+          turnItemId: request.id,
+          itemId: item.id,
+          expectedVersion: item.version,
+          ...(accountItem ? { accountItem } : {}),
+        },
+      });
+      if (response._tag === "Success") onAnswered();
+      else setError(message(squashAtomCommandFailure(response)));
+    })()
+      .catch((cause: unknown) => setError(message(cause)))
+      .finally(() => {
+        busy.current = false;
+        onBusyChange(false);
+      });
   };
   if (!supported) return null;
   if (!allowed)

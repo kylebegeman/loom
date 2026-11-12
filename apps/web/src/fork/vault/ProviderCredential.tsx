@@ -34,6 +34,7 @@ import { useServerConfigs } from "~/state/entities";
 import { useEnvironmentScope } from "~/state/session";
 import { VaultReferencePicker } from "./ReferencePicker";
 import { vault } from "./state";
+import { useVaultEnvironment } from "./useVaultEnvironment";
 
 const references = createVaultReferenceAtoms(connectionAtomRuntime);
 const EMPTY = Atom.make(AsyncResult.initial<VaultReference | null, VaultError>(false));
@@ -54,33 +55,35 @@ export function VaultProviderCredential({
   children: ReactNode;
 }) {
   const configs = useServerConfigs();
+  const { vaultEnvironmentId, resolved } = useVaultEnvironment(environmentId);
   const supported = supportsLoomFeature(
     configs.get(environmentId)?.environment.capabilities,
     VAULT_PROVIDER_CREDENTIALS_FEATURE,
   );
   const canManage = useEnvironmentScope(environmentId, AuthProvidersManageScope);
-  const canInspect = useEnvironmentScope(environmentId, AuthAccessReadScope);
+  const canInspect = useEnvironmentScope(vaultEnvironmentId, AuthAccessReadScope);
   const canWrite = useAtomValue(vault.save.permissionAtom(environmentId));
   const [open, setOpen] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const binding = vaultProviderBinding(value);
   const fromVault = isVaultProviderReference(value);
-  const boundHere = binding?.environmentId === environmentId;
+  const boundHere =
+    binding?.environmentId === environmentId || binding?.environmentId === vaultEnvironmentId;
   const query =
     binding && boundHere && supported && canInspect
-      ? references.describe({ environmentId, input: { id: binding.itemId } })
+      ? references.describe({ environmentId: vaultEnvironmentId, input: { id: binding.itemId } })
       : EMPTY;
   const result = useAtomValue(query);
   const refresh = useAtomRefresh(query);
   const item = Option.getOrNull(AsyncResult.value(result))?.item;
   const allowed = canManage && canWrite;
-  const selectable = allowed && supported && variableName.trim().length > 0;
+  const selectable = resolved && allowed && supported && variableName.trim().length > 0;
   const current =
     item?.state === "active" && item.kind === "secret" && item.version === binding?.expectedVersion;
   const status = !binding
     ? "This Vault binding is invalid. Choose a secret again."
     : !boundHere
-      ? "This Vault binding belongs to another computer. Choose a secret on this computer."
+      ? "This binding belongs to another Vault. Choose a secret from the connected Vault."
       : !supported
         ? "Update Loom on this computer to use Vault provider credentials."
         : !canInspect
@@ -142,25 +145,28 @@ export function VaultProviderCredential({
             </DialogHeader>
             <DialogPanel>
               <VaultReferencePicker
-                environmentId={environmentId}
+                environmentId={vaultEnvironmentId}
                 kind="secret"
                 disabled={!selectable}
                 onSelect={(reference) => {
                   if (
                     !selectable ||
-                    reference.environmentId !== environmentId ||
+                    reference.environmentId !== vaultEnvironmentId ||
                     reference.item.kind !== "secret" ||
                     reference.item.state !== "active"
                   ) {
-                    setSelectionError("Choose an active secret on this computer.");
+                    setSelectionError("Choose an active secret from the connected Vault.");
                     return;
                   }
                   appAtomRegistry.refresh(
-                    references.describe({ environmentId, input: { id: reference.item.id } }),
+                    references.describe({
+                      environmentId: vaultEnvironmentId,
+                      input: { id: reference.item.id },
+                    }),
                   );
                   onChange(
                     vaultProviderReference({
-                      environmentId,
+                      environmentId: vaultEnvironmentId,
                       itemId: reference.item.id,
                       expectedVersion: reference.item.version,
                     }),

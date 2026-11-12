@@ -1,3 +1,5 @@
+import { useVaultEnvironment } from "./useVaultEnvironment";
+import type { VaultItemValue } from "@t3tools/contracts/fork";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
@@ -42,9 +44,15 @@ export function SavedSecretAnswer({
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const supported = supportsLoomFeature(config?.environment.capabilities, VAULT_SECRET_FEATURE);
-  const allowed = useAtomValue(secret.answerFromItem.permissionAtom(environmentId));
+  const { vaultEnvironmentId, resolved } = useVaultEnvironment(environmentId);
+  const sourceAllowed = useAtomValue(secret.answerFromItem.permissionAtom(environmentId));
+  const canReveal = useAtomValue(vault.reveal.permissionAtom(vaultEnvironmentId));
+  const allowed = sourceAllowed && (vaultEnvironmentId === environmentId || canReveal);
+  const reveal = useAtomCommand(vault.reveal, { reportFailure: false, reportDefect: false });
   const status = useEnvironmentQuery(
-    supported && allowed ? vault.status({ environmentId, input: {} }) : null,
+    supported && allowed && resolved
+      ? vault.status({ environmentId: vaultEnvironmentId, input: {} })
+      : null,
   );
   const ready = status.data?.state === "ready";
   const answer = useAtomCommand(secret.answerFromItem, {
@@ -60,7 +68,7 @@ export function SavedSecretAnswer({
   const page = useEnvironmentQuery(
     ready
       ? vault.list({
-          environmentId,
+          environmentId: vaultEnvironmentId,
           input: { cursor, includeArchived: false, query: search, sort: "label" },
         })
       : null,
@@ -76,6 +84,18 @@ export function SavedSecretAnswer({
     onBusyChange(true);
     setError(null);
     await (async () => {
+      let accountItem: VaultItemValue | undefined;
+      if (vaultEnvironmentId !== environmentId) {
+        const revealed = await reveal({
+          environmentId: vaultEnvironmentId,
+          input: { id: item.id, expectedVersion: item.version },
+        });
+        if (revealed._tag === "Failure") {
+          setError(message(squashAtomCommandFailure(revealed)));
+          return;
+        }
+        accountItem = revealed.value;
+      }
       const response = await answer({
         environmentId,
         input: {
@@ -83,6 +103,7 @@ export function SavedSecretAnswer({
           turnItemId: request.id,
           itemId: item.id,
           expectedVersion: item.version,
+          ...(accountItem ? { accountItem } : {}),
         },
       });
       if (response._tag === "Success") onAnswered();

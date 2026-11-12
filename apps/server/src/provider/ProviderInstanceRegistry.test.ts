@@ -926,6 +926,7 @@ describe("ProviderInstanceRegistry secret environment", () => {
     config: unknown = {},
     reference: SecretReference = secret,
     vaultCredentials: VaultProviderCredentials.VaultProviderCredentials["Service"] = {
+      forAccount: () => Effect.die("Unexpected account credential request"),
       read: () => Effect.fail(new VaultError({ reason: "denied" })),
       validate: () => Effect.fail(new VaultError({ reason: "denied" })),
     },
@@ -1130,6 +1131,7 @@ describe("ProviderInstanceRegistry secret environment", () => {
       let permitted = true;
       const consumers: Array<unknown> = [];
       const credentials: VaultProviderCredentials.VaultProviderCredentials["Service"] = {
+        forAccount: () => Effect.die("Unexpected account credential request"),
         read: (_reference, consumer) =>
           Deferred.await(fixture.gate).pipe(
             Effect.andThen(() => {

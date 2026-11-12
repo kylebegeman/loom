@@ -4,7 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { ThreadId, TurnItemId, PositiveInt } from "../baseSchemas.ts";
 import { SecretRequestError } from "../secretRequest.ts";
-import { VaultError, VaultItemId } from "./vault-core.ts";
+import { VaultError, VaultItemId, VaultItemValue } from "./vault-core.ts";
 
 const messages = {
   "secret-ssh-key":
@@ -37,6 +37,7 @@ export const VaultSecretAnswer = Schema.Struct({
   turnItemId: TurnItemId,
   itemId: VaultItemId,
   expectedVersion: PositiveInt,
+  accountItem: Schema.optionalKey(VaultItemValue),
 });
 export type VaultSecretAnswer = typeof VaultSecretAnswer.Type;
 export const VaultSecretRpcGroup = RpcGroup.make(
