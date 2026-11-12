@@ -1,3 +1,10 @@
+import * as Redacted from "effect/Redacted";
+import {
+  ACCOUNT_ENROLLMENT_FEATURE,
+  ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL,
+  type AccountComputerEnrollmentRequest,
+  type AccountComputerEnrollmentProof,
+} from "@t3tools/contracts/fork";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentAuthorizationError, EnvironmentId } from "@t3tools/contracts";
 import {
@@ -522,3 +529,133 @@ it("retains an interrupted Library command as an uncertain result", () => {
   const denied = new LibraryError({ reason: "blocked" });
   expect(squashLibraryCommandFailure(AsyncResult.failure(Cause.fail(denied)))).toBe(denied);
 });
+
+it.effect(
+  "resumes enrollment through the chosen Library and refuses a proof from another computer",
+  () =>
+    Effect.gen(function* () {
+      const computer = EnvironmentId.make("new-computer");
+      const proof = {
+        requestId: "stable-request",
+        libraryEnvironmentId: environmentId,
+        libraryUrl: "https://library.example.test",
+        environmentId: computer,
+        request: { token: "signed-report", publicKey: "public-key" },
+      };
+      let installed = false;
+      let lostReply = true;
+      let wrongComputer = false;
+      let approved = 0;
+      const clients = new Map<EnvironmentId, unknown>([
+        [
+          computer,
+          {
+            [ENROLL.prepare]: (input: AccountComputerEnrollmentRequest) =>
+              Effect.succeed({
+                ...proof,
+                ...input,
+                environmentId: wrongComputer ? EnvironmentId.make("imposter") : computer,
+              }),
+            [ENROLL.install]: () =>
+              Effect.suspend(() => {
+                installed = true;
+                return lostReply ? Effect.fail(new LibraryError({ reason: "io" })) : Effect.void;
+              }),
+            [L.managementStatus]: () =>
+              Effect.succeed({
+                state: installed ? "ready" : "missing",
+                environmentId: computer,
+                keyFingerprint: "a".repeat(64),
+                expiresAt: null,
+              }),
+          },
+        ],
+        [
+          environmentId,
+          {
+            [L.info]: () =>
+              Effect.succeed({
+                isAuthority: true,
+                environmentId,
+                features: [ACCOUNT_ENROLLMENT_FEATURE],
+              }),
+            [ENROLL.approve]: (input: AccountComputerEnrollmentProof) =>
+              Effect.sync(() => {
+                expect(input.requestId).toBe("stable-request");
+                expect(input.libraryUrl).toBe("https://library.example.test");
+                approved += 1;
+                return {
+                  requestId: input.requestId,
+                  credential: { accessToken: Redacted.make("machine-only") },
+                };
+              }),
+          },
+        ],
+      ]);
+      const supervisors = new Map<
+        EnvironmentId,
+        EnvironmentSupervisor.EnvironmentSupervisor["Service"]
+      >();
+      for (const id of [computer, environmentId]) {
+        const target = new PrimaryConnectionTarget({
+          environmentId: id,
+          label: id,
+          httpBaseUrl: "https://library.example.test",
+          wsBaseUrl: "wss://library.example.test",
+        });
+        supervisors.set(
+          id,
+          EnvironmentSupervisor.EnvironmentSupervisor.of({
+            target,
+            state: yield* SubscriptionRef.make<SupervisorConnectionState>(
+              AVAILABLE_CONNECTION_STATE,
+            ),
+            session: yield* SubscriptionRef.make(
+              Option.some({ client: clients.get(id) } as unknown as RpcSession.RpcSession),
+            ),
+            prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(
+              Option.some({
+                environmentId: id,
+                label: id,
+                httpBaseUrl: "https://library.example.test",
+                socketUrl: "wss://library.example.test",
+                httpAuthorization: null,
+                target,
+              }),
+            ),
+            connect: Effect.void,
+            disconnect: Effect.void,
+            retryNow: Effect.void,
+          }),
+        );
+      }
+      const service = EnvironmentRegistry.EnvironmentRegistry.of({
+        run: (id, effect) =>
+          Effect.provideService(
+            effect,
+            EnvironmentSupervisor.EnvironmentSupervisor,
+            supervisors.get(id)!,
+          ),
+      } as EnvironmentRegistry.EnvironmentRegistry["Service"]);
+      const atoms = createProjectLibraryAtoms(
+        Atom.runtime(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, service)),
+      );
+      const registry = AtomRegistry.make();
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      const attempt = () =>
+        Effect.promise(() =>
+          atoms.enrollComputer.run(registry, {
+            environmentId: computer,
+            input: { authorityEnvironmentId: environmentId, requestId: "stable-request" },
+          }),
+        );
+      expect(AsyncResult.isFailure(yield* attempt())).toBe(true);
+      expect(installed).toBe(true);
+      lostReply = false;
+      expect(AsyncResult.isSuccess(yield* attempt())).toBe(true);
+      const before = approved;
+      wrongComputer = true;
+      expect(AsyncResult.isFailure(yield* attempt())).toBe(true);
+      expect(approved).toBe(before);
+    }).pipe(Effect.scoped),
+);

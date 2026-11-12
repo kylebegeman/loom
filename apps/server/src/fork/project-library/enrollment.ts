@@ -61,7 +61,11 @@ export const readLibraryDestination = Effect.fnUntraced(function* (input: {
 });
 
 export const writeLibraryCredential = Effect.fn("LibraryEnrollment.writeCredential")(
-  function* (input: { readonly file: string; readonly contents: string }) {
+  function* (input: {
+    readonly file: string;
+    readonly contents: string;
+    readonly exclusive?: boolean;
+  }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const dir = path.dirname(input.file);
@@ -75,7 +79,8 @@ export const writeLibraryCredential = Effect.fn("LibraryEnrollment.writeCredenti
         const file = path.join(temporary, "publisher.json");
         yield* fs.writeFileString(file, input.contents, { mode: 0o600, flag: "wx" });
         yield* Effect.scoped(fs.open(file).pipe(Effect.flatMap((handle) => handle.sync)));
-        yield* fs.rename(file, input.file);
+        if (input.exclusive) yield* fs.link(file, input.file);
+        else yield* fs.rename(file, input.file);
         yield* Effect.scoped(fs.open(dir).pipe(Effect.flatMap((handle) => handle.sync)));
       }),
     );

@@ -25,9 +25,9 @@ const VIEWS = [
   },
   {
     id: "library",
-    label: "Library",
+    label: "Account",
     icon: LibraryBigIcon,
-    description: "Keep your projects, conversations, and computers together across devices.",
+    description: "Manage your sign-in, devices and access to your computers.",
   },
   {
     id: "updates",

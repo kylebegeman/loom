@@ -1,3 +1,5 @@
+import { ComputerAccountSetup } from "./ComputerAccountSetup";
+import { ACCOUNT_ENROLLMENT_FEATURE } from "@t3tools/contracts/fork";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   reachChangeErrorText,
@@ -162,6 +164,20 @@ export function ComputerReachSection({
 
   return (
     <>
+      {supportsLoomFeature(config?.environment.capabilities, ACCOUNT_ENROLLMENT_FEATURE) &&
+      config?.environment.capabilities.libraryAuthority !== true &&
+      config?.environment.capabilities.supportsExecution !== false ? (
+        <ComputerAccountSetup
+          environmentId={environmentId}
+          connected={connected}
+          report={report}
+          remoteEnabled={view.switch.checked}
+          onRefresh={() => {
+            reportingRefresh();
+            refreshStatus();
+          }}
+        />
+      ) : null}
       {reportingSupported ? (
         <SettingsSection title="Library sign-in and directory">
           <View className="gap-2 px-4 py-3">

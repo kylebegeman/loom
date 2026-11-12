@@ -1,3 +1,4 @@
+import { writeLibraryCredential } from "../fork/project-library/enrollment.ts";
 import { AuthLibraryPublishScope, AuthSessionId, EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -254,32 +255,32 @@ const make = Effect.gen(function* () {
       );
     const written = yield* Effect.result(
       Effect.gen(function* () {
-        yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
-        yield* fs.writeFileString(
-          credentialFile,
-          yield* encodeCredential({
-            version: 1,
-            sourceEnvironmentId: input.sourceEnvironmentId,
-            libraryEnvironmentId: yield* identity.getEnvironmentId,
-            libraryUrl: url.toString().replace(/\/$/, ""),
-            sessionId: session.sessionId,
-            accessToken: session.token,
-            expiresAt: DateTime.formatIso(session.expiresAt),
-            issuedAt: DateTime.formatIso(yield* DateTime.now), // fork: project-library
-            ...(predecessors === undefined ? {} : { predecessors }),
-          }),
-          { flag: "wx", mode: 0o600 },
+        const contents = yield* encodeCredential({
+          version: 1,
+          sourceEnvironmentId: input.sourceEnvironmentId,
+          libraryEnvironmentId: yield* identity.getEnvironmentId,
+          libraryUrl: url.toString().replace(/\/$/, ""),
+          sessionId: session.sessionId,
+          accessToken: session.token,
+          expiresAt: DateTime.formatIso(session.expiresAt),
+          issuedAt: DateTime.formatIso(yield* DateTime.now), // fork: project-library
+          ...(predecessors === undefined ? {} : { predecessors }),
+        });
+        yield* writeLibraryCredential({ file: credentialFile, contents, exclusive: true }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path),
         );
-        yield* Effect.scoped(fs.open(credentialFile).pipe(Effect.flatMap((file) => file.sync)));
-        yield* Effect.scoped(fs.open(config.secretsDir).pipe(Effect.flatMap((file) => file.sync)));
       }),
     );
     if (written._tag === "Failure") {
-      yield* sessions.revoke(session.sessionId).pipe(Effect.ignore);
-      return yield* new LibraryPublishingCredentialError({
-        reason: "write",
-        cause: written.failure,
-      });
+      const published = yield* fs.readFileString(credentialFile).pipe(
+        Effect.flatMap(decodeEnrollment),
+        Effect.map((credential) => credential.sessionId === session.sessionId),
+        Effect.orElseSucceed(() => false),
+      );
+      // A complete receipt can retry its sync; revoking it would poison the saved operation.
+      if (!published) yield* sessions.revoke(session.sessionId).pipe(Effect.ignore);
+      return yield* new LibraryPublishingCredentialError({ reason: "write" });
     }
     return { credentialFile, sessionId: session.sessionId, expiresAt: session.expiresAt };
   });
@@ -314,11 +315,18 @@ const make = Effect.gen(function* () {
       .verify(Redacted.value(credential.accessToken))
       .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "invalid" })));
     if (
+      session.sessionId !== credential.sessionId ||
       session.subject !== `loom-host:${input.sourceEnvironmentId}` ||
       session.scopes.length !== 1 ||
       session.scopes[0] !== AuthLibraryPublishScope
     )
       return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    yield* Effect.scoped(fs.open(credentialFile).pipe(Effect.flatMap((file) => file.sync))).pipe(
+      Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" })),
+    );
+    yield* Effect.scoped(
+      fs.open(path.dirname(credentialFile)).pipe(Effect.flatMap((file) => file.sync)),
+    ).pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" })));
     return credential;
   }, enrollmentLock.withPermit);
   const activate: LibraryPublishingCredential["Service"]["activate"] = Effect.fn(

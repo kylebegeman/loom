@@ -143,7 +143,17 @@ const make = Effect.gen(function* () {
     const requestId = `${input.requestId}:${pin.keyFingerprint}`;
     const credential = yield* credentials
       .enroll({ sourceEnvironmentId: input.environmentId, libraryUrl: input.libraryUrl, requestId })
-      .pipe(Effect.mapError(unavailable));
+      .pipe(
+        Effect.mapError((error) =>
+          error.reason === "invalid"
+            ? new LibraryError({
+                reason: "request-conflict",
+                detail:
+                  "This setup request has expired or ended. Add this computer again to start a new request.",
+              })
+            : unavailable(),
+        ),
+      );
     return { requestId, credential, management: delegation };
   });
   const install = Effect.fn("AccountEnrollment.install")(

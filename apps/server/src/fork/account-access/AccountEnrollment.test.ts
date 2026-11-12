@@ -21,7 +21,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
-import { LibraryPublishingCredential } from "../../auth/LibraryPublishingCredential.ts";
+import {
+  LibraryPublishingCredential,
+  LibraryPublishingCredentialError,
+} from "../../auth/LibraryPublishingCredential.ts";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { DirectoryReporter } from "../directory/DirectoryReporter.ts";
@@ -82,6 +85,7 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
   const file = `${config.baseDir}/custom/publisher.json`;
   const events: string[] = [];
   let refuseOwner = false;
+  let ended = false;
   let activationAvailable = false;
   let libraryMatches = true;
   const read = fs.readFileString(file).pipe(Effect.flatMap(decodeCredential));
@@ -146,9 +150,11 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
             }),
             Layer.mock(LibraryPublishingCredential)({
               enroll: () =>
-                Effect.sync(() => {
+                Effect.suspend(() => {
                   events.push("issue");
-                  return credential;
+                  return ended
+                    ? Effect.fail(new LibraryPublishingCredentialError({ reason: "invalid" }))
+                    : Effect.succeed(credential);
                 }),
             }),
             Layer.mock(LibraryManagement)({
@@ -229,6 +235,9 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
     file,
     read,
     events,
+    endEnrollment: () => {
+      ended = true;
+    },
     denyOwner: () => {
       refuseOwner = true;
     },
@@ -324,6 +333,10 @@ it.effect(
         const approved = yield* f.service.approve(proof, owner);
         expect(approved.requestId).toBe(`request:${FINGERPRINT}`);
         expect(f.events).toEqual(["owner", "pin", "issue"]);
+        f.endEnrollment();
+        expect((yield* f.service.approve(proof, owner).pipe(Effect.flip)).reason).toBe(
+          "request-conflict",
+        );
         f.events.length = 0;
         expect(
           (yield* Effect.result(

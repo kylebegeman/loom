@@ -1,3 +1,5 @@
+import { ComputerAccountSetup } from "./ComputerAccountSetup";
+import { AccountAccessSummary } from "./AccountAccessSummary";
 import { useOptionalSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { useState, type ReactNode } from "react";
 import * as Schema from "effect/Schema";
@@ -161,6 +163,8 @@ export function ComputerConnectionsHome({
         </div>
       ) : (
         <>
+          <AccountAccessSummary />
+          {primaryEnvironment ? <ComputerAccountSetup environment={primaryEnvironment} /> : null}
           {environments.length ? (
             <section className="space-y-3" aria-label="Your computers">
               <div className="flex flex-wrap items-center justify-between gap-3">

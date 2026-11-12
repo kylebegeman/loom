@@ -5,34 +5,6 @@ A computer runs Loom and keeps its own projects and conversations. Your Mac,
 iPhone and browser are clients that connect to those computers. Usually each
 working computer runs one Loom environment.
 
-## Find your computers on another device
-
-Sign in to the same Connect account in Loom on your Mac and iPhone. Link each computer from its connection settings, or use the installed CLI's
-`t3 connect` setup for a headless host. On iPhone, open a directly paired
-computer's details and choose **Link this computer**. That connection must allow
-Connect management. Computers linked to your
-account appear on your other signed-in clients. Direct pairing remains available
-for a local network or VPN without an account.
-
-A direct pairing link grants access on the client that opens it. It does not
-link that computer to your Connect account. Account discovery shares the computer
-inventory, not its project files or conversation storage.
-
-Open **Manage account > Linked computers** to review your account's computers
-and remove a link. Removing an account link revokes its Connect access; removing
-a connection from this device only changes this device. Direct pairing routes
-remain available after an account link is removed.
-
-Loom's iOS release supports email-code sign-in and enrolled account verification
-methods. Account creation and profile changes open the account website. Native
-passkeys, social sign-in, Apple sign-in and push delivery require separate
-configuration for Loom's Apple identity.
-
-The upstream production account service supports its hosted web app and the
-native clients. A browser on a local, IP or VPN address can use direct pairing;
-Connections provides the hosted-web sign-in link when that deployment supports
-it. A privately configured account service follows its own supported domains.
-
 ## Connect computers from your Library
 
 Sign in to your Library to see your compatible computers automatically. With current
@@ -40,6 +12,12 @@ Loom versions on both the Library and the computer, opening the Library also con
 computers that are new to this device. You can open their live threads without another
 sign-in, pairing code or VPN. The computer must be enrolled with your Library and have
 Loomhost enabled.
+
+To add a computer, sign in to your Library, then choose **Add to my account**
+on its computer page. On a new Mac, the same action appears on the Computers
+page. Loom connects publishing and remote access together. If setup is interrupted,
+choose **Resume setup** to continue the saved request. Running work stays open.
+On iPhone, open an already connected computer's details to add it.
 
 Your existing connections and computers you disabled stay as you left them. To move an
 existing connection to account access, choose **Connect** for it under **Settings > Computers**.
@@ -70,6 +48,34 @@ reported to your Library. If there are none, enable **Tailscale HTTPS** on deskt
 or **Loomhost** below the connection settings. **Tailscale HTTPS**
 works with **Network access** off. If another app already serves its port, Loom
 names that app and asks for another port instead of replacing it.
+
+## Legacy Connect account
+
+Sign in to the same Connect account in Loom on your Mac and iPhone. Link each computer from its connection settings, or use the installed CLI's
+`t3 connect` setup for a headless host. On iPhone, open a directly paired
+computer's details and choose **Link this computer**. That connection must allow
+Connect management. Computers linked to your
+account appear on your other signed-in clients. Direct pairing remains available
+for a local network or VPN without an account.
+
+A direct pairing link grants access on the client that opens it. It does not
+link that computer to your Connect account. Account discovery shares the computer
+inventory, not its project files or conversation storage.
+
+Open **Manage account > Linked computers** to review your account's computers
+and remove a link. Removing an account link revokes its Connect access; removing
+a connection from this device only changes this device. Direct pairing routes
+remain available after an account link is removed.
+
+Loom's iOS release supports email-code sign-in and enrolled account verification
+methods. Account creation and profile changes open the account website. Native
+passkeys, social sign-in, Apple sign-in and push delivery require separate
+configuration for Loom's Apple identity.
+
+The upstream production account service supports its hosted web app and the
+native clients. A browser on a local, IP or VPN address can use direct pairing;
+Connections provides the hosted-web sign-in link when that deployment supports
+it. A privately configured account service follows its own supported domains.
 
 ## Keep a computer signed in to its Library
 

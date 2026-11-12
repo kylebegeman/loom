@@ -1,3 +1,4 @@
+import { ComputerAccountSetup } from "../connections/ComputerAccountSetup";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
   backgroundCheckFailureText,
@@ -34,7 +35,8 @@ export function DirectoryReporting({
   if (!supported) return null;
   return (
     <section aria-label="Library sign-in and directory" className="space-y-2 px-3 py-3 sm:px-4">
-      <h3 className="text-xs font-medium">Library sign-in and directory</h3>
+      <ComputerAccountSetup environment={environment} />
+      <h3 className="text-xs font-medium">Library connection status</h3>
       {report ? (
         <>
           {directoryReportingText(report, now).map((text, index) => (
