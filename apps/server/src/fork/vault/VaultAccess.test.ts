@@ -3045,3 +3045,96 @@ it.effect("owner-trusted checks read the thread on the reader while the writer i
     ),
   ),
 );
+
+it.effect(
+  "requires the same personal account owner for enrolled workloads and preserves item, version and online checks",
+  () =>
+    withAccess(({ access, core, fixture }) =>
+      Effect.gen(function* () {
+        const input = {
+          lease: {
+            sourceEnvironmentId: EnvironmentId.make("remote-source"),
+            publisherSessionId: AuthSessionId.make("publisher"),
+            authorityId: "library",
+            authorityEpoch: 1,
+            keyFingerprint: "a".repeat(64),
+            membershipRevision: 1,
+            membershipEpoch: 0,
+            ownerSubject: "human",
+            expiresAt: 60000,
+            workload: {
+              threadId,
+              projectId,
+              runId: RunId.make("remote-run"),
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              runtimeMode: "full-access" as const,
+              interactionMode: "default" as const,
+            },
+          },
+          itemId,
+          expectedVersion: 1,
+          action: "use" as const,
+          destination: "ssh://git@example.test:22",
+        };
+        expect((yield* access.authorizeAccount(input, Effect.void).pipe(Effect.flip)).reason).toBe(
+          "denied",
+        );
+        yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        for (const invalid of [
+          { ...input, expectedVersion: null },
+          { ...input, destination: null },
+        ])
+          expect(
+            (yield* access.authorizeAccount(invalid, Effect.void).pipe(Effect.flip)).reason,
+          ).toBe("invalid-input");
+        fixture.state.deleted = true;
+        yield* access.authorizeAccount(input, Effect.void);
+        expect((yield* access.snapshot).audit[0]).toMatchObject({
+          reason: "allowed",
+          actor: `account:remote-source:thread:${threadId}`,
+          authorization: {
+            environmentId: "remote-source",
+            threadId,
+            runId: "remote-run",
+            category: "owner-trusted",
+          },
+        });
+        expect(
+          (yield* access
+            .authorizeAccount(
+              { ...input, lease: { ...input.lease, ownerSubject: "other-owner" } },
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(
+          (yield* access
+            .authorizeAccount({ ...input, expectedVersion: 2 }, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect(
+          (yield* access
+            .authorizeAccount(input, Effect.fail(new VaultError({ reason: "denied" })))
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        yield* core.change(
+          { id: itemId, operationId: "d".repeat(32), expectedVersion: 1, action: "archive" },
+          "human",
+        );
+        expect(
+          (yield* access
+            .authorizeAccount({ ...input, expectedVersion: 2 }, Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        yield* access.setOwnerPolicy(ownerChange(1, "restricted", "2"), "human", Effect.void);
+        expect(
+          (yield* access
+            .authorizeAccount(
+              { ...input, itemId: null, expectedVersion: null, action: "inspect" },
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+      }),
+    ),
+);

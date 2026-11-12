@@ -1,3 +1,4 @@
+import type { AccountWorkloads } from "../account-access/AccountWorkloads.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { identityOwnershipSubject } from "../../auth/identityPolicy.ts";
 import { ProjectId, ThreadId } from "@t3tools/contracts";
@@ -182,6 +183,8 @@ const RETRY_REPAIRS = {
     "Use the normal operation adapter for a separate explicit attempt. It must recheck current access, destination, trust and connector/broker state; this report grants no execution.",
 } satisfies Record<VaultApprovalRetryReport["nextStep"], string>;
 
+type AccountWorkloadLease = Effect.Success<ReturnType<AccountWorkloads["Service"]["accept"]>>;
+
 export class VaultAccess extends Context.Service<
   VaultAccess,
   {
@@ -277,6 +280,16 @@ export class VaultAccess extends Context.Service<
       actor: string,
       destinationThreadId?: ThreadId,
     ) => Effect.Effect<VaultItemValue, VaultError>;
+    readonly authorizeAccount: (
+      input: {
+        readonly lease: AccountWorkloadLease;
+        readonly itemId: string | null;
+        readonly expectedVersion: number | null;
+        readonly action: "inspect" | "use";
+        readonly destination: string | null;
+      },
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<void, VaultError>;
     readonly setOwnerPolicy: (
       input: VaultOwnerPolicyChange,
       actor: string,
@@ -802,6 +815,67 @@ const make = Effect.gen(function* () {
       }
       if (!result.allowed)
         return yield* new VaultError({ reason: "denied", ...deniedDetail(result.reason) });
+      return;
+    }
+    return yield* new VaultError({ reason: "conflict" });
+  });
+  const authorizeAccount: VaultAccess["Service"]["authorizeAccount"] = Effect.fn(
+    "VaultAccess.authorizeAccount",
+  )(function* (input, authorize) {
+    const { lease, itemId, action, destination } = input;
+    if (
+      action === "use" &&
+      (itemId === null || input.expectedVersion === null || destination === null)
+    )
+      return yield* new VaultError({ reason: "invalid-input" });
+    for (let attempt = 0; attempt < 4; attempt++) {
+      yield* authorize;
+      if (lease.expiresAt <= (yield* Clock.currentTimeMillis))
+        return yield* new VaultError({ reason: "denied" });
+      const { policy, version } = yield* load();
+      const item = itemId === null ? null : yield* core.inspect(itemId);
+      if (item !== null && input.expectedVersion !== null && item.version !== input.expectedVersion)
+        return yield* new VaultError({ reason: "conflict" });
+      const owner = policy.ownerPolicy;
+      const protection =
+        itemId !== null && action === "use"
+          ? AccessPolicy.credentialUseRefusal(policy, itemId)
+          : null;
+      const reason =
+        owner?.mode !== "owner-trusted" || owner.ownerSubject !== lease.ownerSubject
+          ? "scope"
+          : (itemId !== null && (item === null || (action === "use" && item.state !== "active"))) ||
+              (itemId === null && action === "use")
+            ? "item-unavailable"
+            : (protection ?? "allowed");
+      const next = withAudit(policy, {
+        id: yield* eventId,
+        at: yield* Clock.currentTimeMillis,
+        actor: `account:${lease.sourceEnvironmentId}:thread:${lease.workload.threadId}`,
+        type: "decision",
+        itemId,
+        grantId: null,
+        action,
+        reason,
+        policyRevision: policy.revision,
+        authorization: {
+          category: "owner-trusted",
+          environmentId: lease.sourceEnvironmentId,
+          ownerId: owner?.ownerId ?? null,
+          threadId: lease.workload.threadId,
+          runId: lease.workload.runId,
+          destinationDigest: destination === null ? null : yield* hash(destination),
+          itemKind: item?.kind ?? null,
+        },
+      });
+      yield* authorize;
+      const persisted = yield* persist(next, version).pipe(Effect.result);
+      if (persisted._tag === "Failure") {
+        if (persisted.failure.reason === "conflict") continue;
+        return yield* persisted.failure;
+      }
+      if (reason !== "allowed")
+        return yield* new VaultError({ reason: "denied", ...deniedDetail(reason) });
       return;
     }
     return yield* new VaultError({ reason: "conflict" });
@@ -2043,6 +2117,7 @@ const make = Effect.gen(function* () {
       };
     }),
     require: requireAccess,
+    authorizeAccount,
     preview: Effect.fn("VaultAccess.preview")(function* (input, actor) {
       const { policy } = yield* load();
       const grant = yield* prepare(input, policy, actor);
