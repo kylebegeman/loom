@@ -62,6 +62,11 @@ describe("extractAgentNotificationDeepLink", () => {
         }),
       ),
     ).toBe("/threads/env/thread");
+    expect(
+      extractAgentNotificationDeepLink(
+        responseWithData({ deepLink: "/threads/env/bot-run-1", threadId: "bot-run-1" }),
+      ),
+    ).toBe("/threads/env/bot-run-1");
   });
 
   it("falls back to the thread route from environment and thread ids", () => {

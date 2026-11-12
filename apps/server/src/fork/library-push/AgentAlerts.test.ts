@@ -260,6 +260,39 @@ const harness = Effect.fn("test.harness")(function* (
 const posted = (threadId: ThreadId, kind: LibraryPushActivityKind) => ({ threadId, kind });
 
 describe("makeAgentAlerts", () => {
+  it.effect.each([THREAD_ID, ThreadId.make("bot-run-1")])(
+    "announces a nested approval once, on its visible parent %s",
+    (root) =>
+      Effect.gen(function* () {
+        const child = ThreadId.make("child");
+        const grandchild = ThreadId.make("grandchild");
+        const lineage = (parentThreadId: ThreadId) => ({
+          rootThreadId: root,
+          parentThreadId,
+          relationshipToParent: "subagent" as const,
+        });
+        const parent = ended("completed", 0, { id: root });
+        const { posts, change } = yield* harness([
+          parent,
+          running({ id: child, lineage: lineage(root) }),
+          running({ id: grandchild, lineage: lineage(child) }),
+        ]);
+        const waiting = waitingOn("command", "nested-approval", {
+          id: grandchild,
+          lineage: lineage(child),
+        });
+        yield* change(waiting);
+        yield* change(waiting);
+        expect(posts).toEqual([posted(root, "approval")]);
+        yield* change(waitingOn("command", "parent-approval", { id: root }));
+        yield* change(parent);
+        expect(posts).toEqual([posted(root, "approval"), posted(root, "approval")]);
+        yield* change(ended("completed", 0, { id: grandchild, lineage: lineage(child) }));
+        yield* change(parent);
+        expect(posts).toEqual([posted(root, "approval"), posted(root, "approval")]);
+      }).pipe(Effect.scoped),
+  );
+
   it.effect("posts each new transition once, and nothing the seed already saw", () =>
     Effect.gen(function* () {
       const waiting = waitingOn("command", "request-1");
