@@ -37,6 +37,7 @@ const SETTINGS_SEARCH_TERMS = {
     "zen",
     "final answers only",
   ],
+  SettingsLanguage: ["language", "locale", "translation", "english"],
   SettingsNavigation: ["tabs", "tab order", "reorder", "hide tabs"],
   SettingsKeyboard: ["return key", "send message", "new line", "hardware keyboard"],
   SettingsVoice: [
@@ -173,6 +174,7 @@ const SETTINGS_PAGE_LABELS: Record<SettingsPageTarget, string> = {
   SettingsOpenSourceLicenses: "Open source licenses",
   SettingsUsage: "Usage & limits",
   SettingsPreviewLinks: "Previews",
+  SettingsLanguage: "Language", // fork: mobile-navigation
 };
 
 // fork: ext-settings

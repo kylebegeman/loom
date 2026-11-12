@@ -203,11 +203,16 @@ check_seams() {
     [ -z "$short" ] || { echo "  $path $short"; missing=1; }
   done < "$SEAMS_MANIFEST"
   [ "$missing" -eq 0 ] || die "a fork seam is gone; reapply it (see FORK.md), commit, and rerun with --continue"
-  local unlisted
+  local unlisted upstream
+  # Upstream comments about process forks can read like markers; skip those upstream already has.
+  upstream=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null) || upstream=
   unlisted=$(comm -23 \
     <(git grep -nE "$(marker_re '[a-z0-9-]+')" -- . ':(exclude)docs/' \
       | sed -E 's/^([^:]+):[0-9]+:.*(\/\/|\/\*|<!--|#) fork: ([a-z0-9-]+).*/\1	\3/' | sort -u) \
-    <(grep -v '^#' "$SEAMS_MANIFEST" | cut -f1,2 | sort -u))
+    <({ grep -v '^#' "$SEAMS_MANIFEST" | cut -f1,2
+      [ -z "$upstream" ] || git grep -nE "$(marker_re '[a-z0-9-]+')" "$upstream" -- . ':(exclude)docs/' \
+        | sed -E 's/^[^:]+:([^:]+):[0-9]+:.*(\/\/|\/\*|<!--|#) fork: ([a-z0-9-]+).*/\1	\3/'
+    } | sort -u))
   [ -z "$unlisted" ] || die "fork markers missing from $SEAMS_MANIFEST (add a row per file and marker):
 $unlisted"
 }

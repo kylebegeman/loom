@@ -2,6 +2,7 @@ import type {
   DeviceServiceState,
   EnvironmentId,
   MessageId,
+  OrchestrationV2ThreadProjection,
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
@@ -24,6 +25,7 @@ import {
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { WizardPopup } from "../ui/wizard";
+import { findRevertCheckpoint } from "../../session-logic";
 import { registerThreadOverlay } from "./threadOverlayRetention";
 
 /**
@@ -75,6 +77,7 @@ export function PullRequestThreadDialogHost(props: {
   readonly onPrepared: (input: {
     branch: string;
     worktreePath: string | null;
+    pullRequestUrl: string;
   }) => Promise<void> | void;
 }) {
   const state = useThreadOverlay(pullRequestThreadDialogAtom, props.threadKey);
@@ -199,14 +202,23 @@ export function openRevertConfirm(threadKey: string, pending: PendingRevert): vo
 // fork: project-lifecycle
 export function RevertConfirmHost(props: {
   readonly threadKey: string;
+  readonly checkpoints: OrchestrationV2ThreadProjection["checkpoints"] | undefined;
   // fork: project-lifecycle
   readonly canOperate: boolean;
   readonly onConfirm: (pending: PendingRevert, restoreFiles: boolean) => void;
   readonly onFork: (checkpointId: string) => void;
 }) {
   const pending = useThreadOverlay(revertConfirmAtom, props.threadKey);
+  const canRestoreFiles =
+    pending !== null &&
+    pending.canRestoreFiles && // fork: project-lifecycle
+    // fork: project-lifecycle -- side-scope rollbacks name their checkpoint; turn counts cannot address them.
+    (pending.checkpointId === null
+      ? findRevertCheckpoint(props.checkpoints ?? [], pending.turnCount)
+      : props.checkpoints?.find((checkpoint) => checkpoint.id === pending.checkpointId)
+    )?.status === "ready";
   const confirm = (restoreFiles: boolean) => {
-    if (pending === null) return;
+    if (pending === null || (restoreFiles && !canRestoreFiles)) return;
     closeThreadOverlay(revertConfirmAtom);
     props.onConfirm(pending, restoreFiles); // fork: project-lifecycle
   };
@@ -254,7 +266,7 @@ export function RevertConfirmHost(props: {
           ) : null}
           <Button
             variant="destructive-outline"
-            disabled={!props.canOperate || !pending?.canRestoreFiles}
+            disabled={!props.canOperate || !canRestoreFiles} // fork: project-lifecycle
             onClick={() => confirm(true)}
           >
             Revert files too

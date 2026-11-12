@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createCdpRelayConnection, type CdpRelayTarget } from "./CdpRelay.ts";
+import {
+  createCdpRelayConnection,
+  type CdpRelayConnection,
+  type CdpRelayTarget,
+} from "./CdpRelay.ts";
 
 const makeTarget = (
   send: CdpRelayTarget["send"],
@@ -113,62 +117,6 @@ describe("CDP relay", () => {
     await settle();
     expect(written).toEqual([{ id: 1, result: {}, sessionId: "t3-preview-page" }]);
     expect(send).not.toHaveBeenCalled();
-  });
-
-  // fork: browser-timeout-recovery
-  it("reports existing document contexts again when a server reconnects", async () => {
-    let runtimeEnabled = false;
-    let relay: ReturnType<typeof createCdpRelayConnection>;
-    const written: Array<Record<string, unknown>> = [];
-    const send = vi.fn(async (method: string) => {
-      if (method === "Runtime.disable") runtimeEnabled = false;
-      if (method === "Runtime.enable" && !runtimeEnabled) {
-        runtimeEnabled = true;
-        relay.event(
-          "Runtime.executionContextCreated",
-          { context: { id: 1, name: "", auxData: { isDefault: true } } },
-          "",
-        );
-      }
-      return {};
-    });
-    const connect = async () => {
-      relay = makeRelay(makeTarget(send), (raw) => written.push(JSON.parse(raw)));
-      relay.receive(JSON.stringify({ id: 1, method: "Target.setAutoAttach", params: {} }));
-      await settle();
-      written.length = 0;
-      relay.receive(
-        JSON.stringify({ id: 2, method: "Runtime.enable", sessionId: "t3-preview-page" }),
-      );
-      await settle();
-    };
-    await connect();
-    expect(written).toContainEqual(
-      expect.objectContaining({ method: "Runtime.executionContextCreated" }),
-    );
-    await connect();
-    expect(written).toContainEqual(
-      expect.objectContaining({ method: "Runtime.executionContextCreated" }),
-    );
-  });
-
-  // fork: browser-timeout-recovery
-  it("resets Runtime only once and leaves child execution contexts alone", async () => {
-    const send = vi.fn<CdpRelayTarget["send"]>(async () => ({}));
-    const relay = makeRelay(makeTarget(send), () => {});
-    for (const [id, sessionId] of [
-      [1, "t3-preview-page"],
-      [2, "t3-preview-page"],
-      [3, "iframe-session"],
-    ] as const) {
-      relay.receive(JSON.stringify({ id, method: "Runtime.enable", sessionId }));
-    }
-    await settle();
-    expect(send.mock.calls.filter(([method]) => method === "Runtime.disable")).toEqual([
-      ["Runtime.disable", {}, undefined],
-    ]);
-    expect(send).toHaveBeenCalledWith("Runtime.enable", {}, "iframe-session", undefined);
-    expect(send.mock.calls.filter(([method]) => method === "Runtime.enable")).toHaveLength(3);
   });
 
   it("routes tab events to the page session once the page is announced", async () => {
@@ -408,5 +356,45 @@ describe("CDP relay payload budget", () => {
     relay.receive(JSON.stringify({ id: 2, method: "Target.setAutoAttach" }));
     expect(close).toHaveBeenCalledOnce();
     expect(written.map((message) => message["method"])).toEqual([]);
+  });
+});
+
+describe("CDP relay reconnects", () => {
+  it("reports the page's default execution context to every connection", async () => {
+    // Electron keeps one debugger attached, so Runtime stays enabled after a client drops,
+    // and the native Runtime.enable announces contexts again only after Runtime.disable.
+    let runtimeEnabled = false;
+    let current: CdpRelayConnection | undefined;
+    const context = {
+      context: { id: 1, origin: "null", name: "", auxData: { isDefault: true, frameId: "F" } },
+    };
+    const send = vi.fn(async (method: string) => {
+      if (method === "Runtime.disable") runtimeEnabled = false;
+      if (method === "Runtime.enable" && !runtimeEnabled) {
+        runtimeEnabled = true;
+        current!.event("Runtime.executionContextCreated", context, "");
+      }
+      return {};
+    });
+    const connect = async () => {
+      const written: Array<Record<string, unknown>> = [];
+      current = makeRelay(makeTarget(send), (raw) => written.push(JSON.parse(raw)));
+      current.receive(JSON.stringify({ id: 1, method: "Target.setAutoAttach", params: {} }));
+      await settle();
+      current.receive(
+        JSON.stringify({ id: 2, method: "Runtime.enable", sessionId: "t3-preview-page" }),
+      );
+      await settle();
+      return written.filter((m) => m["method"] === "Runtime.executionContextCreated");
+    };
+    const expected = [
+      {
+        method: "Runtime.executionContextCreated",
+        params: context,
+        sessionId: "t3-preview-page",
+      },
+    ];
+    expect(await connect()).toEqual(expected);
+    expect(await connect()).toEqual(expected);
   });
 });

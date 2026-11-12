@@ -37,6 +37,11 @@ vi.mock("../../state/use-thread-selection", () => ({
       id: "thread",
       title: "Conversation",
       lineage: { rootThreadId: "thread", parentThreadId: null, relationshipToParent: null },
+      source: {
+        lineage: { rootThreadId: "thread", parentThreadId: null, relationshipToParent: null },
+        creationSource: "mobile",
+        pendingRuntimeRequest: null,
+      },
     },
     selectedThreadCreation: null,
     selectedThreadDetailRef: { environmentId: "computer", threadId: "thread" },
@@ -150,6 +155,7 @@ vi.mock("../layout/workspace/useAndroidWorkspaceNavigation", () => ({
   useWorkspaceBackNavigation: () => {},
 }));
 vi.mock("./useRememberThreadProject", () => ({ useRememberThreadProject: () => {} }));
+vi.mock("./useThreadStatusAnnouncements", () => ({ useThreadStatusAnnouncements: () => {} }));
 vi.mock("../files/thread-file-navigator-pane", () => ({ ThreadFileNavigatorPane: () => null }));
 vi.mock("../terminal/terminalLaunchContext", () => ({
   resolvePreferredThreadWorktreePath: () => null,

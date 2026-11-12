@@ -72,35 +72,46 @@ export const measureStoragePath = Effect.fn("ProjectStorage.measurePath")(
     const seen = options.seen ?? new Set<string>();
     let entries = 0;
     let bytes = 0;
+    const limit = options.limit ?? STORAGE_ENTRY_LIMIT;
     while (pending.length > 0) {
-      const current = pending.pop()!;
-      if (current === skipped || options.exclude?.has(current)) continue;
-      if (++entries > (options.limit ?? STORAGE_ENTRY_LIMIT)) return null;
-      const linked = yield* fs.readLink(current).pipe(
-        Effect.as(true),
-        Effect.catchIf(
-          (error) =>
-            error.cause instanceof Error && "code" in error.cause && error.cause.code === "EINVAL",
-          () => Effect.succeed(false),
-        ),
+      const inspected = yield* Effect.forEach(
+        pending.splice(-8),
+        // Untraced: this runs once per entry, and a tree can hold millions.
+        Effect.fnUntraced(function* (current) {
+          if (current === skipped || options.exclude?.has(current))
+            return { current, counted: false, file: null, names: [] };
+          const stat = yield* fs.lstat(current);
+          if (stat.type === "SymbolicLink")
+            return { current, counted: true, file: null, names: [] };
+          if ((yield* fs.realPath(current)) !== current) return null;
+          if (stat.type === "Directory")
+            return { current, counted: true, file: null, names: yield* fs.readDirectory(current) };
+          if (
+            stat.type !== "File" ||
+            (options.reclaimable && Option.getOrElse(stat.nlink, () => 1n) !== 1n)
+          )
+            return { current, counted: true, file: null, names: [] };
+          return { current, counted: true, file: stat, names: [] };
+        }),
+        { concurrency: "unbounded" },
       );
-      if (linked) continue;
-      if ((yield* fs.realPath(current)) !== current) return null;
-      const stat = yield* fs.stat(current);
-      if (stat.type === "File") {
-        if (options.reclaimable && Option.getOrElse(stat.nlink, () => 1n) !== 1n) continue;
-        const inode = Option.getOrNull(stat.ino);
-        const key = inode === null ? current : `${stat.dev}:${inode}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        bytes += Option.match(stat.blocks, {
-          onNone: () => Number(stat.size),
-          onSome: (blocks) => Number(blocks * 512n),
-        });
-      } else if (stat.type === "Directory") {
-        const names = yield* fs.readDirectory(current);
-        if (names.length + entries > (options.limit ?? STORAGE_ENTRY_LIMIT)) return null;
-        for (const name of names) pending.push(path.join(current, name));
+      for (const result of inspected) {
+        if (result === null) return null;
+        if (!result.counted) continue;
+        if (++entries > limit) return null;
+        const stat = result.file;
+        if (stat !== null) {
+          const inode = Option.getOrNull(stat.ino);
+          const key = inode === null ? result.current : `${stat.dev}:${inode}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          bytes += Option.match(stat.blocks, {
+            onNone: () => Number(stat.size),
+            onSome: (blocks) => Number(blocks * 512n),
+          });
+        }
+        if (result.names.length + entries > limit) return null;
+        for (const name of result.names) pending.push(path.join(result.current, name));
       }
     }
     return bytes;

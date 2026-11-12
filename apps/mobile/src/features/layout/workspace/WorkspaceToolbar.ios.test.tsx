@@ -23,7 +23,10 @@ vi.mock("../../settings/components/SettingsEnvironmentFilterHeader", () => ({
 }));
 vi.mock("../../../state/active-new-task", () => ({ useActiveNewTask: () => null }));
 vi.mock("../../../components/ui/Toolbar", () => ({ Toolbar: () => null }));
-vi.mock("@react-navigation/native", () => ({ useIsFocused: () => true }));
+vi.mock("@react-navigation/native", () => ({
+  useIsFocused: () => true,
+  useNavigationState: () => false,
+}));
 vi.mock("react-native", () => ({
   Platform: {
     OS: "ios",

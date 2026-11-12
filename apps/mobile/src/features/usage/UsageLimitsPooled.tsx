@@ -173,7 +173,7 @@ function PoolWindowCard({
   readonly color: string;
   readonly now: number;
   readonly environmentIds: readonly string[] | null;
-  readonly label?: string;
+  readonly label?: string | null;
   readonly description?: string;
   readonly wide: boolean;
 }) {
@@ -201,9 +201,11 @@ function PoolWindowCard({
         }
       >
         <View className="min-w-0 gap-1">
-          <Text textRole="footnote" className="font-t3-medium text-foreground-muted">
-            {label ?? pool.label}
-          </Text>
+          {label !== null ? (
+            <Text textRole="footnote" className="font-t3-medium text-foreground-muted">
+              {label ?? pool.label}
+            </Text>
+          ) : null}
           <View className="flex-row items-baseline gap-1.5">
             <Text textRole="display" className="font-t3-bold tabular-nums text-foreground">
               {pool.remainingPercent}%
@@ -508,7 +510,9 @@ export function UsageLimitsSection({
               <View className="overflow-hidden rounded-[24px] border-continuous bg-grouped-card">
                 {windows.map((window, windowIndex) => {
                   const details =
-                    pool.driver === "cursor" ? cursorUsageWindowDetails(window.id) : undefined;
+                    pool.driver === "cursor"
+                      ? cursorUsageWindowDetails(window.id, pool)
+                      : undefined;
                   return (
                     <View
                       key={`${window.kind}:${window.id}`}

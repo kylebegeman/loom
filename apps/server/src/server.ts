@@ -119,6 +119,7 @@ import * as NativeAppIconResolver from "./assets/NativeAppIconResolver.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
+import * as ProviderInstallationGate from "./provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
@@ -233,6 +234,7 @@ import {
   claimTailscaleServe,
   releaseTailscaleServe,
   TAILSCALE_SERVE_CLAIMS_FILE,
+  readTailscaleServeRootHolders,
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
 } from "@t3tools/tailscale";
@@ -768,7 +770,12 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
   ),
   Layer.provideMerge(ProviderRegistry.layer),
-  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(SqlitePersistence.layerConfig)),
+  ),
+  // One gate for the server, below hydration so the Claude adapter sees it: layers memoize by
+  // reference, so the runtime layer shares it.
+  Layer.provideMerge(ProviderInstallationGate.layer),
   // Provider hydration builds the Claude runner, which reports agents to the same scanner the
   // terminal and preview layers share.
   Layer.provideMerge(layerPortScanner),
@@ -979,6 +986,22 @@ const layerMakeServer = Layer.unwrap(
           );
       }),
     );
+    // Who holds the Serve port's root: nobody, this server, only dead loopback ports (an unclean
+    // exit leaves one), or another live server or app, whose route is left alone.
+    const tailscaleServeRootHolder = Effect.fn("server.tailscaleServeRootHolder")(
+      function* (target: { readonly host: string; readonly port: number }) {
+        const net = yield* NetService.NetService;
+        const holders = yield* readTailscaleServeRootHolders(config.tailscaleServePort, target);
+        if (holders.length === 0) return "none" as const;
+        if (holders.some((holder) => holder.ours)) return "ours" as const;
+        const live = yield* Effect.forEach(holders, (holder) =>
+          holder.ours || holder.loopback === undefined
+            ? Effect.succeed(true)
+            : net.hasListenerOnHost(holder.loopback.port, holder.loopback.host),
+        );
+        return live.includes(true) ? ("other" as const) : ("dead" as const);
+      },
+    );
     // fork: tailnet-ownership
     // Claimed on start and released on stop: the mapping proxies to a loopback port
     // that exists only while this process runs. Both steps touch only Loom's `/` mount.
@@ -1086,8 +1109,39 @@ const layerMakeServer = Layer.unwrap(
                     ),
                   )
                 : Effect.void,
+          ).pipe(
+            // Startup is not the only time the route can go stale, so whoever finds it on a dead
+            // port takes it back.
+            Effect.tap((configured) =>
+              configured === null
+                ? Effect.void
+                : Effect.sleep("30 seconds").pipe(
+                    Effect.andThen(
+                      tailscaleServeRootHolder({
+                        host: configured.localHost.replace(/^\[|\]$/gu, ""), // fork: tailnet-ownership
+                        port: configured.localPort,
+                      }),
+                    ),
+                    Effect.flatMap((holder) =>
+                      holder === "dead"
+                        ? // fork: tailnet-ownership -- only takes back a route that is free or Loom's
+                          claimTailscaleServe(configured).pipe(
+                            Effect.andThen(
+                              Effect.logInfo("Tailscale Serve repaired", {
+                                localPort: configured.localPort,
+                                servePort: configured.servePort,
+                              }),
+                            ),
+                          )
+                        : Effect.void,
+                    ),
+                    Effect.ignore,
+                    Effect.forever,
+                    Effect.forkScoped,
+                  ),
+            ),
           ),
-        )
+        ).pipe(Layer.provide(NetService.layer))
       : // fork: background-check-health - no longer checked, so earlier failures no longer apply
         Layer.effectDiscard(
           Effect.flatMap(BackgroundChecks.recorder, (checks) =>

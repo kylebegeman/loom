@@ -23,6 +23,7 @@ import { vi } from "vite-plus/test";
 import * as ServerConfig from "../../config.ts";
 import * as ClaudeAdapterV2 from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { ClaudeDriver } from "../../provider/Drivers/ClaudeDriver.ts";
+import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
 import * as ResetCreditCoordinator from "../../provider/resetCreditCoordinator.ts";
 import { makeRoutingTestHost } from "./routingTestHost.ts";
 
@@ -34,6 +35,7 @@ const layerTest = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(IdAllocator.layer),
   Layer.provideMerge(McpProviderSessions.layer),
+  Layer.provideMerge(ProviderInstallationGate.layer),
   Layer.provideMerge(ResetCreditCoordinator.layerTest),
   Layer.provideMerge(Layer.mock(ClaudeAdapterV2.ClaudeAgentSdkQueryRunner)({})),
   Layer.provideMerge(

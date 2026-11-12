@@ -141,18 +141,17 @@ function lowerCaseRemote(value: string): string {
 export function parseGitRemoteRepository(
   value: string,
 ): { readonly host: string; readonly path: string } | null {
-  // fork: project-checkout-management
-  const trimmed = value.trim().toLowerCase();
   const normalized = lowerCaseRemote(value);
 
-  // fork: project-checkout-management
-  if (/^(?:ssh|https?|git):\/\//i.test(trimmed)) {
+  if (/^(?:ssh|https?|git):\/\//i.test(normalized)) {
     try {
-      // fork: project-checkout-management
-      const url = new URL(trimmed);
-      // Query and fragment metadata must not prevent trimming the repository's suffix.
-      const repositoryPath = url.pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
-      const repositorySegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
+      // Parse the raw remote: `.git` may sit before a query or fragment, so strip it from the path once.
+      const url = new URL(value.trim().toLowerCase());
+      const repositorySegments = url.pathname
+        .replace(/\/+$/, "")
+        .replace(/\.git$/, "")
+        .split("/")
+        .filter((segment) => segment.length > 0);
       if (url.hostname && repositorySegments.length > 1) {
         return { host: url.hostname, path: repositorySegments.join("/") };
       }

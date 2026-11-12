@@ -156,7 +156,7 @@ function formatServiceStatus(
 ): string {
   if (!status.supported) {
     // fork: brand
-    return "Loom service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
+    return "Loom service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd, Windows with Task Scheduler";
   }
   if (!status.installed) {
     // fork: brand

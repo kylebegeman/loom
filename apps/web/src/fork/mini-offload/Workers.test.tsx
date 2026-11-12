@@ -17,6 +17,9 @@ vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: state.refresh
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
 vi.mock("~/fork/settings/PathField", () => ({ PathField: "path-field" }));
+vi.mock("../project-library/LibraryAccessNotice", () => ({
+  LibraryAccessRepairNotice: () => null,
+}));
 vi.mock("../apple-build-tooling/parts", () => ({
   valueOf: (result: { value: unknown }) => result.value,
   failureOf: () => null,

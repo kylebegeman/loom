@@ -1,7 +1,7 @@
 import { useProjectNavigation } from "../../../fork/project-navigation/useProjectNavigation"; // fork: project-navigation
 import { useActiveNewTask } from "../../../state/active-new-task";
 import { Toolbar } from "../../../components/ui/Toolbar";
-import { useIsFocused } from "@react-navigation/native";
+import { useIsFocused, useNavigationState } from "@react-navigation/native";
 import { use, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Platform } from "react-native";
 import { isDuoDevice } from "../../../lib/device-type";
@@ -122,9 +122,14 @@ export function WorkspaceToolbar(props: {
       : workspace.dispatch({ type: "search", tab: selectedTab });
   };
   useHardwareKeyboardCommand("focusSearch", focusSearch);
+  // Home draws the Settings list under the `Settings` route, which holds navigation focus.
+  const settingsListOnTop = useNavigationState(
+    (state) => state.routes[state.index]?.name === "Settings",
+  );
   // The sidebar remains visible while its detail owns navigation focus.
   const searchHostVisible =
     focused ||
+    settingsListOnTop ||
     (!globalSearch && props.searchTab === undefined && primaryColumn?.presented === true);
   const restoreSearch = (afterTransition = false) => {
     if (

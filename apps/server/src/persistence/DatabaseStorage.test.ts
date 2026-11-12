@@ -8,8 +8,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 import * as TestClock from "effect/testing/TestClock";
-import * as Tracer from "effect/Tracer"; // fork: server-weight
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
@@ -46,9 +46,26 @@ it.effect("a new database returns freed pages online without losing data", () =>
     yield* sql`CREATE TABLE retained (value TEXT)`;
     yield* sql`INSERT INTO retained VALUES ('keep')`;
     yield* sql`CREATE TABLE discarded (value BLOB)`;
-    yield* sql`INSERT INTO discarded VALUES (zeroblob(1048576))`;
+    yield* sql`INSERT INTO discarded VALUES (zeroblob(6291456))`;
     yield* sql`DROP TABLE discarded`;
-    assert.isAbove(yield* freePages, 0);
+    const before = yield* freePages;
+    assert.isAbove(before, 1024);
+    const spans: Array<Tracer.NativeSpan> = [];
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    yield* storage.reclaim.pipe(Effect.withTracer(tracer), Effect.withTracerEnabled(true));
+    assert.equal(before - (yield* freePages), 1024);
+    assert.lengthOf(spans, 1);
+    assert.deepEqual(
+      spans.map((span) => span.name),
+      ["DatabaseStorage.reclaim"],
+    );
+    assert.equal(spans[0]?.attributes.get("db.reclaimed_pages"), 1024);
     yield* storage.reclaim;
     assert.equal(yield* freePages, 0);
     assert.deepEqual(yield* sql`SELECT value FROM retained`, [{ value: "keep" }]);
@@ -259,27 +276,6 @@ it.effect("traces one prune span with its counts instead of a span per page", ()
         ),
     );
   }).pipe(Effect.provide(ProjectionMaintenance.layer.pipe(Layer.provideMerge(Sqlite.layerMemory)))),
-);
-
-// fork: server-weight
-it.effect("traces one reclaim span with its page count instead of a span per page", () =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const storage = yield* DatabaseStorage.DatabaseStorage;
-    yield* sql`CREATE TABLE discarded (value BLOB)`;
-    yield* sql`INSERT INTO discarded VALUES (zeroblob(1048576))`;
-    yield* sql`DROP TABLE discarded`;
-    const free = yield* freePages;
-    assert.isAbove(free, 0);
-    const recorder = recordingTracer();
-    yield* storage.reclaim.pipe(Effect.withTracer(recorder.tracer));
-
-    assert.equal(yield* freePages, 0);
-    const passes = recorder.ended.filter((span) => span.name === "DatabaseStorage.reclaim");
-    assert.equal(passes.length, 1);
-    assert.equal(passes[0]!.attributes.get("db.reclaimed_pages"), free);
-    assert.isFalse(recorder.queries().some((query) => query.includes("freelist_count")));
-  }).pipe(Effect.provide(storageLayer(testConfig))),
 );
 
 // NONE is a database from before automatic shrinking, which the repair converts.
