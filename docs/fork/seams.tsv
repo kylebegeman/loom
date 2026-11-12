@@ -568,6 +568,7 @@ apps/server/src/cloud/selfUpdate.ts	brand	2
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	brand	4
 apps/server/src/diagnostics/ProcessDiagnostics.test.ts	brand	1
 apps/server/src/diagnostics/ProcessDiagnostics.ts	brand	2
+apps/server/src/device/DeviceToolchain.ts	brand	1
 apps/server/src/environment/ServerEnvironmentLabel.ts	brand	1
 apps/server/src/mcp/AcpMcpStdioBridge.ts	brand	4
 apps/server/src/mcp/McpHttpServer.test.ts	brand	1
@@ -578,6 +579,7 @@ apps/server/src/mcp/ThreadMetadataMcpService.ts	brand	1
 apps/server/src/mcp/WorktreeMcpService.ts	brand	1
 apps/server/src/mcp/threadAccess.ts	brand	2
 apps/server/src/mcp/toolkits/device/handlers.ts	brand	1
+apps/server/src/mcp/toolkits/toolSearch/tools.ts	brand	1
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	brand	7
 apps/server/src/mcp/toolkits/pullRequests/tools.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts	brand	8
@@ -595,6 +597,7 @@ apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts	brand	1
 apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
 apps/server/src/persistence/DatabaseStorage.ts	brand	1
+apps/server/src/persistence/Sqlite.ts	brand	1
 apps/web/src/components/settings/DatabaseStorageNotice.tsx	brand	3
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
