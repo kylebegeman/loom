@@ -142,7 +142,7 @@ const make = Effect.gen(function* () {
   const access = yield* VaultAccess.VaultAccess;
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* CryptoDigest.Digest;
-  const environmentId = yield* identity.getEnvironmentId;
+  const environmentId = store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId);
   const namespace = yield* crypto
     .digest(CryptoDigest.sha256, new TextEncoder().encode(environmentId))
     .pipe(

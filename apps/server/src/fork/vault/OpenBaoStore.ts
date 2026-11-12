@@ -1,4 +1,5 @@
 import { VaultError, type VaultCoreStatus } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
@@ -20,6 +21,7 @@ import { readOpenBaoSettings } from "./OpenBaoSettings.ts";
 export class OpenBaoStore extends Context.Service<
   OpenBaoStore,
   {
+    readonly inventoryEnvironmentId?: EnvironmentId | undefined;
     readonly status: Effect.Effect<VaultCoreStatus>;
     readonly read: (key: string) => Effect.Effect<
       {
@@ -105,7 +107,13 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const fs = yield* FileSystem.FileSystem;
   const http = yield* HttpClient.HttpClient;
-  const { url: rawOrigin, tokenFile, mount, invalid } = yield* readOpenBaoSettings();
+  const {
+    url: rawOrigin,
+    tokenFile,
+    mount,
+    invalid,
+    inventoryEnvironmentId,
+  } = yield* readOpenBaoSettings();
   const origin = originFor(rawOrigin);
   const configured = invalid || Boolean(rawOrigin || tokenFile);
   const validConfiguration = !invalid && Boolean(origin && tokenFile && validKey(mount));
@@ -153,6 +161,7 @@ const make = Effect.gen(function* () {
       return yield* new VaultError({ reason: "invalid-response" });
   });
   return OpenBaoStore.of({
+    inventoryEnvironmentId,
     status: Effect.gen(function* () {
       const state = (value: VaultCoreStatus["state"]): VaultCoreStatus => ({
         backend: "openbao",

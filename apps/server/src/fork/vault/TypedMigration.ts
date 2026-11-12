@@ -71,7 +71,7 @@ export const makeTypedMigration = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
     );
-  const prefix = `environments/${yield* hash(yield* identity.getEnvironmentId)}/migrations`;
+  const prefix = `environments/${yield* hash(store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId))}/migrations`;
   const lock = yield* Semaphore.make(1);
   const id = () =>
     secureRandom.uuidV4().pipe(

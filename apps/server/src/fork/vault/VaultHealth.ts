@@ -87,7 +87,7 @@ const make = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
     );
-  const path = `environments/${yield* hash(yield* identity.getEnvironmentId)}/health`;
+  const path = `environments/${yield* hash(store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId))}/health`;
   const lock = yield* Semaphore.make(1);
   const load = Effect.gen(function* () {
     const record = yield* store.read(path);

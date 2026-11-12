@@ -75,6 +75,67 @@ it.effect(
       }),
     ),
 );
+it.effect("adopts an existing inventory without rewriting records or weakening protection", () =>
+  withCore((source, f) =>
+    Effect.gen(function* () {
+      yield* source.save(input, "owner");
+      const item = yield* source.save(
+        { ...input, operationId: "c".repeat(32), expectedVersion: 1 },
+        "owner",
+      );
+      const itemPath = [...f.records.keys()][0]!;
+      const policyPath = itemPath.slice(0, itemPath.indexOf("/items/")) + "/access-policy";
+      yield* f.backend.write(
+        policyPath,
+        Redacted.make({
+          schemaVersion: 4,
+          environmentId: "test-environment",
+          revision: 1,
+          grants: [],
+          audit: [],
+          omittedAuditEvents: 0,
+          receipts: [],
+          credentialModes: [
+            { itemId: id, mode: "one-time", revision: 1, updatedBy: "owner", updatedAt: 0 },
+          ],
+          intents: [],
+        }),
+        0,
+      );
+      const before = [...f.records.entries()];
+      const library = yield* VaultCore.VaultCore.pipe(
+        Effect.provide(VaultCore.layer.pipe(Layer.provide(NodeCrypto.layer))),
+        Effect.provideService(OpenBaoStore.OpenBaoStore, {
+          ...f.backend,
+          inventoryEnvironmentId: EnvironmentId.make("test-environment"),
+        }),
+        Effect.provideService(ServerEnvironmentIdentity, {
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("library")),
+        }),
+      );
+      expect((yield* library.list({ cursor: null, includeArchived: true })).items).toEqual([item]);
+      for (const owner of ["test-environment", "library"])
+        expect(
+          (yield* library.list({
+            cursor: null,
+            includeArchived: false,
+            query: `loom-vault:${owner}:${id}`,
+          })).items,
+        ).toEqual([item]);
+      expect((yield* library.reveal({ id, expectedVersion: 2 }).pipe(Effect.flip)).reason).toBe(
+        "denied",
+      );
+      expect([...f.records.entries()]).toEqual(before);
+      const archived = yield* library.change(
+        { id, operationId: "d".repeat(32), expectedVersion: 2, action: "archive" },
+        "owner",
+      );
+      expect(archived.version).toBe(3);
+      expect(f.records.get(itemPath)?.version).toBe(3);
+      expect(f.records.size).toBe(2);
+    }),
+  ),
+);
 it.effect(
   "replays the same operation safely and rejects operation ID reuse with different content",
   () =>

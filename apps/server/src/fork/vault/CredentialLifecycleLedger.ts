@@ -189,7 +189,7 @@ export const layer = Layer.effect(
     const store = yield* OpenBaoStore.OpenBaoStore;
     const identity = yield* ServerEnvironmentIdentity;
     const crypto = yield* CryptoDigest.Digest;
-    const environmentId = yield* identity.getEnvironmentId;
+    const environmentId = store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId);
     const namespace = Hex.encode(
       yield* crypto
         .digest(CryptoDigest.sha256, new TextEncoder().encode(environmentId))

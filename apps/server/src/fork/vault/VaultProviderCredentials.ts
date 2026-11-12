@@ -58,7 +58,7 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Digest.Digest,
     secureRandom = yield* SecureRandom.SecureRandom;
-  const environmentId = yield* identity.getEnvironmentId;
+  const environmentId = store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId);
   const namespace = Hex.encode(
     yield* crypto.digest(Digest.sha256, new TextEncoder().encode(environmentId)).pipe(
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),

@@ -25,6 +25,7 @@ const withStore = <A, E>(
     origin?: string;
     mode?: number;
     disabled?: boolean;
+    environment?: Record<string, string>;
     /** Gives the server a state directory, holding this settings file unless it is null. */
     settingsFile?: { content?: string; mode?: number } | null;
     reply?: (request: HttpClientRequest.HttpClientRequest) => readonly [number, unknown];
@@ -68,15 +69,15 @@ const withStore = <A, E>(
     const store = yield* OpenBaoStore.OpenBaoStore.pipe(
       Effect.provide(OpenBaoStore.layer),
       Effect.provideService(HttpClient.HttpClient, http),
-      Effect.provideService(
-        HostProcess.Environment,
-        options.disabled
+      Effect.provideService(HostProcess.Environment, {
+        ...(options.disabled
           ? {}
           : {
               LOOM_VAULT_OPENBAO_URL: options.origin ?? "https://vault.example.test",
               LOOM_VAULT_OPENBAO_TOKEN_FILE: tokenFile,
-            },
-      ),
+            }),
+        ...options.environment,
+      }),
       Effect.provideService(HostProcess.Platform, "darwin"),
       config ? Effect.provideService(ServerConfig.ServerConfig, config) : (effect) => effect,
     );
@@ -96,6 +97,36 @@ it.effect("does no backend work until configured", () =>
         expect(requests).toHaveLength(0);
       }),
     { disabled: true },
+  ),
+);
+it.effect("retains a reviewed inventory identity only on the Library authority", () =>
+  withStore(
+    ({ store }) =>
+      Effect.gen(function* () {
+        expect(store.inventoryEnvironmentId).toBe("original-computer");
+        expect((yield* store.status).state).toBe("ready");
+      }),
+    {
+      environment: {
+        LOOM_LIBRARY_AUTHORITY: "true",
+        LOOM_VAULT_INVENTORY_ENVIRONMENT_ID: "original-computer",
+      },
+    },
+  ),
+);
+
+it.effect.each([
+  { LOOM_VAULT_INVENTORY_ENVIRONMENT_ID: "original-computer" },
+  { LOOM_LIBRARY_AUTHORITY: "true", LOOM_VAULT_INVENTORY_ENVIRONMENT_ID: "../another" },
+])("refuses unapproved inventory adoption without contacting the backend: %j", (environment) =>
+  withStore(
+    ({ store, requests }) =>
+      Effect.gen(function* () {
+        expect((yield* store.status).state).toBe("misconfigured");
+        expect((yield* store.read("items/example").pipe(Effect.flip)).reason).toBe("configuration");
+        expect(requests).toEqual([]);
+      }),
+    { environment },
   ),
 );
 

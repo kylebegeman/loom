@@ -350,7 +350,7 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Digest.Digest,
     secureRandom = yield* SecureRandom.SecureRandom;
-  const environmentId = yield* identity.getEnvironmentId;
+  const environmentId = store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId);
   const environment = yield* HostProcess.Environment;
   const hash = (input: string) =>
     crypto.digest(Digest.sha256, new TextEncoder().encode(input)).pipe(

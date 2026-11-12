@@ -117,7 +117,7 @@ const make = Effect.gen(function* () {
     threads = yield* ThreadManagementService,
     identity = yield* ServerEnvironmentIdentity,
     crypto = yield* Digest.Digest;
-  const environmentId = yield* identity.getEnvironmentId;
+  const environmentId = store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId);
   const hash = (value: string) =>
     crypto.digest(Digest.sha256, new TextEncoder().encode(value)).pipe(
       Effect.map(Hex.encode),

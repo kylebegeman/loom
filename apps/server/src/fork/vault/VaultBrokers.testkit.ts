@@ -19,6 +19,7 @@ export const brokerFixture = () => {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("broker-test")),
     }),
     Layer.mock(OpenBaoStore.OpenBaoStore)({
+      inventoryEnvironmentId: undefined,
       read: (path) => Effect.sync(() => records.get(path) ?? null),
       write: (path, value, expected) =>
         Effect.suspend(() => {

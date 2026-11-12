@@ -169,6 +169,7 @@ const fixture = Effect.sync(() => {
         }),
     }),
     Layer.mock(OpenBaoStore.OpenBaoStore)({
+      inventoryEnvironmentId: undefined,
       read: (key) => Effect.sync(() => records.get(key) ?? null),
       keys: (prefix) =>
         Effect.succeed(

@@ -103,7 +103,8 @@ const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Digest.Digest;
-  const environmentId = yield* identity.getEnvironmentId;
+  const hostEnvironmentId = yield* identity.getEnvironmentId;
+  const environmentId = store.inventoryEnvironmentId ?? hostEnvironmentId;
   const digest = (value: string) =>
     crypto.digest(Digest.sha256, new TextEncoder().encode(value)).pipe(
       Effect.map(Hex.encode),
@@ -203,7 +204,9 @@ const make = Effect.gen(function* () {
           item.state !== "deleted" &&
           (input.kind === undefined || item.kind === input.kind) &&
           (query.startsWith("loom-vault:")
-            ? vaultReferenceText(environmentId, item.id).toLocaleLowerCase().startsWith(query)
+            ? [environmentId, hostEnvironmentId].some((id) =>
+                vaultReferenceText(id, item.id).toLocaleLowerCase().startsWith(query),
+              )
             : [item.label, item.kind, item.id].some((value) =>
                 value.toLocaleLowerCase().includes(query),
               )),

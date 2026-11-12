@@ -222,7 +222,7 @@ const make = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => new VaultError({ reason: "unavailable" })),
     );
-  const prefix = `environments/${yield* hash(yield* identity.getEnvironmentId)}/migration-replacements`;
+  const prefix = `environments/${yield* hash(store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId))}/migration-replacements`;
   const lock = yield* Semaphore.make(1);
   const source = Effect.fnUntraced(function* (projectId: ProjectId) {
     const found = yield* projects

@@ -119,7 +119,7 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity,
     crypto = yield* Digest.Digest,
     secureRandom = yield* SecureRandom.SecureRandom;
-  const environmentId = yield* identity.getEnvironmentId;
+  const environmentId = store.inventoryEnvironmentId ?? (yield* identity.getEnvironmentId);
   const digest = (value: string) =>
     crypto.digest(Digest.sha256, new TextEncoder().encode(value)).pipe(
       Effect.map(Hex.encode),

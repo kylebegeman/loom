@@ -18,11 +18,12 @@ server, with a settings file at `fork/vault/openbao.json` in its state directory
 { "url": "https://openbao.example.test", "tokenFile": "/path/to/service-token", "mount": "loom" }
 ```
 
-| Field       | Meaning                                                                                                                                   |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`       | HTTPS origin with no path, credentials, query or fragment. Loopback HTTP is accepted for isolated tests.                                  |
-| `tokenFile` | Path to a regular file containing the operator-provisioned service token. POSIX group/other access must be disabled, typically mode 0600. |
-| `mount`     | KV v2 mount path, default `loom`.                                                                                                         |
+| Field                    | Meaning                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                    | HTTPS origin with no path, credentials, query or fragment. Loopback HTTP is accepted for isolated tests.                                  |
+| `tokenFile`              | Path to a regular file containing the operator-provisioned service token. POSIX group/other access must be disabled, typically mode 0600. |
+| `mount`                  | KV v2 mount path, default `loom`.                                                                                                         |
+| `inventoryEnvironmentId` | Optional original environment ID for an inventory whose custody is moving to the Library. Accepted only on a Library authority.           |
 
 The settings file must be owner-only too, because whoever can change it chooses where Loom
 sends its token. A missing file leaves Vault unconfigured. Loom reports a malformed, oversized
@@ -48,6 +49,29 @@ SHA-256 of the persisted Loom server environment ID, not a client-chosen project
 policies scoped to that environment; creating another environment ID deliberately creates a
 separate inventory. The operator creates the mount and service credential; Loom never creates
 or stores a root token. Root tokens are used only inside the disposable test fixture.
+
+### Transfer an existing inventory to the Library
+
+The Library can keep an existing inventory's namespace by setting `inventoryEnvironmentId` to
+its original environment ID in its private OpenBao settings. Its own server environment ID
+stays unchanged. This transfers management without copying encrypted records or replaying KV
+versions. Item IDs, versions, archived/deleted state, access policy, audit, broker revocations,
+profiles and recovery ledgers stay in their existing paths. The owner binding and protected
+credential rules remain in force; adoption does not enable account access or replace an owner.
+
+Prepare and verify an off-host backup first. End the old computer's OpenBao credential and its
+renewal before enabling the Library's replacement credential. Give the Library a separately
+renewed credential scoped to the original namespace. Verify the old credential is denied, then
+compare item IDs and versions through the Library before enabling account access. Do not leave
+both servers managing the inventory, reset its policy, or recreate SSH/GitHub items to migrate.
+Rolling back custody requires ending the Library credential before restoring the original
+computer's credential and configuration; the inventory itself stays in place.
+
+The equivalent environment setting is `LOOM_VAULT_INVENTORY_ENVIRONMENT_ID`. Like the OpenBao
+connection variables, it replaces file settings, so supply the full connection when using it.
+An invalid identity or adoption on an execution computer reports a misconfigured backend and
+does not make backend requests. Existing Vault references can still search by the original
+environment ID; the Library's own reference prefix also identifies those same records.
 
 Status checks health and KV v2 configuration, not all path privileges. A ready connection can
 still receive a denied item operation if its policy is incomplete. A ready status also carries

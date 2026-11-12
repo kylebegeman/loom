@@ -84,7 +84,8 @@ const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
   const core = yield* VaultCore.VaultCore;
   const crypto = yield* Digest.Digest;
-  const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
+  const environmentId =
+    store.inventoryEnvironmentId ?? (yield* (yield* ServerEnvironmentIdentity).getEnvironmentId);
   const hash = (text: string) =>
     crypto.digest(Digest.sha256, new TextEncoder().encode(text)).pipe(
       Effect.map(Hex.encode),
