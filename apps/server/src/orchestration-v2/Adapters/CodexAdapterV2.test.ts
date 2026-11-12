@@ -1,5 +1,6 @@
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { switchboardLimitFailure } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
 import {
   makeProviderTextDeltaCoalescer,
   type ProviderTextDeltaUpdate,
@@ -1308,6 +1309,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     beforeEmitInbound?: CodexReplay.CodexAppServerReplayDriver["beforeEmitInbound"],
     onUsageLimits?: CodexAdapterV2.CodexAdapterV2Options["onUsageLimits"],
     promptSuggestions: Effect.Effect<boolean> = Effect.succeed(false),
+    explainFailure?: CodexAdapterV2.CodexAdapterV2Options["explainFailure"], // fork: switchboard
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1366,6 +1368,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         environment: {},
         clientFactory,
         ...(onUsageLimits ? { onUsageLimits } : {}),
+        ...(explainFailure ? { explainFailure } : {}), // fork: switchboard
         digest: yield* Digest.Digest,
         fileSystem,
         idAllocator,
@@ -6258,6 +6261,15 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       willRetry: true,
       expectedClass: "transport_error",
     },
+    // fork: switchboard
+    {
+      name: "switchboard-refusal",
+      code: "badRequest",
+      message: "unexpected status 400 Bad Request: unknown provider for model gpt-6.1-sol",
+      notification: true,
+      switchboard: true,
+      expectedClass: "usage_limit",
+    },
   ] as const)("classifies Codex terminal failures from $name evidence", (scenario) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -6285,6 +6297,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         const readsAccount =
           scenario.expectedClass === "usage_limit" &&
           !("expectedCode" in scenario) &&
+          !("switchboard" in scenario) && // fork: switchboard
           scenario.name !== "deferred-reset";
         const premium = {
           ...snapshot,
@@ -6506,6 +6519,24 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               ? Deferred.await(terminalReceipt)
               : Effect.void,
           () => Deferred.succeed(snapshotReceipt, undefined),
+          undefined,
+          // fork: switchboard
+          (failure) =>
+            Effect.succeed(
+              switchboardLimitFailure(failure, "codex", {
+                limits: [],
+                availability: "available",
+                models: [
+                  {
+                    driver: "codex",
+                    id: "gpt-6.1-sol",
+                    state: "unavailable",
+                    reason: "All Codex accounts are on credits.",
+                    resetAt: Date.parse(resetAt),
+                  },
+                ],
+              }),
+            ),
         );
         yield* harness.runtime.startTurn(
           makeCodexTestTurnInput({
@@ -6522,8 +6553,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         if (terminal?.status !== "failed") return;
         assert.equal(terminal.failure.class, scenario.expectedClass);
         assert.equal(terminal.threadDisposition, "reusable");
-        if (scenario.name === "deferred-reset" || scenario.name === "first-request-reset")
+        if (
+          scenario.name === "deferred-reset" ||
+          scenario.name === "first-request-reset" ||
+          "switchboard" in scenario // fork: switchboard
+        )
           assert.equal(terminal.failure.resetAt, resetAt);
+        if ("switchboard" in scenario)
+          assert.include(terminal.failure.message, "Switchboard has no Codex account"); // fork: switchboard
         if (scenario.name === "newer-reset-during-read")
           assert.equal(terminal.failure.resetAt, "2033-05-20T11:06:40.000Z");
         if (scenario.name === "matching-details")

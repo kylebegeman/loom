@@ -459,7 +459,11 @@ reading is stale or from a failed pass, no routed model is listed, or every list
 is unknown, every model stays selectable and the picker says availability is unknown. A
 routed hub with no known controller reports `unconfigured`: the picker says no controller
 is configured, and Settings names `LOOM_SWITCHBOARD_CONTROLLER_URL`. The hub still
-enforces each account's limits, and a turn reports any limit it hits. Limits views read
+enforces each account's limits, and a turn reports any limit it hits. The hub refuses a
+model no account may serve, such as one a credit policy excludes, as `unknown provider for
+model <id>`. When a current reading confirms that model `unavailable`, both adapters replace
+the refusal with the controller's reason, and a reading with a reset time makes it a usage
+limit that resumes at that reset (`fork/switchboard/limitFailure.ts`). Limits views read
 that hub's usage from the controller's cached `GET /api/v1/usage` instead of polling each
 subscription (`usage/cliproxyApi.ts`), show it as unavailable rather than polling
 providers when the controller is down or not configured, and ask it to collect again

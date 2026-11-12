@@ -2,6 +2,7 @@ import {
   makeSwitchboardTierReader,
   withSwitchboardServiceTiers,
 } from "../../fork/switchboard/serviceTier.ts";
+import { makeSwitchboardLimitFailures } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
 import {
   ProviderDriverKind,
   ProviderSetupError,
@@ -254,6 +255,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     resolveRuntime: runtime.resolve,
     readServiceTier: yield* makeSwitchboardTierReader(),
+    explainFailure: yield* makeSwitchboardLimitFailures("codex"), // fork: switchboard
   }).pipe(
     Effect.mapError(
       (cause) =>
