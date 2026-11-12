@@ -202,7 +202,6 @@ export class LibraryActivityPublication extends Context.Service<
 
 const make = Effect.gen(function* () {
   const publisher = yield* Publisher.LibraryPublisher;
-  if (!publisher.enabled) return LibraryActivityPublication.of({ report: Effect.void });
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Digest.Digest;
   const workspaces = yield* WorkspaceStore.LibraryWorkspaceStore;
@@ -284,6 +283,7 @@ const make = Effect.gen(function* () {
 
   const report = lock.withPermit(
     Effect.gen(function* () {
+      if (!publisher.enabled) return;
       yield* collect;
       yield* publish;
     }).pipe(

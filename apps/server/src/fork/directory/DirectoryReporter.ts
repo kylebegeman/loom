@@ -8,6 +8,7 @@ import {
   DirectoryError,
   type DirectoryEnvironmentReport,
   type DirectoryReporting,
+  type DirectoryReportRequest,
 } from "@t3tools/contracts/fork";
 import {
   directoryPublicKeyFromPem,
@@ -88,7 +89,15 @@ export class DirectoryReporter extends Context.Service<
   DirectoryReporter,
   {
     readonly status: Effect.Effect<DirectoryReporting>;
-    /** Reports until interrupted. Returns at once without a Library to report to. */
+    readonly prepare: (libraryUrl: string) => Effect.Effect<
+      {
+        readonly environmentId: DirectoryEnvironmentReport["environmentId"];
+        readonly request: DirectoryReportRequest;
+      },
+      DirectoryError
+    >;
+    readonly requestReport: Effect.Effect<void>;
+    /** Reports until interrupted, waiting for enrollment when no Library is configured. */
     readonly run: Effect.Effect<void>;
   }
 >()("t3/fork/directory/DirectoryReporter") {}
@@ -158,11 +167,29 @@ const make = Effect.gen(function* () {
     } satisfies Omit<DirectoryEnvironmentReport, "sequence" | "reportedAt">;
   });
 
-  const run = Effect.gen(function* () {
-    const initial = yield* libraryConnection.current;
-    if (initial.kind === "none" || initial.kind === "authority")
-      return yield* checks.clear("directory-reporting");
+  const wake = yield* Queue.sliding<boolean>(1);
+  const prepare = Effect.fn("DirectoryReporter.prepare")(function* (libraryUrl: string) {
+    const audience = yield* Effect.try({
+      try: () => new URL(libraryUrl).origin,
+      catch: () => new DirectoryError({ reason: "invalid" }),
+    });
+    const description = yield* describe;
+    const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
+      Effect.mapError(() => new DirectoryError({ reason: "io" })),
+    );
+    const publicKey = directoryPublicKeyFromPem(keyPair.publicKey);
+    if (publicKey === null) return yield* new DirectoryError({ reason: "invalid" });
+    const now = yield* Clock.currentTimeMillis;
+    const token = yield* signDirectoryReport({
+      privateKey: keyPair.privateKey,
+      report: { ...description, sequence: now, reportedAt: isoAt(now) },
+      audience,
+      nowEpochSeconds: now / 1000,
+    }).pipe(Effect.mapError(() => new DirectoryError({ reason: "invalid" })));
+    return { environmentId: description.environmentId, request: { publicKey, token } };
+  });
 
+  const run = Effect.gen(function* () {
     // Asked without the publisher token: the descriptor is public. Only a Library that answers
     // lacks the directory; a proxy's error page or an unreadable answer is an outage to retry.
     const directorySupported = (
@@ -227,12 +254,11 @@ const make = Effect.gen(function* () {
     });
 
     // Provider snapshots also change for models and usage, so wake only when a status does.
-    const wake = yield* Queue.sliding<void>(1);
     yield* providers.streamChanges.pipe(
       Stream.map((snapshot) => fingerprintOf(providerStatuses(snapshot))),
       Stream.changes,
       Stream.debounce(PROVIDER_SETTLE),
-      Stream.runForEach(() => Queue.offer(wake, undefined)),
+      Stream.runForEach(() => Queue.offer(wake, false)),
       Effect.forkScoped,
     );
 
@@ -281,7 +307,7 @@ const make = Effect.gen(function* () {
         yield* stopped === null
           ? checks.clear("directory-reporting")
           : checks.fail("directory-reporting", SIGNED_OUT_WARNING);
-        return { delay: CHECK_MS, wakeable: true };
+        return { delay: connection.kind === "unavailable" ? CHECK_MS : null, wakeable: true };
       }
       const library = connection;
       if (!supported) {
@@ -336,20 +362,26 @@ const make = Effect.gen(function* () {
       }
     });
 
+    const awakened = (wakeable: boolean): Effect.Effect<void> =>
+      Queue.take(wake).pipe(
+        Effect.flatMap((force) => (force || wakeable ? Effect.void : awakened(false))),
+      );
     return yield* Effect.forever(
       step.pipe(
         Effect.flatMap(({ delay, wakeable }) =>
-          wakeable
-            ? Queue.take(wake).pipe(
+          delay === null
+            ? awakened(true)
+            : awakened(wakeable).pipe(
                 Effect.timeoutOrElse({ duration: delay, orElse: () => Effect.void }),
-              )
-            : Effect.sleep(delay),
+              ),
         ),
       ),
     );
   }).pipe(Effect.scoped);
 
   return DirectoryReporter.of({
+    prepare,
+    requestReport: Queue.offer(wake, true).pipe(Effect.asVoid),
     status: Effect.gen(function* () {
       const failingChecks = yield* checks.failures;
       return {

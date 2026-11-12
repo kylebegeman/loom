@@ -257,7 +257,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
     readonly environmentId: EnvironmentId;
     readonly publisher: Pick<
       LibraryPublisher["Service"],
-      "info" | "project" | "publishDocuments" | "copyRegistrations"
+      "info" | "project" | "publishDocuments" | "copyRegistrations" | "enabled"
     >;
     readonly workspaces: Pick<LibraryWorkspaceStore["Service"], "receipts" | "followArchived">;
     readonly source: LibraryDocumentSource["Service"];
@@ -283,6 +283,7 @@ export const makeDocumentPublication = Effect.fn("LibraryDocumentPublication.mak
         .pipe(Effect.mapError(io));
     });
     const report = Effect.fn("LibraryDocumentPublication.report")(function* () {
+      if (!input.publisher.enabled) return;
       const info = yield* input.publisher.info;
       if (!info.features?.includes(LIBRARY_DECISIONS_FEATURE)) return;
       const seen = new Set<string>();

@@ -57,12 +57,7 @@ import {
   PreviewPageUpdateInput,
 } from "@t3tools/contracts/fork";
 import { PreviewAccessService } from "../preview-access/PreviewAccessService.ts";
-import {
-  LIBRARY_MISMATCH,
-  LIBRARY_NOT_CONNECTED,
-  LIBRARY_SIGN_IN_MISSING,
-  resolveLibraryConnection,
-} from "./LibraryConnection.ts";
+import { LIBRARY_MISMATCH, resolveLibraryConnection } from "./LibraryConnection.ts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -261,91 +256,7 @@ const make = Effect.gen(function* () {
   const sourceIdentity = yield* ServerEnvironmentIdentity;
   const sourceEnvironmentId = yield* sourceIdentity.getEnvironmentId;
   const noPages = Effect.fail(libraryPagesError("unavailable"));
-  const unavailable = (enabled: boolean) => {
-    const blocked = Effect.fail(
-      new LibraryError({
-        reason: "blocked",
-        detail: enabled ? LIBRARY_SIGN_IN_MISSING : LIBRARY_NOT_CONNECTED,
-        accessRepair: { kind: "connection" },
-      }),
-    );
-    return LibraryPublisher.of({
-      enabled,
-      workstreams: Effect.fn("LibraryPublisher.workstreams")(() => blocked),
-      blueprint: Effect.fn("LibraryPublisher.blueprint")(() => blocked),
-      preservation: Effect.fn("LibraryPublisher.preservation")(() => blocked),
-      briefProposals: Effect.fn("LibraryPublisher.briefProposals")(() => blocked),
-      projects: Effect.fn("LibraryPublisher.projects")(function () {
-        return blocked;
-      }),
-      conversations: Effect.fn("LibraryPublisher.conversations")(function () {
-        return blocked;
-      }),
-      lookupThread: Effect.fn("LibraryPublisher.lookupThread")(function () {
-        return blocked;
-      }),
-      history: Effect.fn("LibraryPublisher.history")(function () {
-        return blocked;
-      }),
-      search: Effect.fn("LibraryPublisher.search")(function () {
-        return blocked;
-      }),
-      timeline: Effect.fn("LibraryPublisher.timeline")(function () {
-        return blocked;
-      }),
-      launchCandidates: Effect.fn("LibraryPublisher.launchCandidates")(function () {
-        return blocked;
-      }),
-      copyRegistrations,
-      publishDocuments: Effect.fn("LibraryPublisher.publishDocuments")(function () {
-        return blocked;
-      }),
-      decisions: Effect.fn("LibraryPublisher.decisions")(function () {
-        return blocked;
-      }),
-      info: blocked,
-      ingest: Effect.fn("LibraryPublisher.ingest")(function () {
-        return blocked;
-      }),
-      registerCopy: Effect.fn("LibraryPublisher.registerCopy")(function () {
-        return blocked;
-      }),
-      publishAttachments: Effect.fn("LibraryPublisher.publishAttachments")(function () {
-        return blocked;
-      }),
-      recordActivity: Effect.fn("LibraryPublisher.recordActivity")(function () {
-        return blocked;
-      }),
-      project: Effect.fn("LibraryPublisher.project")(function () {
-        return blocked;
-      }),
-      proposeBrief: Effect.fn("LibraryPublisher.proposeBrief")(function () {
-        return blocked;
-      }),
-      registerPreviews: Effect.fn("LibraryPublisher.registerPreviews")(function () {
-        return blocked;
-      }),
-      publishPage: Effect.fn("LibraryPublisher.publishPage")(function () {
-        return noPages;
-      }),
-      listPages: Effect.fn("LibraryPublisher.listPages")(function () {
-        return noPages;
-      }),
-      updatePage: Effect.fn("LibraryPublisher.updatePage")(function () {
-        return noPages;
-      }),
-      nextReplies: Effect.fn("LibraryPublisher.nextReplies")(function () {
-        return noPages;
-      }),
-      ackReply: Effect.fn("LibraryPublisher.ackReply")(function () {
-        return noPages;
-      }),
-      signOutPageReaders: Effect.fn("LibraryPublisher.signOutPageReaders")(function () {
-        return noPages;
-      }),
-    });
-  };
-  if (connection.kind === "none") return unavailable(false);
+  let enabled = connection.kind !== "none";
 
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Digest.Digest;
@@ -521,6 +432,7 @@ const make = Effect.gen(function* () {
   });
   /** A Library without pages answers their routes 404; it explains every other refusal. */
   const executePage = Effect.fnUntraced(function* (request: HttpClientRequest.HttpClientRequest) {
+    if (!enabled) return yield* libraryPagesError("unavailable");
     const response = yield* send(request).pipe(
       Effect.mapError((error) => libraryPagesError(error.reason === "blocked" ? "blocked" : "io")),
     );
@@ -545,6 +457,7 @@ const make = Effect.gen(function* () {
   const encodeComputer = Schema.encodeEffect(Schema.fromJsonString(LibraryRegisterComputerRequest));
   const info = Effect.gen(function* () {
     const current = yield* libraryConnection.current;
+    enabled = current.kind !== "none";
     const credential = current.kind === "remote" ? current.credential : null;
     const response = yield* execute(HttpClientRequest.get(endpoint("/api/loom/library/info")));
     const info = yield* response.json.pipe(
@@ -928,7 +841,9 @@ const make = Effect.gen(function* () {
     yield* postPage("/sign-out", "{}");
   });
   return LibraryPublisher.of({
-    enabled: true,
+    get enabled() {
+      return enabled;
+    },
     copyRegistrations,
     publishDocuments,
     decisions,

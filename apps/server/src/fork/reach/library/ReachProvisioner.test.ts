@@ -184,6 +184,22 @@ const count = (steps: ReadonlyArray<string>, step: string) =>
   steps.filter((entry) => entry === step).length;
 
 describe("ReachProvisioner.ensure", () => {
+  it.effect("routes an account computer without provisioning a separate Identity client", () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        fixture.pins.set(STUDIO, { ...pinOf(fixture.studio, "Studio"), accountAccess: true });
+        const reply = yield* ensure(fixture, 1);
+        expect(reply).toMatchObject({
+          accountAccess: true,
+          url: `https://${HOSTNAME}/`,
+          identity: { state: "not-configured" },
+        });
+        expect(fixture.apis.steps).not.toContain("api.create");
+        expect(fixture.apis.steps).not.toContain("grant.put");
+        expect(liveTunnels(fixture)).toHaveLength(1);
+      }),
+    ),
+  );
   it.effect("sets up edge rules before any tunnel, then the token, then Loom Identity", () =>
     withReach((fixture) =>
       Effect.gen(function* () {

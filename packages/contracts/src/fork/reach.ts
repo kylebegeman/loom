@@ -252,6 +252,7 @@ export type ReachRateLimitState = typeof ReachRateLimitState.Type;
  * schema issue, never log it, and never persist it.
  */
 export const ReachEnsureReply = Schema.Struct({
+  accountAccess: Schema.optional(Schema.Boolean),
   hostname: HostnameText,
   url: UrlText,
   /** The ingress the Library configured; a reply naming another origin is refused. */

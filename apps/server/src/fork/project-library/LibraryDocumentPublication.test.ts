@@ -80,6 +80,7 @@ const fixture = Effect.gen(function* () {
   const observed = yield* Deferred.make<void>();
   const copies = yield* Ref.make<ReadonlyArray<WorkspaceReceipt>>([receipt]);
   const publisher = {
+    enabled: true,
     info: Effect.succeed({
       environmentId: EnvironmentId.make("library"),
       authorityId: "authority",

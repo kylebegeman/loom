@@ -1,3 +1,4 @@
+import * as AccountEnrollment from "./account-access/AccountEnrollment.ts";
 import * as AccountAccess from "./account-access/AccountAccess.ts";
 import * as AccountHost from "./account-access/AccountHost.ts";
 import * as AccountGateway from "./account-access/AccountGateway.ts";
@@ -391,6 +392,11 @@ const layerMiniOffload = MiniOffload.layer.pipe(
   ),
 );
 
+const layerDirectoryReporter = DirectoryReporter.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(layerMiniOffload),
+);
+
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
@@ -507,6 +513,19 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   Layer.empty,
   LibraryPublishingCredential.layer,
+  AccountEnrollment.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerLibraryManagement,
+        layerDirectory,
+        layerLibraryPublisher,
+        layerDirectoryReporter,
+        LibraryPublishingCredential.layer,
+        LibraryConnection.layer,
+        ReachService.layer,
+      ),
+    ),
+  ),
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
   StaleConnectLink.layer,
   layerProjectProfiles,
@@ -734,14 +753,7 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(FetchHttpClient.layer),
   ),
   // Reads the worker identities the one Mini instance keeps from its readiness checks.
-  DirectoryReporter.DirectoryReporterLive.pipe(
-    Layer.provideMerge(
-      DirectoryReporter.layer.pipe(
-        Layer.provide(FetchHttpClient.layer),
-        Layer.provide(layerMiniOffload),
-      ),
-    ),
-  ),
+  DirectoryReporter.DirectoryReporterLive.pipe(Layer.provideMerge(layerDirectoryReporter)),
 );
 
 /**

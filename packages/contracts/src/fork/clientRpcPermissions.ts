@@ -1,3 +1,4 @@
+import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "./account-access.ts";
 import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "./browser-dev-tools.ts";
 import { UPSTREAM_WS_METHODS as UPSTREAM } from "./upstream-supervisor.ts";
 import { UPDATE_PLAN_WS_METHODS as UPDATES } from "./machine-updates.ts";
@@ -153,6 +154,9 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [LIB.inspectFolder]: AuthTerminalOperateScope,
   [LIB.managementStatus]: AuthSettingsWriteScope,
   [LIB.issueManagementDelegation]: AuthSettingsWriteScope,
+  [ENROLL.prepare]: AuthSettingsWriteScope,
+  [ENROLL.approve]: AuthSettingsWriteScope,
+  [ENROLL.install]: AuthSettingsWriteScope,
   [LIB.installManagementDelegation]: AuthSettingsWriteScope,
   [LIB.createProject]: AuthSettingsWriteScope,
   [LIB.updateProject]: AuthSettingsWriteScope,

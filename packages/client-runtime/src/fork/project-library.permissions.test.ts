@@ -96,6 +96,7 @@ it.effect.each([
   "saveWorkstream",
   "applyBlueprint",
   "prepareManagement",
+  "enrollComputer",
   "issueManagementDelegation",
   "runOperation",
   "executeOperation",
@@ -113,6 +114,7 @@ it.effect.each([
         method === "saveWorkstream" ||
         method === "applyBlueprint" ||
         method === "prepareManagement" ||
+        method === "enrollComputer" ||
         method === "issueManagementDelegation"
           ? AuthSettingsWriteScope
           : AuthTerminalOperateScope;

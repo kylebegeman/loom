@@ -2,6 +2,7 @@ import { EnvironmentId, IsoDateTime } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
+import * as Path from "effect/Path";
 
 class EnrollmentOperationError extends Schema.TaggedError<EnrollmentOperationError>()(
   "EnrollmentOperationError",
@@ -58,3 +59,25 @@ export const readLibraryDestination = Effect.fnUntraced(function* (input: {
   }
   return undefined;
 });
+
+export const writeLibraryCredential = Effect.fn("LibraryEnrollment.writeCredential")(
+  function* (input: { readonly file: string; readonly contents: string }) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const dir = path.dirname(input.file);
+    yield* fs.makeDirectory(dir, { recursive: true, mode: 0o700 });
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const temporary = yield* Effect.acquireRelease(
+          fs.makeTempDirectory({ directory: dir, prefix: ".publisher-" }),
+          (name) => fs.remove(name, { recursive: true }).pipe(Effect.ignore),
+        );
+        const file = path.join(temporary, "publisher.json");
+        yield* fs.writeFileString(file, input.contents, { mode: 0o600, flag: "wx" });
+        yield* Effect.scoped(fs.open(file).pipe(Effect.flatMap((handle) => handle.sync)));
+        yield* fs.rename(file, input.file);
+        yield* Effect.scoped(fs.open(dir).pipe(Effect.flatMap((handle) => handle.sync)));
+      }),
+    );
+  },
+);

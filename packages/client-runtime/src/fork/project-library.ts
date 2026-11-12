@@ -1,3 +1,9 @@
+import {
+  ACCOUNT_ENROLLMENT_FEATURE,
+  ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL,
+} from "@t3tools/contracts/fork";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as Option from "effect/Option";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { ACCOUNT_GATEWAY_FEATURE, DIRECTORY_WS_METHODS } from "@t3tools/contracts/fork";
 import { syncAccountComputers } from "./account-computers.ts";
@@ -82,6 +88,60 @@ const prepareManagement = Effect.fn("ProjectLibrary.prepareManagement")(function
   return yield* requestGuarded(L.managementStatus, {});
 });
 
+const enrollComputer = Effect.fn("ProjectLibrary.enrollComputer")(
+  function* (input: {
+    readonly authorityEnvironmentId: EnvironmentId;
+    readonly requestId: string;
+  }) {
+    const registry = yield* EnvironmentRegistry;
+    const libraryUrl = yield* registry.run(
+      input.authorityEnvironmentId,
+      Effect.gen(function* () {
+        const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+        const info = yield* requestGuarded(L.info, {});
+        const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+        if (
+          info.environmentId !== input.authorityEnvironmentId ||
+          !info.isAuthority ||
+          !info.features?.includes(ACCOUNT_ENROLLMENT_FEATURE) ||
+          Option.isNone(prepared)
+        )
+          return yield* new LibraryError({
+            reason: "blocked",
+            detail: "Connect and sign in to an updated Library before adding this computer.",
+          });
+        return prepared.value.httpBaseUrl;
+      }),
+    );
+    const proof = yield* requestGuarded(ENROLL.prepare, {
+      requestId: input.requestId,
+      libraryEnvironmentId: input.authorityEnvironmentId,
+      libraryUrl,
+    });
+    const source = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    if (
+      proof.environmentId !== source.target.environmentId ||
+      proof.libraryEnvironmentId !== input.authorityEnvironmentId
+    )
+      return yield* new LibraryError({ reason: "blocked" });
+    const bundle = yield* registry.run(
+      input.authorityEnvironmentId,
+      requestGuarded(ENROLL.approve, proof),
+    );
+    yield* requestGuarded(ENROLL.install, bundle);
+    return yield* requestGuarded(L.managementStatus, {});
+  },
+  Effect.catchTags({
+    EnvironmentNotRegisteredError: () =>
+      Effect.fail(
+        new LibraryError({
+          reason: "blocked",
+          detail: "Reconnect your Library and this computer, then resume adding it.",
+        }),
+      ),
+  }),
+);
+
 const readLibraryInfo = Effect.fn("ProjectLibrary.readInfo")(function* () {
   const info = yield* requestGuarded(L.info, {});
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
@@ -129,6 +189,11 @@ export function createProjectLibraryAtoms<R, E>(
   });
   return {
     refreshes,
+    enrollComputer: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:enroll-computer",
+      tag: L.managementStatus,
+      execute: enrollComputer,
+    }),
     prepareManagement: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:prepare-management",
       tag: L.managementStatus,

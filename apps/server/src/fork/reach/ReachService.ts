@@ -96,6 +96,7 @@ const Sidecar = Schema.Struct({
   hostname: Schema.NullOr(Schema.String),
   /** The last request `seq` signed, so a restart never repeats one. */
   lastSeq: NonNegativeInt,
+  accountAccess: Schema.optional(Schema.Boolean),
   prepared: Schema.NullOr(ReachPrepared),
   /**
    * Set when the edge refused the connector token for good, until reach is turned on, off or
@@ -404,7 +405,7 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     if (connection.kind === "unavailable") warnings.add("library-signed-out");
     if (failure?.warning) warnings.add(failure.warning);
     if (saved.retired) warnings.add("retired");
-    if (saved.enabled)
+    if (saved.enabled && saved.accountAccess !== true)
       for (const warning of identityWarnings(saved.prepared)) warnings.add(warning);
     const base = {
       enabled: saved.enabled,
@@ -597,6 +598,9 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
             yield* persistOrRemember((current) => ({
               ...current,
               hostname,
+              ...(reply.accountAccess || current.accountAccess !== undefined
+                ? { accountAccess: reply.accountAccess === true }
+                : {}),
               prepared: identity.state === "ready" ? preparedFrom(identity) : current.prepared,
             }));
             learned = null;

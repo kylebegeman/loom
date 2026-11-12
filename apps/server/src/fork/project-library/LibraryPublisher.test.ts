@@ -569,11 +569,27 @@ describe("authenticated Library publishing", () => {
           );
       }),
   );
-  it.effect("stays disabled without a central URL", () =>
+  it.effect("stays disabled until enrollment and activates without restarting", () =>
     run({}, (f) =>
       Effect.gen(function* () {
         expect(f.publisher.enabled).toBe(false);
         expect(yield* Ref.get(f.requests)).toEqual([]);
+        yield* f.fs.makeDirectory(f.config.secretsDir, { recursive: true });
+        yield* f.fs.writeFileString(
+          `${f.config.secretsDir}/library-publisher.json`,
+          json({
+            version: 1,
+            sourceEnvironmentId: source,
+            libraryEnvironmentId: source,
+            libraryUrl: "https://library.example.test",
+            sessionId: "session",
+            accessToken: "fixture-token",
+            expiresAt: "2100-01-01T00:00:00.000Z",
+          }),
+          { mode: 0o600 },
+        );
+        expect((yield* f.publisher.info).authorityId).toBe("authority");
+        expect(f.publisher.enabled).toBe(true);
       }),
     ),
   );

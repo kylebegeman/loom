@@ -171,14 +171,6 @@ const disabledStatus = Effect.succeed<ReplicationStatus>({
 
 const make = Effect.gen(function* () {
   const publisher = yield* Publisher.LibraryPublisher;
-  if (!publisher.enabled)
-    return LibraryReplication.of({
-      drain: Effect.void,
-      flush: Effect.void,
-      reportCopyHealth: Effect.void,
-      status: disabledStatus,
-      statusFor: Effect.fn("LibraryReplication.statusFor")(() => disabledStatus),
-    });
   const sql = yield* SqlClient.SqlClient;
   const maxPendingBytes = yield* Config.Int("LOOM_LIBRARY_MAX_PENDING_BYTES").pipe(
     Config.withDefault(512 * 1024 * 1024),
@@ -886,7 +878,13 @@ const make = Effect.gen(function* () {
   const settle = (waiting: boolean) =>
     waiting ? Effect.fail(new LibraryError({ reason: "storage-limit" })) : Ref.set(failure, null);
   const drain = lock
-    .withPermit(pass(undefined).pipe(Effect.flatMap((result) => settle(result.waiting))))
+    .withPermit(
+      Effect.suspend(() =>
+        publisher.enabled
+          ? pass(undefined).pipe(Effect.flatMap((result) => settle(result.waiting)))
+          : Effect.void,
+      ),
+    )
     .pipe(Effect.tapError((error) => Ref.set(failure, error.reason)));
   // One acknowledgement can let a conversation's next snapshot in, or free room for another's, so
   // a flush continues while it makes progress. It snapshots each conversation at most once, so
@@ -894,6 +892,7 @@ const make = Effect.gen(function* () {
   const flush = lock
     .withPermit(
       Effect.gen(function* () {
+        if (!publisher.enabled) return;
         const flushed = new Set<ThreadId>();
         let result = yield* pass(flushed);
         while (result.progressed) result = yield* pass(flushed);
@@ -909,6 +908,7 @@ const make = Effect.gen(function* () {
   const statusOf = (threadIds: ReadonlyArray<ThreadId> | undefined) =>
     mapIo(
       Effect.gen(function* () {
+        if (!publisher.enabled) return yield* disabledStatus;
         const current = (yield* readState)[0];
         const outbox = (yield* sql<{
           count: number;

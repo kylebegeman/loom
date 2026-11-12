@@ -136,6 +136,9 @@ export class LibraryManagement extends Context.Service<
   LibraryManagement,
   {
     readonly status: Effect.Effect<LibraryManagementStatus, LibraryError>;
+    readonly authorizeEnrollment: (
+      session: AuthenticatedSession,
+    ) => Effect.Effect<void, LibraryError>;
     readonly issue: (
       input: LibraryManagementEnrollment,
       session: AuthenticatedSession,
@@ -343,6 +346,15 @@ const make = Effect.gen(function* () {
       );
     if (thread.runtimeMode !== "full-access" || thread.interactionMode !== "default")
       return yield* deny("Project management requires an active full-access/default agent turn.");
+  });
+  const authorizeEnrollment = Effect.fn("LibraryManagement.authorizeEnrollment")(function* (
+    session: AuthenticatedSession,
+  ) {
+    if (!(yield* library.info).isAuthority)
+      return yield* new LibraryError({ reason: "not-authority" });
+    const current = yield* managementSession(session.sessionId);
+    if (current.subject !== session.subject || !session.scopes.includes(AuthSettingsWriteScope))
+      return yield* deny();
   });
   const issue = Effect.fn("LibraryManagement.issue")(function* (
     input: LibraryManagementEnrollment,
@@ -691,6 +703,7 @@ const make = Effect.gen(function* () {
   });
   return LibraryManagement.of({
     status,
+    authorizeEnrollment,
     issue,
     install,
     execute,

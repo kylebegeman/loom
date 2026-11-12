@@ -1,3 +1,5 @@
+import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "@t3tools/contracts/fork";
+import { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
 import {
   DevApiLibraryRpcGroup,
   DevEnvironmentRpcGroup,
@@ -322,11 +324,16 @@ export const makeForkRpcLayer = (
     otherForkRpcGroup.toLayer(
       Effect.gen(function* () {
         const auth = makeForkRpcAuth(session);
+        const enrollment = yield* withForkRuntime(AccountEnrollment);
         const sites = yield* withForkRuntime(SitesService.SitesService);
         const naming = yield* withForkRuntime(ComputerNaming.ComputerNaming);
         const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
         const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
         return otherForkRpcGroup.of({
+          [ENROLL.prepare]: (input) => auth.effect(ENROLL.prepare, enrollment.prepare(input)),
+          [ENROLL.approve]: (input) =>
+            auth.effect(ENROLL.approve, enrollment.approve(input, session)),
+          [ENROLL.install]: (input) => auth.effect(ENROLL.install, enrollment.install(input)),
           [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
           [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
           [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),

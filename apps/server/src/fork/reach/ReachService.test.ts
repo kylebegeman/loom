@@ -452,6 +452,17 @@ describe("ReachService", () => {
     ),
   );
 
+  it.effect("uses account admission without requiring a second Identity sign-in", () =>
+    withReach(
+      { answers: [Response.json(ensureReply(ORIGIN, "token-1", { accountAccess: true }))] },
+      (h) =>
+        Effect.gen(function* () {
+          yield* turnOn(h);
+          expect((yield* h.service.status).warnings).not.toContain("identity-off");
+          expect(yield* h.sidecar).toMatchObject({ accountAccess: true });
+        }),
+    ),
+  );
   it.effect("restarts the connector with each fresh token, after the old one is gone", () =>
     withReach({}, (h) =>
       Effect.gen(function* () {

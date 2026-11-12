@@ -1,3 +1,4 @@
+import { ACCOUNT_ACCESS_FEATURE } from "@t3tools/contracts/fork";
 import * as Signature from "effect/crypto/Signature";
 import { REACH_LIST_ROUTE, ReachLibraryListing, ReachLibraryError } from "@t3tools/contracts/fork";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
@@ -60,6 +61,7 @@ export interface DirectoryPin {
   readonly keyFingerprint: string;
   /** The label of its newest stored report, or null when that payload no longer decodes. */
   readonly label: string | null;
+  readonly accountAccess?: true;
 }
 
 export class DirectoryService extends Context.Service<
@@ -388,6 +390,12 @@ const make = Effect.gen(function* () {
     return {
       publicKey: row.public_key,
       keyFingerprint: row.key_fingerprint,
+      ...(Option.exists(
+        decodeEnvironment(row.payload_json),
+        (environment) => environment.loomFeatures?.includes(ACCOUNT_ACCESS_FEATURE) ?? false,
+      )
+        ? { accountAccess: true as const }
+        : {}),
       label: Option.match(decodeEnvironment(row.payload_json), {
         onNone: () => null,
         onSome: (environment) => environment.label,

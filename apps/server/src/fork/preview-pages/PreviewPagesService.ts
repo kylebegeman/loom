@@ -407,7 +407,7 @@ const make = Effect.gen(function* () {
     }
   });
 
-  if (publisher.enabled) yield* forkParked(relayReplies);
+  yield* forkParked(relayReplies);
 
   return PreviewPagesService.of({
     publish,

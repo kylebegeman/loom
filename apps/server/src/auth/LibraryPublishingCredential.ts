@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 // fork: project-library
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -13,7 +14,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 // fork: project-library
 import * as Semaphore from "effect/Semaphore";
-import { LibraryPublisherRenewal } from "@t3tools/contracts/fork";
+import { AccountComputerCredential, LibraryPublisherRenewal } from "@t3tools/contracts/fork";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
@@ -27,10 +28,21 @@ export const LibraryPublishingCredentialFile = Schema.Struct({
   accessToken: Schema.String,
   expiresAt: Schema.String,
   issuedAt: Schema.optional(Schema.String), // fork: project-library
+  predecessors: Schema.optional(Schema.Array(AuthSessionId)),
 });
 const encodeCredential = Schema.encodeEffect(
   Schema.fromJsonString(LibraryPublishingCredentialFile),
 );
+const decodeEnrollment = Schema.decodeEffect(Schema.fromJsonString(AccountComputerCredential));
+const decodeActivationReceipt = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      ...AccountComputerCredential.fields,
+      predecessors: Schema.optional(Schema.Array(AuthSessionId)),
+    }),
+  ),
+);
+
 export class LibraryPublishingCredentialError extends Schema.TaggedError<LibraryPublishingCredentialError>()(
   "LibraryPublishingCredentialError",
   {
@@ -51,6 +63,15 @@ export class LibraryPublishingCredential extends Context.Service<
     readonly renew: (
       token: string,
     ) => Effect.Effect<typeof LibraryPublisherRenewal.Type, LibraryPublishingCredentialError>;
+    readonly activate: (input: {
+      readonly requestId: string;
+      readonly token: string;
+    }) => Effect.Effect<void, LibraryPublishingCredentialError>;
+    readonly enroll: (input: {
+      readonly sourceEnvironmentId: EnvironmentId;
+      readonly libraryUrl: string;
+      readonly requestId: string;
+    }) => Effect.Effect<AccountComputerCredential, LibraryPublishingCredentialError>;
     readonly issue: (input: {
       readonly sourceEnvironmentId: EnvironmentId;
       readonly libraryUrl: string;
@@ -163,85 +184,179 @@ const make = Effect.gen(function* () {
     }
     return yield* finishRenewal(receipt);
   }, renewalLock.withPermit);
-  return LibraryPublishingCredential.of({
-    renew, // fork: project-library
-    issue: Effect.fn("LibraryPublishingCredential.issue")(function* (input) {
-      const url = yield* Effect.try({
-        try: () => new URL(input.libraryUrl),
-        catch: (cause) => new LibraryPublishingCredentialError({ reason: "invalid", cause }),
-      });
-      const ttl = input.ttl ?? Duration.days(30);
-      if (
-        url.protocol !== "https:" ||
-        url.username ||
-        url.password ||
-        url.search ||
-        url.hash ||
-        Duration.toMillis(ttl) <= 0 ||
-        Duration.toMillis(ttl) > Duration.toMillis(Duration.days(90))
-      )
-        return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+  const credentialFileFor = Effect.fn("LibraryPublishingCredential.credentialFileFor")(
+    function* (input: {
+      readonly sourceEnvironmentId: EnvironmentId;
+      readonly requestId?: string;
+    }) {
       const sourceKey = Hex.encode(
-        yield* crypto
-          .digest(Digest.sha256, new TextEncoder().encode(input.sourceEnvironmentId))
-          .pipe(Effect.orDie),
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(input.sourceEnvironmentId)),
       ).slice(0, 32);
-      const credentialFile = path.join(config.secretsDir, `library-publisher-${sourceKey}.json`);
-      if (
-        yield* fs
-          .exists(credentialFile)
-          .pipe(
-            Effect.mapError(
-              (cause) => new LibraryPublishingCredentialError({ reason: "write", cause }),
-            ),
-          )
-      )
-        return yield* new LibraryPublishingCredentialError({ reason: "exists" });
-      const session = yield* sessions
-        .issue({
-          subject: `loom-host:${input.sourceEnvironmentId}`,
-          method: "bearer-access-token",
-          scopes: [AuthLibraryPublishScope],
-          ttl,
-          client: { deviceType: "bot", label: "Loom Library publisher" },
-        })
+      const requestKey =
+        input.requestId === undefined
+          ? ""
+          : `-${Hex.encode(yield* crypto.digest(Digest.sha256, new TextEncoder().encode(input.requestId))).slice(0, 32)}`;
+      return path.join(config.secretsDir, `library-publisher-${sourceKey}${requestKey}.json`);
+    },
+    Effect.orDie,
+  );
+  const issue = Effect.fn("LibraryPublishingCredential.issue")(function* (
+    input: Parameters<LibraryPublishingCredential["Service"]["issue"]>[0] & {
+      readonly requestId?: string;
+    },
+  ) {
+    const url = yield* Effect.try({
+      try: () => new URL(input.libraryUrl),
+      catch: (cause) => new LibraryPublishingCredentialError({ reason: "invalid", cause }),
+    });
+    const ttl = input.ttl ?? Duration.days(30);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      Duration.toMillis(ttl) <= 0 ||
+      Duration.toMillis(ttl) > Duration.toMillis(Duration.days(90))
+    )
+      return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    const credentialFile = yield* credentialFileFor(input);
+    if (
+      yield* fs
+        .exists(credentialFile)
         .pipe(
           Effect.mapError(
-            (cause) => new LibraryPublishingCredentialError({ reason: "issue", cause }),
+            (cause) => new LibraryPublishingCredentialError({ reason: "write", cause }),
           ),
-        );
-      const written = yield* Effect.result(
-        Effect.gen(function* () {
-          yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
-          yield* fs.writeFileString(
-            credentialFile,
-            yield* encodeCredential({
-              version: 1,
-              sourceEnvironmentId: input.sourceEnvironmentId,
-              libraryEnvironmentId: yield* identity.getEnvironmentId,
-              libraryUrl: url.toString().replace(/\/$/, ""),
-              sessionId: session.sessionId,
-              accessToken: session.token,
-              expiresAt: DateTime.formatIso(session.expiresAt),
-              issuedAt: DateTime.formatIso(yield* DateTime.now), // fork: project-library
-            }),
-            { flag: "wx", mode: 0o600 },
-          );
-          yield* Effect.scoped(fs.open(credentialFile).pipe(Effect.flatMap((file) => file.sync)));
-          yield* Effect.scoped(
-            fs.open(config.secretsDir).pipe(Effect.flatMap((file) => file.sync)),
-          );
-        }),
+        )
+    )
+      return yield* new LibraryPublishingCredentialError({ reason: "exists" });
+    const predecessors =
+      input.requestId === undefined
+        ? undefined
+        : (yield* sessions
+            .listActive()
+            .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" }))))
+            .filter((session) => session.subject === `loom-host:${input.sourceEnvironmentId}`)
+            .map((session) => session.sessionId);
+    const session = yield* sessions
+      .issue({
+        subject: `loom-host:${input.sourceEnvironmentId}`,
+        method: "bearer-access-token",
+        scopes: [AuthLibraryPublishScope],
+        ttl,
+        client: { deviceType: "bot", label: "Loom Library publisher" },
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) => new LibraryPublishingCredentialError({ reason: "issue", cause }),
+        ),
       );
-      if (written._tag === "Failure") {
-        yield* sessions.revoke(session.sessionId).pipe(Effect.ignore);
-        return yield* new LibraryPublishingCredentialError({
-          reason: "write",
-          cause: written.failure,
-        });
-      }
-      return { credentialFile, sessionId: session.sessionId, expiresAt: session.expiresAt };
-    }),
+    const written = yield* Effect.result(
+      Effect.gen(function* () {
+        yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
+        yield* fs.writeFileString(
+          credentialFile,
+          yield* encodeCredential({
+            version: 1,
+            sourceEnvironmentId: input.sourceEnvironmentId,
+            libraryEnvironmentId: yield* identity.getEnvironmentId,
+            libraryUrl: url.toString().replace(/\/$/, ""),
+            sessionId: session.sessionId,
+            accessToken: session.token,
+            expiresAt: DateTime.formatIso(session.expiresAt),
+            issuedAt: DateTime.formatIso(yield* DateTime.now), // fork: project-library
+            ...(predecessors === undefined ? {} : { predecessors }),
+          }),
+          { flag: "wx", mode: 0o600 },
+        );
+        yield* Effect.scoped(fs.open(credentialFile).pipe(Effect.flatMap((file) => file.sync)));
+        yield* Effect.scoped(fs.open(config.secretsDir).pipe(Effect.flatMap((file) => file.sync)));
+      }),
+    );
+    if (written._tag === "Failure") {
+      yield* sessions.revoke(session.sessionId).pipe(Effect.ignore);
+      return yield* new LibraryPublishingCredentialError({
+        reason: "write",
+        cause: written.failure,
+      });
+    }
+    return { credentialFile, sessionId: session.sessionId, expiresAt: session.expiresAt };
   });
+  const enrollmentLock = yield* Semaphore.make(1);
+  const enroll: LibraryPublishingCredential["Service"]["enroll"] = Effect.fn(
+    "LibraryPublishingCredential.enroll",
+  )(function* (input) {
+    const credentialFile = yield* credentialFileFor(input);
+    if (
+      !(yield* fs
+        .exists(credentialFile)
+        .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" }))))
+    )
+      yield* issue(input);
+    const credential = yield* Effect.gen(function* () {
+      const stat = yield* fs.stat(credentialFile);
+      if ((stat.mode & 0o077) !== 0 || Number(stat.size) > 16 * 1024)
+        return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+      return yield* decodeEnrollment(yield* fs.readFileString(credentialFile));
+    }).pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" })));
+    const requestedUrl = yield* Effect.try({
+      try: () => new URL(input.libraryUrl).toString().replace(/\/$/u, ""),
+      catch: () => new LibraryPublishingCredentialError({ reason: "invalid" }),
+    });
+    if (
+      credential.sourceEnvironmentId !== input.sourceEnvironmentId ||
+      credential.libraryEnvironmentId !== (yield* identity.getEnvironmentId) ||
+      credential.libraryUrl !== requestedUrl
+    )
+      return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    const session = yield* sessions
+      .verify(Redacted.value(credential.accessToken))
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "invalid" })));
+    if (
+      session.subject !== `loom-host:${input.sourceEnvironmentId}` ||
+      session.scopes.length !== 1 ||
+      session.scopes[0] !== AuthLibraryPublishScope
+    )
+      return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    return credential;
+  }, enrollmentLock.withPermit);
+  const activate: LibraryPublishingCredential["Service"]["activate"] = Effect.fn(
+    "LibraryPublishingCredential.activate",
+  )(function* (input) {
+    const current = yield* sessions
+      .verify(input.token)
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "invalid" })));
+    if (
+      !current.subject.startsWith("loom-host:") ||
+      current.scopes.length !== 1 ||
+      current.scopes[0] !== AuthLibraryPublishScope
+    )
+      return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    const credentialFile = yield* credentialFileFor({
+      sourceEnvironmentId: EnvironmentId.make(current.subject.slice("loom-host:".length)),
+      requestId: input.requestId,
+    });
+    const credential = yield* fs.readFileString(credentialFile).pipe(
+      Effect.flatMap(decodeActivationReceipt),
+      Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "invalid" })),
+    );
+    if (credential.sessionId !== current.sessionId || credential.issuedAt === undefined)
+      return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    const active = yield* sessions
+      .listActive()
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })));
+    for (const session of active) {
+      if (
+        session.sessionId !== current.sessionId &&
+        session.subject === current.subject &&
+        credential.predecessors?.includes(session.sessionId)
+      )
+        yield* sessions
+          .revoke(session.sessionId)
+          .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })));
+    }
+  }, enrollmentLock.withPermit);
+  return LibraryPublishingCredential.of({ renew, issue, enroll, activate });
 });
 export const layer = Layer.effect(LibraryPublishingCredential, make);

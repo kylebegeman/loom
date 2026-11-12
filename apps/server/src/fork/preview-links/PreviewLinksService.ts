@@ -1854,7 +1854,7 @@ export const makePreviewLinksService = Effect.fn("PreviewLinksService.make")(fun
 
   if (swept.changed) yield* persist({ settings, links }).pipe(Effect.ignore);
   yield* reconcileRuntime;
-  if (publisher.enabled) {
+  {
     yield* forkParked(
       Effect.gen(function* () {
         for (;;) {

@@ -251,6 +251,7 @@ interface Admitted {
   readonly claims: ReachRequestClaims;
   readonly fingerprint: string;
   readonly label: string | null;
+  readonly accountAccess: boolean;
 }
 
 type StepError = ReachCloudflareError | ReachStoreError | ReachProvisionError;
@@ -373,7 +374,12 @@ const make = Effect.gen(function* () {
         ReachRequestError: (error) => refuse(VERIFY_REASON[error.reason], error.diagnostic),
       }),
     );
-    return { claims, fingerprint, label: pin.label } satisfies Admitted;
+    return {
+      claims,
+      fingerprint,
+      label: pin.label,
+      accountAccess: pin.accountAccess === true,
+    } satisfies Admitted;
   });
 
   /** One budget per computer for every call that can reach Cloudflare or Pocket ID. */
@@ -701,7 +707,12 @@ const make = Effect.gen(function* () {
     yield* cloudflare.clearConnections(zone.accountId, tunnel.id);
     const connectorToken = yield* cloudflare.tunnelToken(zone.accountId, tunnel.id);
     yield* noteCloudflare(null);
-    const identity = yield* provisionIdentity(environmentId, admitted.label);
+    const identity = admitted.accountAccess
+      ? {
+          stored: (yield* store.read).computers[environmentId]?.identity ?? null,
+          reply: { state: "not-configured" as const },
+        }
+      : yield* provisionIdentity(environmentId, admitted.label);
     const finishedAt = yield* nowIso;
     yield* putComputer(environmentId, (current) => ({
       ...current,
@@ -718,6 +729,7 @@ const make = Effect.gen(function* () {
       url: `https://${hostname}/`,
       origin,
       connectorToken: Redacted.value(connectorToken),
+      ...(admitted.accountAccess ? { accountAccess: true } : {}),
       edge: {
         allowlist: edge.allowlist === "stale" ? "stale" : "ready",
         rateLimit: edge.rateLimit,

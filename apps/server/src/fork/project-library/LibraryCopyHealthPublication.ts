@@ -182,6 +182,7 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
   /** Reads every copy and publishes what changed. Fails with the first failed publish. */
   const report = lock.withPermit(
     Effect.gen(function* () {
+      if (!input.publisher.enabled) return;
       const copies = (yield* input.workspaces.receipts)
         .map((receipt) => placedCopy(receipt.copy, receipt.project))
         .filter((copy) => copy.environmentId === input.environmentId && publishesHealth(copy));

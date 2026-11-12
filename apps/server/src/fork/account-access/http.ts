@@ -1,6 +1,9 @@
+import { LibraryPublishingCredential } from "../../auth/LibraryPublishingCredential.ts";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_ACCESS_HEADER,
+  ACCOUNT_ENROLLMENT_ACTIVATE,
+  AccountComputerEnrollment,
   ACCOUNT_ACCESS_PREFIX,
   ACCOUNT_ACCESS_VERIFY,
   AccountVerification,
@@ -88,9 +91,36 @@ const verify = withForkRuntime(
   }),
 );
 
+const decodeActivation = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    requestId: AccountComputerEnrollment.fields.requestId,
+  }),
+);
+const activate = withForkRuntime(
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const token = request.headers.authorization?.match(/^Bearer (.+)$/u)?.[1];
+    if (token === undefined) return HttpServerResponse.empty({ status: 401 });
+    const input = yield* request.json.pipe(
+      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(1)),
+      Effect.flatMap(decodeActivation),
+      Effect.mapError(() => new AccountAccess.AccountAccessError({ reason: "denied" })),
+    );
+    yield* (yield* LibraryPublishingCredential).activate({ requestId: input.requestId, token });
+    return HttpServerResponse.empty({ status: 204, headers: { "cache-control": "no-store" } });
+  }),
+).pipe(
+  Effect.catchTags({
+    LibraryPublishingCredentialError: () =>
+      Effect.succeed(HttpServerResponse.empty({ status: 403 })),
+    AccountAccessError: (error) => Effect.succeed(failure(error)),
+  }),
+);
+
 export const AccountAccessRoutes = Layer.mergeAll(
   HttpRouter.add("*", `${ACCOUNT_ACCESS_PREFIX}*`, forward),
   HttpRouter.add("POST", ACCOUNT_ACCESS_VERIFY, verify),
+  HttpRouter.add("POST", ACCOUNT_ENROLLMENT_ACTIVATE, activate),
   // The parallel checker needs concrete middleware channels to preserve upstream requirements.
   HttpRouter.middleware<Types.unhandled, HttpServerRequest.HttpServerRequest, never, never, true>(
     Effect.gen(function* () {

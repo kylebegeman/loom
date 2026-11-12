@@ -589,7 +589,16 @@ describe("DirectoryReporter", () => {
   it.effect("stays off without a Library", () =>
     withReporter({ env: {} }, (h) =>
       Effect.gen(function* () {
-        yield* Fiber.join(h.fiber);
+        const proof = yield* h.reporter.prepare(LIBRARY);
+        expect(proof.environmentId).toBe(STUDIO);
+        expect(
+          (yield* verifyDirectoryReport({
+            ...proof.request,
+            environmentId: STUDIO,
+            audience: LIBRARY,
+            nowEpochSeconds: NOW / 1000,
+          })).label,
+        ).toBe("Studio");
         expect(yield* h.reporter.status).toMatchObject({ state: "off", lastReportedAt: null });
         expect(yield* Queue.size(h.events)).toBe(0);
       }),
