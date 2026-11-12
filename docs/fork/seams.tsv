@@ -15,6 +15,7 @@ apps/web/src/components/chat/WorktreeSetupCard.tsx	library-launch-files	19
 apps/web/src/components/chat/WorktreeSetupCard.tsx	project-lifecycle	6
 apps/web/src/components/chat/useWorktreeSetup.ts	library-launch-files	8
 apps/web/src/components/sidebar/SidebarChrome.tsx	brand	3
+apps/web/src/components/sidebar/SidebarFolderDrop.tsx	brand	1
 apps/web/src/components/chat/TimelineToolActivityIcon.tsx	brand	2
 apps/web/src/components/chat/V2LifecycleRow.tsx	brand	2
 apps/mobile/src/features/threads/thread-work-log.tsx	brand	2
@@ -608,6 +609,7 @@ apps/server/src/preview/PreviewBrowserHost.ts	brand	4
 apps/server/src/preview/PreviewBrowserHost.test.ts	brand	1
 apps/server/src/project/ManagedProjectFolders.ts	brand	1
 apps/server/src/provider/AntigravityProvider.ts	brand	1
+apps/server/src/provider/AntigravityInstallation.ts	brand	1
 apps/server/src/provider/ClaudeProvider.ts	brand	2
 apps/server/src/provider/CodexDeveloperInstructions.test.ts	brand	1
 apps/server/src/provider/CodexAuthCallbackPage.ts	brand	4
