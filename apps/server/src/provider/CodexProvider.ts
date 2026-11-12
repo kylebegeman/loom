@@ -914,7 +914,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   const snapshot = probeResult.success.value;
   const accountStatus = managedAuth
     ? { status: "ready" as const, auth: managedAuth, message: undefined }
-    : yield* withCodexLoginEmail( // fork: codex-login-email
+    : yield* withCodexLoginEmail(
         accountProbeStatus(
           snapshot,
           codexSettings.homePath
@@ -923,7 +923,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         ),
         snapshot,
         codexSettings,
-      );
+      ); // fork: codex-login-email
   // Sign-in guidance still applies when Codex itself says it needs an OpenAI login.
   const usageLimits =
     routedUsage || (!snapshot.nativeUsage && !accountStatus.message) // fork: switchboard
