@@ -185,6 +185,25 @@ describe("agentAlertStep", () => {
     ).toEqual([null, "approval", "input", null, null]);
   });
 
+  it("keeps remote delegated outcomes quiet while preserving their human requests", () => {
+    const delegated = {
+      delegatedFrom: {
+        environmentId: EnvironmentId.make("caller-env"),
+        threadId: ThreadId.make("caller"),
+        title: "Caller",
+      },
+    };
+    expect(
+      alertsFor([
+        running(delegated),
+        ended("completed", 0, delegated),
+        ended("failed", 0, delegated),
+        waitingOn("command", "approval", delegated),
+        waitingOn("user_input", "input", delegated),
+      ]),
+    ).toEqual([null, null, null, "approval", "input"]);
+  });
+
   it("leaves settled, archived and subagent threads alone", () => {
     const quiet: ReadonlyArray<Partial<OrchestrationV2ThreadShell>> = [
       { settledOverride: "settled" },

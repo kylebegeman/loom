@@ -288,6 +288,11 @@ it.effect("routes full projection reads to readers and retains uncommitted write
       payload: {
         ...parent.thread,
         id: threadId,
+        delegatedFrom: {
+          environmentId: EnvironmentId.make("remote"),
+          threadId: parentId,
+          title: "Remote caller",
+        },
         forkedFrom: { type: "run", threadId: parentId, runId: parent.runs[0]!.id },
       },
     });
@@ -313,7 +318,12 @@ it.effect("routes full projection reads to readers and retains uncommitted write
       },
     });
     const { queries, trace } = traceSqlRouting();
-    yield* store.getAgentAwarenessSnapshot().pipe(trace);
+    const activity = yield* store.getAgentAwarenessSnapshot().pipe(trace);
+    assert.deepEqual(activity.threads.find((thread) => thread.id === threadId)?.delegatedFrom, {
+      environmentId: EnvironmentId.make("remote"),
+      threadId: parentId,
+      title: "Remote caller",
+    });
     const projection = yield* store.getThreadProjection(threadId).pipe(trace);
     assert.equal(projection.thread.id, threadId);
     assert.deepEqual(

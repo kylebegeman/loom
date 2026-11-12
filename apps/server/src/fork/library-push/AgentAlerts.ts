@@ -7,17 +7,12 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
-  isBotRunThreadId,
   LIBRARY_PUSH_ACTIVITY_ROUTE,
   type LibraryPushThreadActivityKind,
   LibraryPushActivityReply,
   type LibraryPushActivityRequest,
 } from "@t3tools/contracts/fork";
-import {
-  type AgentAwarenessPhase,
-  projectThreadAwarenessV2,
-  subagentAwaitsApproval,
-} from "@t3tools/shared/agentAwareness";
+import { type AgentAwarenessPhase, subagentAwaitsApproval } from "@t3tools/shared/agentAwareness";
 import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -33,6 +28,7 @@ import {
   shouldPublishAgentAwarenessEvent,
 } from "../../relay/AgentAwarenessRelay.ts";
 import { forkParked } from "../../serverActivation.ts";
+import { projectThreadNotificationAwareness } from "../../relay/agentNotificationPolicy.ts";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { LibraryPushService } from "./LibraryPushService.ts";
 import { UnheardAlertNotices } from "./UnheardAlertNotices.ts";
@@ -158,7 +154,7 @@ export const agentAlertStep = (
   const awareness =
     shell.archivedAt !== null || shell.deletedAt !== null
       ? null
-      : projectThreadAwarenessV2({
+      : projectThreadNotificationAwareness({
           environmentId: input.environmentId,
           project: NO_PROJECT,
           thread: shell,
@@ -170,12 +166,8 @@ export const agentAlertStep = (
                   updatedAt: input.childRequest.createdAt,
                 },
         });
-  const candidate =
-    awareness === null ? null : attentionOf(awareness.phase, shell, input.childRequest);
   const attention =
-    isBotRunThreadId(shell.id) && candidate?.kind !== "approval" && candidate?.kind !== "input"
-      ? null
-      : candidate;
+    awareness === null ? null : attentionOf(awareness.phase, shell, input.childRequest);
   if (attention === null) {
     const working = awareness?.phase === "starting" || awareness?.phase === "running";
     // Keep prior decisions and outcomes through settlement and interleaved child requests.
