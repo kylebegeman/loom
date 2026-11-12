@@ -113,6 +113,7 @@ const environmentIdsAtom = Atom.make<ReadonlyArray<string>>(["env-1"]);
 const router = {
   state: { matches: [{ params: { environmentId: "env-1", threadId: "other-thread" } }] },
   navigate: vi.fn(),
+  subscribe: () => () => undefined,
 } as unknown as AnyRouter;
 
 // The mocked modules read `state`, so every test resets it before starting the service.
