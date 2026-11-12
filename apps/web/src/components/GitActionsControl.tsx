@@ -422,7 +422,7 @@ function GitActionProgressButtonContent({
       aria-live="polite"
       className={cn(
         "grid min-w-0 flex-1 items-center",
-        "grid-cols-[auto_minmax(0,1fr)] grid-rows-[1.5rem] gap-x-3",
+        "grid-cols-[auto_minmax(0,1fr)] grid-rows-[1.125rem] gap-x-3",
       )}
       role="status"
     >
@@ -462,7 +462,7 @@ function GitActionSuccessButtonContent({ success }: { success: InlineGitActionSu
   return (
     <div
       aria-live="polite"
-      className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] grid-rows-[1.5rem] items-center gap-x-3"
+      className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] grid-rows-[1.125rem] items-center gap-x-3"
       role="status"
     >
       <CheckIcon aria-hidden="true" className="size-3.5 shrink-0 text-success" />

@@ -515,7 +515,8 @@ apps/desktop/src/app/DesktopAppActivation.ts	brand	1
 apps/desktop/src/app/DesktopAppActivation.ts	project-lifecycle	2
 apps/desktop/src/app/DesktopAppActivation.test.ts	project-lifecycle	2
 apps/desktop/src/app/DesktopAppActivationBroker.ts	brand	4
-apps/desktop/src/backend/DesktopBackendPool.ts	brand	4
+apps/desktop/src/backend/DesktopBackendPool.ts	brand	3
+apps/desktop/src/backend/DesktopHomeOwner.ts	brand	6
 apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts	brand	1
 apps/desktop/src/electron/WindowsForeground.ts	brand	1
 apps/desktop/src/permissions/MacPermissionHelper.ts	brand	3

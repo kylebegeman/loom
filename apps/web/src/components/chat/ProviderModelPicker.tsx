@@ -90,6 +90,7 @@ export const DockedPickerContext = createContext<{ modelLabel: string }>({ model
 // fork: switchboard - exported below, wrapped to collapse accounts while Switchboard is on.
 const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
+  workspaceCwd?: string | null;
   activeInstanceId: ProviderInstanceId;
   model: string;
   selectedModels?: ReadonlyArray<{ instanceId: ProviderInstanceId; model: string }>;
@@ -283,6 +284,7 @@ const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
     <ModelPickerContent
       searchInputRef={searchInputRef}
       environmentId={props.environmentId}
+      workspaceCwd={props.workspaceCwd ?? null}
       activeInstanceId={activeInstanceId}
       model={props.model}
       {...(props.selectedModels !== undefined ? { selectedModels: props.selectedModels } : {})}
