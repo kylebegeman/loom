@@ -628,10 +628,7 @@ function SwipeActionButton(props: {
   const label = (
     // An offset, not padding: padding would grow the box and move the circle at 1x.
     <Animated.View
-      style={[
-        { justifyContent: "center", minHeight: 14, top: props.compact ? 0 : 2 },
-        labelStyle,
-      ]}
+      style={[{ justifyContent: "center", minHeight: 14, top: props.compact ? 0 : 2 }, labelStyle]}
     >
       <Text
         className="text-3xs font-t3-medium text-foreground-muted"

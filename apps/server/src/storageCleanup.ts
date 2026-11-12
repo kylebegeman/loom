@@ -1600,8 +1600,7 @@ const make = Effect.gen(function* () {
             () => Effect.succeed(false),
           ),
         );
-        if (!exists)
-          return releasing ? keep("checkout is already released") : undefined; // fork: project-lifecycle
+        if (!exists) return releasing ? keep("checkout is already released") : undefined; // fork: project-lifecycle
         // fork: project-lifecycle -- landed work needs every owner settled or archived. Subagent
         // chains follow their owners, as settled retention does. Deleted holders are gone from the
         // group, so a deleted thread's worktree qualifies. A release needs neither.
