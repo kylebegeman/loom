@@ -1,6 +1,7 @@
 import * as AccountWorkloads from "./account-access/AccountWorkloads.ts";
 import * as AccountVaultAuthority from "./vault/AccountVaultAuthority.ts";
 import * as AccountVaultClient from "./vault/AccountVaultClient.ts";
+import * as AccountVaultSsh from "./vault/AccountVaultSsh.ts";
 import { AccountVaultHttpRoutes } from "./vault/account-http.ts";
 import * as AccountEnrollment from "./account-access/AccountEnrollment.ts";
 import * as AccountJoin from "./account-access/AccountJoin.ts";
@@ -237,6 +238,7 @@ const layerVaultSsh = VaultSsh.layer.pipe(
       layerVaultWorkloads,
       SshCrypto.layer,
       SshTransport.layer.pipe(Layer.provide(SshCrypto.layer)),
+      Layer.suspend(() => layerAccountVaultSsh),
     ),
   ),
 );
@@ -383,6 +385,16 @@ const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
 const layerAccountVaultClient = AccountVaultClient.layer.pipe(
   Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer)),
 );
+const layerAccountVaultSsh = AccountVaultSsh.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerAccountVaultClient,
+      SshTransport.layer.pipe(Layer.provide(SshCrypto.layer)),
+      RuntimeLayer.layerThreadManagementProvided,
+      ProjectStore.layer,
+    ),
+  ),
+);
 const layerAccountGateway = AccountGateway.layer.pipe(
   Layer.provideMerge(layerAccountAccess),
   Layer.provide(NodeHttpClient.layerUndici),
@@ -444,6 +456,7 @@ const layerVaultLaunch = VaultLaunch.layer.pipe(
       layerVaultConnections,
       layerVaultWorkloads,
       BrokerCrypto.layer,
+      layerAccountVaultSsh,
       BrokerIdentity.layer.pipe(Layer.provide(BrokerCrypto.layer)),
       ProjectStore.layer,
     ),
@@ -570,6 +583,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerAccountWorkloads,
   layerAccountVaultAuthority,
   layerAccountVaultClient,
+  layerAccountVaultSsh,
   layerAccountJoin,
   layerComputerJoin,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.

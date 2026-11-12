@@ -16,6 +16,7 @@ import * as OpenBaoStore from "./OpenBaoStore.ts";
 import { sshFixture } from "./VaultSsh.testkit.ts";
 import * as SshTransport from "./SshTransport.ts";
 import * as SshCrypto from "./SshCrypto.ts";
+import * as SshAgentFrames from "./SshAgentFrames.ts";
 import * as VaultLaunch from "./VaultLaunch.ts";
 import * as BrokerIdentity from "./BrokerIdentity.ts";
 
@@ -126,7 +127,6 @@ it.live.skipIf(!configured)(
       ).toEqual([]);
       expect(JSON.stringify(yield* f.access.snapshot)).not.toContain("PRIVATE KEY");
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
-  30000,
 );
 
 it.live.skipIf(!configured)(
@@ -154,6 +154,22 @@ it.live.skipIf(!configured)(
         ),
       );
       const transport = yield* SshTransport.SshTransport;
+      const channels: SshAgentFrames.Channels = new Map();
+      expect(
+        (yield* transport.execute({
+          publicKey: key.publicKey,
+          target,
+          command,
+          authorize: Effect.void,
+          agent: (input) =>
+            SshAgentFrames.respond(
+              channels,
+              { ...input, sessionId: "c".repeat(32) },
+              Effect.succeed({ ...key, target }),
+              Effect.void,
+            ).pipe(Effect.provideService(SshCrypto.SshCrypto, keys)),
+        })).stdout,
+      ).toBe(command.argv[2]);
       const execute = (argv: readonly string[], timeoutMs = 8000) =>
         transport.execute({
           ...key,
@@ -203,7 +219,6 @@ it.live.skipIf(!configured)(
         ),
       ),
     ),
-  20000,
 );
 
 it.live.skipIf(!configured)(
@@ -253,7 +268,6 @@ it.live.skipIf(!configured)(
         ),
       ),
     ),
-  30000,
 );
 
 it.live.skipIf(!configured)(
@@ -431,7 +445,6 @@ it.live.skipIf(!configured)(
       ).toBe("denied");
       expect(yield* f.workloads.list(f.threadId)).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
-  30000,
 );
 
 it.live.skipIf(!configured)(
@@ -536,5 +549,4 @@ it.live.skipIf(!configured)(
           .pipe(Effect.flip)).reason,
       ).toBe("policy-denied");
     }).pipe(Effect.provide(dependencies), Effect.scoped),
-  30000,
 );

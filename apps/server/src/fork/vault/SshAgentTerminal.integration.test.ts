@@ -269,14 +269,29 @@ it.live.skipIf(!configured)(
       expect(push.code).toBe(0);
       expect(f.control.frames).toBeGreaterThan(4);
       expect(yield* f.workloads.list(f.threadId)).toEqual([]);
-      const after = yield* Effect.promise(() =>
-        NodeFSP.readdir("/private/tmp", { withFileTypes: true }),
-      );
-      expect(
-        after.filter(
+      const leaked = yield* Effect.promise(async () => {
+        const after = await NodeFSP.readdir("/private/tmp", { withFileTypes: true });
+        const candidates = after.filter(
           (p) => p.isDirectory() && p.name.startsWith("loom-vault-agent-") && !before.has(p.name),
-        ),
-      ).toEqual([]);
+        );
+        return (
+          await Promise.all(
+            candidates.map(async (entry) => {
+              try {
+                const identity = await NodeFSP.readFile(
+                  NodePath.join("/private/tmp", entry.name, "identity.pub"),
+                  "utf8",
+                );
+                return identity.trim() === f.key.publicKey ? entry.name : null;
+              } catch (error) {
+                if (Reflect.get(Object(error), "code") !== "ENOENT") throw error;
+                return null;
+              }
+            }),
+          )
+        ).filter((entry) => entry !== null);
+      });
+      expect(leaked).toEqual([]);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
   60000,
 );

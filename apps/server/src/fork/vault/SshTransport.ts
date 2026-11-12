@@ -13,6 +13,7 @@ import {
   type VaultSshTarget,
   type VaultSshCommand,
   type VaultGitCommand,
+  type VaultSshAgentFrame,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -20,22 +21,32 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Redacted from "effect/Redacted";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as SshCrypto from "./SshCrypto.ts";
 
 type Failure = VaultError | VaultSshError | VaultWorkloadError | VaultConnectionError;
+type SigningIdentity =
+  | { privateKey: Redacted.Redacted<string>; agent?: undefined }
+  | {
+      privateKey?: undefined;
+      agent: (
+        input: Omit<VaultSshAgentFrame, "sessionId">,
+      ) => Effect.Effect<{ response: string }, Failure>;
+    };
 export class SshTransport extends Context.Service<
   SshTransport,
   {
-    readonly execute: (input: {
-      target: VaultSshTarget;
-      publicKey: string;
-      privateKey: Redacted.Redacted<string>;
-      command: VaultSshCommand | VaultGitCommand;
-      // Repository verification must not inherit local executable or URL configuration.
-      isolatedGit?: boolean;
-      authorize: Effect.Effect<void, Failure>;
-    }) => Effect.Effect<{ exitCode: number; stdout: string }, Failure>;
+    readonly execute: (
+      input: SigningIdentity & {
+        target: VaultSshTarget;
+        publicKey: string;
+        command: VaultSshCommand | VaultGitCommand;
+        // Repository verification must not inherit local executable or URL configuration.
+        isolatedGit?: boolean;
+        authorize: Effect.Effect<void, Failure>;
+      },
+    ) => Effect.Effect<{ exitCode: number; stdout: string }, Failure>;
   }
 >()("t3/fork/vault/SshTransport") {}
 const failed = () => new VaultSshError({ reason: "failed" });
@@ -47,7 +58,8 @@ const AGENT_IDLE_MS = 3000;
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const make = Effect.gen(function* () {
   const crypto = yield* SshCrypto.SshCrypto,
-    platform = yield* HostProcess.Platform;
+    platform = yield* HostProcess.Platform,
+    random = yield* SecureRandom.SecureRandom;
   return SshTransport.of({
     execute: Effect.fn("SshTransport.execute")(function* (input) {
       if (platform !== "darwin" && platform !== "linux")
@@ -92,7 +104,8 @@ const make = Effect.gen(function* () {
         }>(8);
         const denial = yield* Deferred.make<never, Failure>();
         const sockets = new Set<NodeNet.Socket>(),
-          bindings = new Map<NodeNet.Socket, SshCrypto.SshBinding>();
+          bindings = new Map<NodeNet.Socket, SshCrypto.SshBinding>(),
+          channels = new Map<NodeNet.Socket, { id: string; sequence: number }>();
         let signed = false;
         yield* Effect.acquireRelease(
           Effect.callback<NodeNet.Server, VaultSshError>((resume) => {
@@ -113,6 +126,7 @@ const make = Effect.gen(function* () {
               socket.on("close", () => {
                 sockets.delete(socket);
                 bindings.delete(socket);
+                channels.delete(socket);
               });
               socket.on("data", (chunk: Buffer) => {
                 buffer = Buffer.concat([buffer, chunk]);
@@ -159,11 +173,41 @@ const make = Effect.gen(function* () {
             if (socket.destroyed) return;
             yield* input.authorize;
             if (frame[0] === 13 && signed) return yield* failed();
-            const result = yield* crypto.respond({
-              ...input,
-              frame,
-              binding: bindings.get(socket) ?? null,
-            });
+            const agent = input.agent;
+            const result =
+              agent === undefined
+                ? yield* crypto.respond({ ...input, frame, binding: bindings.get(socket) ?? null })
+                : yield* Effect.gen(function* () {
+                    let channel = channels.get(socket);
+                    if (!channel) {
+                      channel = {
+                        id: (yield* random.uuidV4().pipe(Effect.mapError(failed))).replaceAll(
+                          "-",
+                          "",
+                        ),
+                        sequence: 0,
+                      };
+                      channels.set(socket, channel);
+                    }
+                    const result = yield* agent({
+                      channelId: channel.id,
+                      sequence: channel.sequence++,
+                      frame: frame.toString("base64"),
+                    });
+                    const response = Buffer.from(result.response, "base64");
+                    if (
+                      !response.length ||
+                      response.length > 16384 ||
+                      response.toString("base64") !== result.response
+                    )
+                      return yield* failed();
+                    return {
+                      response,
+                      binding: null,
+                      signed: frame[0] === 13 && response[0] === 14,
+                    };
+                  });
+            if (agent !== undefined) yield* input.authorize;
             if (result.binding) bindings.set(socket, result.binding);
             if (result.signed) signed = true;
             socket.write(

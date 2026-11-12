@@ -28,6 +28,8 @@ import * as Authority from "./AccountVaultAuthority.ts";
 import * as SshTransport from "./SshTransport.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 import { AccountVaultHttpRoutes } from "./account-http.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
+import * as AccountVaultSsh from "./AccountVaultSsh.ts";
 
 const encode = Schema.encodeEffect(Schema.fromJsonString(AccountVaultRequest));
 const encodeEnvelope = Schema.encodeEffect(Schema.fromJsonString(AccountVaultEnvelope));
@@ -104,7 +106,7 @@ const fixture = Effect.gen(function* () {
     if (result.kind !== "open") return yield* new VaultError({ reason: "invalid-input" });
     return result;
   });
-  return { ...f, state, call, open, authority };
+  return { ...f, threadState: f.state, state, call, open, authority };
 });
 
 it.effect("brokers public SSH frames only for the enrolled run and current item version", () =>
@@ -154,10 +156,11 @@ it.effect("closes and expires activations without leaving a reusable signing ses
   Effect.gen(function* () {
     const f = yield* fixture;
     const first = yield* f.open();
-    expect((yield* f.open()).session.sessionId).toBe(first.session.sessionId);
+    const second = yield* f.open();
+    expect(second.session.sessionId).not.toBe(first.session.sessionId);
     expect(yield* f.call({ kind: "sessions" })).toMatchObject({
       kind: "sessions",
-      sessions: [{ sessionId: first.session.sessionId }],
+      sessions: [{ sessionId: first.session.sessionId }, { sessionId: second.session.sessionId }],
     });
     expect(yield* f.call({ kind: "close", input: { sessionId: first.session.sessionId } })).toEqual(
       { kind: "close", closed: true },
@@ -167,7 +170,9 @@ it.effect("closes and expires activations without leaving a reusable signing ses
         .call({ kind: "close", input: { sessionId: first.session.sessionId } })
         .pipe(Effect.flip)).reason,
     ).toBe("denied");
-    const second = yield* f.open();
+    expect(yield* f.call({ kind: "sessions" })).toMatchObject({
+      sessions: [{ sessionId: second.session.sessionId }],
+    });
     yield* TestClock.setTime(second.session.expiresAt);
     expect(
       (yield* f
@@ -240,5 +245,81 @@ it.effect(
         _tag: "VaultError",
         reason: "denied",
       });
+    }).pipe(Effect.provide(dependencies)),
+);
+
+it.effect(
+  "executes on the source with public key metadata and stops when its active run changes",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      let changeRun = false;
+      const commands: Array<string> = [];
+      const source = yield* AccountVaultSsh.AccountVaultSsh.pipe(
+        Effect.provide(
+          AccountVaultSsh.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeedContext(f.context),
+                Layer.succeed(AccountVaultClient.AccountVaultClient, {
+                  available: Effect.succeed(true),
+                  execute: (request) => f.call(request),
+                }),
+                Layer.succeed(SshTransport.SshTransport, {
+                  execute: (input) =>
+                    Effect.gen(function* () {
+                      expect(input.privateKey).toBeUndefined();
+                      if (!input.agent) return yield* new VaultError({ reason: "denied" });
+                      yield* input.authorize;
+                      const frame = yield* input.agent({
+                        channelId: "b".repeat(32),
+                        sequence: 0,
+                        frame: "Cw==",
+                      });
+                      expect(Buffer.from(frame.response, "base64")[0]).toBe(12);
+                      commands.push(
+                        "kind" in input.command ? input.command.cwd : input.command.argv[0]!,
+                      );
+                      if (changeRun)
+                        f.threadState.thread = {
+                          ...f.threadState.thread,
+                          activeRunId: RunId.make("later-run"),
+                        };
+                      yield* input.authorize;
+                      return { exitCode: 0, stdout: "source-result" };
+                    }),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+        (yield* source.ssh(
+          { id: f.itemId, command: { expectedVersion: 1, argv: ["pwd"], timeoutMs: 1000 } },
+          f.threadId,
+        )).stdout,
+      ).toBe("source-result");
+      expect(yield* f.call({ kind: "sessions" })).toMatchObject({ sessions: [] });
+      yield* source.git(
+        {
+          id: f.itemId,
+          expectedVersion: 1,
+          action: "ls-remote",
+          repository: "owner/repo.git",
+          timeoutMs: 1000,
+        },
+        f.threadId,
+      );
+      expect(commands).toEqual(["pwd", "/private/project"]);
+      changeRun = true;
+      expect(
+        (yield* source
+          .ssh(
+            { id: f.itemId, command: { expectedVersion: 1, argv: ["pwd"], timeoutMs: 1000 } },
+            f.threadId,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
     }).pipe(Effect.provide(dependencies)),
 );

@@ -1,6 +1,7 @@
 import type { AccountWorkloads } from "./account-access/AccountWorkloads.ts";
 import type { AccountVaultAuthority } from "./vault/AccountVaultAuthority.ts";
 import type { AccountVaultClient } from "./vault/AccountVaultClient.ts";
+import type { AccountVaultSsh } from "./vault/AccountVaultSsh.ts";
 import type { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
 import type { AccountJoin } from "./account-access/AccountJoin.ts";
 import type { ComputerJoin } from "./account-access/ComputerJoin.ts";
@@ -152,6 +153,7 @@ export type ForkServices =
   | AccountWorkloads
   | AccountVaultAuthority
   | AccountVaultClient
+  | AccountVaultSsh
   | AccountJoin
   | ComputerJoin
   | ProjectWorkflows

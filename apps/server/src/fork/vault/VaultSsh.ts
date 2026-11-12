@@ -1,4 +1,5 @@
 import * as SshAgentFrames from "./SshAgentFrames.ts";
+import * as AccountVaultSsh from "./AccountVaultSsh.ts";
 import * as PinnedHostKeys from "./PinnedHostKeys.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
@@ -121,6 +122,7 @@ const isAgentOpen = Schema.is(VaultSshAgentOpen),
   isAgentFrame = Schema.is(VaultSshAgentFrame);
 const invalid = () => new VaultSshError({ reason: "invalid-key" });
 const make = Effect.gen(function* () {
+  const account = yield* AccountVaultSsh.AccountVaultSsh;
   const core = yield* VaultCore.VaultCore,
     keys = yield* SshCrypto.SshCrypto,
     workloads = yield* VaultWorkloads.VaultWorkloads,
@@ -231,12 +233,14 @@ const make = Effect.gen(function* () {
       return metadata;
     }),
     agents: Effect.fn("VaultSsh.agents")(function* (threadId) {
+      if (yield* account.available) return yield* account.sessions(threadId);
       const live = new Set((yield* workloads.list(threadId)).map((session) => session.id));
       return [...(yield* Ref.get(agents)).values()]
         .filter((value) => live.has(value.session.id))
         .map((value) => value.metadata);
     }),
     agentClose: Effect.fn("VaultSsh.agentClose")(function* (sessionId, threadId) {
+      if (yield* account.available) return yield* account.close(sessionId, threadId);
       const held = (yield* Ref.get(agents)).get(sessionId);
       if (held && held.session.threadId !== threadId)
         return yield* new VaultError({ reason: "denied" });
@@ -250,6 +254,7 @@ const make = Effect.gen(function* () {
     }),
     agentFrame: Effect.fn("VaultSsh.agentFrame")(function* (input, threadId) {
       if (!isAgentFrame(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      if (yield* account.available) return yield* account.frame(input, threadId);
       const held = yield* findAgent(input.sessionId, threadId);
       return yield* Effect.gen(function* () {
         const authorize = Effect.gen(function* () {

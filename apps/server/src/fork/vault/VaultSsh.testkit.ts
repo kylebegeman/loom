@@ -36,6 +36,7 @@ import * as SshTransport from "./SshTransport.ts";
 import * as VaultSsh from "./VaultSsh.ts";
 import * as VaultCore from "./VaultCore.ts";
 import * as VaultConnections from "./VaultConnections.ts";
+import * as AccountVaultSsh from "./AccountVaultSsh.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultBrokers from "./VaultBrokers.ts";
 import * as VaultWorkloads from "./VaultWorkloads.ts";
@@ -44,7 +45,7 @@ export const sshFixture = (
   transportLayer: Layer.Layer<
     SshTransport.SshTransport,
     never,
-    SshCrypto.SshCrypto
+    SshCrypto.SshCrypto | SecureRandom.SecureRandom
   > = SshTransport.layer,
   githubAdapters = Layer.mergeAll(
     GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
@@ -63,6 +64,7 @@ export const sshFixture = (
       threadReads: { shell: 0, records: 0 },
     };
     const dependencies = Layer.mergeAll(
+      Layer.mock(AccountVaultSsh.AccountVaultSsh)({ available: Effect.succeed(false) }),
       Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
       Layer.mock(ThreadManagementService)({
         getThreadShell: (id) =>

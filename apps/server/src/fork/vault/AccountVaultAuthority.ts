@@ -124,16 +124,6 @@ const make = Effect.gen(function* () {
           return yield* denied();
         const pin = report.selected;
         const key = yield* readKey(lease, pin);
-        const existing = [...sessions.values()].find(
-          (held) =>
-            sameWorkload(held.lease, lease) &&
-            held.pin.item.id === pin.item.id &&
-            held.pin.item.version === pin.item.version &&
-            held.pin.kind === pin.kind &&
-            held.pin.destination === pin.destination &&
-            held.pin.repository === pin.repository,
-        );
-        if (existing) return { kind: "open", pin, session: existing.session };
         const lock = yield* Semaphore.make(1);
         const sessionId = yield* random.uuidV4().pipe(
           Effect.map((id) => id.replaceAll("-", "")),

@@ -2,6 +2,7 @@ import { admissionStamp } from "./admission-stamp.ts";
 import { observeVaultHealth } from "./health-observation.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import * as VaultConnections from "./VaultConnections.ts";
+import * as AccountVaultSsh from "./AccountVaultSsh.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   type VaultApprovalRetryInput,
@@ -96,6 +97,7 @@ const make = Effect.gen(function* () {
     crypto = yield* Digest.Digest,
     secureRandom = yield* SecureRandom.SecureRandom;
   const connections = yield* VaultConnections.VaultConnections;
+  const account = yield* AccountVaultSsh.AccountVaultSsh;
   // VaultSsh guards before accepting a command and before every agent frame. Full revalidation
   // takes seconds against a live Vault, so it runs once per operation; frames re-check the item
   // version (fixing destination, host and account), workload session and use policy. Only the
@@ -290,6 +292,7 @@ const make = Effect.gen(function* () {
     }),
     ssh: Effect.fn("VaultLaunch.sshConnection")(function* (input, threadId) {
       if (!isSshInput(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      if (yield* account.available) return yield* account.ssh(input, threadId);
       if ("id" in input) return yield* operations.ssh(input, threadId);
       const pin = yield* connections.require(
         { kind: "ssh", connection: input.connection },
@@ -303,6 +306,7 @@ const make = Effect.gen(function* () {
     }),
     git: Effect.fn("VaultLaunch.gitConnection")(function* (input, threadId) {
       if (!isGitInput(input)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      if (yield* account.available) return yield* account.git(input, threadId);
       if ("id" in input) return yield* operations.git(input, threadId);
       const pin = yield* connections.require(
         { kind: "git-ssh", connection: input.connection, repository: input.repository },
@@ -316,6 +320,14 @@ const make = Effect.gen(function* () {
     }),
     agent: Effect.fn("VaultLaunch.agent")(function* (raw, threadId) {
       if (!isAgentOpenInput(raw)) return yield* new VaultSshError({ reason: "invalid-operation" });
+      if (yield* account.available)
+        return (yield* account.open(
+          {
+            kind: "ssh",
+            connection: "connection" in raw ? raw.connection : raw,
+          },
+          threadId,
+        )).session;
       const pin =
         !("id" in raw) && "connection" in raw
           ? yield* connections.require({ kind: "ssh", connection: raw.connection }, threadId)
