@@ -788,7 +788,8 @@ export class Launcher {
       const lock = await tryAcquireLauncherLock(lockPath);
       if (lock !== undefined) return lock;
       if (attempt >= LOCK_ATTEMPTS) {
-        throw new Error("Another T3 Code service launcher still runs for this T3 home.");
+        // fork: brand
+        throw new Error("Another Loom service launcher still runs for this Loom home.");
       }
       await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_MS));
     }
