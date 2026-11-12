@@ -29,6 +29,7 @@ import { useEnvironments } from "../../state/environments";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { library, useLibraryAuthority } from "./libraryState";
 import { LibrarySignInSection } from "./LibrarySignInStatus";
+import { DevicesWithAccessSection } from "../connections/DevicesWithAccessSection";
 import { LibraryAccessBlock } from "./LibraryAccessBlock";
 import { LibraryDeletedSettings } from "./LibraryDeletedSettings";
 import { useWorkspacePageBack } from "./workspacePageBack";
@@ -135,87 +136,111 @@ export function LibraryAuthorityScreen() {
   const info = useAtomQueryRunner(library.info, { refresh: true, reportFailure: false });
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   return (
-    <LibraryPage title="Connect your library">
+    <LibraryPage title="Account">
       <Text className="text-sm text-foreground-muted">
-        Choose where Loom keeps your shared library once. Projects can use any connected execution
-        computer later.
+        Sign in once to find your computers, projects and saved conversations on all your devices.
       </Text>
       {authority.environmentId ? (
         <Text className="text-sm text-foreground">
-          Current library: {authority.label}. Changing it opens another library; it does not move
-          saved projects.
+          {authority.connected
+            ? `Connected to ${authority.label}.`
+            : `Sign in to reconnect to ${authority.label}.`}
         </Text>
       ) : null}
       <LibrarySignInSection />
-      <SettingsSection title="Library server">
-        {environments.map((environment, index) => {
-          const connected =
-            environment.entry.enabled && environment.connection.phase === "connected";
-          const supported = supportsLoomFeature(
-            environment.serverConfig?.environment.capabilities,
-            "project-library",
-          );
-          return (
-            <ListChoiceRow
-              key={environment.environmentId}
-              label={environment.label}
-              selected={authority.environmentId === environment.environmentId}
-              separated={index > 0}
-              disabled={!connected || !supported || pending !== null}
-              description={
-                !connected
-                  ? "Offline"
-                  : !supported
-                    ? "Update this server to support the library"
-                    : "Connected"
-              }
-              onPress={() => {
-                setPending(environment.environmentId);
-                setError(null);
-                void info({ environmentId: environment.environmentId, input: {} })
-                  .then(async (result) => {
-                    if (AsyncResult.isFailure(result))
-                      return Promise.reject(squashAtomCommandFailure(result));
-                    if (result.value.isAuthority !== true)
-                      return Promise.reject(
-                        new Error(
-                          "Choose your Library server. This computer runs work and does not own the shared catalog.",
-                        ),
-                      );
-                    await authority.select(environment.environmentId);
-                    navigation.navigate("Library");
-                  })
-                  .catch((cause: unknown) =>
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : "The library connection could not be saved.",
-                    ),
-                  )
-                  .finally(() => setPending(null));
-              }}
-            />
-          );
-        })}
-      </SettingsSection>
+      {authority.environmentId ? (
+        <DevicesWithAccessSection
+          environmentId={authority.environmentId}
+          connected={authority.ready}
+          account
+        />
+      ) : null}
+      {!authority.environmentId ? (
+        <Button label="Sign in to Loom" onPress={() => navigation.navigate("LibrarySignIn", {})} />
+      ) : null}
       <LibraryDeletedSettings />
       {error ? <LibraryNotice error={error} /> : null}
       <Button
-        label={authority.environmentId ? "Sign in to another library" : "Sign in to library"}
-        tone={authority.environmentId ? "secondary" : "primary"}
-        onPress={() => navigation.navigate("LibrarySignIn", {})}
-      />
-      <Button
-        label="Manage computer connections"
+        label={advanced ? "Hide advanced account settings" : "Advanced account settings"}
         tone="text"
-        onPress={() => navigation.navigate("Connections")}
+        onPress={() => setAdvanced(!advanced)}
       />
-      <Button
-        label="T3 Connect account settings"
-        tone="text"
-        onPress={() => navigation.navigate("SettingsAuth")}
-      />
+      {advanced ? (
+        <>
+          <Text className="text-sm text-foreground-muted">
+            Changing your Library opens a different account’s saved work. It does not move projects
+            or enroll this device as an execution computer.
+          </Text>
+          <SettingsSection title="Library server">
+            {environments.map((environment, index) => {
+              const connected =
+                environment.entry.enabled && environment.connection.phase === "connected";
+              const supported = supportsLoomFeature(
+                environment.serverConfig?.environment.capabilities,
+                "project-library",
+              );
+              return (
+                <ListChoiceRow
+                  key={environment.environmentId}
+                  label={environment.label}
+                  selected={authority.environmentId === environment.environmentId}
+                  separated={index > 0}
+                  disabled={!connected || !supported || pending !== null}
+                  description={
+                    !connected
+                      ? "Offline"
+                      : !supported
+                        ? "Update this server to support the library"
+                        : "Connected"
+                  }
+                  onPress={() => {
+                    setPending(environment.environmentId);
+                    setError(null);
+                    void info({ environmentId: environment.environmentId, input: {} })
+                      .then(async (result) => {
+                        if (AsyncResult.isFailure(result))
+                          return Promise.reject(squashAtomCommandFailure(result));
+                        if (result.value.isAuthority !== true)
+                          return Promise.reject(
+                            new Error(
+                              "Choose your Library server. This computer runs work and does not own the shared catalog.",
+                            ),
+                          );
+                        await authority.select(environment.environmentId);
+                        navigation.navigate("Library");
+                      })
+                      .catch((cause: unknown) =>
+                        setError(
+                          cause instanceof Error
+                            ? cause.message
+                            : "The library connection could not be saved.",
+                        ),
+                      )
+                      .finally(() => setPending(null));
+                  }}
+                />
+              );
+            })}
+          </SettingsSection>
+          <Button
+            label={authority.environmentId ? "Sign in to another library" : "Sign in to library"}
+            tone={authority.environmentId ? "secondary" : "primary"}
+            onPress={() => navigation.navigate("LibrarySignIn", {})}
+          />
+          <Button
+            label="Manage computer connections"
+            tone="text"
+            onPress={() => navigation.navigate("Connections")}
+          />
+          <Button
+            label="T3 Connect account settings"
+            tone="text"
+            onPress={() => navigation.navigate("SettingsAuth")}
+          />
+        </>
+      ) : null}
     </LibraryPage>
   );
 }

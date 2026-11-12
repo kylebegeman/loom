@@ -2,7 +2,11 @@ import { AuthSessionId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
-import { applyAuthAccessStreamEvent, EMPTY_AUTH_ACCESS_SNAPSHOT } from "./auth.ts";
+import {
+  accountClientSessions,
+  applyAuthAccessStreamEvent,
+  EMPTY_AUTH_ACCESS_SNAPSHOT,
+} from "./auth.ts";
 
 describe("applyAuthAccessStreamEvent", () => {
   it("accumulates rapid pairing-link and client updates into one snapshot", () => {
@@ -47,6 +51,18 @@ describe("applyAuthAccessStreamEvent", () => {
       pairingLinks: [pairingLink],
       clientSessions: [clientSession],
     });
+    expect(
+      accountClientSessions([
+        {
+          ...clientSession,
+          sessionId: AuthSessionId.make("publisher"),
+          subject: "loom-host:computer",
+        },
+        { ...clientSession, sessionId: AuthSessionId.make("mcp"), subject: "mcp-client" },
+        clientSession,
+        { ...clientSession, sessionId: AuthSessionId.make("current"), current: true },
+      ]).map((session) => session.sessionId),
+    ).toEqual(["current", "session-client"]);
   });
 
   it("applies removals without disturbing unrelated access state", () => {

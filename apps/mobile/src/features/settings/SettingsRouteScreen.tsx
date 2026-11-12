@@ -209,7 +209,7 @@ function useLibraryRow(): SettingsListRow {
   return {
     id: "LibrarySettings",
     icon: "server.rack",
-    label: "Library",
+    label: "Account",
     value: status.environmentId === null ? "Not connected" : status.stateLabel,
     valuePosition: "trailing",
     onPress: () => navigation.navigate("LibrarySettings"),

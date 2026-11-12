@@ -2,6 +2,7 @@ import type {
   AuthAccessSnapshot,
   AuthAccessStreamEvent,
   AuthAccessStreamSnapshotEvent,
+  AuthClientSession,
   AuthCreatePairingCredentialInput,
   AuthRevokeClientSessionInput,
   AuthRevokePairingLinkInput,
@@ -23,6 +24,19 @@ export const EMPTY_AUTH_ACCESS_SNAPSHOT: AuthAccessSnapshot = {
   pairingLinks: [],
   clientSessions: [],
 };
+
+export function accountClientSessions(sessions: ReadonlyArray<AuthClientSession>) {
+  return sessions
+    .filter(
+      (session) => session.subject !== "mcp-client" && !session.subject.startsWith("loom-host:"),
+    )
+    .sort((left, right) => {
+      if (left.current !== right.current) return left.current ? -1 : 1;
+      const latest = (session: AuthClientSession) =>
+        (session.lastConnectedAt ?? session.issuedAt).epochMilliseconds;
+      return latest(right) - latest(left) || left.sessionId.localeCompare(right.sessionId);
+    });
+}
 
 function upsertByKey<A>(
   values: ReadonlyArray<A>,

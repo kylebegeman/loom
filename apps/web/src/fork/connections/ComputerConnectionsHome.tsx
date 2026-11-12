@@ -132,6 +132,7 @@ export function ComputerConnectionsHome({
             </div>
           </header>
           <ComputerWorkActions environment={selected} />
+          <ComputerAccountSetup environment={selected} />
           <section
             className="space-y-3 border-t border-border/60 pt-6"
             aria-label="Connection settings"

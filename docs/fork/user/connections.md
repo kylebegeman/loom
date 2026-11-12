@@ -31,6 +31,14 @@ Older computers continue to use their own Identity sign-in or a pairing code.
 Update Loom on both your Library and the computer to use account access. Direct
 Tailscale and pairing connections remain available for local access and recovery.
 
+## End a device’s account access
+
+Open **Account > Signed-in devices** on iPhone, or **Settings > Computers > Account**
+on web and desktop. Choose **End access** for a lost phone or browser. It must sign
+in again to use your account’s online computer routes. Saved work and computer
+enrollment remain in place. An already authenticated external connection can
+continue until it ends.
+
 The desktop app and iPhone also refuse to sign in at a typed address that
 claims to be a computer your Library lists at other addresses. Sign in from
 your Library's computer list instead, or use a pairing link.

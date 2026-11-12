@@ -38,6 +38,7 @@ import { useEnvironmentSessionState } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LIBRARY_SIGN_IN_TARGET } from "./accessBlock";
 import { LibrarySetup } from "./LibrarySetup";
+import { AccountDevices } from "../connections/AccountDevices";
 import { useLibraryAuthority } from "./state";
 
 const identityMetadata = Atom.family((baseUrl: string) =>
@@ -233,6 +234,7 @@ function LibrarySignInStatus({ environment }: { readonly environment: Environmen
           </div>
         </div>
       </section>
+      <AccountDevices />
       <div className="flex flex-col gap-1">
         <Collapsible>
           <CollapsibleTrigger
