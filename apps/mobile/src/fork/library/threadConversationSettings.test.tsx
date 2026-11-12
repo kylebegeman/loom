@@ -39,6 +39,7 @@ vi.mock("../../lib/modelOptions", () => ({
     { label: "Model", selection, capabilities: null },
   ],
   groupByProvider: () => [],
+  serverConfigForCwd: (config: unknown) => config,
 }));
 vi.mock("../../lib/providerOptions", () => ({ resolveProviderOptionDescriptors: () => [] }));
 vi.mock("../../state/use-composer-drafts", () => ({
