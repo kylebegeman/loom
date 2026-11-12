@@ -236,8 +236,8 @@ Library decides whose iPhones hear it and how often. The computer side is
   alerts. A Library from before the kind answers 400, which the inbox shows as unconfirmed.
 - **Away alerts.** `ScheduledFailureAlertsLive` observes the scheduled-task list after an initial
   seed and posts each changed failed run with only `{ kind: "scheduled-failed", taskId }`.
-  A 400 from an older Library is logged once. Bot approval/input alerts open the Bots inbox;
-  scheduled failures open the task's computer in Scheduled tasks.
+  A 400 from an older Library is logged once. Bot approval/input alerts, including a subagent's approval
+  posted on its bot run, open the bot run's thread; scheduled failures open the task's computer in Scheduled tasks.
 - **Preferences.** The optional `allowedKinds` field on the existing per-device record and
   registration request limits Library delivery. Missing fields allow all kinds, preserving old
   registrations. The `library-push-kind-preferences` capability gates mobile controls.

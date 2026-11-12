@@ -86,7 +86,7 @@ const collapseId = (prefix: string, environmentId: EnvironmentId, threadId: stri
 
 /**
  * The text names no thread, project, computer, model or Vault item, so none reaches Apple or the
- * lock screen. Thread and Vault requests open their thread; bot requests open the inbox.
+ * lock screen. Thread, bot and Vault requests open the requesting conversation.
  * Scheduled failures carry only a task id and open scheduled tasks.
  */
 export const agentAlertRequest = (
@@ -101,9 +101,7 @@ export const agentAlertRequest = (
   const bot = !scheduled && !vault && isBotRunThreadId(input.threadId);
   const deepLink = scheduled
     ? `/settings/scheduled-tasks?environmentId=${environment}&taskId=${encodeURIComponent(input.taskId)}`
-    : bot
-      ? `/bots/${environment}/inbox`
-      : `/threads/${environment}/${encodeURIComponent(input.threadId)}`;
+    : `/threads/${environment}/${encodeURIComponent(input.threadId)}`;
   return {
     payload: alertPayload({
       title: "Loom",

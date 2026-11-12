@@ -334,6 +334,24 @@ const makeTestRelay = Effect.fnUntraced(function* (
 });
 
 describe("AgentAwarenessRelay", () => {
+  it.effect("opens the bot run's thread for an approval nested under it", () =>
+    Effect.gen(function* () {
+      const botId = ThreadId.make("bot-run-parent");
+      const parent = shell({ id: botId });
+      const child = waitingChild({
+        lineage: { rootThreadId: botId, parentThreadId: botId, relationshipToParent: "subagent" },
+      });
+      const { relay, publications } = yield* makeTestRelay({
+        readShell: (id) => Effect.succeed(id === botId ? parent : child),
+      });
+      yield* relay.publishThread(child.id);
+      assert.deepStrictEqual(
+        publications.map(({ state }) => [state?.threadId, state?.phase, state?.deepLink]),
+        [[botId, "waiting_for_approval", `/threads/relay-environment/${botId}`]],
+      );
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("publishes the parent as needing approval while its subagent waits", () =>
     Effect.gen(function* () {
       const shells = yield* Ref.make(

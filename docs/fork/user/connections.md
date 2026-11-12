@@ -251,15 +251,14 @@ and from each computer your Library lists that has a Library connection and runs
 a Loom version with agent alerts. A computer connected to your Library after it
 started sends alerts once it restarts. An alert names no conversation, project
 or computer. Tap it to open the conversation, which needs a connection to that
-computer on this iPhone. A Vault access alert opens its requesting conversation, a bot alert
-opens the Bots inbox, and a failed scheduled-task alert opens that task's computer in Scheduled
-tasks. Older Libraries can still open computer settings for Vault requests. A computer sends
-Vault alerts even when it connected to your Library after starting. Each conversation keeps one
-notification, the latest.
-Subagents and archived or settled conversations never alert. A
-snoozed conversation stays quiet when its agent finishes, but still alerts when
-it fails or asks you something. A computer sends at most 20 alerts an hour, and
-an iPhone gets at most 30.
+computer on this iPhone. Vault and bot alerts open their requesting conversation, and a failed
+scheduled-task alert opens that task's computer in Scheduled tasks. Older Libraries can still open
+computer settings for Vault requests. A computer sends Vault alerts even when it connected to your
+Library after starting. Each conversation keeps one notification, the latest.
+A subagent's approval alerts on its parent conversation, including a bot run's. Bot runs alert
+only when they need your approval or answer. Archived or settled conversations never alert. A
+snoozed conversation stays quiet when its agent finishes, but still alerts when it fails or asks
+you something. A computer sends at most 20 alerts an hour, and an iPhone gets at most 30.
 
 When you reopen Loom on desktop or in a browser, it summarizes scheduled tasks that failed
 since your last visit. Open the notice to review them in Scheduled tasks.

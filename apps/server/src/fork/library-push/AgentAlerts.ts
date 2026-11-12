@@ -1,6 +1,8 @@
+import { isListedThreadLineage } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   OrchestrationV2DomainEvent,
+  OrchestrationV2PendingRuntimeRequestSummary,
   OrchestrationV2ThreadShell,
   ThreadId,
 } from "@t3tools/contracts";
@@ -11,7 +13,11 @@ import {
   LibraryPushActivityReply,
   type LibraryPushActivityRequest,
 } from "@t3tools/contracts/fork";
-import { type AgentAwarenessPhase, projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
+import {
+  type AgentAwarenessPhase,
+  projectThreadAwarenessV2,
+  subagentAwaitsApproval,
+} from "@t3tools/shared/agentAwareness";
 import { threadCompletionAlertMuted } from "@t3tools/shared/fork/thread-alerts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -40,6 +46,7 @@ import { UnheardAlertNotices } from "./UnheardAlertNotices.ts";
 const FRESH_MS = 2 * 60_000;
 /** The post is one small JSON body, so a Library that takes longer is down. */
 const POST_TIMEOUT = "20 seconds";
+const REMEMBERED_REQUESTS = 64;
 
 /** `unheard` is an alert the Library accepted while no recipient had an iPhone registered. */
 export type AgentAlertOutcome =
@@ -74,8 +81,9 @@ const PAUSE_MS: Readonly<Record<AgentAlertOutcome, number>> = {
 
 /** What this computer last saw of a thread. */
 interface SeenThread {
-  /** The last transition that needed the user, so later changes to the thread do not repeat it. */
-  readonly key: string | null;
+  /** Requests already announced, so a parent's request interleaving with a child's repeats neither. */
+  readonly requestKeys: ReadonlyArray<string>;
+  readonly terminalKey: string | null;
   /** A thread seen working makes its next transition news, however long the run took. */
   readonly working: boolean;
 }
@@ -91,12 +99,16 @@ const NO_PROJECT = { title: "" };
 const attentionOf = (
   phase: AgentAwarenessPhase,
   shell: OrchestrationV2ThreadShell,
+  childRequest?: OrchestrationV2PendingRuntimeRequestSummary,
 ): Attention | null => {
   switch (phase) {
     case "waiting_for_approval":
     case "waiting_for_input": {
-      const request = shell.pendingRuntimeRequest;
-      if (request === null) return null;
+      const request =
+        shell.pendingRuntimeRequest?.kind === "auth_refresh"
+          ? childRequest
+          : (shell.pendingRuntimeRequest ?? childRequest);
+      if (request == null) return null;
       const kind = phase === "waiting_for_approval" ? "approval" : "input";
       return {
         kind,
@@ -137,7 +149,11 @@ const attentionOf = (
 export const agentAlertStep = (
   previous: SeenThread | undefined,
   shell: OrchestrationV2ThreadShell,
-  input: { readonly environmentId: EnvironmentId; readonly nowMs: number },
+  input: {
+    readonly environmentId: EnvironmentId;
+    readonly nowMs: number;
+    readonly childRequest?: OrchestrationV2PendingRuntimeRequestSummary | undefined;
+  },
 ): { readonly seen: SeenThread; readonly alert: LibraryPushThreadActivityKind | null } => {
   const awareness =
     shell.archivedAt !== null || shell.deletedAt !== null
@@ -146,19 +162,46 @@ export const agentAlertStep = (
           environmentId: input.environmentId,
           project: NO_PROJECT,
           thread: shell,
+          pendingSubagentRequest:
+            input.childRequest === undefined
+              ? null
+              : {
+                  requestId: input.childRequest.id,
+                  updatedAt: input.childRequest.createdAt,
+                },
         });
-  const candidate = awareness === null ? null : attentionOf(awareness.phase, shell);
+  const candidate =
+    awareness === null ? null : attentionOf(awareness.phase, shell, input.childRequest);
   const attention =
     isBotRunThreadId(shell.id) && candidate?.kind !== "approval" && candidate?.kind !== "input"
       ? null
       : candidate;
   if (attention === null) {
     const working = awareness?.phase === "starting" || awareness?.phase === "running";
-    // The key stays, so settling and unsettling a thread never repeats its last alert.
-    return { seen: { key: previous?.key ?? null, working }, alert: null };
+    // Keep prior decisions and outcomes through settlement and interleaved child requests.
+    return {
+      seen: {
+        requestKeys: previous?.requestKeys ?? [],
+        terminalKey: previous?.terminalKey ?? null,
+        working,
+      },
+      alert: null,
+    };
   }
-  const seen = { key: attention.key, working: false };
-  if (attention.key === previous?.key) return { seen, alert: null };
+  const terminal =
+    attention.kind === "completed" || attention.kind === "failed" || attention.kind === "limited";
+  const repeated = terminal
+    ? attention.key === previous?.terminalKey
+    : previous?.requestKeys.includes(attention.key) === true;
+  const seen = {
+    requestKeys:
+      terminal || repeated
+        ? (previous?.requestKeys ?? [])
+        : [...(previous?.requestKeys ?? []), attention.key].slice(-REMEMBERED_REQUESTS),
+    terminalKey: terminal ? attention.key : (previous?.terminalKey ?? null),
+    working: false,
+  };
+  if (repeated) return { seen, alert: null };
   const fresh =
     previous?.working === true ||
     (attention.atMs !== null && input.nowMs - attention.atMs <= FRESH_MS);
@@ -177,12 +220,61 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
 }) {
   const threads = yield* ThreadManagementService;
   const seen = new Map<ThreadId, SeenThread>();
+  const childRequests = new Map<
+    ThreadId,
+    {
+      readonly parentId: ThreadId;
+      readonly request: OrchestrationV2PendingRuntimeRequestSummary;
+    }
+  >();
+  const childRequestFor = (parentId: ThreadId) => {
+    let newest: OrchestrationV2PendingRuntimeRequestSummary | undefined;
+    for (const entry of childRequests.values()) {
+      if (
+        entry.parentId === parentId &&
+        (newest === undefined || DateTime.isGreaterThan(entry.request.createdAt, newest.createdAt))
+      )
+        newest = entry.request;
+    }
+    return newest;
+  };
+
+  const trackChild = Effect.fn("AgentAlerts.trackChild")(function* (
+    threadId: ThreadId,
+    shell: OrchestrationV2ThreadShell | null,
+  ) {
+    const previous = childRequests.get(threadId);
+    childRequests.delete(threadId);
+    if (
+      shell === null ||
+      shell.deletedAt !== null ||
+      shell.archivedAt !== null ||
+      !subagentAwaitsApproval(shell)
+    )
+      return previous?.parentId;
+    const visited = new Set<ThreadId>([threadId]);
+    let parent = shell;
+    while (!isListedThreadLineage(parent.lineage)) {
+      const parentId = parent.lineage.parentThreadId;
+      if (parentId === null || visited.has(parentId)) return previous?.parentId;
+      visited.add(parentId);
+      const next = yield* threads.getThreadShell(parentId);
+      if (next === null || next.archivedAt !== null || next.deletedAt !== null)
+        return previous?.parentId;
+      parent = next;
+    }
+    if (shell.pendingRuntimeRequest !== null)
+      childRequests.set(threadId, { parentId: parent.id, request: shell.pendingRuntimeRequest });
+    return parent.id;
+  });
   // The worker looks at one thread at a time, so this state needs no lock.
   let pausedUntilMs = 0;
 
-  const check = Effect.fn("AgentAlerts.check")(
+  const check: (threadId: ThreadId) => Effect.Effect<void> = Effect.fn("AgentAlerts.check")(
     function* (threadId: ThreadId) {
       const shell = yield* threads.getThreadShell(threadId);
+      const parentId = yield* trackChild(threadId, shell);
+      if (parentId !== undefined) yield* worker.enqueue(parentId);
       if (shell === null || shell.deletedAt !== null) {
         seen.delete(threadId);
         return;
@@ -191,6 +283,7 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
       const step = agentAlertStep(seen.get(threadId), shell, {
         environmentId: input.environmentId,
         nowMs,
+        childRequest: childRequestFor(threadId),
       });
       seen.set(threadId, step.seen);
       if (step.alert === null || nowMs < pausedUntilMs) return;
@@ -209,8 +302,13 @@ export const makeAgentAlerts = Effect.fn("AgentAlerts.make")(function* (input: {
   const seed = Effect.gen(function* () {
     const snapshot = yield* threads.getShellSnapshot();
     const nowMs = yield* Clock.currentTimeMillis;
+    for (const shell of snapshot.threads) yield* trackChild(shell.id, shell);
     for (const shell of snapshot.threads) {
-      const step = agentAlertStep(undefined, shell, { environmentId: input.environmentId, nowMs });
+      const step = agentAlertStep(undefined, shell, {
+        environmentId: input.environmentId,
+        nowMs,
+        childRequest: childRequestFor(shell.id),
+      });
       seen.set(shell.id, step.seen);
     }
   });
