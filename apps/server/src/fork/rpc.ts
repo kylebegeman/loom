@@ -1,5 +1,7 @@
 import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "@t3tools/contracts/fork";
 import { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
+import { AccountJoin } from "./account-access/AccountJoin.ts";
+import { ComputerJoin } from "./account-access/ComputerJoin.ts";
 import {
   DevApiLibraryRpcGroup,
   DevEnvironmentRpcGroup,
@@ -325,6 +327,8 @@ export const makeForkRpcLayer = (
       Effect.gen(function* () {
         const auth = makeForkRpcAuth(session);
         const enrollment = yield* withForkRuntime(AccountEnrollment);
+        const join = yield* withForkRuntime(AccountJoin);
+        const computerJoin = yield* withForkRuntime(ComputerJoin);
         const sites = yield* withForkRuntime(SitesService.SitesService);
         const naming = yield* withForkRuntime(ComputerNaming.ComputerNaming);
         const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
@@ -334,6 +338,12 @@ export const makeForkRpcLayer = (
           [ENROLL.approve]: (input) =>
             auth.effect(ENROLL.approve, enrollment.approve(input, session)),
           [ENROLL.install]: (input) => auth.effect(ENROLL.install, enrollment.install(input)),
+          [ENROLL.startJoin]: (input) => auth.effect(ENROLL.startJoin, computerJoin.start(input)),
+          [ENROLL.stepJoin]: () => auth.effect(ENROLL.stepJoin, computerJoin.step),
+          [ENROLL.lookupJoin]: (input) =>
+            auth.effect(ENROLL.lookupJoin, join.lookup(input.code, session)),
+          [ENROLL.decideJoin]: (input) =>
+            auth.effect(ENROLL.decideJoin, join.decide(input, session)),
           [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
           [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
           [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),

@@ -30,6 +30,7 @@ import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { library, useLibraryAuthority } from "./libraryState";
 import { LibrarySignInSection } from "./LibrarySignInStatus";
 import { DevicesWithAccessSection } from "../connections/DevicesWithAccessSection";
+import { ApproveComputer } from "../connections/ApproveComputer";
 import { LibraryAccessBlock } from "./LibraryAccessBlock";
 import { LibraryDeletedSettings } from "./LibraryDeletedSettings";
 import { useWorkspacePageBack } from "./workspacePageBack";
@@ -150,6 +151,7 @@ export function LibraryAuthorityScreen() {
         </Text>
       ) : null}
       <LibrarySignInSection />
+      <ApproveComputer />
       {authority.environmentId ? (
         <DevicesWithAccessSection
           environmentId={authority.environmentId}

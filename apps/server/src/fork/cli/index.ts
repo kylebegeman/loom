@@ -5,8 +5,10 @@ import { loomLibraryMigrationCommand } from "../../../scripts/loom-library-migra
 import { loomLibraryBackupCommand } from "../../../scripts/loom-library-backup.ts";
 import { pcbCommand } from "../pcb-preview/cli.ts";
 import { modelCommand } from "../model-preview-3d/cli.ts";
+import { joinCommand } from "../../cli/join.ts";
 export const FORK_CLI_COMMANDS = [
   vaultCommand,
+  joinCommand,
   sitesCommand,
   pcbCommand,
   modelCommand,

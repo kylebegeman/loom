@@ -1,5 +1,5 @@
 import { LibraryPublishingCredential } from "../../auth/LibraryPublishingCredential.ts";
-import { EnvironmentId } from "@t3tools/contracts";
+import { AuthSettingsWriteScope, EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_ACCESS_HEADER,
   ACCOUNT_ENROLLMENT_ACTIVATE,
@@ -7,6 +7,14 @@ import {
   ACCOUNT_ACCESS_PREFIX,
   ACCOUNT_ACCESS_VERIFY,
   AccountVerification,
+  ACCOUNT_JOIN_BEGIN,
+  ACCOUNT_JOIN_REDEEM,
+  ACCOUNT_JOIN_START,
+  ACCOUNT_JOIN_STEP,
+  AccountJoinRequest,
+  AccountJoinRedemption,
+  ComputerJoinStart,
+  LibraryError,
 } from "@t3tools/contracts/fork";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
@@ -25,6 +33,8 @@ import { withForkRuntime } from "../ForkRuntime.ts";
 import * as AccountAccess from "./AccountAccess.ts";
 import * as AccountGateway from "./AccountGateway.ts";
 import * as AccountHost from "./AccountHost.ts";
+import { AccountJoin } from "./AccountJoin.ts";
+import { ComputerJoin } from "./ComputerJoin.ts";
 
 const decodeEnvironmentId = Schema.decodeEffect(EnvironmentId);
 const decodeVerification = Schema.decodeUnknownEffect(AccountVerification);
@@ -117,7 +127,97 @@ const activate = withForkRuntime(
   }),
 );
 
+const decodeJoin = Schema.decodeUnknownEffect(AccountJoinRequest);
+const decodeJoinStart = Schema.decodeUnknownEffect(ComputerJoinStart);
+const encodeRedemption = Schema.encodeEffect(AccountJoinRedemption);
+const invalidJoin = () =>
+  new LibraryError({ reason: "blocked", detail: "The computer approval request is invalid." });
+const joinBody = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  return yield* request.json.pipe(
+    Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(64)),
+    Effect.flatMap(decodeJoin),
+    Effect.mapError(invalidJoin),
+  );
+});
+const joinBegin = withForkRuntime(
+  Effect.gen(function* () {
+    const input = yield* joinBody;
+    const review = yield* (yield* AccountJoin).begin(input);
+    return HttpServerResponse.jsonUnsafe(review, { headers: { "cache-control": "no-store" } });
+  }),
+);
+const joinRedeem = withForkRuntime(
+  Effect.gen(function* () {
+    const input = yield* joinBody;
+    const result = yield* (yield* AccountJoin).redeem(input);
+    return HttpServerResponse.jsonUnsafe(
+      yield* encodeRedemption(result).pipe(Effect.mapError(invalidJoin)),
+      { headers: { "cache-control": "no-store" } },
+    );
+  }),
+);
+const joinOperator = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  if (request.headers.authorization === undefined) return yield* invalidJoin();
+  const session = yield* (yield* EnvironmentAuth.EnvironmentAuth).authenticateHttpRequest(request);
+  if (
+    !session.scopes.includes(AuthSettingsWriteScope) ||
+    session.subject === "mcp-client" ||
+    session.subject.startsWith("loom-host:")
+  )
+    return yield* invalidJoin();
+});
+const joinStart = withForkRuntime(
+  Effect.gen(function* () {
+    yield* joinOperator;
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const input = yield* request.json.pipe(
+      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(4)),
+      Effect.flatMap(decodeJoinStart),
+      Effect.mapError(invalidJoin),
+    );
+    return HttpServerResponse.jsonUnsafe(yield* (yield* ComputerJoin).start(input), {
+      headers: { "cache-control": "no-store" },
+    });
+  }),
+);
+const joinStep = withForkRuntime(
+  Effect.gen(function* () {
+    yield* joinOperator;
+    return HttpServerResponse.jsonUnsafe(yield* (yield* ComputerJoin).step, {
+      headers: { "cache-control": "no-store" },
+    });
+  }),
+);
+const joinErrors = {
+  LibraryError: (error: LibraryError) =>
+    Effect.succeed(
+      HttpServerResponse.jsonUnsafe(
+        { reason: error.reason, message: error.message },
+        {
+          status: error.reason === "not-authority" ? 404 : error.reason === "io" ? 503 : 403,
+          headers: { "cache-control": "no-store" },
+        },
+      ),
+    ),
+  ServerAuthMissingCredentialError: () => Effect.succeed(HttpServerResponse.empty({ status: 401 })),
+  ServerAuthInvalidCredentialError: () => Effect.succeed(HttpServerResponse.empty({ status: 401 })),
+};
+
 export const AccountAccessRoutes = Layer.mergeAll(
+  HttpRouter.add(
+    "POST",
+    ACCOUNT_JOIN_BEGIN,
+    joinBegin.pipe(Effect.catchTags({ LibraryError: joinErrors.LibraryError })),
+  ),
+  HttpRouter.add(
+    "POST",
+    ACCOUNT_JOIN_REDEEM,
+    joinRedeem.pipe(Effect.catchTags({ LibraryError: joinErrors.LibraryError })),
+  ),
+  HttpRouter.add("POST", ACCOUNT_JOIN_START, joinStart.pipe(Effect.catchTags(joinErrors))),
+  HttpRouter.add("POST", ACCOUNT_JOIN_STEP, joinStep.pipe(Effect.catchTags(joinErrors))),
   HttpRouter.add("*", `${ACCOUNT_ACCESS_PREFIX}*`, forward),
   HttpRouter.add("POST", ACCOUNT_ACCESS_VERIFY, verify),
   HttpRouter.add("POST", ACCOUNT_ENROLLMENT_ACTIVATE, activate),

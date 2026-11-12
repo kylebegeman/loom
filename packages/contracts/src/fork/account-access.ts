@@ -60,12 +60,71 @@ export const AccountComputerEnrollment = Schema.Struct({
   management: LibraryManagementDelegation,
 });
 export type AccountComputerEnrollment = typeof AccountComputerEnrollment.Type;
+export const ACCOUNT_JOIN_BEGIN = "/api/loom/account/join/begin";
+export const ACCOUNT_JOIN_REDEEM = "/api/loom/account/join/redeem";
+export const ACCOUNT_JOIN_FEATURE = "account-join";
+export const ACCOUNT_JOIN_START = "/api/loom/account/join/start";
+export const ACCOUNT_JOIN_STEP = "/api/loom/account/join/step";
+export const AccountJoinCode = Schema.String.check(Schema.isPattern(/^[A-F0-9]{5}-[A-F0-9]{5}$/u));
+export const AccountJoinRequest = Schema.Struct({
+  proof: AccountComputerEnrollmentProof,
+  secret: Schema.RedactedFromValue(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u))),
+});
+export type AccountJoinRequest = typeof AccountJoinRequest.Type;
+export const AccountJoinReview = Schema.Struct({
+  requestId: AccountComputerEnrollmentRequest.fields.requestId,
+  code: AccountJoinCode,
+  environmentId: EnvironmentId,
+  label: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(160)),
+  keyFingerprint: Schema.String,
+  expiresAt: Schema.Number,
+  state: Schema.Literals(["pending", "approved", "denied"]),
+});
+export type AccountJoinReview = typeof AccountJoinReview.Type;
+export const AccountJoinRedemption = Schema.Union([
+  Schema.Struct({ state: Schema.Literals(["pending", "denied"]) }),
+  Schema.Struct({ state: Schema.Literal("approved"), enrollment: AccountComputerEnrollment }),
+]);
+export type AccountJoinRedemption = typeof AccountJoinRedemption.Type;
+export const ComputerJoinStart = Schema.Struct({
+  libraryUrl: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048)),
+  restart: Schema.Boolean,
+});
+export const ComputerJoinPrompt = Schema.Struct({
+  review: AccountJoinReview,
+  libraryUrl: Schema.String,
+});
+export const ComputerJoinProgress = Schema.Literals(["pending", "denied", "complete"]);
 export const ACCOUNT_ENROLLMENT_WS_METHODS = {
   prepare: "loom.account.prepareEnrollment",
   approve: "loom.account.approveEnrollment",
   install: "loom.account.installEnrollment",
+  startJoin: "loom.account.startJoin",
+  stepJoin: "loom.account.stepJoin",
+  lookupJoin: "loom.account.lookupJoin",
+  decideJoin: "loom.account.decideJoin",
 } as const;
 export const AccountEnrollmentRpcGroup = RpcGroup.make(
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.startJoin, {
+    payload: ComputerJoinStart,
+    success: ComputerJoinPrompt,
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.stepJoin, {
+    payload: Schema.Struct({}),
+    success: ComputerJoinProgress,
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.lookupJoin, {
+    payload: Schema.Struct({ code: AccountJoinCode }),
+    success: AccountJoinReview,
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.decideJoin, {
+    payload: Schema.Struct({ code: AccountJoinCode, approve: Schema.Boolean }),
+    success: AccountJoinReview,
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
   Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.prepare, {
     payload: AccountComputerEnrollmentRequest,
     success: AccountComputerEnrollmentProof,

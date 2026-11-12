@@ -19,6 +19,13 @@ page. Loom connects publishing and remote access together. If setup is interrupt
 choose **Resume setup** to continue the saved request. Running work stays open.
 On iPhone, open an already connected computer's details to add it.
 
+For a headless computer with Loom running, run `loom join <your-library-address>`
+using your Library’s HTTPS address. On a signed-in device, open **Account > Add
+computer**, enter the terminal’s code, and approve after checking the computer
+name and code. Leave the command running to finish setup. Codes expire after
+15 minutes. If the command stops, run it again to resume the saved request; add
+`--restart` to replace that request with a new code.
+
 Your existing connections and computers you disabled stay as you left them. To move an
 existing connection to account access, choose **Connect** for it under **Settings > Computers**.
 On iPhone, use **From your Library**.

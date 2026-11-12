@@ -1,4 +1,6 @@
 import type { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
+import type { AccountJoin } from "./account-access/AccountJoin.ts";
+import type { ComputerJoin } from "./account-access/ComputerJoin.ts";
 import type { ClaudeWorktreeService } from "../provider/ClaudeWorktreeServiceTag.ts";
 import type { DevApiLibrary } from "./browser-dev-tools/DevApiLibrary.ts";
 import type { DevApiService } from "./browser-dev-tools/DevApiService.ts";
@@ -144,6 +146,8 @@ export type ForkServices =
   | LibraryService
   | LibraryManagement
   | AccountEnrollment
+  | AccountJoin
+  | ComputerJoin
   | ProjectWorkflows
   | ProjectOperations
   | LibraryPublisher

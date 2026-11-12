@@ -1349,10 +1349,10 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     // fork: library-sign-in
     id: "library-sign-in",
-    title: "Library sign-in",
+    title: "Account sign-in and devices",
     to: "/settings/connections",
     searchTerms: [
-      "library identity account signed in sign in again sign out expired renew session address email",
+      "library identity account signed in sign in again sign out expired renew session address email signed-in devices lost phone end access add computer approve code headless join",
     ],
   },
   {

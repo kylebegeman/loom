@@ -1,4 +1,6 @@
 import * as AccountEnrollment from "./account-access/AccountEnrollment.ts";
+import * as AccountJoin from "./account-access/AccountJoin.ts";
+import * as ComputerJoin from "./account-access/ComputerJoin.ts";
 import * as AccountAccess from "./account-access/AccountAccess.ts";
 import * as AccountHost from "./account-access/AccountHost.ts";
 import * as AccountGateway from "./account-access/AccountGateway.ts";
@@ -471,6 +473,27 @@ export const layerSessionToolPolicy = SessionToolPolicy.layer.pipe(
   Layer.provide(ForkMigrationsLive),
 );
 
+const layerAccountEnrollment = AccountEnrollment.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerLibraryManagement,
+      layerDirectory,
+      layerLibraryPublisher,
+      layerDirectoryReporter,
+      LibraryPublishingCredential.layer,
+      LibraryConnection.layer,
+      ReachService.layer,
+    ),
+  ),
+);
+const layerAccountJoin = AccountJoin.layer.pipe(
+  Layer.provide(Layer.merge(layerAccountEnrollment, layerLibraryManagement)),
+);
+const layerComputerJoin = ComputerJoin.layer.pipe(
+  Layer.provide(layerAccountEnrollment),
+  Layer.provide(FetchHttpClient.layer),
+);
+
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   layerDevApi,
@@ -513,19 +536,9 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   Layer.empty,
   LibraryPublishingCredential.layer,
-  AccountEnrollment.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        layerLibraryManagement,
-        layerDirectory,
-        layerLibraryPublisher,
-        layerDirectoryReporter,
-        LibraryPublishingCredential.layer,
-        LibraryConnection.layer,
-        ReachService.layer,
-      ),
-    ),
-  ),
+  layerAccountEnrollment,
+  layerAccountJoin,
+  layerComputerJoin,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
   StaleConnectLink.layer,
   layerProjectProfiles,

@@ -189,6 +189,14 @@ export function createProjectLibraryAtoms<R, E>(
   });
   return {
     refreshes,
+    lookupJoin: createEnvironmentRpcCommand(runtime, {
+      label: "loom:account:review-computer",
+      tag: ENROLL.lookupJoin,
+    }),
+    decideJoin: createEnvironmentRpcCommand(runtime, {
+      label: "loom:account:approve-computer",
+      tag: ENROLL.decideJoin,
+    }),
     enrollComputer: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:enroll-computer",
       tag: L.managementStatus,
