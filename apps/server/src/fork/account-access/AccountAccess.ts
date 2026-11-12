@@ -8,7 +8,7 @@ import {
   AuthStandardClientScopes,
   type EnvironmentId,
 } from "@t3tools/contracts";
-import { type AccountAdmission } from "@t3tools/contracts/fork";
+import { AccountComputerBinding, type AccountAdmission } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -22,10 +22,24 @@ import type * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import * as Directory from "../directory/DirectoryService.ts";
 import * as ReachStore from "../reach/library/ReachStore.ts";
+import * as LibraryStore from "../project-library/LibraryStore.ts";
 
 const GRANT_LIFETIME_MS = 60_000;
 const MAX_PENDING_GRANTS = 4096;
-type AccountLease = { readonly keyFingerprint: string; readonly membershipRevision: number | null };
+const decodeAuthority = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      id: AccountComputerBinding.fields.authorityId,
+      epoch: AccountComputerBinding.fields.authorityEpoch,
+    }),
+  ),
+);
+type AccountLease = {
+  readonly keyFingerprint: string;
+  readonly membershipRevision: number | null;
+  readonly authorityId?: string | undefined;
+  readonly authorityEpoch?: number | undefined;
+};
 
 export class AccountAccessError extends Schema.TaggedError<AccountAccessError>()(
   "AccountAccessError",
@@ -83,6 +97,7 @@ const make = Effect.gen(function* () {
   const directory = yield* Directory.DirectoryService;
   const reach = yield* ReachStore.ReachStore;
   const environment = yield* HostProcess.Environment;
+  const library = yield* LibraryStore.LibraryStore;
   const authorityId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId;
   const pending = new Map<
     string,
@@ -98,6 +113,11 @@ const make = Effect.gen(function* () {
     }
   >();
   const fail = (reason: AccountAccessError["reason"]) => new AccountAccessError({ reason });
+  const currentAuthority = Effect.fn("AccountAccess.authority")(function* () {
+    const saved = yield* library.authority.pipe(Effect.mapError(() => fail("unavailable")));
+    if (saved === null) return yield* fail("unavailable");
+    return yield* decodeAuthority(saved).pipe(Effect.mapError(() => fail("unavailable")));
+  });
   const route = Effect.fn("AccountAccess.route")(function* (environmentId: EnvironmentId) {
     const pin = yield* directory
       .pinned(environmentId)
@@ -119,6 +139,8 @@ const make = Effect.gen(function* () {
       keyFingerprint: pin.keyFingerprint,
       membershipRevision: computer.account?.approvedAt ?? null,
       ownerSubject: computer.account?.ownerSubject,
+      authorityId: computer.account?.authorityId,
+      authorityEpoch: computer.account?.authorityEpoch,
     };
   });
   const active = Effect.fn("AccountAccess.active")(function* (sessionId: string) {
@@ -140,12 +162,21 @@ const make = Effect.gen(function* () {
       return yield* fail("denied");
     yield* active(caller.sessionId);
     const target = yield* route(environmentId);
+    const info = yield* currentAuthority();
+    if (
+      target.membershipRevision !== null &&
+      (target.authorityId !== info.id || target.authorityEpoch !== info.epoch)
+    )
+      return yield* fail("denied");
     if (
       target.ownerSubject !== undefined &&
       target.ownerSubject !== identityOwnershipSubject(caller.subject, environment)
     )
       return yield* fail("denied");
-    return target;
+    return {
+      ...target,
+      account: { authorityId: info.id, authorityEpoch: info.epoch },
+    };
   });
   const prepare: AccountAccess["Service"]["prepare"] = Effect.fn("AccountAccess.prepare")(
     function* (input) {
@@ -159,6 +190,8 @@ const make = Effect.gen(function* () {
       const lease = {
         keyFingerprint: target.keyFingerprint,
         membershipRevision: target.membershipRevision,
+        authorityId: target.authorityId,
+        authorityEpoch: target.authorityEpoch,
       };
       const principal = owner.startsWith("identity-principal:v1:")
         ? owner
@@ -172,6 +205,7 @@ const make = Effect.gen(function* () {
         lease,
         ownerSubject: owner,
         admission: {
+          account: target.account,
           sessionId: caller.sessionId,
           principal,
           scopes: AuthStandardClientScopes.filter((scope) => caller.scopes.includes(scope)),
@@ -202,10 +236,18 @@ const make = Effect.gen(function* () {
       if (entry.deadline <= now || entry.admission.expiresAt <= now) return yield* fail("denied");
       yield* active(entry.admission.sessionId);
       yield* active(publisher.sessionId);
+      const info = yield* currentAuthority();
+      if (
+        info.id !== entry.admission.account?.authorityId ||
+        info.epoch !== entry.admission.account.authorityEpoch
+      )
+        return yield* fail("denied");
       const target = yield* route(entry.environmentId);
       if (target.keyFingerprint !== entry.keyFingerprint) return yield* fail("denied");
       if (
         target.membershipRevision !== entry.lease.membershipRevision ||
+        target.authorityId !== entry.lease.authorityId ||
+        target.authorityEpoch !== entry.lease.authorityEpoch ||
         (target.ownerSubject !== undefined && target.ownerSubject !== entry.ownerSubject)
       )
         return yield* fail("denied");
@@ -224,7 +266,10 @@ const make = Effect.gen(function* () {
           !ReachStore.accountAllowsAccess(computer) ||
           (lease !== undefined &&
             (computer?.keyFingerprint !== lease.keyFingerprint ||
-              (computer.account?.approvedAt ?? null) !== lease.membershipRevision))
+              (computer.account?.approvedAt ?? null) !== lease.membershipRevision)) ||
+          (lease !== undefined &&
+            (computer?.account?.authorityId !== lease.authorityId ||
+              computer?.account?.authorityEpoch !== lease.authorityEpoch))
         );
       }),
       Stream.take(1),

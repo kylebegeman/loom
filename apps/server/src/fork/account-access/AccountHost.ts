@@ -64,7 +64,9 @@ const make = Effect.gen(function* () {
     );
     const library = yield* connection.current;
     // A legacy unbound Library token does not establish computer enrollment.
-    if (library.kind !== "remote" || library.credential === null) return yield* denied();
+    if (library.kind !== "remote" || library.credential?.account === undefined)
+      return yield* denied();
+    const approved = library.credential.account;
     const response = yield* library
       .send(
         HttpClientRequest.post(library.endpoint(ACCOUNT_ACCESS_VERIFY)).pipe(
@@ -80,13 +82,27 @@ const make = Effect.gen(function* () {
       Effect.flatMap(decodeAdmission),
       Effect.mapError(denied),
     );
+    const latest = yield* connection.current;
+    if (
+      admission.account?.authorityId !== approved.authorityId ||
+      admission.account.authorityEpoch !== approved.authorityEpoch ||
+      latest.kind !== "remote" ||
+      latest.origin !== library.origin ||
+      latest.credential?.libraryEnvironmentId !== library.credential.libraryEnvironmentId ||
+      latest.credential.account?.authorityId !== approved.authorityId ||
+      latest.credential.account.authorityEpoch !== approved.authorityEpoch
+    )
+      return yield* denied();
     const now = yield* Clock.currentTimeMillis;
     if (admission.expiresAt <= now) return yield* denied();
     return yield* lock.withPermit(
       Effect.gen(function* () {
         const key = yield* encodeSessionKey([
           library.credential!.libraryEnvironmentId,
+          approved.authorityId,
+          String(approved.authorityEpoch),
           admission.sessionId,
+          admission.principal,
           ...admission.scopes,
         ]).pipe(Effect.orDie);
         const previous = cached.get(key);

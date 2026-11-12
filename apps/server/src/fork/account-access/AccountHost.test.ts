@@ -28,6 +28,12 @@ const fixture = Effect.gen(function* () {
   let issued = 0;
   let allowed = true;
   let enrolled = true;
+  const state = {
+    approvedEpoch: 1,
+    replyEpoch: 1,
+    principal: "identity-principal:v1:test-owner",
+    changeWhileChecking: false,
+  };
   const cached = new Map<string, SessionStore.VerifiedSession>();
   const verification: Array<typeof AccountVerification.Type> = [];
   const layer = AccountHost.layer.pipe(
@@ -70,11 +76,16 @@ const fixture = Effect.gen(function* () {
                   sessionId: "publisher",
                   accessToken: Redacted.make("publisher-token"),
                   expiresAt: "2030-01-01T00:00:00Z",
+                  account: {
+                    authorityId: "library-authority",
+                    authorityEpoch: state.approvedEpoch,
+                  },
                 }
               : null,
             send: (request) =>
               Effect.sync(() => {
                 checks += 1;
+                if (state.changeWhileChecking) state.approvedEpoch += 1;
                 if (request.body._tag === "Uint8Array")
                   verification.push(
                     decodeVerification(new TextDecoder().decode(request.body.body)),
@@ -84,7 +95,11 @@ const fixture = Effect.gen(function* () {
                   Response.json(
                     {
                       sessionId: "owner-device",
-                      principal: "identity-principal:v1:test-owner",
+                      principal: state.principal,
+                      account: {
+                        authorityId: "library-authority",
+                        authorityEpoch: state.replyEpoch,
+                      },
                       scopes: AuthStandardClientScopes,
                       expiresAt: 24 * 60 * 60_000,
                     },
@@ -104,6 +119,7 @@ const fixture = Effect.gen(function* () {
     service,
     admit,
     verification,
+    state,
     checks: () => checks,
     issued: () => issued,
     deny: () => {
@@ -144,5 +160,21 @@ it.effect("refuses invalid grants and legacy unbound connections before calling 
     expect((yield* Effect.result(f.admit("a".repeat(64))))._tag).toBe("Failure");
     expect(f.checks()).toBe(0);
     expect(f.issued()).toBe(0);
+  }),
+);
+
+it.effect("requires approved Library continuity and keeps cached owner identities separate", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    f.state.replyEpoch = 2;
+    expect((yield* Effect.result(f.admit("a".repeat(64))))._tag).toBe("Failure");
+    expect(f.issued()).toBe(0);
+    f.state.approvedEpoch = 2;
+    expect(yield* f.admit("b".repeat(64))).toBe("host-token-1");
+    f.state.principal = "identity-principal:v1:repaired-owner";
+    expect(yield* f.admit("c".repeat(64))).toBe("host-token-2");
+    f.state.changeWhileChecking = true;
+    expect((yield* Effect.result(f.admit("d".repeat(64))))._tag).toBe("Failure");
+    expect(f.issued()).toBe(2);
   }),
 );

@@ -86,6 +86,7 @@ import * as LibraryDocumentPublication from "./project-library/LibraryDocumentPu
 import * as LibraryApis from "./project-library/LibraryApiWorkspaces.ts";
 import * as LibraryManagement from "./project-library/LibraryManagement.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
+import * as LibraryStore from "./project-library/LibraryStore.ts";
 import * as LibraryBriefSuggestions from "./project-library/LibraryBriefSuggestions.ts";
 import * as LibraryReplication from "./project-library/LibraryReplication.ts";
 import * as LibraryActivityPublication from "./project-library/LibraryActivityPublication.ts";
@@ -372,7 +373,7 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
   ),
 );
 const layerAccountAccess = AccountAccess.layer.pipe(
-  Layer.provide(Layer.merge(layerDirectory, layerReachStore)),
+  Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
 );
 const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
   Layer.provide(

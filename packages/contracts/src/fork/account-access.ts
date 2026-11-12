@@ -19,7 +19,13 @@ export const ACCOUNT_ACCESS_PREFIX = "/api/loom/account/computers/";
 export const ACCOUNT_ACCESS_VERIFY = "/api/loom/account/verify";
 export const ACCOUNT_ACCESS_HEADER = "x-loom-account-grant";
 
+export const AccountComputerBinding = Schema.Struct({
+  authorityId: LibraryManagementDelegation.fields.authorityId,
+  authorityEpoch: LibraryManagementDelegation.fields.authorityEpoch,
+});
+
 export const AccountAdmission = Schema.Struct({
+  account: Schema.optionalKey(AccountComputerBinding),
   sessionId: Schema.String.check(Schema.isMaxLength(256)),
   principal: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(1024)),
   scopes: Schema.Array(Schema.Literals(AuthStandardClientScopes)),
@@ -34,10 +40,6 @@ export const AccountVerification = Schema.Struct({
   path: Schema.String.check(Schema.isMaxLength(8192)),
 });
 
-export const AccountComputerBinding = Schema.Struct({
-  authorityId: LibraryManagementDelegation.fields.authorityId,
-  authorityEpoch: LibraryManagementDelegation.fields.authorityEpoch,
-});
 export const AccountComputerCredential = Schema.Struct({
   account: Schema.optionalKey(AccountComputerBinding),
   version: Schema.Literal(1),

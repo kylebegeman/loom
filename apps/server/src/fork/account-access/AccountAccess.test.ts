@@ -22,6 +22,8 @@ import type * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import * as Directory from "../directory/DirectoryService.ts";
 import * as ReachStore from "../reach/library/ReachStore.ts";
+import * as LibraryStore from "../project-library/LibraryStore.ts";
+import * as Schema from "effect/Schema";
 import * as AccountAccess from "./AccountAccess.ts";
 
 const COMPUTER = EnvironmentId.make("computer-a");
@@ -29,6 +31,14 @@ const OTHER = EnvironmentId.make("computer-b");
 const OWNER = AuthSessionId.make("owner-device");
 const PUBLISHER = AuthSessionId.make("publisher-a");
 const KEY = "a".repeat(64);
+const encodeAuthority = Schema.encodeSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      id: Schema.String,
+      epoch: Schema.Number,
+    }),
+  ),
+);
 const IDENTITY_ENV = {
   LOOM_IDENTITY_ISSUER: "https://id.example.test",
   LOOM_IDENTITY_AUDIENCE: "library",
@@ -50,9 +60,16 @@ const fixture = Effect.gen(function* () {
   const active = yield* Ref.make([OWNER, PUBLISHER]);
   const retired = yield* Ref.make(false);
   const revision = yield* Ref.make(0);
+  const authorityEpoch = yield* Ref.make(1);
+  const approvedEpoch = yield* Ref.make(1);
   const membership = yield* Ref.make<"active" | "removing" | "removed" | null>(null);
-  const read = Effect.all([Ref.get(retired), Ref.get(membership), Ref.get(revision)]).pipe(
-    Effect.map(([removed, accountState, membershipRevision]) => ({
+  const read = Effect.all([
+    Ref.get(retired),
+    Ref.get(membership),
+    Ref.get(revision),
+    Ref.get(approvedEpoch),
+  ]).pipe(
+    Effect.map(([removed, accountState, membershipRevision, approvedAuthorityEpoch]) => ({
       ...ReachStore.emptyReachLibraryState,
       computers: {
         [COMPUTER]: {
@@ -75,6 +92,8 @@ const fixture = Effect.gen(function* () {
             ? {}
             : {
                 account: {
+                  authorityId: "library-authority",
+                  authorityEpoch: approvedAuthorityEpoch,
                   state: accountState,
                   label: "Computer",
                   ownerSubject: identityOwnershipSubject(caller.subject, IDENTITY_ENV),
@@ -96,6 +115,13 @@ const fixture = Effect.gen(function* () {
   const service = yield* AccountAccess.AccountAccess.pipe(
     Effect.provide(
       AccountAccess.layer.pipe(
+        Layer.provide(
+          Layer.mock(LibraryStore.LibraryStore)({
+            authority: Ref.get(authorityEpoch).pipe(
+              Effect.map((epoch) => encodeAuthority({ id: "library-authority", epoch })),
+            ),
+          }),
+        ),
         Layer.provide(
           Layer.mock(SessionStore.SessionStore)({
             cookieName: "test",
@@ -133,7 +159,7 @@ const fixture = Effect.gen(function* () {
           Layer.mock(ReachStore.ReachStore)({
             changes: Stream.merge(
               Stream.merge(Ref.changes(retired), Ref.changes(membership)),
-              Ref.changes(revision),
+              Stream.merge(Ref.changes(revision), Ref.changes(approvedEpoch)),
             ).pipe(Stream.mapEffect(() => read)),
             read,
           }),
@@ -158,7 +184,17 @@ const fixture = Effect.gen(function* () {
     service.prepare({ caller, environmentId: COMPUTER, method: "GET", path: "/ws" });
   const consume = (grant: string) =>
     service.consume({ publisher, grant, keyFingerprint: KEY, method: "GET", path: "/ws" });
-  return { service, active, retired, membership, revision, prepare, consume };
+  return {
+    service,
+    active,
+    retired,
+    membership,
+    revision,
+    authorityEpoch,
+    approvedEpoch,
+    prepare,
+    consume,
+  };
 });
 
 it.effect("admits an enrolled computer once, without exposing the account credential", () =>
@@ -167,6 +203,7 @@ it.effect("admits an enrolled computer once, without exposing the account creden
     const route = yield* f.prepare();
     expect(route.origin).toBe("https://computer-loom.example.test");
     expect(yield* f.consume(route.grant)).toEqual({
+      account: { authorityId: "library-authority", authorityEpoch: 1 },
       sessionId: OWNER,
       principal: identityOwnershipSubject(caller.subject, IDENTITY_ENV),
       scopes: AuthStandardClientScopes,
@@ -184,6 +221,20 @@ it.effect("admits an enrolled computer once, without exposing the account creden
     const admission = yield* f.consume(another.grant);
     expect(admission.sessionId).toBe(secondDevice);
     expect(admission.principal).toBe(identityOwnershipSubject(caller.subject, IDENTITY_ENV));
+  }),
+);
+
+it.effect("requires explicit membership repair after the Library revision changes", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* Ref.set(f.membership, "active");
+    const prepared = yield* f.prepare();
+    yield* Ref.set(f.authorityEpoch, 2);
+    expect((yield* Effect.result(f.consume(prepared.grant)))._tag).toBe("Failure");
+    expect((yield* Effect.result(f.prepare()))._tag).toBe("Failure");
+    yield* Ref.set(f.approvedEpoch, 2);
+    const repaired = yield* f.prepare();
+    expect((yield* Effect.result(f.consume(repaired.grant)))._tag).toBe("Success");
   }),
 );
 
@@ -252,19 +303,23 @@ it.effect("does not turn publishers or restricted agent sessions into owner acce
   }),
 );
 
-it.effect(
-  "closes a held lease when membership ends and after a quick removal and re-enrollment",
-  () =>
-    Effect.gen(function* () {
-      const f = yield* fixture;
-      yield* Ref.set(f.membership, "active");
-      const { lease, grant } = yield* f.prepare();
-      const held = yield* f.service.awaitRemoval(COMPUTER, lease).pipe(Effect.forkChild);
-      yield* Ref.set(f.membership, "removing");
-      yield* Fiber.join(held);
-      expect((yield* Effect.result(f.consume(grant)))._tag).toBe("Failure");
-      yield* Ref.set(f.membership, "active");
-      yield* Ref.set(f.revision, 1);
-      yield* f.service.awaitRemoval(COMPUTER, lease);
-    }),
+it.effect("closes held leases after removal, re-enrollment or Library repair", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    yield* Ref.set(f.membership, "active");
+    const { lease, grant } = yield* f.prepare();
+    const held = yield* f.service.awaitRemoval(COMPUTER, lease).pipe(Effect.forkChild);
+    yield* Ref.set(f.membership, "removing");
+    yield* Fiber.join(held);
+    expect((yield* Effect.result(f.consume(grant)))._tag).toBe("Failure");
+    yield* Ref.set(f.membership, "active");
+    yield* Ref.set(f.revision, 1);
+    yield* f.service.awaitRemoval(COMPUTER, lease);
+    const repaired = yield* f.prepare();
+    const beforeRepair = yield* f.service
+      .awaitRemoval(COMPUTER, repaired.lease)
+      .pipe(Effect.forkChild);
+    yield* Ref.set(f.approvedEpoch, 2);
+    yield* Fiber.join(beforeRepair);
+  }),
 );
