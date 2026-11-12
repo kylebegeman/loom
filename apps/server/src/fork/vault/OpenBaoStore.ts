@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpBody from "effect/http/HttpBody";
@@ -68,6 +69,28 @@ const ConfigResponse = Schema.Struct({
 const TokenLookupResponse = Schema.Struct({
   data: Schema.Struct({ ttl: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) }),
 });
+const RenewableToken = Schema.Struct({
+  ttl: Schema.Int.check(Schema.isGreaterThan(0)),
+  renewable: Schema.Literal(true),
+  type: Schema.Literal("service"),
+  policies: Schema.Array(Schema.String).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(128),
+    Schema.makeFilter((policies) => !policies.includes("root")),
+  ),
+});
+const decodeRenewableToken = Schema.decodeUnknownOption(Schema.Struct({ data: RenewableToken }));
+const decodeRenewedToken = Schema.decodeUnknownOption(
+  Schema.Struct({
+    auth: Schema.Struct({
+      client_token: Schema.RedactedFromValue(Schema.String),
+      lease_duration: Schema.Int.check(Schema.isGreaterThanOrEqualTo(2 * 60 * 60)),
+      renewable: Schema.Literal(true),
+      token_type: Schema.Literal("service"),
+      policies: RenewableToken.fields.policies,
+    }),
+  }),
+);
 const ErrorResponse = Schema.Struct({ errors: Schema.Array(Schema.String) });
 const decodeMissing = Schema.decodeUnknownOption(
   Schema.Struct({ errors: Schema.optionalKey(Schema.Array(Schema.Never)) }),
@@ -120,9 +143,7 @@ const make = Effect.gen(function* () {
   const requestOptions = Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" });
   const maxBody = Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.mebibytes(9));
 
-  const execute = Effect.fn("OpenBaoStore.request")(function* (
-    request: HttpClientRequest.HttpClientRequest,
-  ) {
+  const readToken = Effect.fn("OpenBaoStore.readToken")(function* () {
     if (!validConfiguration) return yield* new VaultError({ reason: "configuration" });
     const stat = yield* fs
       .stat(tokenFile!)
@@ -139,13 +160,22 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(() => new VaultError({ reason: "configuration" })));
     if (!token.trim() || /\s/.test(token.trim()))
       return yield* new VaultError({ reason: "configuration" });
-    return yield* http
-      .execute(request.pipe(HttpClientRequest.bearerToken(Redacted.make(token.trim()))))
-      .pipe(
-        requestOptions,
-        Effect.timeout("15 seconds"),
-        Effect.mapError(() => new VaultError({ reason: "unavailable" })),
-      );
+    return Redacted.make(token.trim());
+  });
+  const send = Effect.fn("OpenBaoStore.send")(function (
+    request: HttpClientRequest.HttpClientRequest,
+    token: Redacted.Redacted<string>,
+  ) {
+    return http.execute(request.pipe(HttpClientRequest.bearerToken(token))).pipe(
+      requestOptions,
+      Effect.timeout("15 seconds"),
+      Effect.mapError(() => new VaultError({ reason: "unavailable" })),
+    );
+  });
+  const execute = Effect.fn("OpenBaoStore.request")(function* (
+    request: HttpClientRequest.HttpClientRequest,
+  ) {
+    return yield* send(request, yield* readToken());
   });
   const json = (response: HttpClientResponse.HttpClientResponse) =>
     response.json.pipe(
@@ -160,6 +190,45 @@ const make = Effect.gen(function* () {
     if (response.status < 200 || response.status >= 300)
       return yield* new VaultError({ reason: "invalid-response" });
   });
+  const environment = yield* HostProcess.Environment;
+  if (environment.LOOM_LIBRARY_AUTHORITY === "true" && validConfiguration) {
+    const renew = Effect.fn("OpenBaoStore.renewToken")(function* () {
+      const token = yield* readToken();
+      const lookup = yield* send(
+        HttpClientRequest.get(`${origin}/v1/auth/token/lookup-self`),
+        token,
+      );
+      yield* check(lookup);
+      const current = decodeRenewableToken(yield* json(lookup));
+      if (Option.isNone(current)) return yield* new VaultError({ reason: "configuration" });
+      const policies = new Set(current.value.data.policies);
+      const response = yield* send(
+        HttpClientRequest.post(`${origin}/v1/auth/token/renew-self`).pipe(
+          HttpClientRequest.bodyText("{}", "application/json"),
+        ),
+        token,
+      );
+      yield* check(response);
+      const renewed = decodeRenewedToken(yield* json(response));
+      if (
+        Option.isNone(renewed) ||
+        Redacted.value(renewed.value.auth.client_token) !== Redacted.value(token) ||
+        renewed.value.auth.policies.length !== policies.size ||
+        renewed.value.auth.policies.some((policy) => !policies.has(policy))
+      )
+        return yield* new VaultError({ reason: "invalid-response" });
+    });
+    yield* renew().pipe(
+      Effect.catchTags({
+        VaultError: (error) =>
+          Effect.logWarning("Library Vault token renewal needs attention", {
+            reason: error.reason,
+          }),
+      }),
+      Effect.repeat(Schedule.spaced("1 hour")),
+      Effect.forkScoped({ startImmediately: true }),
+    );
+  }
   return OpenBaoStore.of({
     inventoryEnvironmentId,
     status: Effect.gen(function* () {
@@ -185,7 +254,7 @@ const make = Effect.gen(function* () {
       if (configuration.status === 404) return state("misconfigured");
       yield* check(configuration);
       if (Option.isNone(decodeConfig(yield* json(configuration)))) return state("misconfigured");
-      // Renewal runs outside Loom, so an approaching expiry is the only sign it has stopped.
+      // A short lease warns when the owning runtime or external renewer has stopped renewing.
       // A root token reports ttl 0; a failed lookup leaves the expiry unknown.
       const tokenTtlSeconds = yield* Effect.gen(function* () {
         const lookup = yield* execute(HttpClientRequest.get(`${origin}/v1/auth/token/lookup-self`));

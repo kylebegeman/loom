@@ -76,9 +76,24 @@ environment ID; the Library's own reference prefix also identifies those same re
 Status checks health and KV v2 configuration, not all path privileges. A ready connection can
 still receive a denied item operation if its policy is incomplete. A ready status also carries
 `tokenTtlSeconds` from the token's `lookup-self` TTL. Clients warn when under 72 hours remain,
-since renewal runs outside Loom and a lapsed token has to be reissued. A failed lookup or a
+since a stopped renewer or a lapsed token needs attention. A failed lookup or a
 non-expiring token leaves the field out. A sealed backend reports
 locked. Loom neither auto-unseals it nor asks an SSH key manager to unlock it.
+
+### Library service credential renewal
+
+A configured Library authority renews its OpenBao service token at startup and hourly while
+running. Provision a separately owned, namespace-scoped renewable service token with
+`auth/token/lookup-self` read and `auth/token/renew-self` update. A seven-day periodic token
+fits the hourly schedule; each renewal must return at least two hours of lease. Root, batch,
+non-renewable tokens and tokens without named policies are refused. The runtime checks that renewal retains the
+same token and policies, never replaces the private token file, and reloads that file before
+the next attempt so operator rotation takes effect without a restart.
+
+Failures log a bounded reason and retry on the next hourly attempt. Expired or revoked tokens
+require operator replacement; no credential is minted automatically. The worker stops with
+the runtime. Execution computers do not start it, and an existing standalone desktop Vault
+keeps its external renewal job until custody is explicitly transferred to the Library.
 
 ### Move settings out of the login environment
 

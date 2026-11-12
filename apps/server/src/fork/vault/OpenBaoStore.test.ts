@@ -2,9 +2,13 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -29,6 +33,7 @@ const withStore = <A, E>(
     /** Gives the server a state directory, holding this settings file unless it is null. */
     settingsFile?: { content?: string; mode?: number } | null;
     reply?: (request: HttpClientRequest.HttpClientRequest) => readonly [number, unknown];
+    observed?: (request: HttpClientRequest.HttpClientRequest) => Effect.Effect<void>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -64,10 +69,11 @@ const withStore = <A, E>(
             ? { data: { ttl: tokenTtlSeconds } }
             : { data: { cas_required: true } },
       ];
-      return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status })));
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, Response.json(body, { status })),
+      ).pipe(Effect.tap(() => options.observed?.(request) ?? Effect.void));
     });
-    const store = yield* OpenBaoStore.OpenBaoStore.pipe(
-      Effect.provide(OpenBaoStore.layer),
+    const services = yield* Layer.build(OpenBaoStore.layer).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
       Effect.provideService(HostProcess.Environment, {
         ...(options.disabled
@@ -81,8 +87,102 @@ const withStore = <A, E>(
       Effect.provideService(HostProcess.Platform, "darwin"),
       config ? Effect.provideService(ServerConfig.ServerConfig, config) : (effect) => effect,
     );
+    const store = Context.get(services, OpenBaoStore.OpenBaoStore);
     return yield* use({ store, requests, tokenFile });
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
+
+it.effect("renews the Library token across outages and rotation, and stops with its scope", () =>
+  Effect.gen(function* () {
+    const observed = yield* Queue.unbounded<string>();
+    let unavailable = true;
+    const requests = yield* withStore(
+      ({ requests, tokenFile }) =>
+        Effect.gen(function* () {
+          expect(yield* Queue.take(observed)).toMatch(/\/lookup-self$/);
+          expect(requests.filter((r) => r.url.endsWith("/renew-self"))).toHaveLength(0);
+          unavailable = false;
+          yield* (yield* FileSystem.FileSystem).writeFileString(
+            tokenFile,
+            "rotated-synthetic-token",
+          );
+          yield* TestClock.adjust("1 hour");
+          expect(yield* Queue.take(observed)).toMatch(/\/lookup-self$/);
+          expect(yield* Queue.take(observed)).toMatch(/\/renew-self$/);
+          const renewals = requests.filter((r) => r.url.endsWith("/renew-self"));
+          expect(renewals).toHaveLength(1);
+          expect(renewals[0]?.method).toBe("POST");
+          expect(renewals[0]?.headers.authorization).toBe("Bearer rotated-synthetic-token");
+          expect(yield* (yield* FileSystem.FileSystem).readFileString(tokenFile)).toBe(
+            "rotated-synthetic-token",
+          );
+          return requests;
+        }),
+      {
+        environment: { LOOM_LIBRARY_AUTHORITY: "true" },
+        observed: (request) => Queue.offer(observed, request.url).pipe(Effect.asVoid),
+        reply: (request) =>
+          unavailable
+            ? [503, {}]
+            : request.url.endsWith("/lookup-self")
+              ? [
+                  200,
+                  {
+                    data: {
+                      ttl: tokenTtlSeconds,
+                      renewable: true,
+                      type: "service",
+                      policies: ["loom-scoped"],
+                    },
+                  },
+                ]
+              : [
+                  200,
+                  {
+                    auth: {
+                      client_token: "rotated-synthetic-token",
+                      lease_duration: tokenTtlSeconds,
+                      renewable: true,
+                      token_type: "service",
+                      policies: ["loom-scoped"],
+                    },
+                  },
+                ],
+      },
+    );
+    const count = requests.length;
+    yield* TestClock.adjust("2 hours");
+    expect(requests).toHaveLength(count);
+  }),
+);
+
+it.effect.each([
+  { ttl: 0, renewable: false, type: "service", policies: ["root"] },
+  { ttl: tokenTtlSeconds, renewable: true, type: "service", policies: ["root", "loom-scoped"] },
+  { ttl: tokenTtlSeconds, renewable: false, type: "service", policies: ["loom-scoped"] },
+  { ttl: tokenTtlSeconds, renewable: true, type: "batch", policies: ["loom-scoped"] },
+  { ttl: tokenTtlSeconds, renewable: true, type: "service", policies: [] },
+])("never renews an unsuitable Library credential: %j", (data) =>
+  Effect.gen(function* () {
+    const observed = yield* Queue.unbounded<void>();
+    yield* withStore(
+      ({ requests }) =>
+        Effect.gen(function* () {
+          yield* Queue.take(observed);
+          yield* TestClock.adjust("1 hour");
+          yield* Queue.take(observed);
+          expect(requests.map((request) => request.url)).toEqual([
+            "https://vault.example.test/v1/auth/token/lookup-self",
+            "https://vault.example.test/v1/auth/token/lookup-self",
+          ]);
+        }),
+      {
+        environment: { LOOM_LIBRARY_AUTHORITY: "true" },
+        observed: () => Queue.offer(observed, undefined).pipe(Effect.asVoid),
+        reply: () => [200, { data }],
+      },
+    );
+  }),
+);
 
 it.effect("does no backend work until configured", () =>
   withStore(
