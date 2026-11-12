@@ -15,11 +15,12 @@ for it. Its connector forwards to the server over loopback, so its server must l
 `127.0.0.1`, `::1` or every address; one bound to a single LAN or tailnet address shows an
 error and never asks the Library.
 
-Current state: the hosted Library's reach credentials are files. Its Cloudflare token, with the
-permissions below, and a dedicated Pocket ID admin API key are installed and passed read-only
-checks. Rotating either one means replacing its file, with no restart. The zone is still open
-(D2). Reach is not yet verified live; the passkey signal is confirmed from Pocket ID's source
-only (Roll out, step 2).
+Current state: people see this feature as Loomhost. The hosted Library hosts computers on
+`loomhost.dev`, a zone in its own Cloudflare account (the one signed up as admin@boop.at), not
+Kyle's personal account. Its token (`loom-host-library`, filtered to personal-vps's egress
+addresses) and a dedicated Pocket ID admin API key are files under the Library's state volume
+`credentials/`. Rotating either one means replacing its file, with no restart. Dorothy has
+`dorothy-loom.loomhost.dev`; a phone reaches it through the tunnel with a passkey sign-in.
 
 ## Choose the zone
 
@@ -28,8 +29,8 @@ only (Roll out, step 2).
   `<name>-2-loom.<zone>`.
 - Use a zone that does nothing but reach, ideally in its own Cloudflare account. The token needs
   DNS edit rights on the zone, so on `begam.in` a leaked token could repoint `id.loom.begam.in`
-  or the Library itself. The zone choice is open for Kyle (D2). It can change later, at the cost
-  of every computer's address (see [Change the zone](#change-the-zone)).
+  or the Library itself. The zone can change later, at the cost of every computer's address
+  (see [Change the zone](#change-the-zone)).
 - The rate-limit rule matches paths only, so it applies to the whole zone: `/oauth/token`,
   `/api/auth/session`, `/api/auth/websocket-ticket` and `/api/loom/identity/session` on every host
   in the zone get 60 requests per 10 seconds per client address and Cloudflare data center. A
