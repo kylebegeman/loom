@@ -1,6 +1,15 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import {
+  AuthSessionId,
+  EnvironmentId,
+  RunId,
+  ProviderInstanceId,
+  ProjectId,
+  ThreadId,
+} from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as Effect from "effect/Effect";
@@ -75,13 +84,48 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* fixture;
+      const account = {
+        lease: {
+          sourceEnvironmentId: EnvironmentId.make("remote-source"),
+          publisherSessionId: AuthSessionId.make("publisher"),
+          authorityId: "authority",
+          authorityEpoch: 1,
+          keyFingerprint: "a".repeat(64),
+          membershipRevision: 1,
+          membershipEpoch: 0,
+          ownerSubject: "admin",
+          expiresAt: (yield* Clock.currentTimeMillis) + 30000,
+          workload: {
+            threadId: ThreadId.make("foreign-thread"),
+            runId: RunId.make("foreign-run"),
+            projectId: ProjectId.make("foreign-project"),
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "full-access" as const,
+            interactionMode: "default" as const,
+          },
+        },
+        authorize: Effect.void,
+      };
+
       expect(
         (yield* f.resolver.resolve(
           { kind: "ssh", connection: { resource: "example.test" } },
           f.threadId,
         )).state,
       ).toBe("policy-denied");
+      expect(
+        (yield* f.resolver.resolveForAccount(
+          { kind: "ssh", connection: { resource: "EXAMPLE.TEST" } },
+          account,
+        )).selected,
+      ).toBeNull();
       yield* f.owner("owner-trusted");
+      const remote = yield* f.resolver.resolveForAccount(
+        { kind: "ssh", connection: { resource: "EXAMPLE.TEST" } },
+        account,
+      );
+      expect(remote.selected?.item.id).toBe(f.itemId);
+      expect(JSON.stringify(remote)).not.toMatch(/privateKey|BEGIN|synthetic-private/);
       const one = yield* f.resolver.require(
         { kind: "ssh", connection: { resource: "EXAMPLE.TEST" } },
         f.threadId,
@@ -114,6 +158,12 @@ it.effect(
         f.threadId,
       );
       expect(ambiguous.state).toBe("ambiguous");
+      expect(
+        (yield* f.resolver.resolveForAccount(
+          { kind: "ssh", connection: { resource: "example.test" } },
+          account,
+        )).state,
+      ).toBe("ambiguous");
       expect(ambiguous.choices.map((choice) => choice.item.id).sort()).toEqual(
         [f.itemId, two.item.id].sort(),
       );

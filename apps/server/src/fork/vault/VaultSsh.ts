@@ -1,3 +1,4 @@
+import * as SshAgentFrames from "./SshAgentFrames.ts";
 import * as PinnedHostKeys from "./PinnedHostKeys.ts";
 import type { ThreadId } from "@t3tools/contracts";
 import {
@@ -131,10 +132,7 @@ const make = Effect.gen(function* () {
     session: VaultWorkloadSession;
     metadata: VaultSshAgentSession;
     lock: Semaphore.Semaphore;
-    channels: Map<
-      string,
-      { sequence: number; binding: SshCrypto.SshBinding | null; signed: boolean }
-    >;
+    channels: SshAgentFrames.Channels;
   };
   const agents = yield* Ref.make<ReadonlyMap<string, Activation>>(new Map());
 
@@ -262,28 +260,16 @@ const make = Effect.gen(function* () {
           if (!current || current.state !== "active" || current.version !== held.metadata.version)
             return yield* new VaultError({ reason: "conflict" });
         });
-        yield* authorize;
-        const frame = Buffer.from(input.frame, "base64");
-        if (!frame.length || frame.length > 16384 || frame.toString("base64") !== input.frame)
-          return yield* new VaultSshError({ reason: "invalid-operation" });
-        let channel = held.channels.get(input.channelId);
-        if (!channel) {
-          if (input.sequence !== 0 || held.channels.size >= 32)
-            return yield* new VaultSshError({ reason: "capacity" });
-          channel = { sequence: 0, binding: null, signed: false };
-          held.channels.set(input.channelId, channel);
-        }
-        if (input.sequence !== channel.sequence || (channel.signed && frame[0] === 13))
-          return yield* new VaultSshError({ reason: "invalid-operation" });
-        channel.sequence++;
-        const record = yield* loadPinned(held.metadata.id, held.metadata.version);
-        if (record.item.state !== "active") return yield* new VaultError({ reason: "conflict" });
-        yield* authorize;
-        const result = yield* keys.respond({ ...record.key, frame, binding: channel.binding });
-        channel.binding = result.binding;
-        channel.signed ||= result.signed;
-        yield* authorize;
-        return { response: result.response.toString("base64") };
+        const readKey = loadPinned(held.metadata.id, held.metadata.version).pipe(
+          Effect.flatMap((record) =>
+            record.item.state === "active"
+              ? Effect.succeed(record.key)
+              : Effect.fail(new VaultError({ reason: "conflict" })),
+          ),
+        );
+        return yield* SshAgentFrames.respond(held.channels, input, readKey, authorize).pipe(
+          Effect.provideService(SshCrypto.SshCrypto, keys),
+        );
       }).pipe(held.lock.withPermits(1));
     }),
     git: Effect.fn("VaultSsh.git")(function* (input, guard = Effect.void) {

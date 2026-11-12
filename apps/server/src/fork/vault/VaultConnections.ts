@@ -34,9 +34,18 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { Registry, Pin, encodeRunKey } from "./profile-records.ts";
 import * as VaultCore from "./VaultCore.ts";
 
+type AccountScope = {
+  readonly lease: Parameters<VaultAccess.VaultAccess["Service"]["authorizeAccount"]>[0]["lease"];
+  readonly authorize: Effect.Effect<void, VaultError>;
+};
+
 export class VaultConnections extends Context.Service<
   VaultConnections,
   {
+    readonly resolveForAccount: (
+      input: VaultConnectionRequest,
+      account: AccountScope,
+    ) => Effect.Effect<VaultConnectionReport>;
     readonly resolve: (
       input: VaultConnectionRequest,
       threadId: ThreadId,
@@ -211,8 +220,20 @@ const make = Effect.gen(function* () {
     item: VaultItemSummary,
     kind: VaultConnectionRequest["kind"],
     threadId: ThreadId,
+    account?: AccountScope,
   ) {
-    yield* access.require(threadId, item.id, "inspect", null);
+    yield* account
+      ? access.authorizeAccount(
+          {
+            lease: account.lease,
+            itemId: item.id,
+            expectedVersion: item.version,
+            action: "inspect",
+            destination: null,
+          },
+          account.authorize,
+        )
+      : access.require(threadId, item.id, "inspect", null);
     const value = yield* core.reveal({ id: item.id, expectedVersion: item.version });
     if (value.item.state !== item.state) return null;
     const text = Redacted.value(value.value);
@@ -249,6 +270,7 @@ const make = Effect.gen(function* () {
       readonly profileActive?: boolean;
       readonly repository?: string | null;
     },
+    account?: AccountScope,
   ) {
     const { choice, target } = record;
     if ("id" in input.connection && input.connection.expectedVersion !== choice.item.version)
@@ -303,35 +325,68 @@ const make = Effect.gen(function* () {
         : pinned.repository === repository);
     if (pinned?.destination !== undefined && sameRepository && pinned.destination !== destination)
       return report("version-conflict", [choice]);
-    const explanation = yield* access.explain({
-      threadId,
-      itemId: choice.item.id,
-      action: "use",
-      destination,
-    });
-    if (!explanation.decision.allowed)
-      return report(policyState(explanation.decision.reason), [choice]);
+    if (account) {
+      const permitted = yield* access
+        .authorizeAccount(
+          {
+            lease: account.lease,
+            itemId: choice.item.id,
+            expectedVersion: choice.item.version,
+            action: "use",
+            destination,
+          },
+          account.authorize,
+        )
+        .pipe(Effect.result);
+      if (permitted._tag === "Failure") {
+        if (permitted.failure.reason === "denied") return report("policy-denied", [choice]);
+        if (permitted.failure.reason === "conflict") return report("version-conflict", [choice]);
+        return yield* permitted.failure;
+      }
+    } else {
+      const explanation = yield* access.explain({
+        threadId,
+        itemId: choice.item.id,
+        action: "use",
+        destination,
+      });
+      if (!explanation.decision.allowed)
+        return report(policyState(explanation.decision.reason), [choice]);
+    }
     if (target && !target.hostKey) return report("untrusted-host", [choice]);
     return report("ready", [choice], { ...choice, destination, repository });
   });
   const resolve = Effect.fn("VaultConnections.resolve")(
-    function* (input: VaultConnectionRequest, threadId: ThreadId) {
+    function* (input: VaultConnectionRequest, threadId: ThreadId, account?: AccountScope) {
       if (!isRequest(input)) return report("invalid-input");
+      if (account)
+        yield* access.authorizeAccount(
+          {
+            lease: account.lease,
+            itemId: null,
+            expectedVersion: null,
+            action: "inspect",
+            destination: null,
+          },
+          account.authorize,
+        );
       const kind = input.kind === "github" ? "service-connection" : "ssh-key";
       if ("id" in input.connection) {
-        const inspect = yield* access.explain({
-          threadId,
-          itemId: input.connection.id,
-          action: "inspect",
-          destination: null,
-        });
-        if (!inspect.decision.allowed) {
-          if (
-            inspect.decision.reason === "item-unavailable" &&
-            (yield* access.snapshot).ownerPolicy?.mode === "owner-trusted"
-          )
-            return report("missing");
-          return report(policyState(inspect.decision.reason));
+        if (!account) {
+          const inspect = yield* access.explain({
+            threadId,
+            itemId: input.connection.id,
+            action: "inspect",
+            destination: null,
+          });
+          if (!inspect.decision.allowed) {
+            if (
+              inspect.decision.reason === "item-unavailable" &&
+              (yield* access.snapshot).ownerPolicy?.mode === "owner-trusted"
+            )
+              return report("missing");
+            return report(policyState(inspect.decision.reason));
+          }
         }
         const item = yield* core.inspect(input.connection.id);
         if (!item) return report("missing");
@@ -341,26 +396,28 @@ const make = Effect.gen(function* () {
           return report("inactive", [
             { item, kind: input.kind, hostname: null, account: null, repositories: [] },
           ]);
-        const loaded = yield* metadata(item, input.kind, threadId).pipe(Effect.result);
+        const loaded = yield* metadata(item, input.kind, threadId, account).pipe(Effect.result);
         if (loaded._tag === "Failure") {
           if (loaded.failure.reason === "denied")
             return report(deniedState(loaded.failure, "policy-denied"));
           return yield* loaded.failure;
         }
         return loaded.success
-          ? yield* evaluate(loaded.success, input, threadId)
+          ? yield* evaluate(loaded.success, input, threadId, undefined, account)
           : report("incompatible");
       }
       const selector = input.connection;
       const resource = normalize(selector.resource);
-      const preferences = yield* projectPreferences(threadId, input.kind).pipe(
-        Effect.catchTags({
-          VaultError: (error) =>
-            error.reason === "denied" || error.reason === "not-found"
-              ? Effect.succeed([])
-              : Effect.fail(error),
-        }),
-      );
+      const preferences = account
+        ? []
+        : yield* projectPreferences(threadId, input.kind).pipe(
+            Effect.catchTags({
+              VaultError: (error) =>
+                error.reason === "denied" || error.reason === "not-found"
+                  ? Effect.succeed([])
+                  : Effect.fail(error),
+            }),
+          );
       if ("state" in preferences) return preferences;
       const preferredIds =
         selector.preferredItemIds ??
@@ -376,10 +433,9 @@ const make = Effect.gen(function* () {
       let cursor: string | null = null;
       // Bound inventory work; incomplete scans never authorize a seemingly unique match.
       for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
-        const page: VaultItemPage = yield* access.listForThread(
-          { cursor, includeArchived: true },
-          threadId,
-        );
+        const page: VaultItemPage = yield* account
+          ? core.list({ cursor, includeArchived: true })
+          : access.listForThread({ cursor, includeArchived: true }, threadId);
         for (const item of page.items) {
           if (item.kind !== kind) continue;
           const aliases = preferences
@@ -399,7 +455,7 @@ const make = Effect.gen(function* () {
               );
             continue;
           }
-          const loaded = yield* metadata(item, input.kind, threadId).pipe(Effect.result);
+          const loaded = yield* metadata(item, input.kind, threadId, account).pipe(Effect.result);
           if (loaded._tag === "Failure") {
             if (loaded.failure.reason !== "denied") return yield* loaded.failure;
             if (matchesLabel)
@@ -450,7 +506,7 @@ const make = Effect.gen(function* () {
                 !binding.repository ||
                 normalize(binding.repository) === normalize(input.repository)),
           );
-          matches.push(yield* evaluate(record, input, threadId, pinned));
+          matches.push(yield* evaluate(record, input, threadId, pinned, account));
         }
         cursor = page.nextCursor;
         if (cursor === null) break;
@@ -497,6 +553,9 @@ const make = Effect.gen(function* () {
   });
   return VaultConnections.of({
     resolve,
+    resolveForAccount: Effect.fn("VaultConnections.resolveForAccount")(function* (input, account) {
+      return yield* resolve(input, account.lease.workload.threadId, account);
+    }),
     require: requireConnection,
     revalidate: Effect.fn("VaultConnections.revalidate")(function* (pin, threadId) {
       if (!isPin(pin))
