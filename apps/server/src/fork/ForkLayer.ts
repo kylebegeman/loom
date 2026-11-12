@@ -1,3 +1,7 @@
+import * as AccountAccess from "./account-access/AccountAccess.ts";
+import * as AccountHost from "./account-access/AccountHost.ts";
+import * as AccountGateway from "./account-access/AccountGateway.ts";
+import { AccountAccessRoutes } from "./account-access/http.ts";
 import * as DevApiCredentials from "./browser-dev-tools/DevApiCredentials.ts";
 import * as DevApiLibrary from "./browser-dev-tools/DevApiLibrary.ts";
 import * as DevApi from "./browser-dev-tools/DevApiService.ts";
@@ -344,6 +348,18 @@ const layerDirectory = Directory.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(layerReachStore),
 );
+const layerAccountAccess = AccountAccess.layer.pipe(
+  Layer.provide(Layer.merge(layerDirectory, layerReachStore)),
+);
+const layerAccountGateway = AccountGateway.layer.pipe(
+  Layer.provideMerge(layerAccountAccess),
+  Layer.provide(NodeHttpClient.layerUndici),
+);
+const layerAccountHost = AccountHost.layer.pipe(
+  Layer.provide(LibraryConnection.layer),
+  Layer.provide(NodeHttpClient.layerUndici),
+);
+
 export const layerReachLibrary = ReachProvisioner.layer.pipe(
   Layer.provide(
     Layer.merge(ReachCloudflare.layer, ReachPocketId.layer).pipe(
@@ -698,6 +714,8 @@ const ForkServicesLive = Layer.mergeAll(
     ),
   ),
   layerReachLibrary,
+  layerAccountGateway,
+  layerAccountHost,
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
   ReachService.layer,
   // On the Library, alerts for its own threads go straight to this one push service instance.
@@ -751,6 +769,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PreviewAccessHttpRoutes,
   PageLibraryHttpRoutes,
   DirectoryHttpRoutes,
+  AccountAccessRoutes,
   BotLibraryHttpRoutes,
   ReachHttpRoutes,
   LibraryPushHttpRoutes,

@@ -219,6 +219,7 @@ export async function connectDirectoryComputer(
     return failed("Loom could not check this computer. Try again.");
   const step = planned.value;
   if (step === null) return failed("This computer has no address this device can use.");
+  if (step.kind === "connected") return CONNECTED;
   if (step.kind === "pairing") return { kind: "pairing", step };
   try {
     const signedIn = await dependencies.signIn(directorySignInRequest(step, input.row.label));

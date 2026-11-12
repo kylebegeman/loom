@@ -1,3 +1,4 @@
+import * as Stream from "effect/Stream";
 import type * as Signature from "effect/crypto/Signature";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation.
 import * as NodeCrypto from "node:crypto";
@@ -218,6 +219,7 @@ const run = <A, E>(
         : Layer.succeed(
             ReachStore,
             ReachStore.of({
+              changes: Stream.never,
               read: Effect.suspend(() =>
                 reach.unreadable === true
                   ? Effect.fail(new ReachStoreError({ operation: "read" }))

@@ -35,26 +35,19 @@ it. A privately configured account service follows its own supported domains.
 
 ## Connect computers from your Library
 
-Once this device is connected to your Library, Loom lists the other computers in
-your Library that this device has not connected yet, under **Settings > Computers**.
-On iPhone they are in its **From your Library** section. Choose **Connect** to sign in to
-one with Loom Identity, with no pairing code. In a browser, choose **Sign in**
-next, which opens the sign-in window. Loom reaches these computers over
-Tailscale, or at a computer's Loomhost address once Loomhost is on for it (see
-[Connect from anywhere with Loomhost](#connect-from-anywhere-with-loomhost)). A computer
-without a Loomhost address needs this device on your tailnet. A browser signs in
-over Tailscale; when only the Loomhost address answers, Loom offers pairing instead.
+Sign in to your Library, then choose a computer under **Settings > Computers**.
+On iPhone, use **From your Library**. With current Loom versions on both the Library
+and the computer, **Connect** uses your existing account sign-in. You do not need
+a second sign-in, pairing code or VPN on this device. The computer must be enrolled
+with your Library and have Loomhost enabled.
 
-If you joined your Library with Loom Identity, sign in to each computer with the
-same account. Loom only signs in to a computer that uses the same sign-in
-provider as your Library.
+If the computer is offline, its saved conversations remain in the Library. Loom
+reconnects live work when the computer becomes available. Signing out or revoking
+a device in your Library ends its account access to your computers.
 
-When Loom cannot sign in, it says why and offers the pairing form instead, with
-the computer's address filled in when Loom has a usable one. That happens when
-the computer cannot be reached, does not offer Loom sign-in to this app, or uses
-a different sign-in provider than your Library. In a browser, sign-in also needs
-the computer to allow this app's address. Get a pairing code from Connections
-settings in Loom on that computer.
+Older computers continue to use their own Identity sign-in or a pairing code.
+Update Loom on both your Library and the computer to use account access. Direct
+Tailscale and pairing connections remain available for local access and recovery.
 
 The desktop app and iPhone also refuse to sign in at a typed address that
 claims to be a computer your Library lists at other addresses. Sign in from

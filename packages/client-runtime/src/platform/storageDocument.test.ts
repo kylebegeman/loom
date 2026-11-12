@@ -9,6 +9,7 @@ import {
   BearerConnectionCredential,
   BearerConnectionProfile,
   BearerConnectionRegistration,
+  AccountConnectionRegistration,
   RelayConnectionRegistration,
   SshConnectionProfile,
   SshConnectionRegistration,
@@ -407,4 +408,21 @@ describe("ConnectionCatalogDocument", () => {
       setRoutesInCatalog(document, ENVIRONMENT_ID, [BEARER_TARGET, RELAY_TARGET]).targets,
     ).toEqual([BEARER_TARGET, RELAY_TARGET, other]);
   });
+});
+
+it("persists an account connection as a Library binding without duplicating credentials", () => {
+  const registration = new AccountConnectionRegistration({
+    target: BEARER_TARGET,
+    profile: new BearerConnectionProfile({
+      ...BEARER_PROFILE,
+      account: {
+        libraryEnvironmentId: EnvironmentId.make("library"),
+        connectionId: "library-sign-in",
+      },
+    }),
+  });
+  const document = registerConnectionInCatalog(EMPTY_CONNECTION_CATALOG_DOCUMENT, registration);
+  expect(document.targets).toEqual([BEARER_TARGET]);
+  expect(document.profiles).toEqual([registration.profile]);
+  expect(document.credentials).toEqual([]);
 });

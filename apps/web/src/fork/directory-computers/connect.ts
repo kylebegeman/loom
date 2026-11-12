@@ -83,6 +83,7 @@ export async function connectLibraryComputer(input: {
     return failedWith(planned, "Loom could not check this computer's sign-in.");
   const step = planned.value;
   if (step === null) return { kind: "failed", message: "Loom has no address for this computer." };
+  if (step.kind === "connected") return step;
   if (step.kind === "pairing")
     return {
       kind: "pairing",

@@ -1,3 +1,4 @@
+import { ACCOUNT_ACCESS_FEATURE, ACCOUNT_GATEWAY_FEATURE } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
 import {
@@ -188,6 +189,8 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "bots-completions",
   "bots-creation",
   DIRECTORY_REPORTING_FEATURE,
+  ACCOUNT_ACCESS_FEATURE,
+  ...(directoryAdvertised(process.env) ? [ACCOUNT_GATEWAY_FEATURE] : []),
   REACH_FEATURE,
   REACH_FORGET_FEATURE,
   REACH_IDENTITY_APPLY_FEATURE,

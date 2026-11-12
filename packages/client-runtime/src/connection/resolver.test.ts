@@ -66,6 +66,7 @@ function catalogEntry(
 }
 
 const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((options?: {
+  readonly fetch?: typeof fetch;
   readonly profiles?: ReadonlyArray<ConnectionProfile>;
   readonly profileStore?: ConnectionProfileStore.ConnectionProfileStore["Service"];
   readonly credentials?: ReadonlyArray<readonly [string, ConnectionCredential]>;
@@ -141,21 +142,24 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   });
 
   const layerDependencies = Layer.mergeAll(
-    RpcHttp.layerRemoteHttpClient((() =>
-      Promise.resolve(
-        Response.json({
-          environmentId: ENVIRONMENT_ID,
-          label: "Compatible environment",
-          platform: { os: "linux", arch: "x64" },
-          serverVersion: "0.0.0-test",
-          ...(options?.descriptorProtocolVersion === undefined
-            ? { orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION }
-            : options.descriptorProtocolVersion === null
-              ? {}
-              : { orchestrationProtocolVersion: options.descriptorProtocolVersion }),
-          capabilities: { repositoryIdentity: true },
-        }),
-      )) satisfies typeof fetch),
+    RpcHttp.layerRemoteHttpClient(
+      options?.fetch ??
+        ((() =>
+          Promise.resolve(
+            Response.json({
+              environmentId: ENVIRONMENT_ID,
+              label: "Compatible environment",
+              platform: { os: "linux", arch: "x64" },
+              serverVersion: "0.0.0-test",
+              ...(options?.descriptorProtocolVersion === undefined
+                ? { orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION }
+                : options.descriptorProtocolVersion === null
+                  ? {}
+                  : { orchestrationProtocolVersion: options.descriptorProtocolVersion }),
+              capabilities: { repositoryIdentity: true },
+            }),
+          )) satisfies typeof fetch),
+    ),
     Layer.succeed(
       ConnectionProfileStore.ConnectionProfileStore,
       options?.profileStore ?? profileStore,
@@ -561,3 +565,111 @@ describe("ConnectionResolver", () => {
       }),
   );
 });
+
+it.effect(
+  "uses the current Library credential for an account computer without saving another token",
+  () =>
+    Effect.gen(function* () {
+      const libraryId = EnvironmentId.make("library");
+      const source = new BearerConnectionProfile({
+        connectionId: "library-sign-in",
+        environmentId: libraryId,
+        label: "Library",
+        httpBaseUrl: "https://library.example.test/",
+        wsBaseUrl: "wss://library.example.test/ws",
+      });
+      const target = new BearerConnectionTarget({
+        connectionId: "account-computer",
+        environmentId: ENVIRONMENT_ID,
+        label: "Computer",
+      });
+      const profile = new BearerConnectionProfile({
+        connectionId: target.connectionId,
+        environmentId: ENVIRONMENT_ID,
+        label: "Computer",
+        httpBaseUrl: "https://old-library.example.test/api/loom/account/computers/environment-1/",
+        wsBaseUrl: "wss://old-library.example.test/ws",
+        account: { libraryEnvironmentId: libraryId, connectionId: source.connectionId },
+      });
+      const calls: string[] = [];
+      const layer = yield* makeDependencies({
+        profiles: [source],
+        credentials: [
+          [source.connectionId, new BearerConnectionCredential({ token: "library-current-token" })],
+        ],
+        fetch: (input, init) => {
+          const url = String(input);
+          calls.push(url);
+          expect(new Headers(init?.headers).get("authorization")).toBe(
+            "Bearer library-current-token",
+          );
+          return Promise.resolve(
+            Response.json(
+              url.includes("websocket-ticket")
+                ? { ticket: "library-rpc-ticket", expiresAt: "2026-12-31T00:00:00Z" }
+                : {
+                    environmentId: ENVIRONMENT_ID,
+                    label: "Computer",
+                    platform: { os: "linux", arch: "x64" },
+                    serverVersion: "0.0.0-test",
+                    orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
+                    capabilities: { repositoryIdentity: true },
+                  },
+            ),
+          );
+        },
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layer));
+      const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+      expect(calls).toHaveLength(2);
+      expect(
+        calls.every((url) =>
+          url.startsWith("https://library.example.test/api/loom/account/computers/environment-1/"),
+        ),
+      ).toBe(true);
+      expect(prepared.credentialSourceConnectionId).toBe(source.connectionId);
+      expect(prepared.httpAuthorization).toEqual({
+        _tag: "Bearer",
+        token: "library-current-token",
+      });
+      expect(prepared.socketUrl).toContain(
+        "/api/loom/account/computers/environment-1/ws?wsTicket=library-rpc-ticket",
+      );
+    }),
+);
+
+it.effect("refuses an account route whose saved Library binding names another computer", () =>
+  Effect.gen(function* () {
+    const target = new BearerConnectionTarget({
+      connectionId: "account-computer",
+      environmentId: ENVIRONMENT_ID,
+      label: "Computer",
+    });
+    const profile = new BearerConnectionProfile({
+      connectionId: target.connectionId,
+      environmentId: ENVIRONMENT_ID,
+      label: "Computer",
+      httpBaseUrl: "https://library.example.test/",
+      wsBaseUrl: "wss://library.example.test/ws",
+      account: {
+        libraryEnvironmentId: EnvironmentId.make("library"),
+        connectionId: "unrelated-sign-in",
+      },
+    });
+    const unrelated = new BearerConnectionProfile({
+      connectionId: "unrelated-sign-in",
+      environmentId: EnvironmentId.make("unrelated"),
+      label: "Unrelated",
+      httpBaseUrl: "https://unrelated.example.test/",
+      wsBaseUrl: "wss://unrelated.example.test/ws",
+    });
+    const layer = yield* makeDependencies({
+      profiles: [unrelated],
+      fetch: () => Promise.reject(new Error("A refused binding must send no request")),
+    });
+    const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layer));
+    expect(
+      (yield* Effect.flip(broker.prepare(catalogEntry(target, Option.some(profile))))).reason,
+    ).toBe("authentication");
+  }),
+);

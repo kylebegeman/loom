@@ -1,3 +1,4 @@
+import { environmentResourceUrl } from "@t3tools/client-runtime/environment";
 import { createModelPreviewAtoms } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -17,5 +18,5 @@ export async function runModelCommand<W, A, E>(
 export function modelUrl(environmentId: EnvironmentId, relativeUrl: string) {
   const connection = readPreparedConnection(environmentId);
   if (!connection) throw new Error("The environment is disconnected.");
-  return new URL(relativeUrl, connection.httpBaseUrl).href;
+  return environmentResourceUrl(connection.httpBaseUrl, relativeUrl);
 }

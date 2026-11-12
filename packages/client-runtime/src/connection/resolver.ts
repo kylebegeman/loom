@@ -1,3 +1,9 @@
+import * as PlatformConnectionSource from "../platform/source.ts";
+import * as Stream from "effect/Stream";
+import { ACCOUNT_ACCESS_PREFIX } from "@t3tools/contracts/fork";
+import { environmentEndpointUrl } from "../environment/endpoint.ts";
+import { resolveRemoteWebSocketConnectionUrl } from "../authorization/remote.ts";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import type {
   AuthClientPresentationMetadata,
   ExecutionEnvironmentDescriptor,
@@ -35,13 +41,13 @@ import {
   PullRequestRoutingPermissions,
   pullRequestRoutingConnectionKey,
 } from "./pullRequestRoutingPermissions.ts";
-import type {
+import {
   BearerConnectionTarget,
-  ConnectionTarget,
-  PreparedConnection,
+  type ConnectionTarget,
+  type PreparedConnection,
   PrimaryConnectionTarget,
-  RelayConnectionTarget,
-  SshConnectionTarget,
+  type RelayConnectionTarget,
+  type SshConnectionTarget,
 } from "./model.ts";
 import { ConnectionBlockedError, type ConnectionAttemptError } from "./model.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
@@ -307,10 +313,132 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
   });
 });
 
+const makeAccountBroker = Effect.fn("clientRuntime.connection.broker.makeAccount")(function* (
+  primary: Effect.Success<ReturnType<typeof makePrimaryBroker>>,
+  bearer: Effect.Success<ReturnType<typeof makeBearerBroker>>,
+) {
+  const profiles = yield* ConnectionProfileStore.ConnectionProfileStore;
+  const http = yield* HttpClient.HttpClient;
+  const platform = yield* Effect.serviceOption(PlatformConnectionSource.PlatformConnectionSource);
+  return Effect.fn("clientRuntime.connection.broker.account")(function* (
+    entry: ConnectionCatalogEntry & { readonly target: BearerConnectionTarget },
+    profile: BearerConnectionProfile,
+  ) {
+    const account = profile.account;
+    if (account === undefined || account.libraryEnvironmentId === entry.target.environmentId)
+      return yield* new ConnectionBlockedError({
+        reason: "configuration",
+        detail: "This account connection has an invalid Library binding.",
+      });
+    let source: PreparedConnection;
+    if (account.connectionId === null) {
+      if (Option.isNone(platform))
+        return yield* new ConnectionBlockedError({
+          reason: "configuration",
+          detail: "This device has no primary Library connection.",
+        });
+      const registration = yield* platform.value.registrations.pipe(
+        Stream.map((items) =>
+          items.find(
+            (item) =>
+              item._tag === "PrimaryConnectionRegistration" &&
+              item.target.environmentId === account.libraryEnvironmentId,
+          ),
+        ),
+        Stream.filter((item) => item !== undefined),
+        Stream.runHead,
+        Effect.timeout("10 seconds"),
+        Effect.mapError(
+          () =>
+            new ConnectionBlockedError({
+              reason: "authentication",
+              detail: "Reconnect to your Library to access your computers.",
+            }),
+        ),
+      );
+      if (
+        Option.isNone(registration) ||
+        registration.value._tag !== "PrimaryConnectionRegistration"
+      )
+        return yield* new ConnectionBlockedError({
+          reason: "configuration",
+          detail: "This device has no primary Library connection.",
+        });
+      source = yield* primary(registration.value.target);
+    } else {
+      const saved = Option.getOrNull(yield* profiles.get(account.connectionId));
+      if (
+        saved?._tag !== "BearerConnectionProfile" ||
+        saved.account !== undefined ||
+        saved.environmentId !== account.libraryEnvironmentId
+      )
+        return yield* new ConnectionBlockedError({
+          reason: "authentication",
+          detail: "Sign in to your Library to reconnect your computers.",
+        });
+      source = yield* bearer({
+        target: new BearerConnectionTarget({
+          environmentId: saved.environmentId,
+          label: saved.label,
+          connectionId: saved.connectionId,
+        }),
+        profile: Option.some(saved),
+        enabled: true,
+      });
+    }
+    const authorization = source.httpAuthorization;
+    if (authorization !== null && authorization._tag !== "Bearer")
+      return yield* new ConnectionBlockedError({
+        reason: "unsupported",
+        detail: "This Library connection does not support account access.",
+      });
+    const httpBaseUrl = new URL(
+      `${ACCOUNT_ACCESS_PREFIX}${encodeURIComponent(entry.target.environmentId)}/`,
+      source.httpBaseUrl,
+    ).href;
+    const authenticated =
+      authorization === null
+        ? http
+        : HttpClient.mapRequest(http, HttpClientRequest.bearerToken(authorization.token));
+    const descriptor = yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl }).pipe(
+      Effect.provideService(HttpClient.HttpClient, authenticated),
+      Effect.mapError(mapRemoteEnvironmentError),
+    );
+    if (descriptor.environmentId !== entry.target.environmentId)
+      return yield* environmentMismatchError({
+        expected: entry.target.environmentId,
+        actual: descriptor.environmentId,
+      });
+    const wsBaseUrl = environmentEndpointUrl(httpBaseUrl, "/ws").replace(/^http/u, "ws");
+    const socketUrl =
+      authorization === null
+        ? wsBaseUrl
+        : yield* resolveRemoteWebSocketConnectionUrl({
+            httpBaseUrl,
+            wsBaseUrl,
+            bearerToken: authorization.token,
+          }).pipe(
+            Effect.provideService(HttpClient.HttpClient, http),
+            Effect.mapError(mapRemoteEnvironmentError),
+          );
+    return {
+      environmentId: entry.target.environmentId,
+      label: descriptor.label,
+      httpBaseUrl,
+      socketUrl,
+      httpAuthorization: authorization,
+      credentialSourceConnectionId: account.connectionId,
+      target: entry.target,
+      descriptor,
+    };
+  });
+});
+
 /** @public */
 export const make = Effect.gen(function* () {
   const primary = yield* makePrimaryBroker();
   const bearer = yield* makeBearerBroker();
+  const account = yield* makeAccountBroker(primary, bearer);
   const relay = yield* makeRelayBroker();
   const ssh = yield* makeSshBroker();
   const httpClient = yield* HttpClient.HttpClient;
@@ -329,8 +457,12 @@ export const make = Effect.gen(function* () {
       switch (target._tag) {
         case "PrimaryConnectionTarget":
           return primary(target);
-        case "BearerConnectionTarget":
-          return bearer({ ...entry, target });
+        case "BearerConnectionTarget": {
+          const profile = Option.getOrNull(entry.profile);
+          return profile?._tag === "BearerConnectionProfile" && profile.account !== undefined
+            ? account({ ...entry, target }, profile)
+            : bearer({ ...entry, target });
+        }
         case "RelayConnectionTarget":
           return relay(target);
         case "SshConnectionTarget":

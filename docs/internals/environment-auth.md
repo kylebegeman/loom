@@ -27,7 +27,21 @@ model. DPoP binds a token to a client's proof key; an invalid proof must fail
 rather than fall back to bearer authentication. The OAuth token-exchange
 vocabulary gives these grants a familiar meaning.
 
-### Identity remains a host-local grant
+### Trusted account access
+
+<!-- fork: account-access -->
+
+An enrolled computer can accept owner access through its Library's account gateway.
+This is an explicit trust in the Library to authorize the owner's devices, separate from
+OIDC tokens for a host. The gateway checks the current session and pinned Reach route;
+the computer redeems a one-use, request-bound grant through its own enrolled publisher
+connection. Human Library credentials never reach the computer. The admitted principal
+uses the existing issuer-bound ownership identity, so Vault ownership and operation
+recovery survive device changes. Revocation closes gateway streams; local connections
+and running work remain independent of Library availability. Signed asset URLs retain
+their existing expiry boundary.
+
+### Direct Identity remains a host-local grant
 
 <!-- fork: identity-renewal -->
 
@@ -35,9 +49,10 @@ vocabulary gives these grants a familiar meaning.
 audience, clients and immutable subjects enrolled through the host's trusted process
 configuration or private host configuration explicitly saved by its own settings administrator.
 Reach's **Use these values** writes a 0600 host file and restarts the backend; process
-environment variables take precedence. The Library's issuer or directory never delegates access to another
-computer. Each execution host needs its own explicitly accepted API resource; reusing a
-Library audience silently widens the trust boundary. Sessions are bounded by the accepted
+environment variables take precedence. For direct Identity sign-in, a Directory entry or
+matching issuer does not authorize another computer. Each execution host accepts its own
+API resource; a Library audience cannot substitute for it. Account access uses the separate
+trusted gateway boundary above. Sessions are bounded by the accepted
 token's expiry, one hour and, when the host sets `LOOM_IDENTITY_MAX_SESSION_AGE`, that age
 counted from the ID token's `auth_time`. Refreshes never move `auth_time`, so it is the only
 limit a refresh grant cannot extend. Native clients ask for `offline_access` only from a host

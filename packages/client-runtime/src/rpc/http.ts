@@ -1,3 +1,4 @@
+import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import {
   EnvironmentHttpApi,
   EnvironmentHttpCommonError,
@@ -81,13 +82,7 @@ export const layerRemoteHttpClient = (
     HttpObservability.layer,
   );
 
-const remoteApiBaseUrl = (httpBaseUrl: string): string => {
-  const url = new URL(httpBaseUrl);
-  url.pathname = "/";
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-};
+const remoteApiBaseUrl = (httpBaseUrl: string): string => environmentEndpointUrl(httpBaseUrl, "/");
 
 export const makeEnvironmentHttpApiClient = (httpBaseUrl: string) =>
   HttpApiClient.make(EnvironmentHttpApi, {

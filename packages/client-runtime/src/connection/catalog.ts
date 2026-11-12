@@ -23,6 +23,12 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
+    account: Schema.optionalKey(
+      Schema.Struct({
+        libraryEnvironmentId: EnvironmentId,
+        connectionId: Schema.NullOr(Schema.String),
+      }),
+    ),
     identity: Schema.optionalKey(LoomIdentityAccount), // fork: identity-renewal
     learned: Schema.optionalKey(Schema.Literal(true)),
     authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
@@ -106,6 +112,11 @@ export class BearerConnectionRegistration extends Schema.TaggedClass<BearerConne
   },
 ) {}
 
+export class AccountConnectionRegistration extends Schema.TaggedClass<AccountConnectionRegistration>()(
+  "AccountConnectionRegistration",
+  { target: BearerConnectionTarget, profile: BearerConnectionProfile },
+) {}
+
 export class SshConnectionRegistration extends Schema.TaggedClass<SshConnectionRegistration>()(
   "SshConnectionRegistration",
   {
@@ -119,6 +130,7 @@ export class SshConnectionRegistration extends Schema.TaggedClass<SshConnectionR
 export const ConnectionRegistration = Schema.Union([
   RelayConnectionRegistration,
   BearerConnectionRegistration,
+  AccountConnectionRegistration,
   SshConnectionRegistration,
 ]);
 export type ConnectionRegistration = typeof ConnectionRegistration.Type;
@@ -147,6 +159,7 @@ export function connectionRegistrationCatalogEntry(
         enabled: true,
       };
     case "BearerConnectionRegistration":
+    case "AccountConnectionRegistration":
     case "SshConnectionRegistration":
       return {
         target: registration.target,

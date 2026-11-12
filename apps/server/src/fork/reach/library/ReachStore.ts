@@ -13,7 +13,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Ref from "effect/Ref";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as ServerConfig from "../../../config.ts";
@@ -126,6 +127,7 @@ export class ReachStore extends Context.Service<
   ReachStore,
   {
     readonly read: Effect.Effect<ReachLibraryState, ReachStoreError>;
+    readonly changes: Stream.Stream<ReachLibraryState>;
     /** Writes the file before the copy in memory changes, so a failed write changes nothing. */
     readonly update: (
       change: (state: ReachLibraryState) => ReachLibraryState,
@@ -165,16 +167,16 @@ const makeAt = Effect.fn("ReachStore.make")(function* (filePath: string) {
   const writeLock = yield* Semaphore.make(1);
   // Null until a read succeeds. An unreadable file stays unloaded, so pins, seqs and tombstones
   // are never replaced by an empty state, and a repaired file is picked up without a restart.
-  const loaded = yield* Ref.make<ReachLibraryState | null>(null);
+  const loaded = yield* SubscriptionRef.make<ReachLibraryState | null>(null);
 
   const load = Effect.gen(function* () {
-    const current = yield* Ref.get(loaded);
+    const current = yield* SubscriptionRef.get(loaded);
     if (current !== null) return current;
     const exists = yield* fs
       .exists(filePath)
       .pipe(Effect.mapError(() => new ReachStoreError({ operation: "read" })));
     if (!exists) {
-      yield* Ref.set(loaded, emptyReachLibraryState);
+      yield* SubscriptionRef.set(loaded, emptyReachLibraryState);
       return emptyReachLibraryState;
     }
     const text = yield* fs
@@ -187,7 +189,7 @@ const makeAt = Effect.fn("ReachStore.make")(function* (filePath: string) {
       });
       return yield* new ReachStoreError({ operation: "read" });
     }
-    yield* Ref.set(loaded, decoded.value);
+    yield* SubscriptionRef.set(loaded, decoded.value);
     return decoded.value;
   });
 
@@ -203,12 +205,18 @@ const makeAt = Effect.fn("ReachStore.make")(function* (filePath: string) {
           Effect.provideService(Path.Path, path),
           Effect.mapError(() => new ReachStoreError({ operation: "write" })),
         );
-        yield* Ref.set(loaded, next);
+        yield* SubscriptionRef.set(loaded, next);
         return next;
       }),
     );
 
-  return ReachStore.of({ read: load, update });
+  return ReachStore.of({
+    read: load,
+    update,
+    changes: SubscriptionRef.changes(loaded).pipe(
+      Stream.filter((state): state is ReachLibraryState => state !== null),
+    ),
+  });
 });
 
 /** For tests and tools that keep the file somewhere other than the state directory. */

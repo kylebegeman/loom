@@ -153,6 +153,7 @@ export interface PreparedConnection {
   readonly httpBaseUrl: string;
   readonly socketUrl: string;
   readonly httpAuthorization: PreparedHttpAuthorization | null;
+  readonly credentialSourceConnectionId?: string | null;
   readonly target: ConnectionTarget;
 }
 

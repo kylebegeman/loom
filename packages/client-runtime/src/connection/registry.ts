@@ -728,7 +728,8 @@ export const make = Effect.gen(function* () {
       yield* SubscriptionRef.updateSome(scope.supervisor.prepared, (current) =>
         Option.isSome(current) &&
         current.value.target._tag === "BearerConnectionTarget" &&
-        credentialConnectionId(current.value.target.connectionId) === connectionId &&
+        (credentialConnectionId(current.value.target.connectionId) === connectionId ||
+          current.value.credentialSourceConnectionId === connectionId) &&
         current.value.httpAuthorization?._tag === "Bearer" &&
         current.value.httpAuthorization.token !== token
           ? Option.some(
@@ -764,6 +765,19 @@ export const make = Effect.gen(function* () {
         if (!owns((yield* SubscriptionRef.get(entries)).get(environmentId))) return;
         yield* credentials.put(connectionId, credential);
         yield* applyCredentialLocked(environmentId, connectionId, credential.token);
+        for (const [dependentId, dependent] of yield* SubscriptionRef.get(entries)) {
+          if (dependentId === environmentId) continue;
+          if (
+            connectionRoutes(dependent).some(
+              (route) =>
+                Option.isSome(route.profile) &&
+                route.profile.value._tag === "BearerConnectionProfile" &&
+                route.profile.value.account?.connectionId === connectionId,
+            )
+          ) {
+            yield* applyCredentialLocked(dependentId, connectionId, credential.token);
+          }
+        }
       }),
     );
   });

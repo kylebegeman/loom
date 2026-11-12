@@ -89,7 +89,14 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
+import type { AccountAccess } from "./account-access/AccountAccess.ts";
+import type { AccountHost } from "./account-access/AccountHost.ts";
+import type { AccountGateway } from "./account-access/AccountGateway.ts";
+
 export type ForkServices =
+  | AccountAccess
+  | AccountHost
+  | AccountGateway
   | ClaudeWorktreeService
   | DevApiLibrary
   | DevApiService

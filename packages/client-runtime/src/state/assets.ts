@@ -1,3 +1,4 @@
+import { environmentResourceUrl } from "../environment/endpoint.ts";
 import { nativeTransportHeaders } from "../fork/cloudflare-access.ts"; // fork: cloudflare-access
 import {
   type AssetCreateUrlInput,
@@ -62,7 +63,7 @@ function parseAssetCollectionKey(
 
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
   try {
-    return new URL(relativeUrl, httpBaseUrl).toString();
+    return environmentResourceUrl(httpBaseUrl, relativeUrl);
   } catch {
     return null;
   }
@@ -289,7 +290,7 @@ export function createAssetEnvironmentAtoms<R, E>(
     const asset = yield* registry
       .run(local.environmentId, mint(local.environmentId, input))
       .pipe(Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, () => error))));
-    return { ...asset, relativeUrl: new URL(asset.relativeUrl, local.httpBaseUrl).href };
+    return { ...asset, relativeUrl: environmentResourceUrl(local.httpBaseUrl, asset.relativeUrl) };
   });
   const createUrl = createEnvironmentQueryAtomFamily(runtime, {
     label: "environment-data:assets:create-url",

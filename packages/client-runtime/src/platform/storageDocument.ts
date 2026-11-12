@@ -134,6 +134,15 @@ export function registerConnectionInCatalog(
   switch (registration._tag) {
     case "RelayConnectionRegistration":
       return next;
+    case "AccountConnectionRegistration":
+      return {
+        ...next,
+        profiles: replaceCatalogValue(
+          next.profiles,
+          (value) => value.connectionId,
+          registration.profile,
+        ),
+      };
     case "BearerConnectionRegistration":
     case "SshConnectionRegistration":
       return {

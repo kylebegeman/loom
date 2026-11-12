@@ -395,9 +395,14 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const connectRoute = (entry: ConnectionCatalogEntry, route: ConnectionRoute) =>
     Effect.gen(function* () {
       const target = route.target;
+      const routeProfile = Option.getOrNull(route.profile);
+      const sourceConnectionId =
+        routeProfile?._tag === "BearerConnectionProfile"
+          ? routeProfile.account?.connectionId
+          : undefined;
       const credential =
         target._tag === "BearerConnectionTarget"
-          ? yield* credentialStore.get(target.connectionId)
+          ? yield* credentialStore.get(sourceConnectionId ?? target.connectionId)
           : Option.none();
       const prepared: PreparedConnection = {
         ...PREPARED,
@@ -407,6 +412,9 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
           ? { _tag: "Bearer", token: credential.value.token }
           : null,
         target,
+        ...(sourceConnectionId === undefined
+          ? {}
+          : { credentialSourceConnectionId: sourceConnectionId }),
       };
       if (options?.prepareError) return yield* options.prepareError;
       const heldError = options?.beforePrepareRoute
@@ -1554,9 +1562,23 @@ describe("EnvironmentRegistry", () => {
   // fork: identity-renewal
   it.effect("a renewed saved credential reaches the connected session without reconnecting", () =>
     Effect.gen(function* () {
+      const accountTarget = new BearerConnectionTarget({
+        environmentId: EnvironmentId.make("account-computer"),
+        label: "Account computer",
+        connectionId: "account-computer",
+      });
+      const accountProfile = new BearerConnectionProfile({
+        ...BEARER_PROFILE,
+        environmentId: accountTarget.environmentId,
+        connectionId: accountTarget.connectionId,
+        account: {
+          libraryEnvironmentId: BEARER_TARGET.environmentId,
+          connectionId: BEARER_TARGET.connectionId,
+        },
+      });
       const harness = yield* makeHarness(
-        [BEARER_TARGET],
-        [BEARER_PROFILE],
+        [BEARER_TARGET, accountTarget],
+        [BEARER_PROFILE, accountProfile],
         [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
       );
 
@@ -1566,6 +1588,11 @@ describe("EnvironmentRegistry", () => {
         yield* awaitConnectionState(
           registry,
           BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        yield* awaitConnectionState(
+          registry,
+          accountTarget.environmentId,
           (state) => state.phase === "connected",
         );
         const renewed = new BearerConnectionCredential({ token: "renewed-bearer" });
@@ -1583,8 +1610,18 @@ describe("EnvironmentRegistry", () => {
         expect(Option.getOrThrow(prepared).httpAuthorization).toMatchObject({
           token: "renewed-bearer",
         });
-        expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
+        const dependent = yield* registry.run(
+          accountTarget.environmentId,
+          EnvironmentSupervisor.EnvironmentSupervisor.pipe(
+            Effect.flatMap((supervisor) => SubscriptionRef.get(supervisor.prepared)),
+          ),
+        );
+        expect(Option.getOrThrow(dependent).httpAuthorization).toMatchObject({
+          token: "renewed-bearer",
+        });
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
         const stored = yield* Ref.get(harness.storedCredentials);
+        expect(stored.has(accountTarget.connectionId)).toBe(false);
         expect(stored.get(BEARER_TARGET.connectionId)).toEqual(renewed);
         expect(stored.has("removed-connection")).toBe(false);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
