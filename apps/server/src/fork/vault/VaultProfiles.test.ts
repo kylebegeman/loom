@@ -18,6 +18,7 @@ import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SshTransport from "./SshTransport.ts";
+import * as MachineClient from "./AccountVaultMachineClient.ts";
 import * as VaultProfiles from "./VaultProfiles.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 const dependencies = Layer.merge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer), memoryVault);
@@ -463,5 +464,55 @@ it.effect(
       expect(yield* f.profiles.resolve(f.threadId, null)).toEqual(pinned);
       f.state.thread = { ...f.state.thread, status: "waiting", activeRunId: null };
       expect((yield* f.profiles.resolve(f.threadId, null).pipe(Effect.flip)).reason).toBe("denied");
+    }).pipe(Effect.scoped, Effect.provide(dependencies)),
+);
+
+it.effect(
+  "previews account bindings through the Library without reading same-named local keys",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      let calls = 0;
+      const remote = yield* VaultProfiles.VaultProfiles.pipe(
+        Effect.provide(Layer.fresh(VaultProfiles.layer)),
+        Effect.provideService(MachineClient.AccountVaultMachineClient, {
+          available: Effect.succeed(true),
+          provider: () => Effect.die("Unexpected provider request"),
+          profileRecord: (input) =>
+            Effect.sync(() => {
+              calls++;
+              if (input.kind !== "preview" || input.projectId !== f.projectId)
+                throw new Error("Expected account profile preview");
+              return {
+                kind: "preview" as const,
+                preview: {
+                  ready: false,
+                  bindings: [
+                    {
+                      name: "server",
+                      itemId: f.itemId,
+                      version: 99,
+                      destination: "account-destination",
+                      state: "unchecked" as const,
+                    },
+                  ],
+                },
+              };
+            }),
+        }),
+        Effect.provide(f.context),
+      );
+      const preview = yield* remote.preview({
+        projectId: f.projectId,
+        profile: f.definition,
+        threadId: null,
+      });
+      expect(preview.bindings[0]).toMatchObject({
+        version: 99,
+        destination: "account-destination",
+        state: "unchecked",
+      });
+      expect(preview.ready).toBe(false);
+      expect(calls).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(dependencies)),
 );

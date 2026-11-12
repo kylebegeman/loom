@@ -1,4 +1,6 @@
 import {
+  ACCOUNT_PROFILE_RECORD_ROUTE,
+  AccountProfileRecordEnvelope,
   ACCOUNT_VAULT_ROUTE,
   AccountVaultEnvelope,
   VaultError,
@@ -18,9 +20,10 @@ import {
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { withForkRuntime } from "../ForkRuntime.ts";
 import * as AccountVaultAuthority from "./AccountVaultAuthority.ts";
-import * as AccountProviderAuthority from "./AccountProviderAuthority.ts";
+import * as AccountVaultMachineAuthority from "./AccountVaultMachineAuthority.ts";
 
 const decodeEnvelope = Schema.decodeUnknownEffect(AccountVaultEnvelope);
+const decodeProfileEnvelope = Schema.decodeUnknownEffect(AccountProfileRecordEnvelope);
 const encodeProvider = Schema.encodeEffect(AccountProviderResponse);
 const handler = withForkRuntime(
   Effect.gen(function* () {
@@ -30,15 +33,23 @@ const handler = withForkRuntime(
     );
     if (request.headers["content-type"]?.split(";")[0]?.trim() !== "application/json")
       return HttpServerResponse.empty({ status: 415 });
+    const isProfile = request.url.split("?")[0] === ACCOUNT_PROFILE_RECORD_ROUTE;
     const input = yield* request.json.pipe(
-      Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(96)),
-      Effect.flatMap(decodeEnvelope),
+      Effect.provideService(
+        HttpIncomingMessage.MaxBodySize,
+        isProfile ? ByteSize.mebibytes(3) : ByteSize.kibibytes(96),
+      ),
+      Effect.flatMap(isProfile ? decodeProfileEnvelope : decodeEnvelope),
       Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
     );
-    const result =
-      request.url.split("?")[0] === ACCOUNT_PROVIDER_CREDENTIAL_ROUTE
-        ? yield* (yield* AccountProviderAuthority.AccountProviderAuthority)
-            .execute(input, publisher)
+    const result = isProfile
+      ? yield* (yield* AccountVaultMachineAuthority.AccountVaultMachineAuthority).profileRecord(
+          input,
+          publisher,
+        )
+      : request.url.split("?")[0] === ACCOUNT_PROVIDER_CREDENTIAL_ROUTE
+        ? yield* (yield* AccountVaultMachineAuthority.AccountVaultMachineAuthority)
+            .providerCredential(input, publisher)
             .pipe(
               Effect.flatMap((value) =>
                 encodeProvider(value).pipe(
@@ -93,7 +104,8 @@ const handler = withForkRuntime(
       Effect.succeed(HttpServerResponse.empty({ status: 401 })),
   }),
 );
-export const AccountVaultHttpRoutes = Layer.merge(
+export const AccountVaultHttpRoutes = Layer.mergeAll(
+  HttpRouter.add("POST", ACCOUNT_PROFILE_RECORD_ROUTE, handler),
   HttpRouter.add("POST", ACCOUNT_VAULT_ROUTE, handler),
   HttpRouter.add("POST", ACCOUNT_PROVIDER_CREDENTIAL_ROUTE, handler),
 );

@@ -618,6 +618,10 @@ personal SSH configuration is changed, and private keys stay in Vault's control 
 
 ## Find references and configure a project profile
 
+On account-enrolled computers, profiles stay specific to the computer and project and are
+saved by the Library. Their bindings select from the account Vault. Enrollment, account access,
+host trust and record changes are checked again when a profile runs.
+
 Open **Settings → Vault** on web or desktop, or **Vault** in a computer's settings on mobile.
 Search the item list and choose **Copy reference** on a row. The command palette's **Search
 Vault references** opens that list with search focused. Select the computer whose Vault you

@@ -31,7 +31,7 @@ import { ReachStore } from "../reach/library/ReachStore.ts";
 import { isVaultRunRunning, readVaultThreadShell } from "../vault/active-run.ts";
 
 const PROOF_SECONDS = 30;
-const MAX_PAYLOAD_BYTES = 256 * 1024;
+const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_USED_PROOFS = 4096;
 const PROOF_TYPE = "loom-account-workload+jwt";
 const Workload = Schema.Struct({

@@ -19,7 +19,7 @@ import * as Settings from "../../serverSettings.ts";
 import { credentialUseRefusal, decodePolicy, encodePolicy, type Policy } from "./AccessPolicy.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
-import * as AccountProviderClient from "./AccountProviderClient.ts";
+import * as AccountVaultMachineClient from "./AccountVaultMachineClient.ts";
 import { type AccountProviderRequest } from "@t3tools/contracts/fork";
 
 const Consumer = Schema.Struct({
@@ -60,7 +60,7 @@ export class VaultProviderCredentials extends Context.Service<
 
 const make = Effect.gen(function* () {
   const settings = yield* Settings.ServerSettingsService;
-  const client = yield* Effect.serviceOption(AccountProviderClient.AccountProviderClient);
+  const client = yield* Effect.serviceOption(AccountVaultMachineClient.AccountVaultMachineClient);
   const core = yield* VaultCore.VaultCore;
   const store = yield* OpenBaoStore.OpenBaoStore;
   const identity = yield* ServerEnvironmentIdentity;
@@ -214,7 +214,7 @@ const make = Effect.gen(function* () {
     read: Effect.fn("VaultProviderCredentials.read")(function* (reference, consumer) {
       const binding = yield* bind(reference, consumer);
       if (Option.isSome(client) && (yield* client.value.available)) {
-        const result = yield* client.value.request({ mode: "read", reference, consumer });
+        const result = yield* client.value.provider({ mode: "read", reference, consumer });
         yield* requireBinding(reference, consumer);
         if (result.value === null) return yield* new VaultError({ reason: "invalid-response" });
         return result.value;
@@ -225,7 +225,7 @@ const make = Effect.gen(function* () {
     validate: Effect.fn("VaultProviderCredentials.validate")(function* (reference, consumer) {
       const binding = yield* bind(reference, consumer);
       if (Option.isSome(client) && (yield* client.value.available)) {
-        yield* client.value.request({ mode: "validate", reference, consumer });
+        yield* client.value.provider({ mode: "validate", reference, consumer });
         yield* requireBinding(reference, consumer);
         return;
       }

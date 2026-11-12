@@ -1,4 +1,5 @@
-import * as AccountProviderAuthority from "./vault/AccountProviderAuthority.ts";
+import * as VaultProfileRecords from "./vault/VaultProfileRecords.ts";
+import * as AccountVaultMachineAuthority from "./vault/AccountVaultMachineAuthority.ts";
 import * as AccountWorkloads from "./account-access/AccountWorkloads.ts";
 import * as AccountVaultAuthority from "./vault/AccountVaultAuthority.ts";
 import * as AccountVaultClient from "./vault/AccountVaultClient.ts";
@@ -80,6 +81,7 @@ import {
   layerCore as layerVaultCore,
   layerStore as layerVaultStore,
   layerProviderCredentials,
+  layerMachineClient,
 } from "./vault/layers.ts";
 import * as VaultSecretRequests from "./vault/VaultSecretRequests.ts";
 import * as SitesService from "./sites/SitesService.ts";
@@ -273,7 +275,12 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
   ),
 );
 
+const layerVaultProfileRecords = VaultProfileRecords.layer.pipe(
+  Layer.provide(Layer.merge(layerVaultStore, layerMachineClient)),
+);
 const layerVaultProfiles = VaultProfiles.layer.pipe(
+  Layer.provide(layerMachineClient),
+  Layer.provide(Layer.suspend(() => layerAccountVaultClient)),
   Layer.provide(
     Layer.mergeAll(
       layerVaultStore,
@@ -380,8 +387,15 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
 );
-const layerAccountProviderAuthority = AccountProviderAuthority.layer.pipe(
-  Layer.provide(Layer.merge(layerAccountWorkloads, layerProviderCredentials)),
+const layerAccountVaultMachineAuthority = AccountVaultMachineAuthority.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerAccountWorkloads,
+      layerProviderCredentials,
+      layerVaultProfileRecords,
+      layerVaultProfiles,
+    ),
+  ),
 );
 const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
   Layer.provide(
@@ -597,7 +611,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerAccountEnrollment,
   layerAccountWorkloads,
   layerAccountVaultAuthority,
-  layerAccountProviderAuthority,
+  layerAccountVaultMachineAuthority,
   layerAccountVaultClient,
   layerAccountVaultSsh,
   layerAccountJoin,

@@ -19,7 +19,7 @@ import {
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { HttpClientRequest, HttpClientResponse } from "effect/http";
-import * as AccountProviderClient from "../vault/AccountProviderClient.ts";
+import * as AccountVaultMachineClient from "../vault/AccountVaultMachineClient.ts";
 import { signRelayJwt } from "@t3tools/shared/relayJwt";
 import * as Digest from "effect/crypto/Digest";
 import * as Hex from "effect/encoding/Hex";
@@ -237,9 +237,9 @@ const fixture = Effect.gen(function* () {
         },
       });
     });
-  const provider = yield* AccountProviderClient.AccountProviderClient.pipe(
+  const provider = yield* AccountVaultMachineClient.AccountVaultMachineClient.pipe(
     Effect.provide(
-      AccountProviderClient.layer.pipe(
+      AccountVaultMachineClient.layer.pipe(
         Layer.provide(
           Layer.merge(
             dependencies,
@@ -427,7 +427,22 @@ it.effect(
             if (rebind) f.state.binding = { ...f.state.binding, authorityEpoch: 2 };
             return HttpClientResponse.fromWeb(
               request,
-              Response.json({ value: "synthetic-launch-key" }),
+              Response.json(
+                request.url.endsWith("/profile-record")
+                  ? {
+                      kind: "read",
+                      record: {
+                        version: 7,
+                        value: {
+                          schemaVersion: 1,
+                          activeProfileId: null,
+                          profiles: [],
+                          receipts: [],
+                        },
+                      },
+                    }
+                  : { value: "synthetic-launch-key" },
+              ),
             );
           });
         const request = {
@@ -439,12 +454,19 @@ it.effect(
           }),
           consumer: { instanceId: ProviderInstanceId.make("provider"), variableName: "API_KEY" },
         };
-        const result = yield* f.provider.request(request);
+        const result = yield* f.provider.provider(request);
         expect(Redacted.value(result.value!)).toBe("synthetic-launch-key");
         expect(JSON.stringify(result)).not.toContain("synthetic-launch-key");
+        expect(
+          yield* f.provider.profileRecord({
+            kind: "read",
+            projectId: f.state.thread.projectId,
+            key: "registry",
+          }),
+        ).toMatchObject({ kind: "read", record: { version: 7 } });
         rebind = true;
-        expect((yield* f.provider.request(request).pipe(Effect.flip)).reason).toBe("denied");
-        expect(calls).toBe(2);
+        expect((yield* f.provider.provider(request).pipe(Effect.flip)).reason).toBe("denied");
+        expect(calls).toBe(3);
       }),
     ),
 );

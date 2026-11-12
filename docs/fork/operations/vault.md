@@ -467,6 +467,14 @@ The `vault-profiles` capability stores each project's registry and run selection
 for that environment's profiles subtree in the service policy. Loom does not modify the live
 policy or escalate the token. No SQL migration or new application dependency is needed.
 
+Enrolled account computers keep these records at the Library through signed metadata requests;
+they need no OpenBao token. The adopted inventory keeps its existing project paths. Other
+computers use `profiles/_computers/<computer-sha256>/<project-sha256>/` within that same
+inventory, so equal project IDs on different computers stay separate and the Library token
+needs only the inventory's existing profiles subtree. Owner policy and enrollment are checked
+on every request. The transport accepts schema-checked registries, run pins and retirement
+tombstones, never arbitrary Vault paths or credential values.
+
 Registry CAS revisions protect concurrent management edits. A run selection contains safe
 labels, names, item references, versions and exact destinations, never credential values.
 The first successful resolution creates it; service restart preserves it. Later defaults and

@@ -113,3 +113,4 @@ export * from "./api-library.ts";
 
 export * from "./account-access.ts";
 export * from "./account-vault.ts";
+export * from "./vault-profile-records.ts";

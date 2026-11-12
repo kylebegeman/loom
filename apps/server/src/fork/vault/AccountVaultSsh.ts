@@ -58,10 +58,12 @@ export class AccountVaultSsh extends Context.Service<
     readonly ssh: (
       input: VaultSshRunInput,
       threadId: ThreadId,
+      guard?: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultSshResult, Failure>;
     readonly git: (
       input: VaultGitRunInput,
       threadId: ThreadId,
+      guard?: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<VaultGitResult, Failure>;
   }
 >()("t3/fork/vault/AccountVaultSsh") {}
@@ -143,7 +145,9 @@ const make = Effect.gen(function* () {
   const run = Effect.fn("AccountVaultSsh.run")(function* (
     input: VaultSshRunInput | VaultGitRunInput,
     threadId: ThreadId,
+    guard: Effect.Effect<void, VaultError> = Effect.void,
   ) {
+    yield* guard;
     const thread = yield* liveThread(threadId);
     const git = "repository" in input ? input : null;
     const selection =
@@ -166,6 +170,7 @@ const make = Effect.gen(function* () {
       (held) => close(held.session.sessionId, threadId).pipe(Effect.ignore),
     );
     const authorize = Effect.gen(function* () {
+      yield* guard;
       const current = yield* liveThread(threadId);
       if (
         current.activeRunId !== thread.activeRunId ||
@@ -205,7 +210,10 @@ const make = Effect.gen(function* () {
       publicKey: held.session.publicKey,
       command,
       authorize,
-      agent: (input) => frame({ ...input, sessionId: held.session.sessionId }, threadId),
+      agent: (input) =>
+        guard.pipe(
+          Effect.andThen(frame({ ...input, sessionId: held.session.sessionId }, threadId)),
+        ),
     });
     yield* authorize;
     return { sessionId: held.session.sessionId, requestId, ...result };

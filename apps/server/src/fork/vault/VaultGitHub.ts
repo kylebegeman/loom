@@ -982,7 +982,15 @@ const make = Effect.gen(function* () {
       if (!isRunInput(raw)) return yield* fail("invalid-input");
       if (yield* accountClient.available) {
         yield* guard;
-        return yield* accountClient.github(raw, threadId);
+        const result = yield* accountClient.github(raw, threadId);
+        yield* guard.pipe(
+          Effect.mapError((error) =>
+            result.operationId
+              ? new VaultGitHubError({ reason: "failed", operationId: result.operationId })
+              : error,
+          ),
+        );
+        return result;
       }
       if (raw.operationId)
         return yield* new VaultGitHubError({

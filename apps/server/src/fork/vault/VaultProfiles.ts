@@ -1,5 +1,5 @@
 import { isVaultRunRunning } from "./active-run.ts";
-import { Registry, Pin, encodeRunKey } from "./profile-records.ts";
+import { Registry, Pin, RetiredPin, encodeRunKey } from "./profile-records.ts";
 import {
   VaultProfilePinList,
   VaultProfilePinRetire,
@@ -40,6 +40,9 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import { ProjectStoreV2 } from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
+import * as VaultProfileRecords from "./VaultProfileRecords.ts";
+import * as AccountVaultClient from "./AccountVaultClient.ts";
+import * as MachineClient from "./AccountVaultMachineClient.ts";
 import * as VaultAccess from "./VaultAccess.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
 import * as VaultSsh from "./VaultSsh.ts";
@@ -48,6 +51,10 @@ type Failure = VaultError | VaultSshError | VaultWorkloadError;
 export class VaultProfiles extends Context.Service<
   VaultProfiles,
   {
+    readonly previewForAccount: (
+      profile: VaultProfileDefinition,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultProfilePreview, Failure>;
     readonly currentPin: (
       threadId: ThreadId,
     ) => Effect.Effect<VaultProfileResolution | null, VaultError>;
@@ -83,17 +90,6 @@ export class VaultProfiles extends Context.Service<
     ) => Effect.Effect<VaultProfileResolution, Failure>;
   }
 >()("t3/fork/vault/VaultProfiles") {}
-const RetiredPin = Schema.Struct({
-  schemaVersion: Schema.Literal(2),
-  environmentId: Schema.String,
-  projectId: Schema.String,
-  threadId: Schema.String,
-  runId: Schema.String,
-  createdAt: Schema.NullOr(Schema.String),
-  retiredAt: Schema.String,
-  operationId: Schema.String,
-  actor: Schema.String,
-});
 const decodeRetiredPin = Schema.decodeUnknownOption(RetiredPin);
 const encodeRetiredPin = Schema.encodeEffect(RetiredPin);
 const isMutation = Schema.is(VaultProfileMutation),
@@ -110,9 +106,12 @@ const isPinList = Schema.is(VaultProfilePinList),
 const fail = (reason: VaultError["reason"]) => new VaultError({ reason });
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore,
+    records = yield* VaultProfileRecords.VaultProfileRecords,
     access = yield* VaultAccess.VaultAccess,
     ssh = yield* VaultSsh.VaultSsh,
     github = yield* VaultGitHub.VaultGitHub;
+  const account = yield* Effect.serviceOption(AccountVaultClient.AccountVaultClient);
+  const machine = yield* Effect.serviceOption(MachineClient.AccountVaultMachineClient);
   const projects = yield* ProjectStoreV2,
     threads = yield* ThreadManagementService,
     identity = yield* ServerEnvironmentIdentity,
@@ -123,12 +122,10 @@ const make = Effect.gen(function* () {
       Effect.map(Hex.encode),
       Effect.mapError(() => fail("unavailable")),
     );
-  // _operations/ and _test_accounts/ are reserved; future profiles/ enumeration must skip both.
-  const prefix = `environments/${yield* hash(environmentId)}/profiles`;
   const project = Effect.fnUntraced(function* (id: ProjectId) {
     const found = yield* projects.get(id).pipe(Effect.mapError(() => fail("unavailable")));
     if (Option.isNone(found)) return yield* fail("not-found");
-    return `${prefix}/${yield* hash(id)}`;
+    return;
   });
   const threadOf = Effect.fnUntraced(function* (id: ThreadId, requireRun = false) {
     const thread = yield* threads
@@ -148,11 +145,10 @@ const make = Effect.gen(function* () {
     return thread;
   });
   const load = Effect.fnUntraced(function* (projectId: ProjectId) {
-    const root = yield* project(projectId),
-      record = yield* store.read(root + "/registry");
+    yield* project(projectId);
+    const record = yield* records.read(projectId, "registry");
     if (!record)
       return {
-        root,
         revision: 0,
         value: {
           schemaVersion: 1 as const,
@@ -170,7 +166,7 @@ const make = Effect.gen(function* () {
         !value.profiles.some((p) => p.id === value.activeProfileId && p.state === "active"))
     )
       return yield* fail("invalid-response");
-    return { root, revision: record.version, value };
+    return { revision: record.version, value };
   });
   const snapshot = (
     projectId: ProjectId,
@@ -196,6 +192,45 @@ const make = Effect.gen(function* () {
     };
     if (!binding.itemId || (binding.kind !== "ssh" && !binding.repository))
       return { ...base, state: "missing" as const };
+    if (threadId && Option.isSome(account) && (yield* account.value.available)) {
+      const listed = yield* account.value
+        .execute(
+          { kind: "list", input: { cursor: null, includeArchived: false, query: binding.itemId } },
+          threadId,
+        )
+        .pipe(Effect.catchTags({ VaultSshError: () => Effect.fail(fail("unavailable")) }));
+      if (listed.kind !== "list") return yield* fail("invalid-response");
+      const item = listed.page.items.find((item) => item.id === binding.itemId);
+      if (!item) return { ...base, state: "unavailable" as const };
+      const resolved = yield* account.value
+        .execute(
+          {
+            kind: "resolve",
+            input: {
+              kind: binding.kind === "git" ? "git-ssh" : binding.kind,
+              connection: { id: item.id, expectedVersion: item.version },
+              ...(binding.repository ? { repository: binding.repository } : {}),
+            },
+          },
+          threadId,
+        )
+        .pipe(Effect.catchTags({ VaultSshError: () => Effect.fail(fail("unavailable")) }));
+      if (resolved.kind !== "resolve") return yield* fail("invalid-response");
+      if (resolved.report.state !== "ready" || !resolved.report.selected)
+        return {
+          ...base,
+          state:
+            resolved.report.state === "untrusted-host"
+              ? ("untrusted" as const)
+              : ("denied" as const),
+        };
+      return {
+        ...base,
+        version: item.version,
+        destination: resolved.report.selected.destination,
+        state: "ready" as const,
+      };
+    }
     if (binding.kind === "github") {
       const info = yield* github.info(binding.itemId).pipe(
         Effect.asSome,
@@ -264,25 +299,30 @@ const make = Effect.gen(function* () {
     yield* project(input.projectId);
     if (input.threadId && (yield* threadOf(input.threadId)).projectId !== input.projectId)
       return yield* fail("denied");
+    if (input.threadId === null && Option.isSome(machine) && (yield* machine.value.available)) {
+      const response = yield* machine.value.profileRecord({
+        kind: "preview",
+        projectId: input.projectId,
+        profile: input.profile,
+      });
+      if (response.kind !== "preview") return yield* fail("invalid-response");
+      return response.preview;
+    }
     const bindings = yield* Effect.forEach(input.profile.bindings, (binding) =>
       inspect(binding, input.threadId),
     );
     return { ready: bindings.every((b) => b.state === "ready"), bindings };
   });
-  const readRunPin = Effect.fnUntraced(function* (
-    root: string,
-    thread: OrchestrationV2ThreadShell,
-  ) {
+  const readRunPin = Effect.fnUntraced(function* (thread: OrchestrationV2ThreadShell) {
     if (!thread.activeRunId) return null;
     const pinPath =
-      root +
-      "/runs/" +
+      "runs/" +
       (yield* hash(
         yield* encodeRunKey({ threadId: thread.id, runId: thread.activeRunId }).pipe(
           Effect.mapError(() => fail("invalid-input")),
         ),
       ));
-    const stored = yield* store.read(pinPath);
+    const stored = yield* records.read(thread.projectId, pinPath);
     if (!stored) return null;
     const retired = decodeRetiredPin(Redacted.value(stored.value));
     if (Option.isSome(retired)) return yield* fail("denied");
@@ -307,14 +347,13 @@ const make = Effect.gen(function* () {
     if (expectedRunId && thread.activeRunId !== expectedRunId) return yield* fail("denied");
     const registry = yield* load(thread.projectId);
     const pinPath =
-      registry.root +
-      "/runs/" +
+      "runs/" +
       (yield* hash(
         yield* encodeRunKey({ threadId, runId: thread.activeRunId }).pipe(
           Effect.mapError(() => fail("invalid-input")),
         ),
       ));
-    const readPin = readRunPin(registry.root, thread);
+    const readPin = readRunPin(thread);
     let resolution = yield* readPin;
     if (resolution && requestedId && requestedId !== resolution.profileId)
       return yield* fail("conflict");
@@ -357,7 +396,7 @@ const make = Effect.gen(function* () {
         runId: thread.activeRunId!,
         resolution: candidate,
       }).pipe(Effect.mapError(() => fail("invalid-input")));
-      yield* store.write(pinPath, Redacted.make(encoded), 0).pipe(
+      yield* records.write(thread.projectId, pinPath, Redacted.make(encoded), 0).pipe(
         Effect.catchTags({
           VaultError: (error) =>
             error.reason === "conflict" ? Effect.succeed(0) : Effect.fail(error),
@@ -386,8 +425,8 @@ const make = Effect.gen(function* () {
     return resolution;
   });
   const pinRecord = Effect.fnUntraced(function* (projectId: ProjectId, id: string) {
-    const root = yield* project(projectId);
-    const stored = yield* store.read(`${root}/runs/${id}`);
+    yield* project(projectId);
+    const stored = yield* records.read(projectId, `runs/${id}`);
     if (!stored) return yield* fail("not-found");
     const raw = Redacted.value(stored.value),
       live = decodePin(raw),
@@ -407,7 +446,7 @@ const make = Effect.gen(function* () {
       )) !== id
     )
       return yield* fail("invalid-response");
-    return { root, stored, value };
+    return { stored, value };
   });
   const describePin = Effect.fnUntraced(function* (projectId: ProjectId, id: string) {
     const record = yield* pinRecord(projectId, id),
@@ -441,10 +480,17 @@ const make = Effect.gen(function* () {
     return { record, summary };
   });
   return VaultProfiles.of({
+    previewForAccount: Effect.fn("VaultProfiles.previewForAccount")(function* (profile, authorize) {
+      if (!isDefinition(profile)) return yield* fail("invalid-input");
+      yield* authorize;
+      const bindings = yield* Effect.forEach(profile.bindings, (binding) => inspect(binding, null));
+      yield* authorize;
+      return { ready: false, bindings };
+    }),
     pins: Effect.fn("VaultProfiles.pins")(function* (input) {
       if (!isPinList(input)) return yield* fail("invalid-input");
-      const root = yield* project(input.projectId);
-      const keys = [...(yield* store.keys(root + "/runs"))].sort();
+      yield* project(input.projectId);
+      const keys = [...(yield* records.keys(input.projectId))].sort();
       if (keys.some((key) => !/^[a-f0-9]{64}$/.test(key))) return yield* fail("invalid-response");
       const remaining = keys.filter((key) => input.cursor === null || key > input.cursor),
         page = remaining.slice(0, 25);
@@ -489,8 +535,9 @@ const make = Effect.gen(function* () {
       yield* authorize;
       if (!(yield* describePin(input.projectId, input.id)).summary.canRetire)
         return yield* fail("denied");
-      yield* store.write(
-        `${record.root}/runs/${input.id}`,
+      yield* records.write(
+        input.projectId,
+        `runs/${input.id}`,
         Redacted.make(encoded),
         record.stored.version,
       );
@@ -574,8 +621,9 @@ const make = Effect.gen(function* () {
         Effect.mapError(() => fail("invalid-input")),
       );
       yield* authorize;
-      const revision = yield* store.write(
-        loaded.root + "/registry",
+      const revision = yield* records.write(
+        input.projectId,
+        "registry",
         Redacted.make(encoded),
         loaded.revision,
       );
@@ -583,10 +631,13 @@ const make = Effect.gen(function* () {
     }),
     currentPin: Effect.fn("VaultProfiles.currentPin")(function* (threadId) {
       const thread = yield* threadOf(threadId);
-      return yield* readRunPin(yield* project(thread.projectId), thread);
+      yield* project(thread.projectId);
+      return yield* readRunPin(thread);
     }),
     resolve,
     prepare: resolve,
   });
 });
-export const layer = Layer.effect(VaultProfiles, make);
+export const layer = Layer.effect(VaultProfiles, make).pipe(
+  Layer.provide(VaultProfileRecords.layer),
+);

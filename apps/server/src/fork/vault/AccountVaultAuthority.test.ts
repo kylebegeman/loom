@@ -267,6 +267,8 @@ it.effect(
     Effect.gen(function* () {
       const f = yield* fixture;
       let changeRun = false;
+      let profileActive = true;
+      let archiveProfile = false;
       const commands: Array<string> = [];
       const source = yield* AccountVaultSsh.AccountVaultSsh.pipe(
         Effect.provide(
@@ -292,6 +294,7 @@ it.effect(
                       expect(input.privateKey).toBeUndefined();
                       if (!input.agent) return yield* new VaultError({ reason: "denied" });
                       yield* input.authorize;
+                      if (archiveProfile) profileActive = false;
                       const frame = yield* input.agent({
                         channelId: "b".repeat(32),
                         sequence: 0,
@@ -333,6 +336,21 @@ it.effect(
         f.threadId,
       );
       expect(commands).toEqual(["pwd", "/private/project"]);
+      archiveProfile = true;
+      const profileGuard = Effect.suspend(() =>
+        profileActive ? Effect.void : Effect.fail(new VaultError({ reason: "denied" })),
+      );
+      expect(
+        (yield* source
+          .ssh(
+            { id: f.itemId, command: { expectedVersion: 1, argv: ["pwd"], timeoutMs: 1000 } },
+            f.threadId,
+            profileGuard,
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      expect(commands).toEqual(["pwd", "/private/project"]);
+      archiveProfile = false;
       changeRun = true;
       expect(
         (yield* source

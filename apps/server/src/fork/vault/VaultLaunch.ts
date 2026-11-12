@@ -367,6 +367,33 @@ const make = Effect.gen(function* () {
         )
           return yield* denied();
       });
+      if ((yield* account.available) && input.operation.kind !== "github") {
+        yield* guard;
+        return yield* input.operation.kind === "ssh"
+          ? account.ssh(
+              {
+                id: binding.itemId,
+                command: {
+                  expectedVersion: binding.version,
+                  argv: input.operation.argv,
+                  timeoutMs: input.operation.timeoutMs,
+                },
+              },
+              threadId,
+              guard,
+            )
+          : account.git(
+              {
+                id: binding.itemId,
+                expectedVersion: binding.version,
+                repository: binding.repository!,
+                action: input.operation.action,
+                timeoutMs: input.operation.timeoutMs,
+              },
+              threadId,
+              guard,
+            );
+      }
       if (input.operation.kind === "github")
         return yield* github.run(
           {

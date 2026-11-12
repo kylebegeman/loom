@@ -19,7 +19,7 @@ import * as Settings from "../../serverSettings.ts";
 import { decodePolicy, type Policy } from "./AccessPolicy.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
 import * as VaultCore from "./VaultCore.ts";
-import * as AccountProviderClient from "./AccountProviderClient.ts";
+import * as AccountVaultMachineClient from "./AccountVaultMachineClient.ts";
 import * as VaultProviderCredentials from "./VaultProviderCredentials.ts";
 
 const environmentId = EnvironmentId.make("provider-vault-environment");
@@ -28,7 +28,7 @@ const consumer = { instanceId: ProviderInstanceId.make("claudeWork"), variableNa
 const reference = vaultProviderReference({ environmentId, itemId, expectedVersion: 1 });
 const privateValue = "synthetic-provider-credential";
 
-const fixture = (client?: AccountProviderClient.AccountProviderClient["Service"]) => {
+const fixture = (client?: AccountVaultMachineClient.AccountVaultMachineClient["Service"]) => {
   const records = new Map<string, { value: Redacted.Redacted<unknown>; version: number }>();
   const state = {
     failAudit: false,
@@ -82,7 +82,9 @@ const fixture = (client?: AccountProviderClient.AccountProviderClient["Service"]
       }),
   });
   const dependencies = Layer.mergeAll(
-    client ? Layer.succeed(AccountProviderClient.AccountProviderClient, client) : Layer.empty,
+    client
+      ? Layer.succeed(AccountVaultMachineClient.AccountVaultMachineClient, client)
+      : Layer.empty,
     Layer.mergeAll(NodeServices.layer, NodeCrypto.layer),
     Layer.succeed(OpenBaoStore.OpenBaoStore, store),
     Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(environmentId) }),
@@ -420,7 +422,8 @@ it.effect(
     let unavailable = false;
     const f = fixture({
       available: Effect.succeed(true),
-      request: (input) =>
+      profileRecord: () => Effect.die("Unexpected profile request"),
+      provider: (input) =>
         Effect.suspend(() => {
           calls.push(input);
           return unavailable

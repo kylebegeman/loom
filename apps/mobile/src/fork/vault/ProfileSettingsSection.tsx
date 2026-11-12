@@ -1,3 +1,4 @@
+import { useVaultEnvironment } from "./useVaultEnvironment";
 import { VaultReferenceSearch } from "./ReferenceSearch";
 import { VaultGitHubConnectionPicker } from "./GitHubConnectionPicker";
 import { VaultProfileHistory } from "./ProfileHistory";
@@ -173,6 +174,7 @@ function ProfileManager({
   canWrite: boolean;
   threads: ReadonlyArray<{ id: string; label: string }>;
 }) {
+  const { vaultEnvironmentId } = useVaultEnvironment(environmentId);
   const config = useEnvironmentServerConfig(environmentId);
   const supportsGitHub = supportsLoomFeature(
     config?.environment.capabilities,
@@ -448,7 +450,7 @@ function ProfileManager({
                             ) : null}
                             {b.itemId ? (
                               <BoundReference
-                                environmentId={environmentId}
+                                environmentId={vaultEnvironmentId}
                                 id={b.itemId}
                                 connected={connected}
                               />
@@ -559,7 +561,7 @@ function ProfileManager({
                       >
                         {editing.bindings[picking]?.kind === "github" ? (
                           <VaultGitHubConnectionPicker
-                            environmentId={environmentId}
+                            environmentId={vaultEnvironmentId}
                             connected={connected && !locked}
                             onSelect={(itemId, repository) => {
                               update({
@@ -573,7 +575,7 @@ function ProfileManager({
                           />
                         ) : (
                           <VaultReferenceSearch
-                            environmentId={environmentId}
+                            environmentId={vaultEnvironmentId}
                             connected={connected && !locked}
                             kind="ssh-key"
                             onSelect={(r) => {
