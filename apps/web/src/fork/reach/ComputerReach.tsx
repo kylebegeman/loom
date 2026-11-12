@@ -322,7 +322,9 @@ function ComputerReachBody({
               {isThisComputer && canApplyIdentity && identityApplySupported ? (
                 <div className="space-y-2">
                   <label className="block space-y-1 text-xs">
-                    Allowed Loom account IDs, if not already configured
+                    {view.signIn.values?.allowedSubjects
+                      ? "Allowed Loom account IDs, optional. Leave empty to keep this computer's accounts or use your Library's."
+                      : "Allowed Loom account IDs, if not already configured"}
                     <Input
                       value={allowedSubjects}
                       onChange={(event) => setAllowedSubjects(event.target.value)}

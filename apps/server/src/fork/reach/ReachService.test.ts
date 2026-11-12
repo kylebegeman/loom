@@ -757,6 +757,7 @@ describe("ReachService", () => {
                   nativeClientId: "native-client",
                   resource: "https://studio-loom.example.com",
                   desktopRedirectUri: PREPARED.desktopRedirectUri,
+                  allowedSubjects: "kyle",
                 },
               }),
             ),
@@ -770,6 +771,7 @@ describe("ReachService", () => {
               nativeClientId: "native-client",
               resource: "https://studio-loom.example.com",
               desktopRedirectUri: PREPARED.desktopRedirectUri,
+              allowedSubjects: "kyle",
             };
             expect(yield* h.service.status).toMatchObject({
               prepared,

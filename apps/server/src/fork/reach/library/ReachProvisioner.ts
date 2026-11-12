@@ -612,7 +612,7 @@ const make = Effect.gen(function* () {
     const stored = (yield* read.pipe(Effect.orElseSucceed(() => null)))?.computers[environmentId]
       ?.identity;
     const kept = stored ?? null;
-    const { issuer, nativeClientId, desktopRedirectUri } = config.identity;
+    const { issuer, nativeClientId, desktopRedirectUri, allowedSubjects } = config.identity;
     const resource =
       config.audience === null ? null : reachResource(config.audience, environmentId);
     if (issuer === null || nativeClientId === null || resource === null) {
@@ -624,6 +624,7 @@ const make = Effect.gen(function* () {
       nativeClientId,
       resource,
       ...(desktopRedirectUri === null ? {} : { desktopRedirectUri }),
+      ...(allowedSubjects === null ? {} : { allowedSubjects }),
     } as const;
     const outcome = yield* pocketId
       .ensureApi({

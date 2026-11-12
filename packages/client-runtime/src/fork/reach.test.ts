@@ -261,11 +261,17 @@ describe("reachView", () => {
       copyText: null,
       prepare: "Prepare sign-in",
     });
-    const values = { ...PREPARED, desktopRedirectUri: DESKTOP_REDIRECT };
+    const values = {
+      ...PREPARED,
+      desktopRedirectUri: DESKTOP_REDIRECT,
+      allowedSubjects: "owner-id",
+    };
     const prepared = reachView(input({ ...off, prepared: values }, here)).signIn;
     expect(prepared).toMatchObject({ values, prepare: "Prepare again" });
     expect(prepared?.copyText).toContain(`LOOM_IDENTITY_DESKTOP_REDIRECT_URI=${DESKTOP_REDIRECT}`);
+    expect(prepared?.copyText).toContain("LOOM_IDENTITY_ALLOWED_SUBJECTS=owner-id");
     expect(reachPreparedEnvironment(PREPARED)).not.toContain("LOOM_IDENTITY_DESKTOP_REDIRECT_URI");
+    expect(reachPreparedEnvironment(PREPARED)).not.toContain("LOOM_IDENTITY_ALLOWED_SUBJECTS");
 
     // A Library without a reach zone can still prepare sign-in.
     const notReady = status({ state: "unavailable", enabled: false, blocked: "library-not-ready" });

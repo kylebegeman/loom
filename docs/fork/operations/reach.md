@@ -140,13 +140,15 @@ the key lives. Checking for callback drift is a follow-up decision, not built.
 
 Once the Library prepared sign-in, the computer's own Connections settings (its desktop app, or
 the web app it serves) offer **Use these values** in its Reach section. It saves the prepared
-values with the allowed accounts, the passkey rule and how long sign-ins last (7 days unless
-changed, up to 30) in `secrets/reach-identity.json` (mode 0600) in the computer's state
-directory, then restarts the backend. Its Identity sessions rotate once. Other devices say where
-to find it. The desktop app does not take `LOOM_*` variables from a login shell, so this is the
-way on desktop. A server started by hand can instead set the lines offered to copy (the prepared
-values and the 7-day limit) and the other `LOOM_IDENTITY_*` variables; they take precedence over
-the saved values.
+values with the allowed accounts (entered ones, then `LOOM_IDENTITY_ALLOWED_SUBJECTS`, then the
+saved ones, then the Library's own allowlist, which it shares when set without a wildcard), the
+passkey rule and how long sign-ins last (7 days unless changed, up to 30) in
+`secrets/reach-identity.json` (mode 0600) in the computer's state directory, then restarts the
+backend. Its Identity sessions rotate once. Other devices say where to find it. The desktop app
+does not take `LOOM_*` variables from a login shell, so this is the way on desktop. A server
+started by hand can instead set the lines offered to copy (the prepared values, including the
+Library's allowlist when shared, and the 7-day limit) and the other `LOOM_IDENTITY_*` variables;
+they take precedence over the saved values.
 
 The 7-day default is the native client's refresh lifetime in Pocket ID
 (`refreshTokenDurationMinutes: 10080` in loom-platform's `deploy/identity/clients.yaml`), which

@@ -70,7 +70,8 @@ export const applyHostIdentity = Effect.fn("HostIdentity.apply")(
     const allowedSubjects =
       input.allowedSubjects?.trim() ||
       env.LOOM_IDENTITY_ALLOWED_SUBJECTS?.trim() ||
-      saved?.allowedSubjects;
+      saved?.allowedSubjects ||
+      prepared.allowedSubjects;
     if (
       !allowedSubjects ||
       allowedSubjects.split(",").some((subject) => subject.trim() === "" || subject.trim() === "*")

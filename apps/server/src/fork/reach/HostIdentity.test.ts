@@ -19,6 +19,8 @@ const prepared = {
   nativeClientId: "native-client",
   desktopRedirectUri: "http://127.0.0.1:47123/loom/identity/callback",
 };
+/** What a Library that shares its own sign-in allowlist prepares. */
+const withLibraryAccounts = { ...prepared, allowedSubjects: "library-owner" };
 const layer = ServerConfig.layerTest(process.cwd(), { prefix: "host-identity-" }).pipe(
   Layer.provideMerge(NodeServices.layer),
 );
@@ -32,14 +34,15 @@ it.effect(
       const config = yield* ServerConfig.ServerConfig;
       const file = `${config.secretsDir}/reach-identity.json`;
       let requested = false;
-      yield* applyHostIdentity(prepared, {
+      // Accounts entered on the computer win over the Library's.
+      yield* applyHostIdentity(withLibraryAccounts, {
         allowedSubjects: "owner-id",
         requirePasskey: true,
       }).pipe(
         Effect.provideService(HostIdentityRestart, {
           request: Effect.gen(function* () {
             expect(decode(yield* fs.readFileString(file))).toMatchObject({
-              prepared,
+              prepared: withLibraryAccounts,
               allowedSubjects: "owner-id",
               requirePasskey: true,
             });
@@ -71,9 +74,13 @@ it.effect(
 it.effect("requires an explicit account allowlist and never writes or restarts after refusal", () =>
   Effect.gen(function* () {
     let restarted = false;
-    for (const allowedSubjects of [undefined, "*"])
+    for (const [values, allowedSubjects] of [
+      [prepared, undefined],
+      [prepared, "*"],
+      [{ ...prepared, allowedSubjects: "library-owner,*" }, undefined],
+    ] as const)
       expect(
-        (yield* applyHostIdentity(prepared, {
+        (yield* applyHostIdentity(values, {
           requirePasskey: true,
           ...(allowedSubjects ? { allowedSubjects } : {}),
         }).pipe(
@@ -87,9 +94,16 @@ it.effect("requires an explicit account allowlist and never writes or restarts a
       ).toBe("identity-allowlist");
     expect(restarted).toBe(false);
     const fs = yield* FileSystem.FileSystem;
-    expect(
-      yield* fs.exists(`${(yield* ServerConfig.ServerConfig).secretsDir}/reach-identity.json`),
-    ).toBe(false);
+    const file = `${(yield* ServerConfig.ServerConfig).secretsDir}/reach-identity.json`;
+    expect(yield* fs.exists(file)).toBe(false);
+
+    // With nothing entered or saved, the Library's own accounts are the allowlist.
+    yield* applyHostIdentity(withLibraryAccounts, { requirePasskey: true }).pipe(
+      Effect.provideService(HostIdentityRestart, { request: Effect.void }),
+    );
+    expect(decode(yield* fs.readFileString(file))).toMatchObject({
+      allowedSubjects: "library-owner",
+    });
   }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {})),
 );
 

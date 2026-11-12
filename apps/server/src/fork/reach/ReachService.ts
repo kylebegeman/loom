@@ -258,6 +258,7 @@ const preparedFrom = (identity: ReadyIdentity): ReachPrepared => ({
   ...(identity.desktopRedirectUri === undefined
     ? {}
     : { desktopRedirectUri: identity.desktopRedirectUri }),
+  ...(identity.allowedSubjects === undefined ? {} : { allowedSubjects: identity.allowedSubjects }),
 });
 
 /** Why a Library answer to the Identity request prepared nothing. */

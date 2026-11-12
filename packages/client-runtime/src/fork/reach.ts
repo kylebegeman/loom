@@ -288,6 +288,9 @@ export function reachPreparedEnvironment(prepared: ReachPrepared): string {
     ...(prepared.desktopRedirectUri === undefined
       ? []
       : [`LOOM_IDENTITY_DESKTOP_REDIRECT_URI=${prepared.desktopRedirectUri}`]),
+    ...(prepared.allowedSubjects === undefined
+      ? []
+      : [`LOOM_IDENTITY_ALLOWED_SUBJECTS=${prepared.allowedSubjects}`]),
     // Without a limit sign-ins never renew; this matches what "Use these values" saves.
     `LOOM_IDENTITY_MAX_SESSION_AGE=${String(REACH_IDENTITY_DEFAULT_MAX_SESSION_AGE_SECONDS / 86_400)}d`,
   ].join("\n");

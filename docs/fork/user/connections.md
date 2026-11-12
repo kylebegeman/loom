@@ -165,8 +165,9 @@ To get Loom sign-in for a computer without turning reach on, choose **Prepare
 sign-in** in the Reach section of that computer's own Connections settings.
 When your Library has prepared Loom sign-in for the computer, open its own
 Connections settings and choose **Use these values**. The session must allow
-settings changes. Enter the allowed Loom account IDs if they are not already
-configured, how many days devices stay signed in if not 7, and choose whether to
+settings changes. The computer allows the same Loom accounts as your Library
+unless it already has its own; enter account IDs only to choose different ones.
+Set how many days devices stay signed in if not 7, and choose whether to
 **Require passkey**. Leave it on if you sign in to Loom with a passkey; while it
 is on, signing in with an email code is refused. Loom saves these values
 privately on that computer and restarts its backend. Active connections

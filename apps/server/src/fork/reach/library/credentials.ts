@@ -18,6 +18,23 @@ const nonEmpty = (value: string | undefined) => {
   return trimmed.length === 0 ? null : trimmed;
 };
 
+/**
+ * The Library's own `LOOM_IDENTITY_ALLOWED_SUBJECTS`, normalized, so a computer can adopt the same
+ * owners. Null while it is unset, holds a wildcard, or exceeds what a computer saves.
+ */
+const allowedSubjectsFromEnv = (env: Env): string | null => {
+  const subjects = [
+    ...new Set(
+      (env.LOOM_IDENTITY_ALLOWED_SUBJECTS ?? "")
+        .split(",")
+        .map((subject) => subject.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const joined = subjects.join(",");
+  return subjects.length === 0 || subjects.includes("*") || joined.length > 4096 ? null : joined;
+};
+
 /** A valid `LOOM_REACH_ZONE`, or null while it is unset or invalid. */
 export const reachZoneFromEnv = (env: Env): string | null => {
   const zone = nonEmpty(env.LOOM_REACH_ZONE);
@@ -40,6 +57,8 @@ export interface ReachLibraryConfig {
     readonly nativeClientId: string | null;
     /** The native client's registered desktop callback, or null while it is unset or invalid. */
     readonly desktopRedirectUri: string | null;
+    /** Who may sign in to the Library, which a personal Library's computers share. */
+    readonly allowedSubjects: string | null;
     readonly adminKeyFile: string | null;
   };
 }
@@ -58,6 +77,7 @@ export const reachLibraryConfig = (env: Env): ReachLibraryConfig => {
         desktopRedirectUri !== null && isLoomDesktopRedirectUri(desktopRedirectUri)
           ? desktopRedirectUri
           : null,
+      allowedSubjects: allowedSubjectsFromEnv(env),
       adminKeyFile: nonEmpty(env.LOOM_IDENTITY_ADMIN_API_KEY_FILE),
     },
   };

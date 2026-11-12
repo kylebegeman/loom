@@ -664,23 +664,37 @@ describe("ReachProvisioner.prepareIdentity", () => {
     ),
   );
 
-  it.effect("hands out the desktop callback the native client registered", () =>
-    withReach(
-      (fixture) =>
-        Effect.gen(function* () {
-          expect(yield* prepare(fixture)).toMatchObject({ desktopRedirectUri: DESKTOP_REDIRECT });
-          expect((yield* ensure(fixture, 1)).identity).toMatchObject({
-            desktopRedirectUri: DESKTOP_REDIRECT,
-          });
-          const unregistered = yield* fixture.rebuild({
-            env: {
-              LOOM_IDENTITY_DESKTOP_REDIRECT_URI: "http://127.0.0.1:0/loom/identity/callback",
-            },
-          });
-          expect(yield* prepare(unregistered)).not.toHaveProperty("desktopRedirectUri");
-        }),
-      { env: { LOOM_IDENTITY_DESKTOP_REDIRECT_URI: DESKTOP_REDIRECT } },
-    ),
+  it.effect(
+    "hands out the desktop callback the native client registered and the Library's accounts",
+    () =>
+      withReach(
+        (fixture) =>
+          Effect.gen(function* () {
+            expect(yield* prepare(fixture)).toMatchObject({
+              desktopRedirectUri: DESKTOP_REDIRECT,
+              allowedSubjects: "owner-id,second-id",
+            });
+            expect((yield* ensure(fixture, 1)).identity).toMatchObject({
+              desktopRedirectUri: DESKTOP_REDIRECT,
+              allowedSubjects: "owner-id,second-id",
+            });
+            const unregistered = yield* fixture.rebuild({
+              env: {
+                LOOM_IDENTITY_DESKTOP_REDIRECT_URI: "http://127.0.0.1:0/loom/identity/callback",
+                LOOM_IDENTITY_ALLOWED_SUBJECTS: "owner-id,*",
+              },
+            });
+            const withoutExtras = yield* prepare(unregistered);
+            expect(withoutExtras).not.toHaveProperty("desktopRedirectUri");
+            expect(withoutExtras).not.toHaveProperty("allowedSubjects");
+          }),
+        {
+          env: {
+            LOOM_IDENTITY_DESKTOP_REDIRECT_URI: DESKTOP_REDIRECT,
+            LOOM_IDENTITY_ALLOWED_SUBJECTS: " owner-id, second-id ,owner-id,",
+          },
+        },
+      ),
   );
 
   it.effect("records nothing while the Library has no Loom Identity to share", () =>

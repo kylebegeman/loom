@@ -29,6 +29,8 @@ const ShortText = Schema.String.check(Schema.isMaxLength(500));
 const UrlText = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048));
 const HostnameText = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(253));
 const NativeClientId = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256));
+/** Comma-separated Pocket ID subjects, as `LOOM_IDENTITY_ALLOWED_SUBJECTS` takes them. */
+const AllowedSubjects = Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(4096));
 
 /**
  * `unavailable` cannot run reach at all (see `blocked`). `provisioning` waits on the Library,
@@ -74,15 +76,16 @@ export const ReachWarning = Schema.Literals([
 export type ReachWarning = typeof ReachWarning.Type;
 
 /**
- * Non-secret Loom Identity values the Library prepared for this computer. The computer adopts them
- * only when its own admin applies them to private host configuration; environment variables take precedence.
- * `desktopRedirectUri` is absent from Libraries older than it and from Libraries without one.
+ * Non-secret Loom Identity values the Library prepared, adopted only when this computer's admin
+ * applies them; environment variables take precedence. `allowedSubjects` is the Library's own
+ * allowlist. Both optional keys are absent from older Libraries and from Libraries without one.
  */
 export const ReachPrepared = Schema.Struct({
   issuer: UrlText,
   resource: UrlText,
   nativeClientId: NativeClientId,
   desktopRedirectUri: Schema.optionalKey(LoomDesktopRedirectUri),
+  allowedSubjects: Schema.optionalKey(AllowedSubjects),
 });
 export type ReachPrepared = typeof ReachPrepared.Type;
 
@@ -230,6 +233,7 @@ export const ReachEnsureIdentity = Schema.Union([
     nativeClientId: NativeClientId,
     resource: UrlText,
     desktopRedirectUri: Schema.optionalKey(LoomDesktopRedirectUri),
+    allowedSubjects: Schema.optionalKey(AllowedSubjects),
   }),
   Schema.Struct({ state: Schema.Literal("not-configured") }),
   Schema.Struct({ state: Schema.Literal("failed"), reason: ReachIdentityFailure }),
