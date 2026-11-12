@@ -586,7 +586,7 @@ type SidebarThreadRowProps = {
   onNewThread: (threadRef: ScopedThreadRef) => void; // fork: library-projects
   onStartRename: (threadRef: ScopedThreadRef, title: string) => void;
   onRenameTitleChange: (title: string) => void;
-  onCommitRename: (threadRef: ScopedThreadRef, title: string, originalTitle: string) => void;
+  onCommitRename: (threadRef: ScopedThreadRef, title: string) => void;
   onCancelRename: () => void;
   isRenaming: boolean;
   renamingTitle: string;
@@ -1066,7 +1066,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     <ThreadRenameInput
       title={renamingTitle}
       onTitleChange={onRenameTitleChange}
-      onCommit={() => onCommitRename(threadRef, renamingTitle, thread.title)}
+      onCommit={() => onCommitRename(threadRef, renamingTitle)}
       onCancel={onCancelRename}
     />
   ) : (

@@ -144,6 +144,15 @@ export class TailscaleServeFailedError extends Schema.TaggedError<TailscaleServe
   }
 }
 
+export class TailscaleServeTargetRefusedError extends Schema.TaggedError<TailscaleServeTargetRefusedError>()(
+  "TailscaleServeTargetRefusedError",
+  { localHost: Schema.String },
+) {
+  override get message(): string {
+    return `This Tailscale install can only proxy to localhost, and the server listens on ${this.localHost}. Restart it with \`--host 127.0.0.1\` or \`--host 0.0.0.0\`, then run this command again.`;
+  }
+}
+
 export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupiedError>()(
   "ServePortOccupiedError",
   { servePort: Schema.Number, reason: Schema.String }, // fork: directory-computers
@@ -440,7 +449,12 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
           Effect.fail(new TailscaleUnavailableError({ cause })),
         TailscaleCommandSpawnError: failed,
         TailscaleCommandOutputError: failed,
-        TailscaleCommandExitError: failed,
+        TailscaleCommandExitError: (cause) =>
+          cause.stderrDiagnostic === "unsupported-target" && localTarget.localHost !== undefined
+            ? Effect.fail(
+                new TailscaleServeTargetRefusedError({ localHost: localTarget.localHost }),
+              )
+            : failed(cause),
         TailscaleCommandTimeoutError: failed,
         TailscaleStatusParseError: failed,
         TailscaleServeClaimRecordError: failed,

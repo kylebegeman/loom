@@ -632,7 +632,6 @@ apps/web/src/components/chat/McpAppFrame.tsx	brand	1
 apps/web/src/components/chat/MessagesTimeline.logic.ts	brand	1
 apps/web/src/components/chat/MessagesTimeline.logic.ts	library-launch-files	1
 apps/web/src/components/chat/RightPanelSurfaceContent.tsx	brand	1
-apps/web/src/components/desktop/DesktopAppActivationCoordinator.tsx	brand	1
 apps/web/src/components/desktop/SshPasswordPromptDialog.tsx	brand	1
 apps/web/src/components/desktopUpdate.logic.test.ts	brand	3
 apps/web/src/components/desktopUpdate.logic.ts	brand	4
@@ -1536,6 +1535,7 @@ apps/web/src/components/chat/QueuedRunsControl.tsx	brand	1
 apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	brand	1
 apps/web/src/components/sidebar/UpdateEverythingDialog.tsx	brand	2
 apps/web/src/components/ui/standalone-page.tsx	brand	2
+apps/web/src/hooks/useOpenLocalWorkspace.ts	brand	1
 apps/web/src/hooks/useStartTriage.ts	brand	1
 packages/client-runtime/src/state/peerPairingCode.ts	brand	1
 packages/contracts/src/preview.ts	brand	1

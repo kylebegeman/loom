@@ -365,6 +365,7 @@ export const make = Effect.gen(function* () {
     }
     return {
       ...prepared,
+      descriptor,
       socketUrl: appendOrchestrationProtocol(prepared.socketUrl),
     };
   });

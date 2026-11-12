@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { EnvironmentId } from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import type * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
@@ -14,11 +15,9 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
 
-import { EnvironmentId } from "@t3tools/contracts"; // fork: directory-computers
-
 import * as ServerConfig from "../config.ts";
 import * as DirectEndpoints from "./DirectEndpoints.ts";
-import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts"; // fork: directory-computers
+import * as ServerEnvironment from "./ServerEnvironment.ts";
 import { resolveBoundEndpoints } from "./DirectEndpoints.ts";
 
 const INTERFACES: ReturnType<typeof NodeOS.networkInterfaces> = {
@@ -254,15 +253,8 @@ const layerTailscaleUp = Layer.succeed(
   ),
 );
 
-// fork: directory-computers
-const ENVIRONMENT_ID = "env-direct-endpoints";
-
-const layerIdentity = Layer.succeed(ServerEnvironmentIdentity, {
-  getEnvironmentId: Effect.succeed(EnvironmentId.make(ENVIRONMENT_ID)),
-});
-
 const T3_DESCRIPTOR_BODY = JSON.stringify({
-  environmentId: ENVIRONMENT_ID, // fork: directory-computers
+  environmentId: "serve-test",
   label: "Serve test",
   platform: { os: "darwin", arch: "arm64" },
   serverVersion: "0.0.0-test",
@@ -299,6 +291,12 @@ const layerServeConfig = (host = "127.0.0.1") =>
   ).pipe(
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-direct-" })),
     Layer.provide(NodeServices.layer),
+    Layer.merge(
+      Layer.succeed(ServerEnvironment.ServerEnvironment, {
+        getEnvironmentId: Effect.succeed(EnvironmentId.make("serve-test")),
+        getDescriptor: Effect.die("unused"),
+      }),
+    ),
   );
 
 // fork: directory-computers
@@ -308,12 +306,7 @@ const resolveWithServe = (answer: () => Response) =>
       DirectEndpoints.layer.pipe(
         Layer.provide(
           // fork: directory-computers
-          Layer.mergeAll(
-            layerServeConfig(),
-            layerTailscaleUp,
-            layerIdentity,
-            layerServeProbe(answer),
-          ),
+          Layer.mergeAll(layerServeConfig(), layerTailscaleUp, layerServeProbe(answer)),
         ),
       ),
     ),
@@ -324,7 +317,7 @@ describe("DirectEndpoints Tailscale Serve", () => {
   effectIt.effect("lists the tailnet name once Serve answers as this server", () =>
     Effect.gen(function* () {
       // fork: directory-computers
-      expect(yield* resolveWithServe(describing(ENVIRONMENT_ID))).toEqual([
+      expect(yield* resolveWithServe(describing("serve-test"))).toEqual([
         { kind: "tailnet", httpBaseUrl: "https://bb-1.tail1234.ts.net/" },
       ]);
     }),
@@ -344,7 +337,6 @@ describe("DirectEndpoints Tailscale Serve", () => {
             Layer.mergeAll(
               layerServeConfig("192.168.1.10"),
               layerTailscaleUp,
-              layerIdentity, // fork: directory-computers
               Layer.succeed(
                 HttpClient.HttpClient,
                 HttpClient.make((request) =>
