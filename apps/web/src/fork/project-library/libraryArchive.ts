@@ -9,7 +9,7 @@ export function libraryArchiveTimeline(
 ): readonly TimelineEntry[] {
   if (projection.visibleTurnItems.length === 0) {
     return projection.messages.map(
-      ({ scheduledTaskId, senderThreadId, idleCompaction, ...message }) => ({
+      ({ scheduledTaskId, senderThreadId, linkedSender, idleCompaction, ...message }) => ({
         id: message.id,
         kind: "message" as const,
         createdAt: DateTime.formatIso(message.createdAt),
@@ -17,6 +17,7 @@ export function libraryArchiveTimeline(
           ...message,
           ...(scheduledTaskId === undefined ? {} : { scheduledTaskId }),
           ...(senderThreadId === undefined ? {} : { senderThreadId }),
+          ...(linkedSender === undefined ? {} : { linkedSender }),
           ...(idleCompaction === undefined ? {} : { idleCompaction }),
           createdAt: DateTime.formatIso(message.createdAt),
           updatedAt: DateTime.formatIso(message.updatedAt),
