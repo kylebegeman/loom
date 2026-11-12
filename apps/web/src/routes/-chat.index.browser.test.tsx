@@ -1,5 +1,5 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import type { ComponentType } from "react";
+import type { ComponentProps, ComponentType } from "react";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../test/render";
@@ -60,6 +60,9 @@ vi.mock("~/fork/project-library/LibraryThreadHome", () => ({
 }));
 vi.mock("../components/WorkspacePageHeader", () => ({ WorkspacePageHeader: () => null }));
 vi.mock("../components/HostedEmptyState", () => ({ HostedEmptyState: () => null }));
+vi.mock("../components/ui/sidebar", () => ({
+  SidebarInset: (props: ComponentProps<"main">) => <main {...props} />,
+}));
 
 import { Route } from "./_chat.index";
 
