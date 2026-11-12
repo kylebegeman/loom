@@ -37,6 +37,13 @@ export function forkSettingsSearchItems(): ReadonlyArray<SettingsSearchItem> {
   return [
     ...topics,
     {
+      id: "account-vault",
+      targetId: "account-vault",
+      title: "Account Vault",
+      to: "/settings/connections",
+      searchTerms: ["shared saved SSH GitHub connections account computers credentials"],
+    },
+    {
       id: "bot-notification-dots",
       targetId: "bot-notification-dots",
       title: "Bot notification dots",

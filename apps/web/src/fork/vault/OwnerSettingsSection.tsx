@@ -2,7 +2,11 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { VAULT_ITEM_SEARCH_FEATURE, type VaultItemSummary } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_VAULT_FEATURE,
+  VAULT_ITEM_SEARCH_FEATURE,
+  type VaultItemSummary,
+} from "@t3tools/contracts/fork";
 import { useEnvironmentQuery } from "~/state/query";
 import {
   createVaultAccessAtoms,
@@ -47,13 +51,14 @@ export function VaultOwnerSettings({ environmentId }: { environmentId: Environme
 function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const configs = useServerConfigs();
   const capabilities = configs.get(environmentId)?.environment.capabilities;
+  const account = supportsLoomFeature(capabilities, ACCOUNT_VAULT_FEATURE);
   const snapshotAtom = access.snapshot({ environmentId, input: {} });
   const result = useAtomValue(snapshotAtom);
   const [fresh, setFresh] = useState(false);
   const [request, setRequest] = useState({ environmentId, input: {} });
   const snapshot = fresh && result._tag === "Success" && !result.waiting ? result.value : null;
   const policy = snapshot?.ownerPolicy;
-  const summary = vaultOwnerAccessSummary(policy);
+  const summary = vaultOwnerAccessSummary(policy, account ? "account" : "environment");
   const allowed = useAtomValue(access.setOwnerPolicy.permissionAtom(environmentId));
   const [personal, setPersonal] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -98,8 +103,12 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
     } else {
       setNotice(
         changed.value.ownerPolicy?.mode === "owner-trusted"
-          ? "Owner access enabled for this environment."
-          : "Restricted access enabled. Your saved project grants still apply.",
+          ? account
+            ? "Account Vault access enabled."
+            : "Owner access enabled for this environment."
+          : account
+            ? "Account Vault access disabled. Saved connections are kept."
+            : "Restricted access enabled. Your saved project grants still apply.",
       );
     }
     setPersonal(false);
@@ -107,7 +116,7 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
   };
   return (
     <LoomSettingsPanel
-      title="Owner access"
+      title={account ? "Account access" : "Owner access"}
       description={
         snapshot
           ? summary.description
@@ -156,12 +165,12 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
                   disabled={busy || !allowed}
                   onCheckedChange={(checked) => setPersonal(checked === true)}
                 />
-                This is my personal environment
+                {account ? "This is my personal account" : "This is my personal environment"}
               </label>
               <p className="text-sm text-muted-foreground">
-                Enable this only when you are the sole owner of this Loom environment. Agents
-                running here will be able to inspect and use your connected Vault access across
-                projects.
+                {account
+                  ? "Your approved computers will be able to use these connections across projects. Enable this only for your own trusted computers."
+                  : "Enable this only when you are the sole owner of this Loom environment. Agents running here will be able to inspect and use your connected Vault access across projects."}
               </p>
             </>
           ) : null}
@@ -176,13 +185,14 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
             </Button>
           </div>
           <p className="text-sm text-muted-foreground">
-            Owner access covers inspection and credential use. Changes to Vault records and
-            revealing or exporting values keep their existing permissions. Turning this off keeps
-            your saved project grants.
+            {account
+              ? "Turning this off stops new account use without removing saved connections. Changes to records, host trust and protected credentials keep their controls."
+              : "Owner access covers inspection and credential use. Changes to Vault records and revealing or exporting values keep their existing permissions. Turning this off keeps your saved project grants."}
           </p>
           {!allowed ? (
             <p className="text-sm">
-              Only the authenticated environment owner can change this setting.
+              Only the authenticated {account ? "account" : "environment"} owner can change this
+              setting.
             </p>
           ) : null}
         </div>
@@ -193,7 +203,7 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
         ownerEnabled={summary.enabled && !!snapshot}
         sshEnabled={supportsLoomFeature(capabilities, "vault-ssh-management")}
       />
-      {supportsLoomFeature(capabilities, "vault-brokers") ? (
+      {!account && supportsLoomFeature(capabilities, "vault-brokers") ? (
         <OwnerBrokers environmentId={environmentId} />
       ) : null}
       {supportsLoomFeature(capabilities, "vault-health") ? (
@@ -201,7 +211,7 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
       ) : null}
       <LoomSettingsDetails title="Connection setup and repair">
         <dl className="flex max-w-prose flex-col gap-3 text-sm">
-          {VAULT_OWNER_SETUP_HELP.map((help) => (
+          {VAULT_OWNER_SETUP_HELP.filter((help) => !account || help.id !== "broker").map((help) => (
             <div key={help.id}>
               <dt className="font-medium">{help.title}</dt>
               <dd className="mt-1 text-muted-foreground">{help.description}</dd>
@@ -210,9 +220,9 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
         </dl>
       </LoomSettingsDetails>
       <p className="max-w-prose text-sm text-muted-foreground">
-        Project profiles are optional shortcuts for choosing connections. Owner access does not
-        require a profile. The destination still needs to accept the credential, and SSH needs
-        verified host trust and a working execution broker.
+        {account
+          ? "Approved computers use these connections through your account. SSH still needs verified host trust and its public key registered at the destination."
+          : "Project profiles are optional shortcuts for choosing connections. Owner access does not require a profile. The destination still needs to accept the credential, and SSH needs verified host trust and a working execution broker."}
       </p>
     </LoomSettingsPanel>
   );

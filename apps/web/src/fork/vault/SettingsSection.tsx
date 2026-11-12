@@ -22,6 +22,7 @@ import { forkSettingsTarget } from "../settings/navigation";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import {
+  ACCOUNT_VAULT_FEATURE,
   VaultFileContent,
   type VaultItemKind,
   type VaultItemSummary,
@@ -138,6 +139,9 @@ function VaultItems({
   focusSearch: boolean;
 }) {
   const configs = useServerConfigs();
+  const account = loomFeaturesOf(configs.get(environmentId)?.environment.capabilities).includes(
+    ACCOUNT_VAULT_FEATURE,
+  );
   const sshEnabled = loomFeaturesOf(configs.get(environmentId)?.environment.capabilities).includes(
     "vault-ssh-management",
   );
@@ -475,7 +479,11 @@ function VaultItems({
   const records = (
     <LoomSettingsPanel
       title="Vault items"
-      description="Store and manage development access for this environment."
+      description={
+        account
+          ? "Store and manage saved connections for your account."
+          : "Store and manage development access for this environment."
+      }
     >
       <LoomSettingsActions>
         {sshEnabled ? (

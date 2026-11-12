@@ -2,7 +2,11 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Switch, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { VAULT_ITEM_SEARCH_FEATURE, type VaultPolicySnapshot } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_VAULT_FEATURE,
+  VAULT_ITEM_SEARCH_FEATURE,
+  type VaultPolicySnapshot,
+} from "@t3tools/contracts/fork";
 import {
   createVaultAccessAtoms,
   createVaultCoreAtoms,
@@ -57,6 +61,7 @@ export function VaultOwnerSettings({
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const registry = useContext(RegistryContext);
+  const account = supportsLoomFeature(config?.environment.capabilities, ACCOUNT_VAULT_FEATURE);
   const supported = supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted");
   const canChange = useAtomValue(access.setOwnerPolicy.permissionAtom(environmentId));
   const change = useAtomCommand(access.setOwnerPolicy, { reportFailure: false });
@@ -90,7 +95,7 @@ export function VaultOwnerSettings({
   }, [connected, registry, supported, request]);
   const loading = supported && connected && !snapshot && !error;
   const policy = supported && connected && !loading ? snapshot?.ownerPolicy : undefined;
-  const summary = vaultOwnerAccessSummary(policy);
+  const summary = vaultOwnerAccessSummary(policy, account ? "account" : "environment");
   const changePolicy = async () => {
     if (!connected || !supported || !policy || !snapshot || !canChange || loading || busy) return;
     if (!summary.enabled && !confirmed) return;
@@ -111,8 +116,12 @@ export function VaultOwnerSettings({
         setConfirmed(false);
         setNotice(
           result.value.ownerPolicy?.mode === "owner-trusted"
-            ? "Owner access enabled for this environment."
-            : "Restricted access restored. Saved access rules apply again.",
+            ? account
+              ? "Account Vault access enabled."
+              : "Owner access enabled for this environment."
+            : account
+              ? "Account Vault access disabled. Saved connections are kept."
+              : "Restricted access restored. Saved access rules apply again.",
         );
       })
       .catch((cause: unknown) => {
@@ -133,7 +142,9 @@ export function VaultOwnerSettings({
               {config?.environment.label ?? "This environment"}
             </Text>
             <Text className="text-foreground-muted">
-              Development credentials and agent access on this computer.
+              {account
+                ? "Saved connections and agent access for your approved computers."
+                : "Development credentials and agent access on this computer."}
             </Text>
           </View>
           {!connected ? (
@@ -150,9 +161,17 @@ export function VaultOwnerSettings({
                 <>
                   {!summary.enabled ? (
                     <View className="flex-row items-center gap-3">
-                      <Text className="flex-1">This is my personal environment</Text>
+                      <Text className="flex-1">
+                        {account
+                          ? "This is my personal account"
+                          : "This is my personal environment"}
+                      </Text>
                       <Switch
-                        accessibilityLabel="This is my personal environment"
+                        accessibilityLabel={
+                          account
+                            ? "This is my personal account"
+                            : "This is my personal environment"
+                        }
                         value={confirmed}
                         disabled={busy || !canChange}
                         onValueChange={setConfirmed}
@@ -221,12 +240,14 @@ export function VaultOwnerSettings({
             onPress={() => setHelp(!help)}
           />
           {help
-            ? VAULT_OWNER_SETUP_HELP.map((item) => (
-                <View key={item.id} className="gap-1">
-                  <Text className="font-t3-semibold">{item.title}</Text>
-                  <Text>{item.description}</Text>
-                </View>
-              ))
+            ? VAULT_OWNER_SETUP_HELP.filter((item) => !account || item.id !== "broker").map(
+                (item) => (
+                  <View key={item.id} className="gap-1">
+                    <Text className="font-t3-semibold">{item.title}</Text>
+                    <Text>{item.description}</Text>
+                  </View>
+                ),
+              )
             : null}
         </View>
       </SettingsSection>
@@ -281,7 +302,9 @@ function VaultConnections({
   const capabilities = config?.environment.capabilities;
   const registry = useContext(RegistryContext);
   const sshEnabled = supportsLoomFeature(capabilities, "vault-ssh-management");
-  const brokerEnabled = supportsLoomFeature(capabilities, "vault-brokers");
+  const brokerEnabled =
+    !supportsLoomFeature(capabilities, ACCOUNT_VAULT_FEATURE) &&
+    supportsLoomFeature(capabilities, "vault-brokers");
   const healthEnabled = supportsLoomFeature(capabilities, "vault-health");
   const status = useEnvironmentQuery(connected ? core.status({ environmentId, input: {} }) : null);
   const ready =

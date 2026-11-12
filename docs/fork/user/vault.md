@@ -3,13 +3,15 @@
 Vault stores development credentials and secure records separately from your personal accounts.
 SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub for agents**; the generic item editor can only rename them. Revealed values can be copied and clear when you leave the app or after one minute.
 
-An administrator must connect the selected computer to an OpenBao service first.
+Open **Account → Manage account Vault** to manage saved SSH and GitHub connections for your
+approved computers. **Settings → Vault** also leads to the account Vault. Your Library must
+support account Vault and have its OpenBao connection configured; your phone, browser and
+enrolled execution computers do not need OpenBao credentials.
 
-In web or desktop, open **Settings → Vault** and select the computer you want to manage. Your
-items, owner access and connections are shown together; less frequent tools are under **Advanced**.
-On mobile, open that computer's settings and find **Vault**. The computer owns the connection;
-your phone or browser does not need OpenBao credentials. Servers without Vault support hide or
-disable the controls.
+Existing computer Vaults remain under **This computer’s existing Vault** in that computer's
+Vault settings. Their records are separate from the account Vault. Opening the account Vault
+does not copy or move existing items. Less frequent tools are under **Advanced**. Older Libraries
+and computers retain their existing Vault settings until updated.
 
 The service token that connects the computer to OpenBao has to be renewed outside Loom. When it
 has less than three days left, the Vault status says so; renew or reissue it before it lapses.
@@ -41,6 +43,19 @@ running processes may retain values they received. Use **Refresh provider creden
 a provider needs to retry after the Vault backend becomes available again.
 
 ## Choose personal or restricted access
+
+In the account Vault, confirm **This is my personal account** and choose **Enable account access**
+once to let agents on your approved computers use its saved SSH and GitHub connections. Each
+operation checks the computer's enrollment, active full-access/default run, selected item version
+and destination. SSH private keys and GitHub credentials stay at the Library; SSH and Git commands
+run on the execution computer. Structured GitHub actions run through the Library. Account GitHub
+terminal commands are not supported; use the structured tools or SSH for Git.
+
+Choose **Turn off account access** to stop new account-authorized use while keeping saved items.
+An already authenticated remote connection or completed action cannot be recalled. A locked or
+unavailable Library Vault reports its state without selecting a computer-local credential.
+
+The following settings apply to a computer's existing Vault:
 
 For a computer you own and control, open **Vault**, confirm **This is my personal environment**
 and choose **Enable owner access**. This is one setup action for that environment: authenticated
@@ -107,9 +122,10 @@ credentials into chat. Normal agent tools return metadata, not stored values. Th
 `loom vault status`, `loom vault list` and `loom vault change` commands provide the same metadata and
 lifecycle operations through an existing Loom connection.
 
-Agents can now use the authenticated Vault SSH/Git tools described below after an administrator
-configures this computer's execution broker and access policy. Adding a key alone does not route
-ordinary terminal commands through Vault or remove their existing 1Password approvals.
+Account-enrolled computers use the Library's saved connections and account access policy without
+a second broker enrollment. For a computer-local Vault, an administrator configures that computer's
+execution broker and access policy. Adding a key alone does not route ordinary terminal commands
+through Vault or remove their existing 1Password approvals.
 Authentication connectors and general credential delivery remain selected work.
 
 ## Review temporary access requests
@@ -282,6 +298,10 @@ their own root grants. Normal responses contain references and safe metadata.
 
 ## Enroll an execution host
 
+For account Vault access, add the computer from **Account** or approve its `loom join` request.
+The enrollment supplies its account identity; the separate broker setup below is for existing
+computer-local Vaults.
+
 Open **Settings > Vault > Advanced > Credential brokers** for the selected computer (**Vault
 brokers** on mobile). On the intended macOS/Linux
 execution host, run `loom vault broker identity` and enter its public key, name and platform in
@@ -439,9 +459,10 @@ the repair.
 
 Ask an active Loom agent to use the selected resource with `loom_vault_ssh_exec`, or
 `loom_vault_git` to list remote refs or fetch a development repository. Explicit item ID and
-current-version inputs remain supported. The computer's administrator first enrolls and
-configures its execution broker, keeps it online, and authorizes personal owner access or
-restricted permission for the selected item and exact destination. The agent cannot approve its
+current-version inputs remain supported. Account-enrolled computers use the account Vault when
+account access is enabled. Existing computer-local Vaults require an enrolled execution broker
+and personal owner access or restricted permission for the selected item and exact destination.
+The agent cannot approve its
 own key, host trust or root grant. Full-access/default mode is required.
 
 Loom automatically creates, signs and releases the workload for each operation. No session file

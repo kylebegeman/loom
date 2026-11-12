@@ -49,6 +49,10 @@ import { VaultMigrationSettingsSection } from "../vault/MigrationSettingsSection
 import { VaultPasswordSettingsSection } from "../vault/PasswordGenerator";
 import { VaultProfileSettingsSection } from "../vault/ProfileSettingsSection";
 import { VaultSettingsSection } from "../vault/SettingsSection";
+import { AccountVault } from "../vault/AccountVault";
+import { useLibraryAuthority } from "../project-library/state";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { ACCOUNT_VAULT_FEATURE } from "@t3tools/contracts/fork";
 import { VaultTestAccountSettingsSection } from "../vault/TestAccountSettingsSection";
 import {
   FORK_SETTINGS_SECTIONS,
@@ -88,8 +92,23 @@ const topicsOn = (page: ForkSettingsHome) =>
 const targetIdOf = (topic: ForkSettingsSection) => `loom-${topic.id}`;
 
 export function VaultSettingsPage() {
+  const authority = useLibraryAuthority();
+  const { environment } = useSettingsScope();
   const topics = topicsOn("/settings/vault");
   const advanced = topics.filter((topic) => topic.advanced);
+  const accountElsewhere =
+    authority.authorityId !== environment?.environmentId &&
+    supportsLoomFeature(
+      authority.environment?.serverConfig?.environment.capabilities,
+      ACCOUNT_VAULT_FEATURE,
+    );
+  if (accountElsewhere)
+    return (
+      <SettingsPageContainer scopePresentation="computer">
+        <AccountVault />
+        <AdvancedTopics topics={topics} title="This computer’s existing Vault" />
+      </SettingsPageContainer>
+    );
   return (
     <SettingsPageContainer scopePresentation="computer">
       {topics
@@ -103,7 +122,13 @@ export function VaultSettingsPage() {
 }
 
 // Upstream's AdvancedSettings folds rows inside a group; whole topics fold like an outside-header section.
-function AdvancedTopics({ topics }: { topics: readonly ForkSettingsSection[] }) {
+function AdvancedTopics({
+  topics,
+  title = "Advanced",
+}: {
+  topics: readonly ForkSettingsSection[];
+  title?: string;
+}) {
   const [open, setOpen] = useState(false);
   const searchTargetId = useSettingsSearchTargetId();
   const [seenSearchTargetId, setSeenSearchTargetId] = useState<string | null>(null);
@@ -116,7 +141,7 @@ function AdvancedTopics({ topics }: { topics: readonly ForkSettingsSection[] }) 
       <div className="space-y-6">
         <h2 className="flex min-h-7 items-center px-3 sm:px-4">
           <CollapsibleTrigger className="group flex min-h-7 items-center gap-2 rounded-md text-sm font-normal text-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-            Advanced
+            {title}
             <ChevronRightIcon
               aria-hidden
               className="size-4 shrink-0 transition-transform duration-150 group-data-panel-open:rotate-90 motion-reduce:transition-none"

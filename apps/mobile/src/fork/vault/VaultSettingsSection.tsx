@@ -10,6 +10,7 @@ import { AppState, ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import {
+  ACCOUNT_VAULT_FEATURE,
   VaultFileContent,
   VAULT_ITEM_SEARCH_FEATURE,
   vaultReferenceText,
@@ -45,6 +46,8 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { uuidv4 } from "../../lib/uuid";
 import { downloadAttachmentForPreview } from "../../lib/attachmentDownload";
+import { useLibraryAuthority } from "../library/libraryState";
+import { AccountVaultEntry } from "./AccountVaultEntry";
 
 const vault = createVaultCoreAtoms(connectionAtomRuntime);
 const access = createVaultAccessAtoms(connectionAtomRuntime);
@@ -53,7 +56,31 @@ const decodeFile = Schema.decodeUnknownOption(Schema.fromJsonString(VaultFileCon
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "The Vault operation failed. Try again.";
 
-export function VaultSettingsSection({
+export function VaultSettingsSection(props: { environmentId: EnvironmentId; connected: boolean }) {
+  const authority = useLibraryAuthority();
+  const accountConfig = useEnvironmentServerConfig(authority.environmentId);
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  if (
+    authority.environmentId !== props.environmentId &&
+    supportsLoomFeature(accountConfig?.environment.capabilities, ACCOUNT_VAULT_FEATURE)
+  )
+    return (
+      <>
+        <AccountVaultEntry />
+        <Button
+          label={
+            legacyOpen ? "Hide this computer’s existing Vault" : "This computer’s existing Vault"
+          }
+          tone="text"
+          onPress={() => setLegacyOpen(!legacyOpen)}
+        />
+        {legacyOpen ? <ComputerVaultSettings {...props} /> : null}
+      </>
+    );
+  return <ComputerVaultSettings {...props} />;
+}
+
+function ComputerVaultSettings({
   environmentId,
   connected,
 }: {
@@ -96,6 +123,7 @@ function VaultItems({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
+  const account = supportsLoomFeature(config?.environment.capabilities, ACCOUNT_VAULT_FEATURE);
   const sshEnabled = supportsLoomFeature(config?.environment.capabilities, "vault-ssh-management");
   const githubEnabled = supportsLoomFeature(config?.environment.capabilities, "vault-github");
   const [githubOpen, setGithubOpen] = useState(false);
@@ -347,8 +375,10 @@ function VaultItems({
     </View>
   );
   return (
-    <View className="gap-3">
-      <Text className="text-foreground-muted">Development access for this computer</Text>
+    <View className="gap-3 p-4">
+      <Text className="text-foreground-muted">
+        {account ? "Saved connections for your account" : "Development access for this computer"}
+      </Text>
       {!connected ? (
         <Text>Reconnect this computer to manage Vault.</Text>
       ) : status.data ? (

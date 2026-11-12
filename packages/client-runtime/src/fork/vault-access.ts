@@ -215,8 +215,18 @@ export function createVaultAccessAtoms<R, E>(
 }
 export const vaultOwnerAccessSummary = (
   policy: Pick<VaultOwnerPolicy, "mode" | "ownerId"> | null | undefined,
+  scope: "environment" | "account" = "environment",
 ) => {
   const enabled = policy?.mode === "owner-trusted" && !!policy.ownerId;
+  if (scope === "account")
+    return {
+      enabled,
+      title: enabled ? "Account access enabled" : "Account access is off",
+      description: enabled
+        ? "Agents on your approved computers can inspect and use saved SSH and GitHub connections during active full-access runs outside plan mode."
+        : "Enable account access to let your approved computers use saved SSH and GitHub connections.",
+      actionLabel: enabled ? "Turn off account access" : "Enable account access",
+    };
   return {
     enabled,
     title: enabled ? "Owner access enabled" : "Restricted access",

@@ -16,6 +16,7 @@ import { VaultSshError } from "./vault-ssh.ts";
 import { VaultGitHubRunInput, VaultGitHubResult, VaultGitHubError } from "./vault-github.ts";
 
 export const ACCOUNT_VAULT_ROUTE = "/api/loom/account/vault";
+export const ACCOUNT_VAULT_FEATURE = "account-vault";
 export const AccountVaultRequest = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("github"), input: VaultGitHubRunInput }),
   Schema.Struct({ kind: Schema.Literal("list"), input: VaultItemList }),

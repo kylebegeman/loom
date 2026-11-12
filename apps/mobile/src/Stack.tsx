@@ -16,6 +16,7 @@ import { PreviewLinksRouteScreen } from "./fork/preview-links/PreviewLinksScreen
 // fork: library
 import { LibraryRouteScreen, LibraryProjectRouteScreen } from "./fork/library/LibraryScreens";
 import { LibraryAuthorityScreen } from "./fork/library/LibraryPage";
+import { AccountVaultScreen } from "./fork/vault/AccountVaultScreen";
 import {
   LibraryCreateRouteScreen,
   LibraryEditRouteScreen,
@@ -648,6 +649,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     LibrarySettings: createNativeStackScreen({
       screen: LibraryAuthorityScreen,
       linking: "library/settings",
+      options: pageRoute({ itemStyle: "standard" }),
+    }),
+    AccountVault: createNativeStackScreen({
+      screen: AccountVaultScreen,
+      linking: "account/vault",
       options: pageRoute({ itemStyle: "standard" }),
     }),
     IdentitySignIn: createNativeStackScreen({

@@ -32,6 +32,7 @@ import { LibrarySignInSection } from "./LibrarySignInStatus";
 import { DevicesWithAccessSection } from "../connections/DevicesWithAccessSection";
 import { AccountComputers } from "../connections/AccountComputers";
 import { ApproveComputer } from "../connections/ApproveComputer";
+import { AccountVaultEntry } from "../vault/AccountVaultEntry";
 import { LibraryAccessBlock } from "./LibraryAccessBlock";
 import { LibraryDeletedSettings } from "./LibraryDeletedSettings";
 import { useWorkspacePageBack } from "./workspacePageBack";
@@ -152,6 +153,7 @@ export function LibraryAuthorityScreen() {
         </Text>
       ) : null}
       <LibrarySignInSection />
+      <AccountVaultEntry />
       <ApproveComputer />
       <AccountComputers />
       {authority.environmentId ? (

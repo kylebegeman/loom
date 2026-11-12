@@ -41,6 +41,7 @@ import { LibrarySetup } from "./LibrarySetup";
 import { AccountComputers } from "../connections/AccountComputers";
 import { AccountDevices } from "../connections/AccountDevices";
 import { ApproveComputer } from "../connections/ApproveComputer";
+import { AccountVault } from "../vault/AccountVault";
 import { useLibraryAuthority } from "./state";
 
 const identityMetadata = Atom.family((baseUrl: string) =>
@@ -236,6 +237,7 @@ function LibrarySignInStatus({ environment }: { readonly environment: Environmen
           </div>
         </div>
       </section>
+      <AccountVault />
       <AccountDevices />
       <ApproveComputer />
       <AccountComputers />

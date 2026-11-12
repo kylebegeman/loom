@@ -322,7 +322,13 @@ function useSettingsIndexSections(): SettingsListSection[] {
     page(target, icon, label, { disabled: noServerTargets });
   // fork: library
   const route = (
-    id: "Bots" | "Library" | "LibrarySettings" | "ProjectStorageInventory" | "PullRequests",
+    id:
+      | "Bots"
+      | "Library"
+      | "LibrarySettings"
+      | "AccountVault"
+      | "ProjectStorageInventory"
+      | "PullRequests",
     icon: SettingsListRow["icon"],
     label: string,
   ): SettingsListRow => ({ id, icon, label, onPress: () => navigation.navigate(id) });
@@ -362,6 +368,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
         rows: [
           serverPage("SettingsProviderAccounts", "person.crop.circle", gt("Providers")),
+          route("AccountVault", { ios: "lock", android: "lock" }, "Vault"),
           serverPage("SettingsThreads", "text.bubble", gt("Threads")),
           page("SettingsScheduledTasks", "clock", gt("Scheduled tasks")),
         ],
@@ -414,6 +421,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
       ...(noServerTargets ? { notice: <SettingsComputerNotice /> } : {}),
       rows: [
         serverPage("SettingsProviderAccounts", "person.crop.circle", gt("Providers")),
+        route("AccountVault", { ios: "lock", android: "lock" }, "Vault"),
         serverPage("SettingsThreads", "text.bubble", gt("Threads")),
         ...(BOTS_NAVIGATION_VISIBLE ? [route("Bots", "bolt.circle", "Bots")] : []), // fork: bots
         page("SettingsScheduledTasks", "clock", gt("Scheduled tasks")),
