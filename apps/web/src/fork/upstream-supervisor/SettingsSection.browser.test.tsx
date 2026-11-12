@@ -57,6 +57,10 @@ vi.mock("~/state/query", () => ({
   }),
 }));
 vi.mock("../vault/state", () => ({ runVault: (...args: unknown[]) => state.save(...args) }));
+// The real notice pulls in the live identity and connection runtime, which these mocks replace.
+vi.mock("../project-library/LibraryAccessNotice", () => ({
+  LibraryAccessRepairNotice: () => null,
+}));
 
 import { UpstreamSupervisorSettingsSection } from "./SettingsSection";
 
