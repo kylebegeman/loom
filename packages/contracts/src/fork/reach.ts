@@ -145,7 +145,7 @@ export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
   override get message(): string {
     switch (this.reason) {
       case "identity-allowlist":
-        return "Enter the Loom account IDs allowed to sign in to this computer. A wildcard is not allowed.";
+        return "Enter the Loom account IDs allowed to sign in to this computer. A web address or wildcard is not an account ID.";
       case "identity-library":
         return "Preparing sign-in needs a current sign-in to your Library, and a Library on a recent Loom. Check this computer's Library connection, or update Loom on your Library.";
       case "identity-not-configured":

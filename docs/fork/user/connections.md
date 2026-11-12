@@ -165,8 +165,9 @@ To get Loom sign-in for a computer without turning Loomhost on, choose **Prepare
 sign-in** in the Loomhost section of that computer's own Connections settings.
 When your Library has prepared Loom sign-in for the computer, open its own
 Connections settings and choose **Use these values**. The session must allow
-settings changes. The computer allows the same Loom accounts as your Library
-unless it already has its own; enter account IDs only to choose different ones.
+settings changes. The computer allows the same Loom accounts as your Library.
+With a Library that does not share its accounts, enter the account IDs instead,
+not the computer's address.
 Set how many days devices stay signed in if not 7, and choose whether to
 **Require passkey**. Leave it on if you sign in to Loom with a passkey; while it
 is on, signing in with an email code is refused. Loom saves these values

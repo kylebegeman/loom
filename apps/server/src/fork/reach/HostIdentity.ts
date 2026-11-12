@@ -38,6 +38,11 @@ const HostIdentityFile = Schema.Struct({
   ),
 });
 const codec = Schema.fromJsonString(HostIdentityFile);
+/** Identity subjects are opaque account IDs, never addresses, wildcards or blanks. */
+const isAccountList = (value: string | undefined): value is string =>
+  value !== undefined &&
+  value.length <= 4096 &&
+  value.split(",").every((subject) => /^[\w.@-]+$/.test(subject.trim()));
 const isReachError = Schema.is(ReachError);
 export class HostIdentityRestart extends Context.Service<
   HostIdentityRestart,
@@ -67,16 +72,16 @@ export const applyHostIdentity = Effect.fn("HostIdentity.apply")(
       return yield* new ReachError({ reason: "unavailable" });
     const env = yield* HostProcess.Environment;
     const saved = yield* read();
-    const allowedSubjects =
-      input.allowedSubjects?.trim() ||
-      env.LOOM_IDENTITY_ALLOWED_SUBJECTS?.trim() ||
-      saved?.allowedSubjects ||
-      prepared.allowedSubjects;
-    if (
-      !allowedSubjects ||
-      allowedSubjects.split(",").some((subject) => subject.trim() === "" || subject.trim() === "*")
-    )
-      return yield* new ReachError({ reason: "identity-allowlist" });
+    const typed = input.allowedSubjects?.trim();
+    // A saved list that is not account IDs (a pasted address) is skipped, so the Library's list can repair it.
+    const allowedSubjects = typed
+      ? isAccountList(typed) && typed
+      : [
+          env.LOOM_IDENTITY_ALLOWED_SUBJECTS?.trim(),
+          prepared.allowedSubjects,
+          saved?.allowedSubjects,
+        ].find(isAccountList);
+    if (!allowedSubjects) return yield* new ReachError({ reason: "identity-allowlist" });
     for (const value of [prepared.issuer, prepared.resource]) {
       const url = yield* Effect.try({
         try: () => new URL(value),

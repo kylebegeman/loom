@@ -142,8 +142,9 @@ the key lives. Checking for callback drift is a follow-up decision, not built.
 
 Once the Library prepared sign-in, the computer's own Connections settings (its desktop app, or
 the web app it serves) offer **Use these values** in its Reach section. It saves the prepared
-values with the allowed accounts (entered ones, then `LOOM_IDENTITY_ALLOWED_SUBJECTS`, then the
-saved ones, then the Library's own allowlist, which it shares when set without a wildcard), the
+values with the allowed accounts (entered ones, otherwise the first valid list of
+`LOOM_IDENTITY_ALLOWED_SUBJECTS`, the Library's own allowlist, which it shares when set without a
+wildcard, and the saved ones; a list holding an address or wildcard is skipped or refused), the
 passkey rule and how long sign-ins last (7 days unless changed, up to 30) in
 `secrets/reach-identity.json` (mode 0600) in the computer's state directory, then restarts the
 backend. Its Identity sessions rotate once. Other devices say where to find it. The desktop app

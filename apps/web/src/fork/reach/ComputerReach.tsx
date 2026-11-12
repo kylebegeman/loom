@@ -321,16 +321,16 @@ function ComputerReachBody({
               </pre>
               {isThisComputer && canApplyIdentity && identityApplySupported ? (
                 <div className="space-y-2">
-                  <label className="block space-y-1 text-xs">
-                    {view.signIn.values?.allowedSubjects
-                      ? "Allowed Loom account IDs, optional. Leave empty to keep this computer's accounts or use your Library's."
-                      : "Allowed Loom account IDs, if not already configured"}
-                    <Input
-                      value={allowedSubjects}
-                      onChange={(event) => setAllowedSubjects(event.target.value)}
-                      placeholder="Account IDs, separated by commas"
-                    />
-                  </label>
+                  {view.signIn.values?.allowedSubjects ? null : (
+                    <label className="block space-y-1 text-xs">
+                      Allowed Loom account IDs, if not already configured
+                      <Input
+                        value={allowedSubjects}
+                        onChange={(event) => setAllowedSubjects(event.target.value)}
+                        placeholder="Account IDs, separated by commas"
+                      />
+                    </label>
+                  )}
                   <label className="block space-y-1 text-xs">
                     Days devices stay signed in, if not already set ({DEFAULT_SESSION_DAYS} by
                     default, up to {MAX_SESSION_DAYS})

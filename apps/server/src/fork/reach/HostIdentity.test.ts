@@ -77,6 +77,7 @@ it.effect("requires an explicit account allowlist and never writes or restarts a
     for (const [values, allowedSubjects] of [
       [prepared, undefined],
       [prepared, "*"],
+      [prepared, "https://studio-loom.example.test/"],
       [{ ...prepared, allowedSubjects: "library-owner,*" }, undefined],
     ] as const)
       expect(
@@ -100,6 +101,17 @@ it.effect("requires an explicit account allowlist and never writes or restarts a
     // With nothing entered or saved, the Library's own accounts are the allowlist.
     yield* applyHostIdentity(withLibraryAccounts, { requirePasskey: true }).pipe(
       Effect.provideService(HostIdentityRestart, { request: Effect.void }),
+    );
+    expect(decode(yield* fs.readFileString(file))).toMatchObject({
+      allowedSubjects: "library-owner",
+    });
+
+    // A saved address where account IDs belong is skipped, so the Library's accounts repair it.
+    yield* applyHostIdentity(withLibraryAccounts, { requirePasskey: true }).pipe(
+      Effect.provideService(HostIdentityRestart, { request: Effect.void }),
+      Effect.provideService(HostProcess.Environment, {
+        LOOM_IDENTITY_ALLOWED_SUBJECTS: "https://studio-loom.example.test/",
+      }),
     );
     expect(decode(yield* fs.readFileString(file))).toMatchObject({
       allowedSubjects: "library-owner",
