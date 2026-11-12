@@ -617,6 +617,7 @@ apps/server/src/provider/antigravityAuthSupport.ts	brand	1
 apps/server/src/provider/providerCompatibility.ts	brand	3
 apps/server/src/provider/providerInstallation.ts	brand	2
 apps/server/src/provider/providerMaintenanceRunner.ts	brand	3
+apps/server/src/provider/providerMaintenanceRunner.test.ts	brand	1
 apps/server/src/serverOwnership.ts	brand	2
 apps/server/src/serviceLauncher.ts	brand	3
 apps/server/src/startupAccess.ts	brand	1

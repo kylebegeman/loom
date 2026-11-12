@@ -149,6 +149,7 @@ const describeDesktopServer = Effect.fn("test.describe_desktop_server")(function
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "loom-self-update-switch-" });
   return yield* describeServer(baseDir, selfUpdate, {
     mode: "desktop",
+    desktopAppUpdate: true,
     desktopTelemetryControlFd: 5,
   });
 });

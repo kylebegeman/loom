@@ -28,6 +28,8 @@ import {
   switchboardUsageController,
 } from "./switchboard.ts";
 
+const APP_SERVER = ["app-server", "-c", "thread_unload_delay_secs=0"];
+
 const MAC_CODEX_ARGS = [
   "-c",
   'model_providers.loom_switchboard_test={name="Switchboard",base_url="http://127.0.0.1:8317/v1",wire_api="responses",supports_websockets=true,requires_openai_auth=false,auth={command="/usr/bin/security",args=["find-generic-password","-s","switchboard","-a","client-api-key","-w"]}}',
@@ -58,7 +60,7 @@ afterEach(() => {
 describe("Switchboard routing", () => {
   it("leaves launches alone while off, including invalid unused Switchboard configuration", () => {
     setSwitchboardEnvironment({ LOOM_SWITCHBOARD_URL: "not an endpoint" }, "linux");
-    expect(codexAppServerArgs("--enable foo")).toEqual(["app-server", "--enable", "foo"]);
+    expect(codexAppServerArgs("--enable foo")).toEqual([...APP_SERVER, "--enable", "foo"]);
     expect(switchboardClaudeSettings()).toEqual({});
     expect(codexThreadRuntimeParams({ threadId: null, mcpSession: undefined })).toEqual({
       config: CODEX_THREAD_CONFIG,
@@ -69,7 +71,7 @@ describe("Switchboard routing", () => {
   it("selects the hub after the instance's own Codex arguments, so it wins", () => {
     setSwitchboardEnabled(true);
     expect(codexAppServerArgs("-c model_provider=other")).toEqual([
-      "app-server",
+      ...APP_SERVER,
       "-c",
       "model_provider=other",
       ...MAC_CODEX_ARGS,
@@ -193,14 +195,14 @@ describe("Switchboard routing", () => {
     const routing = switchboardCodexThreadOptions();
     const args = switchboardCodexArgs();
     setSwitchboardEnabled(false);
-    expect(codexAppServerArgs("", args)).toEqual(["app-server", ...MAC_CODEX_ARGS]);
+    expect(codexAppServerArgs("", args)).toEqual([...APP_SERVER, ...MAC_CODEX_ARGS]);
     expect(
       codexThreadRuntimeParams({ threadId: null, mcpSession: undefined }, routing).modelProvider,
     ).toBe("loom_switchboard_test");
     const nativeRouting = switchboardCodexThreadOptions();
     const nativeArgs = switchboardCodexArgs();
     setSwitchboardEnabled(true);
-    expect(codexAppServerArgs("", nativeArgs)).toEqual(["app-server"]);
+    expect(codexAppServerArgs("", nativeArgs)).toEqual(APP_SERVER);
     expect(
       codexThreadRuntimeParams({ threadId: null, mcpSession: undefined }, nativeRouting)
         .modelProvider,
