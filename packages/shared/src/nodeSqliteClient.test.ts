@@ -3,14 +3,15 @@ import type * as NodeWorkerThreads from "node:worker_threads";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Cause from "effect/Cause"; // fork: library-projects
-import * as Schema from "effect/Schema"; // fork: library-projects
-import { SqlError } from "effect/sql/SqlError"; // fork: library-projects
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 import * as Statement from "effect/sql/Statement";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as Stream from "effect/Stream";
@@ -19,7 +20,6 @@ import { vi } from "vite-plus/test";
 
 import * as SqliteClient from "./nodeSqliteClient.ts";
 
-const isSqlError = Schema.is(SqlError); // fork: library-projects
 const startedWorkers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 const silentWorkers = vi.hoisted(() => ({ on: false, readyOnTerminate: false }));
 const failingWorkers = vi.hoisted(() => ({ message: undefined as string | undefined }));
@@ -89,7 +89,7 @@ layer("NodeSqliteClient", (it) => {
         .pipe(Effect.exit);
       assert(failed._tag === "Failure");
       const failure = Cause.squash(failed.cause);
-      assert(isSqlError(failure));
+      assert(SqlError.isSqlError(failure));
       assert.equal(failure.reason._tag, "ConstraintError");
       assert.deepEqual(yield* sql`SELECT * FROM commit_parents`, []);
       assert.deepEqual(yield* sql`SELECT * FROM commit_children`, []);
@@ -441,6 +441,24 @@ it.effect("uses the writer when the reader cannot open the database", () =>
       assert.equal(startedWorkers.length, startedBefore + 1);
     }),
   ),
+);
+
+it.effect("fails with a typed SqlError when the database file is not SQLite", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-sqlite-notadb-" });
+    const filename = path.join(directory, "state.sqlite");
+    yield* fs.writeFileString(filename, "not a db\n");
+
+    const exit = yield* Layer.build(SqliteClient.layer({ filename, checkpointWorker: true })).pipe(
+      Effect.exit,
+    );
+
+    assert.isTrue(Exit.isFailure(exit));
+    if (Exit.isFailure(exit)) assert.isTrue(SqlError.isSqlError(Cause.squash(exit.cause)));
+    if (Exit.isFailure(exit)) assert.isFalse(Cause.hasDies(exit.cause));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("finishes masked database cleanup after its caller is interrupted", () =>

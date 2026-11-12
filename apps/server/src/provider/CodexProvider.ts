@@ -761,7 +761,12 @@ const makePendingCodexProvider = Effect.fn("CodexProvider.makePendingCodexProvid
   });
 });
 
-function accountProbeStatus({ account, rateLimits }: CodexAppServerProviderSnapshot): {
+const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
+
+function accountProbeStatus(
+  { account, rateLimits }: CodexAppServerProviderSnapshot,
+  codexHome: string | undefined,
+): {
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: ServerProvider["auth"];
   readonly message?: string;
@@ -789,7 +794,9 @@ function accountProbeStatus({ account, rateLimits }: CodexAppServerProviderSnaps
     return {
       status: "error",
       auth: { status: "unauthenticated" },
-      message: "Codex CLI is not authenticated. Run `codex login` and try again.",
+      message: codexHome
+        ? `Codex CLI is not authenticated. Run \`codex login\` with CODEX_HOME set to ${quotePath(codexHome)} and try again.`
+        : "Codex CLI is not authenticated. Run `codex login` and try again.",
     };
   }
 
@@ -907,7 +914,16 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   const snapshot = probeResult.success.value;
   const accountStatus = managedAuth
     ? { status: "ready" as const, auth: managedAuth, message: undefined }
-    : yield* withCodexLoginEmail(accountProbeStatus(snapshot), snapshot, codexSettings); // fork: codex-login-email
+    : yield* withCodexLoginEmail( // fork: codex-login-email
+        accountProbeStatus(
+          snapshot,
+          codexSettings.homePath
+            ? expandHomePath(codexSettings.homePath, yield* HostProcess.HomeDirectory)
+            : undefined,
+        ),
+        snapshot,
+        codexSettings,
+      );
   // Sign-in guidance still applies when Codex itself says it needs an OpenAI login.
   const usageLimits =
     routedUsage || (!snapshot.nativeUsage && !accountStatus.message) // fork: switchboard

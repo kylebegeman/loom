@@ -178,7 +178,9 @@ To clone, choose **Git URL**, paste the repository address, and choose its desti
 A branch or file page copied from GitHub, GitLab, GitCafe, Codeberg or Bitbucket also works: Loom
 clones that repository's default branch. On other hosts, paste the repository's clone URL.
 Loom opens the new thread while the clone runs. The repository name and files stay attached to
-that thread. Ready source-control account shortcuts also appear in the picker.
+that thread. Ready source-control account shortcuts also appear in the picker. Only GitHub is
+listed at first. To list another provider here and in **Publish Repository**, turn on its switch
+under **Settings → Source control**.
 **Add project** on a computer in **Computers** keeps that computer selected.
 
 On mobile, new shared projects use the Library. They can start from a name, an existing folder,

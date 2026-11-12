@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe, expect, it } from "vite-plus/test";
@@ -260,6 +261,20 @@ const layerIdentity = Layer.succeed(ServerEnvironmentIdentity, {
   getEnvironmentId: Effect.succeed(EnvironmentId.make(ENVIRONMENT_ID)),
 });
 
+const T3_DESCRIPTOR_BODY = JSON.stringify({
+  environmentId: ENVIRONMENT_ID, // fork: directory-computers
+  label: "Serve test",
+  platform: { os: "darwin", arch: "arm64" },
+  serverVersion: "0.0.0-test",
+  capabilities: { repositoryIdentity: true },
+});
+
+const serveProbeResponse = (request: HttpClientRequest.HttpClientRequest, status: number) =>
+  HttpClientResponse.fromWeb(
+    request,
+    new Response(status === 200 ? T3_DESCRIPTOR_BODY : null, { status }),
+  );
+
 const layerServeProbe = (answer: () => Response) =>
   Layer.succeed(
     HttpClient.HttpClient,
@@ -269,7 +284,7 @@ const layerServeProbe = (answer: () => Response) =>
 
 // fork: directory-computers
 const describing = (environmentId: string) => () =>
-  Response.json({ environmentId, label: "Studio" }, { status: 200 });
+  Response.json({ ...JSON.parse(T3_DESCRIPTOR_BODY), environmentId }, { status: 200 });
 
 const layerServeConfig = (host = "127.0.0.1") =>
   Layer.effect(
@@ -343,15 +358,7 @@ describe("DirectEndpoints Tailscale Serve", () => {
                           )
                         : Effect.void,
                     ),
-                    Effect.map((status) =>
-                      HttpClientResponse.fromWeb(
-                        request,
-                        // fork: directory-computers
-                        status === 200
-                          ? describing(ENVIRONMENT_ID)()
-                          : new Response(null, { status }),
-                      ),
-                    ),
+                    Effect.map((status) => serveProbeResponse(request, status)),
                   ),
                 ),
               ),
