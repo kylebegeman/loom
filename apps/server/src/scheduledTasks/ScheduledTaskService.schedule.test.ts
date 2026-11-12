@@ -413,7 +413,7 @@ it.effect("a fixed-time slot missed while the server was off shows on the task",
           ),
       }),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-        namedProjectsRoot: "/projects",
+        // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
         isScratchProject: () => Effect.succeed(false),
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({}),
@@ -495,7 +495,7 @@ it.effect(
             ).pipe(Effect.as({ threadId: `thread-${input.title}`, resumed: false } as never)),
         }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-          namedProjectsRoot: "/projects",
+          // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
           isScratchProject: () => Effect.succeed(false),
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({}),

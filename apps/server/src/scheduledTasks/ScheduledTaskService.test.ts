@@ -469,7 +469,7 @@ it.effect.each([
           }),
           Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-            namedProjectsRoot: "/projects",
+            // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
             isScratchProject: () => Effect.succeed(false),
           }),
           NodeCrypto.layer,
