@@ -1673,7 +1673,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
           providerInstanceId: ProviderInstanceId.make("copilot"),
         },
         client: undefined,
-        capabilities: new Set(["orchestration"]),
+        capabilities: new Set(["orchestration", "preview"]), // fork: agent-catalog
         issuedAt: 1,
       });
       const scopes = new Map([

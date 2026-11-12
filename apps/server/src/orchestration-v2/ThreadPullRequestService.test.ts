@@ -666,7 +666,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
               SecureRandom.SecureRandom,
               SecureRandom.make((size) => new Uint8Array(size).fill(1)),
             ),
-            FileSystem.layerNoop({}),
+            projectRepositoryFileSystem, // fork: server-weight
             Path.layer,
           );
           yield* Effect.gen(function* () {

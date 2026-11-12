@@ -391,7 +391,7 @@ const makeAllowanceProbePeer = Effect.fn("makeAllowanceProbePeer")(function* (
 
 const chatgptAccount = {
   account: { type: "chatgpt", email: "native@example.test", planType: "plus" },
-  requiresOpenaiAuth: false,
+  requiresOpenaiAuth: true,
 } satisfies CodexSchema.V2GetAccountResponse;
 
 it.layer(NodeServices.layer)("Codex allowance probe policy", (it) => {
