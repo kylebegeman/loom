@@ -700,7 +700,7 @@ default-branch confirmation per project, and show landed work so its thread can 
 `packages/contracts/src/git.ts` (4 marker lines) keeps every new status field optional so older
 servers still decode. `rpc.ts` (4) adds `git.resolveOperation`, which `clientRpcPermissions.ts`
 (1) puts behind the source-control write scope and `RpcInstrumentation.ts` (1) traces as `git`.
-`GitVcsDriverCore.ts` (21) refuses to commit or stage while the index has unmerged paths,
+`GitVcsDriverCore.ts` (19) refuses to commit or stage while the index has unmerged paths,
 checked before `add` or `reset` can hide them, and refuses Continue or Abort when the operation
 or HEAD changed since the user confirmed. Pushes stop after the ten-minute `PUSH_TIMEOUT_MS`,
 and the error says `push_timed_out` only when the limit is that constant. Landed is set only

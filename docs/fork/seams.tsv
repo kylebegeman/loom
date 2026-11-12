@@ -998,7 +998,7 @@ apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
 apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
-apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
+apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	19
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1
@@ -1455,7 +1455,7 @@ packages/contracts/src/sourceControl.ts	file-placement	2
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	was declined in Loom.
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	launch arguments in Loom settings
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	Set the service tier Loom sends
-packages/shared/src/nodeSqliteClient.test.ts	library-projects	5
+packages/shared/src/nodeSqliteClient.test.ts	library-projects	1
 packages/shared/src/usageLimits.test.ts	switchboard	1
 packages/ssh/src/auth.ts	-	Loom ssh-askpass invoked without T3_SSH_AUTH_SECRET.
 packages/ssh/src/tunnel.ts	-	Remote Loom server did not become ready on 127.0.0.1
