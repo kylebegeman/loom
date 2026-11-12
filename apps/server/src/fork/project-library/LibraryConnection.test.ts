@@ -30,6 +30,7 @@ const initial = {
   accessToken: "before-token",
   issuedAt: iso(NOW - 20 * DAY),
   expiresAt: iso(NOW + 10 * DAY),
+  account: { authorityId: "authority", authorityEpoch: 3 },
   computer: {
     environmentId: "source",
     label: "Source",
@@ -126,6 +127,7 @@ it.effect(
           expect(decode(yield* fs.readFileString(h.file))).toMatchObject({
             ...successor,
             computer: initial.computer,
+            account: initial.account,
           });
           expect((yield* fs.stat(h.file)).mode & 0o777).toBe(0o600);
           yield* h.service.send(HttpClientRequest.post("/api/loom/directory/list"));

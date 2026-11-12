@@ -134,7 +134,9 @@ const make = Effect.gen(function* () {
       computer.account?.state !== "active" ||
       computer.account.approvedAt !== lease.membershipRevision ||
       computer.account.epoch !== lease.membershipEpoch ||
-      computer.account.ownerSubject !== lease.ownerSubject
+      computer.account.ownerSubject !== lease.ownerSubject ||
+      computer.account.authorityId !== lease.authorityId ||
+      computer.account.authorityEpoch !== lease.authorityEpoch
     )
       return yield* denied();
   });
@@ -152,7 +154,9 @@ const make = Effect.gen(function* () {
     if (
       !info.isAuthority ||
       info.environmentId !== destination.credential.libraryEnvironmentId ||
-      info.environmentId === environmentId
+      info.environmentId === environmentId ||
+      destination.credential.account?.authorityId !== info.authorityId ||
+      destination.credential.account.authorityEpoch !== info.authorityEpoch
     )
       return yield* denied();
     const thread = yield* readVaultThreadShell(threads, threadId).pipe(Effect.mapError(denied));

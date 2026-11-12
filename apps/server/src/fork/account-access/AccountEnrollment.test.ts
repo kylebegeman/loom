@@ -371,9 +371,17 @@ it.effect(
         for (const input of [
           {
             ...bundle,
+            credential: { ...credential, account: { authorityId: "other", authorityEpoch: 1 } },
+          },
+          {
+            ...bundle,
             credential: { ...credential, sourceEnvironmentId: EnvironmentId.make("other") },
           },
           { ...bundle, management: { ...bundle.management, keyFingerprint: "0".repeat(64) } },
+          {
+            ...bundle,
+            credential: { ...credential, account: { authorityId: "authority", authorityEpoch: 2 } },
+          },
         ])
           expect((yield* Effect.result(f.service.install(input)))._tag).toBe("Failure");
         expect(yield* f.fs.exists(f.file)).toBe(false);
@@ -409,6 +417,10 @@ it.effect(
         };
         const approved = yield* f.service.approve(proof, owner);
         expect(approved.requestId).toBe(`request:${FINGERPRINT}`);
+        expect(approved.credential.account).toEqual({
+          authorityId: "authority",
+          authorityEpoch: 1,
+        });
         expect(f.events).toEqual(["owner", "pin", "issue"]);
         f.endEnrollment();
         expect((yield* f.service.approve(proof, owner).pipe(Effect.flip)).reason).toBe(

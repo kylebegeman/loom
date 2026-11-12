@@ -11,6 +11,9 @@ import {
   decodeEd25519PublicKey,
   keyFingerprint,
 } from "@t3tools/shared/fork/directory";
+import { signRelayJwt } from "@t3tools/shared/relayJwt";
+import * as Digest from "effect/crypto/Digest";
+import * as Hex from "effect/encoding/Hex";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -51,6 +54,8 @@ const fixture = Effect.gen(function* () {
     active: true,
     stopAtKeyRead: false,
     authorityEpoch: 1,
+    approvedAuthorityEpoch: 1,
+    binding: { authorityId: "authority", authorityEpoch: 1 },
     membershipRevision: 1,
     membershipEpoch: 0,
     membershipState: "active" as "active" | "removing" | "removed",
@@ -94,13 +99,14 @@ const fixture = Effect.gen(function* () {
       })),
     }),
     Layer.mock(LibraryConnectionService)({
-      current: Effect.succeed({
-        kind: "remote",
+      current: Effect.sync(() => ({
+        kind: "remote" as const,
         origin: "https://library.example.test",
         endpoint: (path) => `https://library.example.test${path}`,
         send: () => Effect.die("not used"),
         credential: {
-          version: 1,
+          version: 1 as const,
+          account: state.binding,
           sourceEnvironmentId: SOURCE,
           libraryEnvironmentId: LIBRARY,
           libraryUrl: "https://library.example.test",
@@ -108,7 +114,7 @@ const fixture = Effect.gen(function* () {
           accessToken: Redacted.make("machine-only"),
           expiresAt: "2026-11-13T12:00:00Z",
         },
-      }),
+      })),
     }),
     Layer.mock(SessionStore)({
       cookieName: "test",
@@ -147,6 +153,8 @@ const fixture = Effect.gen(function* () {
             keyFingerprint: fingerprint,
             account: {
               label: "Source",
+              authorityId: "authority",
+              authorityEpoch: state.approvedAuthorityEpoch,
               ownerSubject: "account-owner",
               requestId: "enrollment",
               approvedAt: state.membershipRevision,
@@ -181,7 +189,37 @@ const fixture = Effect.gen(function* () {
     );
   const source = yield* open(SOURCE);
   const authority = yield* open(LIBRARY);
-  return { source, authority, state };
+  const forgeCurrentAuthority = () =>
+    Effect.gen(function* () {
+      const crypto = yield* Digest.Digest;
+      return yield* signRelayJwt({
+        privateKey: key.privateKey,
+        typ: "loom-account-workload+jwt",
+        payload: {
+          iss: SOURCE,
+          sub: SOURCE,
+          aud: LIBRARY,
+          iat: NOW / 1000,
+          exp: NOW / 1000 + 30,
+          publisherSessionId: PUBLISHER,
+          authorityId: "authority",
+          authorityEpoch: state.authorityEpoch,
+          nonce: "a".repeat(32),
+          digest: Hex.encode(
+            yield* crypto.digest(Digest.sha256, new TextEncoder().encode(PAYLOAD)),
+          ),
+          workload: {
+            threadId: THREAD,
+            runId: state.thread.activeRunId,
+            projectId: state.thread.projectId,
+            providerInstanceId: state.thread.providerInstanceId,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+          },
+        },
+      });
+    });
+  return { source, authority, state, forgeCurrentAuthority };
 });
 const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provide(NodeCrypto.layer));
@@ -284,4 +322,27 @@ it.effect.each(["restricted", "plan", "ended", "archived", "changed-during-signi
         expect((yield* f.source.prepare(PAYLOAD, THREAD).pipe(Effect.flip)).reason).toBe("denied");
       }),
     ),
+);
+
+it.effect("requires explicit enrollment repair after a Library revision changes", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.authorityEpoch = 2;
+      expect((yield* f.source.prepare(PAYLOAD, THREAD).pipe(Effect.result))._tag).toBe("Failure");
+      expect(
+        (yield* f.authority
+          .accept(PAYLOAD, yield* f.forgeCurrentAuthority(), publisher)
+          .pipe(Effect.flip)).reason,
+      ).toBe("denied");
+      f.state.binding = { authorityId: "authority", authorityEpoch: 2 };
+      f.state.approvedAuthorityEpoch = 2;
+      const accepted = yield* f.authority.accept(
+        PAYLOAD,
+        yield* f.source.prepare(PAYLOAD, THREAD),
+        publisher,
+      );
+      expect(accepted.authorityEpoch).toBe(2);
+    }),
+  ),
 );

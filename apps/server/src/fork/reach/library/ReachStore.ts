@@ -45,6 +45,8 @@ const ReachStoredLeftoverZone = Schema.Struct({
 export type ReachStoredLeftoverZone = typeof ReachStoredLeftoverZone.Type;
 
 const AccountMembership = Schema.Struct({
+  authorityId: Schema.optionalKey(Schema.String),
+  authorityEpoch: Schema.optionalKey(NonNegativeInt),
   label: Schema.String,
   ownerSubject: Schema.String,
   requestId: Schema.String,

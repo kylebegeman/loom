@@ -245,6 +245,8 @@ const make = Effect.gen(function* () {
             keyFingerprint: pin.keyFingerprint,
             account: {
               label: pin.label ?? input.environmentId,
+              authorityId: delegation.authorityId,
+              authorityEpoch: delegation.authorityEpoch,
               ownerSubject,
               requestId,
               approvedAt,
@@ -261,7 +263,17 @@ const make = Effect.gen(function* () {
         },
       }))
       .pipe(Effect.mapError(unavailable));
-    return { requestId, credential, management: delegation };
+    return {
+      requestId,
+      credential: {
+        ...credential,
+        account: {
+          authorityId: delegation.authorityId,
+          authorityEpoch: delegation.authorityEpoch,
+        },
+      },
+      management: delegation,
+    };
   }, membershipLock.withPermit);
 
   const computers = Effect.fn("AccountEnrollment.computers")(function* (
@@ -349,6 +361,7 @@ const make = Effect.gen(function* () {
       const next: ReachStoredComputer = {
         ...current,
         account: {
+          ...current.account,
           label: current.account?.label ?? pin?.label ?? input.environmentId,
           ownerSubject,
           requestId: current.account?.requestId ?? `legacy:${input.environmentId}`,
@@ -429,6 +442,13 @@ const make = Effect.gen(function* () {
     function* (input: AccountComputerEnrollment) {
       const credential = input.credential;
       const source = yield* identity.getEnvironmentId;
+      if (
+        credential.account !== undefined &&
+        (credential.account.authorityId !== input.management.authorityId ||
+          credential.account.authorityEpoch !== input.management.authorityEpoch)
+      )
+        return yield* refused();
+
       const url = yield* libraryUrl(credential.libraryUrl);
       if (
         credential.sourceEnvironmentId !== source ||

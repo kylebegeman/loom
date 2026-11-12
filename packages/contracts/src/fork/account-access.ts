@@ -34,7 +34,12 @@ export const AccountVerification = Schema.Struct({
   path: Schema.String.check(Schema.isMaxLength(8192)),
 });
 
+export const AccountComputerBinding = Schema.Struct({
+  authorityId: LibraryManagementDelegation.fields.authorityId,
+  authorityEpoch: LibraryManagementDelegation.fields.authorityEpoch,
+});
 export const AccountComputerCredential = Schema.Struct({
+  account: Schema.optionalKey(AccountComputerBinding),
   version: Schema.Literal(1),
   sourceEnvironmentId: EnvironmentId,
   libraryEnvironmentId: EnvironmentId,

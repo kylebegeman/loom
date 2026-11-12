@@ -1,6 +1,7 @@
 import { EnvironmentId, IsoDateTime } from "@t3tools/contracts";
 import {
   LibraryComputerRegistration,
+  AccountComputerBinding,
   LibraryError,
   LIBRARY_PUBLISHER_RENEW_ROUTE,
   LibraryPublisherRenewal,
@@ -26,6 +27,7 @@ import { libraryComputerDirectory } from "./enrollment.ts";
 import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts";
 
 const LibraryHostCredential = Schema.Struct({
+  account: Schema.optionalKey(AccountComputerBinding),
   computer: Schema.optional(LibraryComputerRegistration),
   version: Schema.Literal(1),
   sourceEnvironmentId: EnvironmentId,
