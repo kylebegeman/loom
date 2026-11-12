@@ -206,6 +206,7 @@ export function ServerUpdatesAction({
           (await requestConfirmDialog(
             // fork: brand
             `Update the Loom desktop apps on ${desktopTargets.map((target) => target.serverLabel).join(", ")}? They will close and relaunch on those machines.`,
+            { initialFocus: "confirm" },
           )) ?? true;
         if (!confirmed) return;
       }
@@ -314,6 +315,7 @@ export function ServerUpdateAction({
         (await requestConfirmDialog(
           // fork: brand
           `Update the Loom desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
+          { initialFocus: "confirm" },
         )) ?? true;
       if (!confirmed) {
         return;

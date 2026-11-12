@@ -119,21 +119,23 @@ vi.mock("react-native", () => ({
       {children}
     </button>
   ),
-  FlatList: ({
+}));
+vi.mock("@legendapp/list/react-native", () => ({
+  LegendList: ({
     data,
     renderItem,
     ListHeaderComponent,
     ListFooterComponent,
   }: {
     data: ReadonlyArray<BotDefinition>;
-    renderItem: (info: { item: BotDefinition }) => ReactNode;
+    renderItem: (info: { item: BotDefinition; index: number }) => ReactNode;
     ListHeaderComponent: ReactNode;
     ListFooterComponent: ReactNode;
   }) => (
     <div>
       {ListHeaderComponent}
-      {data.map((item) => (
-        <div key={item.id}>{renderItem({ item })}</div>
+      {data.map((item, index) => (
+        <div key={item.id}>{renderItem({ item, index })}</div>
       ))}
       {ListFooterComponent}
     </div>

@@ -58,7 +58,7 @@ export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_ssh_agent_open", {
     description:
       "Explicitly activate one five-minute SSH agent session for this current full-access/default run, dedicated key/version and pinned host. Requires current Vault policy permission for that SSH host; repository-only grants do not authorize agent signing. Use the Loom ssh-agent-exec CLI to run ordinary terminal SSH/Git with local socket cleanup. Returns public metadata, never private keys. Already authenticated remote connections are not recalled by revocation.",
-    parameters: VaultSshAgentOpenInput.check(objectInput),
+    parameters: objectInput(VaultSshAgentOpenInput),
     success: VaultSshAgentSession,
     failure,
     failureMode: "return",
@@ -94,7 +94,7 @@ export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_ssh_exec", {
     description:
       "Run a short SSH probe (at most 8 seconds and 2 KiB of output) using a dedicated Vault item and its current version for this authenticated active thread/run. For anything longer, file transfers or piped stdin, run `loom vault ssh-agent-exec` in the agent terminal with connection:{resource:personal-vps} and argv [\"personal-vps\", ...] instead. Automatically signs and releases an operation-scoped workload through the server's enrolled broker. Accepts connection:{resource:personal-vps} with command:{argv,timeoutMs}, or the existing explicit item/version. Requires current Vault policy and full-access/default mode. Owner-trusted environments need no individual grant or project profile. No private keys, manual session files or personal key-manager prompts. Execution is on the Loom server, not the provider's terminal. Do not put secrets in argv or output. No retry after unknown outcomes.",
-    parameters: VaultSshRunInput.check(objectInput),
+    parameters: objectInput(VaultSshRunInput),
     success: VaultSshResult,
     failure,
     failureMode: "return",
@@ -103,7 +103,7 @@ export const VaultSshToolkit = Toolkit.make(
   Tool.make("loom_vault_git", {
     description:
       "List remote refs or fetch into this thread's checkout using a dedicated Vault SSH key. Supply connection:{resource} or an explicit item id/current expectedVersion, action ls-remote or fetch, repository path on that host and timeoutMs up to 30000. Requires current Vault policy permission; owner-trusted mode needs no individual grant. Restricted grants use git+ssh://user@host:port/repository (absolute paths use /:absolute/path); a host-scoped SSH grant alone does not authorize this Git destination. Workload signing/release is automatic through the configured enrolled server broker. Fetch writes FETCH_HEAD, does not merge, rewrite origin or change personal SSH settings. No clone/push/submodules yet. Runs on the Loom server; no secret output.",
-    parameters: VaultGitRunInput.check(objectInput),
+    parameters: objectInput(VaultGitRunInput),
     success: VaultGitResult,
     failure,
     failureMode: "return",

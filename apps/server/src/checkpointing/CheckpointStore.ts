@@ -135,14 +135,21 @@ export const make = Effect.gen(function* () {
     }
     return records.join("\0");
   };
+  // The registry reads an unreadable repository as none; ask Git again so that fails here.
+  const isGitRepositoryAt = Effect.fnUntraced(function* (cwd: string) {
+    // fork: library-projects -- per-repository body of upstream's isGitRepository.
+    if ((yield* vcsRegistry.detect({ cwd, requestedKind: "git" })) !== null) return true;
+    const git = yield* vcsRegistry.get("git");
+    return (yield* git.detectRepository(cwd)) !== null;
+  });
   const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = Effect.fn(
     "CheckpointStore.isGitRepository",
   )(function* (cwd) {
+    // fork: library-projects
     const repositories = yield* targets(cwd);
     if (repositories.length === 0) return false;
     for (const repository of repositories) {
-      if ((yield* vcsRegistry.detect({ cwd: repository.path, requestedKind: "git" })) === null)
-        return false;
+      if (!(yield* isGitRepositoryAt(repository.path))) return false;
     }
     return true;
   });

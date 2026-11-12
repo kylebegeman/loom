@@ -35,6 +35,8 @@ vi.mock("./state", () => ({
   }),
   useLibraryPermission: (command: unknown) =>
     command === state.commands.remove ? state.canRemove : state.canRegister,
+  useLibraryAuthorityId: () => "library",
+  readLibraryAuthorityId: () => "library",
 }));
 vi.mock("~/state/query", () => ({
   useEnvironmentQuery: () => ({

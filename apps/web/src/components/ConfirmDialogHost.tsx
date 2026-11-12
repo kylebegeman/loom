@@ -9,6 +9,7 @@ import {
 import {
   AlertDialog,
   AlertDialogClose,
+  AlertDialogAction,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
@@ -59,6 +60,7 @@ export function ConfirmDialogHost() {
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
+  const focusConfirm = state.status !== "idle" && state.initialFocus === "confirm";
   const confirmLabel = state.status === "idle" ? null : state.confirmLabel; // fork: confirm-label
   const cancelLabel = state.status === "idle" ? null : state.cancelLabel; // fork: confirm-label
   const onCancel = () => respondToConfirmDialog(false);
@@ -87,9 +89,15 @@ export function ConfirmDialogHost() {
           <AlertDialogClose render={<Button variant="outline" />}>
             {cancelLabel ?? "Cancel" /* fork: confirm-label */}
           </AlertDialogClose>
-          <Button variant={confirmVariant} onClick={onConfirm}>
-            {confirmLabel ?? "Confirm" /* fork: confirm-label */}
-          </Button>
+          {focusConfirm && confirmVariant === "default" ? (
+            <AlertDialogAction onClick={onConfirm}>
+              {confirmLabel ?? "Confirm" /* fork: confirm-label */}
+            </AlertDialogAction>
+          ) : (
+            <Button variant={confirmVariant} onClick={onConfirm}>
+              {confirmLabel ?? "Confirm" /* fork: confirm-label */}
+            </Button>
+          )}
         </AlertDialogFooter>
       </AlertDialogPopup>
     </AlertDialog>

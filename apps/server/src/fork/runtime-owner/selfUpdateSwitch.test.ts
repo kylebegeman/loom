@@ -62,12 +62,13 @@ const makeSelfUpdate = Effect.fn("test.make_switched_self_update")(function* (op
       ServiceLauncherClient.ServiceLauncherClient,
       ServiceLauncherClient.ServiceLauncherClient.of({
         managed: options.managed,
+        protocol: options.managed ? SERVICE_LAUNCHER_PROTOCOL : undefined,
         requestUpdate: () =>
           Effect.sync(() => {
             calls.push("requestUpdate");
             return "launcher-id";
           }),
-        prepareTrial: Effect.undefined,
+        prepareTrial: () => Effect.undefined,
       }),
     ),
     Effect.provideService(DesktopAppUpdate.DesktopAppUpdate, {
@@ -148,6 +149,7 @@ const describeDesktopServer = Effect.fn("test.describe_desktop_server")(function
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "loom-self-update-switch-" });
   return yield* describeServer(baseDir, selfUpdate, {
     mode: "desktop",
+    desktopAppUpdate: true,
     desktopTelemetryControlFd: 5,
   });
 });

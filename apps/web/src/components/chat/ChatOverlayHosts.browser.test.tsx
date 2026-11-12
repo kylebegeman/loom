@@ -1,4 +1,12 @@
-import { MessageId } from "@t3tools/contracts";
+import {
+  CheckpointId,
+  CheckpointRef,
+  CheckpointScopeId,
+  MessageId,
+  NodeId,
+  ThreadId,
+} from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
@@ -15,6 +23,21 @@ const pending = {
   canRestoreFiles: true,
   reason: null,
 };
+// fork: project-lifecycle -- ready, so only the shared-workspace reason can disable file restore.
+const readyCheckpoint = {
+  id: CheckpointId.make("checkpoint-1"),
+  threadId: ThreadId.make("thread-1"),
+  scopeId: CheckpointScopeId.make("scope-1"),
+  runId: null,
+  nodeId: NodeId.make("node-1"),
+  parentCheckpointId: null,
+  ordinalWithinScope: 2,
+  appRunOrdinal: null,
+  ref: CheckpointRef.make("refs/test/checkpoint-1"),
+  status: "ready" as const,
+  files: [],
+  capturedAt: DateTime.makeUnsafe(0),
+};
 const dialog = () => document.querySelector('[role="alertdialog"]');
 
 describe("RevertConfirmHost", () => {
@@ -25,6 +48,7 @@ describe("RevertConfirmHost", () => {
         {/* fork: project-lifecycle */}
         <RevertConfirmHost
           threadKey={threadKey}
+          checkpoints={undefined}
           canOperate
           onConfirm={onConfirm}
           onFork={vi.fn()}
@@ -58,7 +82,13 @@ it("explains shared workspace restrictions and forks without confirming a restor
   const onConfirm = vi.fn();
   await using _screen = await render(
     <AppAtomRegistryProvider>
-      <RevertConfirmHost threadKey="env:shared" canOperate onConfirm={onConfirm} onFork={onFork} />
+      <RevertConfirmHost
+        threadKey="env:shared"
+        checkpoints={[readyCheckpoint]}
+        canOperate
+        onConfirm={onConfirm}
+        onFork={onFork}
+      />
     </AppAtomRegistryProvider>,
   );
   await act(() =>

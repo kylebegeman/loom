@@ -35,7 +35,7 @@ export const VaultGitHubToolkit = Toolkit.make(
   Tool.make("loom_vault_github_exec", {
     description:
       "Run an explicit noninteractive gh or Git HTTPS argv on the Loom server using a selected Vault connection/version/repository. Accepts connection:{resource} or an explicit item/version. Active full-access/default thread with current Vault policy permission; owner-trusted mode needs no individual grant. gh supports repo view, PR/issue operations, release list/view/create/edit/upload/download, workflow list/view/run and run list/view/watch/rerun/cancel. Release files must be literal paths inside the active checkout; downloads require an empty checkout directory. Git supports ls-remote, fetch, push, clone. Use origin or the selected HTTPS URL. A push updates origin's tracking branches and -u records origin as the upstream, so no follow-up fetch is needed. No shell, account commands, extensions, SSH agents or persistent terminal login. Credentials are scoped to the child; writes are never retried. Inspect after an unknown outcome.",
-    parameters: VaultGitHubTerminalRunInput.check(objectInput),
+    parameters: objectInput(VaultGitHubTerminalRunInput),
     success: VaultGitHubTerminalResult,
     failure,
     failureMode: "return",
@@ -53,7 +53,7 @@ export const VaultGitHubToolkit = Toolkit.make(
   Tool.make("loom_vault_github", {
     description:
       "Run a documented GH operation on the Loom server with a dedicated Vault GitHub connection and operation-scoped token. Requires this authenticated full-access/default active run, current item version, configured repository coverage and current Vault policy permission. Accepts connection:{resource} or an explicit item/version; owner-trusted mode needs no profile or individual grant. Supported actions: repo-view, pr-list, issue-list, pr-view/issue-view/pr-checks with number; pr-comment/issue-comment with number/body; issue-create with title/body. No raw gh argv, tokens, ambient GitHub login or SSH agents. Writes may have completed after a timeout; inspect before retrying. Does not configure the provider terminal or Git HTTPS.",
-    parameters: VaultGitHubRunInput.check(objectInput),
+    parameters: objectInput(VaultGitHubRunInput),
     success: VaultGitHubResult,
     failure,
     failureMode: "return",

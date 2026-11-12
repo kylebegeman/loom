@@ -10,6 +10,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "./TextGeneration.ts";
@@ -93,6 +94,7 @@ describe("TextGeneration.make", () => {
               resolveLink: () => Effect.die("Unauthenticated generation must not resolve links"),
             }),
             ServerSettings.ServerSettingsService.layerTest(),
+            ProviderInstallationGate.layer,
             Layer.mock(TextGenerators.TextGenerators)({
               runner: () => Effect.undefined,
             }),

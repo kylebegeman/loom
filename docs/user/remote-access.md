@@ -16,16 +16,15 @@ t3 up
 ```
 
 It asks how your other devices reach the machine: T3 Connect, the local network,
-or both. Choose T3 Connect and follow the sign-in instructions. On Linux and
-macOS, it then runs T3 Code as a [background service](./background-service.md).
+or both. Choose T3 Connect and follow the sign-in instructions. It then runs
+T3 Code as a [background service](./background-service.md).
 `t3 connect` is the same as `t3 up --connect`. Run `t3 up` again to change your
 choice, and `t3 status` to see it.
 
-The background service is not available on Windows, so there `t3 up` prints the
-`t3 serve` command to keep running in a terminal. You can also keep the desktop
-app running with its local environment enabled. Closing the desktop app's last
-window stops its local server. Saving your sign-in alone does not start a server
-or make the machine reachable.
+Instead of the background service, you can keep the desktop app running with
+its local environment enabled. Closing the desktop app's last window stops its
+local server. Saving your sign-in alone does not start a server or make the
+machine reachable.
 
 On your other device, sign in to the same T3 Connect account and choose the
 environment. On the app.t3.codes home page with no computer added yet, signing
@@ -509,6 +508,10 @@ your Library, pairing, T3 Connect, or SSH. To connect your Library or add a comp
 **Settings → Computers**. Connect your Library at the top of the page, or choose **Connect
 computer** to pair another one. While this computer has no saved connections, the home screen
 also offers **Connect your Library** and **Add a computer**.
+
+If a [background service](./background-service.md) on this computer uses the same T3 home, the
+app still treats it as this computer: **Open in** and file reveal for its projects run here,
+whichever connection you reach it through.
 
 Turn **Run agents on this computer** back on in the same place to restart with your previous
 local settings.

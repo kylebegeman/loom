@@ -1,8 +1,9 @@
 import { useBotBadgeCount } from "./useBotBadgeCount";
+import { LegendList } from "@legendapp/list/react-native";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   BOTS_FEATURE,
@@ -404,9 +405,12 @@ function BotsCatalog({
         menu.length ? [{ title: "Bots tools", icon: "ellipsis.circle", items: menu }] : undefined
       }
     >
-      <FlatList
+      <LegendList
         data={showList ? filtered : []}
         keyExtractor={(bot) => bot.id}
+        extraData={{ environmentId, callerThreadId }}
+        estimatedItemSize={80}
+        recycleItems
         renderScrollComponent={BOT_LIST_SCROLL_VIEW}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

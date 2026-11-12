@@ -178,7 +178,9 @@ To clone, choose **Git URL**, paste the repository address, and choose its desti
 A branch or file page copied from GitHub, GitLab, GitCafe, Codeberg or Bitbucket also works: Loom
 clones that repository's default branch. On other hosts, paste the repository's clone URL.
 Loom opens the new thread while the clone runs. The repository name and files stay attached to
-that thread. Ready source-control account shortcuts also appear in the picker.
+that thread. Ready source-control account shortcuts also appear in the picker. Only GitHub is
+listed at first. To list another provider here and in **Publish Repository**, turn on its switch
+under **Settings → Source control**.
 **Add project** on a computer in **Computers** keeps that computer selected.
 
 On mobile, new shared projects use the Library. They can start from a name, an existing folder,
@@ -374,7 +376,7 @@ Linking and unlinking are available in the web and desktop clients.
 The **Linked pull requests** panel lists every review and groups stacks. Unlink a review from its
 row menu. An unlinked stack layer stays out of later syncs. Open linked reviews refresh on the server;
 closed reviews refresh periodically so reopening one on the host is detected. Merged reviews refresh
-when requested. A settled thread's reviews stop refreshing until you unsettle it. With **Auto-settle merged threads** enabled, a thread can settle after every linked
+when requested. Settling a thread refreshes its open and closed reviews once; after that they stop refreshing until you unsettle it. With **Auto-settle merged threads** enabled, a thread can settle after every linked
 review is terminal. An open or unsynced link keeps it active.
 
 Ask the agent to watch, monitor, or babysit a pull request and it calls `watch_pull_request`. While

@@ -217,6 +217,7 @@ scripts/lib/public-config.ts	mobile-identity	2
 packages/shared/src/cliRelease.test.ts	fleet-connect	3
 packages/shared/src/cliRelease.ts	fleet-connect	4
 packages/ssh/src/tunnel.ts	fleet-connect	3
+packages/ssh/src/tunnel.test.ts	fleet-connect	1
 apps/mobile/src/features/settings/environment-maintenance.test.ts	fleet-connect	6
 apps/mobile/src/features/cloud/linkEnvironment.ts	fleet-connect	7
 apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	fleet-connect	1
@@ -351,8 +352,6 @@ apps/server/src/orchestration-v2/runtimeLayer.ts	library-projects	11
 apps/server/src/orchestration-v2/runtimeLayer.ts	mini-native-retention	3
 apps/server/src/orchestration-v2/runtimeLayer.ts	project-lifecycle	5
 apps/server/src/preview/ServerBrowser.test.ts	browser-timeout-recovery	15
-apps/desktop/src/preview/CdpRelay.ts	browser-timeout-recovery	2
-apps/desktop/src/preview/CdpRelay.test.ts	browser-timeout-recovery	2
 apps/server/src/project/ProjectSetupScriptRunner.ts	project-lifecycle	7
 apps/server/src/project/ProjectSetupScriptRunner.test.ts	project-lifecycle	5
 apps/server/src/server.ts	library-projects	4
@@ -415,7 +414,7 @@ apps/server/src/cli/invocation.ts	brand	3
 apps/server/src/cli/invocation.ts	ext-vault	1
 apps/server/src/cli/automaticPort.ts	brand	1
 apps/server/src/policy/policyTemplates.ts	brand	12
-apps/server/src/cli/invocation.test.ts	brand	9
+apps/server/src/cli/invocation.test.ts	brand	11
 apps/server/src/cli/server.ts	brand	3
 apps/web/src/components/settings/CliCommandSettingsRow.tsx	brand	4
 apps/web/src/components/settings/settingsSearch.ts	brand	2
@@ -515,7 +514,8 @@ apps/desktop/src/app/DesktopAppActivation.ts	brand	1
 apps/desktop/src/app/DesktopAppActivation.ts	project-lifecycle	2
 apps/desktop/src/app/DesktopAppActivation.test.ts	project-lifecycle	2
 apps/desktop/src/app/DesktopAppActivationBroker.ts	brand	4
-apps/desktop/src/backend/DesktopBackendPool.ts	brand	4
+apps/desktop/src/backend/DesktopBackendPool.ts	brand	3
+apps/desktop/src/backend/DesktopHomeOwner.ts	brand	6
 apps/desktop/src/backend/DesktopLocalEnvironmentAuth.ts	brand	1
 apps/desktop/src/electron/WindowsForeground.ts	brand	1
 apps/desktop/src/permissions/MacPermissionHelper.ts	brand	3
@@ -563,14 +563,17 @@ apps/server/src/cli/updateProgress.ts	brand	1
 apps/server/src/cli/up.ts	brand	7
 apps/server/src/cli/up.test.ts	brand	2
 apps/server/src/cloud/ConnectReachability.ts	brand	1
-apps/server/src/cloud/bootService.ts	brand	4
+apps/server/src/cloud/bootService.ts	brand	5
 apps/server/src/cloud/selfUpdate.ts	brand	2
 apps/server/src/desktopUpdate/DesktopAppUpdate.ts	brand	4
 apps/server/src/diagnostics/ProcessDiagnostics.test.ts	brand	1
 apps/server/src/diagnostics/ProcessDiagnostics.ts	brand	2
+apps/server/src/device/DeviceToolchain.ts	brand	1
 apps/server/src/environment/ServerEnvironmentLabel.ts	brand	1
 apps/server/src/mcp/AcpMcpStdioBridge.ts	brand	4
 apps/server/src/mcp/McpHttpServer.test.ts	brand	1
+apps/server/src/mcp/McpHttpServer.test.ts	file-placement	1
+apps/server/src/mcp/McpHttpServer.test.ts	agent-catalog	1
 apps/server/src/mcp/McpHttpServer.ts	brand	2
 apps/server/src/mcp/McpInvocationContext.ts	brand	1
 apps/server/src/mcp/OrchestratorMcpService.ts	brand	3
@@ -578,6 +581,7 @@ apps/server/src/mcp/ThreadMetadataMcpService.ts	brand	1
 apps/server/src/mcp/WorktreeMcpService.ts	brand	1
 apps/server/src/mcp/threadAccess.ts	brand	2
 apps/server/src/mcp/toolkits/device/handlers.ts	brand	1
+apps/server/src/mcp/toolkits/toolSearch/tools.ts	brand	1
 apps/server/src/mcp/toolkits/orchestrator/tools.ts	brand	7
 apps/server/src/mcp/toolkits/pullRequests/tools.ts	brand	3
 apps/server/src/orchestration-v2/Adapters/AcpAdapterV2.test.ts	brand	8
@@ -595,6 +599,8 @@ apps/server/src/orchestration-v2/testkit/OrchestratorReplayRecovery.integration.
 apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts	brand	1
 apps/server/src/persistence/DatabaseMaintenance.ts	brand	3
 apps/server/src/persistence/DatabaseStorage.ts	brand	1
+apps/server/src/persistence/Sqlite.ts	brand	2
+apps/desktop/src/preview/BrowserSession.ts	brand	1
 apps/web/src/components/settings/DatabaseStorageNotice.tsx	brand	3
 apps/server/src/preview/PreviewBrowser.test.ts	brand	1
 apps/server/src/preview/PreviewBrowser.ts	brand	5
@@ -613,10 +619,12 @@ apps/server/src/provider/antigravityAuthSupport.ts	brand	1
 apps/server/src/provider/providerCompatibility.ts	brand	3
 apps/server/src/provider/providerInstallation.ts	brand	2
 apps/server/src/provider/providerMaintenanceRunner.ts	brand	3
+apps/server/src/provider/providerMaintenanceRunner.test.ts	brand	1
 apps/server/src/serverOwnership.ts	brand	2
-apps/server/src/serviceLauncher.ts	brand	2
+apps/server/src/serviceLauncher.ts	brand	3
 apps/server/src/startupAccess.ts	brand	1
-apps/server/src/ws.ts	brand	2
+apps/server/src/ws.ts	brand	1
+apps/server/src/provider/AcpRegistrySessions.ts	brand	1
 apps/web/src/components/HostedEmptyState.tsx	brand	1
 apps/web/src/components/RightPanelTabs.tsx	brand	1
 apps/web/src/components/ServerUpdateAction.tsx	brand	2
@@ -778,9 +786,8 @@ apps/server/src/orchestration-v2/FoundationPersistence.test.ts	server-weight	13
 apps/server/src/orchestration-v2/ThreadSettlementService.ts	server-weight	20
 apps/server/src/orchestration-v2/ThreadSettlementService.test.ts	server-weight	10
 apps/server/src/orchestration-v2/ThreadPullRequestService.ts	server-weight	2
-apps/server/src/orchestration-v2/ThreadPullRequestService.test.ts	server-weight	9
-apps/server/src/persistence/DatabaseStorage.ts	server-weight	7
-apps/server/src/persistence/DatabaseStorage.test.ts	server-weight	4
+apps/server/src/orchestration-v2/ThreadPullRequestService.test.ts	server-weight	10
+apps/server/src/persistence/DatabaseStorage.test.ts	server-weight	2
 apps/server/src/persistence/Sqlite.ts	server-weight	1
 apps/server/src/preview/ServerBrowserContexts.ts	server-weight	1
 packages/shared/src/observability.ts	server-weight	4
@@ -819,10 +826,6 @@ apps/web/src/components/settings/ArchivedThreadsPanel.tsx	agent-work	4
 apps/mobile/src/features/home/useThreadListActions.ts	agent-work	2
 apps/mobile/src/features/archive/ArchivedThreadsRouteScreen.tsx	agent-work	2
 apps/mobile/src/features/archive/ArchivedThreadsScreen.tsx	agent-work	5
-apps/server/src/vcs/GitVcsDriverCore.ts	git-gitfile-errors	2
-apps/server/src/vcs/GitVcsDriverCore.test.ts	git-gitfile-errors	2
-apps/server/src/storageCleanup.ts	git-gitfile-errors	2
-apps/server/src/git/GitManager.ts	git-gitfile-errors	2
 packages/shared/package.json	-	"./fork/reach"
 packages/shared/package.json	-	"./fork/thread-alerts"
 packages/shared/package.json	-	"./fork/run-continuation"
@@ -997,7 +1000,7 @@ apps/server/src/observability/RpcInstrumentation.ts	source-control-cockpit	1
 apps/server/src/vcs/GitVcsDriver.ts	source-control-cockpit	5
 apps/server/src/vcs/GitVcsDriver.ts	library-projects	1
 apps/server/src/vcs/GitVcsDriverCore.test.ts	source-control-cockpit	12
-apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	21
+apps/server/src/vcs/GitVcsDriverCore.ts	source-control-cockpit	19
 apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1
@@ -1026,7 +1029,6 @@ packages/shared/src/git.test.ts	checkpoint-capable	1
 packages/shared/src/git.test.ts	project-checkout-management	1
 packages/shared/src/git.ts	source-control-cockpit	2
 packages/shared/src/git.ts	checkpoint-capable	1
-packages/shared/src/git.ts	project-checkout-management	3
 apps/server/src/ws.test.ts	project-lifecycle	2
 apps/server/src/ws.test.ts	file-placement	9
 apps/web/src/components/chat/useTimelineRewind.ts	project-lifecycle	22
@@ -1065,7 +1067,7 @@ packages/client-runtime/src/connection/registry.test.ts	reach	2
 packages/client-runtime/src/connection/registry.ts	directory-computers	6
 apps/web/src/components/settings/AddEnvironmentDialog.tsx	directory-computers	9
 packages/client-runtime/src/connection/supervisor.test.ts	fleet-connections	2
-packages/client-runtime/src/connection/supervisor.test.ts	reach	4
+packages/client-runtime/src/connection/supervisor.test.ts	reach	3
 packages/client-runtime/src/connection/supervisor.ts	fleet-connections	6
 packages/client-runtime/src/connection/supervisor.ts	reach	4
 packages/client-runtime/src/state/presentation.ts	fleet-connections	4
@@ -1375,6 +1377,7 @@ apps/server/src/project/ProjectMutation.test.ts	project-home	1
 apps/server/src/project/ProjectMutation.ts	file-placement	1
 apps/server/src/project/ProjectMutation.ts	project-home	3
 apps/server/src/project/RepositoryIdentityResolver.test.ts	project-lifecycle	3
+apps/server/src/orchestration-v2/RunFinalizationService.test.ts	project-lifecycle	4
 apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	2
@@ -1425,7 +1428,6 @@ apps/web/src/routes/_chat.settings.tsx	ext-settings	4
 apps/web/src/rpc/requestLatencyState.test.ts	library-launch-files	1
 apps/web/src/state/queries.ts	fleet-connections	1
 apps/web/src/state/session.ts	library-projects	1
-apps/web/vite.config.ts	update-publisher	2
 knip.jsonc	ext-lint	8
 package.json	-	"dev:fixtures": "node apps/server/scripts/dev-fixtures.ts"
 package.json	-	"seed-dev-db": "node apps/server/scripts/seed-dev-db.ts"
@@ -1455,7 +1457,7 @@ packages/contracts/src/sourceControl.ts	file-placement	2
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	was declined in Loom.
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	launch arguments in Loom settings
 packages/provider-pi/src/server/mcpExtensionSource.ts	-	Set the service tier Loom sends
-packages/shared/src/nodeSqliteClient.test.ts	library-projects	5
+packages/shared/src/nodeSqliteClient.test.ts	library-projects	1
 packages/shared/src/usageLimits.test.ts	switchboard	1
 packages/ssh/src/auth.ts	-	Loom ssh-askpass invoked without T3_SSH_AUTH_SECRET.
 packages/ssh/src/tunnel.ts	-	Remote Loom server did not become ready on 127.0.0.1
@@ -1782,3 +1784,5 @@ apps/mobile/deps/README.md	native-tab-bar	1
 apps/web/src/components/chat/turnDetailAnnouncement.ts	brand	1
 apps/web/src/components/chat/turnDetailAnnouncement.test.ts	brand	4
 apps/web/src/components/chat/ThreadActivityAnnouncer.browser.test.tsx	brand	4
+# Not a seam: upstream's comment "// fork: a child forked..." matches the marker pattern.
+packages/provider-opencode/src/server/OpenCodeServerLedger.test.ts	a	1

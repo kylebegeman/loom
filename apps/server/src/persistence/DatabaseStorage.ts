@@ -32,8 +32,6 @@ import { forkParked } from "../serverActivation.ts";
 // Bound each reclaim pass to one minute of churn.
 const RECLAIM_PAGES_PER_PASS = 1024;
 const COMPACTION_INTERVAL = Duration.hours(6);
-// fork: server-weight: a pass runs two statements per page, up to 2,048 a minute, so pages run untraced and the pass span carries the count.
-const untracedPage = Effect.withTracerEnabled(false);
 
 export class DatabaseStorage extends Context.Service<
   DatabaseStorage,
@@ -161,25 +159,25 @@ const make = Effect.gen(function* () {
     Effect.catch((cause) => Effect.logWarning("Database storage inspection failed", { cause })),
   );
 
-  const reclaim = Effect.gen(function* () {
-    if (!(yield* readLayout).incrementalVacuum) return;
-    let reclaimedPages = 0; // fork: server-weight
-    // The driver steps once per statement; incremental_vacuum frees one page per step. Yield between pages.
-    for (let page = 0; page < RECLAIM_PAGES_PER_PASS; page++) {
-      // fork: server-weight
-      const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`.pipe(
-        untracedPage,
-      );
-      if ((free[0]?.freelist_count ?? 0) === 0) break;
-      yield* sql`PRAGMA incremental_vacuum(1)`.pipe(untracedPage); // fork: server-weight
-      reclaimedPages++; // fork: server-weight
-      yield* Effect.yieldNow;
-    }
-    yield* Effect.annotateCurrentSpan({ "db.reclaimed_pages": reclaimedPages }); // fork: server-weight
-  }).pipe(
-    Effect.withSpan("DatabaseStorage.reclaim"), // fork: server-weight
-    Effect.catch((cause) => Effect.logWarning("Database space reclamation failed", { cause })),
-  );
+  const reclaim = Effect.suspend(() => {
+    let page = 0;
+    return Effect.gen(function* () {
+      if (!(yield* readLayout).incrementalVacuum) return;
+      // The driver steps once per statement; incremental_vacuum frees one page per step. Yield between pages.
+      for (; page < RECLAIM_PAGES_PER_PASS; page++) {
+        const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
+        if ((free[0]?.freelist_count ?? 0) === 0) break;
+        yield* sql`PRAGMA incremental_vacuum(1)`;
+        yield* Effect.yieldNow;
+      }
+    }).pipe(
+      Effect.ensuring(Effect.suspend(() => Effect.annotateCurrentSpan("db.reclaimed_pages", page))),
+      Effect.catch((cause) => Effect.logWarning("Database space reclamation failed", { cause })),
+      // The pass owns the span; tracing each page's two PRAGMAs floods the server trace.
+      Effect.withTracerEnabled(false),
+      Effect.withSpan("DatabaseStorage.reclaim"),
+    );
+  });
 
   // Even a pass that deletes nothing scans the event store. Persist completion
   // so restarting does not trigger another scan before the six-hour interval.

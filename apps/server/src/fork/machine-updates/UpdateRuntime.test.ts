@@ -34,7 +34,10 @@ const runtimeFixture = (
             mode: options.mode ?? "web",
             desktopTelemetryControlFd: options.controlFd,
           }),
-          Layer.mock(ServiceLauncherClient)({ managed: options.managed ?? true }),
+          Layer.mock(ServiceLauncherClient)({
+            managed: options.managed ?? true,
+            protocol: undefined,
+          }),
           Layer.mock(ServerSelfUpdate)({
             update: options.update ?? (() => Effect.die("unexpected install")),
             commitDesktopUpdate: options.commit ?? (() => Effect.die("unexpected desktop commit")),
