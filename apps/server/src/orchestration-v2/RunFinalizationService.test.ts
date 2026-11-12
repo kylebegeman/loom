@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as ServerConfig from "../config.ts"; // fork: project-lifecycle
 import * as ProcessRunner from "../processRunner.ts";
 import * as ProjectEnrichment from "../project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
@@ -346,7 +347,18 @@ it.effect("resolves the identity of a project whose remote was added during the 
       );
     }).pipe(
       Effect.scoped,
-      Effect.provide(layerIdentityRefresh(workspaceRoot, RepositoryIdentityResolver.layer)),
+      // fork: project-lifecycle - The resolver reads managed checkout receipts from server state.
+      Effect.provide(
+        layerIdentityRefresh(
+          workspaceRoot,
+          RepositoryIdentityResolver.layer.pipe(
+            Layer.provide(
+              ServerConfig.layerTest(process.cwd(), { prefix: "t3-run-finalization-" }),
+            ), // fork: project-lifecycle
+            Layer.orDie, // fork: project-lifecycle
+          ),
+        ),
+      ),
     );
   }).pipe(
     Effect.scoped,

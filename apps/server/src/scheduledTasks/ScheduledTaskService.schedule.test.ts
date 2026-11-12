@@ -211,7 +211,7 @@ it.effect("keeps one queued occurrence of a recurring task while its bound threa
       }),
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-        namedProjectsRoot: "/projects",
+        // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
         isScratchProject: () => Effect.succeed(false),
       }),
       Layer.mock(ThreadManagementService.ThreadManagementService)({

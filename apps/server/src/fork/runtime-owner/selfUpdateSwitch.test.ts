@@ -62,12 +62,13 @@ const makeSelfUpdate = Effect.fn("test.make_switched_self_update")(function* (op
       ServiceLauncherClient.ServiceLauncherClient,
       ServiceLauncherClient.ServiceLauncherClient.of({
         managed: options.managed,
+        protocol: options.managed ? SERVICE_LAUNCHER_PROTOCOL : undefined,
         requestUpdate: () =>
           Effect.sync(() => {
             calls.push("requestUpdate");
             return "launcher-id";
           }),
-        prepareTrial: Effect.undefined,
+        prepareTrial: () => Effect.undefined,
       }),
     ),
     Effect.provideService(DesktopAppUpdate.DesktopAppUpdate, {

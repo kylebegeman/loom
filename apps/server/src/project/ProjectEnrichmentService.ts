@@ -198,7 +198,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
 
   const resolveRepositoryIdentity = Effect.fn("ProjectEnrichmentService.resolveRepositoryIdentity")(
     // fork: project-preparation
-    function* (workspaceRoot: string, revision: number) {
+    function* (workspaceRoot: string, revision: number | undefined) {
       const repositoryIdentity = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
       yield* logFailure(workspaceRoot, "repositoryIdentity", repositoryIdentity);
       const faviconPath = yield* Cache.getSuccess(faviconCache, workspaceRoot);
@@ -408,7 +408,9 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
         return;
       }
       yield* Cache.invalidate(repositoryIdentityCache, workspaceRoot);
-      yield* resolveRepositoryIdentity(workspaceRoot);
+      // fork: project-preparation - Outside a lane the revision is undefined and the guard passes.
+      const revision = (yield* Ref.get(repositoryIdentityLane.pendingRoots)).get(workspaceRoot);
+      yield* resolveRepositoryIdentity(workspaceRoot, revision); // fork: project-preparation
     });
 
   return ProjectEnrichmentService.of({

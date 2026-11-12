@@ -1375,6 +1375,7 @@ apps/server/src/project/ProjectMutation.test.ts	project-home	1
 apps/server/src/project/ProjectMutation.ts	file-placement	1
 apps/server/src/project/ProjectMutation.ts	project-home	3
 apps/server/src/project/RepositoryIdentityResolver.test.ts	project-lifecycle	3
+apps/server/src/orchestration-v2/RunFinalizationService.test.ts	project-lifecycle	4
 apps/server/src/project/RepositoryIdentityResolver.ts	project-lifecycle	4
 apps/server/src/project/http.ts	file-placement	1
 apps/server/src/scheduledTasks/ScheduledTaskService.interval.test.ts	file-placement	2
