@@ -20,7 +20,7 @@ import type {
 } from "@t3tools/contracts";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork"; // fork: mini-native-retention
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
