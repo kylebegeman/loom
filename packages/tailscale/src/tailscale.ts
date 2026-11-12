@@ -1,3 +1,4 @@
+import { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isLocalLoopbackHost, normalizeHostname } from "@t3tools/shared/hostClassification";
 import * as Duration from "effect/Duration";
@@ -798,7 +799,9 @@ export const readTailscaleServeStatusJson = runTailscale(
   TAILSCALE_STATUS_TIMEOUT,
 );
 
-const EnvironmentIdentityJson = Schema.Struct({ environmentId: Schema.String });
+const EnvironmentIdentityJson = Schema.Struct({
+  environmentId: ExecutionEnvironmentDescriptor.fields.environmentId,
+});
 
 /** The environment a T3 server at `baseUrl` reports, or none when nothing answers as one. */
 export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdentity")(
@@ -813,7 +816,7 @@ export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdent
         Effect.flatMap(HttpClientResponse.schemaBodyJson(EnvironmentIdentityJson)),
         Effect.timeoutOption(input.timeout ?? TAILSCALE_PROBE_TIMEOUT),
       );
-    return Option.map(identity, (descriptor) => descriptor.environmentId);
+    return Option.map(identity, (descriptor): string => descriptor.environmentId);
   },
   Effect.orElseSucceed(() => Option.none<string>()),
 );
