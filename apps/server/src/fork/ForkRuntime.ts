@@ -1,3 +1,4 @@
+import type { AccountWorkloads } from "./account-access/AccountWorkloads.ts";
 import type { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
 import type { AccountJoin } from "./account-access/AccountJoin.ts";
 import type { ComputerJoin } from "./account-access/ComputerJoin.ts";
@@ -146,6 +147,7 @@ export type ForkServices =
   | LibraryService
   | LibraryManagement
   | AccountEnrollment
+  | AccountWorkloads
   | AccountJoin
   | ComputerJoin
   | ProjectWorkflows

@@ -1,3 +1,4 @@
+import * as AccountWorkloads from "./account-access/AccountWorkloads.ts";
 import * as AccountEnrollment from "./account-access/AccountEnrollment.ts";
 import * as AccountJoin from "./account-access/AccountJoin.ts";
 import * as ComputerJoin from "./account-access/ComputerJoin.ts";
@@ -351,6 +352,17 @@ const layerDirectory = Directory.layer.pipe(
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(layerReachStore),
 );
+const layerAccountWorkloads = AccountWorkloads.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerLibraryPublisher,
+      layerDirectory,
+      layerReachStore,
+      LibraryConnection.layer,
+      RuntimeLayer.layerThreadManagementProvided,
+    ),
+  ),
+);
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.merge(layerDirectory, layerReachStore)),
 );
@@ -538,6 +550,7 @@ const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   LibraryPublishingCredential.layer,
   layerAccountEnrollment,
+  layerAccountWorkloads,
   layerAccountJoin,
   layerComputerJoin,
   // A retired Connect build drops stale Connect secrets before upstream relay code reads them.
