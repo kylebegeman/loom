@@ -442,7 +442,7 @@ describe("ReachService", () => {
         expect(yield* h.waitFor((status) => status.state === "error")).toMatchObject({
           enabled: true,
           message:
-            "Reach needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
+            "Loomhost needs Loom's server to listen on 127.0.0.1, ::1 or every address on this computer.",
         });
         yield* Ref.set(h.origin, ORIGIN);
         yield* h.service.setEnabled(true);
@@ -920,7 +920,7 @@ describe("ReachService", () => {
           expect(yield* h.service.status).toMatchObject({
             state: "removing",
             message:
-              "Replace this computer's Library credential to finish removing reach. Loom reloads it automatically.",
+              "Replace this computer's Library credential to finish removing its Loomhost address. Loom reloads it automatically.",
             warnings: ["library-signed-out"],
           });
           const busy = yield* Effect.flip(h.service.setEnabled(true));
@@ -955,7 +955,7 @@ describe("ReachService", () => {
           yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
           expect(yield* h.service.status).toMatchObject({
             state: "removing",
-            message: "Update Loom on your Library to finish removing reach.",
+            message: "Update Loom on your Library to finish removing its Loomhost address.",
           });
 
           const forgotten = yield* h.service.forget();
@@ -1032,7 +1032,7 @@ describe("ReachService", () => {
             blocked: null,
             url: null,
             message:
-              "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+              "Your Library retired this computer's address, or another copy of this computer took it over. Turn Loomhost on to get an address again.",
             warnings: ["retired"],
             prepared: null,
           });

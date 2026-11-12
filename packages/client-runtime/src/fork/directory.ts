@@ -71,7 +71,7 @@ export function directoryReportingText(report: DirectoryReporting, now: number):
     );
   if (routes?.length === 0 && report.state !== "off" && report.state !== "unsupported")
     lines.push(
-      "Turn on Tailscale HTTPS or Reach from anywhere on this computer so other devices can find it. You can also pair a device using a reachable address.",
+      "Turn on Tailscale HTTPS or Loomhost on this computer so other devices can find it. You can also pair a device using a reachable address.",
     );
   const signIn = report.signIn;
   if (signIn?.expiresAt) {

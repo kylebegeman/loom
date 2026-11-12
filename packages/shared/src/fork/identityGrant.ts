@@ -132,7 +132,7 @@ export const IDENTITY_FRESH_SIGN_IN_TEXT =
  * whose button copies them as "sign-in values".
  */
 export const IDENTITY_RESOURCE_MISMATCH_TEXT =
-  "This computer's Loom sign-in is set up for a different computer. Copy the sign-in values from this computer's own Reach section, then restart Loom on it.";
+  "This computer's Loom sign-in is set up for a different computer. Copy the sign-in values from this computer's own Loomhost section, then restart Loom on it.";
 
 /** The path of the resource the Library derives for each computer (`reachResource`). */
 const PER_COMPUTER_RESOURCE_PATH = /^\/computers\/([^/]+)$/u;

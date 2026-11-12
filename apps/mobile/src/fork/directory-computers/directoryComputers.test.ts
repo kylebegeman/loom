@@ -155,7 +155,7 @@ describe("Library computers section", () => {
     });
     expect(listed.kind === "computers" && listed.computers[0]).toMatchObject({
       description:
-        "macOS · Reporting normally, last seen 2 minutes ago. · Turn on Tailscale HTTPS or Reach on Book, or pair instead",
+        "macOS · Reporting normally, last seen 2 minutes ago. · Turn on Tailscale HTTPS or Loomhost on Book, or pair instead",
       connectable: false,
     });
   });

@@ -422,7 +422,7 @@ export function ProfileEditor({
               ),
             );
             const label =
-              family === "hardware" ? "Hardware" : family === "reach" ? "Reach" : "Sites";
+              family === "hardware" ? "Hardware" : family === "reach" ? "Loomhost" : "Sites";
             return (
               <LoomSettingsField key={family} label={label}>
                 <Select

@@ -86,7 +86,7 @@ describe("confirm dialog coordinator", () => {
   it("keeps each confirmation's button label through closing and the queue", async () => {
     const unregister = mountHost();
     const first = requireConfirmation(
-      requestConfirmDialog("Turn reach off?", {
+      requestConfirmDialog("Turn Loomhost off?", {
         variant: "destructive",
         confirmLabel: "Turn off",
         cancelLabel: "Keep on",

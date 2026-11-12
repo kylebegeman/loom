@@ -1,9 +1,11 @@
 # Reach operations
 
+People see this feature as Loomhost in the apps and user guides; code, settings and logs still say reach.
+
 Reach gives a computer a public address, `https://<name>-loom.<zone>/`, through a Cloudflare
 tunnel its Library sets up. This guide covers the Library side: the zone, the Cloudflare token,
 the optional Pocket ID admin key, edge checks, rollout, rotation and removal. What people see is
-in the [Connections guide](../user/connections.md#reach-a-computer-from-anywhere). Design,
+in the [Connections guide](../user/connections.md#connect-from-anywhere-with-loomhost). Design,
 decisions and residual risks are in the [L114 packet](../packets/L114-reach/README.md).
 
 Everything ships off. A Library offers reach only when it is the Library authority with an https

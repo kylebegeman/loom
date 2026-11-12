@@ -45,7 +45,7 @@ import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 import { directoryComputers } from "./state";
 
 const FOOTER =
-  "Computers your Library knows about. Reconnect with Library adds a current address without removing saved conversations or drafts. A computer needs Reach or Tailscale HTTPS for access away from home. Forget clears the Library entry and leaves your files and saved connection in place.";
+  "Computers your Library knows about. Reconnect with Library adds a current address without removing saved conversations or drafts. A computer needs Loomhost or Tailscale HTTPS for access away from home. Forget clears the Library entry and leaves your files and saved connection in place.";
 
 const SIGN_IN_PROGRESS = { "signing-in": "Signing in...", verifying: "Verifying..." } as const;
 

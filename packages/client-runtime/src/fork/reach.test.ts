@@ -108,8 +108,9 @@ describe("reachView", () => {
       expect(view.address).toEqual({ url: ADDRESS, host: HOST });
       if (supported === false)
         expect(view.status.text).toBe("Update Loom on this computer to turn this on.");
-      else if (!connected) expect(view.status.text).toBe("Connect this computer to change reach.");
-      else if (supported === null) expect(view.status.text).toBe("Checking reach...");
+      else if (!connected)
+        expect(view.status.text).toBe("Connect this computer to change Loomhost settings.");
+      else if (supported === null) expect(view.status.text).toBe("Checking Loomhost...");
       if (live && !canChange) expect(view.switch.disabledReason).toBe(REACH_CHANGE_ELSEWHERE_TEXT);
     },
   );
@@ -207,7 +208,7 @@ describe("reachView", () => {
       // A refusal at start keeps reach on, so the way back starts with turning it off.
       const on = reachView(input(status({ state: "unavailable", enabled: true, blocked })));
       expect(on.switch).toEqual({ checked: true, disabled: false, disabledReason: null });
-      expect(on.status.text).toMatch(/turn reach off and on again/iu);
+      expect(on.status.text).toMatch(/turn Loomhost off and on again/iu);
     }
   });
 
@@ -256,7 +257,7 @@ describe("reachView", () => {
     const here = { isThisComputer: true, canPrepareSignIn: true };
     const off = status({ state: "off", enabled: false, url: null });
     expect(reachView(input(off, here)).signIn).toEqual({
-      text: "Your Library can prepare Loom sign-in for this computer. Reach does not need to be on.",
+      text: "Your Library can prepare Loom sign-in for this computer. Loomhost does not need to be on.",
       values: null,
       copyText: null,
       prepare: "Prepare sign-in",
@@ -291,7 +292,7 @@ describe("reachView", () => {
     const through = reachView(input(status(), { activeRouteUrl: `${ADDRESS}ws?x=1` }));
     expect(through.throughAddress).toBe(true);
     expect(through.confirmOff).toEqual({
-      title: "Turn reach off?",
+      title: "Turn Loomhost off?",
       message: `You are connected through ${HOST}, so this device disconnects.`,
       action: "Turn off",
     });
@@ -319,14 +320,14 @@ describe("reachView", () => {
     const stuck = status({
       state: "removing",
       enabled: false,
-      message: "Update Loom on your Library to finish removing reach.",
+      message: "Update Loom on your Library to finish removing its Loomhost address.",
     });
     const view = reachView(input(stuck));
     expect(view.actions).toMatchObject({ forget: true, remove: false });
     expect(view.confirmForget).toEqual({
-      title: "Forget reach on this computer?",
+      title: "Forget Loomhost on this computer?",
       message:
-        "Reach stops here without your Library. Its tunnel and address stay until you retire them in your Library under Reach addresses.",
+        "Loomhost stops here without your Library. Its tunnel and address stay until you retire them in your Library under Loomhost addresses.",
       action: "Forget",
     });
     expect(view.confirmForget?.title).toMatch(/^[^?]+\?$/u);
@@ -350,13 +351,13 @@ describe("reachView", () => {
       url: null,
       // What the computer sends for clients that predate the warning.
       message:
-        "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+        "Your Library retired this computer's address, or another copy of this computer took it over. Turn Loomhost on to get an address again.",
       warnings: ["retired"],
     });
     const view = reachView(input(retired));
     expect(view.status).toEqual({
       tone: "warning",
-      text: "Your Library retired this computer's address, or another copy of this computer took it over. Turn reach on to get an address again.",
+      text: "Your Library retired this computer's address, or another copy of this computer took it over. Turn Loomhost on to get an address again.",
     });
     expect(view.detail).toBeNull();
     expect(view.notes).toEqual([]);
@@ -374,7 +375,7 @@ describe("reachView", () => {
     });
     expect(view.status).toEqual({
       tone: "danger",
-      text: "Loom could not read reach on this computer.",
+      text: "Loom could not read Loomhost settings on this computer.",
     });
     expect(view.actions).toEqual({
       copyAddress: false,
@@ -394,7 +395,7 @@ describe("reachView", () => {
       `On at ${HOST}. Every device still needs your sign-in or pairing.`,
     );
     expect(view.notes).toEqual([
-      "Loom could not refresh reach on this computer, so this is the last state it read.",
+      "Loom could not refresh Loomhost settings on this computer, so this is the last state it read.",
     ]);
     expect(view.actions.retry).toBe(true);
     expect(view.switch.disabled).toBe(false);
@@ -415,12 +416,12 @@ describe("reachView", () => {
       retry: false,
     });
     const unknown = reachView({ ...input(status()), result: AsyncResult.initial(), canRead: null });
-    expect(unknown.status.text).toBe("Checking reach...");
+    expect(unknown.status.text).toBe("Checking Loomhost...");
   });
 
   it("reads as loading before the first status", () => {
     const view = reachView({ ...input(status()), result: AsyncResult.initial() });
-    expect(view.status.text).toBe("Checking reach...");
+    expect(view.status.text).toBe("Checking Loomhost...");
     expect(view.switch).toMatchObject({ checked: false, disabled: true });
   });
 });
@@ -443,10 +444,10 @@ describe("reachChangeErrorText", () => {
       new ReachError({ reason: "busy" }).message,
     );
     expect(reachChangeErrorText(Cause.fail(dropped))).toBe(
-      "Connect this computer to change reach.",
+      "Connect this computer to change Loomhost settings.",
     );
     expect(reachChangeErrorText(Cause.die(new Error("socket body with a secret")))).toBe(
-      "Loom could not change reach on this computer.",
+      "Loom could not change Loomhost settings on this computer.",
     );
   });
 
@@ -508,7 +509,7 @@ describe("reachLibraryView", () => {
     expect(library(AsyncResult.initial(), { supported: false }).status).toBe("unsupported");
     expect(library(AsyncResult.initial())).toMatchObject({
       status: "loading",
-      notice: "Loading reach addresses...",
+      notice: "Loading Loomhost addresses...",
     });
     const failed = library(
       AsyncResult.failure(Cause.fail(new ReachLibraryError({ reason: "not-configured" }))),
@@ -517,7 +518,7 @@ describe("reachLibraryView", () => {
     expect(failed.error).toBe(new ReachLibraryError({ reason: "not-configured" }).message);
     expect(library(AsyncResult.success(listingOf([])))).toMatchObject({
       status: "empty",
-      notice: "No computer has reach yet. Turn it on in a computer's Connections settings.",
+      notice: "No computer has Loomhost yet. Turn it on in a computer's Connections settings.",
     });
   });
 
@@ -558,7 +559,7 @@ describe("reachLibraryView", () => {
     expect(row?.retire?.confirm.message).toContain("revoke its Library sign-in too");
     expect(row?.retire?.endIdentityLabel).toBe("Also end Loom sign-in for this computer");
     expect(view.setup.map((line) => line.text)).toContain(
-      "Another rate-limit rule holds the zone's only slot, so reach addresses have no rate limit.",
+      "Another rate-limit rule holds the zone's only slot, so Loomhost addresses have no rate limit.",
     );
     expect(allText(view)).not.toContain("—");
   });
@@ -582,7 +583,7 @@ describe("reachLibraryView", () => {
       ),
     );
     expect(view.computers[0]?.notes).toEqual([
-      "Your earlier reach zone old.example may still hold this computer's DNS record studio-loom.old.example (dns-9) and tunnel loom-reach-studio. The Library's token could not remove them, so delete them in Cloudflare.",
+      "Your earlier Loomhost zone old.example may still hold this computer's DNS record studio-loom.old.example (dns-9) and tunnel loom-reach-studio. The Library's token could not remove them, so delete them in Cloudflare.",
     ]);
   });
 
@@ -626,7 +627,7 @@ describe("reachLibraryView", () => {
     const view = library(AsyncResult.success(listingOf([computer()])), { canRetire: false });
     expect(view.computers[0]?.retire).toBeNull();
     expect(view.retireDisabledReason).toBe(
-      "Retire reach addresses from your Library itself or from a device paired with full access.",
+      "Retire Loomhost addresses from your Library itself or from a device paired with full access.",
     );
     const denied = new EnvironmentAuthorizationError({
       message: "This connection requires settings:write.",
@@ -674,7 +675,7 @@ describe("reachLibraryView", () => {
     expect(row?.notes).toEqual([]);
     expect(row?.retire?.confirm).toEqual({
       title: "Retire Studio?",
-      message: "This computer has Loom sign-in only, with no reach address to delete.",
+      message: "This computer has Loom sign-in only, with no Loomhost address to delete.",
       action: "Retire",
     });
     // Retiring it without ending sign-in changes nothing, so the choice says so.
@@ -697,7 +698,7 @@ describe("reachLibraryView", () => {
     expect(empty.setup).toEqual([
       {
         tone: "neutral",
-        text: "No reach zone is set, so your Library prepares Loom sign-in only. Set LOOM_REACH_ZONE and LOOM_REACH_CLOUDFLARE_TOKEN_FILE on it to hand out addresses too.",
+        text: "No Loomhost zone is set, so your Library prepares Loom sign-in only. Set LOOM_REACH_ZONE and LOOM_REACH_CLOUDFLARE_TOKEN_FILE on it to hand out addresses too.",
       },
       { tone: "success", text: "The Pocket ID key works." },
     ]);
@@ -709,10 +710,10 @@ describe("reachLibraryView", () => {
     );
     expect(zoneless.setup[0]).toEqual({
       tone: "danger",
-      text: "No reach zone is set. Set LOOM_REACH_ZONE on your Library and restart it.",
+      text: "No Loomhost zone is set. Set LOOM_REACH_ZONE on your Library and restart it.",
     });
     expect(zoneless.notice).toBe(
-      "No computer has reach yet. Turn it on in a computer's Connections settings.",
+      "No computer has Loomhost yet. Turn it on in a computer's Connections settings.",
     );
   });
 

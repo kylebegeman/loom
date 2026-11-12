@@ -207,7 +207,7 @@ export class DirectoryError extends Schema.TaggedError<DirectoryError>()("Direct
       case "not-found":
         return "The directory has no entry with that id.";
       case "reach-active":
-        return "This computer still has a reach address. Retire it under Reach addresses first, then forget the computer.";
+        return "This computer still has a Loomhost address. Retire it under Loomhost addresses first, then forget the computer.";
       case "io":
         return "The directory could not store or read its records. Try again.";
     }

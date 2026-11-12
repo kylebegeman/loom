@@ -153,11 +153,11 @@ export class ReachError extends Schema.TaggedError<ReachError>()("ReachError", {
       case "identity-failed":
         return "Your Library could not prepare Loom sign-in right now. Try again in a few minutes.";
       case "unavailable":
-        return "Reach cannot run on this computer right now. It needs a Library that supports reach and a current sign-in to it.";
+        return "Loomhost cannot run on this computer right now. It needs a Library that supports Loomhost and a current sign-in to it.";
       case "busy":
-        return "Reach is still finishing another change on this computer. Try again in a moment.";
+        return "Loomhost is still finishing another change on this computer. Try again in a moment.";
       case "storage":
-        return "This computer could not save its reach settings. Try again.";
+        return "This computer could not save its Loomhost settings. Try again.";
     }
   }
 }
@@ -433,11 +433,11 @@ export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
   override get message(): string {
     switch (this.reason) {
       case "not-authority":
-        return "This computer is not your Library, so it does not manage reach addresses.";
+        return "This computer is not your Library, so it does not manage Loomhost addresses.";
       case "not-configured":
-        return "This Library is not set up for reach. Set its reach zone and Cloudflare token file, then restart it.";
+        return "This Library is not set up for Loomhost. Set its Loomhost zone and Cloudflare token file, then restart it.";
       case "not-found":
-        return "This Library has no reach address for that computer.";
+        return "This Library has no Loomhost address for that computer.";
       case "cloudflare-denied":
         return "Cloudflare refused this Library's token. Check the token and its permissions.";
       case "cloudflare-limited":
@@ -447,7 +447,7 @@ export class ReachLibraryError extends Schema.TaggedError<ReachLibraryError>()(
       case "tunnel-busy":
         return "The computer's connector is still attached. Try again in a moment.";
       case "io":
-        return "This Library could not store or read its reach records. Try again.";
+        return "This Library could not store or read its Loomhost records. Try again.";
       case "identity-key-missing":
         return "Nothing was changed. Ending Loom sign-in needs this Library's Pocket ID admin key file, which is missing or unreadable. Bring the key online, then retire again, or retire without ending sign-in.";
     }

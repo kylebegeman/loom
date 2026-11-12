@@ -197,10 +197,10 @@ export function ComputerReachSection({
           />
         </SettingsSection>
       ) : null}
-      <SettingsSection title="Reach" footer={FOOTER}>
+      <SettingsSection title="Loomhost" footer={FOOTER}>
         <SettingsSwitchRow
           icon="globe"
-          label="Reach from anywhere"
+          label="Use Loomhost"
           subtitle={view.status.text}
           value={pending === "on" ? true : pending === "off" ? false : view.switch.checked}
           disabled={view.switch.disabled || pending !== null}
@@ -243,7 +243,7 @@ export function ComputerReachSection({
         {view.actions.forget ? (
           <SettingsActionRow
             icon="xmark.circle.fill"
-            label="Forget reach on this computer"
+            label="Forget Loomhost on this computer"
             tone="danger"
             loading={pending === "forget"}
             disabled={pending !== null}

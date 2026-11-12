@@ -51,7 +51,7 @@ function LibraryReachSection({ libraryId }: { readonly libraryId: EnvironmentId 
   return (
     <>
       <LibrarySection
-        title="Reach addresses"
+        title="Loomhost addresses"
         count={view.computers.length}
         action={
           <Button
