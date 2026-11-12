@@ -151,7 +151,7 @@ const make = Effect.gen(function* () {
       const destinationPath = `${cleaned.pathname}${cleaned.search}`;
       const prepared =
         caller === null
-          ? { origin: yield* access.publicRoute(environmentId), grant: null }
+          ? { origin: yield* access.publicRoute(environmentId), grant: null, lease: undefined }
           : yield* access.prepare({
               caller,
               environmentId,
@@ -159,6 +159,7 @@ const make = Effect.gen(function* () {
               path: destinationPath,
             });
       const upstream = `${prepared.origin}${destinationPath}`;
+      const removal = access.awaitRemoval(environmentId, prepared.lease);
       const headers: Record<string, string> =
         prepared.grant === null ? {} : { [ACCOUNT_ACCESS_HEADER]: prepared.grant };
       for (const [name, value] of Object.entries(request.headers)) {
@@ -181,10 +182,7 @@ const make = Effect.gen(function* () {
                 const serverWriter = yield* server.writer;
                 yield* Effect.raceFirst(
                   Effect.raceFirst(pump(client, serverWriter), pump(server, clientWriter)),
-                  Effect.raceFirst(
-                    sessions.awaitSessionChain(held),
-                    access.awaitRemoval(environmentId),
-                  ),
+                  Effect.raceFirst(sessions.awaitSessionChain(held), removal),
                 );
                 return HttpServerResponse.empty();
               }),
@@ -215,11 +213,8 @@ const make = Effect.gen(function* () {
         response.stream.pipe(
           Stream.interruptWhen(
             caller === null
-              ? access.awaitRemoval(environmentId)
-              : Effect.raceFirst(
-                  sessions.awaitInvalidation(caller.sessionId),
-                  access.awaitRemoval(environmentId),
-                ),
+              ? removal
+              : Effect.raceFirst(sessions.awaitInvalidation(caller.sessionId), removal),
           ),
         ),
         { status: response.status, headers: responseHeaders },

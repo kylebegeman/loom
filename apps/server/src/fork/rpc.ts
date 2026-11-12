@@ -334,6 +334,9 @@ export const makeForkRpcLayer = (
         const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
         const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
         return otherForkRpcGroup.of({
+          [ENROLL.computers]: () => auth.effect(ENROLL.computers, enrollment.computers(session)),
+          [ENROLL.removeComputer]: (input) =>
+            auth.effect(ENROLL.removeComputer, enrollment.remove(input, session)),
           [ENROLL.prepare]: (input) => auth.effect(ENROLL.prepare, enrollment.prepare(input)),
           [ENROLL.approve]: (input) =>
             auth.effect(ENROLL.approve, enrollment.approve(input, session)),

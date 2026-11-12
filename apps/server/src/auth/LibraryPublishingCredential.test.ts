@@ -175,6 +175,11 @@ it.layer(layer)("LibraryPublishingCredential", (it) => {
           token: Redacted.value(installed.accessToken),
         });
         expect(revocations).not.toContain(installed.sessionId);
+        yield* service.revokeForComputer(enrollment.sourceEnvironmentId);
+        expect(revocations).toContain(installed.sessionId);
+        expect(revocations).toContain("pending-newer");
+        expect(revocations).not.toContain("other-computer");
+        expect((yield* service.enroll(enrollment).pipe(Effect.result))._tag).toBe("Failure");
       }),
   );
   // fork: project-library

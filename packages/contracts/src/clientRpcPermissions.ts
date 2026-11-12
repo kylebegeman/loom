@@ -1,4 +1,8 @@
 import { FORK_CLIENT_GUARDED_RPC_SCOPES } from "./fork/clientRpcPermissions.ts"; // fork: ext-core
+import {
+  ACCOUNT_ENROLLMENT_WS_METHODS,
+  ACCOUNT_COMPUTER_ADMIN_SCOPES,
+} from "./fork/account-access.ts";
 import * as Schema from "effect/Schema";
 import { vaultProviderSettingsScopes } from "./fork/vault-provider-credentials.ts"; // fork: vault-provider-credentials
 import { ServerSettingsPatch } from "./settings.ts"; // fork: vault-provider-credentials
@@ -111,6 +115,7 @@ export function clientRpcRequiredScopes(
   method: string,
   input: unknown,
 ): readonly AuthEnvironmentScope[] {
+  if (method === ACCOUNT_ENROLLMENT_WS_METHODS.removeComputer) return ACCOUNT_COMPUTER_ADMIN_SCOPES;
   // fork: vault-provider-credentials
   if (method === WS_METHODS.serverUpdateSettings && input !== undefined) {
     const scopes = vaultProviderSettingsScopes(decodeProviderSettingsUpdate(input));

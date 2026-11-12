@@ -21,6 +21,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { AccountEnrollment } from "./AccountEnrollment.ts";
 import * as Join from "./ComputerJoin.ts";
 
@@ -40,13 +41,46 @@ const fixture = Effect.gen(function* () {
   let loseBeginReply = true,
     loseInstallReply = true,
     approved = false,
-    wrongLibrary = false;
+    wrongLibrary = false,
+    revoked = false;
   const open = Join.ComputerJoin.pipe(
     Effect.provide(
       Join.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(SOURCE) }),
+            Layer.mock(LibraryConnectionService)({
+              current: Effect.succeed({
+                kind: "remote",
+                origin: URL,
+                credential: {
+                  version: 1,
+                  sourceEnvironmentId: SOURCE,
+                  libraryEnvironmentId: LIBRARY,
+                  libraryUrl: URL,
+                  sessionId: "machine",
+                  accessToken: Redacted.make("machine-only"),
+                  expiresAt: DateTime.formatIso(DateTime.makeUnsafe(NOW + 86400000)),
+                },
+                endpoint: (path) => `${URL}${path}`,
+                send: () => Effect.die("unused"),
+              }),
+              send: (request) =>
+                Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    revoked
+                      ? new Response(null, { status: 401 })
+                      : Response.json({
+                          environmentId: LIBRARY,
+                          authorityId: "authority",
+                          authorityEpoch: 1,
+                          isAuthority: true,
+                          assets: "local",
+                        }),
+                  ),
+                ),
+            }),
             Layer.mock(AccountEnrollment)({
               prepare: (input) =>
                 Effect.succeed({
@@ -158,6 +192,9 @@ const fixture = Effect.gen(function* () {
     approve: () => {
       approved = true;
     },
+    revoke: () => {
+      revoked = true;
+    },
     changeLibrary: () => {
       wrongLibrary = true;
     },
@@ -206,12 +243,16 @@ it.effect(
           prompt.review.code,
         );
         expect(f.requests).toHaveLength(count);
+        f.revoke();
+        expect((yield* final.step.pipe(Effect.flip)).reason).toBe("request-conflict");
+        const replacement = yield* final.start({ libraryUrl: URL, restart: false });
+        expect(replacement.review.requestId).not.toBe(prompt.review.requestId);
         expect(
           (yield* final
             .start({ libraryUrl: "https://other.example.test", restart: false })
             .pipe(Effect.result))._tag,
         ).toBe("Failure");
-        expect(f.requests).toHaveLength(count);
+        expect(f.began).toHaveLength(3);
       }),
     ),
 );

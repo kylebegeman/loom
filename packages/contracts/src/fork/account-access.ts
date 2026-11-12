@@ -3,7 +3,13 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { DirectoryReportRequest } from "./directory.ts";
 import { LibraryManagementDelegation, LibraryError } from "./project-library.ts";
 import { EnvironmentId, AuthSessionId, IsoDateTime } from "../baseSchemas.ts";
-import { EnvironmentAuthorizationError, AuthStandardClientScopes } from "../auth.ts";
+import {
+  EnvironmentAuthorizationError,
+  AuthStandardClientScopes,
+  AuthSettingsWriteScope,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
+} from "../auth.ts";
 import * as Schema from "effect/Schema";
 
 export const ACCOUNT_ACCESS_FEATURE = "account-access";
@@ -63,6 +69,29 @@ export type AccountComputerEnrollment = typeof AccountComputerEnrollment.Type;
 export const ACCOUNT_JOIN_BEGIN = "/api/loom/account/join/begin";
 export const ACCOUNT_JOIN_REDEEM = "/api/loom/account/join/redeem";
 export const ACCOUNT_JOIN_FEATURE = "account-join";
+export const ACCOUNT_COMPUTERS_FEATURE = "account-computers";
+export const ACCOUNT_COMPUTER_ADMIN_SCOPES = [
+  AuthSettingsWriteScope,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
+] as const;
+export const AccountComputerStatus = Schema.Struct({
+  membershipRevision: Schema.NullOr(Schema.Number),
+  environmentId: EnvironmentId,
+  label: Schema.String,
+  state: Schema.Literals(["active", "removing", "removed"]),
+  publishingEnded: Schema.Boolean,
+  routeRemoved: Schema.Boolean,
+  directoryRemoved: Schema.Boolean,
+  detail: Schema.NullOr(Schema.String),
+});
+export type AccountComputerStatus = typeof AccountComputerStatus.Type;
+export const AccountComputerRemoval = Schema.Struct({
+  membershipRevision: Schema.NullOr(Schema.Number),
+  environmentId: EnvironmentId,
+  requestId: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(128)),
+});
+export type AccountComputerRemoval = typeof AccountComputerRemoval.Type;
 export const ACCOUNT_JOIN_START = "/api/loom/account/join/start";
 export const ACCOUNT_JOIN_STEP = "/api/loom/account/join/step";
 export const AccountJoinCode = Schema.String.check(Schema.isPattern(/^[A-F0-9]{5}-[A-F0-9]{5}$/u));
@@ -103,8 +132,20 @@ export const ACCOUNT_ENROLLMENT_WS_METHODS = {
   stepJoin: "loom.account.stepJoin",
   lookupJoin: "loom.account.lookupJoin",
   decideJoin: "loom.account.decideJoin",
+  computers: "loom.account.computers",
+  removeComputer: "loom.account.removeComputer",
 } as const;
 export const AccountEnrollmentRpcGroup = RpcGroup.make(
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.computers, {
+    payload: Schema.Struct({}),
+    success: Schema.Array(AccountComputerStatus),
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.removeComputer, {
+    payload: AccountComputerRemoval,
+    success: AccountComputerStatus,
+    error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
+  }),
   Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.startJoin, {
     payload: ComputerJoinStart,
     success: ComputerJoinPrompt,

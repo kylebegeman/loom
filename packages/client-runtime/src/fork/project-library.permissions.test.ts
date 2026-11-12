@@ -8,7 +8,11 @@ import {
   EnvironmentId,
   type AuthSessionState,
 } from "@t3tools/contracts";
-import { LIBRARY_WS_METHODS } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL,
+  ACCOUNT_COMPUTER_ADMIN_SCOPES,
+  LIBRARY_WS_METHODS,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Atom, AtomRegistry, AsyncResult } from "effect/reactivity";
@@ -130,6 +134,50 @@ it.effect.each([
       expect(registry.get(command.permissionAtom(destination))).toBe(true);
       registry.set(sessions(destination), AsyncResult.success(grant(false, scope)));
       expect(registry.get(command.permissionAtom(destination))).toBe(false);
+    }),
+  ),
+);
+
+it.effect("computer removal requires every administration grant on the selected account", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = AtomRegistry.make();
+      yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+      const command = createProjectLibraryAtoms(runtime).removeAccountComputer;
+      const policy = createCommandPermissions(runtime, ENROLL.removeComputer);
+      registry.mount(command.permissionAtom(destination));
+      registry.mount(command.permissionAtom(other));
+      const state = grant(true, AuthSettingsWriteScope);
+      registry.set(
+        sessions(other),
+        AsyncResult.success({
+          ...state,
+          scopes: ACCOUNT_COMPUTER_ADMIN_SCOPES,
+          permissions: ACCOUNT_COMPUTER_ADMIN_SCOPES,
+        }),
+      );
+      for (const missing of ACCOUNT_COMPUTER_ADMIN_SCOPES) {
+        const scopes = ACCOUNT_COMPUTER_ADMIN_SCOPES.filter((scope) => scope !== missing);
+        registry.set(
+          sessions(destination),
+          AsyncResult.success({ ...state, scopes, permissions: scopes }),
+        );
+        expect(registry.get(command.permissionAtom(destination))).toBe(false);
+        expect(registry.get(command.permissionAtom(other))).toBe(true);
+        expect((yield* policy.authorize(registry, destination).pipe(Effect.result))._tag).toBe(
+          "Failure",
+        );
+      }
+      registry.set(
+        sessions(destination),
+        AsyncResult.success({
+          ...state,
+          scopes: ACCOUNT_COMPUTER_ADMIN_SCOPES,
+          permissions: ACCOUNT_COMPUTER_ADMIN_SCOPES,
+        }),
+      );
+      expect(registry.get(command.permissionAtom(destination))).toBe(true);
+      yield* policy.authorize(registry, destination);
     }),
   ),
 );

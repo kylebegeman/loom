@@ -44,7 +44,23 @@ const ReachStoredLeftoverZone = Schema.Struct({
 });
 export type ReachStoredLeftoverZone = typeof ReachStoredLeftoverZone.Type;
 
+const AccountMembership = Schema.Struct({
+  label: Schema.String,
+  ownerSubject: Schema.String,
+  requestId: Schema.String,
+  approvedAt: Schema.Number,
+  epoch: NonNegativeInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
+  removedAt: Schema.NullOr(Schema.Number),
+  removalRequestId: Schema.NullOr(Schema.String),
+  state: Schema.Literals(["active", "removing", "removed"]),
+  publishingEnded: Schema.Boolean,
+  routeRemoved: Schema.Boolean,
+  directoryRemoved: Schema.Boolean,
+  detail: Schema.NullOr(Schema.String),
+});
+
 export const ReachStoredComputer = Schema.Struct({
+  account: Schema.optionalKey(AccountMembership),
   /** Only grows, and is never deleted, so a captured request cannot replay after a remove. */
   seq: NonNegativeInt,
   /** The key that first ensured; any other key is refused until an admin retires the record. */
@@ -72,6 +88,28 @@ export const ReachStoredComputer = Schema.Struct({
   ),
 });
 export type ReachStoredComputer = typeof ReachStoredComputer.Type;
+
+export const freshComputer = (updatedAt: string): ReachStoredComputer => ({
+  seq: 0,
+  keyFingerprint: null,
+  hostname: null,
+  tunnelId: null,
+  dnsRecordId: null,
+  origin: null,
+  state: "provisioning",
+  lastError: null,
+  leftoverDnsRecordId: null,
+  publisherSessionId: null,
+  updatedAt,
+  lastEnsuredAt: null,
+  identity: null,
+  zone: null,
+  leftoverZones: [],
+});
+
+// Legacy enrollments retain their existing access until the owner changes their membership.
+export const accountAllowsAccess = (computer: ReachStoredComputer | undefined) =>
+  computer?.account === undefined || computer.account.state === "active";
 
 const ReachStoredEdge = Schema.Struct({
   zoneId: Id,
@@ -103,7 +141,7 @@ export const emptyReachLibraryState: ReachLibraryState = {
 
 /** The hostname a computer may publish as its `public` route right now. */
 export const readyHostname = (computer: ReachStoredComputer | undefined) =>
-  computer?.state === "ready" ? computer.hostname : null;
+  computer?.state === "ready" && accountAllowsAccess(computer) ? computer.hostname : null;
 
 /**
  * A record whose tunnel may still exist. Removed records stay out because their key pin

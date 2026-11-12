@@ -2,6 +2,7 @@ import * as Signature from "effect/crypto/Signature";
 import {
   AuthSessionId,
   AuthSettingsWriteScope,
+  AuthOrchestrationReadScope,
   type ProviderInstanceId,
   type ThreadId,
   type EnvironmentId,
@@ -138,6 +139,7 @@ export class LibraryManagement extends Context.Service<
     readonly status: Effect.Effect<LibraryManagementStatus, LibraryError>;
     readonly authorizeEnrollment: (
       session: AuthenticatedSession,
+      access?: "read" | "write",
     ) => Effect.Effect<void, LibraryError>;
     readonly issue: (
       input: LibraryManagementEnrollment,
@@ -247,11 +249,14 @@ const make = Effect.gen(function* () {
   });
   const managementSession = Effect.fn("LibraryManagement.managementSession")(function* (
     id: AuthSessionId,
+    scope:
+      | typeof AuthOrchestrationReadScope
+      | typeof AuthSettingsWriteScope = AuthSettingsWriteScope,
   ) {
     const session = yield* currentSession(id);
     if (!session) return yield* deny(SIGN_IN_ENDED, "sign-in", environmentId);
     if (
-      !(session.permissions ?? session.scopes).includes(AuthSettingsWriteScope) ||
+      !(session.permissions ?? session.scopes).includes(scope) ||
       session.subject === "mcp-client" ||
       session.subject.startsWith("loom-host:")
     )
@@ -349,11 +354,13 @@ const make = Effect.gen(function* () {
   });
   const authorizeEnrollment = Effect.fn("LibraryManagement.authorizeEnrollment")(function* (
     session: AuthenticatedSession,
+    access: "read" | "write" = "write",
   ) {
     if (!(yield* library.info).isAuthority)
       return yield* new LibraryError({ reason: "not-authority" });
-    const current = yield* managementSession(session.sessionId);
-    if (current.subject !== session.subject || !session.scopes.includes(AuthSettingsWriteScope))
+    const scope = access === "read" ? AuthOrchestrationReadScope : AuthSettingsWriteScope;
+    const current = yield* managementSession(session.sessionId, scope);
+    if (current.subject !== session.subject || !session.scopes.includes(scope))
       return yield* deny();
   });
   const issue = Effect.fn("LibraryManagement.issue")(function* (

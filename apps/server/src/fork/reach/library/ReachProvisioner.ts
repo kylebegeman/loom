@@ -63,6 +63,8 @@ import {
   ReachStore,
   isInZone,
   isReachActive,
+  accountAllowsAccess,
+  freshComputer,
 } from "./ReachStore.ts";
 
 /** Per computer, so one looping computer cannot spend the Cloudflare budget of the others. */
@@ -179,24 +181,6 @@ const cloudflareFailure = (error: ReachCloudflareError): ReachProvisionError => 
       return provisionError(isEdgeStage(error.stage) ? "edge-failed" : "cloudflare-unavailable");
   }
 };
-
-const freshComputer = (updatedAt: string): ReachStoredComputer => ({
-  seq: 0,
-  keyFingerprint: null,
-  hostname: null,
-  tunnelId: null,
-  dnsRecordId: null,
-  origin: null,
-  state: "provisioning",
-  lastError: null,
-  leftoverDnsRecordId: null,
-  publisherSessionId: null,
-  updatedAt,
-  lastEnsuredAt: null,
-  identity: null,
-  zone: null,
-  leftoverZones: [],
-});
 
 /** No ensure ever claimed it, so it holds Loom Identity only and nothing in Cloudflare. */
 const signInOnly = (updatedAt: string): ReachStoredComputer => ({
@@ -357,6 +341,10 @@ const make = Effect.gen(function* () {
       }),
     );
     if (pin === null) return yield* refuse("not-in-directory");
+    const current = (yield* read.pipe(Effect.mapError(() => provisionError("io")))).computers[
+      environmentId
+    ];
+    if (!accountAllowsAccess(current)) return yield* refuse("not-in-directory");
     const der = decodeEd25519PublicKey(request.publicKey);
     if (der === null) return yield* refuse("invalid");
     const fingerprint = keyFingerprint(der);
@@ -411,6 +399,7 @@ const make = Effect.gen(function* () {
   const claim = Effect.fnUntraced(function* (environmentId: string, admitted: Admitted) {
     const now = yield* Clock.currentTimeMillis;
     const existing = (yield* read).computers[environmentId];
+    if (!accountAllowsAccess(existing)) return yield* refuse("not-in-directory");
     if (
       existing !== undefined &&
       existing.keyFingerprint !== null &&
@@ -1045,6 +1034,14 @@ const make = Effect.gen(function* () {
       const pin = yield* directory.pinned(environmentId).pipe(Effect.orElseSucceed(() => null));
       return yield* lock.withPermits(1)(
         Effect.gen(function* () {
+          if (
+            !accountAllowsAccess(
+              (yield* read.pipe(Effect.mapError(() => provisionError("io")))).computers[
+                environmentId
+              ],
+            )
+          )
+            return yield* refuse("not-in-directory");
           const identity = yield* provisionIdentity(environmentId, pin?.label ?? null);
           const stored = identity.stored;
           if (stored === null) return identity.reply;
@@ -1052,7 +1049,8 @@ const make = Effect.gen(function* () {
           yield* store
             .update((state) => {
               const { [environmentId]: current, ...others } = state.computers;
-              if (holdsNothing(current?.seq ?? 0, stored)) return { ...state, computers: others };
+              if (holdsNothing(current?.seq ?? 0, stored) && current?.account === undefined)
+                return { ...state, computers: others };
               return {
                 ...state,
                 computers: {
@@ -1279,7 +1277,7 @@ const make = Effect.gen(function* () {
             }
           }
           const updatedAt = yield* nowIso;
-          const dropped = holdsNothing(existing.seq, identity);
+          const dropped = holdsNothing(existing.seq, identity) && existing.account === undefined;
           if (dropped) identity = null;
           const state = yield* (
             dropped
@@ -1292,6 +1290,7 @@ const make = Effect.gen(function* () {
                   identity,
                   // F2: a new key may claim this computer's reach only after an admin retired it.
                   keyFingerprint: null,
+                  ...(claimed ? {} : { state: "removed" as const, lastError: null }),
                   updatedAt,
                 }))
           ).pipe(Effect.mapError(() => libraryError("io")));

@@ -12,7 +12,8 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
+import * as Ref from "effect/SubscriptionRef";
+import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as Duration from "effect/Duration";
@@ -48,6 +49,50 @@ const publisher: EnvironmentAuth.AuthenticatedSession = {
 const fixture = Effect.gen(function* () {
   const active = yield* Ref.make([OWNER, PUBLISHER]);
   const retired = yield* Ref.make(false);
+  const revision = yield* Ref.make(0);
+  const membership = yield* Ref.make<"active" | "removing" | "removed" | null>(null);
+  const read = Effect.all([Ref.get(retired), Ref.get(membership), Ref.get(revision)]).pipe(
+    Effect.map(([removed, accountState, membershipRevision]) => ({
+      ...ReachStore.emptyReachLibraryState,
+      computers: {
+        [COMPUTER]: {
+          seq: 1,
+          keyFingerprint: KEY,
+          hostname: "computer-loom.example.test",
+          tunnelId: "tunnel",
+          dnsRecordId: "dns",
+          origin: "http://localhost:1000",
+          state: removed ? ("removed" as const) : ("ready" as const),
+          lastError: null,
+          leftoverDnsRecordId: null,
+          publisherSessionId: PUBLISHER,
+          updatedAt: "2026-01-01T00:00:00Z",
+          lastEnsuredAt: null,
+          identity: null,
+          zone: { name: "example.test", zoneId: "zone", accountId: "account" },
+          leftoverZones: [],
+          ...(accountState === null
+            ? {}
+            : {
+                account: {
+                  state: accountState,
+                  label: "Computer",
+                  ownerSubject: identityOwnershipSubject(caller.subject, IDENTITY_ENV),
+                  requestId: "enrollment",
+                  approvedAt: membershipRevision,
+                  epoch: 0,
+                  removedAt: accountState === "active" ? null : 1,
+                  removalRequestId: accountState === "active" ? null : "removal",
+                  publishingEnded: false,
+                  routeRemoved: false,
+                  directoryRemoved: false,
+                  detail: null,
+                },
+              }),
+        },
+      },
+    })),
+  );
   const service = yield* AccountAccess.AccountAccess.pipe(
     Effect.provide(
       AccountAccess.layer.pipe(
@@ -86,31 +131,11 @@ const fixture = Effect.gen(function* () {
         ),
         Layer.provide(
           Layer.mock(ReachStore.ReachStore)({
-            changes: Stream.never,
-            read: Ref.get(retired).pipe(
-              Effect.map((removed) => ({
-                ...ReachStore.emptyReachLibraryState,
-                computers: {
-                  [COMPUTER]: {
-                    seq: 1,
-                    keyFingerprint: KEY,
-                    hostname: "computer-loom.example.test",
-                    tunnelId: "tunnel",
-                    dnsRecordId: "dns",
-                    origin: "http://localhost:1000",
-                    state: removed ? ("removed" as const) : ("ready" as const),
-                    lastError: null,
-                    leftoverDnsRecordId: null,
-                    publisherSessionId: PUBLISHER,
-                    updatedAt: "2026-01-01T00:00:00Z",
-                    lastEnsuredAt: null,
-                    identity: null,
-                    zone: { name: "example.test", zoneId: "zone", accountId: "account" },
-                    leftoverZones: [],
-                  },
-                },
-              })),
-            ),
+            changes: Stream.merge(
+              Stream.merge(Ref.changes(retired), Ref.changes(membership)),
+              Ref.changes(revision),
+            ).pipe(Stream.mapEffect(() => read)),
+            read,
           }),
         ),
         Layer.provide(
@@ -133,7 +158,7 @@ const fixture = Effect.gen(function* () {
     service.prepare({ caller, environmentId: COMPUTER, method: "GET", path: "/ws" });
   const consume = (grant: string) =>
     service.consume({ publisher, grant, keyFingerprint: KEY, method: "GET", path: "/ws" });
-  return { service, active, retired, prepare, consume };
+  return { service, active, retired, membership, revision, prepare, consume };
 });
 
 it.effect("admits an enrolled computer once, without exposing the account credential", () =>
@@ -191,12 +216,13 @@ it.effect("binds admission to the publisher, machine key, method and full reques
 
 it.effect("refuses revoked devices, revoked publishers, retired computers and expired grants", () =>
   Effect.gen(function* () {
-    for (const change of ["device", "publisher", "computer", "expired"] as const) {
+    for (const change of ["device", "publisher", "computer", "membership", "expired"] as const) {
       const f = yield* fixture;
       const { grant } = yield* f.prepare();
       if (change === "device") yield* Ref.set(f.active, [PUBLISHER]);
       if (change === "publisher") yield* Ref.set(f.active, [OWNER]);
       if (change === "computer") yield* Ref.set(f.retired, true);
+      if (change === "membership") yield* Ref.set(f.membership, "removing");
       if (change === "expired") yield* TestClock.adjust(Duration.minutes(1));
       expect((yield* Effect.result(f.consume(grant)))._tag).toBe("Failure");
     }
@@ -224,4 +250,21 @@ it.effect("does not turn publishers or restricted agent sessions into owner acce
       ).toBe("Failure");
     }
   }),
+);
+
+it.effect(
+  "closes a held lease when membership ends and after a quick removal and re-enrollment",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Ref.set(f.membership, "active");
+      const { lease, grant } = yield* f.prepare();
+      const held = yield* f.service.awaitRemoval(COMPUTER, lease).pipe(Effect.forkChild);
+      yield* Ref.set(f.membership, "removing");
+      yield* Fiber.join(held);
+      expect((yield* Effect.result(f.consume(grant)))._tag).toBe("Failure");
+      yield* Ref.set(f.membership, "active");
+      yield* Ref.set(f.revision, 1);
+      yield* f.service.awaitRemoval(COMPUTER, lease);
+    }),
 );

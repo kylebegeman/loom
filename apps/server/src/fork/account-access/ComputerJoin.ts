@@ -10,6 +10,7 @@ import {
   ComputerJoinPrompt,
   ComputerJoinProgress,
   LibraryError,
+  LibraryInfo,
 } from "@t3tools/contracts/fork";
 import { decodeEd25519PublicKey, keyFingerprint } from "@t3tools/shared/fork/directory";
 import * as Clock from "effect/Clock";
@@ -27,6 +28,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { ServerConfig } from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { writeLibraryCredential } from "../project-library/enrollment.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { AccountEnrollment } from "./AccountEnrollment.ts";
 
 const State = Schema.Struct({
@@ -46,6 +48,7 @@ const decodeState = Schema.decodeEffect(Schema.fromJsonString(State));
 const encodeRequest = Schema.encodeEffect(AccountJoinRequest);
 const decodeDescriptor = Schema.decodeUnknownEffect(ExecutionEnvironmentDescriptor);
 const decodeReview = Schema.decodeUnknownEffect(AccountJoinReview);
+const decodeInfo = Schema.decodeUnknownEffect(LibraryInfo);
 const decodeRedemption = Schema.decodeUnknownEffect(AccountJoinRedemption);
 const unavailable = () =>
   new LibraryError({
@@ -92,6 +95,7 @@ const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const identity = yield* ServerEnvironmentIdentity;
   const enrollment = yield* AccountEnrollment;
+  const connection = yield* LibraryConnectionService;
   const http = yield* HttpClient.HttpClient;
   const random = yield* SecureRandom.SecureRandom;
   const lock = yield* Semaphore.make(1);
@@ -134,12 +138,35 @@ const make = Effect.gen(function* () {
       secret: state.secret,
     };
   });
+  const enrollmentActive = Effect.fn("ComputerJoin.enrollmentActive")(function* (state: State) {
+    const current = yield* connection.current;
+    if (
+      current.kind !== "remote" ||
+      current.credential?.libraryEnvironmentId !== state.libraryEnvironmentId ||
+      current.origin !== state.libraryUrl
+    )
+      return false;
+    const response = yield* connection
+      .send(HttpClientRequest.get("/api/loom/library/info"))
+      .pipe(Effect.timeout("20 seconds"), Effect.mapError(unavailable));
+    if (response.status === 401 || response.status === 403) return false;
+    if (response.status !== 200) return yield* unavailable();
+    const info = yield* response.json.pipe(
+      Effect.flatMap(decodeInfo),
+      Effect.mapError(unavailable),
+    );
+    if (!info.isAuthority || info.environmentId !== state.libraryEnvironmentId)
+      return yield* refused();
+    return true;
+  });
   const start = Effect.fn("ComputerJoin.start")(function* (input: typeof ComputerJoinStart.Type) {
     const libraryUrl = yield* validUrl(input.libraryUrl);
-    const previous = yield* load();
+    let previous = yield* load();
     if (previous !== null && previous.libraryUrl !== libraryUrl) return yield* refused();
-    if (previous?.complete && previous.review !== null && !input.restart)
-      return { libraryUrl, review: previous.review };
+    if (previous?.complete && previous.review !== null && !input.restart) {
+      if (yield* enrollmentActive(previous)) return { libraryUrl, review: previous.review };
+      previous = null;
+    }
     const response = yield* execute(
       HttpClientRequest.get(`${libraryUrl}/.well-known/t3/environment`),
     );
@@ -199,7 +226,14 @@ const make = Effect.gen(function* () {
   const step = Effect.gen(function* () {
     const state = yield* load();
     if (state === null) return yield* refused();
-    if (state.complete) return "complete" as const;
+    if (state.complete) {
+      if (yield* enrollmentActive(state)) return "complete" as const;
+      return yield* new LibraryError({
+        reason: "request-conflict",
+        detail:
+          "This computer’s account access has ended. Run the join command again for a new approval code.",
+      });
+    }
     if (state.expiresAt <= (yield* Clock.currentTimeMillis))
       return yield* new LibraryError({
         reason: "request-conflict",

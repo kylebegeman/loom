@@ -480,6 +480,7 @@ const layerAccountEnrollment = AccountEnrollment.layer.pipe(
       layerDirectory,
       layerLibraryPublisher,
       layerDirectoryReporter,
+      layerReachLibrary,
       LibraryPublishingCredential.layer,
       LibraryConnection.layer,
       ReachService.layer,
@@ -490,7 +491,7 @@ const layerAccountJoin = AccountJoin.layer.pipe(
   Layer.provide(Layer.merge(layerAccountEnrollment, layerLibraryManagement)),
 );
 const layerComputerJoin = ComputerJoin.layer.pipe(
-  Layer.provide(layerAccountEnrollment),
+  Layer.provide(Layer.merge(layerAccountEnrollment, LibraryConnection.layer)),
   Layer.provide(FetchHttpClient.layer),
 );
 

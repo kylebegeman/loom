@@ -35,7 +35,12 @@ const fixture = Effect.gen(function* () {
   let origin = "https://computer-loom.example.test";
   const dependencies = Layer.mergeAll(
     Layer.mock(AccountAccess.AccountAccess)({
-      prepare: () => Effect.succeed({ origin, grant: "one-use-grant" }),
+      prepare: () =>
+        Effect.succeed({
+          origin,
+          grant: "one-use-grant",
+          lease: { keyFingerprint: "key", membershipRevision: null },
+        }),
       publicRoute: () => Effect.succeed(origin),
       awaitRemoval: () => Deferred.await(removed),
     }),

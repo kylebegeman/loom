@@ -1,4 +1,7 @@
 import type * as Path from "effect/Path";
+import * as ReachStore from "../reach/library/ReachStore.ts";
+import { ReachProvisioner } from "../reach/library/ReachProvisioner.ts";
+import { ReachLibraryError } from "@t3tools/contracts/fork";
 import { ReachService } from "../reach/ReachService.ts";
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -89,11 +92,50 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
   let activationAvailable = false;
   let libraryMatches = true;
   const read = fs.readFileString(file).pipe(Effect.flatMap(decodeCredential));
-  const service = yield* Enrollment.AccountEnrollment.pipe(
+  let cleanupAvailable = false;
+  let pinned = true;
+  const store = yield* ReachStore.ReachStore.pipe(Effect.provide(ReachStore.layer));
+  const open = Enrollment.AccountEnrollment.pipe(
     Effect.provide(
       Enrollment.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
+            Layer.succeed(ReachStore.ReachStore, store),
+            Layer.mock(ReachProvisioner)({
+              retire: ({ environmentId }) =>
+                Effect.gen(function* () {
+                  if (!cleanupAvailable) return yield* new ReachLibraryError({ reason: "io" });
+                  const result = yield* store
+                    .update((state) => ({
+                      ...state,
+                      computers: {
+                        ...state.computers,
+                        [environmentId]: {
+                          ...state.computers[environmentId]!,
+                          state: "removed",
+                          keyFingerprint: null,
+                        },
+                      },
+                    }))
+                    .pipe(Effect.mapError(() => new ReachLibraryError({ reason: "io" })));
+                  const record = result.computers[environmentId]!;
+                  return {
+                    environmentId,
+                    label: "Source",
+                    hostname: record.hostname,
+                    state: record.state,
+                    lastError: null,
+                    connection: "down" as const,
+                    connectors: 0,
+                    leftoverDnsRecordId: null,
+                    leftoverZones: [],
+                    identity: null,
+                    signIn: "ended" as const,
+                    updatedAt: credential.issuedAt,
+                    lastEnsuredAt: null,
+                  };
+                }),
+            }),
             Layer.mock(ReachService)({
               guardState: () => ({ hostname: null, serving: false }),
               ownPorts: () => [],
@@ -125,6 +167,7 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
               report: () =>
                 Effect.suspend(() => {
                   events.push("pin");
+                  pinned = true;
                   return Effect.succeed({
                     environmentId: SOURCE,
                     keyFingerprint: FINGERPRINT,
@@ -141,14 +184,29 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
                     receivedAt: credential.issuedAt,
                   });
                 }),
-              pinned: () =>
-                Effect.succeed({
-                  publicKey: PUBLIC_KEY,
-                  keyFingerprint: FINGERPRINT,
-                  label: "Source",
+              list: Effect.succeed({
+                environments: [],
+                machines: [],
+                generatedAt: credential.issuedAt,
+              }),
+              forget: () =>
+                Effect.sync(() => {
+                  pinned = false;
+                  events.push("forget");
                 }),
+              pinned: () =>
+                Effect.sync(() =>
+                  pinned
+                    ? { publicKey: PUBLIC_KEY, keyFingerprint: FINGERPRINT, label: "Source" }
+                    : null,
+                ),
             }),
             Layer.mock(LibraryPublishingCredential)({
+              revokeForComputer: () =>
+                Effect.sync(() => {
+                  ended = true;
+                  events.push("revoke");
+                }),
               enroll: () =>
                 Effect.suspend(() => {
                   events.push("issue");
@@ -224,17 +282,26 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
               }),
             ),
             Layer.succeed(HostProcess.HomeDirectory, config.baseDir),
+            Layer.succeed(HostProcess.Environment, {}),
           ),
         ),
       ),
     ),
   );
   return {
-    service,
+    service: yield* open,
+    open,
+    store,
+    finishCleanup: () => {
+      cleanupAvailable = true;
+    },
     fs,
     file,
     read,
     events,
+    renewEnrollment: () => {
+      ended = false;
+    },
     endEnrollment: () => {
       ended = true;
     },
@@ -348,6 +415,77 @@ it.effect(
         f.denyOwner();
         expect((yield* Effect.result(f.service.approve(proof, owner)))._tag).toBe("Failure");
         expect(f.events).toEqual(["owner"]);
+      }),
+    ),
+);
+
+it.effect(
+  "ends membership before cleanup, persists retries, and rejects stale enrollment and removal requests",
+  () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture(true);
+        const proof = {
+          requestId: "request",
+          environmentId: SOURCE,
+          libraryEnvironmentId: LIBRARY,
+          libraryUrl: credential.libraryUrl,
+          request: { publicKey: PUBLIC_KEY, token: "signed-report" },
+        };
+        yield* f.service.approve(proof, owner);
+        const epoch = yield* f.service.epoch(SOURCE);
+        for (const missing of ["settings:write", "access:write", "relay:write"]) {
+          expect(
+            (yield* f.service
+              .remove(
+                { environmentId: SOURCE, requestId: "denied", membershipRevision: NOW },
+                { ...owner, scopes: owner.scopes.filter((scope) => scope !== missing) },
+              )
+              .pipe(Effect.result))._tag,
+          ).toBe("Failure");
+        }
+        const removal = { environmentId: SOURCE, requestId: "remove", membershipRevision: NOW };
+        expect(yield* f.service.remove(removal, owner)).toMatchObject({
+          state: "removing",
+          publishingEnded: true,
+          routeRemoved: false,
+        });
+        expect(ReachStore.accountAllowsAccess((yield* f.store.read).computers[SOURCE])).toBe(false);
+        const restarted = yield* f.open;
+        expect((yield* restarted.computers(owner))[0]?.state).toBe("removing");
+        expect(
+          (yield* restarted
+            .approve({ ...proof, requestId: "new-request" }, owner)
+            .pipe(Effect.flip)).reason,
+        ).toBe("blocked");
+        f.finishCleanup();
+        expect(yield* restarted.remove(removal, owner)).toMatchObject({
+          state: "removed",
+          publishingEnded: true,
+          routeRemoved: true,
+          directoryRemoved: true,
+        });
+        yield* restarted.remove(removal, owner);
+        expect((yield* restarted.approve(proof, owner).pipe(Effect.flip)).reason).toBe(
+          "request-conflict",
+        );
+        expect(
+          (yield* restarted
+            .approve({ ...proof, requestId: "new-request" }, owner, epoch)
+            .pipe(Effect.flip)).reason,
+        ).toBe("request-conflict");
+        expect(
+          (yield* restarted.remove(removal, { ...owner, subject: "other" }).pipe(Effect.flip))
+            .reason,
+        ).toBe("blocked");
+        f.renewEnrollment();
+        yield* restarted.approve({ ...proof, requestId: "new-request" }, owner);
+        expect(
+          (yield* restarted
+            .remove({ ...removal, requestId: "delayed-removal" }, owner)
+            .pipe(Effect.flip)).reason,
+        ).toBe("request-conflict");
+        expect((yield* restarted.computers(owner))[0]?.state).toBe("active");
       }),
     ),
 );

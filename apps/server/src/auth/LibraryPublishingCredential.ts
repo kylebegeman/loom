@@ -73,6 +73,9 @@ export class LibraryPublishingCredential extends Context.Service<
       readonly libraryUrl: string;
       readonly requestId: string;
     }) => Effect.Effect<AccountComputerCredential, LibraryPublishingCredentialError>;
+    readonly revokeForComputer: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<void, LibraryPublishingCredentialError>;
     readonly issue: (input: {
       readonly sourceEnvironmentId: EnvironmentId;
       readonly libraryUrl: string;
@@ -95,7 +98,7 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const sessions = yield* SessionStore.SessionStore;
   // fork: project-library
-  const renewalLock = yield* Semaphore.make(1);
+  const credentialLock = yield* Semaphore.make(1);
   const RenewalReceipt = Schema.Struct({
     predecessor: AuthSessionId,
     retryUntil: Schema.Number,
@@ -184,7 +187,7 @@ const make = Effect.gen(function* () {
       return yield* new LibraryPublishingCredentialError({ reason: "write" });
     }
     return yield* finishRenewal(receipt);
-  }, renewalLock.withPermit);
+  }, credentialLock.withPermit);
   const credentialFileFor = Effect.fn("LibraryPublishingCredential.credentialFileFor")(
     function* (input: {
       readonly sourceEnvironmentId: EnvironmentId;
@@ -284,7 +287,6 @@ const make = Effect.gen(function* () {
     }
     return { credentialFile, sessionId: session.sessionId, expiresAt: session.expiresAt };
   });
-  const enrollmentLock = yield* Semaphore.make(1);
   const enroll: LibraryPublishingCredential["Service"]["enroll"] = Effect.fn(
     "LibraryPublishingCredential.enroll",
   )(function* (input) {
@@ -328,7 +330,7 @@ const make = Effect.gen(function* () {
       fs.open(path.dirname(credentialFile)).pipe(Effect.flatMap((file) => file.sync)),
     ).pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" })));
     return credential;
-  }, enrollmentLock.withPermit);
+  }, credentialLock.withPermit);
   const activate: LibraryPublishingCredential["Service"]["activate"] = Effect.fn(
     "LibraryPublishingCredential.activate",
   )(function* (input) {
@@ -364,7 +366,19 @@ const make = Effect.gen(function* () {
           .revoke(session.sessionId)
           .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })));
     }
-  }, enrollmentLock.withPermit);
-  return LibraryPublishingCredential.of({ renew, issue, enroll, activate });
+  }, credentialLock.withPermit);
+  const revokeForComputer = Effect.fn("LibraryPublishingCredential.revokeForComputer")(
+    function* (environmentId: EnvironmentId) {
+      const active = yield* sessions.listActive();
+      for (const session of active) {
+        if (session.subject === `loom-host:${environmentId}`)
+          yield* sessions.revoke(session.sessionId);
+      }
+    },
+    credentialLock.withPermit,
+    Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })),
+  );
+
+  return LibraryPublishingCredential.of({ renew, issue, enroll, activate, revokeForComputer });
 });
 export const layer = Layer.effect(LibraryPublishingCredential, make);

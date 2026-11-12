@@ -38,6 +38,19 @@ Older computers continue to use their own Identity sign-in or a pairing code.
 Update Loom on both your Library and the computer to use account access. Direct
 Tailscale and pairing connections remain available for local access and recovery.
 
+## Remove a computer from your account
+
+Open **Account > Account computers** on iPhone, or **Settings > Computers > Account**
+on web and desktop. Choose **Remove computer** to end its publishing and remote
+account access. Saved conversations and projects stay in the Library. Active
+account connections close as removal begins. Independently paired local connections
+and external sessions keep their own access rules.
+
+If a service cannot finish cleanup, the computer shows **Cleanup pending** with
+**Retry cleanup**. Account access stays ended while you retry. Add the computer
+again after cleanup to reconnect it. A headless computer whose access ended gets a
+new approval code when you run `loom join` again.
+
 ## End a device’s account access
 
 Open **Account > Signed-in devices** on iPhone, or **Settings > Computers > Account**

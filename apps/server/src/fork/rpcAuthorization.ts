@@ -238,6 +238,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [ENROLL.stepJoin]: AuthSettingsWriteScope,
   [ENROLL.lookupJoin]: AuthSettingsWriteScope,
   [ENROLL.decideJoin]: AuthSettingsWriteScope,
+  [ENROLL.computers]: AuthOrchestrationReadScope,
+  [ENROLL.removeComputer]: AuthSettingsWriteScope,
   [LIB.installManagementDelegation]: AuthSettingsWriteScope,
   [LIB.info]: AuthOrchestrationReadScope,
   [LIB.projects]: AuthOrchestrationReadScope,

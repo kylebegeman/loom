@@ -189,6 +189,14 @@ export function createProjectLibraryAtoms<R, E>(
   });
   return {
     refreshes,
+    accountComputers: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:account:computers",
+      tag: ENROLL.computers,
+    }),
+    removeAccountComputer: createEnvironmentRpcCommand(runtime, {
+      label: "loom:account:remove-computer",
+      tag: ENROLL.removeComputer,
+    }),
     lookupJoin: createEnvironmentRpcCommand(runtime, {
       label: "loom:account:review-computer",
       tag: ENROLL.lookupJoin,

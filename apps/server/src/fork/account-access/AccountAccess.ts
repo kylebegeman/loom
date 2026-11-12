@@ -25,6 +25,7 @@ import * as ReachStore from "../reach/library/ReachStore.ts";
 
 const GRANT_LIFETIME_MS = 60_000;
 const MAX_PENDING_GRANTS = 4096;
+type AccountLease = { readonly keyFingerprint: string; readonly membershipRevision: number | null };
 
 export class AccountAccessError extends Schema.TaggedError<AccountAccessError>()(
   "AccountAccessError",
@@ -52,13 +53,19 @@ export class AccountAccess extends Context.Service<
     readonly publicRoute: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<string, AccountAccessError>;
-    readonly awaitRemoval: (environmentId: EnvironmentId) => Effect.Effect<void>;
+    readonly awaitRemoval: (
+      environmentId: EnvironmentId,
+      lease?: AccountLease,
+    ) => Effect.Effect<void>;
     readonly prepare: (input: {
       readonly caller: EnvironmentAuth.AuthenticatedSession;
       readonly environmentId: EnvironmentId;
       readonly method: string;
       readonly path: string;
-    }) => Effect.Effect<{ readonly origin: string; readonly grant: string }, AccountAccessError>;
+    }) => Effect.Effect<
+      { readonly origin: string; readonly grant: string; readonly lease: AccountLease },
+      AccountAccessError
+    >;
     readonly consume: (input: {
       readonly publisher: EnvironmentAuth.AuthenticatedSession;
       readonly grant: string;
@@ -85,6 +92,8 @@ const make = Effect.gen(function* () {
       readonly method: string;
       readonly path: string;
       readonly admission: AccountAdmission;
+      readonly lease: AccountLease;
+      readonly ownerSubject: string;
       readonly deadline: number;
     }
   >();
@@ -105,7 +114,12 @@ const make = Effect.gen(function* () {
       !/^[a-z0-9.-]+$/u.test(hostname)
     )
       return yield* fail("unavailable");
-    return { origin: `https://${hostname}`, keyFingerprint: pin.keyFingerprint };
+    return {
+      origin: `https://${hostname}`,
+      keyFingerprint: pin.keyFingerprint,
+      membershipRevision: computer.account?.approvedAt ?? null,
+      ownerSubject: computer.account?.ownerSubject,
+    };
   });
   const active = Effect.fn("AccountAccess.active")(function* (sessionId: string) {
     const live = yield* sessions.listActive().pipe(Effect.mapError(() => fail("unavailable")));
@@ -125,7 +139,13 @@ const make = Effect.gen(function* () {
     )
       return yield* fail("denied");
     yield* active(caller.sessionId);
-    return yield* route(environmentId);
+    const target = yield* route(environmentId);
+    if (
+      target.ownerSubject !== undefined &&
+      target.ownerSubject !== identityOwnershipSubject(caller.subject, environment)
+    )
+      return yield* fail("denied");
+    return target;
   });
   const prepare: AccountAccess["Service"]["prepare"] = Effect.fn("AccountAccess.prepare")(
     function* (input) {
@@ -136,6 +156,10 @@ const make = Effect.gen(function* () {
       if (pending.size >= MAX_PENDING_GRANTS) return yield* fail("capacity");
       const grant = Hex.encode(yield* random.randomBytes(32).pipe(Effect.orDie));
       const owner = identityOwnershipSubject(caller.subject, environment);
+      const lease = {
+        keyFingerprint: target.keyFingerprint,
+        membershipRevision: target.membershipRevision,
+      };
       const principal = owner.startsWith("identity-principal:v1:")
         ? owner
         : `loom-account-owner:${authorityId}:${Buffer.from(owner).toString("base64url")}`;
@@ -145,6 +169,8 @@ const make = Effect.gen(function* () {
         method: input.method,
         path: input.path,
         deadline: now + GRANT_LIFETIME_MS,
+        lease,
+        ownerSubject: owner,
         admission: {
           sessionId: caller.sessionId,
           principal,
@@ -152,7 +178,7 @@ const make = Effect.gen(function* () {
           expiresAt: caller.expiresAt?.epochMilliseconds ?? now + GRANT_LIFETIME_MS,
         },
       });
-      return { origin: target.origin, grant };
+      return { origin: target.origin, grant, lease };
     },
   );
   const consume: AccountAccess["Service"]["consume"] = Effect.fn("AccountAccess.consume")(
@@ -178,14 +204,29 @@ const make = Effect.gen(function* () {
       yield* active(publisher.sessionId);
       const target = yield* route(entry.environmentId);
       if (target.keyFingerprint !== entry.keyFingerprint) return yield* fail("denied");
+      if (
+        target.membershipRevision !== entry.lease.membershipRevision ||
+        (target.ownerSubject !== undefined && target.ownerSubject !== entry.ownerSubject)
+      )
+        return yield* fail("denied");
       return entry.admission;
     },
   );
   const awaitRemoval = Effect.fn("AccountAccess.awaitRemoval")(function* (
     environmentId: EnvironmentId,
+    lease?: AccountLease,
   ) {
     yield* reach.changes.pipe(
-      Stream.filter((state) => !ReachStore.isReachActive(state.computers[environmentId])),
+      Stream.filter((state) => {
+        const computer = state.computers[environmentId];
+        return (
+          !ReachStore.isReachActive(computer) ||
+          !ReachStore.accountAllowsAccess(computer) ||
+          (lease !== undefined &&
+            (computer?.keyFingerprint !== lease.keyFingerprint ||
+              (computer.account?.approvedAt ?? null) !== lease.membershipRevision))
+        );
+      }),
       Stream.take(1),
       Stream.runDrain,
     );

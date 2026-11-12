@@ -38,6 +38,7 @@ import { useEnvironmentSessionState } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { LIBRARY_SIGN_IN_TARGET } from "./accessBlock";
 import { LibrarySetup } from "./LibrarySetup";
+import { AccountComputers } from "../connections/AccountComputers";
 import { AccountDevices } from "../connections/AccountDevices";
 import { ApproveComputer } from "../connections/ApproveComputer";
 import { useLibraryAuthority } from "./state";
@@ -237,6 +238,7 @@ function LibrarySignInStatus({ environment }: { readonly environment: Environmen
       </section>
       <AccountDevices />
       <ApproveComputer />
+      <AccountComputers />
       <div className="flex flex-col gap-1">
         <Collapsible>
           <CollapsibleTrigger

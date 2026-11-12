@@ -13,7 +13,7 @@ import * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import { RATE_LIMIT_PHASE, reachTunnelTarget } from "./ReachCloudflare.ts";
 import { ReachProvisioner } from "./ReachProvisioner.ts";
-import { ReachStore } from "./ReachStore.ts";
+import { freshComputer, ReachStore } from "./ReachStore.ts";
 import {
   ACCOUNT_ID,
   CONNECTOR_TOKEN_PREFIX,
@@ -1260,3 +1260,54 @@ describe("ReachProvisioner admin", () => {
     ),
   );
 });
+
+it.effect(
+  "keeps a never-routed account removal fence and refuses fresh routing and Identity requests",
+  () =>
+    withReach((fixture) =>
+      Effect.gen(function* () {
+        yield* fixture.store.update((state) => ({
+          ...state,
+          computers: {
+            ...state.computers,
+            [STUDIO]: {
+              ...freshComputer("2026-10-24T12:00:00.000Z"),
+              account: {
+                label: "Studio",
+                ownerSubject: "owner",
+                requestId: "enroll",
+                approvedAt: 1,
+                epoch: 1,
+                removedAt: 2,
+                removalRequestId: "remove",
+                state: "removing",
+                publishingEnded: true,
+                routeRemoved: false,
+                directoryRemoved: false,
+                detail: null,
+              },
+            },
+          },
+        }));
+        expect(yield* refusal(ensure(fixture, 1))).toBe("not-in-directory");
+        expect(
+          yield* refusal(
+            fixture.provisioner.prepareIdentity({
+              environmentId: STUDIO,
+              publisherSessionId: "session-studio",
+            }),
+          ),
+        ).toBe("not-in-directory");
+        const retired = yield* fixture.provisioner.retire({
+          environmentId: STUDIO,
+          endIdentity: true,
+        });
+        expect(retired).toMatchObject({ state: "removed", identity: null });
+        expect((yield* recordOf(fixture.store))?.account).toMatchObject({
+          epoch: 1,
+          state: "removing",
+        });
+        expect(liveTunnels(fixture)).toEqual([]);
+      }),
+    ),
+);

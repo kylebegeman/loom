@@ -67,6 +67,7 @@ const fixture = Effect.gen(function* () {
       } satisfies AccountJoinRequest;
     });
   let ownerAllowed = true;
+  let epoch = 0;
   const issued: string[] = [];
   const authorized = Effect.suspend(() =>
     ownerAllowed ? Effect.void : Effect.fail(new LibraryError({ reason: "blocked" })),
@@ -79,8 +80,13 @@ const fixture = Effect.gen(function* () {
             Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(LIBRARY) }),
             Layer.mock(LibraryManagement)({ authorizeEnrollment: () => authorized }),
             Layer.mock(AccountEnrollment)({
-              approve: (proof) =>
-                authorized.pipe(
+              epoch: () => Effect.sync(() => epoch),
+              approve: (proof, _owner, expectedEpoch) =>
+                Effect.suspend(() =>
+                  expectedEpoch !== epoch
+                    ? Effect.fail(new LibraryError({ reason: "request-conflict" }))
+                    : authorized,
+                ).pipe(
                   Effect.map(() => {
                     issued.push(proof.environmentId);
                     return {
@@ -116,6 +122,9 @@ const fixture = Effect.gen(function* () {
     open,
     request,
     issued,
+    removeComputer: () => {
+      epoch++;
+    },
     denyOwner: () => {
       ownerAllowed = false;
     },
@@ -213,4 +222,27 @@ it.effect("denies expired, declined and incorrectly signed requests without enro
       expect(f.issued).toEqual([]);
     }),
   ),
+);
+
+it.effect(
+  "does not redeem an earlier approval after computer removal, even with a fresh signed report",
+  () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const service = yield* f.open;
+        const request = yield* f.request();
+        const review = yield* service.begin(request);
+        yield* service.decide({ code: review.code, approve: true }, owner);
+        f.removeComputer();
+        const restarted = yield* f.open;
+        expect((yield* restarted.redeem(yield* f.request()).pipe(Effect.flip)).reason).toBe(
+          "request-conflict",
+        );
+        const fresh = { ...request, proof: { ...request.proof, requestId: "new-request" } };
+        const next = yield* restarted.begin(fresh);
+        yield* restarted.decide({ code: next.code, approve: true }, owner);
+        expect((yield* restarted.redeem(fresh)).state).toBe("approved");
+      }),
+    ),
 );

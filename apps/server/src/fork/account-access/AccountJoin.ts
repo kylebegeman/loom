@@ -49,6 +49,7 @@ const Record = Schema.Struct({
   review: AccountJoinReview,
   secretHash: Schema.String,
   owner: Schema.NullOr(Owner),
+  epoch: Schema.Number.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
 });
 type Record = typeof Record.Type;
 const encode = Schema.encodeEffect(Schema.fromJsonString(Record));
@@ -197,6 +198,8 @@ const make = Effect.gen(function* () {
         existing.review.keyFingerprint !== verified.keyFingerprint
       )
         return yield* refused();
+      if (existing.epoch !== (yield* enrollment.epoch(input.proof.environmentId)))
+        return yield* ended();
       return existing.review;
     }
     if (existing === undefined && active.length >= MAX_REQUESTS)
@@ -221,7 +224,13 @@ const make = Effect.gen(function* () {
       state: "pending",
       expiresAt: (yield* Clock.currentTimeMillis) + LIFETIME_MS,
     };
-    yield* save({ version: 1, review, secretHash: verified.secretHash, owner: null });
+    yield* save({
+      version: 1,
+      review,
+      secretHash: verified.secretHash,
+      owner: null,
+      epoch: yield* enrollment.epoch(input.proof.environmentId),
+    });
     return review;
   }, lock.withPermit);
   const lookup = Effect.fn("AccountJoin.lookup")(function* (
@@ -237,6 +246,8 @@ const make = Effect.gen(function* () {
   ) {
     yield* management.authorizeEnrollment(session);
     const record = yield* find(input.code);
+    if (record.epoch !== (yield* enrollment.epoch(record.review.environmentId)))
+      return yield* ended();
     const next = input.approve ? "approved" : "denied";
     if (record.review.state !== "pending" && record.review.state !== next) return yield* ended();
     const review: AccountJoinReview = { ...record.review, state: next };
@@ -267,7 +278,10 @@ const make = Effect.gen(function* () {
       return yield* refused();
     if (record.review.state !== "approved") return { state: record.review.state };
     if (record.owner === null) return yield* unavailable();
-    return { state: "approved", enrollment: yield* enrollment.approve(input.proof, record.owner) };
+    return {
+      state: "approved",
+      enrollment: yield* enrollment.approve(input.proof, record.owner, record.epoch),
+    };
   }, lock.withPermit);
   return AccountJoin.of({ begin, lookup, decide, redeem });
 });
