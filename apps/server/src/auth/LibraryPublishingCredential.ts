@@ -57,6 +57,12 @@ export class LibraryPublishingCredentialError extends Schema.TaggedError<Library
       : "The Library publishing credential could not be saved.";
   }
 }
+type EnrollmentInput = {
+  readonly sourceEnvironmentId: EnvironmentId;
+  readonly libraryUrl: string;
+  readonly requestId: string;
+};
+
 export class LibraryPublishingCredential extends Context.Service<
   LibraryPublishingCredential,
   {
@@ -68,11 +74,12 @@ export class LibraryPublishingCredential extends Context.Service<
       readonly requestId: string;
       readonly token: string;
     }) => Effect.Effect<void, LibraryPublishingCredentialError>;
-    readonly enroll: (input: {
-      readonly sourceEnvironmentId: EnvironmentId;
-      readonly libraryUrl: string;
-      readonly requestId: string;
-    }) => Effect.Effect<AccountComputerCredential, LibraryPublishingCredentialError>;
+    readonly checkEnrollment: (
+      input: EnrollmentInput,
+    ) => Effect.Effect<void, LibraryPublishingCredentialError>;
+    readonly enroll: (
+      input: EnrollmentInput,
+    ) => Effect.Effect<AccountComputerCredential, LibraryPublishingCredentialError>;
     readonly revokeForComputer: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<void, LibraryPublishingCredentialError>;
@@ -287,16 +294,10 @@ const make = Effect.gen(function* () {
     }
     return { credentialFile, sessionId: session.sessionId, expiresAt: session.expiresAt };
   });
-  const enroll: LibraryPublishingCredential["Service"]["enroll"] = Effect.fn(
-    "LibraryPublishingCredential.enroll",
-  )(function* (input) {
-    const credentialFile = yield* credentialFileFor(input);
-    if (
-      !(yield* fs
-        .exists(credentialFile)
-        .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" }))))
-    )
-      yield* issue(input);
+  const readEnrollment = Effect.fn("LibraryPublishingCredential.readEnrollment")(function* (
+    input: EnrollmentInput,
+    credentialFile: string,
+  ) {
     const credential = yield* Effect.gen(function* () {
       const stat = yield* fs.stat(credentialFile);
       if ((stat.mode & 0o077) !== 0 || Number(stat.size) > 16 * 1024)
@@ -323,6 +324,28 @@ const make = Effect.gen(function* () {
       session.scopes[0] !== AuthLibraryPublishScope
     )
       return yield* new LibraryPublishingCredentialError({ reason: "invalid" });
+    return credential;
+  });
+  const checkEnrollment = Effect.fn("LibraryPublishingCredential.checkEnrollment")(function* (
+    input: EnrollmentInput,
+  ) {
+    const credentialFile = yield* credentialFileFor(input);
+    const exists = yield* fs
+      .exists(credentialFile)
+      .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" })));
+    if (exists) yield* readEnrollment(input, credentialFile);
+  }, credentialLock.withPermit);
+  const enroll: LibraryPublishingCredential["Service"]["enroll"] = Effect.fn(
+    "LibraryPublishingCredential.enroll",
+  )(function* (input) {
+    const credentialFile = yield* credentialFileFor(input);
+    if (
+      !(yield* fs
+        .exists(credentialFile)
+        .pipe(Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" }))))
+    )
+      yield* issue(input);
+    const credential = yield* readEnrollment(input, credentialFile);
     yield* Effect.scoped(fs.open(credentialFile).pipe(Effect.flatMap((file) => file.sync))).pipe(
       Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "write" })),
     );
@@ -379,6 +402,13 @@ const make = Effect.gen(function* () {
     Effect.mapError(() => new LibraryPublishingCredentialError({ reason: "issue" })),
   );
 
-  return LibraryPublishingCredential.of({ renew, issue, enroll, activate, revokeForComputer });
+  return LibraryPublishingCredential.of({
+    renew,
+    issue,
+    enroll,
+    activate,
+    revokeForComputer,
+    checkEnrollment,
+  });
 });
 export const layer = Layer.effect(LibraryPublishingCredential, make);

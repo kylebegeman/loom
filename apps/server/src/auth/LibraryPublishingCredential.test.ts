@@ -137,7 +137,10 @@ it.layer(layer)("LibraryPublishingCredential", (it) => {
           libraryUrl: "https://library.example.test",
           requestId: "owner-enrollment",
         };
+        yield* service.checkEnrollment(enrollment);
+        expect(issued).toHaveLength(before);
         const installed = yield* service.enroll(enrollment);
+        yield* service.checkEnrollment(enrollment);
         expect(installed.sourceEnvironmentId).toBe("source-host");
         expect(Redacted.value(installed.accessToken)).toBe("test-publisher-token");
         expect(issued).toHaveLength(before + 1);
@@ -179,6 +182,9 @@ it.layer(layer)("LibraryPublishingCredential", (it) => {
         expect(revocations).toContain(installed.sessionId);
         expect(revocations).toContain("pending-newer");
         expect(revocations).not.toContain("other-computer");
+        expect((yield* service.checkEnrollment(enrollment).pipe(Effect.flip)).reason).toBe(
+          "invalid",
+        );
         expect((yield* service.enroll(enrollment).pipe(Effect.result))._tag).toBe("Failure");
       }),
   );

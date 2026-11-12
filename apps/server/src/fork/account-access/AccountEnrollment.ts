@@ -194,6 +194,15 @@ const make = Effect.gen(function* () {
       });
     if (previous?.account?.state === "removed" && previous.account.requestId === requestId)
       return yield* closedRequest();
+    yield* credentials
+      .checkEnrollment({
+        sourceEnvironmentId: input.environmentId,
+        libraryUrl: input.libraryUrl,
+        requestId,
+      })
+      .pipe(
+        Effect.mapError((error) => (error.reason === "invalid" ? closedRequest() : unavailable())),
+      );
     yield* directory.report({ environmentId: input.environmentId, request: input.request }).pipe(
       Effect.catchIf(
         (error) => error.reason === "stale-sequence",
@@ -205,9 +214,26 @@ const make = Effect.gen(function* () {
     if (pin === null) return yield* refused();
     const now = yield* Clock.currentTimeMillis;
     const approvedAt =
-      previous?.account?.state === "active" && previous.account.requestId === requestId
+      previous?.account?.state === "active"
         ? previous.account.approvedAt
         : Math.max(now, (previous?.account?.approvedAt ?? 0) + 1);
+    const delegation = yield* management.issue(
+      { environmentId: input.environmentId, keyFingerprint: pin.keyFingerprint },
+      session,
+    );
+    const credential = yield* credentials
+      .enroll({ sourceEnvironmentId: input.environmentId, libraryUrl: input.libraryUrl, requestId })
+      .pipe(
+        Effect.mapError((error) =>
+          error.reason === "invalid"
+            ? new LibraryError({
+                reason: "request-conflict",
+                detail:
+                  "This setup request has expired or ended. Add this computer again to start a new request.",
+              })
+            : unavailable(),
+        ),
+      );
     yield* store
       .update((current) => ({
         ...current,
@@ -235,23 +261,6 @@ const make = Effect.gen(function* () {
         },
       }))
       .pipe(Effect.mapError(unavailable));
-    const delegation = yield* management.issue(
-      { environmentId: input.environmentId, keyFingerprint: pin.keyFingerprint },
-      session,
-    );
-    const credential = yield* credentials
-      .enroll({ sourceEnvironmentId: input.environmentId, libraryUrl: input.libraryUrl, requestId })
-      .pipe(
-        Effect.mapError((error) =>
-          error.reason === "invalid"
-            ? new LibraryError({
-                reason: "request-conflict",
-                detail:
-                  "This setup request has expired or ended. Add this computer again to start a new request.",
-              })
-            : unavailable(),
-        ),
-      );
     return { requestId, credential, management: delegation };
   }, membershipLock.withPermit);
 

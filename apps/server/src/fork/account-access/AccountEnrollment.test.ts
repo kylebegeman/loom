@@ -89,6 +89,8 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
   const events: string[] = [];
   let refuseOwner = false;
   let ended = false;
+  const issuedRequests = new Set<string>();
+  const revokedRequests = new Set<string>();
   let activationAvailable = false;
   let libraryMatches = true;
   const read = fs.readFileString(file).pipe(Effect.flatMap(decodeCredential));
@@ -202,15 +204,22 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
                 ),
             }),
             Layer.mock(LibraryPublishingCredential)({
+              checkEnrollment: ({ requestId }) =>
+                Effect.suspend(() =>
+                  ended || revokedRequests.has(requestId)
+                    ? Effect.fail(new LibraryPublishingCredentialError({ reason: "invalid" }))
+                    : Effect.void,
+                ),
               revokeForComputer: () =>
                 Effect.sync(() => {
-                  ended = true;
+                  for (const request of issuedRequests) revokedRequests.add(request);
                   events.push("revoke");
                 }),
-              enroll: () =>
+              enroll: ({ requestId }) =>
                 Effect.suspend(() => {
                   events.push("issue");
-                  return ended
+                  if (!ended && !revokedRequests.has(requestId)) issuedRequests.add(requestId);
+                  return ended || revokedRequests.has(requestId)
                     ? Effect.fail(new LibraryPublishingCredentialError({ reason: "invalid" }))
                     : Effect.succeed(credential);
                 }),
@@ -292,6 +301,7 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
     service: yield* open,
     open,
     store,
+    hasPin: () => pinned,
     finishCleanup: () => {
       cleanupAvailable = true;
     },
@@ -433,6 +443,9 @@ it.effect(
           request: { publicKey: PUBLIC_KEY, token: "signed-report" },
         };
         yield* f.service.approve(proof, owner);
+        yield* f.service.approve({ ...proof, requestId: "rotated-request" }, owner);
+        expect((yield* f.store.read).computers[SOURCE]?.account?.approvedAt).toBe(NOW);
+
         const epoch = yield* f.service.epoch(SOURCE);
         for (const missing of ["settings:write", "access:write", "relay:write"]) {
           expect(
@@ -469,6 +482,8 @@ it.effect(
         expect((yield* restarted.approve(proof, owner).pipe(Effect.flip)).reason).toBe(
           "request-conflict",
         );
+        expect((yield* f.store.read).computers[SOURCE]?.account?.state).toBe("removed");
+        expect(f.hasPin()).toBe(false);
         expect(
           (yield* restarted
             .approve({ ...proof, requestId: "new-request" }, owner, epoch)
