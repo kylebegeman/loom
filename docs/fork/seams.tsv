@@ -572,6 +572,7 @@ apps/server/src/device/DeviceToolchain.ts	brand	1
 apps/server/src/environment/ServerEnvironmentLabel.ts	brand	1
 apps/server/src/mcp/AcpMcpStdioBridge.ts	brand	4
 apps/server/src/mcp/McpHttpServer.test.ts	brand	1
+apps/server/src/mcp/McpHttpServer.test.ts	file-placement	1
 apps/server/src/mcp/McpHttpServer.ts	brand	2
 apps/server/src/mcp/McpInvocationContext.ts	brand	1
 apps/server/src/mcp/OrchestratorMcpService.ts	brand	3

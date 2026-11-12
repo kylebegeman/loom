@@ -41,6 +41,7 @@ import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.t
 // fork: file-placement
 import * as ProjectEnrichmentService from "../../../project/ProjectEnrichmentService.ts";
 import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
+import * as ProjectPlacement from "../../../project/ProjectPlacement.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as SourceControlProviderRegistry from "../../../sourceControl/SourceControlProviderRegistry.ts";
 import * as Repositories from "../../../sourceControl/SourceControlRepositoryService.ts";
@@ -842,6 +843,24 @@ it.effect("an agent's clone is not cut off while git is still transferring", () 
       runtimeModeCeiling: "full-access",
       launched: [],
     });
+    // fork: file-placement -- agent clones run through the tracker, which registers the project.
+    const cloneDependencies = Layer.merge(
+      dependencies,
+      Layer.mergeAll(
+        Layer.mock(ProjectPlacement.ProjectPlacement)({
+          assertPlacementAllowed: (target) => Effect.succeed(target),
+        }),
+        Layer.mock(Project.ProjectService)({
+          create: (input) =>
+            Effect.succeed({
+              id: input.projectId,
+              workspaceRoot: input.workspaceRoot,
+            } as unknown as ProjectRecord),
+        }),
+        Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
+        Layer.mock(ProjectEnrichmentService.ProjectEnrichmentService)({}),
+      ),
+    );
     const repositories = Repositories.layer.pipe(
       Layer.provide(
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
@@ -876,7 +895,8 @@ it.effect("an agent's clone is not cut off while git is still transferring", () 
             ),
         }),
       ),
-      Layer.provideMerge(dependencies),
+      Layer.provideMerge(cloneDependencies), // fork: file-placement
+      (layer) => Layer.provideMerge(ProjectCloneTracker.layer, layer), // fork: file-placement
     );
     const toolkit = yield* ProjectToolkit.pipe(
       Effect.provide(
@@ -892,7 +912,11 @@ it.effect("an agent's clone is not cut off while git is still transferring", () 
     yield* TestClock.adjust("10 minutes");
     yield* Deferred.succeed(transferred, undefined);
 
-    expect((yield* Fiber.join(clone)).at(-1)?.result).toMatchObject({ cwd: destinationPath });
+    // fork: file-placement -- the tracker reports a cut-off clone as a failed phase, not an error.
+    expect((yield* Fiber.join(clone)).at(-1)?.result).toMatchObject({
+      cwd: destinationPath,
+      phase: "done",
+    });
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

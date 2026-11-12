@@ -517,7 +517,6 @@ it.effect("interrupting the git RPC stream terminates its scoped child", () =>
           args: ["push"],
           env: { PATH: `${cwd}:${process.env.PATH ?? ""}` },
           timeoutMs: 600_000,
-          forceKillAfterMs: 100,
         })
         .pipe(Effect.andThen(Queue.end(queue)), Effect.orDie),
     );

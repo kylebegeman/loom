@@ -2639,7 +2639,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       {
         env: { GIT_EDITOR: "true", GIT_SEQUENCE_EDITOR: "true", GIT_TERMINAL_PROMPT: "0" },
         timeoutMs: PUSH_TIMEOUT_MS,
-        forceKillAfterMs: 2_000,
         allowNonZeroExit: true,
       },
     );
@@ -2966,7 +2965,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // fork: source-control-cockpit -- pushes share streamed hook/output reporting and a ten-minute ceiling.
     const pushOptions = {
       timeoutMs: PUSH_TIMEOUT_MS,
-      forceKillAfterMs: 2_000,
       appendTruncationMarker: true,
       keepLineCallbacksAfterTruncation: true,
       progress: {

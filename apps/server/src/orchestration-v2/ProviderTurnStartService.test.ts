@@ -441,6 +441,7 @@ it.each(["projection", "checkout", "setup"] as const)(
           }),
           Layer.mock(RunExecutionService.RunExecutionServiceV2)({ startRootRun }),
           Layer.mock(RuntimePolicy.RuntimePolicyV2)({}),
+          Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}), // fork: project-lifecycle
         ),
       ),
     );

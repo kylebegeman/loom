@@ -302,9 +302,8 @@ const layerRecordingTools = (calls: Array<unknown>) => {
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
-        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-          namedProjectsRoot: process.cwd(),
-        }),
+        // fork: file-placement -- ManagedProjectFolders no longer has namedProjectsRoot
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(ServerSettings.ServerSettingsService)({}),
         Layer.mock(DocumentText.DocumentText)({}),
