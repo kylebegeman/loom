@@ -580,15 +580,15 @@ The `server-weight` seams cut trace volume and background database work on long-
 computers. `serverActivation.ts` (4 marker lines) and `Scheduler.ts` (2) start each parked
 fiber and scheduler pass in its own trace through
 `apps/server/src/fork/tracing/withoutParentSpan.ts`, instead of growing the startup trace for
-the server's life. History compaction in `ProjectionMaintenance.ts` (11) and space reclaim in
-`DatabaseStorage.ts` (7) run their per-page statements untraced under one span per pass that
-carries the counts. `Sqlite.ts` (1) drops the constant `db.name` and `service.name` attributes
+the server's life. History compaction in `ProjectionMaintenance.ts` (11) runs its per-page
+statements untraced under one span per pass that carries the counts; upstream now does the same
+for space reclaim. `Sqlite.ts` (1) drops the constant `db.name` and `service.name` attributes
 from every statement, and `packages/shared/src/observability.ts` (3) collapses SQL whitespace
 before truncating. `ThreadSettlementService.ts` (11) reuses one settings read per sweep until
 settings change and asks for a storage sweep only once a settled thread is done with its
 worktree, which lets the lane watchdog cache ready lanes. `ServerBrowserContexts.ts` (1) caps
 the preview browser's disk cache at 128 MiB. Tests carry the rest: `FoundationPersistence.test.ts`
-(8), `ThreadSettlementService.test.ts` (3), `DatabaseStorage.test.ts` (4),
+(8), `ThreadSettlementService.test.ts` (3), `DatabaseStorage.test.ts` (2),
 `Scheduler.test.ts` (3) and `observability.test.ts` (2).
 On desktop, `DesktopIpc.ts` (5) lets a sync IPC method run with the tracer off, so its nested
 spans are skipped too, and `ipc/methods/localEnvironment.ts` (1) and `ipc/methods/window.ts`
@@ -650,12 +650,6 @@ agent-launched top-level thread, which can hold real work. Web `useThreadActions
 them in order and reloads the archive once per computer; `ArchivedThreadsPanel.tsx` (4) shows the
 section. Mobile `useThreadListActions.ts` (2), `ArchivedThreadsRouteScreen.tsx` (2) and
 `ArchivedThreadsScreen.tsx` (5) do the same in the archive sheet.
-
-The `git-gitfile-errors` seams read Git 2.56's "gitfile does not point to a valid repository",
-its new wording for a `.git` file whose repository is gone, as a non-repository like the older
-"not a git repository". `GitVcsDriverCore.ts` (2) holds the shared check and its test file (2)
-covers both wordings; `storageCleanup.ts` (2) and `GitManager.ts` (2) use it instead of their own
-copies, so a worktree left behind by a deleted repository is not reported as a Git failure.
 
 The `failed-run-retry` seams let a failed run continue when its root failure is one another try
 can get past (usage limit, provider or transport error, unknown), using the rule in
