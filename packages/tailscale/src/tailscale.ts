@@ -826,11 +826,13 @@ export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdent
 export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHttpsEndpoint")(
   function* (input: {
     readonly baseUrl: string;
-    readonly environmentId: string;
+    readonly environmentId?: string;
     readonly timeout?: Duration.Input;
   }) {
     const identity = yield* readEnvironmentIdentity(input);
-    return Option.contains(identity, input.environmentId);
+    return input.environmentId === undefined
+      ? Option.isSome(identity)
+      : Option.contains(identity, input.environmentId);
   },
   // fork: tailnet-ownership -- readEnvironmentIdentity above already falls back to none
 );
