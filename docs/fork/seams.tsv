@@ -402,7 +402,7 @@ apps/server/src/binCli.ts	github-host-setup	2
 apps/server/src/cli/pair.ts	brand	6
 apps/server/src/cli/pair.ts	directory-computers	12
 apps/server/src/cli/pair.test.ts	brand	4
-apps/server/src/cli/pair.test.ts	directory-computers	2
+apps/server/src/cli/pair.test.ts	directory-computers	1
 apps/server/package.json	-	"loom": "./dist/bin.mjs"
 apps/server/src/cli/app.test.ts	brand	1
 apps/server/src/cli/app.test.ts	project-lifecycle	2
@@ -1226,7 +1226,7 @@ apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	everyday-workflows	
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	library-launch-files	6
 apps/mobile/src/features/threads/ThreadRouteScreen.tsx	attention-status	2
 apps/server/src/environment/DirectEndpoints.ts	background-check-health	3
-apps/server/src/environment/DirectEndpoints.ts	directory-computers	4
+apps/server/src/environment/DirectEndpoints.ts	directory-computers	1
 apps/server/src/mcp/OrchestratorMcpService.test.ts	webhook-delivery-issues	1
 apps/server/src/mcp/OrchestratorMcpService.ts	webhook-delivery-issues	1
 apps/server/src/scheduledTasks/ScheduledTaskService.ts	webhook-delivery-issues	6
@@ -1283,8 +1283,8 @@ README.md	brand	1
 apps/desktop/package.json	-	"jose": "catalog:"
 apps/desktop/src/backend/DesktopServerExposure.test.ts	tailnet-ownership	12
 apps/desktop/src/backend/DesktopServerExposure.ts	tailnet-ownership	21
-apps/desktop/src/backend/tailscaleEndpointProvider.test.ts	tailnet-ownership	2
-apps/desktop/src/backend/tailscaleEndpointProvider.ts	tailnet-ownership	7
+apps/desktop/src/backend/tailscaleEndpointProvider.test.ts	tailnet-ownership	1
+apps/desktop/src/backend/tailscaleEndpointProvider.ts	tailnet-ownership	3
 apps/desktop/src/ipc/methods/serverExposure.ts	tailnet-ownership	7
 apps/desktop/src/settings/DesktopAppSettings.ts	tailnet-ownership	1
 apps/mobile/eas.json	-	"ios": {}
@@ -1351,7 +1351,7 @@ apps/server/src/cli/auth.ts	library-projects	2
 apps/server/src/device/AgentDeviceShim.ts	device-qa	1
 apps/server/src/device/AgentDeviceShim.ts	brand	4
 apps/server/src/device/AgentDeviceTarget.test.ts	brand	2
-apps/server/src/environment/DirectEndpoints.test.ts	directory-computers	11
+apps/server/src/environment/DirectEndpoints.test.ts	directory-computers	8
 apps/server/src/environment/ServerEnvironment.test.ts	computer-naming	1
 apps/server/src/mcp/toolkits/orchestrator/handlers.ts	bots	3
 apps/server/src/orchestration-v2/ClaudeAutomaticDelivery.integration.test.ts	file-placement	1
@@ -1463,7 +1463,7 @@ packages/ssh/src/tunnel.ts	-	Remote Loom server did not become ready on 127.0.0.
 packages/ssh/src/tunnel.ts	-	Remote Loom server with PID %s did not stop within 2 seconds
 packages/tailscale/src/index.ts	tailnet-ownership	1
 packages/tailscale/src/tailscale.test.ts	tailnet-ownership	8
-packages/tailscale/src/tailscale.ts	tailnet-ownership	29
+packages/tailscale/src/tailscale.ts	tailnet-ownership	25
 scripts/dev-runner.test.ts	tailnet-ownership	2
 scripts/dev-runner.ts	tailnet-ownership	6
 scripts/lib/dev-share.test.ts	tailnet-ownership	25

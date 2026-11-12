@@ -862,25 +862,3 @@ export const readTailscaleServeStatusJson = runTailscale(
   ["serve", "status", "--json"],
   TAILSCALE_STATUS_TIMEOUT,
 );
-
-const EnvironmentIdentityJson = Schema.Struct({
-  environmentId: ExecutionEnvironmentDescriptor.fields.environmentId,
-});
-
-/** The environment a T3 server at `baseUrl` reports, or none when nothing answers as one. */
-export const readEnvironmentIdentity = Effect.fn("tailscale.readEnvironmentIdentity")(
-  function* (input: { readonly baseUrl: string; readonly timeout?: Duration.Input }) {
-    const client = yield* HttpClient.HttpClient;
-    // fork: tailnet-ownership
-    const url = new URL("/.well-known/t3/environment", input.baseUrl);
-    const identity = yield* client
-      .execute(HttpClientRequest.get(url.toString()))
-      .pipe(
-        Effect.flatMap(HttpClientResponse.filterStatusOk),
-        Effect.flatMap(HttpClientResponse.schemaBodyJson(EnvironmentIdentityJson)),
-        Effect.timeoutOption(input.timeout ?? TAILSCALE_PROBE_TIMEOUT),
-      );
-    return Option.map(identity, (descriptor): string => descriptor.environmentId);
-  },
-  Effect.orElseSucceed(() => Option.none<string>()),
-);
