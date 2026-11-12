@@ -8,6 +8,7 @@ import {
   ensureTailscaleServe,
   readTailscaleServeStatusJson,
   readTailscaleStatus,
+  TailscaleServeHttpsDisabledError,
   TailscaleStatusParseError,
   type TailscaleCommandError,
 } from "./tailscale.ts";
@@ -311,15 +312,6 @@ export class TailscaleServeNotLoggedInError extends Schema.TaggedError<Tailscale
 ) {
   override get message(): string {
     return "Tailscale is not logged in on this machine. Log in to Tailscale, then try again.";
-  }
-}
-
-export class TailscaleServeHttpsDisabledError extends Schema.TaggedError<TailscaleServeHttpsDisabledError>()(
-  "TailscaleServeHttpsDisabledError",
-  {},
-) {
-  override get message(): string {
-    return "HTTPS certificates are off for this tailnet. Turn them on at https://login.tailscale.com/admin/dns, then try again.";
   }
 }
 
