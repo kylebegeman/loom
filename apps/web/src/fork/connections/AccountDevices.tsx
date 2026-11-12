@@ -34,9 +34,11 @@ export function AccountDevices() {
   );
   const endAccess = async (session: AuthClientSession) => {
     if (!canWrite || pending !== null) return;
+    // oxlint-disable-next-line t3code/no-rpc-permission-bypass -- AuthClientSession.client holds device metadata.
+    const { client: device } = session;
     if (
       !(await requestConfirmDialog(
-        "End this device’s account access? It will need to sign in again. Your computers and saved work stay in your account. An already authenticated external connection may continue until it ends.",
+        `End account access for ${device.label ?? device.os ?? device.deviceType}? It will need to sign in again. Your computers and saved work stay in your account. An already authenticated external connection may continue until it ends.`,
         { variant: "destructive" },
       ))
     )
@@ -100,6 +102,7 @@ export function AccountDevices() {
                 size="sm"
                 variant="outline"
                 disabled={!canWrite || pending !== null}
+                aria-label={`End access for ${device.label ?? device.os ?? device.deviceType}`}
                 onClick={() => void endAccess(session)}
               >
                 {pending === session.sessionId ? "Ending access..." : "End access"}

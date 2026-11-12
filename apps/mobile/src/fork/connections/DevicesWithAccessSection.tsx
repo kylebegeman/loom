@@ -18,6 +18,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { Button } from "../../components/ui/Button";
 import { useAtomCommand } from "../../state/use-atom-command";
 import * as Dialog from "../../components/ui/Dialog";
 
@@ -44,8 +45,10 @@ export function DevicesWithAccessSection({
   const [error, setError] = useState<string | null>(null);
   const endAccess = (session: AuthClientSession) => {
     if (!canWrite || pending !== null) return;
+    // oxlint-disable-next-line t3code/no-rpc-permission-bypass -- AuthClientSession.client holds device metadata.
+    const { client: device } = session;
     Dialog.confirm({
-      title: "End this device’s access?",
+      title: `End access for ${device.label ?? device.os ?? device.deviceType}?`,
       message: account
         ? "It will need to sign in again to access your account and computers. Your saved work stays in your account. An already authenticated external connection may continue until it ends."
         : "It will need to reconnect to use this computer again. Your saved work stays on the computer.",
@@ -106,25 +109,30 @@ export function DevicesWithAccessSection({
           // oxlint-disable-next-line t3code/no-rpc-permission-bypass -- AuthClientSession.client is device metadata, not an RPC client.
           const { client: device } = session;
           return (
-            <View key={session.sessionId} className="gap-1 p-4">
-              <Text className="text-base text-foreground">
-                {device.label ?? device.os ?? device.deviceType}
-                {session.current ? " (this device)" : ""}
-              </Text>
+            <View
+              key={session.sessionId}
+              className="flex-row flex-wrap items-center justify-between gap-3 p-4"
+            >
+              <View className="min-w-0 flex-1 gap-1">
+                <Text className="text-base text-foreground">
+                  {device.label ?? device.os ?? device.deviceType}
+                  {session.current ? " (this device)" : ""}
+                </Text>
+                <Text className="text-sm text-foreground-muted">
+                  {session.connected ? "Connected" : "Not connected"}
+                  {device.browser ? ` · ${device.browser}` : ""}
+                </Text>
+              </View>
               {canWrite ? (
-                <SettingsActionRow
-                  icon="xmark.circle.fill"
+                <Button
                   label="End access"
-                  tone="danger"
+                  accessibilityLabel={`End access for ${device.label ?? device.os ?? device.deviceType}`}
+                  size="compact"
                   loading={pending === session.sessionId}
                   disabled={pending !== null}
                   onPress={() => endAccess(session)}
                 />
               ) : null}
-              <Text className="text-sm text-foreground-muted">
-                {session.connected ? "Connected" : "Not connected"}
-                {device.browser ? ` · ${device.browser}` : ""}
-              </Text>
             </View>
           );
         })
