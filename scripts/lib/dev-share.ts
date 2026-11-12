@@ -26,10 +26,8 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
 };
 
 const explainCommandFailure = (
-  error:
-    | TailscaleCommandError
-    | TailscaleServeHttpsDisabledError
-    | TailscaleStatusParseError, // fork: tailnet-ownership
+  // fork: tailnet-ownership
+  error: TailscaleCommandError | TailscaleServeHttpsDisabledError | TailscaleStatusParseError,
 ): string | undefined =>
   error._tag === "TailscaleServeHttpsDisabledError"
     ? "HTTPS is not enabled on this tailnet — enable HTTPS certificates at https://login.tailscale.com/admin/dns"
