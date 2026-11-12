@@ -1783,3 +1783,5 @@ apps/mobile/deps/README.md	native-tab-bar	1
 apps/web/src/components/chat/turnDetailAnnouncement.ts	brand	1
 apps/web/src/components/chat/turnDetailAnnouncement.test.ts	brand	4
 apps/web/src/components/chat/ThreadActivityAnnouncer.browser.test.tsx	brand	4
+# Not a seam: upstream's comment "// fork: a child forked..." matches the marker pattern.
+packages/provider-opencode/src/server/OpenCodeServerLedger.test.ts	a	1
