@@ -559,7 +559,9 @@ apps/server/src/cli/doctor.ts	brand	2
 apps/server/src/cli/service.ts	brand	22
 apps/server/src/cli/service.ts	github-host-setup	3
 apps/server/src/cli/theme.ts	brand	1
-apps/server/src/cli/uninstall.ts	brand	1
+apps/server/src/cli/uninstall.ts	brand	2
+apps/server/src/background/KeepAwake.ts	brand	1
+apps/server/src/preview/ServerBrowserPage.ts	brand	1
 apps/server/src/cli/update.ts	brand	5
 apps/server/src/cli/update.test.ts	fleet-connect	1
 apps/server/src/cli/updateProgress.ts	brand	1

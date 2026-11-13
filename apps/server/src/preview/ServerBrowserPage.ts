@@ -481,8 +481,9 @@ export const captureViewport = async (
         reject(
           new ServerBrowserOperationError({
             tag: "PreviewAutomationExecutionError",
+            // fork: brand
             message:
-              "The browser is not producing screenshot frames. For a desktop tab, show or restore the T3 Code window and try again.",
+              "The browser is not producing screenshot frames. For a desktop tab, show or restore the Loom window and try again.",
           }),
         ),
       SCREENSHOT_TIMEOUT_MS,
