@@ -1,3 +1,5 @@
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -14,7 +16,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
  * Switchboard is a CLIProxyAPI hub holding every Claude and Codex subscription. With
  * `switchboardEnabled` on, every Claude and Codex launch here points at it; off, launches are what
  * the instance configures. Hub and controller default to this machine's loopback listeners. The
- * client key never reaches Loom: both CLIs run the key helper themselves.
+ * CLIs run the key helper themselves; the opt-in shared gateway reads it to authenticate requests.
  */
 const DEFAULT_URL = "http://127.0.0.1:8317";
 /** The controller's cached operations API (`/api/v1/*`), served beside the default hub. */
@@ -180,8 +182,7 @@ export const resolveSwitchboardClaudeProbeRouting = (
   return { settings: routing(config, "").claudeSettings, keyCommand: config.keyCommand };
 };
 
-/** Resolve only credential availability; no credential or helper output leaves this probe. */
-export const probeSwitchboardCredential = Effect.fnUntraced(
+export const readSwitchboardCredential = Effect.fn("Switchboard.readCredential")(
   function* (keyCommand: SwitchboardConfiguration["keyCommand"], environment: NodeJS.ProcessEnv) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const child = yield* spawner.spawn(
@@ -202,17 +203,25 @@ export const probeSwitchboardCredential = Effect.fnUntraced(
     );
     // Match Claude's helper validation after trimming. Its initialization only
     // reads a cache, and even a failed helper can populate that cache with " ".
-    return (
-      Number(exitCode) === 0 &&
+    return Number(exitCode) === 0 &&
       !output.truncated &&
       !output.invalidUtf8 &&
       /^[\x21-\x7e]{1,16384}$/.test(output.text.trim())
-    );
+      ? Option.some(Redacted.make(output.text.trim()))
+      : Option.none<Redacted.Redacted<string>>();
   },
   Effect.scoped,
   Effect.timeout(AUTH_PROBE_TIMEOUT_MS),
-  Effect.orElseSucceed(() => false),
+  Effect.orElseSucceed(() => Option.none<Redacted.Redacted<string>>()),
 );
+
+/** Resolve only credential availability; no credential or helper output leaves this probe. */
+export const probeSwitchboardCredential = Effect.fn("Switchboard.probeCredential")(function* (
+  keyCommand: SwitchboardConfiguration["keyCommand"],
+  environment: NodeJS.ProcessEnv,
+) {
+  return Option.isSome(yield* readSwitchboardCredential(keyCommand, environment));
+});
 
 // Synchronous launch helpers retain the fork's existing adapter seam. The owning
 // server layer captures only its three configuration values, and validates them

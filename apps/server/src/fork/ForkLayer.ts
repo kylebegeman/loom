@@ -1,3 +1,6 @@
+import * as SwitchboardGateway from "./switchboard/SwitchboardGateway.ts";
+import { SwitchboardGatewayRoutes } from "./switchboard/gateway-http.ts";
+import { upstreamWebSocketConstructor } from "../device/DeviceHubProxy.ts";
 import * as VaultOwnerLink from "./vault/VaultOwnerLink.ts";
 import { VaultOwnerLinkHttpRoutes } from "./vault/owner-link-http.ts";
 import * as VaultProfileRecords from "./vault/VaultProfileRecords.ts";
@@ -841,6 +844,10 @@ const ForkServicesLive = Layer.mergeAll(
   ),
   layerReachLibrary,
   layerAccountGateway,
+  SwitchboardGateway.layer.pipe(
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(upstreamWebSocketConstructor),
+  ),
   layerAccountHost,
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
   ReachService.layer,
@@ -882,6 +889,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   VaultWorkloadHttpRoutes,
   AccountVaultHttpRoutes,
   VaultOwnerLinkHttpRoutes,
+  SwitchboardGatewayRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

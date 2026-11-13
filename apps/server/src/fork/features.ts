@@ -127,6 +127,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "project-checkout-management",
   "landed-worktree-cleanup",
   "switchboard",
+  "switchboard-shared-gateway",
   "model-preview-3d",
   "model-ortho-camera",
   "model-bed-fit",

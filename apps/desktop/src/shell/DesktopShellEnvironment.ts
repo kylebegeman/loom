@@ -111,6 +111,7 @@ const LOGIN_SHELL_ENV_NAMES = [
   "LOOM_SWITCHBOARD_URL",
   "LOOM_SWITCHBOARD_CONTROLLER_URL",
   "LOOM_SWITCHBOARD_KEY_HELPER",
+  "LOOM_SWITCHBOARD_SHARE_GATEWAY",
   "T3CODE_TELEMETRY_ENABLED",
   "T3CODE_GITHUB_APP_CLIENT_ID",
   "__MISE_DIFF",
@@ -537,6 +538,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       "LOOM_SWITCHBOARD_URL",
       "LOOM_SWITCHBOARD_CONTROLLER_URL",
       "LOOM_SWITCHBOARD_KEY_HELPER",
+      "LOOM_SWITCHBOARD_SHARE_GATEWAY",
     ] as const) {
       if (config.env[name] === undefined && shellEnvironment[name] !== undefined) {
         config.env[name] = shellEnvironment[name];
@@ -630,6 +632,7 @@ const CACHED_ENV_NAMES = [
   "LOOM_SWITCHBOARD_URL",
   "LOOM_SWITCHBOARD_CONTROLLER_URL",
   "LOOM_SWITCHBOARD_KEY_HELPER",
+  "LOOM_SWITCHBOARD_SHARE_GATEWAY",
 ] as const;
 
 /** @public */

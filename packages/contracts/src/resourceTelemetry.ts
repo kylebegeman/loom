@@ -320,6 +320,7 @@ export const ShellEnvironmentPatch = Schema.Struct({
   LOOM_SWITCHBOARD_URL: Schema.optionalKey(Schema.NullOr(Schema.String)),
   LOOM_SWITCHBOARD_CONTROLLER_URL: Schema.optionalKey(Schema.NullOr(Schema.String)),
   LOOM_SWITCHBOARD_KEY_HELPER: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  LOOM_SWITCHBOARD_SHARE_GATEWAY: Schema.optionalKey(Schema.NullOr(Schema.String)),
   T3CODE_TELEMETRY_ENABLED: Schema.optionalKey(Schema.NullOr(Schema.String)),
   T3CODE_GITHUB_APP_CLIENT_ID: Schema.optionalKey(Schema.NullOr(Schema.String)),
   __MISE_DIFF: Schema.optionalKey(Schema.NullOr(Schema.String)),

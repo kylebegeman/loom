@@ -574,11 +574,13 @@ describe("DesktopShellEnvironment", () => {
               LOOM_SWITCHBOARD_URL: "http://100.64.0.1:8317",
               LOOM_SWITCHBOARD_CONTROLLER_URL: "https://hub.tailnet.ts.net:8443",
               LOOM_SWITCHBOARD_KEY_HELPER: "/shell/key-helper",
+              LOOM_SWITCHBOARD_SHARE_GATEWAY: "true",
             }),
         });
         assert.equal(env.LOOM_SWITCHBOARD_URL, "http://100.64.0.1:8317");
         assert.equal(env.LOOM_SWITCHBOARD_CONTROLLER_URL, "");
         assert.equal(env.LOOM_SWITCHBOARD_KEY_HELPER, "/explicit/key-helper");
+        assert.equal(env.LOOM_SWITCHBOARD_SHARE_GATEWAY, "true");
       }),
   );
 
