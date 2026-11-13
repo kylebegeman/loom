@@ -18,10 +18,7 @@ import { useMemo, useState } from "react";
 import { Platform } from "react-native";
 
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import {
-  pickableProjectGroups,
-  resolveScratchProjectScopeKey,
-} from "@t3tools/client-runtime/state/project-grouping";
+import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 
 import { useProjects } from "../../state/entities";
 import { steadyNavigationThreadShellsAtom } from "../../state/threads";
@@ -40,7 +37,7 @@ import {
   useAtomValueWhileVisible,
   useHomeRouteVisible,
 } from "./home-route-visibility";
-import { buildHomeProjectScopes } from "./homeThreadList";
+import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
@@ -139,34 +136,24 @@ export function HomeRouteScreen() {
     setSelectedProjectKey,
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
-  // A legacy per-environment scratch key resolves here on every render; the stored
-  // value is only rewritten when the user picks a filter.
-  // fork: library
-  const resolvedProjectKey = isLibraryProjectScopeKey(listOptions.selectedProjectKey)
-    ? listOptions.selectedProjectKey
-    : resolveScratchProjectScopeKey(listOptions.selectedProjectKey, projects, {
-        sidebarProjectGroupingMode: listOptions.projectGroupingMode,
-        sidebarProjectGroupingOverrides: {},
-      });
-  // fork: library -- scopes feed the Library project filter below
   const projectScopes = useMemo(
     () =>
-      pickableProjectGroups(
-        buildHomeProjectScopes({
-          projects,
-          environmentId: selectedEnvironmentId,
-          projectGroupingMode: listOptions.projectGroupingMode,
-        }),
-      ), // fork: library
+      buildHomeProjectScopes({
+        projects,
+        environmentId: selectedEnvironmentId,
+        projectGroupingMode: listOptions.projectGroupingMode,
+      }),
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
-  const projectFilter = useLibraryProjectFilter(projectScopes, resolvedProjectKey); // fork: library
+  // fork: library -- a Library project key passes through; local keys resolve as upstream's do
+  const selectedProjectKey = isLibraryProjectScopeKey(listOptions.selectedProjectKey)
+    ? listOptions.selectedProjectKey // fork: library
+    : (resolveHomeProjectFilterScope(projectScopes, projects, listOptions)?.key ?? null);
+  const projectFilter = useLibraryProjectFilter(
+    pickableProjectGroups(projectScopes), // fork: library
+    selectedProjectKey, // fork: library
+  ); // fork: library
   const projectFilterOptions = projectFilter.options; // fork: library
-  const selectedProjectKey =
-    isLibraryProjectScopeKey(resolvedProjectKey) || // fork: library
-    projectFilterOptions.some((project) => project.key === resolvedProjectKey)
-      ? resolvedProjectKey
-      : null;
 
   // fork: library - A selected Library project leads the New task choices.
   const startConversation = () => libraryHome.startConversation(selectedProjectKey, startNewTask); // fork: library
