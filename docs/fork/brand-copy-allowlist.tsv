@@ -31,7 +31,7 @@ apps/web/src/components/settings/SnapShotSetupDialog.tsx	description: "Enable T3
 # The session label a linked environment records; its tests and the forget prompt match it.
 apps/server/src/peer/PeerLinks.testkit.ts	sessions.filter((session) => session.client.label?.startsWith("T3 Code · ")),
 apps/server/src/peer/PeerLinks.ts	const issued = yield* signIn(primary, input, `T3 Code · ${self.label}`);
-apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	`Forget ${link.label}? Agents here stop working there. Revoke "T3 Code · …" in ${link.label}'s Connections to end the session there too.`,
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	`Forget ${link.label}? Agents here stop working there. Revoke "T3 Code · …" in ${link.label}'s Sharing & access to end the session there too.`,
 
 # Names sent to third parties or written as git identities.
 apps/server/src/device/EasDeviceHost.ts	const name = `T3 Code · ${config.label} · ${(yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0")}`;
