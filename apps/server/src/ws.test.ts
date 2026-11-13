@@ -1226,6 +1226,7 @@ it.effect("access changes made while the snapshot loads reach the client after i
                 cookieName: "auth-access-test",
                 legacyCookieName: undefined,
                 streamChanges: subscribe(sessionChanges),
+                renewalsOf: (sessionId) => Effect.succeed(new Set([sessionId])), // fork: identity-renewal
               }),
             ),
           ),

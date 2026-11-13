@@ -765,6 +765,7 @@ apps/server/src/auth/SessionStore.test.ts	identity-renewal	6
 apps/server/src/auth/SessionStore.test.ts	library-projects	2
 apps/server/src/auth/SessionStore.test.ts	library-sign-in	3
 apps/server/src/ws.ts	identity-renewal	11
+apps/server/src/ws.test.ts	identity-renewal	1
 apps/web/src/connection/platform.ts	identity-renewal	3
 packages/client-runtime/src/connection/layer.ts	identity-renewal	2
 packages/client-runtime/src/connection/registry.ts	identity-renewal	22
