@@ -101,6 +101,19 @@ vi.mock("../../components/ui/Chip", () => ({
 vi.mock("expo-glass-effect", () => ({ isLiquidGlassAvailable: () => false }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Pressable: ({
+    children,
+    accessibilityLabel,
+    onPress,
+  }: {
+    children: ReactNode;
+    accessibilityLabel: string;
+    onPress: () => void;
+  }) => (
+    <button aria-label={accessibilityLabel} onClick={onPress}>
+      {children}
+    </button>
+  ),
   Switch: ({
     value,
     disabled,

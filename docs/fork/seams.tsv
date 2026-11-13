@@ -280,7 +280,7 @@ apps/web/src/hooks/useHandleNewThread.ts	project-home	6
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	5
 apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	failed-run-retry	3
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	5
-apps/mobile/src/features/threads/new-task-flow-provider.test.tsx	project-home	1
+apps/mobile/src/features/threads/new-task-flow-provider.test.tsx	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	2
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
 apps/web/src/components/settings/ProjectsSettings.tsx	project-home	2

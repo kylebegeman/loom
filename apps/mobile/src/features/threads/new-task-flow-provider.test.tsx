@@ -381,6 +381,7 @@ async function renderTriageDraft(screen: ReturnType<typeof setup>) {
   });
   mocks.openScratch.mockResolvedValue({ _tag: "Success", value: screen.projects[2] });
   await screen.render(true);
+  await act(async () => screen.current.setProject(screen.projects[0]!)); // fork: project-home
   act(() => screen.current.setPrompt(`${playbookPrompt("one")}It is slow.`));
 }
 
