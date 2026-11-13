@@ -7,9 +7,9 @@ import * as NodeVM from "node:vm";
 import { expect, it } from "vite-plus/test";
 
 const repo = NodePath.resolve(import.meta.dirname, "../..");
-const screens = "react-native-screens@5.0.0-t3.48";
-const patch = "patches/react-native-screens@5.0.0-t3.48.patch";
-const tarball = "apps/mobile/deps/react-native-screens-5.0.0-t3.48.tgz";
+const screens = "react-native-screens@5.0.0-t3.50";
+const patch = "patches/react-native-screens@5.0.0-t3.50.patch";
+const tarball = "apps/mobile/deps/react-native-screens-5.0.0-t3.50.tgz";
 
 function fixture(platform = "linux") {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-pnpmfile-"));

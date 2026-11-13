@@ -5,6 +5,7 @@ import { useAtomCommand } from "../../../state/use-atom-command";
 import { serverEnvironment } from "../../../state/server";
 import { useEnvironmentScope } from "../../../state/session";
 import { Switch } from "react-native";
+import { AppText as Text } from "../../../components/ui/AppText";
 import { resolveDefaultBranchActionDialogCopy } from "@t3tools/client-runtime/state/vcs";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveAutoFeatureBranchName } from "@t3tools/shared/git";
@@ -12,13 +13,11 @@ import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react"; // fork: source-control-cockpit
-import { Platform, ScrollView, useWindowDimensions, View } from "react-native";
-
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { View } from "react-native";
 
 import { SheetHeader } from "../../../components/ui/SheetHeader";
-import { ScreenContent } from "../../../components/ui/ScreenContent";
-import { AppText as Text } from "../../../components/ui/AppText";
+import { FitSheet } from "../../../components/ui/FitSheet";
+import { SheetIntro } from "../../../components/ui/SheetIntro";
 import { useSelectedThreadGitActions } from "../../../state/use-selected-thread-git-actions";
 import { useSelectedThreadGitState } from "../../../state/use-selected-thread-git-state";
 import { useThreadSelection } from "../../../state/use-thread-selection";
@@ -36,8 +35,6 @@ type GitConfirmSheetProps = StaticScreenProps<{
 
 export function GitConfirmSheet(props: GitConfirmSheetProps) {
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const { canWriteSourceControl, canChangeThreadBranch } = gitActions;
@@ -149,81 +146,48 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
   ]);
 
   return (
-    <View
-      collapsable={false}
-      className="bg-sheet ios:flex-1 android:flex-col-reverse"
-      style={Platform.OS === "android" ? { maxHeight: windowHeight * 0.92 } : undefined}
+    <FitSheet
+      header={<SheetHeader title="Confirm action" onClose={() => navigation.goBack()} />}
+      showsVerticalScrollIndicator={false}
     >
-      <ScreenContent fitToContents>
-        <ScrollView
-          nestedScrollEnabled
-          className="android:shrink android:grow-0 ios:flex-1"
-          showsVerticalScrollIndicator={false}
-          contentContainerClassName="android:gap-2 android:p-2"
-          contentContainerStyle={
-            Platform.OS === "android"
-              ? { paddingBottom: Math.max(insets.bottom, 18) + 8 }
-              : undefined
-          }
-        >
-          <View className="android:gap-2 android:rounded-[20px] android:bg-card android:p-3 ios:items-center ios:gap-1 ios:px-5 ios:pb-3 ios:pt-4">
-            {Platform.OS !== "android" ? (
-              <Text className="text-xs font-t3-bold tracking-[1px] uppercase text-foreground-muted">
-                Confirm
-              </Text>
-            ) : null}
-            <Text className="android:text-xl android:font-t3-medium ios:text-center ios:text-3xl ios:font-t3-bold">
-              {copy?.title ?? "Run action on default branch?"}
-            </Text>
-            <Text className="text-foreground-secondary leading-normal android:text-base ios:text-center ios:text-sm ios:font-medium">
-              {copy?.description ?? "Choose how to continue."}
-              {
-                " Checking out a feature branch switches this folder for every conversation using it." /* fork: source-control-cockpit */
-              }
-            </Text>
-          </View>
+      <SheetIntro
+        eyebrow="Confirm"
+        title={copy?.title ?? "Run action on default branch?"}
+        description={`${copy?.description ?? "Choose how to continue."} Checking out a feature branch switches this folder for every conversation using it.` /* fork: source-control-cockpit */}
+      />
 
-          {/* fork: source-control-cockpit */}
-          {canRemember && selectedThreadProject && (
-            <View className="flex-row items-center justify-between gap-2 px-5">
-              <Text>Don't ask again for this project</Text>
-              <Switch
-                accessibilityLabel="Don't ask again for this project"
-                value={remember}
-                onValueChange={setRemember}
-              />
-            </View>
-          )}
-          <View
-            className="android:gap-2 ios:gap-3 ios:px-5 ios:pt-2"
-            style={
-              Platform.OS === "android"
-                ? undefined
-                : { paddingBottom: Math.max(insets.bottom, 18) + 8 }
-            }
-          >
-            <SheetActionButton
-              icon="arrow.right.circle"
-              label={copy?.continueLabel ?? "Continue"}
-              tone="primary" // fork: source-control-cockpit
-              disabled={!canWriteSourceControl}
-              onPress={() => void continuePendingAction()}
-            />
-            <SheetActionButton
-              icon="arrow.branch"
-              label={
-                otherCount > 0
-                  ? `Feature branch (switches ${otherCount} other conversation${otherCount === 1 ? "" : "s"})`
-                  : "Feature branch (switches this folder)"
-              } // fork: source-control-cockpit
-              disabled={!canChangeThreadBranch}
-              tone="secondary" // fork: source-control-cockpit
-              onPress={() => void movePendingActionToFeatureBranch()}
-            />
-          </View>
-        </ScrollView>
-      </ScreenContent>
-      <SheetHeader title="Confirm action" onClose={() => navigation.goBack()} />
-    </View>
+      {/* fork: source-control-cockpit */}
+      {canRemember && selectedThreadProject && (
+        <View className="flex-row items-center justify-between gap-2">
+          <Text>Don't ask again for this project</Text>
+          <Switch
+            accessibilityLabel="Don't ask again for this project"
+            value={remember}
+            onValueChange={setRemember}
+          />
+        </View>
+      )}
+
+      <View className="gap-3">
+        <SheetActionButton
+          icon="arrow.right.circle"
+          label={copy?.continueLabel ?? "Continue"}
+          tone="primary" // fork: source-control-cockpit
+          disabled={!canWriteSourceControl}
+          onPress={() => void continuePendingAction()}
+        />
+        <SheetActionButton
+          icon="arrow.branch"
+          label={
+            otherCount > 0
+              ? `Feature branch (switches ${otherCount} other conversation${otherCount === 1 ? "" : "s"})`
+              : "Feature branch (switches this folder)"
+          } // fork: source-control-cockpit
+          disabled={!canChangeThreadBranch}
+          tone="secondary" // fork: source-control-cockpit
+          onPress={() => void movePendingActionToFeatureBranch()}
+        />
+      </View>
+    </FitSheet>
   );
 }

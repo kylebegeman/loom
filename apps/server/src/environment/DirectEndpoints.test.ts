@@ -375,7 +375,7 @@ describe("DirectEndpoints Tailscale Serve", () => {
         yield* Deferred.succeed(finishRevalidation, undefined);
         expect(yield* Fiber.join(revalidating)).toEqual([bound]);
         expect(yield* service.resolveAvailable()).toEqual([bound]);
-      }).pipe(Effect.scoped),
+      }),
   );
 
   // fork: directory-computers

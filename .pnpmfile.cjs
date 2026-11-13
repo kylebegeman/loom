@@ -8,16 +8,16 @@ const crypto = require("node:crypto");
 // Keep the reviewed Loom overlay tied to both inputs; a new archive must fail for review.
 function isLoomScreensPatch(key, patch, dependencies) {
   if (
-    key !== "react-native-screens@5.0.0-t3.48" ||
-    patch !== "patches/react-native-screens@5.0.0-t3.48.patch" ||
-    dependencies["react-native-screens"] !== "file:deps/react-native-screens-5.0.0-t3.48.tgz"
+    key !== "react-native-screens@5.0.0-t3.50" ||
+    patch !== "patches/react-native-screens@5.0.0-t3.50.patch" ||
+    dependencies["react-native-screens"] !== "file:deps/react-native-screens-5.0.0-t3.50.tgz"
   )
     return false;
   try {
     return [
       [
-        "apps/mobile/deps/react-native-screens-5.0.0-t3.48.tgz",
-        "8b7d0dff8fc91f5f13ed3d4204fe84978a412107f4ac99856bd5290ea8431d3e",
+        "apps/mobile/deps/react-native-screens-5.0.0-t3.50.tgz",
+        "396cb2ff742b245d15d002ca14734828fe86c88f40f5475af2de00e10418f6e2",
       ],
       [patch, "ff9a93f4e4d306e8a0617375dc0aed64924a73cdd59e1ce69403f865b2fec13a"],
     ].every(

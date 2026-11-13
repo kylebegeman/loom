@@ -116,7 +116,7 @@ describe("layer", () => {
 
       yield* TestClock.adjust("25 seconds");
       expect(calls).toBe(2);
-    }).pipe(Effect.scoped),
+    }),
   );
   // fork: server-weight
   it.effect(
@@ -181,6 +181,6 @@ describe("layer", () => {
 
       yield* TestClock.adjust("25 seconds");
       expect(calls).toBe(2);
-    }).pipe(Effect.scoped),
+    }),
   );
 });

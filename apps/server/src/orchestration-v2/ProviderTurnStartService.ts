@@ -43,7 +43,7 @@ import {
   CLAUDE_PROVIDER,
   CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,
 } from "./Adapters/ClaudeAdapterV2.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts"; // fork: project-lifecycle
 import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts"; // fork: mini-native-retention
 import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts"; // fork: mini-native-retention
@@ -2029,9 +2029,21 @@ export const layer: Layer.Layer<
               : Effect.void
           ).pipe(Effect.result);
           const startup = start(input, Effect.fromResult(preparation));
-          const providerTurn = yield* thread.worktreePath === null
-            ? startup
-            : withWorkspaceLease(path.resolve(thread.worktreePath), startup); // fork: library-launch-files
+          const cwd =
+            thread.worktreePath ??
+            (yield* projects
+              .getById(thread.projectId, { includeDeleted: true })
+              .pipe(Effect.map((project) => Option.getOrUndefined(project)?.workspaceRoot)));
+          const providerTurn = yield* cwd === undefined
+            ? startup // fork: library-launch-files
+            : withTurnStartReservation(
+                fileSystem,
+                path,
+                path.resolve(cwd),
+                thread.worktreePath === null
+                  ? startup // fork: library-launch-files
+                  : withWorkspaceLease(path.resolve(thread.worktreePath), startup), // fork: library-launch-files
+              );
           if (providerTurn !== undefined) yield* providerTurn;
         },
         (effect, input) =>
