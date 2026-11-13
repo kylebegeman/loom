@@ -554,6 +554,34 @@ describe("DesktopShellEnvironment", () => {
     }),
   );
 
+  // fork: switchboard
+  it.effect(
+    "hydrates Switchboard routing from the login shell without replacing explicit launch settings",
+    () =>
+      Effect.gen(function* () {
+        const env: NodeJS.ProcessEnv = {
+          SHELL: "/bin/zsh",
+          PATH: "/usr/bin",
+          LOOM_SWITCHBOARD_CONTROLLER_URL: "",
+          LOOM_SWITCHBOARD_KEY_HELPER: "/explicit/key-helper",
+        };
+        yield* runShellEnvironment({
+          env,
+          platform: "darwin",
+          handler: () =>
+            envOutput({
+              PATH: "/opt/homebrew/bin:/usr/bin",
+              LOOM_SWITCHBOARD_URL: "http://100.64.0.1:8317",
+              LOOM_SWITCHBOARD_CONTROLLER_URL: "https://hub.tailnet.ts.net:8443",
+              LOOM_SWITCHBOARD_KEY_HELPER: "/shell/key-helper",
+            }),
+        });
+        assert.equal(env.LOOM_SWITCHBOARD_URL, "http://100.64.0.1:8317");
+        assert.equal(env.LOOM_SWITCHBOARD_CONTROLLER_URL, "");
+        assert.equal(env.LOOM_SWITCHBOARD_KEY_HELPER, "/explicit/key-helper");
+      }),
+  );
+
   it.effect("hydrates missing CA trust variables from the login shell", () =>
     Effect.gen(function* () {
       const env: NodeJS.ProcessEnv = {

@@ -22,7 +22,12 @@ Provider setup and status belong to that computer. Use **Set up agents** or
 **Check agents** if it has no ready provider. Provider accounts and **Route
 through Switchboard** are under that computer's **Settings → Providers**. The
 Switchboard hub and controller addresses come from the `LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_CONTROLLER_URL` environment
-of the server running there.
+of the server running there. On macOS, export these settings in `~/.zprofile`, then fully
+quit and reopen Loom. Loom also reads `LOOM_SWITCHBOARD_KEY_HELPER` when a custom
+credential helper is needed; otherwise it uses the personal `switchboard/client-api-key`
+item in Keychain. Install the provider CLI on each execution computer even when its
+subscriptions stay on the shared hub. Adding a usage-monitoring hub only adds usage
+readings; it does not configure the agent's route.
 
 ## Optional command jobs
 

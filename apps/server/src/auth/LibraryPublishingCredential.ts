@@ -1,4 +1,4 @@
-import { writeLibraryCredential } from "../fork/project-library/enrollment.ts";
+import { writeLibraryCredential } from "../fork/project-library/enrollment.ts"; // fork: project-library
 import { AuthLibraryPublishScope, AuthSessionId, EnvironmentId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
