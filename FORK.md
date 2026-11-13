@@ -803,7 +803,7 @@ blank-URL report leaves the session and the event stream untouched and that the 
 report still emits `navigated`.
 
 The `project-library` seams let a computer's Library publisher credential renew itself before
-its session lapses. `LibraryPublishingCredential.ts` (7 marker lines) is a fork file in
+its session lapses. `LibraryPublishingCredential.ts` (6 marker lines) is a fork file in
 upstream's `apps/server/src/auth` directory with no upstream counterpart, so its markers flag
 the renewal additions. The credential file gains an optional `issuedAt`, optional so files
 written before it still decode; `LibraryConnection` then falls back to the token's `iat` claim
