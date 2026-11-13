@@ -22,7 +22,7 @@ function LibraryConnectDialog({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title="Connect your Library"
+      title="Sign in to Loom"
       description={LIBRARY_SETUP_DESCRIPTION}
       actions={
         <Button variant="ghost" onClick={onClose}>

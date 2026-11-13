@@ -20,7 +20,6 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { Button } from "~/components/ui/button";
 import { projectLibrary, useLibraryAuthority } from "../project-library/state";
-import { requestLibraryConnect } from "../project-library/libraryPaletteSession";
 import { directoryReporting } from "../directory-computers/state";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -122,32 +121,27 @@ function ComputerAccountSetupForm({
     setBusy(false);
   };
   return (
-    <section
-      aria-label="Account access"
-      className="space-y-3 rounded-xl bg-secondary/40 p-4 sm:p-5"
-    >
+    <section aria-label="Account access" className="space-y-3 border-t border-border/60 pt-4">
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">
-          {ready ? "Connected to your account" : "Use this computer from your other devices"}
+          {ready
+            ? `${environment.label} is ready for your other devices`
+            : `Add ${environment.label} to your account`}
         </h3>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
           {ready
-            ? "Your Library keeps this computer’s saved work. Account access uses the same sign-in on your phone, Mac and browser."
-            : "Add it once. Loom connects your Library, saves conversations and sets up remote access for your other devices."}
+            ? "Open this computer’s conversations from your phone, browser and other Macs."
+            : "Approve this computer once to open its conversations from your other devices."}
         </p>
       </div>
-      {!authority.authorityId || !authority.connected ? (
-        <Button size="sm" variant="outline" onClick={() => requestLibraryConnect("computers")}>
-          Sign in to Loom
-        </Button>
-      ) : !ready || savedRequestId ? (
+      {!ready || savedRequestId ? (
         <Button
           size="sm"
           variant="default"
           disabled={!available || busy || !computers.isSuccess || computers.isPending}
           onClick={() => void start()}
         >
-          {busy ? "Setting up computer..." : savedRequestId ? "Resume setup" : "Add to my account"}
+          {busy ? "Adding computer..." : savedRequestId ? "Resume setup" : "Add computer"}
         </Button>
       ) : null}
       {authority.connected && !available ? (

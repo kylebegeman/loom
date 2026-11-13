@@ -13,9 +13,9 @@ computers that are new to this device. You can open their live threads without a
 sign-in, pairing code or VPN. The computer must be enrolled with your Library and have
 Loomhost enabled.
 
-To add a computer, sign in to your Library, then choose **Add to my account**
-on its computer page. On a new Mac, the same action appears on the Computers
-page. Loom connects publishing and remote access together. If setup is interrupted,
+To add a computer on web or desktop, open **Settings > Computers** and choose
+**Sign in to Loom**. After sign-in, choose **Add computer** in the account panel.
+Loom connects publishing and remote access together. If setup is interrupted,
 choose **Resume setup** to continue the saved request. Running work stays open.
 On iPhone, open an already connected computer's details to add it.
 

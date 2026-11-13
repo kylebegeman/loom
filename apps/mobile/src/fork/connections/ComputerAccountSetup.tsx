@@ -23,12 +23,14 @@ const isLibraryError = Schema.is(LibraryError);
 
 export function ComputerAccountSetup({
   environmentId,
+  label,
   connected,
   report,
   remoteEnabled,
   onRefresh,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly label: string;
   readonly connected: boolean;
   readonly report: DirectoryReporting | null;
   readonly remoteEnabled: boolean;
@@ -100,12 +102,18 @@ export function ComputerAccountSetup({
     <SettingsSection title="Account access">
       <View className="gap-2 px-4 py-3">
         <Text className="text-base text-foreground">
-          {ready ? "Connected to your account" : "Use this computer from your other devices"}
+          {!authority.ready
+            ? "Sign in to add this computer"
+            : ready
+              ? `${label} is ready for your other devices`
+              : `Add ${label} to your account`}
         </Text>
         <Text className="text-sm text-foreground-muted">
-          {ready
-            ? "Your Library keeps this computer’s saved work. Your other devices use the same account sign-in."
-            : "Add it once. Loom connects your Library, saves conversations and sets up remote access."}
+          {!authority.ready
+            ? "Use your Loom account to connect this computer to your other devices."
+            : ready
+              ? "Open this computer’s conversations from your phone, browser and other Macs."
+              : "Approve this computer once to open its conversations from your other devices."}
         </Text>
         {error ? (
           <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
@@ -139,7 +147,7 @@ export function ComputerAccountSetup({
               ? "Start setup again"
               : error
                 ? "Resume setup"
-                : "Add to my account"
+                : "Add computer"
           }
           loading={busy}
           disabled={!available || !computers.isSuccess || computers.isPending}

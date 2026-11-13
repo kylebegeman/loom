@@ -85,6 +85,7 @@ export function ComputerConnectionsHome({
     }
   }
   const selected = environments.find((environment) => environment.environmentId === selectedId);
+  const setupEnvironment = selected ?? primaryEnvironment;
   if (isReady && selectedId !== null && !selected) setSelectedId(null);
   const connected = environments.filter(
     (environment) => environment.entry.enabled && environment.connection.phase === "connected",
@@ -95,6 +96,11 @@ export function ComputerConnectionsHome({
       id={searchableSetting("remote-environments").id}
       className="@container/computers space-y-7"
     >
+      <AccountAccessSummary>
+        {isReady && setupEnvironment ? (
+          <ComputerAccountSetup environment={setupEnvironment} />
+        ) : null}
+      </AccountAccessSummary>
       {selected ? (
         <div className="space-y-6">
           <Button
@@ -132,7 +138,6 @@ export function ComputerConnectionsHome({
             </div>
           </header>
           <ComputerWorkActions environment={selected} />
-          <ComputerAccountSetup environment={selected} />
           <section
             className="space-y-3 border-t border-border/60 pt-6"
             aria-label="Connection settings"
@@ -164,8 +169,6 @@ export function ComputerConnectionsHome({
         </div>
       ) : (
         <>
-          <AccountAccessSummary />
-          {primaryEnvironment ? <ComputerAccountSetup environment={primaryEnvironment} /> : null}
           {environments.length ? (
             <section className="space-y-3" aria-label="Your computers">
               <div className="flex flex-wrap items-center justify-between gap-3">
