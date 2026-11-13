@@ -114,8 +114,8 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
                 path: cwd,
               };
             }
-            const remoteHead = remoteName === null ? null : `refs/remotes/${remoteName}/HEAD`;
-            if (remoteHead !== null && (yield* git.hasCommit({ cwd: root, refName: remoteHead }))) {
+            const remoteHead = `refs/remotes/${remoteName}/HEAD`;
+            if (remoteName !== null && (yield* git.hasCommit({ cwd: root, refName: remoteHead }))) {
               const { commitSha } = yield* git.resolveRemoteTrackingCommit({
                 cwd: root,
                 refName: "HEAD",
