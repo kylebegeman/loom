@@ -10,7 +10,8 @@ export function useThreadCheckoutReleased(threadRef: ScopedThreadRef | null) {
   const supported =
     threadRef !== null &&
     supportsLoomFeature(
-      configs.get(threadRef.environmentId)?.environment.capabilities,
+      // Partial config fixtures in upstream's sidebar tests omit `environment`.
+      configs.get(threadRef.environmentId)?.environment?.capabilities,
       CHECKOUT_RESTORE_FEATURE,
     );
   const status = useEnvironmentQuery(

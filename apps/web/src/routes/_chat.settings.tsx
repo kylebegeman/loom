@@ -159,6 +159,7 @@ function SettingsRouteLayout() {
         pathname === "/settings/secrets" ||
         FORK_SINGLE_ENVIRONMENT_SETTINGS_PATHS.has(pathname) // fork: ext-settings
       }
+      deviceOnly={SETTINGS_DEVICE_ONLY_PATHS.has(pathname)}
       onChange={(next) => {
         // Send every axis so retain middleware recognizes "all" as an explicit target.
         void navigate({

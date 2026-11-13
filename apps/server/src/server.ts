@@ -234,7 +234,7 @@ import {
   claimTailscaleServe,
   releaseTailscaleServe,
   TAILSCALE_SERVE_CLAIMS_FILE,
-  readTailscaleServeRootHolders,
+  readTailscaleServeRootHolder,
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
 } from "@t3tools/tailscale";
@@ -781,7 +781,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerPortScanner),
   Layer.provideMerge(
     Layer.mergeAll(
-      AntigravityInstallation.AntigravityInstallation.layer,
+      AntigravityInstallation.AntigravityInstallation.layer.pipe(
+        Layer.provide(layerServerSettings),
+      ),
       CodexInstallation.CodexInstallation.layer,
     ),
   ),
@@ -848,7 +850,6 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(AnalyticsService.layer.pipe(Layer.provide(ManagedPolicy.layer))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
-  // fork: tailnet-ownership
   Layer.provideMerge(DirectEndpoints.layer.pipe(Layer.provide(layerServerEnvironment))),
   Layer.provideMerge(ReachPublicRoute.layer), // fork: reach
   Layer.provideMerge(BackgroundChecks.layer), // fork: background-check-health
@@ -986,22 +987,8 @@ const layerMakeServer = Layer.unwrap(
           );
       }),
     );
-    // Who holds the Serve port's root: nobody, this server, only dead loopback ports (an unclean
-    // exit leaves one), or another live server or app, whose route is left alone.
-    const tailscaleServeRootHolder = Effect.fn("server.tailscaleServeRootHolder")(
-      function* (target: { readonly host: string; readonly port: number }) {
-        const net = yield* NetService.NetService;
-        const holders = yield* readTailscaleServeRootHolders(config.tailscaleServePort, target);
-        if (holders.length === 0) return "none" as const;
-        if (holders.some((holder) => holder.ours)) return "ours" as const;
-        const live = yield* Effect.forEach(holders, (holder) =>
-          holder.ours || holder.loopback === undefined
-            ? Effect.succeed(true)
-            : net.hasListenerOnHost(holder.loopback.port, holder.loopback.host),
-        );
-        return live.includes(true) ? ("other" as const) : ("dead" as const);
-      },
-    );
+    const tailscaleServeRootHolder = (target: { readonly host: string; readonly port: number }) =>
+      readTailscaleServeRootHolder(config.tailscaleServePort, target);
     // fork: tailnet-ownership
     // Claimed on start and released on stop: the mapping proxies to a loopback port
     // that exists only while this process runs. Both steps touch only Loom's `/` mount.
@@ -1039,13 +1026,19 @@ const layerMakeServer = Layer.unwrap(
                 Effect.tap(() => checks.clear("tailscale-serve")), // fork: background-check-health
                 Effect.as(target), // fork: tailnet-ownership
                 Effect.catch((cause) =>
-                  // fork: tailnet-ownership
-                  Effect.logWarning("Tailscale Serve not configured", {
-                    reason: cause._tag,
-                    cause,
-                    localPort: target.localPort,
-                    servePort: target.servePort,
-                  }).pipe(
+                  Effect.logWarning(
+                    cause._tag === "TailscaleCommandExitError" &&
+                      cause.stderrDiagnostic === "unsupported-target"
+                      ? `Tailscale Serve left off; this Tailscale install can only proxy to localhost, not ${target.localHost}. Bind --host 127.0.0.1 or 0.0.0.0 instead`
+                      : "Tailscale Serve not configured", // fork: tailnet-ownership
+                    // fork: tailnet-ownership
+                    {
+                      reason: cause._tag,
+                      cause,
+                      localPort: target.localPort,
+                      servePort: target.servePort,
+                    },
+                  ).pipe(
                     // fork: background-check-health
                     Effect.andThen(
                       checks.fail("tailscale-serve", BackgroundChecks.tailscaleFailure(cause)),

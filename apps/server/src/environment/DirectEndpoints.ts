@@ -23,7 +23,7 @@ import {
 } from "@t3tools/shared/hostClassification";
 
 import * as ServerConfig from "../config.ts";
-import { ServerEnvironmentIdentity } from "./ServerEnvironment.ts"; // fork: directory-computers
+import * as ServerEnvironment from "./ServerEnvironment.ts";
 import { ReachPublicRoute, reachPublicEndpoints } from "../fork/reach/publicRoute.ts"; // fork: reach
 import * as BackgroundChecks from "../fork/background-checks/BackgroundChecks.ts"; // fork: background-check-health
 import { isLoopbackHost, isPrivateNetworkAddress, VIRTUAL_INTERFACE } from "../startupAccess.ts";
@@ -123,7 +123,7 @@ export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const platform = yield* HostProcess.Platform;
-  const environmentId = yield* (yield* ServerEnvironmentIdentity).getEnvironmentId; // fork: directory-computers
+  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
   const reachRoute = yield* Effect.serviceOption(ReachPublicRoute); // fork: reach
   const checks = yield* BackgroundChecks.recorder; // fork: background-check-health
   // Only the service default listens on every interface without being asked,
@@ -168,7 +168,6 @@ export const make = Effect.gen(function* () {
             magicDnsName,
             servePort: config.tailscaleServePort,
           });
-          // fork: directory-computers
           return probeTailscaleHttpsEndpoint({ baseUrl: httpBaseUrl, environmentId }).pipe(
             Effect.map((reachable) => (reachable ? httpBaseUrl : null)),
           );
