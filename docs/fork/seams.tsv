@@ -409,6 +409,7 @@ apps/server/src/cli/pair.test.ts	directory-computers	1
 apps/server/package.json	-	"loom": "./dist/bin.mjs"
 apps/server/src/cli/app.test.ts	brand	1
 apps/server/src/cli/app.test.ts	project-lifecycle	2
+apps/server/src/cli/doctor.test.ts	brand	1
 apps/desktop/src/app/DesktopCliCommand.ts	brand	9
 apps/desktop/src/app/DesktopCliShim.ts	brand	5
 apps/desktop/src/app/DesktopCliCommand.test.ts	brand	15

@@ -640,9 +640,15 @@ const make = Effect.gen(function* () {
   );
 
   const measureWorktree = Effect.fn("storageCleanup.measureWorktree")(
-    function* (worktreePath: string, inspectRepositories = false) {
+    function* (
+      worktreePath: string,
+      inspectRepositories = false,
+      deleteDevHome = false, // fork: project-lifecycle
+    ) {
       const root = yield* fs.realPath(worktreePath);
       const skipped = yield* sharedPnpmVirtualStore(root);
+      // fork: project-lifecycle -- the landed rule deletes the worktree's own .t3/ dev home whole.
+      const devHome = !deleteDevHome ? null : pathKey(path.join(root, ".t3"));
       const incomplete = { bytes: null, reason: "worktree could not be fully inspected" };
       const repositories = new Set([pathKey(root)]);
       const moduleStores: string[] = [];
@@ -670,6 +676,7 @@ const make = Effect.gen(function* () {
       // Registered submodules have their own recursive safety checks.
       const isNestedRepository = (target: string, names: ReadonlyArray<string>) => {
         const key = pathKey(target);
+        if (devHome !== null && (key === devHome || inside(devHome, key))) return false; // fork: project-lifecycle
         if (
           repositories.has(key) ||
           moduleStores.some((store) => key === store || inside(store, key))
@@ -2196,7 +2203,11 @@ const make = Effect.gen(function* () {
         const blocked = yield* blockedSinceCheck();
         if (blocked !== null) return keep(blocked);
         // Inspect before the lease; provider startup must not wait for directory traversal.
-        const inspection = yield* measureWorktree(worktreePath, true);
+        const inspection = yield* measureWorktree(
+          worktreePath,
+          true,
+          "devHomeRoot" in fileRules, // fork: project-lifecycle
+        );
         if (inspection.reason !== null) return keep(inspection.reason);
         const bytes = inspection.bytes;
         yield* withWorkspaceLease(
