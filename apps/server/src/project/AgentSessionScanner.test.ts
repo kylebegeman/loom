@@ -991,8 +991,10 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         );
         const links = yield* makeTempDir("t3code-workspace-links-");
         const unknown = yield* makeTempDir("t3code-workspace-unknown-");
-        yield* fileSystem.makeDirectory(path.join(configBaseDir, "state-repo"));
-        yield* fileSystem.symlink(path.join(configBaseDir, "state-repo"), path.join(links, "repo"));
+        // fork: file-placement -- Loom excludes its state folder, not all of baseDir.
+        const stateRepo = path.join(configBaseDir, "userdata", "state-repo");
+        yield* fileSystem.makeDirectory(stateRepo, { recursive: true }); // fork: file-placement
+        yield* fileSystem.symlink(stateRepo, path.join(links, "repo")); // fork: file-placement
         const hiddenCheckouts: Array<string> = [];
         for (const [main, config] of [
           [unknown, null],
