@@ -96,7 +96,12 @@ const make = Effect.gen(function* () {
         return yield* new SwitchboardGatewayError({ reason: "path" });
       const bearer = request.headers.authorization;
       const apiKey = request.headers["x-api-key"];
-      if (bearer !== undefined && apiKey !== undefined)
+      // Claude sends its helper credential in both headers.
+      if (
+        bearer !== undefined &&
+        apiKey !== undefined &&
+        (!claude || bearer !== `Bearer ${apiKey}`)
+      )
         return yield* new SwitchboardGatewayError({ reason: "authentication" });
       const key = bearer?.match(/^Bearer ([a-f0-9]{64})$/u)?.[1] ?? (claude ? apiKey : undefined);
       if (key === undefined || !/^[a-f0-9]{64}$/u.test(key))

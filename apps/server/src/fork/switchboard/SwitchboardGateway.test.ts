@@ -152,6 +152,11 @@ it.effect("streams personal inference through only the restricted local gateway"
     yield* f.send("/v1/messages?beta=true", "POST", null, { "x-api-key": KEY });
     expect(f.requests.at(-1)?.headers["x-api-key"]).toBe(KEY);
     expect(f.requests.at(-1)?.headers.authorization).toBeUndefined();
+    for (const path of ["/v1/messages?beta=true", "/v1/messages/count_tokens?beta=true"]) {
+      yield* f.send(path, "POST", KEY, { "x-api-key": KEY });
+      expect(f.requests.at(-1)?.headers.authorization).toBe("Bearer " + KEY);
+      expect(f.requests.at(-1)?.headers["x-api-key"]).toBe(KEY);
+    }
   }),
 );
 
@@ -184,6 +189,18 @@ it.effect("refuses opt-out, foreign credentials, protected routes, and redirecte
       expect((yield* f.send("/v1/models", "GET", credential, extra).pipe(Effect.flip)).reason).toBe(
         "authentication",
       );
+    }
+    for (const [credential, apiKey] of [
+      [KEY, "b".repeat(64)],
+      ["b".repeat(64), KEY],
+      ["malformed", KEY],
+      [KEY, "malformed"],
+    ] as const) {
+      expect(
+        (yield* f
+          .send("/v1/messages?beta=true", "POST", credential, { "x-api-key": apiKey })
+          .pipe(Effect.flip)).reason,
+      ).toBe("authentication");
     }
     f.state.key = "b".repeat(64);
     expect((yield* f.send("/v1/models").pipe(Effect.flip)).reason).toBe("authentication");
