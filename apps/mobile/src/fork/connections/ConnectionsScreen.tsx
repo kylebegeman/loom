@@ -1,4 +1,6 @@
 import { FleetUpdatePlans } from "./UpdatePlans";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
+import { LibraryAccountSection } from "../library/LibrarySignInStatus";
 import { CompatibilityNotice } from "./CompatibilityNotice";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -223,20 +225,22 @@ export function ConnectionsScreen() {
         <DirectoryComputersSection directory={directoryComputers} onPair={pairDirectoryComputer} />
         <LibraryReachSection libraryReach={libraryReach} />
 
-        {/* Keep connected relays visible and removable without cloud config or sign-in; this component gates discovery. */}
-        <CloudEnvironmentRows
-          connectedCloudEnvironments={connectedCloudEnvironments}
-          onOpenEnvironment={openEnvironment}
-          onSetEnvironmentEnabled={onSetEnvironmentEnabled}
-          onRemoveEnvironment={onRemoveEnvironmentPress}
-          {...(SHOWCASE_ENABLED
-            ? {
-                showcaseAvailableEnvironments: SHOWCASE_AVAILABLE_CLOUD_ENVIRONMENTS,
-                showcaseSignedIn: true,
-              }
-            : {})}
-        />
-        <AccountSettings />
+        {/* fork: connect-ui - Saved routes remain in LocalEnvironmentList when legacy discovery is hidden. */}
+        {LEGACY_CONNECT_UI_ENABLED ? (
+          <CloudEnvironmentRows
+            connectedCloudEnvironments={connectedCloudEnvironments}
+            onOpenEnvironment={openEnvironment}
+            onSetEnvironmentEnabled={onSetEnvironmentEnabled}
+            onRemoveEnvironment={onRemoveEnvironmentPress}
+            {...(SHOWCASE_ENABLED
+              ? {
+                  showcaseAvailableEnvironments: SHOWCASE_AVAILABLE_CLOUD_ENVIRONMENTS,
+                  showcaseSignedIn: true,
+                }
+              : {})}
+          />
+        ) : null}
+        {LEGACY_CONNECT_UI_ENABLED ? <AccountSettings /> : <LibraryAccountSection />}
         <PullRequestRoutingSettings />
       </ScrollView>
     </SettingsScreen>

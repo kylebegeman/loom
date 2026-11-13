@@ -107,6 +107,11 @@ const LOGIN_SHELL_ENV_NAMES = [
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
+  // fork: switchboard
+  "LOOM_SWITCHBOARD_URL",
+  "LOOM_SWITCHBOARD_CONTROLLER_URL",
+  "LOOM_SWITCHBOARD_KEY_HELPER",
+  "LOOM_SWITCHBOARD_SHARE_GATEWAY",
   "T3CODE_TELEMETRY_ENABLED",
   "T3CODE_GITHUB_APP_CLIENT_ID",
   "__MISE_DIFF",
@@ -528,6 +533,18 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       }
     }
 
+    // fork: switchboard - An explicit empty controller setting disables availability reads.
+    for (const name of [
+      "LOOM_SWITCHBOARD_URL",
+      "LOOM_SWITCHBOARD_CONTROLLER_URL",
+      "LOOM_SWITCHBOARD_KEY_HELPER",
+      "LOOM_SWITCHBOARD_SHARE_GATEWAY",
+    ] as const) {
+      if (config.env[name] === undefined && shellEnvironment[name] !== undefined) {
+        config.env[name] = shellEnvironment[name];
+      }
+    }
+
     // Hydrate locale variables together; inherited LC_ALL can override LANG or LC_CTYPE.
     if (
       config.platform === "darwin" &&
@@ -611,6 +628,11 @@ const CACHED_ENV_NAMES = [
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
+  // fork: switchboard
+  "LOOM_SWITCHBOARD_URL",
+  "LOOM_SWITCHBOARD_CONTROLLER_URL",
+  "LOOM_SWITCHBOARD_KEY_HELPER",
+  "LOOM_SWITCHBOARD_SHARE_GATEWAY",
 ] as const;
 
 /** @public */

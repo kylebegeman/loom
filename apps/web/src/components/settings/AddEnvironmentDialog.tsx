@@ -1,4 +1,5 @@
 import { pipe } from "effect/Function";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { ChevronsLeftRightEllipsisIcon, PlusIcon, TerminalIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
@@ -482,7 +483,7 @@ export function AddEnvironmentDialog({
   };
   const renderRemoteModeBody = () => (
     <div className="space-y-4">
-      {relayRouteOffer !== null ? (
+      {LEGACY_CONNECT_UI_ENABLED && relayRouteOffer !== null ? (
         <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
           <p className="text-xs text-muted-foreground">
             This machine is on your T3 Connect account. Use it as a fallback route.

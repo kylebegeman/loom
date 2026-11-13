@@ -1,4 +1,5 @@
 import * as Dialog from "../components/ui/Dialog";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import { Discovery } from "@t3tools/client-runtime/relay";
@@ -190,7 +191,7 @@ export function useRemoteConnections() {
         void forgetPushThen(controller.removeEnvironment, environmentId); // fork: library-push
       },
     } as const;
-    if (environment.isRelayManaged) {
+    if (LEGACY_CONNECT_UI_ENABLED && environment.isRelayManaged) {
       const registration = Discovery.relayEnvironmentRegistration(
         appAtomRegistry.get(relayEnvironmentDiscovery.stateValueAtom),
         environmentId,

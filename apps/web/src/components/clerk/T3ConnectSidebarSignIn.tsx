@@ -1,4 +1,5 @@
 import { UserButton, useAuth } from "@clerk/react";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { LogInIcon } from "lucide-react";
 
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
@@ -7,12 +8,14 @@ import { T3_CONNECT_ACCOUNT_PAGES } from "./T3ConnectAccountPages";
 import { useT3ConnectAuthPrompt } from "./useT3ConnectAuthPrompt";
 
 export function T3ConnectSidebarSignIn() {
+  if (!LEGACY_CONNECT_UI_ENABLED) return null;
   if (!hasCloudPublicConfig()) return null;
 
   return <ConfiguredT3ConnectSidebarSignIn />;
 }
 
 export function T3ConnectSidebarAvatar() {
+  if (!LEGACY_CONNECT_UI_ENABLED) return null;
   if (!hasCloudPublicConfig()) return null;
 
   return <ConfiguredT3ConnectSidebarAvatar />;

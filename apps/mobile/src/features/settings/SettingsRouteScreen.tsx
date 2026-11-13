@@ -1,4 +1,5 @@
 import { BOTS_NAVIGATION_VISIBLE } from "@t3tools/client-runtime/fork"; // fork: bots
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import {
   navigationCustomizationAvailable,
@@ -79,7 +80,11 @@ function useSettingsListPlacement() {
 }
 
 function SettingsListContent() {
-  return hasCloudPublicConfig() ? <ConfiguredSettingsRouteScreen /> : <LocalSettingsRouteScreen />;
+  return LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig() ? (
+    <ConfiguredSettingsRouteScreen />
+  ) : (
+    <LocalSettingsRouteScreen />
+  );
 }
 
 // fork: mobile-navigation

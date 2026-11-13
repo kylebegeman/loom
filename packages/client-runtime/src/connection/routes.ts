@@ -5,6 +5,7 @@ import {
   isTailnetHost,
 } from "@t3tools/shared/hostClassification";
 import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
+import { LEGACY_CONNECT_UI_ENABLED } from "../fork/legacy-connect.ts"; // fork: connect-ui
 import * as Option from "effect/Option";
 
 import {
@@ -210,7 +211,7 @@ function routeAddressKey(route: ConnectionRoute): string | null {
 export function connectionRouteLabel(route: ConnectionRoute): string {
   switch (connectionRouteKind(route)) {
     case "relay":
-      return "T3 Connect";
+      return LEGACY_CONNECT_UI_ENABLED ? "T3 Connect" : "Relay";
     case "loopback":
       return "This device";
     case "lan":

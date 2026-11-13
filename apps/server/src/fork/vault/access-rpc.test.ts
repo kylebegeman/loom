@@ -205,6 +205,7 @@ it.effect(
         "broker:host",
         "host:replica",
         "library:replica",
+        "loom-host:publisher",
       ]) {
         const session = {
           sessionId: AuthSessionId.make("setup"),

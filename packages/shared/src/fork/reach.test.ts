@@ -280,6 +280,16 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
     }
     expect(reachAllowsRequest("GET", "/ws?wsTicket=abc%2Fdef")).toBe(true);
     expect(reachAllowsRequest("POST", "/api/auth/clients/revoke")).toBe(true);
+    for (const [method, path] of [
+      ["GET", "/api/loom/switchboard/v1/models"],
+      ["GET", "/api/loom/switchboard/v1/responses"],
+      ["POST", "/api/loom/switchboard/v1/responses"],
+      ["POST", "/api/loom/switchboard/v1/chat/completions"],
+      ["POST", "/api/loom/switchboard/v1/messages?beta=true"],
+      ["POST", "/api/loom/switchboard/v1/messages/count_tokens?beta=true"],
+    ] as const) {
+      expect(reachAllowsRequest(method, path)).toBe(true);
+    }
   });
 
   it("refuses other methods and every unlisted path", () => {
@@ -309,6 +319,10 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       "/api/projectsx",
       "/ws/",
       "/api/assets",
+      "/api/loom/switchboard",
+      "/api/loom/switchboard/v0/management",
+      "/api/loom/switchboard/v1/models/",
+      "/api/loom/switchboard/v1/responses/other",
     ]) {
       expect(reachAllowsRequest("GET", path)).toBe(false);
     }

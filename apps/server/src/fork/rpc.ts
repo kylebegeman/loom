@@ -42,6 +42,7 @@ import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Layer from "effect/Layer";
 import { makeVaultSshRpcHandlers } from "./vault/ssh-rpc.ts";
 import { makeVaultBrokerRpcHandlers } from "./vault/broker-rpc.ts";
+import { makeVaultOwnerLinkRpcHandlers } from "./vault/owner-link-rpc.ts";
 import { makeVaultAccessRpcHandlers } from "./vault/access-rpc.ts";
 import { makeVaultCoreRpcHandlers } from "./vault/rpc.ts";
 import { VaultSecretRpcGroup, VAULT_SECRET_WS_METHODS } from "@t3tools/contracts/fork";
@@ -250,7 +251,10 @@ export const makeForkRpcLayer = (
     ),
     VaultAccessRpcGroup.toLayer(
       withForkRuntime(
-        makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session),
+        Effect.all([
+          makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session),
+          makeVaultOwnerLinkRpcHandlers(makeForkRpcAuth(session), session),
+        ]).pipe(Effect.map(([access, ownerLink]) => ({ ...access, ...ownerLink }))),
       ),
     ),
     VaultSecretRpcGroup.toLayer(

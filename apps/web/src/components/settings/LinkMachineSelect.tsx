@@ -1,3 +1,4 @@
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import {
   ANOTHER_ADDRESS,
   type LinkableMachine,
@@ -39,7 +40,7 @@ export function LinkMachineBadge({ machine }: { readonly machine: LinkableMachin
   if (machine.connected) return null;
   return (
     <Badge variant="outline" size="sm">
-      {machine.connectOnly ? "T3 Connect" : "Not connected"}
+      {machine.connectOnly ? (LEGACY_CONNECT_UI_ENABLED ? "T3 Connect" : "Relay") : "Not connected"}
     </Badge>
   );
 }

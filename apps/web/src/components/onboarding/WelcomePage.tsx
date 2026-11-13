@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentSessionProjectCandidate,
@@ -147,7 +148,7 @@ export function WelcomePage({
   const canWriteRelay = useEnvironmentScope(environmentId, AuthRelayWriteScope);
   const showPhone = welcomeOffersPhone({
     isPrimary,
-    cloud: hasCloudPublicConfig(),
+    cloud: LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig(),
     canShare: canReadRelay && canWriteRelay,
     policy: useManagedPolicy(environmentId),
   });

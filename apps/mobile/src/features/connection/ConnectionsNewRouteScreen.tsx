@@ -1,4 +1,6 @@
 import { Button } from "../../components/ui/Button"; // fork: fleet-connections
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
+import { LibraryAccountSection } from "../../fork/library/LibrarySignInStatus";
 import { ListRow } from "../../components/ui/ListRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -326,7 +328,13 @@ function PairingForm({
             onPress={() => void handleSubmit()}
           />
 
-          {hasCloudPublicConfig() && !routeFor ? <T3ConnectSection /> : null}
+          {!routeFor ? (
+            LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig() ? (
+              <T3ConnectSection />
+            ) : (
+              <LibraryAccountSection />
+            )
+          ) : null}
         </View>
       </ScrollView>
     </SettingsScreen>

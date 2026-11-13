@@ -1,4 +1,5 @@
 import { CurrentIdentitySession } from "~/fork/identity/CurrentIdentitySession"; // fork: library-sign-in
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { LibrarySignInSettings } from "~/fork/project-library/LibrarySignInSettings"; // fork: library-sign-in
 import { ForkSettingsTopics } from "~/fork/settings/pages"; // fork: ext-settings
 import { runtimeManagedByOperatingSystem } from "@t3tools/client-runtime/fork"; // fork: runtime-owner
@@ -704,7 +705,7 @@ function ConnectionsSettingsContent({
   const [pendingT3ConnectRemoval, setPendingT3ConnectRemoval] =
     useState<EnvironmentPresentation | null>(null);
   const handleRemoveSavedBackend = async (environment: EnvironmentPresentation) => {
-    if (environment.relayManaged && hasCloudPublicConfig()) {
+    if (LEGACY_CONNECT_UI_ENABLED && environment.relayManaged && hasCloudPublicConfig()) {
       setPendingT3ConnectRemoval(environment);
       return;
     }
@@ -1736,7 +1737,7 @@ function ConnectionsSettingsContent({
           ) : null
         }
       />
-      {hasCloudPublicConfig() ? (
+      {LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
           environmentLabel={pendingT3ConnectRemoval?.label ?? null}
           environmentId={pendingT3ConnectRemoval?.environmentId ?? null}

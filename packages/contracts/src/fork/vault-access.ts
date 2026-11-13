@@ -4,6 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import {
   RunId,
+  EnvironmentId,
   ThreadId,
   TrimmedNonEmptyString,
   NonNegativeInt,
@@ -151,6 +152,7 @@ export type VaultAuditEvent = typeof VaultAuditEvent.Type;
 export const VaultOwnerPolicyMode = Schema.Literals(["restricted", "owner-trusted"]);
 export type VaultOwnerPolicyMode = typeof VaultOwnerPolicyMode.Type;
 export const VaultOwnerPolicy = Schema.Struct({
+  accountLinked: Schema.optionalKey(Schema.Boolean),
   environmentId: Id,
   ownerId: Schema.NullOr(VaultItemId),
   mode: VaultOwnerPolicyMode,
@@ -166,11 +168,42 @@ export const VaultOwnerPolicy = Schema.Struct({
 );
 export type VaultOwnerPolicy = typeof VaultOwnerPolicy.Type;
 export const VaultOwnerPolicyChange = Schema.Struct({
+  unlinkAccount: Schema.optionalKey(Schema.Literal(true)),
   operationId: VaultItemId,
   expectedRevision: NonNegativeInt,
   mode: VaultOwnerPolicyMode,
 });
 export type VaultOwnerPolicyChange = typeof VaultOwnerPolicyChange.Type;
+export const VAULT_OWNER_LINK_FEATURE = "vault-owner-link";
+export const VAULT_OWNER_LINK_VERIFY_ROUTE = "/api/loom/vault/owner-link/verify";
+export const VaultOwnerLinkChange = Schema.Struct({
+  operationId: VaultItemId,
+  expectedRevision: NonNegativeInt,
+  ownerId: VaultItemId,
+  inventoryEnvironmentId: Id,
+});
+export type VaultOwnerLinkChange = typeof VaultOwnerLinkChange.Type;
+export const VaultOwnerLinkRequest = Schema.Struct({
+  ...VaultOwnerLinkChange.fields,
+  sourceEnvironmentId: EnvironmentId,
+  libraryEnvironmentId: EnvironmentId,
+  authorityId: Id,
+  authorityEpoch: NonNegativeInt,
+  keyFingerprint: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+});
+export type VaultOwnerLinkRequest = typeof VaultOwnerLinkRequest.Type;
+export const VaultOwnerLinkApproval = Schema.Struct({
+  request: VaultOwnerLinkRequest,
+  token: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+  expiresAt: Time,
+});
+export type VaultOwnerLinkApproval = typeof VaultOwnerLinkApproval.Type;
+export const VaultOwnerLinkVerification = Schema.Struct({
+  request: VaultOwnerLinkRequest,
+  ownerSubject: Schema.String.check(Schema.isPattern(/^identity-principal:v1:[A-Za-z0-9_-]{43}$/)),
+  expiresAt: Time,
+});
+export type VaultOwnerLinkVerification = typeof VaultOwnerLinkVerification.Type;
 export const VaultPolicySnapshot = Schema.Struct({
   ownerPolicy: Schema.optionalKey(VaultOwnerPolicy),
   environmentId: Id,
@@ -508,6 +541,9 @@ export type VaultApprovalInbox = typeof VaultApprovalInbox.Type;
 
 export const VAULT_ACCESS_WS_METHODS = {
   setOwnerPolicy: "loom.vault-owner-policy.set",
+  ownerLinkPrepare: "loom.vault-owner-link.prepare",
+  ownerLinkApprove: "loom.vault-owner-link.approve",
+  ownerLinkApply: "loom.vault-owner-link.apply",
   approvalInbox: "loom.vault-approvals.inbox",
   approvalCreate: "loom.vault-approvals.request",
   approvalChange: "loom.vault-approvals.decide",
@@ -522,6 +558,21 @@ export const VAULT_ACCESS_WS_METHODS = {
 } as const;
 const error = Schema.Union([VaultError, EnvironmentAuthorizationError]);
 export const VaultAccessRpcGroup = RpcGroup.make(
+  Rpc.make(VAULT_ACCESS_WS_METHODS.ownerLinkPrepare, {
+    payload: Schema.Struct({ operationId: VaultItemId }),
+    success: VaultOwnerLinkRequest,
+    error,
+  }),
+  Rpc.make(VAULT_ACCESS_WS_METHODS.ownerLinkApprove, {
+    payload: VaultOwnerLinkRequest,
+    success: VaultOwnerLinkApproval,
+    error,
+  }),
+  Rpc.make(VAULT_ACCESS_WS_METHODS.ownerLinkApply, {
+    payload: VaultOwnerLinkApproval,
+    success: VaultPolicySnapshot,
+    error,
+  }),
   Rpc.make(VAULT_ACCESS_WS_METHODS.setOwnerPolicy, {
     payload: VaultOwnerPolicyChange,
     success: VaultPolicySnapshot,

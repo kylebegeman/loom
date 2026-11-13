@@ -1,4 +1,5 @@
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
@@ -642,10 +643,12 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
-        <PlugIcon className="size-3" />
-        Use in another app (MCP)
-      </Button>
+      {LEGACY_CONNECT_UI_ENABLED ? (
+        <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
+          <PlugIcon className="size-3" />
+          Use in another app (MCP)
+        </Button>
+      ) : null}
       <Button
         size="xs"
         variant="destructive-outline"

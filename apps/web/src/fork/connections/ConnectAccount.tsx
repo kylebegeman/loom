@@ -1,4 +1,5 @@
 import { useAuth, useClerk, useUser } from "@clerk/react";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { ArrowUpRightIcon, LogInIcon } from "lucide-react";
 import { resolveCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "~/components/clerk/useT3ConnectAuthPrompt";
@@ -10,6 +11,7 @@ import { Alert, useAction } from "~/fork/apple-build-tooling/parts";
 
 /** The account entry point belongs beside the computers it discovers. */
 export function ConnectAccount() {
+  if (!LEGACY_CONNECT_UI_ENABLED) return null;
   const surface = resolveCurrentConnectAuthSurface(resolveCloudPublicConfig());
   switch (surface.kind) {
     case "available":

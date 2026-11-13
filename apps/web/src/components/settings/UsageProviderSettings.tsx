@@ -49,7 +49,11 @@ export function UsageProviderSettings({
         {/* fork: switchboard */}
         <SwitchboardSettingsRow environmentId={environmentId} readOnly={readOnly} />
         {entries.length === 0 ? (
-          <SettingsRow title="No hubs configured." />
+          // fork: switchboard
+          <SettingsRow
+            title="No usage monitoring hubs configured."
+            description="Add a hub here to show its usage totals."
+          />
         ) : (
           entries.map(([id, source]) => {
             const label = source.label?.trim() || source.url;

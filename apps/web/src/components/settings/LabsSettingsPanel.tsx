@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { Link } from "@tanstack/react-router";
 import { managedCapabilityDenial } from "@t3tools/contracts";
 
@@ -20,7 +21,13 @@ export function LabsSettingsPanel() {
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
-        {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
+        {LEGACY_CONNECT_UI_ENABLED ? (
+          hasCloudPublicConfig() ? (
+            <GuestLinksRowWithSignIn />
+          ) : (
+            <GuestLinksRow />
+          )
+        ) : null}
         <LinkedEnvironmentsRow />
         <PromptSuggestionsRow />
         <SimlockHostsRow />

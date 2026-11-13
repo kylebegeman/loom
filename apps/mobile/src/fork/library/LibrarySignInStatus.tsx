@@ -147,6 +147,32 @@ export function LibrarySignInSection() {
   );
 }
 
+export function LibraryAccountSection() {
+  const navigation = useNavigation();
+  const status = useLibrarySignInStatus();
+  const signIn = status.environmentId === null || status.signIn.canSignIn;
+  return (
+    <SettingsSection
+      title="Your Loom account"
+      footer="Sign in once to find your computers and saved conversations on all your devices."
+    >
+      <SettingsActionRow
+        icon="person.crop.circle"
+        label={signIn ? "Sign in to Loom" : "Manage account"}
+        description={status.account ?? undefined}
+        onPress={() =>
+          signIn
+            ? navigation.navigate(
+                "LibrarySignIn",
+                status.environmentId ? { environmentId: status.environmentId } : {},
+              )
+            : navigation.navigate("LibrarySettings")
+        }
+      />
+    </SettingsSection>
+  );
+}
+
 /** The repair for a Library denial that says to sign in again. */
 export function LibrarySignInAgainButton({
   environmentId: requestedEnvironmentId,

@@ -1,4 +1,5 @@
 import { useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import type { LibraryAccessRepair, LibraryError } from "@t3tools/contracts/fork";
 import { type LibraryAccessRepairContext, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -240,11 +241,13 @@ export function LibraryAuthorityScreen() {
             tone="text"
             onPress={() => navigation.navigate("Connections")}
           />
-          <Button
-            label="T3 Connect account settings"
-            tone="text"
-            onPress={() => navigation.navigate("SettingsAuth")}
-          />
+          {LEGACY_CONNECT_UI_ENABLED ? (
+            <Button
+              label="T3 Connect account settings"
+              tone="text"
+              onPress={() => navigation.navigate("SettingsAuth")}
+            />
+          ) : null}
         </>
       ) : null}
     </LibraryPage>

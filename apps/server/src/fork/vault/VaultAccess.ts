@@ -20,6 +20,7 @@ import {
   type VaultApprovalInbox,
   VaultError,
   VaultOwnerPolicyChange,
+  VaultOwnerLinkChange,
   type VaultOwnerPolicy,
   VaultGrant,
   VaultGrantMutation,
@@ -69,6 +70,15 @@ import { decodePolicy, encodePolicy, type Policy } from "./AccessPolicy.ts";
 const decodeOwnerPolicyChange = Schema.decodeUnknownEffect(VaultOwnerPolicyChange, {
   onExcessProperty: "error",
 });
+const encodeOwnerLink = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      input: VaultOwnerLinkChange,
+      ownerSubject: Schema.String,
+      actor: Schema.String,
+    }),
+  ),
+);
 const encodeOwnerPolicyChange = Schema.encodeEffect(
   Schema.fromJsonString(
     Schema.Struct({
@@ -291,6 +301,16 @@ export class VaultAccess extends Context.Service<
       },
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<void, VaultError>;
+    readonly ownerLinkBinding: (
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<Omit<VaultOwnerLinkChange, "operationId">, VaultError>;
+    readonly linkOwner: (
+      input: VaultOwnerLinkChange,
+      ownerSubject: string,
+      actor: string,
+      authorize: Effect.Effect<void, VaultError>,
+    ) => Effect.Effect<VaultPolicySnapshot, VaultError>;
     readonly setOwnerPolicy: (
       input: VaultOwnerPolicyChange,
       actor: string,
@@ -443,6 +463,7 @@ const make = Effect.gen(function* () {
     revision: policy.revision,
     updatedAt: policy.ownerPolicy?.updatedAt ?? null,
     updatedBy: policy.ownerPolicy?.updatedBy ?? null,
+    accountLinked: policy.ownerPolicy?.accountOwnerSubject !== undefined,
   });
   const snapshotView = (policy: Policy): VaultPolicySnapshot => ({
     environmentId,
@@ -844,7 +865,8 @@ const make = Effect.gen(function* () {
           ? AccessPolicy.credentialUseRefusal(policy, itemId)
           : null;
       const reason =
-        owner?.mode !== "owner-trusted" || owner.ownerSubject !== lease.ownerSubject
+        owner?.mode !== "owner-trusted" ||
+        (owner.accountOwnerSubject ?? owner.ownerSubject) !== lease.ownerSubject
           ? "scope"
           : (itemId !== null && (item === null || (action === "use" && item.state !== "active"))) ||
               (itemId === null && action === "use")
@@ -2003,6 +2025,109 @@ const make = Effect.gen(function* () {
       };
     }).pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" }))),
     snapshot: Effect.map(load(), ({ policy }) => snapshotView(policy)),
+    ownerLinkBinding: Effect.fn("VaultAccess.ownerLinkBinding")(function* (actor, authorize) {
+      yield* authorize;
+      const { policy } = yield* load();
+      if (
+        !isAdministrator(actor) ||
+        !policy.ownerPolicy ||
+        policy.ownerPolicy.ownerSubject.startsWith("identity-principal:v1:") ||
+        (identityOwnershipSubject(actor, environment) !== policy.ownerPolicy.ownerSubject &&
+          identityOwnershipSubject(actor, environment) !== policy.ownerPolicy.accountOwnerSubject)
+      )
+        return yield* new VaultError({ reason: "denied" });
+      return {
+        ownerId: policy.ownerPolicy.ownerId,
+        expectedRevision: policy.revision,
+        inventoryEnvironmentId: environmentId,
+      };
+    }),
+    linkOwner: Effect.fn("VaultAccess.linkOwner")(
+      function* (input, ownerSubject, actor, authorize) {
+        if (
+          !isAdministrator(actor) ||
+          /^(client:|broker:|host:|library:|loom-host:|mcp-client$)/.test(actor) ||
+          !/^identity-principal:v1:[A-Za-z0-9_-]{43}$/.test(ownerSubject)
+        )
+          return yield* new VaultError({ reason: "denied" });
+        const fingerprint = yield* hash(
+          yield* encodeOwnerLink({ input, ownerSubject, actor }).pipe(
+            Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
+          ),
+        );
+        for (let attempt = 0; attempt < 4; attempt++) {
+          yield* authorize;
+          const { policy, version } = yield* load();
+          const owner = policy.ownerPolicy;
+          if (
+            !owner ||
+            owner.ownerSubject.startsWith("identity-principal:v1:") ||
+            input.ownerId !== owner.ownerId ||
+            input.inventoryEnvironmentId !== environmentId
+          )
+            return yield* new VaultError({ reason: "denied" });
+          const receipt = policy.ownerReceipts?.find((entry) => entry.id === input.operationId);
+          if (receipt) {
+            if (receipt.fingerprint !== fingerprint)
+              return yield* new VaultError({ reason: "conflict" });
+            yield* authorize;
+            return snapshotView(policy);
+          }
+          if (
+            identityOwnershipSubject(actor, environment) !== owner.ownerSubject &&
+            identityOwnershipSubject(actor, environment) !== owner.accountOwnerSubject
+          )
+            return yield* new VaultError({ reason: "denied" });
+          if (
+            policy.revision !== input.expectedRevision ||
+            policy.receipts.some((entry) => entry.id === input.operationId) ||
+            policy.batchReceipts?.some((entry) => entry.id === input.operationId)
+          )
+            return yield* new VaultError({ reason: "conflict" });
+          if (owner.accountOwnerSubject && owner.accountOwnerSubject !== ownerSubject)
+            return yield* new VaultError({ reason: "conflict" });
+          const now = yield* Clock.currentTimeMillis;
+          if (now < owner.updatedAt) return yield* new VaultError({ reason: "unavailable" });
+          const revision = policy.revision + 1;
+          const next = withAudit(
+            {
+              ...policy,
+              revision,
+              ownerPolicy: { ...owner, accountOwnerSubject: ownerSubject, updatedAt: now },
+              ownerReceipts: [
+                ...(policy.ownerReceipts ?? []),
+                { id: input.operationId, fingerprint, revision },
+              ].slice(-32),
+            },
+            {
+              id: yield* eventId,
+              at: now,
+              actor,
+              type: "owner-policy-change",
+              itemId: null,
+              grantId: null,
+              action: null,
+              reason: "account-owner-linked",
+              policyRevision: revision,
+              authorization: {
+                category: "owner-policy-change",
+                environmentId,
+                ownerId: owner.ownerId,
+                threadId: null,
+                runId: null,
+                destinationDigest: null,
+                itemKind: null,
+              },
+            },
+          );
+          yield* authorize;
+          const saved = yield* persist(next, version).pipe(Effect.result);
+          if (saved._tag === "Success") return snapshotView(next);
+          if (saved.failure.reason !== "conflict") return yield* saved.failure;
+        }
+        return yield* new VaultError({ reason: "conflict" });
+      },
+    ),
     setOwnerPolicy: Effect.fn("VaultAccess.setOwnerPolicy")(function* (raw, actor, authorize) {
       const input = yield* decodeOwnerPolicyChange(raw).pipe(
         Effect.mapError(() => new VaultError({ reason: "invalid-input" })),
@@ -2024,7 +2149,8 @@ const make = Effect.gen(function* () {
         const { policy, version } = yield* load();
         if (
           policy.ownerPolicy &&
-          identityOwnershipSubject(policy.ownerPolicy.ownerSubject, environment) !== ownerSubject
+          identityOwnershipSubject(policy.ownerPolicy.ownerSubject, environment) !== ownerSubject &&
+          policy.ownerPolicy.accountOwnerSubject !== ownerSubject
         )
           return yield* new VaultError({ reason: "denied" });
         if (
@@ -2055,10 +2181,13 @@ const make = Effect.gen(function* () {
             ownerPolicy: {
               environmentId,
               ownerId,
-              ownerSubject,
+              ownerSubject: policy.ownerPolicy?.ownerSubject ?? ownerSubject,
               mode: input.mode,
               updatedAt: now,
-              updatedBy: ownerSubject,
+              updatedBy: policy.ownerPolicy?.ownerSubject ?? ownerSubject,
+              ...(!input.unlinkAccount && policy.ownerPolicy?.accountOwnerSubject
+                ? { accountOwnerSubject: policy.ownerPolicy.accountOwnerSubject }
+                : {}),
             },
             ownerReceipts: [
               ...(policy.ownerReceipts ?? []),
@@ -2073,7 +2202,7 @@ const make = Effect.gen(function* () {
             itemId: null,
             grantId: null,
             action: null,
-            reason: input.mode,
+            reason: input.unlinkAccount ? "account-owner-unlinked" : input.mode,
             policyRevision: revision,
             authorization: {
               category: "owner-policy-change",

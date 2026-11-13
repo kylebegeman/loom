@@ -1,4 +1,6 @@
 import { useAuth } from "@clerk/expo";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
+import { LibraryAuthorityScreen } from "../../fork/library/LibraryPage";
 import {
   AuthView,
   type UserProfileCustomPage,
@@ -26,7 +28,11 @@ const USER_PROFILE_CUSTOM_PAGES = [
 
 // Without cloud config the app has no entry point here and appLinking drops the deep link.
 export function SettingsAuthRouteScreen() {
-  return hasCloudPublicConfig() ? <ConfiguredSettingsAuthRouteScreen /> : null;
+  return LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig() ? (
+    <ConfiguredSettingsAuthRouteScreen />
+  ) : (
+    <LibraryAuthorityScreen />
+  );
 }
 
 // fork: mobile-design

@@ -22,7 +22,24 @@ Provider setup and status belong to that computer. Use **Set up agents** or
 **Check agents** if it has no ready provider. Provider accounts and **Route
 through Switchboard** are under that computer's **Settings → Providers**. The
 Switchboard hub and controller addresses come from the `LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_CONTROLLER_URL` environment
-of the server running there.
+of the server running there. On macOS, export these settings in `~/.zprofile`, then fully
+quit and reopen Loom. Loom also reads `LOOM_SWITCHBOARD_KEY_HELPER` when a custom
+credential helper is needed; otherwise it uses the personal `switchboard/client-api-key`
+item in Keychain. Install the provider CLI on each execution computer even when its
+subscriptions stay on the shared hub. Adding a usage-monitoring hub only adds usage
+readings; it does not configure the agent's route.
+
+A shared hub can use the host computer's public Loom address without a VPN. On the
+computer running Switchboard, export `LOOM_SWITCHBOARD_SHARE_GATEWAY=true` in
+`~/.zprofile`, then quit and reopen Loom. It forwards only inference and model
+requests to Switchboard's restricted local gateway on port 8321, authenticated
+with the personal client key. The dashboard and management APIs remain separate.
+On each execution computer, set `LOOM_SWITCHBOARD_URL` to the hub computer's HTTPS
+Loom address followed by `/api/loom/switchboard` and set
+`LOOM_SWITCHBOARD_CONTROLLER_URL` to an empty string when no controller route is
+available. Store the personal client key in that computer's Keychain using the
+Switchboard client setup. Provider subscriptions stay on the hub computer.
+Remove the sharing setting and reopen Loom to turn this route off.
 
 ## Optional command jobs
 

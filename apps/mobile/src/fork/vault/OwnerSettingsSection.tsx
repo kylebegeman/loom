@@ -4,6 +4,7 @@ import { Switch, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_VAULT_FEATURE,
+  VAULT_OWNER_LINK_FEATURE,
   VAULT_ITEM_SEARCH_FEATURE,
   type VaultPolicySnapshot,
 } from "@t3tools/contracts/fork";
@@ -65,6 +66,9 @@ export function VaultOwnerSettings({
   const supported = supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted");
   const canChange = useAtomValue(access.setOwnerPolicy.permissionAtom(environmentId));
   const change = useAtomCommand(access.setOwnerPolicy, { reportFailure: false });
+  const link = useAtomCommand(access.linkOwner, { reportFailure: false });
+  const canLink = useAtomValue(access.linkOwner.permissionAtom(environmentId));
+  const [linkConfirmed, setLinkConfirmed] = useState(false);
   const [snapshot, setSnapshot] = useState<VaultPolicySnapshot | null>(null);
   const [request, setRequest] = useState({ environmentId, input: {} });
   const [confirmed, setConfirmed] = useState(false);
@@ -131,6 +135,45 @@ export function VaultOwnerSettings({
       })
       .finally(() => setBusy(false));
   };
+  const linked = policy?.accountLinked === true;
+  const linkOwner = async () => {
+    if (busy || !connected || !snapshot || !policy || !canLink || !linkConfirmed) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = linked
+      ? await change({
+          environmentId,
+          input: {
+            operationId: uuidv4().replaceAll("-", ""),
+            expectedRevision: snapshot.revision,
+            mode: policy.mode,
+            unlinkAccount: true,
+          },
+        })
+      : await link({
+          environmentId,
+          input: {
+            operationId: uuidv4().replaceAll("-", ""),
+            expectedRevision: snapshot.revision,
+            mode: policy.mode,
+          },
+        });
+    if (result._tag === "Failure") {
+      setError(failureMessage(squashAtomCommandFailure(result)));
+      setSnapshot(null);
+      setRequest({ environmentId, input: {} });
+    } else {
+      setSnapshot(result.value);
+      setNotice(
+        linked
+          ? "Vault account link removed. Local owner and saved connections are kept."
+          : "Vault owner linked to your Loom account. Your saved connections and access rules are kept.",
+      );
+    }
+    setLinkConfirmed(false);
+    setBusy(false);
+  };
   const openRepair = useCallback((section: "broker" | "health") => setRepair(section), []);
   return (
     <>
@@ -195,6 +238,50 @@ export function VaultOwnerSettings({
               )}
             </View>
           )}
+          {(!account || linked) &&
+          connected &&
+          policy?.ownerId &&
+          !policy.updatedBy?.startsWith("identity-principal:v1:") &&
+          supportsLoomFeature(config?.environment.capabilities, VAULT_OWNER_LINK_FEATURE) ? (
+            <View className="gap-3">
+              <Text>
+                {linked
+                  ? "This Vault owner is linked to a Loom account. Unlinking stops account access and keeps the local owner and saved access rules."
+                  : "Link this Vault owner to the account signed in to your Library before adding this computer to your account. Sign in to your Library on this device first."}
+              </Text>
+              <>
+                <View className="flex-row items-center gap-3">
+                  <Text className="flex-1">
+                    {linked
+                      ? "Unlink this Vault from my Loom account"
+                      : "I own this Vault and the account signed in to my Library"}
+                  </Text>
+                  <Switch
+                    accessibilityLabel={
+                      linked
+                        ? "Unlink this Vault from my Loom account"
+                        : "I own this Vault and the account signed in to my Library"
+                    }
+                    value={linkConfirmed}
+                    disabled={busy || !canLink}
+                    onValueChange={setLinkConfirmed}
+                  />
+                </View>
+                <Button
+                  label={
+                    busy
+                      ? "Saving owner link…"
+                      : linked
+                        ? "Unlink Loom account"
+                        : "Link Vault owner to Loom account"
+                  }
+                  tone="secondary"
+                  disabled={busy || !canLink || !linkConfirmed}
+                  onPress={() => void linkOwner()}
+                />
+              </>
+            </View>
+          ) : null}
           {error ? <Text accessibilityRole="alert">{error}</Text> : null}
           {notice ? <Text accessibilityRole="summary">{notice}</Text> : null}
           {supported ? (

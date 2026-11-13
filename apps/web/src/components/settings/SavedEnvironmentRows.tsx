@@ -1,4 +1,5 @@
 import { SessionPermissions } from "./SessionPermissions";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { ChevronsLeftRightEllipsisIcon, EllipsisIcon, RouteIcon } from "lucide-react"; // fork: fleet-connections
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useEffectEvent, useState } from "react";
@@ -773,6 +774,7 @@ export function CloudLinkRow({
   readonly canReadRelay: boolean;
   readonly canManageRelay: boolean;
 }) {
+  if (!LEGACY_CONNECT_UI_ENABLED) return null;
   if (!hasCloudPublicConfig()) return null;
   if (!canReadRelay) {
     return (
@@ -812,6 +814,7 @@ export function CloudRemoteEnvironmentRows({
   readonly primaryEnvironmentId: EnvironmentId | null;
   readonly savedEnvironments: ReadonlyArray<EnvironmentPresentation>;
 }) {
+  if (!LEGACY_CONNECT_UI_ENABLED) return null;
   return hasCloudPublicConfig() ? (
     <CloudEnvironmentConnectRows
       primaryEnvironmentId={primaryEnvironmentId}

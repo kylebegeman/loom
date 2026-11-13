@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_VAULT_FEATURE,
+  VAULT_OWNER_LINK_FEATURE,
   VAULT_ITEM_SEARCH_FEATURE,
   type VaultItemSummary,
 } from "@t3tools/contracts/fork";
@@ -65,6 +66,51 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const field = useId();
+  const linkField = useId();
+  const canLink = useAtomValue(access.linkOwner.permissionAtom(environmentId));
+  const [linkConfirmed, setLinkConfirmed] = useState(false);
+  const linked = policy?.accountLinked === true;
+  const linkOwner = async () => {
+    if (busy || !snapshot || !policy || !canLink || !linkConfirmed) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const changed = linked
+      ? await access.setOwnerPolicy.run(appAtomRegistry, {
+          environmentId,
+          input: {
+            operationId: randomUUID().replaceAll("-", ""),
+            expectedRevision: snapshot.revision,
+            mode: policy.mode,
+            unlinkAccount: true,
+          },
+        })
+      : await access.linkOwner.run(appAtomRegistry, {
+          environmentId,
+          input: {
+            operationId: randomUUID().replaceAll("-", ""),
+            expectedRevision: snapshot.revision,
+            mode: policy.mode,
+          },
+        });
+    if (changed._tag === "Failure") {
+      const cause = squashAtomCommandFailure(changed);
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not confirm the owner link. Refresh status before continuing.",
+      );
+    } else {
+      setNotice(
+        linked
+          ? "Vault account link removed. Local owner and saved connections are kept."
+          : "Vault owner linked to your Loom account. Your saved connections and access rules are kept.",
+      );
+    }
+    appAtomRegistry.refresh(snapshotAtom);
+    setLinkConfirmed(false);
+    setBusy(false);
+  };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the vault access snapshot from the server and aborts it on change
   useEffect(() => {
     const controller = new AbortController();
@@ -195,6 +241,45 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
               setting.
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {(!account || linked) &&
+      policy?.ownerId &&
+      !policy.updatedBy?.startsWith("identity-principal:v1:") &&
+      supportsLoomFeature(capabilities, VAULT_OWNER_LINK_FEATURE) ? (
+        <div className="flex max-w-prose flex-col gap-3">
+          <p className="text-sm">
+            {linked
+              ? "This Vault owner is linked to a Loom account. Unlinking stops account access and keeps the local owner and saved access rules."
+              : "Link this Vault owner to the account signed in to your Library before adding this computer to your account. Sign in to your Library on this device first."}
+          </p>
+          <>
+            <label htmlFor={linkField} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                id={linkField}
+                checked={linkConfirmed}
+                disabled={busy || !canLink}
+                onCheckedChange={(checked) => setLinkConfirmed(checked === true)}
+              />
+              {linked
+                ? "Unlink this Vault from my Loom account"
+                : "I own this Vault and the account signed in to my Library"}
+            </label>
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !canLink || !linkConfirmed}
+                onClick={() => void linkOwner()}
+              >
+                {busy
+                  ? "Saving owner link…"
+                  : linked
+                    ? "Unlink Loom account"
+                    : "Link Vault owner to Loom account"}
+              </Button>
+            </div>
+          </>
         </div>
       ) : null}
       {notice ? <LoomSettingsNotice role="status">{notice}</LoomSettingsNotice> : null}
