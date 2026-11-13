@@ -6,7 +6,11 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { AuthOrchestrationReadScope, type EnvironmentId } from "@t3tools/contracts";
 import { PROJECT_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  librarySignInTarget,
+  squashLibraryCommandFailure,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -16,6 +20,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { useEnvironmentQuery } from "~/state/query";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useEnvironmentScope } from "~/state/session";
 import {
   projectLibrary,
@@ -25,7 +30,7 @@ import {
 } from "./state";
 
 export const LIBRARY_SETUP_DESCRIPTION =
-  "Your Library keeps projects and saved conversations together across devices. Connect it once. You’ll choose a computer when starting work.";
+  "Sign in once to open your computers, projects and saved conversations on all your devices.";
 
 /** Choose storage once; working-copy and conversation computers are separate choices. */
 export function LibrarySetup({
@@ -41,6 +46,7 @@ export function LibrarySetup({
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const readInfo = useAtomQueryRunner(projectLibrary.info, { refresh: true, reportFailure: false });
   const eligible = authority.environments.filter(
     (entry) =>
       supportsLoomFeature(entry.serverConfig?.environment.capabilities, PROJECT_LIBRARY_FEATURE) &&
@@ -50,7 +56,6 @@ export function LibrarySetup({
   const [chosenCandidate, setCandidate] = useState<EnvironmentId | null>(authority.authorityId);
   const candidate = chosenCandidate ?? onlyLibraryId;
   const connectedBaseUrl = useEnvironmentHttpBaseUrl(candidate);
-  const signInBaseUrl = connectedBaseUrl ?? authority.destination?.url;
   const environment = authority.environments.find((entry) => entry.environmentId === candidate);
   const connected =
     environment?.entry.enabled === true && environment.connection.phase === "connected";
@@ -64,19 +69,59 @@ export function LibrarySetup({
       ? projectLibrary.info({ environmentId: candidate, input: {} })
       : null,
   );
+  const signInTarget = librarySignInTarget({
+    candidate:
+      query.data ??
+      (environment?.serverConfig?.environment.capabilities.libraryAuthority === true
+        ? { environmentId: environment.environmentId, isAuthority: true }
+        : null),
+    candidateUrl: connectedBaseUrl,
+    destination: authority.destination,
+  });
+  const chooseLibrary = (environmentId: EnvironmentId) => {
+    authority.setAuthorityId(environmentId);
+    if (readLibraryAuthorityId() === environmentId) {
+      if (environmentId !== authority.authorityId) selectProject(null);
+      setSaveError(null);
+      onSelected?.();
+    } else {
+      setSaveError(
+        "This device could not save your account connection. Allow site storage and try again.",
+      );
+    }
+  };
+  const finishSignIn = async (environmentId: EnvironmentId) => {
+    setCandidate(environmentId);
+    const result = await readInfo({ environmentId, input: {} });
+    if (result._tag === "Failure") {
+      const cause = squashLibraryCommandFailure(result);
+      setSaveError(
+        cause instanceof Error
+          ? cause.message
+          : "Loom could not verify your account connection. Try again.",
+      );
+    } else if (result.value.environmentId !== environmentId || result.value.isAuthority !== true) {
+      setSaveError(
+        "This address is a work computer. Enter your Library address to sign in to your account.",
+      );
+    } else {
+      chooseLibrary(environmentId);
+    }
+  };
   return (
     <div className="max-w-xl space-y-4">
       {heading ? (
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">Connect your Library</h2>
+          <h2 className="text-base font-semibold">Sign in to Loom</h2>
           <p className="text-sm text-muted-foreground">{LIBRARY_SETUP_DESCRIPTION}</p>
         </div>
       ) : null}
-      {eligible.length === 0 ? (
+      {!signInTarget ? (
         <p className="text-sm text-muted-foreground" role="status">
-          No Library connection yet. Sign in to your Library or add its address below.
+          Enter your Library address to sign in to your Loom account.
         </p>
-      ) : (
+      ) : null}
+      {eligible.length > 1 ? (
         <Select
           items={eligible.map((entry) => ({
             value: entry.environmentId,
@@ -97,8 +142,8 @@ export function LibrarySetup({
             ))}
           </SelectPopup>
         </Select>
-      )}
-      {candidate ? (
+      ) : null}
+      {candidate && !signInTarget ? (
         <p className="text-xs text-muted-foreground" role="status">
           {!connected
             ? "Reconnect this server to use its Library."
@@ -119,39 +164,24 @@ export function LibrarySetup({
           Changing the Library server does not move your existing projects or history.
         </p>
       ) : null}
-      {signInBaseUrl ? (
-        <LoomSignIn baseUrl={signInBaseUrl} onConnected={setCandidate} showUnavailable />
-      ) : (
-        <LoomSignIn onConnected={setCandidate} />
-      )}
-      <LoomLibraryAddress onConnected={setCandidate} />
+      {signInTarget ? (
+        <LoomSignIn
+          baseUrl={signInTarget.url}
+          expectedEnvironmentId={signInTarget.environmentId}
+          onConnected={(id) => void finishSignIn(id)}
+          actionLabel="Sign in to Loom"
+          description={false}
+          showUnavailable
+        />
+      ) : null}
+      <LoomLibraryAddress onConnected={(id) => void finishSignIn(id)} />
       <LibraryErrorNotice error={saveError} />
       <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={
-            !candidate ||
-            !connected ||
-            !query.isSuccess ||
-            query.isPending ||
-            query.data?.isAuthority !== true
-          }
-          onClick={() => {
-            if (candidate) {
-              authority.setAuthorityId(candidate);
-              if (readLibraryAuthorityId() === candidate) {
-                if (candidate !== authority.authorityId) selectProject(null);
-                onSelected?.();
-                setSaveError(null);
-              } else {
-                setSaveError(
-                  "This browser could not save the Library choice. Allow site storage and try again.",
-                );
-              }
-            }
-          }}
-        >
-          Use this Library
-        </Button>
+        {candidate && connected && query.isSuccess && query.data?.isAuthority === true ? (
+          <Button disabled={query.isPending} onClick={() => chooseLibrary(candidate)}>
+            Use this account
+          </Button>
+        ) : null}
         {showConnectionsLink ? (
           <Button variant="outline" render={<Link to="/settings/connections" />}>
             Open computers

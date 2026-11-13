@@ -1,6 +1,16 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryInfo, LibraryProject } from "@t3tools/contracts/fork";
 
+export function librarySignInTarget(input: {
+  readonly candidate: Pick<LibraryInfo, "environmentId" | "isAuthority" | "destination"> | null;
+  readonly candidateUrl: string | null;
+  readonly destination: LibraryInfo["destination"];
+}) {
+  if (input.candidateUrl && input.candidate?.isAuthority === true)
+    return { environmentId: input.candidate.environmentId, url: input.candidateUrl };
+  return input.candidate?.destination ?? input.destination ?? null;
+}
+
 /** App-shell navigation reads the deepest active route, outside the leaf route's React context. */
 export function libraryRouteParams(params: unknown) {
   const record = params !== null && typeof params === "object" ? params : {};

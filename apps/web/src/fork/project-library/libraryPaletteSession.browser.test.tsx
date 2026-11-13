@@ -68,7 +68,7 @@ describe("Library palette session", () => {
     await act(() => openLibraryAction("create-project"));
 
     expect(isLibraryPaletteOpen()).toBe(false);
-    const dialog = page.getByRole("dialog", { name: "Connect your Library" });
+    const dialog = page.getByRole("dialog", { name: "Sign in to Loom" });
     await userEvent.click(dialog.getByText("Sign in to a Library address"));
     await expect.element(dialog.getByRole("textbox", { name: "Library address" })).toBeInViewport();
   });
@@ -81,7 +81,7 @@ describe("Library palette session", () => {
     await userEvent.click(page.getByRole("option", { name: /Connect your Library/ }));
 
     expect(isLibraryPaletteOpen()).toBe(false);
-    const dialog = page.getByRole("dialog", { name: "Connect your Library" });
+    const dialog = page.getByRole("dialog", { name: "Sign in to Loom" });
     await userEvent.click(dialog.getByRole("button", { name: "Cancel" }));
     await expect.element(dialog).not.toBeInTheDocument();
   });

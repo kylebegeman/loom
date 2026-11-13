@@ -3,6 +3,7 @@ import {
   ACCOUNT_ACCESS_FEATURE,
   ACCOUNT_ACCESS_PREFIX,
   type DirectoryListing,
+  type AccountComputerStatus,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -15,6 +16,23 @@ import {
 import { BearerConnectionTarget } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import { connectionRoutes } from "../connection/routes.ts";
+
+export function accountComputerEnrollmentReady(input: {
+  readonly libraryEnvironmentId: EnvironmentId | null;
+  readonly sourceLibraryEnvironmentId: EnvironmentId | null;
+  readonly membership: AccountComputerStatus | null;
+  readonly signedIn: boolean;
+  readonly remoteEnabled: boolean;
+}) {
+  return (
+    input.libraryEnvironmentId !== null &&
+    input.sourceLibraryEnvironmentId === input.libraryEnvironmentId &&
+    input.signedIn &&
+    input.remoteEnabled &&
+    input.membership?.state === "active" &&
+    input.membership.membershipRevision !== null
+  );
+}
 
 export function accountComputerRegistration(
   library: ConnectionCatalogEntry,

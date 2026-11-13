@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { ACCOUNT_ACCESS_FEATURE } from "@t3tools/contracts/fork";
+import { ACCOUNT_ACCESS_FEATURE, type AccountComputerStatus } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -16,7 +16,7 @@ import {
   type NetworkStatus,
 } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { syncAccountComputers } from "./account-computers.ts";
+import { accountComputerEnrollmentReady, syncAccountComputers } from "./account-computers.ts";
 import { BOOK, DESK, LIBRARY, STUDIO, listing, reported } from "./directory-test-fixtures.ts";
 
 const source = (identity = true): ConnectionCatalogEntry => ({
@@ -36,6 +36,38 @@ const source = (identity = true): ConnectionCatalogEntry => ({
     }),
   ),
   enabled: true,
+});
+
+it("requires approved account membership beyond existing publishing and remote access", () => {
+  const membership: AccountComputerStatus = {
+    environmentId: BOOK,
+    label: "Book",
+    membershipRevision: 1,
+    state: "active",
+    publishingEnded: false,
+    routeRemoved: false,
+    directoryRemoved: false,
+    detail: null,
+  };
+  const input = {
+    libraryEnvironmentId: LIBRARY,
+    sourceLibraryEnvironmentId: LIBRARY,
+    signedIn: true,
+    remoteEnabled: true,
+    membership,
+  };
+  expect(accountComputerEnrollmentReady(input)).toBe(true);
+  for (const change of [
+    { membership: null },
+    { membership: { ...membership, membershipRevision: null } },
+    { membership: { ...membership, state: "removed" as const } },
+    { membership: { ...membership, state: "removing" as const } },
+    { sourceLibraryEnvironmentId: DESK },
+    { libraryEnvironmentId: null },
+    { signedIn: false },
+    { remoteEnabled: false },
+  ])
+    expect(accountComputerEnrollmentReady({ ...input, ...change })).toBe(false);
 });
 const fixture = Effect.gen(function* () {
   const entries = yield* SubscriptionRef.make<ReadonlyMap<typeof LIBRARY, ConnectionCatalogEntry>>(

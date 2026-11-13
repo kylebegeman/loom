@@ -1,7 +1,10 @@
 import * as Schema from "effect/Schema";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomValue } from "@effect/atom-react";
-import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
+import {
+  accountComputerEnrollmentReady,
+  squashLibraryCommandFailure,
+} from "@t3tools/client-runtime/fork";
 import { AuthSettingsWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, type DirectoryReporting } from "@t3tools/contracts/fork";
 import * as SecureStore from "expo-secure-store";
@@ -20,12 +23,14 @@ const isLibraryError = Schema.is(LibraryError);
 
 export function ComputerAccountSetup({
   environmentId,
+  label,
   connected,
   report,
   remoteEnabled,
   onRefresh,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly label: string;
   readonly connected: boolean;
   readonly report: DirectoryReporting | null;
   readonly remoteEnabled: boolean;
@@ -33,6 +38,11 @@ export function ComputerAccountSetup({
 }) {
   const authority = useLibraryAuthority();
   const source = useEnvironmentQuery(connected ? library.info({ environmentId, input: {} }) : null);
+  const computers = useEnvironmentQuery(
+    authority.ready && authority.environmentId
+      ? library.accountComputers({ environmentId: authority.environmentId, input: {} })
+      : null,
+  );
   const canInstall = useAtomValue(library.enrollComputer.permissionAtom(environmentId));
   const canApprove = useEnvironmentScope(authority.environmentId, AuthSettingsWriteScope);
   const enroll = useAtomCommand(library.enrollComputer, { reportFailure: false });
@@ -42,11 +52,15 @@ export function ComputerAccountSetup({
   const [finishedFor, setFinishedFor] = useState<string | null>(null);
   const finished = finishedFor === identity;
   if (authority.environmentId === environmentId) return null;
-  const ready =
-    finished ||
-    (source.data?.destination?.environmentId === authority.environmentId &&
-      remoteEnabled &&
-      (report?.signIn?.state === "ready" || report?.signIn?.state === "expiring"));
+  const ready = accountComputerEnrollmentReady({
+    libraryEnvironmentId: authority.environmentId,
+    sourceLibraryEnvironmentId: source.data?.destination?.environmentId ?? null,
+    membership: computers.isSuccess
+      ? (computers.data?.find((computer) => computer.environmentId === environmentId) ?? null)
+      : null,
+    signedIn: report?.signIn?.state === "ready" || report?.signIn?.state === "expiring",
+    remoteEnabled,
+  });
   const available = connected && authority.ready && canInstall && canApprove;
   const start = async () => {
     if (busy || !available || !authority.environmentId) return;
@@ -74,6 +88,8 @@ export function ComputerAccountSetup({
       } else {
         setFinishedFor(identity);
         onRefresh();
+        source.refresh();
+        computers.refresh();
         await SecureStore.deleteItemAsync(key);
       }
     } catch (cause) {
@@ -86,16 +102,27 @@ export function ComputerAccountSetup({
     <SettingsSection title="Account access">
       <View className="gap-2 px-4 py-3">
         <Text className="text-base text-foreground">
-          {ready ? "Connected to your account" : "Use this computer from your other devices"}
+          {!authority.ready
+            ? "Sign in to add this computer"
+            : ready
+              ? `${label} is ready for your other devices`
+              : `Add ${label} to your account`}
         </Text>
         <Text className="text-sm text-foreground-muted">
-          {ready
-            ? "Your Library keeps this computer’s saved work. Your other devices use the same account sign-in."
-            : "Add it once. Loom connects your Library, saves conversations and sets up remote access."}
+          {!authority.ready
+            ? "Use your Loom account to connect this computer to your other devices."
+            : ready
+              ? "Open this computer’s conversations from your phone, browser and other Macs."
+              : "Approve this computer once to open its conversations from your other devices."}
         </Text>
         {error ? (
           <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
             {error.message}
+          </Text>
+        ) : null}
+        {computers.error ? (
+          <Text accessibilityRole="alert" className="text-sm text-danger-foreground">
+            {computers.error}
           </Text>
         ) : null}
         {finished ? (
@@ -120,11 +147,18 @@ export function ComputerAccountSetup({
               ? "Start setup again"
               : error
                 ? "Resume setup"
-                : "Add to my account"
+                : "Add computer"
           }
           loading={busy}
-          disabled={!available}
+          disabled={!available || !computers.isSuccess || computers.isPending}
           onPress={() => void start()}
+        />
+      ) : null}
+      {computers.error ? (
+        <ListActionRow
+          icon="arrow.clockwise"
+          label="Check account setup again"
+          onPress={computers.refresh}
         />
       ) : null}
     </SettingsSection>

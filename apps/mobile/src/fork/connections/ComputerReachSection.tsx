@@ -169,6 +169,7 @@ export function ComputerReachSection({
       config?.environment.capabilities.supportsExecution !== false ? (
         <ComputerAccountSetup
           environmentId={environmentId}
+          label={config?.environment.label ?? "This computer"}
           connected={connected}
           report={report}
           remoteEnabled={view.switch.checked}

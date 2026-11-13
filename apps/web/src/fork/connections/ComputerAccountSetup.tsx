@@ -7,6 +7,7 @@ import {
   squashLibraryCommandFailure,
   supportsLoomFeature,
   directoryReportingView,
+  accountComputerEnrollmentReady,
 } from "@t3tools/client-runtime/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { LibraryError, ACCOUNT_ENROLLMENT_FEATURE } from "@t3tools/contracts/fork";
@@ -19,7 +20,6 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { Button } from "~/components/ui/button";
 import { projectLibrary, useLibraryAuthority } from "../project-library/state";
-import { requestLibraryConnect } from "../project-library/libraryPaletteSession";
 import { directoryReporting } from "../directory-computers/state";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -53,6 +53,11 @@ function ComputerAccountSetupForm({
   const source = useEnvironmentQuery(
     connected ? projectLibrary.info({ environmentId: environment.environmentId, input: {} }) : null,
   );
+  const computers = useEnvironmentQuery(
+    authority.connected && authority.authorityId
+      ? projectLibrary.accountComputers({ environmentId: authority.authorityId, input: {} })
+      : null,
+  );
   const canInstall = useAtomValue(
     projectLibrary.enrollComputer.permissionAtom(environment.environmentId),
   );
@@ -68,12 +73,18 @@ function ComputerAccountSetupForm({
   const [error, setError] = useState<string | null>(null);
   const [finishedFor, setFinishedFor] = useState<string | null>(null);
   const finished = finishedFor === key;
-  const belongs = source.data?.destination?.environmentId === authority.authorityId;
   const available = connected && authority.connected && canInstall && canApprove;
   const signedIn = report?.signIn?.state === "ready" || report?.signIn?.state === "expiring";
-  const ready =
-    finished ||
-    (belongs && signedIn && Option.exists(AsyncResult.value(route), (status) => status.enabled));
+  const ready = accountComputerEnrollmentReady({
+    libraryEnvironmentId: authority.authorityId,
+    sourceLibraryEnvironmentId: source.data?.destination?.environmentId ?? null,
+    membership: computers.isSuccess
+      ? (computers.data?.find((computer) => computer.environmentId === environment.environmentId) ??
+        null)
+      : null,
+    signedIn,
+    remoteEnabled: Option.exists(AsyncResult.value(route), (status) => status.enabled),
+  });
   const start = async () => {
     if (busy || !available || !authority.authorityId) return;
     setBusy(true);
@@ -98,6 +109,8 @@ function ComputerAccountSetupForm({
           saveRequestId(null);
           setFinishedFor(key);
           refreshReport();
+          source.refresh();
+          computers.refresh();
         }
       }
     } catch (cause) {
@@ -108,32 +121,27 @@ function ComputerAccountSetupForm({
     setBusy(false);
   };
   return (
-    <section
-      aria-label="Account access"
-      className="space-y-3 rounded-xl bg-secondary/40 p-4 sm:p-5"
-    >
+    <section aria-label="Account access" className="space-y-3 border-t border-border/60 pt-4">
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">
-          {ready ? "Connected to your account" : "Use this computer from your other devices"}
+          {ready
+            ? `${environment.label} is ready for your other devices`
+            : `Add ${environment.label} to your account`}
         </h3>
         <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
           {ready
-            ? "Your Library keeps this computer’s saved work. Account access uses the same sign-in on your phone, Mac and browser."
-            : "Add it once. Loom connects your Library, saves conversations and sets up remote access for your other devices."}
+            ? "Open this computer’s conversations from your phone, browser and other Macs."
+            : "Approve this computer once to open its conversations from your other devices."}
         </p>
       </div>
-      {!authority.authorityId || !authority.connected ? (
-        <Button size="sm" variant="outline" onClick={() => requestLibraryConnect("computers")}>
-          Sign in to Loom
-        </Button>
-      ) : !ready || savedRequestId ? (
+      {!ready || savedRequestId ? (
         <Button
           size="sm"
           variant="default"
-          disabled={!available || busy}
+          disabled={!available || busy || !computers.isSuccess || computers.isPending}
           onClick={() => void start()}
         >
-          {busy ? "Setting up computer..." : savedRequestId ? "Resume setup" : "Add to my account"}
+          {busy ? "Adding computer..." : savedRequestId ? "Resume setup" : "Add computer"}
         </Button>
       ) : null}
       {authority.connected && !available ? (
@@ -146,6 +154,14 @@ function ComputerAccountSetupForm({
       {finished ? (
         <p role="status" className="text-xs text-muted-foreground">
           Computer added. Remote access starts automatically.
+        </p>
+      ) : null}
+      {computers.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {computers.error}
+          <Button size="sm" variant="outline" onClick={computers.refresh}>
+            Check account setup again
+          </Button>
         </p>
       ) : null}
       {error ? (
