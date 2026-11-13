@@ -126,6 +126,7 @@ export type ToolGroupSummaryKind =
   | ToolGroupAction
   | "dynamic-tool"
   | "reasoning"
+  | "mcp-startup-warning"
   | "agent-tool"
   | "tone-tool"
   | "mixed";
@@ -565,10 +566,22 @@ function summaryActionPriority(action: ToolGroupAction | T3McpToolSummaryAction)
   }
 }
 
+export function workEntryIsMcpStartupWarning(
+  entry: Pick<WorkLogPresentationEntry, "id" | "itemType">,
+): boolean {
+  return entry.itemType === "system_notice" && entry.id.startsWith("mcp-startup-failed:");
+}
+
 export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEntry>): {
   summary: string;
   hasFailure: boolean;
 } {
+  if (entries.length > 0 && entries.every(workEntryIsMcpStartupWarning)) {
+    return {
+      summary: `${entries.length} ${entries.length === 1 ? "integration" : "integrations"} unavailable`,
+      hasFailure: false,
+    };
+  }
   const toolEntries = entries.filter((entry) => entry.itemType !== "reasoning");
   if (entries.length > 0 && toolEntries.length === 0) {
     return {
@@ -657,6 +670,8 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
 export function toolGroupSummaryKind(
   entries: ReadonlyArray<WorkLogPresentationEntry>,
 ): ToolGroupSummaryKind {
+  if (entries.length > 0 && entries.every(workEntryIsMcpStartupWarning))
+    return "mcp-startup-warning";
   const toolEntries = entries.filter((entry) => entry.itemType !== "reasoning");
   if (entries.length > 0 && toolEntries.length === 0) return "reasoning";
   entries = toolEntries;

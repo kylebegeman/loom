@@ -1823,6 +1823,92 @@ describe("subagent continued by a later turn", () => {
   });
 });
 
+it.each([1, 7])(
+  "collapses %s integration startup warnings without a live row and retains diagnostics",
+  (count) => {
+    const at = "2026-06-20T00:00:02.000Z";
+    const items: OrchestrationV2TurnItem[] = Array.from({ length: count }, (_, index) => ({
+      ...base(`mcp-startup-failed:turn:server-${index}`, at, index),
+      type: "system_notice",
+      title: `MCP server server-${index} failed to start`,
+      message: `server-${index}: handshake failed\nFull connection diagnostics`,
+    }));
+    const feed = buildThreadFeed(items.map((item, position) => projected(item, position)));
+    for (const status of ["completed", "running", "failed"] as const) {
+      const latestRun = {
+        runId,
+        status,
+        startedAt: at,
+        completedAt: status === "running" ? null : at,
+      };
+      const rows = deriveThreadFeedPresentation(feed, latestRun, new Set(), new Set(), at);
+      const toggles = rows.filter((row) => row.type === "work-toggle");
+      expect(toggles).toHaveLength(1);
+      expect(toggles[0]).toMatchObject({
+        summary: `${count} ${count === 1 ? "integration" : "integrations"} unavailable`,
+        summaryKind: "mcp-startup-warning",
+        hiddenCount: count,
+        expanded: false,
+        hasFailure: false,
+        live: false,
+        shimmer: false,
+      });
+      expect(rows.some((row) => row.type === "activity-group")).toBe(false);
+      const expanded = deriveThreadFeedPresentation(
+        feed,
+        latestRun,
+        new Set(),
+        new Set([toggles[0]!.groupId]),
+        at,
+      );
+      const details = expanded.flatMap((row) =>
+        row.type === "activity-group" ? row.activities : [],
+      );
+      expect(details.map((activity) => activity.projectedItem.item)).toEqual(items);
+      expect(details.every((activity) => activity.live === false)).toBe(true);
+      expect(details.map((activity) => activity.detail)).toEqual(
+        items.map((item) => (item.type === "system_notice" ? item.message : "")),
+      );
+    }
+  },
+);
+
+it.each(["system_notice", "command_execution", "reasoning"] as const)(
+  "separates integration startup warnings from nearby %s activities",
+  (type) => {
+    const at = "2026-06-20T00:00:02.000Z";
+    const warning = (id: string): OrchestrationV2TurnItem => ({
+      ...base(`mcp-startup-failed:turn:${id}`, at, 1),
+      type: "system_notice",
+      title: `MCP server ${id} failed to start`,
+      message: `${id}: handshake failed`,
+    });
+    const nearby: OrchestrationV2TurnItem =
+      type === "system_notice"
+        ? { ...base("nearby", at, 2), type, message: "Review permissions before continuing" }
+        : type === "reasoning"
+          ? { ...base("nearby", at, 2), type, text: "Considering the next step", streaming: false }
+          : command(at);
+    const rows = deriveThreadFeedPresentation(
+      buildThreadFeed(
+        [warning("first"), nearby, warning("last")].map((item, position) =>
+          projected(item, position),
+        ),
+      ),
+      null,
+      new Set(),
+    );
+    expect(
+      rows.filter((row) => row.type === "work-toggle" && row.summaryKind === "mcp-startup-warning"),
+    ).toHaveLength(2);
+    if (type === "system_notice") {
+      expect(rows.find((row) => row.type === "activity-group")).toMatchObject({
+        activities: [{ projectedItem: { item: nearby } }],
+      });
+    }
+  },
+);
+
 it("stops stranded thinking after a steer and follows the next thought or tool", () => {
   const at = "2026-06-20T00:00:02.000Z";
   const thought = (id: string): OrchestrationV2TurnItem => ({

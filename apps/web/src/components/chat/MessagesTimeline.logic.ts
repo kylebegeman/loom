@@ -27,6 +27,7 @@ import {
   type ToolGroupSummaryKind,
   liveThoughtLine,
   workEntryHiddenByToolCallVisibility,
+  workEntryIsMcpStartupWarning,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
   deriveRevertTurnCountByUserMessageId,
@@ -1953,14 +1954,17 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
+      const mcpStartupWarning = workEntryIsMcpStartupWarning(timelineEntry.entry);
       if (
         isPendingApproval(timelineEntry.entry) ||
-        (timelineEntry.entry.runId != null && itemizedRunIds.has(timelineEntry.entry.runId)) ||
+        (!mcpStartupWarning &&
+          timelineEntry.entry.runId != null &&
+          itemizedRunIds.has(timelineEntry.entry.runId)) ||
         (timelineEntry.entry.itemType === "error" &&
           timelineEntry.entry.toolLifecycleStatus === "failed") ||
         timelineEntry.entry.tone === "error" ||
         timelineEntry.entry.sourceActivityKind === "runtime.error" ||
-        timelineEntry.entry.itemType === "system_notice" ||
+        (timelineEntry.entry.itemType === "system_notice" && !mcpStartupWarning) ||
         timelineEntry.entry.itemType === "notification" ||
         timelineEntry.entry.itemType === "todo_list" ||
         timelineEntry.entry.questionAnswer !== undefined
@@ -1986,7 +1990,9 @@ export function deriveMessagesTimelineRows(input: {
             nextEntry.entry.toolLifecycleStatus === "failed") ||
           nextEntry.entry.tone === "error" ||
           nextEntry.entry.sourceActivityKind === "runtime.error" ||
-          nextEntry.entry.itemType === "system_notice" ||
+          (nextEntry.entry.itemType === "system_notice" &&
+            !workEntryIsMcpStartupWarning(nextEntry.entry)) ||
+          workEntryIsMcpStartupWarning(nextEntry.entry) !== mcpStartupWarning ||
           nextEntry.entry.itemType === "notification" ||
           nextEntry.entry.itemType === "todo_list" ||
           nextEntry.entry.questionAnswer !== undefined ||
@@ -2008,7 +2014,9 @@ export function deriveMessagesTimelineRows(input: {
         workEntryIsVisibleInGroup(entry, workEntryIsInActiveRun(entry)),
       );
       if (visibleGroupedEntries.length > 0) {
-        const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
+        const activeInProgressToolEntries = mcpStartupWarning
+          ? []
+          : visibleGroupedEntries.filter(workEntryIsInActiveRun);
         if (activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
@@ -2077,13 +2085,14 @@ export function deriveMessagesTimelineRows(input: {
             hiddenCount: visibleGroupedEntries.length,
             expanded,
             summary:
-              singleEntry !== null && !workLogEntryIsToolLike(singleEntry)
+              singleEntry !== null && !mcpStartupWarning && !workLogEntryIsToolLike(singleEntry)
                 ? singleEntry.label
                 : summarizeToolGroup(visibleGroupedEntries).summary,
             summaryKind,
             ...(groupToolSurface ? { toolSurface: groupToolSurface } : {}),
             ...(groupToolIcon ? { toolIcon: groupToolIcon } : {}),
             hasFailure:
+              !mcpStartupWarning &&
               latestToolEntry !== undefined &&
               workEntryDisplayIndicatesToolFailure(latestToolEntry),
           });
