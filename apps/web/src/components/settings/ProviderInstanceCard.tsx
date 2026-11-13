@@ -289,6 +289,7 @@ function ProviderEnvironmentFieldRow(props: {
   readonly onRemove: (field: ProviderEnvironmentField) => void;
   readonly managedReason?: string | undefined;
   readonly secretSources: ReadonlyArray<SecretSource>;
+  readonly environmentId?: EnvironmentId | undefined;
   // fork: vault-provider-credentials
   readonly vaultContext?: { environmentId: EnvironmentId; providerName: string } | undefined;
 }) {
@@ -307,6 +308,7 @@ function ProviderEnvironmentFieldRow(props: {
       spellCheck={false}
       aria-label={props.field.label}
       sources={props.secretSources}
+      environmentId={props.environmentId}
       onSecretChange={(secret) => props.onSecretChange(props.field, secret)}
     />
   );
@@ -372,6 +374,7 @@ export function ProviderEnvironmentSection(props: {
   /** Variables an administrator's policy pins: listed by name, never editable or removable. */
   readonly managed?: { readonly names: ReadonlySet<string>; readonly reason: string } | undefined;
   readonly secretSources?: ReadonlyArray<SecretSource>;
+  readonly environmentId?: EnvironmentId | undefined;
   // fork: vault-provider-credentials
   readonly vaultContext?: { environmentId: EnvironmentId; providerName: string } | undefined;
 }) {
@@ -575,6 +578,7 @@ export function ProviderEnvironmentSection(props: {
                     spellCheck={false}
                     aria-label={`Environment variable value ${index + 1}`}
                     sources={props.secretSources ?? []}
+                    environmentId={props.environmentId}
                     onSecretChange={(secret) => setVariableSecret(variable.id, secret)}
                   >
                     {(parts) =>
@@ -1374,6 +1378,7 @@ export function ProviderInstanceCard({
                       : undefined
                   }
                   secretSources={secretSources}
+                  environmentId={environmentId}
                   // fork: vault-provider-credentials
                   vaultContext={
                     environmentId ? { environmentId, providerName: displayName } : undefined
@@ -1425,6 +1430,7 @@ export function ProviderInstanceCard({
             environment={genericEnvironment}
             onChange={updateGenericEnvironment}
             secretSources={secretSources}
+            environmentId={environmentId}
             managed={
               instanceLocks && {
                 names: instanceLocks.environmentNames,

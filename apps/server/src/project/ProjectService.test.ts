@@ -10,6 +10,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: file-placem
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
@@ -17,7 +18,6 @@ import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as FileSystem from "effect/FileSystem"; // fork: file-placement
 
 import * as ServerConfig from "../config.ts";
 // fork: file-placement
@@ -53,6 +53,7 @@ import * as ProjectPlacement from "./ProjectPlacement.ts"; // fork: file-placeme
 import * as ProjectService from "./ProjectService.ts";
 import * as RepositoryIdentityResolver from "./RepositoryIdentityResolver.ts";
 import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts"; // fork: file-placement
+import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
 
 const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
   normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot.replace(/\/$/, "")),
@@ -348,7 +349,14 @@ it.layer(layerTest)("ProjectService", (it) => {
       });
       assert.isFalse(reset.autoPull);
       assert.isNull(reset.projectIcon);
-      assert.equal(reset.faviconPath, hydratedCreated.faviconPath);
+      assert.equal(
+        (yield* waitForProject(
+          service,
+          projectId,
+          (project) => project.faviconPath === hydratedCreated.faviconPath,
+        )).faviconPath,
+        hydratedCreated.faviconPath,
+      );
       assert.isNull(reset.defaultThreadEnvMode);
       assert.deepEqual(
         (yield* service.snapshot).projects.map((project) => project.id),
@@ -777,6 +785,49 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
       );
     }).pipe(Effect.provide(layerTestFor(layerVersionedMetadata)));
   }),
+);
+
+it.effect("resolves a restored icon immediately after reselecting its saved path", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "project-icon-reselect-" });
+    const iconPath = `${cwd}/icon.svg`;
+    const metadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: () => Effect.succeed(null),
+      }),
+      ProjectFaviconResolver.layer.pipe(
+        Layer.provide(layerWorkspacePaths),
+        Layer.provide(T3ProjectFileLoader.layer),
+        Layer.provide(NodeServices.layer),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const resolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
+      const projectId = ProjectId.make("project:icon-reselect");
+      yield* service.create({
+        commandId: CommandId.make("command:icon-reselect:create"),
+        projectId,
+        title: "Icon reselection",
+        workspaceRoot: cwd,
+      });
+      yield* service.update({
+        commandId: CommandId.make("command:icon-reselect:missing"),
+        projectId,
+        faviconPath: "icon.svg",
+      });
+      assert.isNull(yield* resolver.resolvePath(cwd, "icon.svg"));
+      yield* fileSystem.writeFileString(iconPath, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+      assert.isNull(yield* resolver.resolvePath(cwd, "icon.svg"));
+      yield* service.update({
+        commandId: CommandId.make("command:icon-reselect:restored"),
+        projectId,
+        faviconPath: "icon.svg",
+      });
+      assert.equal(yield* resolver.resolvePath(cwd, "icon.svg"), iconPath);
+    }).pipe(Effect.provide(layerTestFor(metadata)));
+  }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("serializes two projects claiming the same workspace root", () =>

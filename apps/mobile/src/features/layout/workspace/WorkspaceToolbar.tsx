@@ -110,8 +110,7 @@ export function WorkspaceToolbar(props: {
   const cancelSearch = () => {
     if (!acceptsNativeSearchEvent({ globalSearch, focused, tabActive: isTabActive(selectedTab) }))
       return;
-    workspace.recordScrollOffset(selectedTab, tab.searchEntryOffset);
-    workspace.dispatch({ type: "cancel", tab: selectedTab });
+    workspace.cancelSearch(selectedTab);
     // UIKit restores UISearchTab on cancel; RNS uses that tab type from iOS 26.1.
     if (globalSearch && Number.parseFloat(String(Platform.Version)) < 26.1)
       selectTab(workspace.state.searchReturnTab);
@@ -132,6 +131,8 @@ export function WorkspaceToolbar(props: {
     settingsListOnTop ||
     (!globalSearch && props.searchTab === undefined && primaryColumn?.presented === true);
   const restoreSearch = (afterTransition = false) => {
+    // A search cancelled while its screen was covered leaves its text in the native field.
+    if (tab.searchMode === "resting") searchRef.current?.setText("");
     if (
       searchHostVisible &&
       searchVisible &&

@@ -570,7 +570,7 @@ export const make = Effect.gen(function* () {
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
       });
-      if (workspaceRoot !== previousRoot) {
+      if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
         // fork: file-placement: the project already moved; a receipt left behind only keeps its old name taken.
         yield* relocateManagedProjectCheckout(previousRoot, workspaceRoot).pipe(

@@ -55,7 +55,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
+import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts"; // fork: project-lifecycle
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
@@ -96,8 +96,6 @@ export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStart
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}
-
-// fork: project-lifecycle -- restoreWorktree replaces upstream's worktree recreation errors.
 
 const isProviderTurnStartError = Schema.is(ProviderTurnStartError);
 const isProviderAdapterProtocolError = Schema.is(ProviderAdapter.ProviderAdapterProtocolError);
@@ -200,7 +198,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     // fork: mini-native-retention -- fileSystem moved above for workspace restoration.
     const path = yield* Path.Path;
-    // fork: project-lifecycle -- restoreWorktree replaced gitWorkflow; projects moved above.
+    // fork: project-lifecycle -- restoreWorktree replaced restoreMissingWorktree; projects moved up.
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -642,7 +640,7 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      // fork: project-lifecycle -- replaces upstream's inline missing-worktree recreation.
+      // fork: project-lifecycle -- replaces upstream's restoreMissingWorktree.
       {
         // The service `start` wrapper holds the non-reentrant lease for the worktree,
         // so restoration and setup inside it must not take that lease again.

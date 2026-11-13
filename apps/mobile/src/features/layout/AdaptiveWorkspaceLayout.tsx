@@ -115,7 +115,7 @@ import {
   type WorkspaceTabHistory,
 } from "./workspace/workspace-tab-navigation";
 import { settingsNavigationState } from "../settings/settings-navigation";
-import type { WorkspaceTab } from "./workspace/workspace-tabs-state";
+import { workspaceTabOf, type WorkspaceTab } from "./workspace/workspace-tabs-state";
 import { workspacePrimaryTab } from "./workspace/workspace-primary-navigation";
 import { workspaceRoutesOf } from "./workspace-overlay-routes";
 import { SettingsWorkspaceLayout } from "../settings/SettingsWorkspaceLayout";
@@ -609,7 +609,7 @@ function AdaptiveWorkspaceLayoutContent(
       if (!preserveOrigin) {
         workspace?.dispatch({
           type: "select",
-          tab: Platform.OS === "ios" || detail.name === "Thread" ? "threads" : "pullRequests",
+          tab: Platform.OS === "ios" ? "threads" : workspaceTabOf(detail.name),
         });
       }
       startOpeningDetail(detail);

@@ -3,6 +3,7 @@ import {
   withSwitchboardServiceTiers,
 } from "../../fork/switchboard/serviceTier.ts";
 import { makeSwitchboardLimitFailures } from "../../fork/switchboard/limitFailure.ts"; // fork: switchboard
+import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import { CodexSettings, ProviderDriverKind } from "@t3tools/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -257,6 +258,9 @@ export const CodexDriver: ProviderDriver<
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         readServiceTier,
         explainFailure: yield* makeSwitchboardLimitFailures("codex"), // fork: switchboard
+        models: Effect.suspend(() => snapshot.getSnapshot).pipe(
+          Effect.map((value) => value.models),
+        ),
         compatibility: installation.compatibility,
       },
     ).pipe(
@@ -351,7 +355,7 @@ export const CodexDriver: ProviderDriver<
               environment: processEnv,
             }).pipe(
               Effect.scoped,
-              Effect.timeout("20 seconds"),
+              Effect.timeout(resolveProviderProbeTimeoutMs("codex", 20_000, processEnv)),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
             ),
           ]).pipe(

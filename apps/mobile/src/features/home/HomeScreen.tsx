@@ -117,6 +117,7 @@ import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-sw
 import { useFabScroll } from "./FabScrollContext";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
+import { deriveHomeEmptyState } from "./home-empty-state";
 
 interface HomeScreenProps {
   readonly projects: ReadonlyArray<EnvironmentProject>;
@@ -177,79 +178,6 @@ const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 96;
 // swipe-row-activation), so render further ahead: a fast fling then reaches
 // rows that are already built instead of rows still being rebuilt.
 const THREAD_LIST_V2_DRAW_DISTANCE = 1_000;
-
-// fork: fleet-connections - Computer wording; readiness, not the shell snapshot, gates empty states.
-function deriveEmptyState(props: {
-  readonly catalogState: WorkspaceState;
-  readonly projectCount: number;
-}): { readonly title: string; readonly detail: string; readonly loading: boolean } {
-  const { catalogState } = props;
-  if (catalogState.isLoadingConnections) {
-    return {
-      // fork: fleet-connections
-      title: "Loading computers",
-      detail: "Checking saved computers on this device.",
-      loading: true,
-    };
-  }
-
-  if (!catalogState.hasConnections) {
-    return {
-      // fork: fleet-connections
-      title: "Connect a computer",
-      detail: "Connect a computer to open projects and start tasks there.",
-      loading: false,
-    };
-  }
-
-  if (
-    (catalogState.connectionState === "available" ||
-      catalogState.connectionState === "offline" ||
-      catalogState.connectionState === "error" ||
-      catalogState.connectionState === "unsupported") &&
-    !catalogState.hasReadyEnvironment // fork: fleet-connections
-  ) {
-    return {
-      title:
-        catalogState.connectionState === "unsupported"
-          ? "Client not supported"
-          : "Computer unavailable", // fork: fleet-connections
-      detail:
-        catalogState.connectionError ??
-        // fork: fleet-connections
-        "The saved computer is offline. Reconnect it or choose another computer to start working.",
-      loading: false,
-    };
-  }
-
-  if (
-    catalogState.hasConnectingEnvironment &&
-    !catalogState.hasReadyEnvironment && // fork: fleet-connections
-    catalogState.connectionError === null
-  ) {
-    return {
-      // fork: fleet-connections
-      title: "Connecting to computer",
-      detail: "Loading projects and conversations from the saved computer.",
-      loading: true,
-    };
-  }
-
-  if (props.projectCount === 0 && catalogState.hasLoadedShellSnapshot) {
-    return {
-      // fork: fleet-connections
-      title: "Start your first task",
-      detail: "Choose a project or start without one. Your work runs on the connected computer.",
-      loading: false,
-    };
-  }
-
-  return {
-    title: "No threads yet",
-    detail: "Start a task in a project, or work without one.", // fork: fleet-connections
-    loading: false,
-  };
-}
 
 function HomeTopContentSpacer() {
   return <View className="h-4" />;
@@ -845,10 +773,7 @@ export function HomeScreen(props: HomeScreenProps) {
     hasSearchQuery ||
     props.selectedEnvironmentId !== null ||
     (navigationView === "threads" && props.selectedProjectKey !== null);
-  const emptyState = deriveEmptyState({
-    catalogState: props.catalogState,
-    projectCount: props.projects.length,
-  });
+  const emptyState = deriveHomeEmptyState(props.catalogState, props.projects.length);
 
   // fork: fleet-connections - Empty states route to the next useful step instead of an early return.
   const emptyActionLabel = emptyState.loading
