@@ -1437,6 +1437,7 @@ describe("subagent worktree ownership", () => {
       const fixture = yield* cleanupFixture({
         ...DEFAULT_SERVER_SETTINGS.storageCleanup,
         worktreeSettledAfterDays: 8,
+        browserArtifactsAfterDays: null, // fork: retention-defaults
       });
       const linkedParent = `${yield* fixture.fs.makeTempDirectoryScoped({ prefix: "cleanup-link-" })}/worktrees`;
       yield* fixture.fs.symlink(fixture.config.worktreesDir, linkedParent);
@@ -1459,6 +1460,7 @@ describe("subagent worktree ownership", () => {
       const fixture = yield* cleanupFixture({
         ...DEFAULT_SERVER_SETTINGS.storageCleanup,
         worktreeSettledAfterDays: 8,
+        browserArtifactsAfterDays: null, // fork: retention-defaults
       }).pipe(Effect.provideService(HostProcess.Platform, "win32"));
       const settled = { branch: "feature", settledAt: at(-20 * DAY_MS) };
       fixture.setThreads([
@@ -3475,6 +3477,7 @@ describe("storage cleanup reports and local file policies", () => {
           const { service, fs, repo, worktree, command, setThreads } = yield* cleanupFixture({
             ...DEFAULT_SERVER_SETTINGS.storageCleanup,
             worktreeUnchanged: true,
+            worktreeOnLand: false, // fork: project-lifecycle
           });
           setThreads([
             shell({ branch: "feature", worktreePath: worktree, archivedAt: at(-DAY_MS) }),
