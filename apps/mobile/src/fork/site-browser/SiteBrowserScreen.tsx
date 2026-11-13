@@ -7,7 +7,8 @@ import { SITES_FEATURE, type SitesSnapshot, type SitesState } from "@t3tools/con
 import { AsyncResult } from "effect/reactivity";
 import { Image } from "expo-image";
 import { use, useEffect, useRef, useState, type ReactNode } from "react";
-import { Linking, Platform, RefreshControl, View } from "react-native";
+import { Linking, Platform, View } from "react-native";
+import { RefreshControl } from "../../components/ui/RefreshControl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";

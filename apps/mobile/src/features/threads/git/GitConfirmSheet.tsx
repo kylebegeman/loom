@@ -153,7 +153,9 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
       <SheetIntro
         eyebrow="Confirm"
         title={copy?.title ?? "Run action on default branch?"}
-        description={`${copy?.description ?? "Choose how to continue."} Checking out a feature branch switches this folder for every conversation using it.` /* fork: source-control-cockpit */}
+        description={
+          `${copy?.description ?? "Choose how to continue."} Checking out a feature branch switches this folder for every conversation using it.` /* fork: source-control-cockpit */
+        }
       />
 
       {/* fork: source-control-cockpit */}

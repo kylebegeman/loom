@@ -2170,7 +2170,8 @@ effectIt.effect.each([
       const releaseRestore = yield* Deferred.make<void>();
       const restoreEntered = yield* Deferred.make<void>();
       const fileSystem = FileSystem.makeNoop({
-        exists: () => Effect.succeed(true),
+        // A present checkout would read a managed-project receipt. These paths are not one.
+        exists: () => Effect.succeed(false),
         realPath: (candidate) =>
           (missing as ReadonlyArray<string>).includes(candidate)
             ? Effect.fail(

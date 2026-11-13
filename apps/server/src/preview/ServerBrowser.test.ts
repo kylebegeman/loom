@@ -3252,8 +3252,10 @@ it.effect("text-only snapshots leave viewer screencasts running and skip image c
   Effect.scoped(
     Effect.gen(function* () {
       const { browser, broker, tabId } = yield* ready;
-      yield* browser.attachViewer(viewerInput(tabId, false));
       const context = contexts[0]!;
+      yield* browser.attachViewer(viewerInput(tabId, false));
+      // The viewer still is captured after attach returns. Let that deadline pass, then watch the snapshot.
+      yield* TestClock.adjust("3 seconds");
       for (const session of context.sessions) session.send.mockClear();
       const snapshot = yield* broker.invoke<PreviewAutomationSnapshot>({
         scope,
@@ -3347,7 +3349,10 @@ it.effect(
         const send = original.sessions[0]!.send;
         const previous = send.getMockImplementation()!;
         send.mockImplementation((method, input) => {
-          if (method === "Page.captureScreenshot") {
+          if (
+            method === "Page.captureScreenshot" &&
+            (input as { format?: string }).format === "png"
+          ) {
             started.resolve();
             return release.promise;
           }
@@ -3365,7 +3370,8 @@ it.effect(
           })
           .pipe(Effect.forkChild);
         yield* Effect.promise(() => started.promise);
-        yield* Effect.promise(() => vi.advanceTimersByTimeAsync(10_000));
+        // Stay under the stalled-screenshot deadline. A longer jump is that deadline firing.
+        yield* Effect.promise(() => vi.advanceTimersByTimeAsync(1_000));
         expect(snapshot.pollUnsafe()).toBeUndefined();
         expect(original.page.isClosed()).toBe(false);
         expect(

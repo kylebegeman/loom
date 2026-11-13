@@ -23,9 +23,8 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts"; // fork: machine-updates
-import * as Option from "effect/Option"; // fork: machine-updates
 // fork: machine-updates
-import { makeIdleWindowLifetime } from "../fork/machine-updates/IdleWindowLifetime.ts";
+import { makeIdleWindowLifetime } from "../fork/machine-updates/IdleWindowLifetime.ts"; // fork: machine-updates
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedError<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",

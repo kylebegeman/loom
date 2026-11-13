@@ -475,6 +475,8 @@ it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
             ThreadCommandExecutor.layer,
             NodeServices.layer,
             Layer.mock(ServerConfig.ServerConfig)({ worktreesDir } as never),
+            // fork: project-lifecycle
+            Layer.mock(CheckpointStore.CheckpointStore)({ captureCheckpoint: () => Effect.void }),
             ServerSettings.layerTest(),
             Layer.mock(ProjectStore.ProjectStoreV2)({
               get: () => Effect.succeedSome({ workspaceRoot } as never),

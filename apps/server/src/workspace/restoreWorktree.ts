@@ -93,9 +93,13 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           );
           // Only a thread with no saved work may start over from the project's current branch.
           if (ready.length === 0) {
-            // Push keeps the tracking ref current, so recovery reads it without fetching.
-            const pushedRef = `refs/remotes/origin/${input.branch}`;
-            if (yield* git.hasCommit({ cwd: root, refName: pushedRef }))
+            // The only remote is not always named origin. Push keeps its tracking ref current.
+            const remoteName = yield* git
+              .resolvePrimaryRemoteName(root)
+              .pipe(Effect.orElseSucceed(() => null));
+            const pushedRef =
+              remoteName === null ? null : `refs/remotes/${remoteName}/${input.branch}`;
+            if (pushedRef !== null && (yield* git.hasCommit({ cwd: root, refName: pushedRef })))
               return { cwd: root, refName: pushedRef, newRefName: input.branch, path: cwd };
             // Recovery can follow an external checkout, before the status cache expires.
             yield* git.invalidateLocalStatus(root);
@@ -110,18 +114,19 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
                 path: cwd,
               };
             }
-            if (yield* git.hasCommit({ cwd: root, refName: "refs/remotes/origin/HEAD" })) {
+            const remoteHead = remoteName === null ? null : `refs/remotes/${remoteName}/HEAD`;
+            if (remoteHead !== null && (yield* git.hasCommit({ cwd: root, refName: remoteHead }))) {
               const { commitSha } = yield* git.resolveRemoteTrackingCommit({
                 cwd: root,
                 refName: "HEAD",
-                fallbackRemoteName: "origin",
+                fallbackRemoteName: remoteName,
               });
               // Start from the commit so the thread branch does not track the default branch.
               return {
                 cwd: root,
                 refName: commitSha,
                 newRefName: input.branch,
-                baseRefName: "refs/remotes/origin/HEAD",
+                baseRefName: remoteHead,
                 path: cwd,
               };
             }
