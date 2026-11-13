@@ -1571,6 +1571,8 @@ function toolGroupSummarySymbolName(kind: ToolGroupSummaryKind): AppSymbolName {
       return { ios: "wrench", android: "build" };
     case "reasoning":
       return { ios: "brain", android: "psychology" };
+    case "mcp-startup-warning":
+      return "exclamationmark.circle";
     case "agent-tool":
       return "robot";
     case "tone-tool":

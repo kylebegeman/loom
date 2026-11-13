@@ -515,6 +515,133 @@ describe("deriveMessagesTimelineRows", () => {
     },
   );
 
+  it.each([1, 7])(
+    "collapses %s integration startup warnings and retains their expanded diagnostics",
+    (count) => {
+      const fixture = makeStreamingTimelineFixture();
+      const sources: OrchestrationV2ProjectedTurnItem[] = Array.from(
+        { length: count },
+        (_, index) => {
+          const id = TurnItemId.make(`mcp-startup-failed:turn:server-${index}`);
+          return {
+            ...fixture.visibleTurnItems[0]!,
+            sourceItemId: id,
+            item: {
+              id,
+              threadId: fixture.threadId,
+              runId: fixture.runId,
+              nodeId: null,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: index,
+              startedAt: DateTime.makeUnsafe(fixture.time(index)),
+              completedAt: DateTime.makeUnsafe(fixture.time(index)),
+              updatedAt: DateTime.makeUnsafe(fixture.time(index)),
+              type: "system_notice",
+              title: `MCP server server-${index} failed to start`,
+              message: `server-${index}: handshake failed\nFull connection diagnostics`,
+              status: "completed",
+            },
+          };
+        },
+      );
+      const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: sources,
+        optimisticMessages: [],
+      });
+      for (const status of ["completed", "running", "failed"] as const) {
+        const input = {
+          timelineEntries,
+          isWorking: status === "running",
+          latestRun: {
+            runId: fixture.runId,
+            status,
+            startedAt: fixture.time(0),
+            completedAt: status === "running" ? null : fixture.time(count),
+          },
+          runningRunId: fixture.runId,
+          activeTurnStartedAt: fixture.time(0),
+          turnDiffSummaries: [],
+          supportsConversationRollback: false,
+        };
+        const rows = deriveMessagesTimelineRows(input);
+        const toggles = rows.filter((row) => row.kind === "work-toggle");
+        expect(toggles).toHaveLength(1);
+        expect(toggles[0]).toMatchObject({
+          summary: `${count} ${count === 1 ? "integration" : "integrations"} unavailable`,
+          summaryKind: "mcp-startup-warning",
+          hiddenCount: count,
+          hasFailure: false,
+          expanded: false,
+        });
+        expect(rows.some((row) => row.kind === "work" || row.kind === "work-live")).toBe(false);
+        const expanded = deriveMessagesTimelineRows({
+          ...input,
+          expandedWorkGroupIds: new Set([toggles[0]!.groupId]),
+        });
+        const details = expanded.flatMap((row) => (row.kind === "work" ? row.groupedEntries : []));
+        expect(details.map((entry) => entry.structuredPayload)).toEqual(
+          sources.map((source) => source.item),
+        );
+      }
+    },
+  );
+
+  it.each(["system_notice", "command_execution", "reasoning"] as const)(
+    "separates integration startup warnings from nearby %s entries",
+    (itemType) => {
+      const at = "2026-01-01T00:00:00.000Z";
+      const warning = (id: string): TimelineEntry => ({
+        kind: "work",
+        id,
+        createdAt: at,
+        entry: {
+          id: `mcp-startup-failed:turn:${id}`,
+          createdAt: at,
+          itemType: "system_notice",
+          label: `MCP server ${id} failed to start`,
+          tone: "info",
+          toolLifecycleStatus: "completed",
+        },
+      });
+      const nearby: TimelineEntry = {
+        kind: "work",
+        id: "nearby",
+        createdAt: at,
+        entry: {
+          id: "nearby",
+          createdAt: at,
+          itemType,
+          label: "Keep this separate",
+          tone:
+            itemType === "reasoning"
+              ? "thinking"
+              : itemType === "command_execution"
+                ? "tool"
+                : "info",
+          toolLifecycleStatus: "completed",
+        },
+      };
+      const rows = deriveMessagesTimelineRows({
+        timelineEntries: [warning("first"), nearby, warning("last")],
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+      expect(
+        rows.filter(
+          (row) => row.kind === "work-toggle" && row.summaryKind === "mcp-startup-warning",
+        ),
+      ).toHaveLength(2);
+      expect(
+        rows.some((row) => row.kind === "work" && row.groupedEntries.includes(nearby.entry)),
+      ).toBe(itemType !== "reasoning");
+    },
+  );
+
   it.each([false, true])(
     "gives live compaction the activity slot and restores Thinking (runless: %s)",
     (runless) => {

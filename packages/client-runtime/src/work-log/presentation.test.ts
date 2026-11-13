@@ -7,6 +7,8 @@ import {
   contextCompactionLabel, // fork: compaction-recovery
   resolveWorkEntryToolPresentation,
   toolItemForDisplay,
+  summarizeToolGroup,
+  toolGroupSummaryKind,
   type WorkLogPresentationEntry,
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
@@ -220,5 +222,28 @@ describe("contextCompactionLabel", () => {
     expect(
       contextCompactionLabel({ status, beforeTokenCount: 899_000, afterTokenCount: 19_000 }),
     ).toBe(label);
+  });
+});
+
+describe("integration startup warning summaries", () => {
+  it.each([1, 7])("summarizes %s unavailable integrations without a tool failure", (count) => {
+    const entries: WorkLogPresentationEntry[] = Array.from({ length: count }, (_, index) => ({
+      id: `mcp-startup-failed:turn:server-${index}`,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      label: `MCP server server-${index} failed to start`,
+      tone: "info",
+      itemType: "system_notice",
+    }));
+    expect(summarizeToolGroup(entries)).toEqual({
+      summary: `${count} ${count === 1 ? "integration" : "integrations"} unavailable`,
+      hasFailure: false,
+    });
+    expect(toolGroupSummaryKind(entries)).toBe("mcp-startup-warning");
+    expect(toolGroupSummaryKind([{ ...entries[0]!, itemType: "notification" }])).not.toBe(
+      "mcp-startup-warning",
+    );
+    expect(toolGroupSummaryKind([{ ...entries[0]!, id: "permission-notice" }])).not.toBe(
+      "mcp-startup-warning",
+    );
   });
 });

@@ -42,6 +42,8 @@ export function toolGroupSummaryIconName(
       return "hammer";
     case "reasoning":
       return "brain";
+    case "mcp-startup-warning":
+      return "circle-alert";
     case "agent-tool":
       return "bot";
     case "tone-tool":

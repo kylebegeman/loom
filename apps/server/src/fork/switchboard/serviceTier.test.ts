@@ -159,6 +159,12 @@ it.effect("prepares a pooled Codex catalog without changing native account metad
         { slug: "gpt-6-astra", base_instructions: "Astra", service_tiers: [] },
         { slug: "gpt-6-luna", service_tiers: [] },
       ];
+      // Another client's catalog omits Sol; pinning it would give Sol fallback metadata.
+      yield* fs.writeFileString(
+        path.join(home, "models_cache.json"),
+        JSON.stringify({ models: models.slice(1) }),
+      );
+      assert.equal(yield* makeSwitchboardCodexCatalog(home), undefined);
       const source = JSON.stringify({ models, identity: { account: "native-account" } });
       yield* fs.writeFileString(path.join(home, "models_cache.json"), source);
       const file = yield* makeSwitchboardCodexCatalog(home);

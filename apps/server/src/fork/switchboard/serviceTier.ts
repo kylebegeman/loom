@@ -160,6 +160,11 @@ export const makeSwitchboardCodexCatalog = Effect.fn("Switchboard.makeCodexCatal
   const source = path.join(home, "models_cache.json");
   if (!(yield* fs.exists(source))) return undefined;
   const catalog = yield* fs.readFileString(source).pipe(Effect.flatMap(decodeCodexCatalog));
+  // Other clients rewrite this shared cache with catalogs tailored to them. Pinning one
+  // without a routed model gives it fallback metadata (a 272k window) for the process
+  // lifetime, so let Codex load its own catalog instead.
+  const slugs = new Set(catalog.models.map((model) => model.slug));
+  if ([...SWITCHBOARD_CODEX_MODELS].some((slug) => !slugs.has(slug))) return undefined;
   const models = catalog.models.map((model) => {
     if (typeof model.slug !== "string" || !SWITCHBOARD_CODEX_MODELS.has(model.slug)) return model;
     const tiers = Array.isArray(model.service_tiers) ? model.service_tiers : [];

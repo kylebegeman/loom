@@ -32,6 +32,7 @@ import {
   type WorkLogPresentationEntry,
   type WorkLogToolLifecycleStatus,
   workEntryHiddenByToolCallVisibility,
+  workEntryIsMcpStartupWarning,
 } from "@t3tools/client-runtime/work-log/presentation";
 import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import {
@@ -984,6 +985,8 @@ function groupAdjacentActivities(
       continue;
     }
 
+    const mcpStartupWarning = workEntryIsMcpStartupWarning(entry.activity.workEntry);
+    const prominent = entry.activity.prominent && !mcpStartupWarning;
     const isStandaloneActivity =
       entry.activity.workEntry.questionAnswer !== undefined ||
       entry.activity.projectedItem.item.type === "compaction" ||
@@ -991,7 +994,10 @@ function groupAdjacentActivities(
       entry.activity.projectedItem.item.type === "notification";
     if (
       isStandaloneActivity ||
-      entry.activity.prominent ||
+      prominent ||
+      (firstActivityEntry !== null &&
+        workEntryIsMcpStartupWarning(firstActivityEntry.activity.workEntry) !==
+          mcpStartupWarning) ||
       (entry.activity.projectedItem.item.type === "subagent") !==
         (firstActivityEntry?.activity.projectedItem.item.type === "subagent") ||
       firstActivityEntry?.runId !== entry.runId ||
@@ -1005,7 +1011,7 @@ function groupAdjacentActivities(
     }
     firstActivityEntry ??= entry;
     openGroupActivities.push(entry.activity);
-    if (isStandaloneActivity || entry.activity.prominent) {
+    if (isStandaloneActivity || prominent) {
       flushGroup();
     }
   }
@@ -1792,7 +1798,8 @@ export function deriveThreadFeedPresentation(
       if (
         entry.type === "activity-group" &&
         entry.runId !== null &&
-        failedRunIds.has(entry.runId)
+        failedRunIds.has(entry.runId) &&
+        !entry.activities.every((activity) => workEntryIsMcpStartupWarning(activity.workEntry))
       ) {
         let rows = failedActivityGroupsCache.get(entry);
         if (!rows) {
@@ -2027,7 +2034,11 @@ function appendActivityGroupRows(
   let groupAnchorId: string | null = null;
   for (const activity of entry.activities) {
     const item = activity.projectedItem.item;
-    if (activity.prominent || (item.type === "error" && item.status === "failed")) {
+    const mcpStartupWarning = workEntryIsMcpStartupWarning(activity.workEntry);
+    if (
+      (activity.prominent && !mcpStartupWarning) ||
+      (item.type === "error" && item.status === "failed")
+    ) {
       groupAnchorId = null;
       continue;
     }
@@ -2072,7 +2083,11 @@ function appendActivityGroupRows(
   for (const activity of activities) {
     const item = activity.projectedItem.item;
     const severeProviderError = item.type === "error" && item.status === "failed";
-    if (!activity.prominent && !severeProviderError && item.type !== "notification") {
+    const mcpStartupWarning = workEntryIsMcpStartupWarning(activity.workEntry);
+    if (
+      mcpStartupWarning ||
+      (!activity.prominent && !severeProviderError && item.type !== "notification")
+    ) {
       groupableRun.push(activity);
       continue;
     }
@@ -2103,10 +2118,14 @@ function appendToolGroupRows(
     (activity) =>
       isWorking && activity.lifecycleStatus === "inProgress" && activity.runId === activeRunId,
   );
-  const active = latestActiveActivity !== undefined;
-  const live = activeTail || active;
+  const mcpStartupWarning = activities.every((activity) =>
+    workEntryIsMcpStartupWarning(activity.workEntry),
+  );
+  const active = !mcpStartupWarning && latestActiveActivity !== undefined;
+  const live = !mcpStartupWarning && (activeTail || active);
   const latestActivity = latestActiveActivity ?? activities.at(-1)!;
-  const shimmer = activeTail && (active || latestActivity.status === "success");
+  const shimmer =
+    !mcpStartupWarning && activeTail && (active || latestActivity.status === "success");
   const singleActivity = activities.length === 1 ? latestActivity : null;
   const groupSummary = summarizeToolGroup(activities.map((activity) => activity.workEntry));
   const latestThought =
@@ -2128,12 +2147,16 @@ function appendToolGroupRows(
         singleActivity.toolLike &&
         toolGroupAction(singleActivity.workEntry) !== "edit"
       ? singleToolCallLabel(singleActivity, expanded)
-      : singleActivity !== null && !singleActivity.toolLike
+      : singleActivity !== null && !mcpStartupWarning && !singleActivity.toolLike
         ? singleActivity.workEntry.label
         : groupSummary.summary;
   const id = shimmer ? LIVE_ACTIVITY_ROW_ID : `${live ? "work-live" : "work-toggle"}:${groupId}`;
   // Lone calls replace the header and disclose directly; lone thoughts retain the header to show text on expansion.
-  if (singleActivity !== null && singleActivity.workEntry.itemType !== "reasoning") {
+  if (
+    singleActivity !== null &&
+    !mcpStartupWarning &&
+    singleActivity.workEntry.itemType !== "reasoning"
+  ) {
     result.push({
       type: "activity-group",
       id,
@@ -2188,7 +2211,9 @@ function appendToolGroupRows(
     hasFailure: (() => {
       const lastToolLike = activities.findLast((activity) => activity.toolLike);
       return (
-        lastToolLike !== undefined && workEntryDisplayIndicatesToolFailure(lastToolLike.workEntry)
+        !mcpStartupWarning &&
+        lastToolLike !== undefined &&
+        workEntryDisplayIndicatesToolFailure(lastToolLike.workEntry)
       );
     })(),
     live,
@@ -2204,6 +2229,7 @@ function appendToolGroupRows(
       ...activity,
       groupedToolDetail: true,
       live:
+        !mcpStartupWarning &&
         isWorking &&
         activity.id === latestActivity.id &&
         activity.lifecycleStatus === "inProgress" &&
