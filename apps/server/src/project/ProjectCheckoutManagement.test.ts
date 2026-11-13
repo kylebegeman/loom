@@ -50,6 +50,7 @@ const fixture = Effect.gen(function* () {
   const row: ProjectStore.ProjectRow = {
     projectId,
     title: "Existing project",
+    hasCustomTitle: false,
     workspaceRoot: cwd,
     defaultModelSelection: null,
     defaultThreadEnvMode: null,

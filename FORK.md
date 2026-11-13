@@ -74,6 +74,7 @@ provider settings controls. Their marker counts are checked in `docs/fork/seams.
 | `apps/web/src/components/settings/ProviderInstanceCard.tsx`                 | Mount the Vault source control for sensitive environment fields. |
 | `apps/mobile/src/features/settings/SettingsProviderAccountsRouteScreen.tsx` | Mount native provider credential settings.                       |
 | `apps/server/src/provider/ProviderInstanceRegistry.test.ts`                 | Cover contextual delivery and fail-closed reload.                |
+| `apps/server/src/secrets/SecretCheck.test.ts`                               | Supply the Vault credential service to the registry.             |
 | `apps/server/src/auth/RpcAuthorization.test.ts`                             | Cover both settings mutation paths.                              |
 | `packages/client-runtime/src/state/commandPermissions.test.ts`              | Cover destination permissions and revocation.                    |
 

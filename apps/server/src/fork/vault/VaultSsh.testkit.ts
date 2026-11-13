@@ -91,6 +91,7 @@ export const sshFixture = (
           Effect.succeedSome({
             projectId,
             title: "Disposable project",
+            hasCustomTitle: false,
             workspaceRoot: "/private/project",
             defaultModelSelection: null,
             defaultThreadEnvMode: null,

@@ -610,10 +610,10 @@ it.effect("assembly edits preserve atomic operations and revision conflicts", ()
   Effect.gen(function* () {
     const threadId = ThreadId.make("assembly-thread");
     const path = "cases/case.loom-assembly.json";
-    const operations: readonly AssemblyOperation[] = [
+    const operations = [
       { op: "add-part", id: "board", name: "Board", path: "models/board.b3d.py" },
       { op: "update-part", id: "board", position: [1, 2, 3], parameters: { width: "20" } },
-    ];
+    ] satisfies readonly AssemblyOperation[];
     const snapshot: AssemblyReadResult = {
       path,
       revision: "saved-revision",

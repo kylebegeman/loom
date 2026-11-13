@@ -31,6 +31,8 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as ProviderInstanceRegistryMutator from "../provider/ProviderInstanceRegistryMutator.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as SecretCheck from "./SecretCheck.ts";
+// fork: vault-provider-credentials
+import * as VaultProviderCredentials from "../fork/vault/VaultProviderCredentials.ts";
 
 const FAKE_KIND = SecretProviderKind.make("fake");
 const secretProvider = SecretProviderId.make("personal");
@@ -188,6 +190,7 @@ const setup = Effect.fn("SecretCheckTest.setup")(function* (
 });
 
 const layerTest = Layer.mergeAll(
+  Layer.mock(VaultProviderCredentials.VaultProviderCredentials)({}), // fork: vault-provider-credentials
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-secret-check-" }),
   ModelManifest.layerTest,
   ProviderLatestVersions.layer,

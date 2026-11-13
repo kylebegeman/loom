@@ -1205,9 +1205,9 @@ it.effect("access changes made while the snapshot loads reach the client after i
               Layer.mock(UsageLimitSources.UsageLimitSources)({}),
               Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
               Layer.mock(DirectEndpoints.DirectEndpoints)({}),
-              Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
-                namedProjectsRoot: "/unused",
-              }),
+              // fork: file-placement -- ProjectPlacement supplies the folders namedProjectsRoot did
+              Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({}),
+              Layer.mock(ProjectPlacement.ProjectPlacement)({}), // fork: file-placement
               Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
               Layer.mock(ServerEnvironment.ServerEnvironment)({}),
               Layer.mock(EnvironmentAuth.EnvironmentAuth)({

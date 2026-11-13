@@ -64,6 +64,7 @@ export const launchFixture = (
         Effect.succeedSome({
           projectId: f.state.thread.projectId,
           title: "Disposable project",
+          hasCustomTitle: false,
           workspaceRoot: "/private/project",
           defaultModelSelection: null,
           defaultThreadEnvMode: null,
