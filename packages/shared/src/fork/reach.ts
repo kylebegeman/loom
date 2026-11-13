@@ -167,6 +167,8 @@ export const REACH_ALLOWED_PATHS = [
   "/oauth/token",
   "/api/auth/session",
   "/api/auth/websocket-ticket",
+  "/api/auth/websocket-ticket/rpc",
+  "/api/auth/websocket-ticket/media",
   // A device that reaches the computer only this way must still be able to revoke a stolen one.
   "/api/auth/clients",
   "/api/auth/clients/revoke",
@@ -400,6 +402,8 @@ export function reachWafRule(zone: string) {
 export const REACH_RATE_LIMITED_PATHS = [
   "/oauth/token",
   "/api/auth/websocket-ticket",
+  "/api/auth/websocket-ticket/rpc",
+  "/api/auth/websocket-ticket/media",
   "/api/auth/session",
   "/api/loom/identity/session",
 ] as const;
