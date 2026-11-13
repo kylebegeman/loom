@@ -1501,7 +1501,9 @@ behavior eval. It reads current skill files and reuses the upstream MCP eval har
 `knip.jsonc` (`ext-lint`) includes the directly invoked skill validator and semantic
 upstream report as entrypoints; neither is bundled into the running application.
 It also ignores upstream's mobile `workspace-list-insets.ts`, whose only caller
-is the early-return empty state that project-navigation's in-list empty states replace.
+is the early-return empty state that project-navigation's in-list empty states replace,
+and allows the server's `makeRestoreMissingWorktree` export, whose turn-start caller
+project-lifecycle's checkout restoration replaces (terminals still use it in-file).
 
 ### Native effect lint compatibility
 

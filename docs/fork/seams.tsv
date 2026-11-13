@@ -1433,7 +1433,7 @@ apps/web/src/routes/_chat.settings.tsx	ext-settings	4
 apps/web/src/rpc/requestLatencyState.test.ts	library-launch-files	1
 apps/web/src/state/queries.ts	fleet-connections	1
 apps/web/src/state/session.ts	library-projects	1
-knip.jsonc	ext-lint	8
+knip.jsonc	ext-lint	9
 package.json	-	"dev:fixtures": "node apps/server/scripts/dev-fixtures.ts"
 package.json	-	"seed-dev-db": "node apps/server/scripts/seed-dev-db.ts"
 packages/client-runtime/src/connection/catalog.ts	directory-computers	1
