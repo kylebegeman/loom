@@ -739,10 +739,7 @@ it.effect(
             return Effect.void;
           },
         });
-        const invoke = (
-          name: Parameters<typeof toolkit.handle>[0],
-          input: Schema.Json,
-        ) =>
+        const invoke = (name: Parameters<typeof toolkit.handle>[0], input: Schema.Json) =>
           toolkit
             .handle(name, input)
             .pipe(
