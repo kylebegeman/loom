@@ -41,7 +41,6 @@ import { expect, vi } from "vite-plus/test";
 import * as ServerConfig from "../config.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import * as ServerConfig from "../config.ts"; // fork: project-lifecycle
 // fork: project-lifecycle
 import {
   markManagedProjectCheckout,
@@ -51,7 +50,6 @@ import {
 } from "../workspace/ManagedProjectCheckout.ts";
 import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
 import { runCheckoutProcess } from "../workspace/checkoutProcess.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";

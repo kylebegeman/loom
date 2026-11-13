@@ -168,7 +168,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecy
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
-apps/server/src/terminal/Manager.test.ts	project-lifecycle	6
+apps/server/src/terminal/Manager.test.ts	project-lifecycle	5
 apps/server/src/storageCleanup.test.ts	project-lifecycle	39
 packages/contracts/src/settings.test.ts	project-lifecycle	4
 apps/server/src/serverSettings.test.ts	project-lifecycle	1
