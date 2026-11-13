@@ -38,8 +38,20 @@ main checkout, as it is when Loom runs that action.
 
 ## First checkout
 
-Install `vp` using the [root README](../../README.md#install-vp). It provides the Node version
-pinned in `package.json` (Node 26), so no separate Node install is needed. From the repository root:
+T3 Code uses [Vite+](https://viteplus.dev/guide/). Install its global `vp` command:
+
+```sh
+curl -fsSL https://vite.plus | bash
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://vite.plus/ps1 | iex
+```
+
+`vp` provides the Node version pinned in `package.json` (Node 26), so no separate Node install is
+needed. From the repository root:
 
 ```sh
 vp i

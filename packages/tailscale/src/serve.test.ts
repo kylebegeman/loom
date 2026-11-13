@@ -15,10 +15,10 @@ import {
   inspectTailscaleServe,
   parseTailscaleServeConfig,
   releaseTailscaleServe,
-  TailscaleServeHttpsDisabledError,
   TailscaleServePortHeldError,
   type TailscaleServeConfig,
 } from "./serve.ts";
+import { TailscaleServeHttpsDisabledError } from "./tailscale.ts";
 
 const encoder = new TextEncoder();
 

@@ -486,19 +486,18 @@ const fixture = Effect.gen(function* () {
     revokeAfterRead,
   };
 });
-type State = Effect.Success<typeof fixture> & {
+type Fixture = Effect.Success<typeof fixture>;
+type State = Fixture & {
   service: ProjectOperations.ProjectOperations["Service"];
 };
-const run = <A, E, R>(
-  use: (state: State) => Effect.Effect<A, E, R>,
+// Builds no service, so a test can store rows before the only startup scan runs.
+const withFixture = <A, E, R>(
+  use: (state: Fixture) => Effect.Effect<A, E, R>,
   environment: NodeJS.ProcessEnv = {},
 ) =>
   Effect.gen(function* () {
     yield* runForkMigrationSet(ProjectLibraryMigrations);
-    const state = yield* fixture;
-    return yield* Effect.flatMap(ProjectOperations.ProjectOperations, (service) =>
-      use({ ...state, service }),
-    ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external))));
+    return yield* use(yield* fixture);
   }).pipe(
     Effect.provide(
       layerMemory.pipe(
@@ -510,6 +509,17 @@ const run = <A, E, R>(
     ),
     Effect.provideService(HostProcess.Environment, environment),
     Effect.scoped,
+  );
+const run = <A, E, R>(
+  use: (state: State) => Effect.Effect<A, E, R>,
+  environment: NodeJS.ProcessEnv = {},
+) =>
+  withFixture(
+    (state) =>
+      Effect.flatMap(ProjectOperations.ProjectOperations, (service) =>
+        use({ ...state, service }),
+      ).pipe(Effect.provide(ProjectOperations.layer.pipe(Layer.provide(state.external)))),
+    environment,
   );
 
 const localProject = {
@@ -1451,7 +1461,7 @@ describe("Project operations", () => {
     ),
   );
   it.effect("recovers a durable queued operation after service reconstruction", () =>
-    run((state) =>
+    withFixture((state) =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const request = yield* encodeRequest(create);
@@ -1480,7 +1490,7 @@ describe("Project operations", () => {
     ),
   );
   it.effect("lets Resume finish a removal an earlier build's cancel left set aside", () =>
-    run((state) =>
+    withFixture((state) =>
       Effect.gen(function* () {
         const request = yield* encodeRequest({
           kind: "release",
