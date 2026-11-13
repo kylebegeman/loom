@@ -3,6 +3,8 @@ import { createWorkspaceHandoffAtoms } from "../fork/workspace-handoff.ts"; // f
 import {
   WORKSPACE_HANDOFF_WS_METHODS,
   FORK_CLIENT_GUARDED_RPC_SCOPES,
+  ACCOUNT_ENROLLMENT_WS_METHODS,
+  ACCOUNT_COMPUTER_ADMIN_SCOPES,
 } from "@t3tools/contracts/fork";
 import { requestGuarded, runStreamGuarded } from "../rpc/client.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
@@ -96,7 +98,12 @@ describe("command permissions", () => {
         // fork: pcb-preview
         for (const [method, scope] of Object.entries(FORK_CLIENT_GUARDED_RPC_SCOPES)) {
           const policy = createCommandPermissions(runtime, method);
-          expect(policy.requiredScopes()).toEqual([scope]);
+          // fork: pcb-preview -- removing a computer needs every account administration grant.
+          const required =
+            method === ACCOUNT_ENROLLMENT_WS_METHODS.removeComputer
+              ? [...ACCOUNT_COMPUTER_ADMIN_SCOPES]
+              : [scope];
+          expect(policy.requiredScopes()).toEqual(required);
           registry.set(sessions(env), AsyncResult.success(grant(false)));
           expect(registry.get(policy.permissionAtom(env))).toBe(false);
           expect((yield* policy.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
@@ -104,7 +111,7 @@ describe("command permissions", () => {
           );
           registry.set(
             sessions(env),
-            AsyncResult.success({ ...grant(true), scopes: [scope], permissions: [scope] }),
+            AsyncResult.success({ ...grant(true), scopes: required, permissions: required }),
           );
           yield* policy.authorize(registry, env);
           expect(registry.get(policy.permissionAtom(env))).toBe(true);
