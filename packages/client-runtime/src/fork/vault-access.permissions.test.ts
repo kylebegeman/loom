@@ -108,17 +108,22 @@ it.effect("batch preview requires access:read on the destination and observes re
   ),
 );
 
-it.effect(
-  "owner policy requires maintenance access on its destination and observes revocation",
-  () =>
+it.effect.each(["setOwnerPolicy", "linkOwner"] as const)(
+  "%s requires maintenance access on its destination and observes revocation",
+  (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = AtomRegistry.make();
         yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
         registry.mount(sessions(destination));
         registry.mount(sessions(other));
-        const command = createVaultAccessAtoms(runtime).setOwnerPolicy;
-        const policy = createCommandPermissions(runtime, VAULT_ACCESS_WS_METHODS.setOwnerPolicy);
+        const command = createVaultAccessAtoms(runtime)[method];
+        const policy = createCommandPermissions(
+          runtime,
+          method === "linkOwner"
+            ? VAULT_ACCESS_WS_METHODS.ownerLinkApply
+            : VAULT_ACCESS_WS_METHODS.setOwnerPolicy,
+        );
         registry.mount(command.permissionAtom(destination));
         registry.mount(command.permissionAtom(other));
         expect(policy.requiredScopes()).toEqual([AuthEnvironmentMaintainScope]);

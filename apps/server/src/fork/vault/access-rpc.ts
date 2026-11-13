@@ -16,6 +16,30 @@ import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 import * as VaultAccessInspector from "./VaultAccessInspector.ts";
 import * as VaultReadiness from "./VaultReadiness.ts";
 import * as VaultAccess from "./VaultAccess.ts";
+export const authorizeVaultOwner = Effect.fn("VaultAccess.authorizeOwner")(function* (
+  auth: ForkRpcAuth,
+  actor: string,
+  session: AuthenticatedSession | undefined,
+  method:
+    | typeof V.setOwnerPolicy
+    | typeof V.ownerLinkPrepare
+    | typeof V.ownerLinkApprove
+    | typeof V.ownerLinkApply,
+) {
+  if (
+    !session ||
+    session.subject !== actor ||
+    /^(thread:|client:|broker:|host:|library:|loom-host:|mcp-client$)/.test(actor) ||
+    !AuthStandardClientScopes.every((scope) => session.scopes.includes(scope))
+  )
+    return yield* new VaultError({ reason: "denied" });
+  yield* auth
+    .effect(method, Effect.void)
+    .pipe(Effect.mapError(() => new VaultError({ reason: "denied" })));
+  yield* auth
+    .effect(V.apply, Effect.void)
+    .pipe(Effect.mapError(() => new VaultError({ reason: "denied" })));
+});
 export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers")(function* (
   auth: ForkRpcAuth,
   actor: string,
@@ -32,19 +56,7 @@ export const makeVaultAccessRpcHandlers = Effect.fn("VaultAccess.makeRpcHandlers
             .effect(method, Effect.void)
             .pipe(Effect.mapError(() => new VaultError({ reason: "denied" }))),
     );
-  // Declaring an environment personal requires its human administrator, not a scoped
-  // client, provider workload, broker or Library replication identity.
-  const authorizeOwner = Effect.suspend(() =>
-    !session ||
-    session.subject !== actor ||
-    /^(thread:|client:|broker:|host:|library:|mcp-client$)/.test(actor) ||
-    !AuthStandardClientScopes.every((scope) => session.scopes.includes(scope))
-      ? Effect.fail(new VaultError({ reason: "denied" }))
-      : auth.effect(V.setOwnerPolicy, Effect.void).pipe(
-          Effect.andThen(auth.effect(V.apply, Effect.void)),
-          Effect.mapError(() => new VaultError({ reason: "denied" })),
-        ),
-  );
+  const authorizeOwner = authorizeVaultOwner(auth, actor, session, V.setOwnerPolicy);
   return {
     [V.setOwnerPolicy]: (input: VaultOwnerPolicyChange) =>
       auth.effect(

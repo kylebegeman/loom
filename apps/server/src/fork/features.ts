@@ -74,6 +74,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "vault-core",
   VAULT_ITEM_SEARCH_FEATURE,
   "vault-owner-trusted",
+  "vault-owner-link",
   "vault-connection-resolution",
   "vault-test-accounts",
   "vault-migration-recovery-design",

@@ -128,6 +128,9 @@ export const ProtectedPolicy = Schema.Struct({
 );
 export type ProtectedPolicy = typeof ProtectedPolicy.Type;
 const OwnerBinding = Schema.Struct({
+  accountOwnerSubject: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^identity-principal:v1:[A-Za-z0-9_-]{43}$/)),
+  ),
   environmentId: Actor,
   ownerId: VaultItemId,
   ownerSubject: OperationIntent.fields.reviewedBy,

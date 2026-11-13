@@ -16,6 +16,17 @@ and computers retain their existing Vault settings until updated.
 The service token that connects the computer to OpenBao has to be renewed outside Loom. When it
 has less than three days left, the Vault status says so; renew or reissue it before it lapses.
 
+## Link an existing Vault owner to your account
+
+Before adding a computer with an existing Vault to your account, sign in to your Library on
+that device. In the computer's Vault settings, confirm that you own both the Vault and the
+signed-in account, then choose **Link Vault owner to Loom account**. Both owners must approve;
+a computer's publishing connection cannot approve the account identity by itself.
+
+The link keeps the local owner, saved items, versions, access rules and credential protection.
+It does not move the Vault to your Library. **Unlink Loom account** stops account use and keeps
+local ownership; **Turn off account access** stops new use without removing the link.
+
 ## Answer a private request with a saved item
 
 When an agent asks for a secret, choose **Use saved item** in the private card. An exact name

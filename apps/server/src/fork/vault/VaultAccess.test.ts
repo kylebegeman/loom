@@ -2424,6 +2424,106 @@ const ownerChange = (
   mode,
 });
 it.effect(
+  "links the authenticated existing owner without replacing inventory or weakening policy",
+  () =>
+    withAccess(({ access, fixture }) =>
+      Effect.gen(function* () {
+        yield* access.apply(save, "human");
+        const original = yield* access.setOwnerPolicy(
+          ownerChange(1, "owner-trusted"),
+          "human",
+          Effect.void,
+        );
+        const request = {
+          operationId: "7".repeat(32),
+          expectedRevision: original.revision,
+          ownerId: original.ownerPolicy!.ownerId!,
+          inventoryEnvironmentId: original.environmentId,
+        };
+        const principal = "identity-principal:v1:" + "a".repeat(43);
+        const before = [...fixture.records.values()].map((record) => Redacted.value(record.value));
+        expect(
+          (yield* access
+            .linkOwner(request, principal, "another-human", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(
+          (yield* access
+            .linkOwner({ ...request, expectedRevision: 0 }, principal, "human", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        expect(
+          (yield* access
+            .linkOwner(request, principal, "thread:agent", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(
+          (yield* access
+            .linkOwner(
+              request,
+              principal,
+              "human",
+              Effect.fail(new VaultError({ reason: "denied" })),
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect([...fixture.records.values()].map((record) => Redacted.value(record.value))).toEqual(
+          before,
+        );
+        fixture.state.loseNextReply = true;
+        expect(
+          (yield* access.linkOwner(request, principal, "human", Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("unavailable");
+        const linked = yield* access.linkOwner(request, principal, "human", Effect.void);
+        expect(linked.revision).toBe(original.revision + 1);
+        expect(linked.ownerPolicy).toMatchObject({
+          ownerId: request.ownerId,
+          mode: "owner-trusted",
+          updatedBy: "human",
+          accountLinked: true,
+        });
+        expect(linked.grants).toEqual(original.grants);
+        expect(linked.environmentId).toBe(original.environmentId);
+        expect(linked.audit.find((event) => event.reason === "account-owner-linked")?.reason).toBe(
+          "account-owner-linked",
+        );
+        expect(
+          (yield* access
+            .linkOwner(request, "identity-principal:v1:" + "b".repeat(43), "human", Effect.void)
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        const disabled = yield* access.setOwnerPolicy(
+          ownerChange(linked.revision, "restricted", "8"),
+          principal,
+          Effect.void,
+        );
+        expect(yield* access.linkOwner(request, principal, "human", Effect.void)).toEqual(disabled);
+        const unlinked = yield* access.setOwnerPolicy(
+          { ...ownerChange(disabled.revision, "restricted", "9"), unlinkAccount: true },
+          "human",
+          Effect.void,
+        );
+        expect(unlinked.ownerPolicy).toMatchObject({
+          ownerId: request.ownerId,
+          accountLinked: false,
+          updatedBy: "human",
+        });
+        expect(yield* access.linkOwner(request, principal, "human", Effect.void)).toEqual(unlinked);
+        expect(
+          (yield* access
+            .setOwnerPolicy(
+              ownerChange(unlinked.revision, "owner-trusted", "0"),
+              principal,
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
+        ).toBe("denied");
+        expect(fixture.state.policyWrites).toBe(5);
+      }),
+    ),
+);
+it.effect(
   "keeps the same Vault owner across host policy changes without claiming other accounts",
   () => {
     const environment = {
@@ -2440,6 +2540,10 @@ it.effect(
           actorFor(environment),
           Effect.void,
         );
+        expect(
+          (yield* access.ownerLinkBinding(actorFor(environment), Effect.void).pipe(Effect.flip))
+            .reason,
+        ).toBe("denied");
         const [policyPath, policyRecord] = [...fixture.records.entries()].find(([path]) =>
           path.endsWith("/access-policy"),
         )!;
@@ -2899,6 +3003,17 @@ it.effect(
           Effect.void,
         );
         expect(enabled.ownerPolicy?.mode).toBe("owner-trusted");
+        yield* access.linkOwner(
+          {
+            operationId: "7".repeat(32),
+            expectedRevision: enabled.revision,
+            ownerId: enabled.ownerPolicy!.ownerId!,
+            inventoryEnvironmentId: enabled.environmentId,
+          },
+          "identity-principal:v1:" + "a".repeat(43),
+          "human",
+          Effect.void,
+        );
         const current = fixture.records.get(path)!;
         const parsed = AccessPolicy.decodePolicy(Redacted.value(current.value));
         expect(Option.isSome(parsed)).toBe(true);
@@ -2928,7 +3043,7 @@ it.effect(
         expect(
           (yield* core.reveal({ id: itemId, expectedVersion: 1 }).pipe(Effect.flip)).reason,
         ).toBe("denied");
-        yield* access.setOwnerPolicy(ownerChange(3, "restricted", "2"), "human", Effect.void);
+        yield* access.setOwnerPolicy(ownerChange(4, "restricted", "2"), "human", Effect.void);
         expect(
           (yield* access.explain({ threadId, itemId, action: "use", destination: null })).decision
             .reason,
@@ -3072,9 +3187,9 @@ it.effect("owner-trusted checks read the thread on the reader while the writer i
   ),
 );
 
-it.effect(
-  "requires the same personal account owner for enrolled workloads and preserves item, version and online checks",
-  () =>
+it.effect.each(["local", "linked"] as const)(
+  "requires the same personal account owner (%s) for enrolled workloads and preserves item, version and online checks",
+  (identity) =>
     withAccess(({ access, core, fixture }) =>
       Effect.gen(function* () {
         const input = {
@@ -3105,7 +3220,29 @@ it.effect(
         expect((yield* access.authorizeAccount(input, Effect.void).pipe(Effect.flip)).reason).toBe(
           "denied",
         );
-        yield* access.setOwnerPolicy(ownerChange(0, "owner-trusted"), "human", Effect.void);
+        const enabled = yield* access.setOwnerPolicy(
+          ownerChange(0, "owner-trusted"),
+          "human",
+          Effect.void,
+        );
+        if (identity === "linked") {
+          const principal = "identity-principal:v1:" + "a".repeat(43);
+          yield* access.linkOwner(
+            {
+              operationId: "7".repeat(32),
+              expectedRevision: enabled.revision,
+              ownerId: enabled.ownerPolicy!.ownerId!,
+              inventoryEnvironmentId: enabled.environmentId,
+            },
+            principal,
+            "human",
+            Effect.void,
+          );
+          expect(
+            (yield* access.authorizeAccount(input, Effect.void).pipe(Effect.flip)).reason,
+          ).toBe("denied");
+          input.lease.ownerSubject = principal;
+        }
         for (const invalid of [
           { ...input, expectedVersion: null },
           { ...input, destination: null },
@@ -3152,7 +3289,11 @@ it.effect(
             .authorizeAccount({ ...input, expectedVersion: 2 }, Effect.void)
             .pipe(Effect.flip)).reason,
         ).toBe("denied");
-        yield* access.setOwnerPolicy(ownerChange(1, "restricted", "2"), "human", Effect.void);
+        yield* access.setOwnerPolicy(
+          ownerChange((yield* access.snapshot).revision, "restricted", "2"),
+          "human",
+          Effect.void,
+        );
         expect(
           (yield* access
             .authorizeAccount(

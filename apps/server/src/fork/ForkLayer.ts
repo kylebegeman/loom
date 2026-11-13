@@ -1,3 +1,5 @@
+import * as VaultOwnerLink from "./vault/VaultOwnerLink.ts";
+import { VaultOwnerLinkHttpRoutes } from "./vault/owner-link-http.ts";
 import * as VaultProfileRecords from "./vault/VaultProfileRecords.ts";
 import * as AccountVaultMachineAuthority from "./vault/AccountVaultMachineAuthority.ts";
 import * as AccountWorkloads from "./account-access/AccountWorkloads.ts";
@@ -469,6 +471,20 @@ const layerDirectoryReporter = DirectoryReporter.layer.pipe(
   Layer.provide(layerMiniOffload),
 );
 
+const layerVaultOwnerLink = VaultOwnerLink.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerVaultAccess,
+      layerLibraryManagement,
+      layerLibraryService,
+      layerLibraryPublisher,
+      layerDirectory,
+      layerDirectoryReporter,
+      LibraryConnection.layer,
+    ),
+  ),
+);
+
 const layerVaultHealthChecks = VaultHealthChecks.layer.pipe(
   Layer.provide(Layer.mergeAll(layerVaultHealth, layerVaultGitHub, layerVaultSsh)),
 );
@@ -666,6 +682,7 @@ const ForkServicesLive = Layer.mergeAll(
   layerVaultTestAccounts,
   layerVaultCore,
   layerVaultAccess,
+  layerVaultOwnerLink,
   layerVaultJournal,
   layerOperationAdmission,
   ApprovalCards.reactor.pipe(
@@ -864,6 +881,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   VaultBrokerHttpRoutes,
   VaultWorkloadHttpRoutes,
   AccountVaultHttpRoutes,
+  VaultOwnerLinkHttpRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

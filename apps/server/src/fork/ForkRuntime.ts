@@ -1,3 +1,4 @@
+import type { VaultOwnerLink } from "./vault/VaultOwnerLink.ts";
 import type { AccountWorkloads } from "./account-access/AccountWorkloads.ts";
 import type { AccountVaultMachineAuthority } from "./vault/AccountVaultMachineAuthority.ts";
 import type { AccountVaultAuthority } from "./vault/AccountVaultAuthority.ts";
@@ -140,6 +141,7 @@ export type ForkServices =
   | VaultWorkloads
   | VaultBrokers
   | VaultAccess
+  | VaultOwnerLink
   | VaultSecretRequests
   | VaultCore
   | VaultPrivateInput

@@ -13,13 +13,16 @@ import {
   type VaultReadinessReport,
   type VaultGrant,
   type VaultOwnerPolicy,
+  type VaultOwnerPolicyChange,
 } from "@t3tools/contracts/fork";
+import { requestGuarded, EnvironmentRpcUnavailableError } from "../rpc/client.ts";
+import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { Atom, AsyncResult, type AtomRegistry } from "effect/reactivity";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
@@ -104,6 +107,34 @@ export function reviewVaultApprovalCard(
   };
 }
 
+const linkVaultOwner = Effect.fn("VaultAccess.linkOwner")(
+  function* (input: VaultOwnerPolicyChange) {
+    const request = yield* requestGuarded(V.ownerLinkPrepare, input);
+    const source = yield* EnvironmentSupervisor;
+    if (
+      request.sourceEnvironmentId !== source.target.environmentId ||
+      request.expectedRevision !== input.expectedRevision
+    )
+      return yield* new VaultError({ reason: "denied" });
+    const registry = yield* EnvironmentRegistry;
+    const approval = yield* registry.run(
+      request.libraryEnvironmentId,
+      requestGuarded(V.ownerLinkApprove, request),
+    );
+    return yield* requestGuarded(V.ownerLinkApply, approval);
+  },
+  Effect.catchTags({
+    EnvironmentNotRegisteredError: (error) =>
+      Effect.fail(
+        new EnvironmentRpcUnavailableError({
+          environmentId: error.environmentId,
+          message:
+            "Sign in to your Library in Settings > Account, then refresh Vault status and link the owner.",
+        }),
+      ),
+  }),
+);
+
 export function createVaultAccessAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -179,6 +210,16 @@ export function createVaultAccessAtoms<R, E>(
       label: "loom:vault:grants",
       tag: V.snapshot,
       refreshTrigger: ({ environmentId }) => vaultPolicyChanges(environmentId),
+    }),
+    linkOwner: createEnvironmentRpcCommand(runtime, {
+      label: "loom:vault:owner-link",
+      tag: V.setOwnerPolicy,
+      execute: linkVaultOwner,
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => {
+          const signal = vaultPolicyChanges(environmentId);
+          registry.set(signal, registry.get(signal) + 1);
+        }),
     }),
     setOwnerPolicy: createEnvironmentRpcCommand(runtime, {
       label: "loom:vault:owner-policy-set",
