@@ -1559,6 +1559,23 @@ const NIGHTLY = "v1.0.0-nightly.20261014.1";
 // Built from parts so the repository's own seam check never counts this file.
 const SEAM = ["//", "fork:", "demo"].join(" ");
 
+it("checks tracked fork markers with macOS Bash", () => {
+  const f = repositoryFixture();
+  f.git("tag", "v1.0.0");
+  NodeFS.writeFileSync(NodePath.join(f.root, "a.ts"), `export const a = 1; ${SEAM}\n`);
+  NodeFS.writeFileSync(NodePath.join(f.root, "seams.tsv"), "a.ts\tdemo\t1\n");
+  f.git("add", "a.ts", "seams.tsv");
+  const check = () => runSync(f.root, "SEAMS_MANIFEST=seams.tsv; check_seams");
+  expect(check().status).toBe(0);
+  NodeFS.writeFileSync(NodePath.join(f.root, "b.ts"), `export const b = 1; ${SEAM}\n`);
+  f.git("add", "b.ts");
+  const unlisted = check();
+  expect(unlisted.status).not.toBe(0);
+  expect(unlisted.stderr).toContain("b.ts");
+  NodeFS.appendFileSync(NodePath.join(f.root, "seams.tsv"), "b.ts\tdemo\t1\n");
+  expect(check().status).toBe(0);
+});
+
 function agentScript(root: string, name: string, body: string) {
   const path = NodePath.join(root, "..", `${NodePath.basename(root)}-${name}.sh`);
   roots.push(path);

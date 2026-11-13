@@ -209,10 +209,10 @@ check_seams() {
   unlisted=$(comm -23 \
     <(git grep -nE "$(marker_re '[a-z0-9-]+')" -- . ':(exclude)docs/' \
       | sed -E 's/^([^:]+):[0-9]+:.*(\/\/|\/\*|<!--|#) fork: ([a-z0-9-]+).*/\1	\3/' | sort -u) \
-    <({ grep -v '^#' "$SEAMS_MANIFEST" | cut -f1,2
+    <( (grep -v '^#' "$SEAMS_MANIFEST" | cut -f1,2
       [ -z "$upstream" ] || git grep -nE "$(marker_re '[a-z0-9-]+')" "$upstream" -- . ':(exclude)docs/' \
         | sed -E 's/^[^:]+:([^:]+):[0-9]+:.*(\/\/|\/\*|<!--|#) fork: ([a-z0-9-]+).*/\1	\3/'
-    } | sort -u))
+    ) | sort -u))
   [ -z "$unlisted" ] || die "fork markers missing from $SEAMS_MANIFEST (add a row per file and marker):
 $unlisted"
 }
