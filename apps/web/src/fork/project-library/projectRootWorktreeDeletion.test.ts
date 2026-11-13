@@ -23,7 +23,11 @@ vi.mock("react", async (original) => ({
   useRef: (value: unknown) => ({ current: value }),
 }));
 vi.mock("@tanstack/react-router", () => ({
-  useRouter: () => ({ state: { matches: [] }, navigate: async () => {} }),
+  useRouter: () => ({
+    state: { matches: [] },
+    history: { subscribe: () => () => {} },
+    navigate: async () => {},
+  }),
 }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: unknown) => unknown) =>
