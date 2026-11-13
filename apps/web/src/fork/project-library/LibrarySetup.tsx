@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { AuthOrchestrationReadScope, type EnvironmentId } from "@t3tools/contracts";
 import { PROJECT_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { librarySignInTarget, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -50,7 +50,6 @@ export function LibrarySetup({
   const [chosenCandidate, setCandidate] = useState<EnvironmentId | null>(authority.authorityId);
   const candidate = chosenCandidate ?? onlyLibraryId;
   const connectedBaseUrl = useEnvironmentHttpBaseUrl(candidate);
-  const signInBaseUrl = connectedBaseUrl ?? authority.destination?.url;
   const environment = authority.environments.find((entry) => entry.environmentId === candidate);
   const connected =
     environment?.entry.enabled === true && environment.connection.phase === "connected";
@@ -64,6 +63,11 @@ export function LibrarySetup({
       ? projectLibrary.info({ environmentId: candidate, input: {} })
       : null,
   );
+  const signInTarget = librarySignInTarget({
+    candidate: query.data,
+    candidateUrl: connectedBaseUrl,
+    destination: authority.destination,
+  });
   return (
     <div className="max-w-xl space-y-4">
       {heading ? (
@@ -119,11 +123,14 @@ export function LibrarySetup({
           Changing the Library server does not move your existing projects or history.
         </p>
       ) : null}
-      {signInBaseUrl ? (
-        <LoomSignIn baseUrl={signInBaseUrl} onConnected={setCandidate} showUnavailable />
-      ) : (
-        <LoomSignIn onConnected={setCandidate} />
-      )}
+      {signInTarget ? (
+        <LoomSignIn
+          baseUrl={signInTarget.url}
+          expectedEnvironmentId={signInTarget.environmentId}
+          onConnected={setCandidate}
+          showUnavailable
+        />
+      ) : null}
       <LoomLibraryAddress onConnected={setCandidate} />
       <LibraryErrorNotice error={saveError} />
       <div className="flex flex-wrap gap-2">

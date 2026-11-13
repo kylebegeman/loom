@@ -5,6 +5,7 @@ import {
   libraryRouteParams,
   resolveLibrarySelection,
   resolveLibraryAuthorityId,
+  librarySignInTarget,
 } from "./library-selection.ts";
 const project: LibraryProject = {
   id: "new-project",
@@ -76,6 +77,27 @@ it("requires agreeing enrolled Library reports and confirmation from that exact 
     destination: { environmentId: authority.environmentId, url: "https://library.example" },
   };
   const other = { environmentId: EnvironmentId.make("other-library"), isAuthority: true };
+  expect(
+    librarySignInTarget({
+      candidate: execution,
+      candidateUrl: "http://localhost:3773",
+      destination: execution.destination,
+    }),
+  ).toEqual(execution.destination);
+  expect(
+    librarySignInTarget({
+      candidate: null,
+      candidateUrl: "http://localhost:3773",
+      destination: undefined,
+    }),
+  ).toBeNull();
+  expect(
+    librarySignInTarget({
+      candidate: authority,
+      candidateUrl: "https://library.example",
+      destination: execution.destination,
+    }),
+  ).toEqual({ environmentId: authority.environmentId, url: "https://library.example" });
   expect(resolveLibraryAuthorityId([execution, authority])).toBe(authority.environmentId);
   expect(resolveLibraryAuthorityId([execution])).toBeNull();
   expect(resolveLibraryAuthorityId([execution, authority, other])).toBeNull();

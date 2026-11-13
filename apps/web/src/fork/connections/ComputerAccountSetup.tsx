@@ -7,6 +7,7 @@ import {
   squashLibraryCommandFailure,
   supportsLoomFeature,
   directoryReportingView,
+  accountComputerEnrollmentReady,
 } from "@t3tools/client-runtime/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { LibraryError, ACCOUNT_ENROLLMENT_FEATURE } from "@t3tools/contracts/fork";
@@ -53,6 +54,11 @@ function ComputerAccountSetupForm({
   const source = useEnvironmentQuery(
     connected ? projectLibrary.info({ environmentId: environment.environmentId, input: {} }) : null,
   );
+  const computers = useEnvironmentQuery(
+    authority.connected && authority.authorityId
+      ? projectLibrary.accountComputers({ environmentId: authority.authorityId, input: {} })
+      : null,
+  );
   const canInstall = useAtomValue(
     projectLibrary.enrollComputer.permissionAtom(environment.environmentId),
   );
@@ -68,12 +74,18 @@ function ComputerAccountSetupForm({
   const [error, setError] = useState<string | null>(null);
   const [finishedFor, setFinishedFor] = useState<string | null>(null);
   const finished = finishedFor === key;
-  const belongs = source.data?.destination?.environmentId === authority.authorityId;
   const available = connected && authority.connected && canInstall && canApprove;
   const signedIn = report?.signIn?.state === "ready" || report?.signIn?.state === "expiring";
-  const ready =
-    finished ||
-    (belongs && signedIn && Option.exists(AsyncResult.value(route), (status) => status.enabled));
+  const ready = accountComputerEnrollmentReady({
+    libraryEnvironmentId: authority.authorityId,
+    sourceLibraryEnvironmentId: source.data?.destination?.environmentId ?? null,
+    membership: computers.isSuccess
+      ? (computers.data?.find((computer) => computer.environmentId === environment.environmentId) ??
+        null)
+      : null,
+    signedIn,
+    remoteEnabled: Option.exists(AsyncResult.value(route), (status) => status.enabled),
+  });
   const start = async () => {
     if (busy || !available || !authority.authorityId) return;
     setBusy(true);
@@ -98,6 +110,8 @@ function ComputerAccountSetupForm({
           saveRequestId(null);
           setFinishedFor(key);
           refreshReport();
+          source.refresh();
+          computers.refresh();
         }
       }
     } catch (cause) {
@@ -130,7 +144,7 @@ function ComputerAccountSetupForm({
         <Button
           size="sm"
           variant="default"
-          disabled={!available || busy}
+          disabled={!available || busy || !computers.isSuccess || computers.isPending}
           onClick={() => void start()}
         >
           {busy ? "Setting up computer..." : savedRequestId ? "Resume setup" : "Add to my account"}
@@ -146,6 +160,14 @@ function ComputerAccountSetupForm({
       {finished ? (
         <p role="status" className="text-xs text-muted-foreground">
           Computer added. Remote access starts automatically.
+        </p>
+      ) : null}
+      {computers.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {computers.error}
+          <Button size="sm" variant="outline" onClick={computers.refresh}>
+            Check account setup again
+          </Button>
         </p>
       ) : null}
       {error ? (
