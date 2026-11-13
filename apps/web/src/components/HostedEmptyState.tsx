@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/react";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import type { EnvironmentId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
@@ -20,7 +21,7 @@ import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 /** Home screen for the hosted app before any computer is added. */
 export function HostedEmptyState() {
-  const cloudEnabled = hasCloudPublicConfig();
+  const cloudEnabled = LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig();
   const localEnvironmentOff = isLocalEnvironmentDisabled();
 
   return (
@@ -50,7 +51,7 @@ export function HostedEmptyState() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            {localEnvironmentOff ? (
+            {localEnvironmentOff || !LEGACY_CONNECT_UI_ENABLED ? (
               <ClientComputerActions /> // fork: fleet-connections
             ) : (
               <ol className="w-full space-y-4 text-left">

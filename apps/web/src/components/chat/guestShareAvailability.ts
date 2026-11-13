@@ -1,4 +1,5 @@
 import { type EnvironmentId, managedCapabilityDenial } from "@t3tools/contracts";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { Atom } from "effect/reactivity";
 
 import { environmentPresentations } from "~/state/presentation";
@@ -13,6 +14,7 @@ export const canShareWithGuestAtom = Atom.family((environmentId: EnvironmentId) 
   Atom.make((get) => {
     const serverConfig = get(environmentPresentations.serverConfigsAtom).get(environmentId);
     return (
+      LEGACY_CONNECT_UI_ENABLED &&
       get(serverEnvironment.createGuestShare.permissionAtom(environmentId)) &&
       serverConfig?.settings.guestSharingEnabled === true &&
       managedCapabilityDenial(serverConfig.managedPolicy, "connect") === undefined

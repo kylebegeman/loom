@@ -1,4 +1,5 @@
 import { useAuth } from "@clerk/expo";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
@@ -70,6 +71,7 @@ export function ComputerConnectSection(props: {
   environmentId: EnvironmentId;
   connected: boolean;
 }) {
+  if (!LEGACY_CONNECT_UI_ENABLED) return null;
   if (!hasCloudPublicConfig()) {
     return (
       <SettingsSection title="Connect account">

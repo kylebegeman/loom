@@ -1,4 +1,5 @@
 import { openLibraryAction } from "~/fork/project-library/actions";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 // fork: attention-status
 import { useThreadAttention } from "../fork/attention/ThreadAttention";
 // fork: source-control-cockpit
@@ -1931,33 +1932,34 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  actionItems.push({
-    kind: "action",
-    value: "action:use-in-another-app",
-    searchTerms: [
-      "mcp",
-      "connector",
-      "another app",
-      "poke",
-      "claude",
-      "chatgpt",
-      "grok",
-      "muse",
-      "instinct",
-      "openclaw",
-      "hermes",
-    ],
-    title: "Use Loom in another app (MCP)", // fork: brand
-    icon: <PlugIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      openUseInAnotherApp(
-        currentProjectEnvironmentId ??
-          (paletteRouteTarget?.kind === "server"
-            ? paletteRouteTarget.threadRef.environmentId
-            : null),
-      );
-    },
-  });
+  if (LEGACY_CONNECT_UI_ENABLED)
+    actionItems.push({
+      kind: "action",
+      value: "action:use-in-another-app",
+      searchTerms: [
+        "mcp",
+        "connector",
+        "another app",
+        "poke",
+        "claude",
+        "chatgpt",
+        "grok",
+        "muse",
+        "instinct",
+        "openclaw",
+        "hermes",
+      ],
+      title: "Use Loom in another app (MCP)", // fork: brand
+      icon: <PlugIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        openUseInAnotherApp(
+          currentProjectEnvironmentId ??
+            (paletteRouteTarget?.kind === "server"
+              ? paletteRouteTarget.threadRef.environmentId
+              : null),
+        );
+      },
+    });
 
   actionItems.push({
     kind: "action",

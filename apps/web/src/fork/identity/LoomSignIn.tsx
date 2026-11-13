@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import { useEffect, useRef, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LoomIdentityMetadata } from "@t3tools/contracts/fork";
@@ -241,7 +242,8 @@ function LoomSignInTarget({
       {description ? (
         <p className="max-w-lg text-xs text-muted-foreground">
           Use this computer's configured Identity account. When access expires, sign in again.
-          Pairing links remain available. T3 Connect uses its own account.
+          Pairing links remain available.
+          {LEGACY_CONNECT_UI_ENABLED ? " T3 Connect uses its own account." : null}
         </p>
       ) : null}
       {connected ? (

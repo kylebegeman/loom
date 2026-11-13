@@ -49,6 +49,11 @@ const state = vi.hoisted(() => ({
   scanPending: false,
 }));
 
+// The retained upstream onboarding still has coverage with its UI switch enabled.
+vi.mock("../../../../../packages/client-runtime/src/fork/legacy-connect.ts", () => ({
+  LEGACY_CONNECT_UI_ENABLED: true,
+}));
+
 vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
   const actual = await original();
   return {

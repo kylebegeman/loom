@@ -5,6 +5,7 @@ import {
   type ConnectAuthorizeRequest,
 } from "@t3tools/shared/connectAuth";
 import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 
 import { isHostedStaticApp } from "../hostedPairing";
 import { hasCloudPublicConfig, resolveCloudPublicConfig, trimNonEmpty } from "./publicConfig";
@@ -20,7 +21,12 @@ function hasConnectCliAuthConfig(): boolean {
 }
 
 export function connectCliAuthRoutesEnabled(): boolean {
-  return isHostedStaticApp() && hasCloudPublicConfig() && hasConnectCliAuthConfig();
+  return (
+    LEGACY_CONNECT_UI_ENABLED &&
+    isHostedStaticApp() &&
+    hasCloudPublicConfig() &&
+    hasConnectCliAuthConfig()
+  );
 }
 
 export function buildConnectCliClerkAuthorizeUrl(request: ConnectAuthorizeRequest): string | null {

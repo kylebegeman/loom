@@ -1,4 +1,5 @@
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -66,7 +67,8 @@ export function PullRequestRoutingSettings() {
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>
                     {/* fork: brand */}
-                    {connectionCatalogDisplayUrl(entry) ?? "Loom Connect"}
+                    {connectionCatalogDisplayUrl(entry) ??
+                      (LEGACY_CONNECT_UI_ENABLED ? "Loom Connect" : "Saved connection")}
                   </Text>
                 </View>
                 <Text className="text-sm text-foreground-muted">

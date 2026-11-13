@@ -546,6 +546,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "guest-links",
+    cloudOnly: true, // fork: connect-ui
     title: "Guest links",
     to: "/settings/labs",
     scope: "environment",

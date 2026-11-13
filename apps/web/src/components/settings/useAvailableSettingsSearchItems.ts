@@ -1,4 +1,5 @@
 import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 
 import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -56,7 +57,7 @@ export function useAvailableSettingsSearchItems() {
   const desktopWsl = useEnvironmentQuery(
     isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
   );
-  const cloudPublicConfig = hasCloudPublicConfig() === true;
+  const cloudPublicConfig = LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig() === true;
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
 

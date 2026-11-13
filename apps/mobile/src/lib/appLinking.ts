@@ -1,4 +1,5 @@
 import type { NavigationState, PartialState } from "@react-navigation/native";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 
 /**
  * The Expo dev client launches the app via
@@ -16,7 +17,7 @@ export function shouldHandleAppLink(url: string, cloudConfigured: boolean): bool
     !route.includes("expo-development-client") &&
     !route.includes("://expo-sharing") &&
     !/^(?:loom|t3code)(-dev|-preview)?:\/*$/.test(url) && // fork: mobile-identity
-    (cloudConfigured || !CLOUD_ONLY_LINK_PATH.test(route))
+    ((LEGACY_CONNECT_UI_ENABLED && cloudConfigured) || !CLOUD_ONLY_LINK_PATH.test(route))
   );
 }
 

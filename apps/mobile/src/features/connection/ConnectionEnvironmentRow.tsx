@@ -1,4 +1,5 @@
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: computer-naming
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import * as Dialog from "../../components/ui/Dialog";
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -230,10 +231,12 @@ export function ConnectionEnvironmentRow(props: {
             />
           ) : null}
           {props.environment.isRelayManaged ? (
-            <Text className="text-sm text-foreground-muted">
-              {/* fork: brand */}
-              Loom Connect keeps this connection address up to date.
-            </Text>
+            LEGACY_CONNECT_UI_ENABLED ? (
+              <Text className="text-sm text-foreground-muted">
+                {/* fork: brand */}
+                Loom Connect keeps this connection address up to date.
+              </Text>
+            ) : null
           ) : (
             <>
               {/* fork: computer-naming - Older hosts retain an explicit device-local alias. */}

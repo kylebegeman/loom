@@ -66,6 +66,7 @@ vi.mock("../layout/workspace/workspace-selection-store", () => ({
 }));
 vi.mock("../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
 vi.mock("./CloudEnvironmentRows", () => ({ CloudEnvironmentRows: () => null }));
+vi.mock("../../fork/library/LibrarySignInStatus", () => ({ LibraryAccountSection: () => null }));
 vi.mock("./environmentSections", () => ({
   splitEnvironmentSections: () => ({ connectedCloudEnvironments: [] }),
 }));

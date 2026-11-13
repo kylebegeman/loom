@@ -19,6 +19,9 @@ Loom connects publishing and remote access together. If setup is interrupted,
 choose **Resume setup** to continue the saved request. Running work stays open.
 On iPhone, open an already connected computer's details to add it.
 
+To sign in on iPhone, open **Settings > Account > Sign in to Loom** and enter
+your Library address. Use the same account as on your computers.
+
 For a headless computer with Loom running, run `loom join <your-library-address>`
 using your Library’s HTTPS address. On a signed-in device, open **Account > Add
 computer**, enter the terminal’s code, and approve after checking the computer
@@ -77,6 +80,7 @@ or **Loomhost** below the connection settings. **Tailscale HTTPS**
 works with **Network access** off. If another app already serves its port, Loom
 names that app and asks for another port instead of replacing it.
 
+<!-- fork: connect-ui - Legacy setup stays with its upstream implementation, hidden in Loom.
 ## Legacy Connect account
 
 Sign in to the same Connect account in Loom on your Mac and iPhone. Link each computer from its connection settings, or use the installed CLI's
@@ -104,6 +108,8 @@ The upstream production account service supports its hosted web app and the
 native clients. A browser on a local, IP or VPN address can use direct pairing;
 Connections provides the hosted-web sign-in link when that deployment supports
 it. A privately configured account service follows its own supported domains.
+
+-->
 
 ## Keep a computer signed in to its Library
 

@@ -1,4 +1,5 @@
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import * as Dialog from "../../components/ui/Dialog";
 import {
   AuthRelayWriteScope,
@@ -112,13 +113,13 @@ function useDeviceRegistered(): boolean {
 }
 
 export function SettingsNotificationsRouteScreen() {
-  if (!hasCloudPublicConfig() && LibraryPush.isSupported())
+  if ((!LEGACY_CONNECT_UI_ENABLED || !hasCloudPublicConfig()) && LibraryPush.isSupported())
     return (
       <LibraryPush.Screen>
         <BotBadgeSettings />
       </LibraryPush.Screen>
     ); // fork: library-push
-  if (!hasCloudPublicConfig()) {
+  if (!LEGACY_CONNECT_UI_ENABLED || !hasCloudPublicConfig()) {
     return (
       <SettingsScreen title="Notifications">
         <ScrollView

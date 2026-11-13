@@ -1,3 +1,4 @@
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
 import {
   type ConnectionTarget,
   connectionRouteId,
@@ -37,7 +38,7 @@ export function environmentTransportLabel(
       ? connectionRouteLabel(routes[0]!)
       : `via ${connectionRouteLabel(active)}`;
   }
-  if (environment.relayManaged) return "T3 Connect";
+  if (environment.relayManaged) return LEGACY_CONNECT_UI_ENABLED ? "T3 Connect" : "Relay";
   if (isDesktopLocalConnectionTarget(entry.target)) return "WSL";
   if (
     entry.target._tag === "SshConnectionTarget" &&

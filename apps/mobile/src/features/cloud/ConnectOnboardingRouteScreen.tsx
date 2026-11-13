@@ -1,4 +1,6 @@
 import { AppBar } from "../../components/ui/AppBar";
+import { LEGACY_CONNECT_UI_ENABLED } from "@t3tools/client-runtime/fork"; // fork: connect-ui
+import { LibraryAuthorityScreen } from "../../fork/library/LibraryPage";
 import { Button } from "../../components/ui/Button";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 
@@ -21,7 +23,11 @@ import { hasCloudPublicConfig } from "./publicConfig";
 // Only reachable with cloud config: onboarding is requested after a T3 Connect
 // sign-in, and appLinking drops the deep link otherwise.
 export function ConnectOnboardingRouteScreen() {
-  return hasCloudPublicConfig() ? <ConfiguredConnectOnboardingRouteScreen /> : null;
+  return LEGACY_CONNECT_UI_ENABLED && hasCloudPublicConfig() ? (
+    <ConfiguredConnectOnboardingRouteScreen />
+  ) : (
+    <LibraryAuthorityScreen />
+  );
 }
 
 // fork: mobile-design

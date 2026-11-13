@@ -93,9 +93,9 @@ describe("cloud-only deep links", () => {
     "t3code://settings/waitlist",
     "t3code://settings/auth",
     "exp://192.168.1.2:8081/--/settings/auth",
-  ])("ignores %s without cloud config", (url) => {
+  ])("ignores %s while legacy Connect UI is hidden", (url) => {
     expect(shouldHandleAppLink(url, false)).toBe(false);
-    expect(shouldHandleAppLink(url, true)).toBe(true);
+    expect(shouldHandleAppLink(url, true)).toBe(false);
   });
 
   it.each([
