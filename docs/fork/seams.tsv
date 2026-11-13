@@ -740,7 +740,7 @@ packages/ssh/src/tunnel.ts	brand	2
 apps/server/src/serverRuntimeStartup.ts	brand	1
 packages/provider-opencode/src/server/OpenCodeServerLedger.ts	brand	1
 packages/shared/src/relayClient.ts	brand	1
-apps/server/src/serviceLauncher.test.ts	brand	1
+apps/server/src/serviceLauncher.test.ts	brand	3
 apps/web/src/components/CommandPalette.tsx	no-project-first	8
 apps/web/src/components/ProjectEnvironmentBadge.tsx	no-project-first	2
 apps/web/src/components/chat/DraftHeroHeadline.tsx	no-project-first	10
