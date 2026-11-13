@@ -6,8 +6,13 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { findEsmImportsOfExternalPackages } from "./cli-executable-imports.ts";
+import {
+  findEsmImportsOfExternalPackages,
+  requireExternalCjsImports,
+} from "./cli-executable-imports.ts";
 
 import {
   isRuntimeExternalCliDependency,
@@ -269,3 +274,33 @@ describe("findEsmImportsOfExternalPackages", () => {
     assert.deepStrictEqual(findEsmImportsOfExternalPackages(source), []);
   });
 });
+
+it.live(
+  "loads external CommonJS imports from the executable directory without ESM resolution",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "loom-sea-external-" });
+      yield* fs.makeDirectory(`${directory}/node_modules/undici`, { recursive: true });
+      yield* fs.writeFileString(
+        `${directory}/node_modules/undici/index.js`,
+        'module.exports = { Agent: class { name = "agent" }, FormData: class { name = "form" } };',
+      );
+      const source = [
+        "#!/usr/bin/env node",
+        'import undici from "undici";',
+        'import * as namespace from "undici";',
+        'import { Agent as Client } from "undici";',
+        'console.log([undici === namespace.default, new Client().name, new namespace.FormData().name].join(":"));',
+      ].join("\n");
+      const rewritten = requireExternalCjsImports(source, new Set(["undici"]));
+      assert.deepStrictEqual(findEsmImportsOfExternalPackages(rewritten), []);
+      const bundle = `${directory}/bundle.mjs`;
+      yield* fs.writeFileString(bundle, rewritten);
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const result = yield* spawner.string(
+        ChildProcess.make(yield* HostProcess.ExecutablePath, [bundle]),
+      );
+      assert.strictEqual(result.trim(), "true:agent:form");
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

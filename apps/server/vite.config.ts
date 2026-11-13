@@ -102,6 +102,23 @@ export default mergeConfig(
       outDir: packBootstrap ? "dist-exe" : packExecutable ? cliAssetDir : "dist",
       sourcemap: !packExecutable,
       clean: true,
+      ...(packExecutable
+        ? {
+            plugins: [
+              {
+                name: "sea-undici-require",
+                async renderChunk(code: string) {
+                  const { requireExternalCjsImports } =
+                    await import("../../scripts/lib/cli-executable-imports.ts");
+                  return {
+                    code: requireExternalCjsImports(code, new Set(["undici"])),
+                    map: null,
+                  };
+                },
+              },
+            ],
+          }
+        : {}),
       // SEA can only resolve built-ins; keep dynamic imports inside each emitted module.
       ...(packExecutable ? { outputOptions: { codeSplitting: false } } : {}),
       ...(packMode === "1"
