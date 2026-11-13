@@ -142,6 +142,10 @@ vi.mock("../state/query", async (original) => ({
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
 }));
+vi.mock("../fork/project-library/state", async (original) => ({
+  ...(await original<typeof import("../fork/project-library/state")>()),
+  useLibraryAuthority: () => ({ authorityId: null, environment: null, connected: false }),
+})); // fork: library-palette
 vi.mock("../fork/commandPalette/registry", () => ({
   useForkCommandPaletteItems: () => ({ items: [], searchItems: [] }),
 }));
