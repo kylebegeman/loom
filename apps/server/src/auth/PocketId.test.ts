@@ -44,6 +44,12 @@ const AUDIENCE = "https://library.example.test";
 const CLIENT_ID = "loom-web";
 const CLIENT: AuthClientMetadata = { deviceType: "mobile", label: "My phone", os: "iOS" };
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+type Completed = Effect.Success<ReturnType<PocketId.PocketId["Service"]["completeLogin"]>>;
+/** Only an approval sign-in completes with a grant instead of a session. */
+const signedIn = (completed: Completed) =>
+  "approval" in completed
+    ? Effect.die("Expected a sign-in, not an approval")
+    : Effect.succeed(completed);
 
 const fixture = Effect.gen(function* () {
   const now = yield* DateTime.now;
@@ -140,6 +146,9 @@ const fixture = Effect.gen(function* () {
     }),
     Layer.succeed(HttpClient.HttpClient, http),
     Layer.succeed(HostProcess.Environment, env),
+    Layer.mock(ServerSecretStore.ServerSecretStore)({
+      getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
+    }),
   );
   const layer = PocketId.layer.pipe(
     Layer.provideMerge(sessions),
@@ -312,7 +321,7 @@ it.effect(
             identity.completeLogin({ ...callback, cookieValue: `${state}.forged-signature` }),
           ))._tag,
         ).toBe("Failure");
-        const session = yield* identity.completeLogin(callback);
+        const session = yield* identity.completeLogin(callback).pipe(Effect.flatMap(signedIn));
         expect(session.method).toBe("browser-session-cookie");
         expect(session.expiresAt.epochMilliseconds - (yield* DateTime.now).epochMilliseconds).toBe(
           Duration.toMillis(Duration.seconds(120)),
@@ -528,12 +537,14 @@ it.effect(
           CLIENT_ID,
           "JWT",
         );
-        const completed = yield* identity.completeLogin({
-          state: authorization.searchParams.get("state")!,
-          code: "idp-code",
-          cookieValue: login.cookieValue,
-          client: CLIENT,
-        });
+        const completed = yield* identity
+          .completeLogin({
+            state: authorization.searchParams.get("state")!,
+            code: "idp-code",
+            cookieValue: login.cookieValue,
+            client: CLIENT,
+          })
+          .pipe(Effect.flatMap(signedIn));
         const handoff = completed.handoff!;
         expect(handoff).toMatchObject({
           state: browser.state,
@@ -627,12 +638,14 @@ it.effect("expires an unredeemed browser handoff without issuing a bearer sessio
         CLIENT_ID,
         "JWT",
       );
-      const completed = yield* identity.completeLogin({
-        state: authorization.searchParams.get("state")!,
-        code: "idp-code",
-        cookieValue: login.cookieValue,
-        client: CLIENT,
-      });
+      const completed = yield* identity
+        .completeLogin({
+          state: authorization.searchParams.get("state")!,
+          code: "idp-code",
+          cookieValue: login.cookieValue,
+          client: CLIENT,
+        })
+        .pipe(Effect.flatMap(signedIn));
       yield* TestClock.adjust(Duration.seconds(61));
       expect(
         (yield* identity
@@ -802,12 +815,14 @@ it.effect("caps browser sign-in age and asks Pocket ID for a recent enough sign-
             CLIENT_ID,
             "JWT",
           );
-          return yield* identity.completeLogin({
-            state: authorization.searchParams.get("state")!,
-            code: "one-time-code",
-            cookieValue: login.cookieValue,
-            client: CLIENT,
-          });
+          return yield* identity
+            .completeLogin({
+              state: authorization.searchParams.get("state")!,
+              code: "one-time-code",
+              cookieValue: login.cookieValue,
+              client: CLIENT,
+            })
+            .pipe(Effect.flatMap(signedIn));
         });
       expect(yield* signIn(test.seconds - 7200).pipe(Effect.flip)).toMatchObject({
         reason: "expired",
@@ -859,12 +874,14 @@ it.effect("requires a passkey sign-in in the browser and natively when the host 
               "JWT",
             )
             .pipe(Effect.orDie);
-          return yield* identity.completeLogin({
-            state: authorization.searchParams.get("state")!,
-            code: "one-time-code",
-            cookieValue: login.cookieValue,
-            client: CLIENT,
-          });
+          return yield* identity
+            .completeLogin({
+              state: authorization.searchParams.get("state")!,
+              code: "one-time-code",
+              cookieValue: login.cookieValue,
+              client: CLIENT,
+            })
+            .pipe(Effect.flatMap(signedIn));
         });
       // No sign-in limit is set: the requirement alone makes the ID token mandatory.
       expect((yield* identity.metadata).maxSessionAgeSeconds).toBeUndefined();
@@ -1043,4 +1060,152 @@ it.effect("refuses to renew a session the host revoked, along with its earlier r
         ).toBe("revoked");
     }).pipe(Effect.provide(layer));
   }),
+);
+
+it.effect(
+  "grants one approval per passkey sign-in made moments ago, spent once by the account that made it",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      const crypto = yield* Digest.Digest.pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      );
+      const verifier = "v".repeat(43);
+      const challenge = Base64Url.encode(
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)),
+      );
+      const owner = `${identitySessionPrefix(test.env)}${Base64Url.encode(new TextEncoder().encode("owner-id"))}`;
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const approveInBrowser = (payload: Jose.JWTPayload) =>
+          Effect.gen(function* () {
+            // The Library's own app approves from a window too, without listing its origin.
+            const login = yield* identity.beginLogin("/", {
+              ...browserRequest,
+              origin: "https://library.example.test",
+              challenge,
+              purpose: "approve",
+            });
+            const authorization = new URL(login.authorizationUrl);
+            expect(authorization.searchParams.get("max_age")).toBe("0");
+            test.tokenReply.access = yield* test.access();
+            test.tokenReply.id = yield* test.signed(
+              { nonce: authorization.searchParams.get("nonce")!, ...payload },
+              CLIENT_ID,
+              "JWT",
+            );
+            const completed = yield* identity.completeLogin({
+              state: authorization.searchParams.get("state")!,
+              code: "idp-code",
+              cookieValue: login.cookieValue,
+              client: CLIENT,
+            });
+            if (!("approval" in completed)) return yield* Effect.die("Expected an approval");
+            return completed.approval.code;
+          });
+        const fresh = { amr: ["phr"], auth_time: test.seconds - 30 };
+        const reason = <A>(
+          effect: Effect.Effect<A, PocketId.PocketIdError | PocketIdFixtureError>,
+        ) =>
+          effect.pipe(
+            Effect.flip,
+            Effect.map((error) => (error._tag === "PocketIdError" ? error.reason : error._tag)),
+          );
+        expect(yield* reason(approveInBrowser({ ...fresh, amr: ["otp"] }))).toBe("passkey");
+        expect(yield* reason(approveInBrowser({ ...fresh, auth_time: test.seconds - 301 }))).toBe(
+          "stale",
+        );
+        const spentByWrongVerifier = yield* approveInBrowser(fresh);
+        expect(
+          yield* reason(
+            identity.redeemApproval(
+              { code: spentByWrongVerifier, verifier: "x".repeat(43) },
+              owner,
+            ),
+          ),
+        ).toBe("state");
+        expect(
+          yield* reason(identity.redeemApproval({ code: spentByWrongVerifier, verifier }, owner)),
+        ).toBe("stale");
+        const another = yield* approveInBrowser(fresh);
+        expect(
+          yield* reason(identity.redeemApproval({ code: another, verifier }, "identity:other")),
+        ).toBe("subject");
+        // The Library's own window holds no account, so the passkey alone approves there.
+        yield* identity.redeemApproval({ code: yield* approveInBrowser(fresh), verifier }, "owner");
+        const approved = yield* approveInBrowser(fresh);
+        yield* identity.redeemApproval({ code: approved, verifier }, owner);
+        expect(yield* reason(identity.redeemApproval({ code: approved, verifier }, owner))).toBe(
+          "stale",
+        );
+        const late = yield* approveInBrowser(fresh);
+        yield* TestClock.adjust("5 minutes");
+        expect(yield* reason(identity.redeemApproval({ code: late, verifier }, owner))).toBe(
+          "stale",
+        );
+        // An approval sign-in issues no host session.
+        expect(test.issued).toHaveLength(0);
+      }).pipe(Effect.provide(test.layer));
+    }),
+);
+
+it.effect(
+  "grants a native passkey approval once and a phone token tied to that account until it expires",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      const crypto = yield* Digest.Digest.pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      );
+      const verifier = "v".repeat(43);
+      const challenge = Base64Url.encode(
+        yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)),
+      );
+      const owner = `${identitySessionPrefix(test.env)}${Base64Url.encode(new TextEncoder().encode("owner-id"))}`;
+      const accessToken = yield* test.access();
+      const bound = yield* atHash(accessToken);
+      const request = (payload: Jose.JWTPayload) =>
+        Effect.map(
+          test.signed(
+            { at_hash: bound, amr: ["phr"], auth_time: test.seconds - 30, ...payload },
+            "loom-native",
+            "JWT",
+          ),
+          (idToken) => ({
+            accessToken,
+            idToken,
+            environmentId: EnvironmentId.make("host-id"),
+            challenge,
+            device: true,
+          }),
+        );
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const reason = <A>(
+          effect: Effect.Effect<A, PocketId.PocketIdError | PocketIdFixtureError>,
+        ) =>
+          effect.pipe(
+            Effect.flip,
+            Effect.map((error) => (error._tag === "PocketIdError" ? error.reason : error._tag)),
+          );
+        expect(yield* reason(identity.approvalProof(yield* request({ amr: undefined })))).toBe(
+          "passkey",
+        );
+        expect(yield* reason(identity.approvalProof(yield* request({ at_hash: undefined })))).toBe(
+          "token",
+        );
+        const proof = yield* request({});
+        const granted = yield* identity.approvalProof(proof);
+        expect(yield* reason(identity.approvalProof(proof))).toBe("state");
+        yield* identity.redeemApproval({ code: granted.code, verifier }, owner);
+        const token = granted.device!.token;
+        yield* identity.verifyDeviceApproval(token, owner);
+        expect(yield* reason(identity.verifyDeviceApproval(token, "identity:other"))).toBe(
+          "subject",
+        );
+        expect(yield* reason(identity.verifyDeviceApproval(`${token}x`, owner))).toBe("token");
+        yield* TestClock.adjust("31 days");
+        expect(yield* reason(identity.verifyDeviceApproval(token, owner))).toBe("expired");
+      }).pipe(Effect.provide(test.layer));
+    }),
 );

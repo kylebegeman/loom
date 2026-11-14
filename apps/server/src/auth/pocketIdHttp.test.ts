@@ -56,6 +56,7 @@ const metadata = {
   environmentId: EnvironmentId.make("host"),
 };
 const pocket = Layer.mock(PocketId.PocketId)({
+  enabled: true,
   cookieName: "identity-state",
   metadata: Effect.succeed(metadata),
   beginLogin: () =>

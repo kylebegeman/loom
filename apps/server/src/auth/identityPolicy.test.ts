@@ -2,6 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 import { describe, expect, it } from "vite-plus/test";
 import {
+  approvalSignInRefusal,
   identityConfigured,
   identityOwnershipSubject,
   identityAccountFromSession,
@@ -54,6 +55,28 @@ describe("parseMaxSessionAge", () => {
   it("refuses limits outside one hour to 365 days and anything that is not a whole number", () => {
     for (const value of ["", "59m", "3599", "366d", "1.5h", "-1d", "7 d", "7D", "1w", "7dd", "d"])
       expect(parseMaxSessionAge(value)).toBeNull();
+  });
+});
+
+describe("approvalSignInRefusal", () => {
+  const now = Date.parse("2026-11-14T12:00:00Z");
+  const at = (msAgo: number) => (now - msAgo) / 1000;
+
+  it("accepts only a passkey sign-in from the last five minutes", () => {
+    expect(approvalSignInRefusal({ auth_time: at(0), amr: ["phr"] }, now)).toBeNull();
+    expect(approvalSignInRefusal({ auth_time: at(5 * 60_000), amr: ["phr"] }, now)).toBeNull();
+    expect(approvalSignInRefusal({ auth_time: at(5 * 60_000 + 1000), amr: ["phr"] }, now)).toBe(
+      "stale",
+    );
+    expect(approvalSignInRefusal({ auth_time: at(-60_000), amr: ["phr"] }, now)).toBe("stale");
+    expect(approvalSignInRefusal({ amr: ["phr"] }, now)).toBe("stale");
+  });
+
+  it("refuses a fresh sign-in that did not use a passkey", () => {
+    for (const amr of [undefined, [], ["otp"], ["pwd", "mfa"]])
+      expect(approvalSignInRefusal({ auth_time: at(0), ...(amr ? { amr } : {}) }, now)).toBe(
+        "passkey",
+      );
   });
 });
 

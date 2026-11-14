@@ -4,7 +4,12 @@ import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { AuthSessionId, AuthStandardClientScopes, EnvironmentId } from "@t3tools/contracts";
-import { LibraryError, type AccountJoinRequest } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_JOIN_APPROVAL_REQUIRED,
+  ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED,
+  LibraryError,
+  type AccountJoinRequest,
+} from "@t3tools/contracts/fork";
 import { directoryPublicKeyFromPem, signDirectoryReport } from "@t3tools/shared/fork/directory";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
@@ -18,6 +23,7 @@ import * as Queue from "effect/Queue";
 import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
+import { PocketId, PocketIdError } from "../../auth/PocketId.ts";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { LibraryPushService } from "../library-push/LibraryPushService.ts";
@@ -73,7 +79,10 @@ const fixture = Effect.gen(function* () {
       } satisfies AccountJoinRequest;
     });
   let ownerAllowed = true;
+  let identity = false;
   let epoch = 0;
+  // Grants a passkey sign-in left, by code, as the Library's identity service would keep them.
+  const grants = new Map<string, { subject: string; reason?: PocketIdError["reason"] }>();
   const issued: string[] = [];
   const authorized = Effect.suspend(() =>
     ownerAllowed ? Effect.void : Effect.fail(new LibraryError({ reason: "blocked" })),
@@ -90,6 +99,28 @@ const fixture = Effect.gen(function* () {
             joinPrompt: (input) => Queue.offer(pushes, input.requestId).pipe(Effect.asVoid),
           }),
           Layer.mock(LibraryManagement)({ authorizeEnrollment: () => authorized }),
+          // Read when the service is built, so `enableIdentity` before `open` takes effect.
+          Layer.suspend(() =>
+            Layer.mock(PocketId)({
+              enabled: identity,
+              cookieName: "unused",
+              redeemApproval: (input, subject) =>
+                Effect.suspend(() => {
+                  const grant = grants.get(input.code);
+                  grants.delete(input.code);
+                  if (grant === undefined)
+                    return Effect.fail(new PocketIdError({ reason: "stale" }));
+                  if (grant.reason) return Effect.fail(new PocketIdError({ reason: grant.reason }));
+                  return grant.subject === subject
+                    ? Effect.void
+                    : Effect.fail(new PocketIdError({ reason: "subject" }));
+                }),
+              verifyDeviceApproval: (token, subject) =>
+                token === `phone:${subject}`
+                  ? Effect.void
+                  : Effect.fail(new PocketIdError({ reason: "expired" })),
+            }),
+          ),
           Layer.mock(AccountEnrollment)({
             epoch: () => Effect.sync(() => epoch),
             approve: (proof, _owner, expectedEpoch) =>
@@ -139,6 +170,10 @@ const fixture = Effect.gen(function* () {
     denyOwner: () => {
       ownerAllowed = false;
     },
+    enableIdentity: () => {
+      identity = true;
+    },
+    grants,
     fs: yield* FileSystem.FileSystem,
   };
 });
@@ -328,6 +363,90 @@ it.effect("streams pending prompts to the owner as requests arrive and end", () 
           .respond({ requestId: review.requestId, code: review.code }, owner)
           .pipe(Effect.result))._tag,
       ).toBe("Failure");
+    }),
+  ),
+);
+
+it.effect("on a Library with Loom Identity, approves only with fresh passkey or phone proof", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.enableIdentity();
+      const service = yield* f.open;
+      const request = yield* f.request();
+      const review = yield* service.begin(request);
+      const verifier = "v".repeat(43);
+      const passkey = (code: string) => ({ _tag: "passkey" as const, code, verifier });
+      const refusal = <A>(answer: Effect.Effect<A, LibraryError>) =>
+        answer.pipe(
+          Effect.flip,
+          Effect.map((error) => error.detail),
+        );
+      expect(
+        yield* refusal(service.respond({ requestId: review.requestId, code: review.code }, owner)),
+      ).toBe(ACCOUNT_JOIN_APPROVAL_REQUIRED);
+      f.grants.set("a".repeat(43), { subject: owner.subject, reason: "stale" });
+      expect(
+        yield* refusal(
+          service.decide(
+            { code: review.code, approve: true, approval: passkey("a".repeat(43)) },
+            owner,
+          ),
+        ),
+      ).toBe(ACCOUNT_JOIN_APPROVAL_REQUIRED);
+      f.grants.set("b".repeat(43), { subject: "someone-else" });
+      expect(
+        yield* refusal(
+          service.respond(
+            { requestId: review.requestId, code: review.code, approval: passkey("b".repeat(43)) },
+            owner,
+          ),
+        ),
+      ).toContain("Loom Identity account");
+      expect(
+        yield* refusal(
+          service.respond(
+            {
+              requestId: review.requestId,
+              code: review.code,
+              approval: { _tag: "device", token: "phone:someone-else" },
+            },
+            owner,
+          ),
+        ),
+      ).toBe(ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED);
+      expect(yield* service.redeem(request)).toEqual({ state: "pending" });
+      f.grants.set("c".repeat(43), { subject: owner.subject });
+      const approval = passkey("c".repeat(43));
+      expect(
+        (yield* service.respond(
+          { requestId: review.requestId, code: review.code, approval },
+          owner,
+        )).state,
+      ).toBe("approved");
+      expect((yield* service.redeem(request)).state).toBe("approved");
+
+      const fresh = { ...request, proof: { ...request.proof, requestId: "phone-request" } };
+      const next = yield* service.begin(fresh);
+      const wrong = (yield* service.prompts(owner).pipe(Stream.take(1), Stream.runCollect))[0]!
+        .find((prompt) => prompt.requestId === next.requestId)!
+        .choices.find((choice) => choice !== next.code)!;
+      // A decline never needs proof: it cannot add a computer.
+      expect(
+        (yield* service.respond({ requestId: next.requestId, code: wrong }, owner)).state,
+      ).toBe("denied");
+      const third = { ...request, proof: { ...request.proof, requestId: "third-request" } };
+      const last = yield* service.begin(third);
+      expect(
+        (yield* service.respond(
+          {
+            requestId: last.requestId,
+            code: last.code,
+            approval: { _tag: "device", token: `phone:${owner.subject}` },
+          },
+          owner,
+        )).state,
+      ).toBe("approved");
     }),
   ),
 );

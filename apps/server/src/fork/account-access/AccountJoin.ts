@@ -1,9 +1,12 @@
 import { AuthEnvironmentScope, AuthSessionId, ServerAuthSessionMethod } from "@t3tools/contracts";
 import {
+  ACCOUNT_JOIN_APPROVAL_REQUIRED,
+  ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED,
   ACCOUNT_JOIN_PROMPT_CHOICES,
   AccountJoinCode,
   AccountJoinReview,
   LibraryError,
+  type AccountJoinApproval,
   type AccountJoinPrompt,
   type AccountJoinRequest,
   type AccountJoinRedemption,
@@ -33,6 +36,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { AuthenticatedSession } from "../../auth/EnvironmentAuth.ts";
+import { PocketId, type PocketIdError } from "../../auth/PocketId.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { LibraryPushService } from "../library-push/LibraryPushService.ts";
@@ -90,7 +94,11 @@ export class AccountJoin extends Context.Service<
       session: AuthenticatedSession,
     ) => Effect.Effect<AccountJoinReview, LibraryError>;
     readonly decide: (
-      input: { readonly code: string; readonly approve: boolean },
+      input: {
+        readonly code: string;
+        readonly approve: boolean;
+        readonly approval?: AccountJoinApproval;
+      },
       session: AuthenticatedSession,
     ) => Effect.Effect<AccountJoinReview, LibraryError>;
     readonly redeem: (
@@ -119,6 +127,7 @@ const make = Effect.gen(function* () {
   const management = yield* LibraryManagement;
   const enrollment = yield* AccountEnrollment;
   const push = yield* LibraryPushService;
+  const identityProvider = yield* PocketId;
   // Owns each prompt push, so a slow Apple reply never holds the computer's request open.
   const scope = yield* Effect.scope;
   const revision = yield* SubscriptionRef.make(0);
@@ -204,6 +213,33 @@ const make = Effect.gen(function* () {
     const found = (yield* records()).filter((record) => record.review.code === code);
     if (found.length !== 1) return yield* ended();
     return found[0]!;
+  });
+  const approvalRefused = (detail: string) => new LibraryError({ reason: "blocked", detail });
+  /** On a Library with Loom Identity, approving needs a passkey moment ago or a phone's Face ID. */
+  const checkApproval = Effect.fn("AccountJoin.checkApproval")(function* (
+    approval: AccountJoinApproval | undefined,
+    session: AuthenticatedSession,
+  ) {
+    // Without Loom Identity there is no passkey to ask for, so the owner session stands alone.
+    if (!identityProvider.enabled) return;
+    if (approval === undefined) return yield* approvalRefused(ACCOUNT_JOIN_APPROVAL_REQUIRED);
+    const failed = (error: PocketIdError) =>
+      error.reason === "configuration" || error.reason === "discovery" || error.reason === "session"
+        ? unavailable()
+        : error.reason === "subject"
+          ? approvalRefused(
+              "Confirm with the passkey of the Loom Identity account this device is signed in with.",
+            )
+          : approvalRefused(
+              approval._tag === "device"
+                ? ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED
+                : ACCOUNT_JOIN_APPROVAL_REQUIRED,
+            );
+    yield* (
+      approval._tag === "passkey"
+        ? identityProvider.redeemApproval(approval, session.subject)
+        : identityProvider.verifyDeviceApproval(approval.token, session.subject)
+    ).pipe(Effect.mapError(failed));
   });
   const ownerFor = (session: AuthenticatedSession) => {
     const { expiresAt, ...sessionFields } = session;
@@ -291,7 +327,11 @@ const make = Effect.gen(function* () {
     return (yield* find(code)).review;
   }, lock.withPermit);
   const decide = Effect.fn("AccountJoin.decide")(function* (
-    input: { readonly code: string; readonly approve: boolean },
+    input: {
+      readonly code: string;
+      readonly approve: boolean;
+      readonly approval?: AccountJoinApproval;
+    },
     session: AuthenticatedSession,
   ) {
     yield* management.authorizeEnrollment(session);
@@ -299,7 +339,9 @@ const make = Effect.gen(function* () {
     if (record.epoch !== (yield* enrollment.epoch(record.review.environmentId)))
       return yield* ended();
     const next = input.approve ? "approved" : "denied";
-    if (record.review.state !== "pending" && record.review.state !== next) return yield* ended();
+    if (record.review.state === next) return record.review;
+    if (record.review.state !== "pending") return yield* ended();
+    if (input.approve) yield* checkApproval(input.approval, session);
     const review: AccountJoinReview = { ...record.review, state: next };
     yield* save({ ...record, review, owner: input.approve ? ownerFor(session) : null });
     yield* changed;
@@ -371,6 +413,7 @@ const make = Effect.gen(function* () {
     const next = matches ? "approved" : "denied";
     if (record.review.state !== "pending")
       return record.review.state === next ? record.review : yield* ended();
+    if (matches) yield* checkApproval(input.approval, session);
     const review: AccountJoinReview = { ...record.review, state: next };
     yield* save({ ...record, review, owner: matches ? ownerFor(session) : null });
     yield* changed;

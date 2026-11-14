@@ -240,7 +240,7 @@ const identityFixture = Effect.gen(function* () {
     Effect.provideService(HostProcess.Environment, identityEnvironment),
   );
   const identity = yield* PocketId.PocketId.pipe(
-    Effect.provide(PocketId.layer),
+    Effect.provide(PocketId.layer.pipe(Layer.provide(ServerSecretStore.layer))),
     Effect.provideService(SessionStore.SessionStore, sessions),
     Effect.provideService(HttpClient.HttpClient, client),
     Effect.provideService(HostProcess.Environment, identityEnvironment),

@@ -1,4 +1,5 @@
 import {
+  LOOM_IDENTITY_APPROVAL_PATH,
   LOOM_IDENTITY_CALLBACK_PATH,
   LOOM_IDENTITY_LOGIN_PATH,
   LOOM_IDENTITY_METADATA_PATH,
@@ -6,6 +7,8 @@ import {
   LOOM_IDENTITY_LOGOUT_PATH,
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
+  LOOM_IDENTITY_SIGN_IN_STALE,
+  LoomIdentityApprovalRequest,
   LoomIdentityBrowserRequest,
   LoomIdentitySessionRequest,
 } from "@t3tools/contracts/fork";
@@ -32,6 +35,9 @@ const decodeBrowserRequest = Schema.decodeUnknownEffect(LoomIdentityBrowserReque
 const decodeSessionRequest = Schema.decodeUnknownEffect(
   Schema.fromJsonString(LoomIdentitySessionRequest),
 );
+const decodeApprovalRequest = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(LoomIdentityApprovalRequest),
+);
 
 const HEADERS = {
   "cache-control": "no-store",
@@ -48,6 +54,7 @@ const failed = (status: number) =>
 const SIGN_IN_REFUSALS: Partial<Record<PocketId.PocketIdError["reason"], string>> = {
   expired: LOOM_IDENTITY_SIGN_IN_EXPIRED,
   passkey: LOOM_IDENTITY_PASSKEY_REQUIRED,
+  stale: LOOM_IDENTITY_SIGN_IN_STALE,
 };
 const signInRefused = (error: PocketId.PocketIdError) => {
   const code = SIGN_IN_REFUSALS[error.reason];
@@ -75,6 +82,7 @@ const sessionFailed = (error: unknown) => {
 const CALLBACK_REFUSAL_TEXT: Partial<Record<PocketId.PocketIdError["reason"], string>> = {
   expired: IDENTITY_FRESH_SIGN_IN_TEXT,
   passkey: IDENTITY_PASSKEY_REQUIRED_TEXT,
+  stale: new PocketId.PocketIdError({ reason: "stale" }).message,
 };
 /**
  * The callback's failure page. A window opened by another Loom app hears the refusal's code so
@@ -142,6 +150,7 @@ export const layer = Layer.unwrap(
           state: query.get("state"),
           challenge: query.get("challenge"),
           environmentId: query.get("environmentId"),
+          ...(query.get("purpose") === "approve" ? { purpose: "approve" } : {}),
           ...(query.has("issuer") || query.has("subject")
             ? { expectedIdentity: { issuer: query.get("issuer"), subject: query.get("subject") } }
             : {}),
@@ -165,8 +174,9 @@ export const layer = Layer.unwrap(
         ...(query.has("iss") ? { issuer: query.get("iss")! } : {}),
         client: deriveAuthClientMetadata({ request }),
       });
+      if ("approval" in session) return browserHandoffResponse(session.approval, "approving");
       const response = session.handoff
-        ? browserHandoffResponse(session.handoff)
+        ? browserHandoffResponse(session.handoff, "connecting")
         : HttpServerResponse.redirect(session.returnTo, { headers: HEADERS });
       return yield* setCookie(
         response,
@@ -203,6 +213,14 @@ export const layer = Layer.unwrap(
       );
       return HttpServerResponse.jsonUnsafe(session, { headers: HEADERS });
     }).pipe(Effect.catch((error) => Effect.succeed(sessionFailed(error))));
+    const approval = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      if (!request.headers["content-type"]?.startsWith("application/json")) return failed(415);
+      const body = yield* request.text;
+      if (body.length > 40_000) return failed(400);
+      const result = yield* identity.approvalProof(yield* decodeApprovalRequest(body));
+      return HttpServerResponse.jsonUnsafe(result, { headers: HEADERS });
+    }).pipe(Effect.catch((error) => Effect.succeed(sessionFailed(error))));
     const logout = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const authorization = request.headers.authorization;
@@ -229,6 +247,7 @@ export const layer = Layer.unwrap(
     }).pipe(Effect.orElseSucceed(() => failed(401)));
     return Layer.mergeAll(
       HttpRouter.add("POST", LOOM_IDENTITY_SESSION_PATH, exchange),
+      HttpRouter.add("POST", LOOM_IDENTITY_APPROVAL_PATH, approval),
       HttpRouter.add("POST", LOOM_IDENTITY_LOGOUT_PATH, logout),
       HttpRouter.add("GET", LOOM_IDENTITY_METADATA_PATH, metadata),
       HttpRouter.add("GET", LOOM_IDENTITY_LOGIN_PATH, login),
@@ -282,14 +301,17 @@ function identityPage(input: {
   );
 }
 
-function browserHandoffResponse(handoff: {
-  readonly code: string;
-  readonly state: string;
-  readonly origin: string;
-  readonly environmentId: string;
-}) {
+function browserHandoffResponse(
+  handoff: {
+    readonly code: string;
+    readonly state: string;
+    readonly origin: string;
+    readonly environmentId: string;
+  },
+  finishing: "connecting" | "approving",
+) {
   return identityPage({
-    body: "<p>Return to Loom to finish connecting. You can close this window.</p>",
+    body: `<p>Return to Loom to finish ${finishing}. You can close this window.</p>`,
     script: openerMessage(
       {
         type: "loom:identity:complete",

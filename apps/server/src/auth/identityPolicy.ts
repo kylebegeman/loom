@@ -20,6 +20,31 @@ const ADDED_POLICY_KEYS = [
   "LOOM_ACCESS_AUDIENCE",
 ] as const;
 
+/** The `amr` value Pocket ID sets only for a passkey sign-in (`webauthn/service.go`). */
+export const PASSKEY_AUTH_METHOD = "phr";
+/** How recent a passkey sign-in must be to approve a computer joining the account. */
+export const APPROVAL_SIGN_IN_MAX_AGE_MS = 5 * 60_000;
+/** Drift allowed between this host's clock and the identity provider's. */
+const APPROVAL_CLOCK_SKEW_MS = 30_000;
+
+/**
+ * Why an ID token cannot approve a computer, or null for a passkey sign-in made in the last five
+ * minutes. `auth_time` is when the person signed in, which no refresh can move forward.
+ */
+export function approvalSignInRefusal(
+  claims: {
+    readonly auth_time?: number | undefined;
+    readonly amr?: ReadonlyArray<string> | undefined;
+  },
+  nowMs: number,
+): "passkey" | "stale" | null {
+  if (!claims.amr?.includes(PASSKEY_AUTH_METHOD)) return "passkey";
+  if (claims.auth_time === undefined) return "stale";
+  const signedInAt = claims.auth_time * 1000;
+  if (signedInAt > nowMs + APPROVAL_CLOCK_SKEW_MS) return "stale";
+  return nowMs - signedInAt > APPROVAL_SIGN_IN_MAX_AGE_MS ? "stale" : null;
+}
+
 const MIN_SESSION_AGE_SECONDS = 60 * 60;
 const MAX_SESSION_AGE_SECONDS = 365 * 24 * 60 * 60;
 const SESSION_AGE_UNITS = { s: 1, m: 60, h: 60 * 60, d: 24 * 60 * 60 } as const;

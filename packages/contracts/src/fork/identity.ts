@@ -45,6 +45,8 @@ export const LOOM_IDENTITY_CALLBACK_PATH = "/api/loom/identity/callback";
 
 export const LOOM_IDENTITY_SESSION_PATH = "/api/loom/identity/session";
 export const LOOM_IDENTITY_LOGOUT_PATH = "/api/loom/identity/logout";
+/** Exchanges a native passkey sign-in made moments ago for a single-use approval grant. */
+export const LOOM_IDENTITY_APPROVAL_PATH = "/api/loom/identity/approval";
 /** The session endpoint's 401 `error` when a sign-in is older than the host's maximum age. */
 export const LOOM_IDENTITY_SIGN_IN_EXPIRED = "sign_in_expired";
 /**
@@ -52,6 +54,8 @@ export const LOOM_IDENTITY_SIGN_IN_EXPIRED = "sign_in_expired";
  * `amr` lacks one. Signing in again only helps after signing out of Loom Identity in the browser.
  */
 export const LOOM_IDENTITY_PASSKEY_REQUIRED = "passkey_required";
+/** An approval's sign-in was not just made, typically because the provider skipped the passkey. */
+export const LOOM_IDENTITY_SIGN_IN_STALE = "sign_in_stale";
 
 export const LoomIdentityAccount = Schema.Struct({
   issuer: Schema.String,
@@ -83,6 +87,8 @@ export const LoomIdentityBrowserRequest = Schema.Struct({
   challenge: Schema.String,
   environmentId: EnvironmentId,
   expectedIdentity: Schema.optional(LoomIdentityAccount),
+  /** `approve` asks for a new passkey sign-in whose single-use grant approves one request. */
+  purpose: Schema.optional(Schema.Literal("approve")),
 });
 export type LoomIdentityBrowserRequest = typeof LoomIdentityBrowserRequest.Type;
 export const LoomIdentitySessionRequest = Schema.Union([
@@ -103,6 +109,21 @@ export const LoomIdentitySessionRequest = Schema.Union([
   }),
 ]);
 export type LoomIdentitySessionRequest = typeof LoomIdentitySessionRequest.Type;
+export const LoomIdentityApprovalRequest = Schema.Struct({
+  accessToken: Schema.String,
+  idToken: Schema.String,
+  environmentId: EnvironmentId,
+  /** S256 of the verifier the approval later presents with the grant's code. */
+  challenge: Schema.String,
+  /** A phone also asks for a token it can approve with after Face ID or its passcode. */
+  device: Schema.optional(Schema.Boolean),
+});
+export type LoomIdentityApprovalRequest = typeof LoomIdentityApprovalRequest.Type;
+export const LoomIdentityApprovalResult = Schema.Struct({
+  code: Schema.String,
+  device: Schema.optional(Schema.Struct({ token: Schema.String, expiresAt: Schema.Number })),
+});
+export type LoomIdentityApprovalResult = typeof LoomIdentityApprovalResult.Type;
 
 const LoomIdentityKnownComputer = Schema.Struct({
   environmentId: EnvironmentId,
@@ -145,6 +166,18 @@ export const LoomDesktopSignInResult = Schema.Struct({
   expiresAt: Schema.optional(Schema.Number),
 });
 export type LoomDesktopSignInResult = typeof LoomDesktopSignInResult.Type;
+/** A passkey check for the Library, made only to approve a computer joining the account. */
+export const LoomDesktopApprovalRequest = Schema.Struct({
+  httpBaseUrl: Schema.String,
+  expectedEnvironmentId: EnvironmentId,
+  expectedIdentity: Schema.optional(LoomIdentityAccount),
+});
+export type LoomDesktopApprovalRequest = typeof LoomDesktopApprovalRequest.Type;
+export const LoomDesktopApprovalResult = Schema.Struct({
+  code: Schema.String,
+  verifier: Schema.String,
+});
+export type LoomDesktopApprovalResult = typeof LoomDesktopApprovalResult.Type;
 
 export const LoomDesktopRenewRequest = Schema.Struct({
   httpBaseUrl: Schema.String,

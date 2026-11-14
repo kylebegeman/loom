@@ -149,10 +149,34 @@ export const AccountJoinPrompt = Schema.Struct({
   choices: Schema.Array(AccountJoinCode).check(Schema.isMaxLength(ACCOUNT_JOIN_PROMPT_CHOICES)),
 });
 export type AccountJoinPrompt = typeof AccountJoinPrompt.Type;
+/**
+ * What lets a Library with Loom Identity accept an approval. `passkey` redeems the single-use
+ * grant from a passkey sign-in made moments ago; `device` is the token an owner phone received
+ * at such a sign-in and releases only after Face ID or its passcode.
+ */
+export const AccountJoinApproval = Schema.Union([
+  Schema.TaggedStruct("passkey", {
+    code: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/u)),
+    verifier: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._~-]{43,128}$/u)),
+  }),
+  Schema.TaggedStruct("device", {
+    token: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048)),
+  }),
+]);
+export type AccountJoinApproval = typeof AccountJoinApproval.Type;
+/** The refusal detail for an approval sent without fresh proof, so clients can ask for one. */
+export const ACCOUNT_JOIN_APPROVAL_REQUIRED =
+  "Confirm with your passkey to approve this computer. Approve it again to try.";
+/** The refusal detail for an expired or replaced phone approval token. */
+export const ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED =
+  "This phone needs your passkey again before it can approve computers. Approve it again to confirm.";
+
 /** `code: null` declines. A code other than the terminal's also declines the request. */
 export const AccountJoinResponse = Schema.Struct({
   requestId: AccountJoinReview.fields.requestId,
   code: Schema.NullOr(AccountJoinCode),
+  /** Required to approve on a Library with Loom Identity; a decline never needs it. */
+  approval: Schema.optionalKey(AccountJoinApproval),
 });
 export type AccountJoinResponse = typeof AccountJoinResponse.Type;
 
@@ -211,7 +235,11 @@ export const AccountEnrollmentRpcGroup = RpcGroup.make(
     error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
   }),
   Rpc.make(ACCOUNT_ENROLLMENT_WS_METHODS.decideJoin, {
-    payload: Schema.Struct({ code: AccountJoinCode, approve: Schema.Boolean }),
+    payload: Schema.Struct({
+      code: AccountJoinCode,
+      approve: Schema.Boolean,
+      approval: Schema.optionalKey(AccountJoinApproval),
+    }),
     success: AccountJoinReview,
     error: Schema.Union([LibraryError, EnvironmentAuthorizationError]),
   }),

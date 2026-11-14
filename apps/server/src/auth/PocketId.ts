@@ -12,6 +12,8 @@ import {
   LOOM_IDENTITY_CALLBACK_PATH,
   type LoomIdentityMetadata,
   type LoomIdentityAccount,
+  type LoomIdentityApprovalRequest,
+  type LoomIdentityApprovalResult,
   type LoomIdentityBrowserRequest,
   type LoomIdentitySessionRequest,
   type LoomIdentitySessionResult,
@@ -24,6 +26,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -38,7 +41,14 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { timingSafeEqualBase64Url } from "./utils.ts";
 import * as PayloadSigner from "./PayloadSigner.ts";
-import { identitySessionPrefix, parseMaxSessionAge, passkeyRequired } from "./identityPolicy.ts";
+import {
+  APPROVAL_SIGN_IN_MAX_AGE_MS,
+  PASSKEY_AUTH_METHOD,
+  approvalSignInRefusal,
+  identitySessionPrefix,
+  parseMaxSessionAge,
+  passkeyRequired,
+} from "./identityPolicy.ts";
 
 const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
   AuthAccessReadScope,
@@ -70,8 +80,12 @@ const AT_HASH_DIGESTS: ReadonlyMap<string, Digest.Algorithm> = new Map([
   ["PS256", Digest.sha256],
   ["EdDSA", Digest.sha512],
 ]);
-/** The `amr` value Pocket ID sets only for a passkey sign-in (`webauthn/service.go`). */
-const PASSKEY_AUTH_METHOD = "phr";
+/** How long a phone may approve computers after Face ID before it needs a passkey again. */
+const DEVICE_APPROVAL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const DEVICE_APPROVAL_SECRET = "loom-identity-device-approval";
+const DeviceApproval = Schema.Struct({ v: Schema.Literal(1), sub: Schema.String, exp: Schema.Int });
+const encodeDeviceApproval = Schema.encodeSync(Schema.fromJsonString(DeviceApproval));
+const decodeDeviceApproval = Schema.decodeUnknownOption(Schema.fromJsonString(DeviceApproval));
 const Discovery = Schema.Struct({
   issuer: Schema.String,
   authorization_endpoint: Schema.String,
@@ -134,6 +148,7 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
     "expired",
     "revoked",
     "passkey",
+    "stale",
   ]),
   cause: Schema.optional(Schema.Defect()),
   /**
@@ -152,6 +167,8 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
         return "Your Loom sign-in reached this computer's time limit. Sign in again.";
       case "passkey":
         return IDENTITY_PASSKEY_REQUIRED_TEXT;
+      case "stale":
+        return "Loom Identity did not ask for your passkey just now. Approve the computer again.";
       default:
         return "Loom could not complete sign-in. Try again.";
     }
@@ -163,6 +180,18 @@ interface VerifiedIdentity {
   readonly account: LoomIdentityAccount;
   readonly expiresAt: DateTime.Utc;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+}
+interface BrowserHandoff {
+  readonly code: string;
+  readonly state: string;
+  readonly origin: string;
+  readonly environmentId: string;
+}
+interface ApprovalGrant {
+  readonly subject: string;
+  readonly challenge: string;
+  /** When the passkey sign-in stops being recent enough to approve with. */
+  readonly expiresAt: number;
 }
 interface PendingLogin {
   readonly returnTo: string;
@@ -177,6 +206,8 @@ export class PocketId extends Context.Service<
   PocketId,
   {
     readonly metadata: Effect.Effect<LoomIdentityMetadata, PocketIdError>;
+    /** Loom Identity has an issuer, an audience and an allowlist here. */
+    readonly enabled: boolean;
     readonly cookieName: string;
     readonly beginLogin: (
       returnTo?: string,
@@ -196,15 +227,12 @@ export class PocketId extends Context.Service<
       readonly issuer?: string;
       readonly client: AuthClientMetadata;
     }) => Effect.Effect<
-      SessionStore.IssuedSession & {
-        readonly returnTo: string;
-        readonly handoff?: {
-          readonly code: string;
-          readonly state: string;
-          readonly origin: string;
-          readonly environmentId: string;
-        };
-      },
+      | (SessionStore.IssuedSession & {
+          readonly returnTo: string;
+          readonly handoff?: BrowserHandoff;
+        })
+      /** An approval sign-in issues no session, only the grant its window hands back. */
+      | { readonly approval: BrowserHandoff; readonly returnTo: string },
       PocketIdError
     >;
     readonly logout: (input: {
@@ -223,6 +251,20 @@ export class PocketId extends Context.Service<
       currentToken?: string,
     ) => Effect.Effect<LoomIdentitySessionResult, PocketIdError>;
     readonly verifyAccessToken: (token: string) => Effect.Effect<VerifiedIdentity, PocketIdError>;
+    /** A native passkey sign-in made moments ago, exchanged for a single-use approval grant. */
+    readonly approvalProof: (
+      input: LoomIdentityApprovalRequest,
+    ) => Effect.Effect<LoomIdentityApprovalResult, PocketIdError>;
+    /** Spends an approval grant. An Identity session can spend only its own account's grant. */
+    readonly redeemApproval: (
+      input: { readonly code: string; readonly verifier: string },
+      subject: string,
+    ) => Effect.Effect<void, PocketIdError>;
+    /** Checks a phone's approval token against the session `subject` it was issued to. */
+    readonly verifyDeviceApproval: (
+      token: string,
+      subject: string,
+    ) => Effect.Effect<void, PocketIdError>;
     readonly exchangeAccessToken: (input: {
       readonly token: string;
       readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
@@ -289,6 +331,12 @@ const make = Effect.gen(function* () {
       }
     >
   >(new Map());
+  const approvals = yield* Ref.make<{
+    readonly grants: ReadonlyMap<string, ApprovalGrant>;
+    /** ID tokens already exchanged, so one passkey sign-in grants one approval. */
+    readonly spent: ReadonlyMap<string, number>;
+  }>({ grants: new Map(), spent: new Map() });
+  const deviceSigner = yield* PayloadSigner.make(DEVICE_APPROVAL_SECRET);
   const discoveryCache = yield* Ref.make<{
     readonly value: typeof Discovery.Type;
     readonly expiresAt: number;
@@ -603,6 +651,126 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.mapError((cause) => new PocketIdError({ reason: "session", cause })));
   });
+  /**
+   * A session signed in with Loom Identity approves only with its own account. The Library's own
+   * window and paired devices hold no account, so any allowed account's passkey stands for them.
+   */
+  const approvesFor = (granted: string, session: string) =>
+    !session.startsWith("identity:") || granted === session;
+  const tokenHash = (value: string) =>
+    crypto
+      .digest(Digest.sha256, new TextEncoder().encode(value))
+      .pipe(Effect.map(Base64Url.encode), Effect.orDie);
+  const grantApproval = Effect.fnUntraced(function* (input: {
+    readonly subject: string;
+    readonly challenge: string;
+    readonly claims: {
+      readonly auth_time?: number | undefined;
+      readonly amr?: ReadonlyArray<string> | undefined;
+    };
+    readonly idToken: string;
+  }) {
+    const now = (yield* DateTime.now).epochMilliseconds;
+    const refusal = approvalSignInRefusal(input.claims, now);
+    if (refusal !== null) return yield* new PocketIdError({ reason: refusal });
+    const spent = yield* tokenHash(input.idToken);
+    const code = Base64Url.encode(yield* secureRandom.randomBytes(32).pipe(Effect.orDie));
+    const expiresAt = (input.claims.auth_time ?? 0) * 1000 + APPROVAL_SIGN_IN_MAX_AGE_MS;
+    const outcome = yield* Ref.modify(approvals, (current) => {
+      const live = <V>(entries: ReadonlyMap<string, V>, expiry: (value: V) => number) =>
+        new Map([...entries].filter(([, value]) => expiry(value) > now));
+      const grants = live(current.grants, (grant) => grant.expiresAt);
+      const used = live(current.spent, (until) => until);
+      if (used.has(spent)) return ["spent", { grants, spent: used }] as const;
+      if (grants.size >= MAX_PENDING_LOGINS) return ["capacity", { grants, spent: used }] as const;
+      grants.set(code, { subject: input.subject, challenge: input.challenge, expiresAt });
+      used.set(spent, expiresAt);
+      return ["granted", { grants, spent: used }] as const;
+    });
+    if (outcome === "spent") return yield* new PocketIdError({ reason: "state" });
+    if (outcome === "capacity") return yield* new PocketIdError({ reason: "capacity" });
+    return code;
+  });
+  const approvalProof: PocketId["Service"]["approvalProof"] = Effect.fn("PocketId.approvalProof")(
+    function* (input) {
+      if (nativeClientId === null) return yield* new PocketIdError({ reason: "disabled" });
+      if (input.environmentId !== environmentId || !/^[A-Za-z0-9_-]{43}$/.test(input.challenge))
+        return yield* new PocketIdError({ reason: "state" });
+      const identity = yield* verifyAccessToken(input.accessToken);
+      const claims = yield* verifyIdToken({
+        idToken: input.idToken,
+        accessToken: input.accessToken,
+        audience: nativeClientId,
+        requireAtHash: true,
+      });
+      if (claims.sub !== identity.account.subject)
+        return yield* new PocketIdError({ reason: "subject" });
+      const code = yield* grantApproval({
+        subject: identity.subject,
+        challenge: input.challenge,
+        claims,
+        idToken: input.idToken,
+      });
+      if (input.device !== true) return { code };
+      const expiresAt = (yield* DateTime.now).epochMilliseconds + DEVICE_APPROVAL_TTL_MS;
+      const payload = Base64Url.encode(
+        new TextEncoder().encode(
+          encodeDeviceApproval({ v: 1, sub: identity.subject, exp: expiresAt }),
+        ),
+      );
+      const signature = yield* deviceSigner
+        .sign(payload)
+        .pipe(Effect.mapError((cause) => new PocketIdError({ reason: "session", cause })));
+      return { code, device: { token: `${payload}.${signature}`, expiresAt } };
+    },
+  );
+  const redeemApproval: PocketId["Service"]["redeemApproval"] = Effect.fn(
+    "PocketId.redeemApproval",
+  )(function* (input, subject) {
+    const now = (yield* DateTime.now).epochMilliseconds;
+    const challenge = Base64Url.encode(
+      yield* crypto
+        .digest(Digest.sha256, new TextEncoder().encode(input.verifier))
+        .pipe(Effect.orDie),
+    );
+    // A grant leaves the store on its first presentation, so a wrong verifier also spends it.
+    const grant = yield* Ref.modify(approvals, (current) => {
+      const grants = new Map(current.grants);
+      const found = grants.get(input.code);
+      grants.delete(input.code);
+      return [found, { ...current, grants }] as const;
+    });
+    if (grant === undefined || grant.expiresAt <= now)
+      return yield* new PocketIdError({ reason: "stale" });
+    if (!timingSafeEqualBase64Url(challenge, grant.challenge))
+      return yield* new PocketIdError({ reason: "state" });
+    if (!approvesFor(grant.subject, subject))
+      return yield* new PocketIdError({ reason: "subject" });
+  });
+  const verifyDeviceApproval: PocketId["Service"]["verifyDeviceApproval"] = Effect.fn(
+    "PocketId.verifyDeviceApproval",
+  )(function* (token, subject) {
+    const [payload, signature, extra] = token.split(".");
+    if (
+      payload === undefined ||
+      signature === undefined ||
+      extra !== undefined ||
+      !(yield* deviceSigner
+        .verify(payload, signature)
+        .pipe(Effect.mapError((cause) => new PocketIdError({ reason: "session", cause }))))
+    )
+      return yield* new PocketIdError({ reason: "token" });
+    const bytes = Base64Url.decode(payload);
+    const claims =
+      bytes._tag === "Success"
+        ? decodeDeviceApproval(new TextDecoder().decode(bytes.success))
+        : Option.none();
+    if (Option.isNone(claims)) return yield* new PocketIdError({ reason: "token" });
+    if (claims.value.exp <= (yield* DateTime.now).epochMilliseconds)
+      return yield* new PocketIdError({ reason: "expired" });
+    if (!approvesFor(claims.value.sub, subject))
+      return yield* new PocketIdError({ reason: "subject" });
+  });
   const metadata = Effect.gen(function* () {
     const endpoints = enabled ? yield* discovery : null;
     return {
@@ -638,9 +806,12 @@ const make = Effect.gen(function* () {
     if (!browserLoginEnabled || clientId === null || redirectUri === null)
       return yield* new PocketIdError({ reason: "disabled" });
     const endpoints = yield* discovery;
+    const approving = browser?.purpose === "approve";
+    // An approval keeps the app open, so the Library's own app signs in from a window too.
+    const ownOrigin = (yield* secureUrl(redirectUri)).origin;
     if (
       browser &&
-      (!browserOrigins.includes(browser.origin) ||
+      (!(browserOrigins.includes(browser.origin) || (approving && browser.origin === ownOrigin)) ||
         browser.environmentId !== environmentId ||
         !/^[A-Za-z0-9_-]{43}$/.test(browser.challenge) ||
         !/^[A-Za-z0-9_-]{43}$/.test(browser.state) ||
@@ -687,9 +858,11 @@ const make = Effect.gen(function* () {
     }))
       authorization.searchParams.set(name, value);
     if (resource !== null) authorization.searchParams.set("resource", resource);
+    // An approval needs the passkey now, whatever sign-in the provider already holds.
+    if (approving) authorization.searchParams.set("max_age", "0");
     // An older Pocket ID sign-in would be refused at the callback, so ask for one that still
     // leaves a full host session before the limit.
-    if (maxSessionAgeSeconds !== null)
+    else if (maxSessionAgeSeconds !== null)
       authorization.searchParams.set(
         "max_age",
         String(maxSessionAgeSeconds - HOST_SESSION_SECONDS),
@@ -763,7 +936,7 @@ const make = Effect.gen(function* () {
           nonce: entry.nonce,
           requireAtHash: false,
         });
-        yield* checkPasskey(claims.amr);
+        if (entry.browser?.purpose !== "approve") yield* checkPasskey(claims.amr);
         const identity = yield* verifyAccessToken(tokens.access_token);
         if (
           identity.account.subject !== claims.sub ||
@@ -772,6 +945,21 @@ const make = Effect.gen(function* () {
               entry.browser.expectedIdentity.subject !== identity.account.subject))
         )
           return yield* new PocketIdError({ reason: "subject" });
+        if (entry.browser?.purpose === "approve")
+          return {
+            approval: {
+              code: yield* grantApproval({
+                subject: identity.subject,
+                challenge: entry.browser.challenge,
+                claims,
+                idToken: tokens.id_token,
+              }),
+              origin: entry.browser.origin,
+              state: entry.browser.state,
+              environmentId,
+            },
+            returnTo: entry.returnTo,
+          };
         const expiration = DateTime.make(claims.exp * 1000);
         if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
         const acceptedIdentity = yield* capSignInAge(
@@ -829,11 +1017,15 @@ const make = Effect.gen(function* () {
     },
   );
   return PocketId.of({
+    enabled,
     cookieName,
     metadata,
     beginLogin,
     completeLogin,
     verifyAccessToken,
+    approvalProof,
+    redeemApproval,
+    verifyDeviceApproval,
     logout: Effect.fn("PocketId.logout")(function* (input) {
       if (input.bearerToken === undefined) {
         if (redirectUri === null || input.origin !== (yield* secureUrl(redirectUri)).origin)
