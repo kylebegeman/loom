@@ -64,6 +64,15 @@ type ConnectionFailure = Failure | VaultConnectionError;
 export class VaultGitHub extends Context.Service<
   VaultGitHub,
   {
+    readonly terminalForAccount: (
+      input: VaultGitHubTerminalRun,
+      account: {
+        readonly lease: Parameters<
+          VaultAccess.VaultAccess["Service"]["authorizeAccount"]
+        >[0]["lease"];
+        readonly authorize: Effect.Effect<void, VaultError>;
+      },
+    ) => Effect.Effect<{ account: string; token: Redacted.Redacted<string> }, ConnectionFailure>;
     readonly runForAccount: (
       input: VaultGitHubRun,
       account: {
@@ -275,18 +284,13 @@ const make = Effect.gen(function* () {
     yield* observeExpiry(record.info, session);
     return session;
   });
-  const runAuthorization = Effect.fnUntraced(function* (
-    input: VaultGitHubTarget,
-    threadId: ThreadId,
-    guard: Effect.Effect<void, VaultError | VaultConnectionError> = Effect.void,
-    authorization: "audit" | "observe" = "audit",
-  ) {
+  // Source execution must stay attached to the run and working copy that requested credentials.
+  const workloadAuthorization = Effect.fnUntraced(function* (threadId: ThreadId) {
     const initial = yield* threads
       .getThreadShell(threadId)
       .pipe(Effect.mapError(() => fail("denied")));
-    if (!initial?.activeRunId) return Effect.fail(fail("denied"));
-    const authorize = Effect.gen(function* () {
-      yield* guard;
+    if (!initial?.activeRunId) return yield* fail("denied");
+    return Effect.gen(function* () {
       const thread = yield* threads
         .getThreadShell(threadId)
         .pipe(Effect.mapError(() => fail("denied")));
@@ -303,6 +307,18 @@ const make = Effect.gen(function* () {
         thread.deletedAt
       )
         return yield* fail("denied");
+    });
+  });
+  const runAuthorization = Effect.fnUntraced(function* (
+    input: VaultGitHubTarget,
+    threadId: ThreadId,
+    guard: Effect.Effect<void, VaultError | VaultConnectionError> = Effect.void,
+    authorization: "audit" | "observe" = "audit",
+  ) {
+    const workload = yield* workloadAuthorization(threadId);
+    const authorize = Effect.gen(function* () {
+      yield* guard;
+      yield* workload;
       if (authorization === "audit") {
         yield* access.require(threadId, input.id, "use", vaultGitHubDestination(input.repository));
       } else {
@@ -605,6 +621,34 @@ const make = Effect.gen(function* () {
       );
   }, Effect.scoped);
   return VaultGitHub.of({
+    terminalForAccount: Effect.fn("VaultGitHub.terminalForAccount")(function* (input, account) {
+      if (!isTerminal(input) || !githubTerminalArgs(input.repository.toLowerCase(), input.command))
+        return yield* new VaultGitHubError({ reason: "invalid-command" });
+      const authorize = access
+        .authorizeAccount(
+          {
+            lease: account.lease,
+            itemId: input.id,
+            expectedVersion: input.expectedVersion,
+            action: "use",
+            destination: vaultGitHubDestination(input.repository),
+          },
+          account.authorize,
+        )
+        .pipe(
+          Effect.andThen(() => check(input)),
+          Effect.asVoid,
+        );
+      yield* authorize;
+      return yield* permits.withPermits(1)(
+        Effect.gen(function* () {
+          const record = yield* check(input);
+          const current = yield* session(record, input.repository);
+          yield* authorize;
+          return { account: current.account, token: current.token };
+        }),
+      );
+    }, Effect.scoped),
     runForAccount: Effect.fn("VaultGitHub.runForAccount")(function* (input, account) {
       const authorize = access
         .authorizeAccount(
@@ -782,15 +826,19 @@ const make = Effect.gen(function* () {
     }),
     terminal: Effect.fn("VaultGitHub.terminal")(function* (raw, threadId) {
       if (!isTerminalInput(raw)) return yield* new VaultGitHubError({ reason: "invalid-command" });
-      if (yield* accountClient.available)
-        return yield* new VaultGitHubError({ reason: "account-terminal-unavailable" });
+      const sourceWorkload = yield* workloadAuthorization(threadId);
+      yield* sourceWorkload;
+      const remote = (yield* accountClient.available)
+        ? yield* accountClient.terminalCredential(raw, threadId)
+        : null;
       const pin =
-        !("id" in raw) && "connection" in raw
+        remote?.pin ??
+        (!("id" in raw) && "connection" in raw
           ? yield* connections.require(
               { kind: "github", connection: raw.connection, repository: raw.repository },
               threadId,
             )
-          : null;
+          : null);
       const input = pin
         ? ({
             ...raw,
@@ -801,7 +849,33 @@ const make = Effect.gen(function* () {
       if (!isTerminal(input) || !githubTerminalArgs(input.repository.toLowerCase(), input.command))
         return yield* new VaultGitHubError({ reason: "invalid-command" });
       const guard = pin ? connections.revalidate(pin, threadId) : Effect.void;
-      const authorize = yield* runAuthorization(input, threadId, guard);
+      const authorize = remote
+        ? Effect.gen(function* () {
+            yield* sourceWorkload;
+            const result = yield* accountClient.execute(
+              {
+                kind: "resolve",
+                input: {
+                  kind: "github",
+                  connection: { id: remote.pin.item.id, expectedVersion: remote.pin.item.version },
+                  repository: input.repository,
+                },
+              },
+              threadId,
+            );
+            if (
+              result.kind !== "resolve" ||
+              result.report.state !== "ready" ||
+              result.report.selected?.destination !== remote.pin.destination
+            )
+              return yield* fail("denied");
+            yield* sourceWorkload;
+          }).pipe(
+            Effect.catchTags({
+              VaultSshError: () => Effect.fail(new VaultError({ reason: "unavailable" })),
+            }),
+          )
+        : yield* runAuthorization(input, threadId, guard);
       yield* authorize;
       const thread = yield* threads
         .getThreadShell(threadId)
@@ -817,8 +891,9 @@ const make = Effect.gen(function* () {
         .withPermits(1)(
           Effect.gen(function* () {
             yield* authorize;
-            const record = yield* check(input),
-              current = yield* session(record, input.repository);
+            const current = remote
+              ? remote.credential
+              : yield* session(yield* check(input), input.repository);
             yield* authorize;
             const result = yield* terminal.execute({
               token: current.token,

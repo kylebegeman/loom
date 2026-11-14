@@ -7,7 +7,7 @@ import { GitHubProjectAccess } from "./GitHubProjectAccess";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { Linking, ScrollView, View } from "react-native";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import type { VaultGitHubInfo, VaultGitHubTarget } from "@t3tools/contracts/fork";
 import {
   createVaultGitHubAtoms,
@@ -41,8 +41,8 @@ export function VaultGitHubSettingsSection({
   ownerMode?: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope),
-    canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope),
+    canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-github")) return null;
   return (
     <SettingsSection title="GitHub for agents (Vault)">
@@ -73,7 +73,7 @@ export function VaultGitHubConnectSheet({
   onSaved: (info: VaultGitHubInfo) => void;
   onClose: () => void;
 }) {
-  const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   return (
     <Manager
       environmentId={environmentId}
@@ -97,7 +97,7 @@ export function VaultGitHubRepairSheet({
   const { environments } = useEnvironments();
   const computer = environments.find((entry) => entry.environmentId === environmentId);
   const connected = computer?.entry.enabled === true && computer.connection.phase === "connected";
-  const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   const policy = useEnvironmentQuery(accessAtoms.snapshot({ environmentId, input: {} }));
   return (
     <Sheet title="Selected Vault GitHub connection" onClose={onClose}>

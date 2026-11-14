@@ -34,6 +34,7 @@ import { DevicesWithAccessSection } from "../connections/DevicesWithAccessSectio
 import { AccountComputers } from "../connections/AccountComputers";
 import { AccountLinksPolicy } from "../connections/AccountLinksPolicy";
 import { ApproveComputer } from "../connections/ApproveComputer";
+import { JoinRequests } from "../connections/JoinRequests";
 import { AccountVaultEntry } from "../vault/AccountVaultEntry";
 import { LibraryAccessBlock } from "./LibraryAccessBlock";
 import { LibraryDeletedSettings } from "./LibraryDeletedSettings";
@@ -154,6 +155,7 @@ export function LibraryAuthorityScreen() {
             : `Sign in to reconnect to ${authority.label}.`}
         </Text>
       ) : null}
+      <JoinRequests />
       <LibrarySignInSection />
       <AccountVaultEntry />
       <ApproveComputer />

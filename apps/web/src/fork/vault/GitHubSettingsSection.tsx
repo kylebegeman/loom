@@ -14,7 +14,7 @@ import {
 import { VaultQueryFeedback } from "./SettingsFeedback";
 import { useId, useState, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import type { VaultGitHubInfo, VaultItemSummary } from "@t3tools/contracts/fork";
 import {
   createVaultGitHubAtoms,
@@ -81,8 +81,8 @@ export function VaultGitHubSettingsSection() {
       ? Number(version)
       : undefined;
   const configs = useServerConfigs();
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
-  const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope);
+  const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultWriteScope);
   if (
     !environment ||
     !supportsLoomFeature(

@@ -23,7 +23,7 @@ const launch = (argv: ReadonlyArray<string>, aliases?: ReadonlyArray<string>) =>
   const result = NodeChildProcess.spawnSync("/bin/sh", ["-c", script, "ssh", ...argv], {
     encoding: "utf8",
   });
-  return { status: result.status, stdout: result.stdout.trim() };
+  return { status: result.status, stdout: result.stdout.trim(), stderr: result.stderr.trim() };
 };
 
 it("lets the selected resource name stand in for the pinned destination", () => {
@@ -36,8 +36,23 @@ it("lets the selected resource name stand in for the pinned destination", () => 
 
 it("still refuses other destinations, other users and unsafe aliases", () => {
   expect(launch(["other.test", "true"], ["personal-vps"]).status).toBe(64);
+  expect(launch(["other.test", "true"]).stderr).toContain("deploy@vps.example.test:2222");
   expect(launch(["root@personal-vps", "true"], ["personal-vps"]).status).toBe(64);
   expect(launch(["personal-vps", "true"]).status).toBe(64);
   for (const alias of ["-oProxyCommand=x", "a b", "x;y", "user@host"])
     expect(launch([alias, "true"], [alias]).status).toBe(64);
+});
+
+it("accepts the pinned item's own label without a resource selector", () => {
+  const script = renderAgentSshLauncher({ ...session, label: "personal-vps" }, paths).replace(
+    "exec /usr/bin/ssh ",
+    "exec /bin/echo ",
+  );
+  const result = NodeChildProcess.spawnSync(
+    "/bin/sh",
+    ["-c", script, "ssh", "personal-vps", "true"],
+    { encoding: "utf8" },
+  );
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("-- vps.example.test true");
 });

@@ -176,6 +176,10 @@ const fixture = Effect.gen(function* () {
   const health = yield* VaultHealth.VaultHealth.pipe(
     Effect.provide(VaultHealth.layer.pipe(Layer.provide(Layer.succeedContext(f.context)))),
   );
+  let accountTerminal:
+    | AccountVaultClient.AccountVaultClient["Service"]["terminalCredential"]
+    | null = null;
+  let accountResolve: AccountVaultClient.AccountVaultClient["Service"]["execute"] | null = null;
   let accountRun: AccountVaultClient.AccountVaultClient["Service"]["github"] | null = null;
   const service = yield* VaultGitHub.VaultGitHub.pipe(
     Effect.provide(
@@ -185,6 +189,14 @@ const fixture = Effect.gen(function* () {
             Layer.succeedContext(f.context),
             Layer.mock(AccountVaultClient.AccountVaultClient)({
               available: Effect.sync(() => accountRun !== null),
+              terminalCredential: (input, threadId) =>
+                accountTerminal
+                  ? accountTerminal(input, threadId)
+                  : Effect.fail(new VaultError({ reason: "unavailable" })),
+              execute: (input, threadId) =>
+                accountResolve
+                  ? accountResolve(input, threadId)
+                  : Effect.fail(new VaultError({ reason: "unavailable" })),
               github: (input, threadId) =>
                 Effect.suspend(() =>
                   accountRun
@@ -215,6 +227,13 @@ const fixture = Effect.gen(function* () {
   return {
     ...f,
     service,
+    routeTerminal: (
+      terminal: NonNullable<typeof accountTerminal>,
+      resolve: NonNullable<typeof accountResolve>,
+    ) => {
+      accountTerminal = terminal;
+      accountResolve = resolve;
+    },
     routeAccount: (run: NonNullable<typeof accountRun>) => {
       accountRun = run;
     },
@@ -1422,7 +1441,7 @@ it.effect(
 );
 
 it.effect(
-  "brokers account GitHub actions with the enrolled owner and keeps tokens out of source execution",
+  "brokers account GitHub actions and runs terminal commands on the source with scoped credentials",
   () =>
     Effect.gen(function* () {
       const f = yield* fixture;
@@ -1494,8 +1513,61 @@ it.effect(
           .runForAccount({ ...input, repository: "other/repo" }, account)
           .pipe(Effect.flip)).reason,
       ).toBe("repository-denied");
+      const pin = {
+        item: (yield* f.core.inspect(input.id))!,
+        kind: "github" as const,
+        hostname: "github.com",
+        account: "loom-bot",
+        repositories: [input.repository],
+        repository: input.repository,
+        destination: vaultGitHubDestination(input.repository),
+      };
+      f.state.thread = { ...f.state.thread, activeRunId: RunId.make("source-run") };
+      f.routeTerminal(
+        (raw) =>
+          f.service
+            .terminalForAccount(
+              { ...raw, id: input.id, expectedVersion: input.expectedVersion },
+              account,
+            )
+            .pipe(
+              Effect.map((credential) => ({ kind: "github-terminal" as const, pin, credential })),
+            ),
+        () =>
+          Effect.succeed({
+            kind: "resolve",
+            report: { state: "ready", selected: pin, choices: [pin], repair: null },
+          }),
+      );
+      const completed = yield* f.service.terminal(
+        {
+          id: input.id,
+          expectedVersion: 1,
+          repository: input.repository,
+          command: { tool: "gh", argv: ["pr", "list"] },
+        },
+        f.threadId,
+      );
+      expect(completed.exitCode).toBe(0);
+      expect(f.terminalCalls()).toBe(1);
+      f.routeTerminal(
+        () =>
+          Effect.sync(() => {
+            f.state.thread = { ...f.state.thread, activeRunId: RunId.make("replacement-run") };
+            return {
+              kind: "github-terminal" as const,
+              pin,
+              credential: { account: "loom-bot", token: Redacted.make("synthetic-private-token") },
+            };
+          }),
+        () =>
+          Effect.succeed({
+            kind: "resolve",
+            report: { state: "ready", selected: pin, choices: [pin], repair: null },
+          }),
+      );
       expect(
-        (yield* f.service
+        yield* f.service
           .terminal(
             {
               id: input.id,
@@ -1505,8 +1577,10 @@ it.effect(
             },
             f.threadId,
           )
-          .pipe(Effect.flip)).reason,
-      ).toBe("account-terminal-unavailable");
+          .pipe(Effect.flip),
+      ).toMatchObject({ reason: "denied" });
+      expect(f.terminalCalls()).toBe(1);
+      f.state.thread = { ...f.state.thread, activeRunId: null };
       f.onSession(() => {
         revoked = true;
       });

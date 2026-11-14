@@ -23,6 +23,8 @@ import { EmptyConversationOffer } from "./project-library/EmptyConversationOffer
 import { PanelPickerCommandHost } from "./panel-picker/PanelPickerCommandHost";
 import { LocalUpdateInstallHost } from "./connections/LocalUpdateInstallHost";
 import { ClientSetupResume } from "./connections/ClientComputerSetup";
+import { AccountEnrollmentHost } from "./connections/AccountEnrollmentHost";
+import { AccountJoinPromptHost } from "./connections/AccountJoinPromptHost";
 import { ScheduledTaskFailureAlertsHost } from "./scheduled-task-alerts/ScheduledTaskFailureAlertsHost";
 
 /** Components mounted once in the authenticated app shell. One line per packet. */
@@ -51,6 +53,8 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   { id: "local-update-install", Component: LocalUpdateInstallHost },
   { id: "client-setup-resume", Component: ClientSetupResume },
+  { id: "account-enrollment", Component: AccountEnrollmentHost },
+  { id: "account-join-prompts", Component: AccountJoinPromptHost },
   { id: "library-management", Component: LibraryManagementSync },
   { id: "library-empty-conversations", Component: EmptyConversationOffer },
   { id: "scheduled-task-alerts", Component: ScheduledTaskFailureAlertsHost },

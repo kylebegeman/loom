@@ -9,8 +9,10 @@ import {
   ComputerJoinStart,
   ComputerJoinPrompt,
   ComputerJoinProgress,
+  type ComputerJoinReadiness,
   LibraryError,
   LibraryInfo,
+  type ReachStatus,
 } from "@t3tools/contracts/fork";
 import { decodeEd25519PublicKey, keyFingerprint } from "@t3tools/shared/fork/directory";
 import * as Clock from "effect/Clock";
@@ -27,6 +29,8 @@ import * as Semaphore from "effect/Semaphore";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { ServerConfig } from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { DirectoryReporter } from "../directory/DirectoryReporter.ts";
+import { ReachService } from "../reach/ReachService.ts";
 import { writeLibraryCredential } from "../project-library/enrollment.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { AccountEnrollment } from "./AccountEnrollment.ts";
@@ -79,6 +83,31 @@ const validUrl = (value: string) =>
     catch: refused,
   });
 
+/** Remote access that waits on the owner, not on time, so `loom join` stops waiting for it. */
+const remoteNoteFor = (remote: ReachStatus): string | null => {
+  if (remote.state === "off")
+    return "off. Turn on Loomhost in this computer's details once your Library has Loomhost set up.";
+  if (remote.state !== "unavailable") return null;
+  if (remote.blocked === "library-not-ready")
+    return "off until your Library has Loomhost set up. Devices on the same network or Tailscale can still connect.";
+  if (remote.blocked === "library-outdated") return "off until Loom on your Library is updated.";
+  return null;
+};
+
+/** The first missing piece, in the words `loom join` prints while it waits. */
+const computerJoinWaitingFor = (
+  readiness: Omit<ComputerJoinReadiness, "waitingFor">,
+  remoteMessage: string | null,
+): string | null => {
+  if (!readiness.joined) return "approval from a signed-in device";
+  if (readiness.history !== "ready" && readiness.history !== "expiring")
+    return "this computer's Library sign-in, which publishes its history";
+  if (readiness.directory !== "reporting") return "its entry in your computer list";
+  if (readiness.remote !== "connected" && readiness.remoteNote === null)
+    return remoteMessage === null ? "its remote access route" : `remote access: ${remoteMessage}`;
+  return null;
+};
+
 export class ComputerJoin extends Context.Service<
   ComputerJoin,
   {
@@ -86,6 +115,8 @@ export class ComputerJoin extends Context.Service<
       input: typeof ComputerJoinStart.Type,
     ) => Effect.Effect<typeof ComputerJoinPrompt.Type, LibraryError>;
     readonly step: Effect.Effect<typeof ComputerJoinProgress.Type, LibraryError>;
+    /** What this computer still needs after approval before agents can work on it. */
+    readonly readiness: Effect.Effect<ComputerJoinReadiness, LibraryError>;
   }
 >()("t3/fork/account-access/ComputerJoin") {}
 
@@ -96,6 +127,8 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const enrollment = yield* AccountEnrollment;
   const connection = yield* LibraryConnectionService;
+  const reporter = yield* DirectoryReporter;
+  const reach = yield* ReachService;
   const http = yield* HttpClient.HttpClient;
   const random = yield* SecureRandom.SecureRandom;
   const lock = yield* Semaphore.make(1);
@@ -257,6 +290,24 @@ const make = Effect.gen(function* () {
     yield* save({ ...state, complete: true });
     return "complete" as const;
   }).pipe(lock.withPermit, Effect.withSpan("ComputerJoin.step"));
-  return ComputerJoin.of({ start, step });
+  const readiness = Effect.gen(function* () {
+    const state = yield* load();
+    const current = yield* connection.current;
+    const joined =
+      state?.complete === true &&
+      current.kind === "remote" &&
+      current.credential?.libraryEnvironmentId === state.libraryEnvironmentId;
+    const remote = yield* reach.status;
+    const found = {
+      joined,
+      history: (yield* connection.status).state,
+      directory: (yield* reporter.status).state,
+      remote: remote.state,
+      url: remote.url,
+      remoteNote: remoteNoteFor(remote),
+    };
+    return { ...found, waitingFor: computerJoinWaitingFor(found, remote.message) };
+  }).pipe(Effect.withSpan("ComputerJoin.readiness"));
+  return ComputerJoin.of({ start, step, readiness });
 });
 export const layer = Layer.effect(ComputerJoin, make);

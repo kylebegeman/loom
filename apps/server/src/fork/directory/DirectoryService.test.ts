@@ -265,8 +265,9 @@ describe("DirectoryService", () => {
       Effect.gen(function* () {
         const first = yield* directory.report({
           environmentId: STUDIO,
-          request: yield* signed(reportOf()),
+          request: yield* signed(reportOf({ vaultBackend: true })),
         });
+        expect(first.vaultBackend).toBe(true);
         expect(first.firstSeenAt).toBe("2026-10-20T12:00:00.000Z");
         yield* TestClock.adjust("1 minute");
         const second = yield* directory.report({
@@ -274,6 +275,7 @@ describe("DirectoryService", () => {
           request: yield* signed(
             reportOf({
               sequence: NOW + 60_000,
+              vaultBackend: false,
               routes: [
                 { kind: "public", url: "https://studio.example.com/" },
                 { kind: "tailnet", url: "https://100.64.0.7/" },
@@ -286,6 +288,7 @@ describe("DirectoryService", () => {
         expect(listing.environments).toHaveLength(1);
         expect(listing.environments[0]).toMatchObject({
           environmentId: STUDIO,
+          vaultBackend: false,
           // Without a ready reach record for it, a computer's public route is not listed.
           routes: [],
           firstSeenAt: "2026-10-20T12:00:00.000Z",

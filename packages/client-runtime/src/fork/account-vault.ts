@@ -1,8 +1,4 @@
-import {
-  AuthAccessReadScope,
-  sessionGrantsScope,
-  type SessionGrantInput,
-} from "@t3tools/contracts";
+import { AuthVaultReadScope, sessionGrantsScope, type SessionGrantInput } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import { connectionRoutes } from "../connection/routes.ts";
@@ -30,7 +26,7 @@ export function accountVaultState(input: AccountVaultInput): AccountVaultState {
   if (!input.connected || input.sessionFailed) return { kind: "reconnect" };
   if (input.session === null) return { kind: "checking" };
   if (!input.session.authenticated) return { kind: "signed-out" };
-  return sessionGrantsScope(input.session, AuthAccessReadScope)
+  return sessionGrantsScope(input.session, AuthVaultReadScope)
     ? { kind: "open" }
     : { kind: "no-access", identity: input.identity };
 }
@@ -77,7 +73,7 @@ export function accountVaultDetail(
       return `Sign in to ${library} again to manage saved connections.`;
     case "no-access":
       return state.identity
-        ? `Your sign-in to ${library} does not include Vault access, so the account Vault cannot be managed from this device. To allow it, set LOOM_IDENTITY_ALLOW_ADMIN=true on ${library}, restart it and sign in again. Until then, use each computer's own Vault.`
+        ? `Your sign-in to ${library} does not include Vault access, so the account Vault cannot be managed from this device. To allow it, update ${library} and sign in with its sole owner’s passkey. A single-owner Library with passkey sign-in grants Vault access without device or relay administration.`
         : `This device's pairing with ${library} does not include Vault access, so the account Vault cannot be managed from this device. Pair it again with a link that includes View access and Manage access. Until then, use each computer's own Vault.`;
   }
 }

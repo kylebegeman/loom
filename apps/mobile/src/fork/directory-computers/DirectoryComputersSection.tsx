@@ -4,6 +4,7 @@ import {
   directoryComputersView,
   directoryCatalogRows,
   directoryOldMachines,
+  libraryListRows,
   supportsLoomFeature,
   type DirectoryCatalogRow,
 } from "@t3tools/client-runtime/fork";
@@ -45,7 +46,7 @@ import { ForgetDirectoryEntry } from "./ForgetDirectoryEntry";
 import { directoryComputers } from "./state";
 
 const FOOTER =
-  "Computers your Library knows about. Reconnect with Library adds a current address without removing saved conversations or drafts. A computer needs Loomhost or Tailscale HTTPS for access away from home. Forget clears the Library entry and leaves your files and saved connection in place.";
+  "Computers in your Library that are not saved on this phone, or that your Library can reconnect. Reconnect with Library adds a current address without removing saved conversations or drafts. A computer needs Loomhost or Tailscale HTTPS for access away from home. Forget clears the Library entry and leaves your files and saved connection in place.";
 
 const SIGN_IN_PROGRESS = { "signing-in": "Signing in...", verifying: "Verifying..." } as const;
 
@@ -107,17 +108,22 @@ export function useDirectoryComputers() {
   const listing = view.listing.listing;
   const old = listing ? directoryOldMachines(listing, now) : { environments: [], machines: [] };
   const oldIds = new Set(old.environments.map((row) => row.environmentId));
-  const rows = directoryCatalogRows({
-    listing,
-    saved,
-    connected: [...presentations.entries()]
-      .filter(([, entry]) => entry.connection.phase === "connected")
-      .map(([id]) => id),
-    reconnectable: [...catalog.entries.values()]
-      .filter((entry) => entry.enabled && entry.target._tag !== "PrimaryConnectionTarget")
-      .map((entry) => entry.target.environmentId),
-    now,
-  }).filter((row) => row.report !== null && row.environmentId !== libraryId);
+  const rows = [
+    ...libraryListRows(
+      directoryCatalogRows({
+        listing,
+        saved,
+        connected: [...presentations.entries()]
+          .filter(([, entry]) => entry.connection.phase === "connected")
+          .map(([id]) => id),
+        reconnectable: [...catalog.entries.values()]
+          .filter((entry) => entry.enabled && entry.target._tag !== "PrimaryConnectionTarget")
+          .map((entry) => entry.target.environmentId),
+        now,
+      }),
+      { libraryEnvironmentId: libraryId, oldIds },
+    ),
+  ];
   rows.sort(
     (left, right) =>
       Number(oldIds.has(left.environmentId)) - Number(oldIds.has(right.environmentId)),

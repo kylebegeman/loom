@@ -1,4 +1,10 @@
+import * as AccountVaultHuman from "./vault/AccountVaultHuman.ts";
+import * as AccountVaultRouting from "./vault/AccountVaultRouting.ts";
 import * as SwitchboardGateway from "./switchboard/SwitchboardGateway.ts";
+import * as SwitchboardAccount from "./switchboard/SwitchboardAccount.ts";
+import * as SwitchboardClients from "./switchboard/SwitchboardClients.ts";
+import * as SwitchboardIssuer from "./switchboard/SwitchboardIssuer.ts";
+import { SwitchboardAccountRoutes } from "./switchboard/account-http.ts";
 import { SwitchboardGatewayRoutes } from "./switchboard/gateway-http.ts";
 import { upstreamWebSocketConstructor } from "../device/DeviceHubProxy.ts";
 import * as VaultOwnerLink from "./vault/VaultOwnerLink.ts";
@@ -275,13 +281,13 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
       layerVaultAccess,
       layerVaultConnections,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
-      FetchHttpClient.layer,
       GitHubCli.layer,
       GitHubTerminal.layer,
       GitHubRepositoryTransport.layer,
       ProjectStore.layer,
     ),
   ),
+  Layer.provide(FetchHttpClient.layer),
 );
 
 const layerVaultProfileRecords = VaultProfileRecords.layer.pipe(
@@ -393,8 +399,19 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
     ),
   ),
 );
+// One store of issued credentials, shared by the gateway that checks them and the settings row.
+const layerSwitchboardClients = SwitchboardClients.layer.pipe(
+  Layer.provide(LibraryConnection.layer),
+);
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
+);
+const layerAccountVaultRouting = AccountVaultRouting.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultStore, layerDirectory, layerAccountWorkloads)),
+  Layer.provide(FetchHttpClient.layer),
+);
+const layerAccountVaultHuman = AccountVaultHuman.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerAccountVaultRouting, layerAccountAccess, layerVaultAccess)),
 );
 const layerAccountVaultMachineAuthority = AccountVaultMachineAuthority.layer.pipe(
   Layer.provide(
@@ -420,7 +437,7 @@ const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
   ),
 );
 const layerAccountVaultClient = AccountVaultClient.layer.pipe(
-  Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer)),
+  Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer, layerVaultStore)),
   Layer.provide(FetchHttpClient.layer),
 );
 const layerAccountVaultSsh = AccountVaultSsh.layer.pipe(
@@ -595,10 +612,17 @@ const layerAccountEnrollment = AccountEnrollment.layer.pipe(
   ),
 );
 const layerAccountJoin = AccountJoin.layer.pipe(
-  Layer.provide(Layer.merge(layerAccountEnrollment, layerLibraryManagement)),
+  Layer.provide(Layer.mergeAll(layerAccountEnrollment, layerLibraryManagement, LibraryPushLive)),
 );
 const layerComputerJoin = ComputerJoin.layer.pipe(
-  Layer.provide(Layer.merge(layerAccountEnrollment, LibraryConnection.layer)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerAccountEnrollment,
+      LibraryConnection.layer,
+      layerDirectoryReporter,
+      ReachService.layer,
+    ),
+  ),
   Layer.provide(FetchHttpClient.layer),
 );
 
@@ -647,6 +671,8 @@ const ForkServicesLive = Layer.mergeAll(
   layerAccountEnrollment,
   layerAccountWorkloads,
   layerAccountVaultAuthority,
+  layerAccountVaultRouting,
+  layerAccountVaultHuman,
   layerAccountVaultMachineAuthority,
   layerAccountVaultClient,
   layerAccountVaultSsh,
@@ -862,9 +888,20 @@ const ForkServicesLive = Layer.mergeAll(
   layerReachLibrary,
   ReachProvisioner.ReachEdgeReconcilerLive.pipe(Layer.provide(layerReachLibrary)),
   layerAccountGateway,
+  layerSwitchboardClients,
   SwitchboardGateway.layer.pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(upstreamWebSocketConstructor),
+    Layer.provide(layerSwitchboardClients),
+  ),
+  SwitchboardIssuer.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(layerAccountWorkloads, layerDirectory, layerReachStore, layerLibraryPublisher),
+    ),
+  ),
+  SwitchboardAccount.layer.pipe(
+    Layer.provide(Layer.mergeAll(layerSwitchboardClients, layerDirectory, LibraryConnection.layer)),
+    Layer.provide(FetchHttpClient.layer),
   ),
   layerAccountHost,
   layerAccountLinks,
@@ -910,6 +947,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   AccountVaultHttpRoutes,
   VaultOwnerLinkHttpRoutes,
   SwitchboardGatewayRoutes,
+  SwitchboardAccountRoutes,
   LibraryAssetHttpRoutes,
   LibraryRecoveryHttpRoutes,
   LibraryHttpRoutes,

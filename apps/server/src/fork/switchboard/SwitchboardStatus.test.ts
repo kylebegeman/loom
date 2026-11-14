@@ -4,12 +4,16 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ServerSettings from "../../serverSettings.ts";
+import { printingSpawner } from "./routingTestHost.ts";
+import { setSwitchboardAccountRoute } from "./switchboard.ts";
 import * as SwitchboardStatus from "./SwitchboardStatus.ts";
 
 const EVALUATED_AT = "2026-10-02T20:00:00.000Z";
 const NOW = Date.parse(EVALUATED_AT);
+const KEY = "c".repeat(64);
 
 const availability = (models: ReadonlyArray<Record<string, unknown>>) => ({
   version: 1,
@@ -43,6 +47,7 @@ const fixture = (
     Layer.provideMerge(ServerSettings.layerTest({ switchboardEnabled: options.enabled ?? true })),
     Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
     Layer.provide(Layer.succeed(HostProcess.Environment, options.environment ?? {})),
+    Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, printingSpawner(KEY))),
   );
   const readLimits = TestClock.setTime(NOW).pipe(
     Effect.andThen(SwitchboardStatus.SwitchboardStatus),
@@ -79,6 +84,28 @@ describe("Switchboard availability", () => {
       expect(f.requests[0]?.headers.authorization).toBeUndefined();
     }).pipe(Effect.provide(f.layer));
   });
+
+  it.effect(
+    "reads the account hub's controller through its gateway with this computer's key",
+    () => {
+      const f = fixture({ response: Response.json(availability([])) });
+      return Effect.gen(function* () {
+        setSwitchboardAccountRoute({
+          url: "https://hub.example.test/api/loom/switchboard",
+          keyCommand: { command: "/bin/cat", args: ["/secrets/credential.bin"] },
+          hubOrigins: ["https://hub.example.test"],
+        });
+        yield* f.readLimits;
+        expect(f.requests.map((request) => request.url)).toEqual([
+          "https://hub.example.test/api/loom/switchboard/controller/api/v1/availability",
+        ]);
+        expect(f.requests[0]?.headers.authorization).toBe(`Bearer ${KEY}`);
+      }).pipe(
+        Effect.provide(f.layer),
+        Effect.ensuring(Effect.sync(() => setSwitchboardAccountRoute(undefined))),
+      );
+    },
+  );
 
   it.effect("does not guess a controller for a remote hub", () => {
     const f = fixture({ environment: { LOOM_SWITCHBOARD_URL: "https://hub.example.test" } });

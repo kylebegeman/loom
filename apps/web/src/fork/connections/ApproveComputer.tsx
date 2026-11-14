@@ -1,12 +1,17 @@
 import { useAtomValue } from "@effect/atom-react";
 import { accountJoinCode, squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
-import { ACCOUNT_JOIN_FEATURE, type AccountJoinReview } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_JOIN_FEATURE,
+  ACCOUNT_JOIN_PROMPTS_FEATURE,
+  type AccountJoinReview,
+} from "@t3tools/contracts/fork";
 import { useId, useState } from "react";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryAuthority } from "../project-library/state";
+import { PendingJoinRequests } from "./AccountJoinPromptHost";
 
 export function ApproveComputer() {
   const authority = useLibraryAuthority();
@@ -23,6 +28,7 @@ export function ApproveComputer() {
   const id = useId();
   if (!authority.connected || !authority.info.data?.features?.includes(ACCOUNT_JOIN_FEATURE))
     return null;
+  const prompts = authority.info.data.features.includes(ACCOUNT_JOIN_PROMPTS_FEATURE);
   const review =
     reviewed?.authorityId === authority.authorityId &&
     reviewed.review.code === accountJoinCode(code)
@@ -56,9 +62,13 @@ export function ApproveComputer() {
     <SettingsSection title="Add computer" id="library-join">
       <div className="space-y-4 p-4">
         <p className="text-sm text-muted-foreground">
-          Enter the code shown on the computer you are adding. Review its name and matching code
-          before approving.
+          {prompts
+            ? "Run loom join on the computer you are adding. This device then asks you to tap the code its terminal shows. No request showing? Enter that code here instead."
+            : "Enter the code shown on the computer you are adding. Review its name and matching code before approving."}
         </p>
+        {prompts && canDecide && authority.authorityId ? (
+          <PendingJoinRequests authorityId={authority.authorityId} />
+        ) : null}
         <form
           onSubmit={(event) => {
             event.preventDefault();

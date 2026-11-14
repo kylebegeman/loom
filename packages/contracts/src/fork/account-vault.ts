@@ -18,7 +18,12 @@ import {
 } from "./vault-ssh-agent.ts";
 import { VaultError, VaultItemList, VaultItemPage, VaultItemId } from "./vault-core.ts";
 import { VaultSshError } from "./vault-ssh.ts";
-import { VaultGitHubRunInput, VaultGitHubResult, VaultGitHubError } from "./vault-github.ts";
+import {
+  VaultGitHubTerminalRunInput,
+  VaultGitHubRunInput,
+  VaultGitHubResult,
+  VaultGitHubError,
+} from "./vault-github.ts";
 
 export const ACCOUNT_VAULT_ROUTE = "/api/loom/account/vault";
 export const ACCOUNT_VAULT_FEATURE = "account-vault";
@@ -37,6 +42,7 @@ export const AccountProviderResponse = Schema.Struct({
   value: Schema.NullOr(Schema.RedactedFromValue(Schema.String)),
 });
 export const AccountVaultRequest = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("github-terminal"), input: VaultGitHubTerminalRunInput }),
   Schema.Struct({
     kind: Schema.Literal("github"),
     input: VaultGitHubRunInput,
@@ -57,6 +63,14 @@ export const AccountVaultEnvelope = Schema.Struct({
 });
 export type AccountVaultEnvelope = typeof AccountVaultEnvelope.Type;
 export const AccountVaultResponse = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("github-terminal"),
+    pin: VaultConnectionPin,
+    credential: Schema.Struct({
+      account: Schema.String,
+      token: Schema.RedactedFromValue(Schema.String),
+    }),
+  }),
   Schema.Struct({ kind: Schema.Literal("github"), result: VaultGitHubResult }),
   Schema.Struct({ kind: Schema.Literal("list"), page: VaultItemPage }),
   Schema.Struct({ kind: Schema.Literal("sessions"), sessions: Schema.Array(VaultSshAgentSession) }),

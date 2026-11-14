@@ -13,8 +13,10 @@ import type { RpcSession } from "../rpc/session.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  clientRpcRequiredScopes,
   AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthVaultWriteScope,
   AuthEnvironmentMaintainScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -91,12 +93,14 @@ describe("command permissions", () => {
         const registry = yield* setup;
         // fork: ext-core
         expect(FORK_CLIENT_GUARDED_RPC_SCOPES["loom.vault-secret.answer-from-item"]).toBe(
-          AuthAccessWriteScope,
+          AuthVaultWriteScope,
         );
         // fork: pcb-preview
         for (const [method, scope] of Object.entries(FORK_CLIENT_GUARDED_RPC_SCOPES)) {
           const policy = createCommandPermissions(runtime, method);
-          expect(policy.requiredScopes()).toEqual([scope]);
+          const required = clientRpcRequiredScopes(method, undefined);
+          expect(required).toContain(scope);
+          expect(policy.requiredScopes()).toEqual(required);
           registry.set(sessions(env), AsyncResult.success(grant(false)));
           expect(registry.get(policy.permissionAtom(env))).toBe(false);
           expect((yield* policy.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
@@ -104,7 +108,7 @@ describe("command permissions", () => {
           );
           registry.set(
             sessions(env),
-            AsyncResult.success({ ...grant(true), scopes: [scope], permissions: [scope] }),
+            AsyncResult.success({ ...grant(true), scopes: required, permissions: required }),
           );
           yield* policy.authorize(registry, env);
           expect(registry.get(policy.permissionAtom(env))).toBe(true);

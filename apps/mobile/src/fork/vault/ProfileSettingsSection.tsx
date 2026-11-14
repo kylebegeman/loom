@@ -7,8 +7,8 @@ import { useState } from "react";
 import { KeyboardAvoidingView, Modal, Platform, ScrollView, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
-  AuthAccessReadScope,
-  AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   ProjectId,
   ThreadId,
   type EnvironmentId,
@@ -56,8 +56,8 @@ export function VaultProfileSettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope),
-    canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope),
+    canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   const supportsProfiles = supportsLoomFeature(config?.environment.capabilities, "vault-profiles");
   return (
     <>

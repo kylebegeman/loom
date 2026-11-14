@@ -34,6 +34,57 @@ export function accountComputerEnrollmentReady(input: {
   );
 }
 
+/**
+ * What this device's own computer needs from its Library account. `enroll` runs without a click;
+ * a computer the owner removed, or one already in the account, is left alone. Remote access is
+ * the owner's switch, so an enrolled computer with it off still counts as enrolled.
+ */
+export type OwnComputerEnrollment =
+  | {
+      readonly kind: "waiting";
+      readonly reason: "signed-out" | "reconnect" | "permission" | "checking";
+    }
+  | { readonly kind: "other-library" }
+  | { readonly kind: "removed" }
+  | { readonly kind: "enrolled" }
+  | { readonly kind: "enroll" };
+
+export function ownComputerEnrollment(input: {
+  readonly libraryEnvironmentId: EnvironmentId | null;
+  readonly libraryConnected: boolean;
+  readonly computerConnected: boolean;
+  readonly permitted: boolean;
+  /** `undefined` while unknown; `null` when the computer publishes to no Library yet. */
+  readonly sourceLibraryEnvironmentId: EnvironmentId | null | undefined;
+  /** `undefined` while unknown; `null` when the account has no record of the computer. */
+  readonly membership: AccountComputerStatus | null | undefined;
+  readonly signedIn: boolean;
+}): OwnComputerEnrollment {
+  if (input.libraryEnvironmentId === null || !input.libraryConnected)
+    return { kind: "waiting", reason: "signed-out" };
+  if (!input.computerConnected) return { kind: "waiting", reason: "reconnect" };
+  if (!input.permitted) return { kind: "waiting", reason: "permission" };
+  const { sourceLibraryEnvironmentId, membership } = input;
+  if (sourceLibraryEnvironmentId === undefined || membership === undefined)
+    return { kind: "waiting", reason: "checking" };
+  if (
+    sourceLibraryEnvironmentId !== null &&
+    sourceLibraryEnvironmentId !== input.libraryEnvironmentId
+  )
+    return { kind: "other-library" };
+  if (membership?.state === "removing" || membership?.state === "removed")
+    return { kind: "removed" };
+  return accountComputerEnrollmentReady({
+    libraryEnvironmentId: input.libraryEnvironmentId,
+    sourceLibraryEnvironmentId,
+    membership,
+    signedIn: input.signedIn,
+    remoteEnabled: true,
+  })
+    ? { kind: "enrolled" }
+    : { kind: "enroll" };
+}
+
 export function accountComputerRegistration(
   library: ConnectionCatalogEntry,
   computer: { readonly environmentId: EnvironmentId; readonly label: string },
@@ -89,8 +140,8 @@ export const syncAccountComputers = Effect.fn("AccountComputers.sync")(function*
   if (library === undefined || !library.enabled) return;
   for (const computer of listing.environments) {
     const existing = entries.get(computer.environmentId);
+    // A switched-off computer still gains the route and stays off, so switching it on uses it.
     if (
-      existing?.enabled === false ||
       existing?.target._tag === "PrimaryConnectionTarget" ||
       !computer.loomFeatures.includes(ACCOUNT_ACCESS_FEATURE)
     )

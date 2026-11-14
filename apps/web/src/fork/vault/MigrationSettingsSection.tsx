@@ -10,7 +10,7 @@ import {
 import { TypedImports } from "./TypedImports";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId } from "@t3tools/contracts";
 import type { VaultMigrationResult } from "@t3tools/contracts/fork";
 import { createVaultMigrationAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import * as Redacted from "effect/Redacted";
@@ -37,7 +37,7 @@ const newId = () => randomUUID().replaceAll("-", "");
 export function VaultMigrationSettingsSection() {
   const { environment } = useSettingsScope(),
     configs = useServerConfigs();
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope);
   if (
     !environment ||
     !supportsLoomFeature(

@@ -26,7 +26,7 @@ export const VAULT_KIND_LABELS: Record<VaultItemKind, string> = {
 // Hourly renewal keeps a seven-day token near its full period, so three days left means it stopped.
 export const VAULT_TOKEN_WARNING_SECONDS = 72 * 60 * 60;
 export const vaultStatusMessage = (status: VaultCoreStatus) => {
-  const message = {
+  const summary = {
     unconfigured: "Connect this environment to your OpenBao service to start using Vault.",
     ready: "Vault is connected. Values stay hidden until you choose to reveal them.",
     locked: "Your Vault backend is locked. Unlock OpenBao, then refresh.",
@@ -35,6 +35,7 @@ export const vaultStatusMessage = (status: VaultCoreStatus) => {
     misconfigured:
       "The Vault connection needs repair. Check the origin, private token file and KV v2 mount in fork/vault/openbao.json or the server environment.",
   }[status.state];
+  const message = status.host ? `${summary} Backend: ${status.host.label}.` : summary;
   const remaining = status.tokenTtlSeconds ?? Infinity;
   if (status.state !== "ready" || remaining >= VAULT_TOKEN_WARNING_SECONDS) return message;
   const hours = Math.floor(remaining / (60 * 60));

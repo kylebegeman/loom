@@ -24,11 +24,11 @@ export class AccountVaultMachineAuthority extends Context.Service<
   {
     readonly profileRecord: (
       envelope: { readonly payload: string; readonly proof: string },
-      publisher: AuthenticatedSession,
+      publisher: AuthenticatedSession | undefined,
     ) => Effect.Effect<AccountProfileRecordResponse, VaultError>;
     readonly providerCredential: (
       envelope: { readonly payload: string; readonly proof: string },
-      publisher: AuthenticatedSession,
+      publisher: AuthenticatedSession | undefined,
     ) => Effect.Effect<{ readonly value: Redacted.Redacted<string> | null }, VaultError>;
   }
 >()("t3/fork/vault/AccountVaultMachineAuthority") {}

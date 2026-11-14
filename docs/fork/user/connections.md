@@ -13,25 +13,61 @@ computers that are new to this device. You can open their live threads without a
 sign-in, pairing code or VPN. The computer must be enrolled with your Library and have
 Loomhost enabled.
 
-To add a computer on web or desktop, open **Settings > Computers** and choose
-**Sign in to Loom**. After sign-in, choose **Add computer** in the account panel.
-Loom connects publishing and remote access together. If setup is interrupted,
-choose **Resume setup** to continue the saved request. Running work stays open.
-On iPhone, open an already connected computer's details to add it.
+### Add this computer
+
+Open **Settings > Computers** on the computer you want to add and choose
+**Sign in to Loom**. When sign-in finishes, Loom adds that computer to your
+account on its own: it starts publishing history to your Library, lists the
+computer for your other devices and turns on remote access. A notice shows the
+progress. If setup is interrupted, Loom resumes the same request the next time
+the app starts, or choose **Resume setup**. Running work stays open. A computer
+that was already signed in but not in your account is added at its next start.
+
+Loom never re-adds a computer you removed. Choose **Add again** in its account
+panel to bring it back. Turning remote access off in its details keeps it off.
+To add a different computer that this device is connected to, open that
+computer's details and choose **Add computer**. On iPhone, open an already
+connected computer's details to add it.
 
 To sign in on iPhone, open **Settings > Account > Sign in to Loom** and enter
 your Library address. Use the same account as on your computers.
 
-For a headless computer with Loom running, run `loom join <your-library-address>`
-using your Library’s HTTPS address. On a signed-in device, open **Account > Add
-computer**, enter the terminal’s code, and approve after checking the computer
-name and code. Leave the command running to finish setup. Codes expire after
-15 minutes. If the command stops, run it again to resume the saved request; add
-`--restart` to replace that request with a new code.
+### Add a headless computer
 
-Your existing connections and computers you disabled stay as you left them. To move an
-existing connection to account access, choose **Connect** for it under **Settings > Computers**.
-On iPhone, use **From your Library**.
+On a computer without a screen, run `loom join <your-library-address>` using
+your Library's HTTPS address. The terminal shows a code, the computer's name and
+its key. Desktop apps and browsers signed in to your account ask whether to add
+it. Your iPhone gets a notification that opens **Account**, where the computer is
+listed under **Computers asking to join**. Tap the code the terminal shows. A
+code it did not show declines the request, so a stray tap cannot add the wrong
+computer. On desktop and in a browser, **Later** sets the prompt aside and
+**Account > Add computer** lists it again with **Review**. If no request
+appears, enter the terminal's code in **Account > Add computer** instead.
+
+After approval the command keeps running until the computer is ready, then
+prints where its history publishes and its remote access address. Codes expire
+after 15 minutes. If the command stops, run it again to resume the saved
+request; add `--restart` to replace that request with a new code. If Loom is not
+running on the computer, the command says so: run `loom service install` first.
+
+A Linux or LoomOS machine needs:
+
+- Loom installed and running as a service, with `loom service install`.
+- An outbound HTTPS connection to your Library. No open ports are needed.
+- Loomhost set up on your Library, for remote access from other networks. Loom
+  installs and updates Cloudflare's connector on the computer itself. Without
+  it, `loom join` finishes and says remote access is off. After your Library
+  has Loomhost, turn on **Loomhost** in the computer's details.
+
+### One row per computer
+
+Each computer appears once on every device, however you first connected it.
+When your Library knows a newer address for a computer saved here, Loom uses it
+automatically and keeps your saved connection. A computer you switched off on
+this device stays off and shows **Switched off on this device**; switch it on to
+connect through your account. The **From your Library** list on iPhone, and your
+Library's list on web and desktop, show only computers that are not saved here
+or that your Library can reconnect.
 
 If the computer is offline, its saved conversations remain in the Library. Loom
 reconnects live work when the computer becomes available. Signing out or revoking
@@ -384,7 +420,8 @@ backends. Open **Settings > Computers > Fleet updates** to compare runtime
 versions and provider updates across computers. **Review updates** shows the
 planned updates, skipped computers, and restart impact before you run them. The
 command palette's **Review updates** opens this section.
-Offline computers retain their last known version until they reconnect.
+Offline computers show the version they last reported to your Library.
+A computer switched off on this device says so; switch it on to check its updates.
 
 Choose **Update all when agents finish**, or arm one computer, to leave the update waiting there.
 Each computer remembers its plan after you close every window. The waiting count and **Cancel**

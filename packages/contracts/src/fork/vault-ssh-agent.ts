@@ -7,6 +7,7 @@ import { VaultSshTarget, VaultSshPublicKey } from "./vault-ssh.ts";
 export const VaultSshAgentOpen = Schema.Struct({ id: VaultItemId, expectedVersion: PositiveInt });
 export type VaultSshAgentOpen = typeof VaultSshAgentOpen.Type;
 export const VaultSshAgentSession = Schema.Struct({
+  label: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   sessionId: VaultItemId,
   id: VaultItemId,
   version: PositiveInt,
@@ -30,6 +31,7 @@ export type VaultSshAgentFrame = typeof VaultSshAgentFrame.Type;
 export const VaultSshAgentResponse = Schema.Struct({ response: Frame });
 export const VaultSshAgentClose = Schema.Struct({ sessionId: VaultItemId });
 export const VaultSshAgentClosed = Schema.Struct({ closed: Schema.Literal(true) });
+export const VAULT_SSH_COMMAND_TIMEOUT_MAX_MS = 86_400_000;
 export const VaultSshAgentRun = Schema.Struct({
   ...VaultSshAgentOpen.fields,
   command: Schema.Struct({
@@ -41,7 +43,9 @@ export const VaultSshAgentRun = Schema.Struct({
       ),
     ).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
   }),
-  timeoutMs: Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 300_000 })),
+  timeoutMs: Schema.Int.check(
+    Schema.isBetween({ minimum: 100, maximum: VAULT_SSH_COMMAND_TIMEOUT_MAX_MS }),
+  ),
 });
 export type VaultSshAgentRun = typeof VaultSshAgentRun.Type;
 

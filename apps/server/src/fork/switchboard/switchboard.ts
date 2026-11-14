@@ -21,6 +21,14 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 const DEFAULT_URL = "http://127.0.0.1:8317";
 /** The controller's cached operations API (`/api/v1/*`), served beside the default hub. */
 const DEFAULT_CONTROLLER_URL = "http://127.0.0.1:8318";
+/** Where a hub computer's Loom shares its Switchboard (`SwitchboardGateway.ts`). */
+export const SWITCHBOARD_GATEWAY_PREFIX = "/api/loom/switchboard";
+/** Names the reason on the gateway's own refusals, so a client can tell them from upstream ones. */
+export const SWITCHBOARD_GATEWAY_ERROR_HEADER = "x-loom-switchboard";
+/** Below the gateway, the hub controller's `/api/v1/*` reads a routed computer may make. */
+export const SWITCHBOARD_CONTROLLER_PATH = "/controller";
+// Set only by `SwitchboardAccount`, never on the hub itself.
+let accountRoute: SwitchboardAccountRoute | undefined;
 
 export class SwitchboardConfigurationError extends Schema.TaggedError<SwitchboardConfigurationError>()(
   "SwitchboardConfigurationError",
@@ -64,12 +72,26 @@ const endpoint = (value: string, setting: SwitchboardSetting): string => {
   return url.toString().replace(/\/+$/, "");
 };
 
-/** The owning server supplies these values; client and provider-instance env never override them. */
-export function resolveSwitchboardConfiguration(
+export interface SwitchboardKeyCommand {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+}
+
+/** The account's hub this computer holds a credential for, set by `SwitchboardAccount`. */
+export interface SwitchboardAccountRoute {
+  /** The hub's gateway, `<origin>/api/loom/switchboard`. */
+  readonly url: string;
+  /** Prints this computer's own credential for that hub. */
+  readonly keyCommand: SwitchboardKeyCommand;
+  /** Every origin the hub's directory entry lists, so a hand-set URL for it adopts the credential. */
+  readonly hubOrigins: ReadonlyArray<string>;
+}
+
+/** The helper that prints the shared key from this computer's Keychain or Secret Service. */
+const personalKeyCommand = (
   environment: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
-) {
-  const url = endpoint(environment.LOOM_SWITCHBOARD_URL ?? DEFAULT_URL, "LOOM_SWITCHBOARD_URL");
+): SwitchboardKeyCommand => {
   const helper = environment.LOOM_SWITCHBOARD_KEY_HELPER;
   if (helper !== undefined) {
     const absolute =
@@ -77,27 +99,90 @@ export function resolveSwitchboardConfiguration(
     if (!absolute || containsControlCharacter(helper)) {
       throw new SwitchboardConfigurationError({ setting: "LOOM_SWITCHBOARD_KEY_HELPER" });
     }
-    return { url, keyCommand: { command: helper, args: [] as ReadonlyArray<string> } };
+    return { command: helper, args: [] };
   }
   if (platform === "darwin") {
     return {
-      url,
-      keyCommand: {
-        command: "/usr/bin/security",
-        args: ["find-generic-password", "-s", "switchboard", "-a", "client-api-key", "-w"],
-      },
+      command: "/usr/bin/security",
+      args: ["find-generic-password", "-s", "switchboard", "-a", "client-api-key", "-w"],
     };
   }
   if (platform === "linux") {
     return {
-      url,
-      keyCommand: {
-        command: "/usr/bin/secret-tool",
-        args: ["lookup", "service", "switchboard", "account", "client-api-key"],
-      },
+      command: "/usr/bin/secret-tool",
+      args: ["lookup", "service", "switchboard", "account", "client-api-key"],
     };
   }
   throw new SwitchboardConfigurationError({ setting: "LOOM_SWITCHBOARD_KEY_HELPER" });
+};
+
+/** The local or `LOOM_SWITCHBOARD_URL` hub and the shared key, ignoring any account route. */
+export function resolveSwitchboardHubConfiguration(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+) {
+  const url = endpoint(environment.LOOM_SWITCHBOARD_URL ?? DEFAULT_URL, "LOOM_SWITCHBOARD_URL");
+  const keyCommand = personalKeyCommand(environment, platform);
+  const source: "local" | "environment" =
+    environment.LOOM_SWITCHBOARD_URL === undefined &&
+    environment.LOOM_SWITCHBOARD_KEY_HELPER === undefined
+      ? "local"
+      : "environment";
+  return { url, keyCommand, source };
+}
+
+/** Whether `url` names the account hub, as a URL set by hand before enrollment existed would. */
+const namesAccountHub = (url: string, account: SwitchboardAccountRoute) => {
+  const key = hubKey(url);
+  return (
+    key !== null &&
+    [
+      account.url,
+      ...account.hubOrigins.map((origin) => `${origin}${SWITCHBOARD_GATEWAY_PREFIX}`),
+    ].some((candidate) => hubKey(candidate) === key)
+  );
+};
+
+/**
+ * The owning server supplies these values; client and provider-instance env never override them.
+ * Settings in the environment win, except that a URL naming the account hub uses this computer's
+ * own credential for it in place of the shared key. With none set, the account hub wins over the
+ * local default.
+ */
+export function resolveSwitchboardConfiguration(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  account: SwitchboardAccountRoute | undefined = accountRoute,
+) {
+  if (account !== undefined) {
+    const configured = environment.LOOM_SWITCHBOARD_URL;
+    if (configured === undefined && environment.LOOM_SWITCHBOARD_KEY_HELPER === undefined)
+      return { url: account.url, keyCommand: account.keyCommand, source: "account" as const };
+    if (configured !== undefined) {
+      const url = endpoint(configured, "LOOM_SWITCHBOARD_URL");
+      if (namesAccountHub(url, account))
+        return { url, keyCommand: account.keyCommand, source: "account" as const };
+    }
+  }
+  return resolveSwitchboardHubConfiguration(environment, platform);
+}
+
+/**
+ * The controller origin whose cached `/api/v1/*` reads describe the routed hub, and the helper
+ * whose key they need. An account hub's controller is read through its gateway, unless
+ * `LOOM_SWITCHBOARD_CONTROLLER_URL` names another; otherwise as `resolveSwitchboardController`.
+ * An empty value means "no controller route", which an account hub's gateway always provides.
+ */
+export function resolveSwitchboardControllerRoute(
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): { readonly url: string; readonly keyCommand?: SwitchboardKeyCommand } | null {
+  const configured = environment.LOOM_SWITCHBOARD_CONTROLLER_URL;
+  const routed = resolveSwitchboardConfiguration(environment, platform);
+  if (routed.source === "account" && !configured)
+    return { url: `${routed.url}${SWITCHBOARD_CONTROLLER_PATH}`, keyCommand: routed.keyCommand };
+  const url = resolveSwitchboardController(environment);
+  return url === null ? null : { url };
 }
 
 /**
@@ -134,7 +219,6 @@ const hubKey = (value: string): string | null => {
 };
 
 type SwitchboardConfiguration = ReturnType<typeof resolveSwitchboardConfiguration>;
-export type SwitchboardKeyCommand = SwitchboardConfiguration["keyCommand"];
 const tomlString = (value: string) => JSON.stringify(value);
 const shellArgument = (value: string) =>
   /^[a-zA-Z0-9_./:-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
@@ -185,7 +269,7 @@ export const resolveSwitchboardClaudeProbeRouting = (
 };
 
 export const readSwitchboardCredential = Effect.fn("Switchboard.readCredential")(
-  function* (keyCommand: SwitchboardConfiguration["keyCommand"], environment: NodeJS.ProcessEnv) {
+  function* (keyCommand: SwitchboardKeyCommand, environment: NodeJS.ProcessEnv) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const child = yield* spawner.spawn(
       ChildProcess.make(keyCommand.command, keyCommand.args, {
@@ -217,9 +301,19 @@ export const readSwitchboardCredential = Effect.fn("Switchboard.readCredential")
   Effect.orElseSucceed(() => Option.none<Redacted.Redacted<string>>()),
 );
 
+/** A controller read's headers: none for a local or configured controller, a bearer for the hub's. */
+export const switchboardControllerHeaders = Effect.fn("Switchboard.controllerHeaders")(function* (
+  route: { readonly keyCommand?: SwitchboardKeyCommand },
+  environment: NodeJS.ProcessEnv,
+) {
+  if (route.keyCommand === undefined) return Option.some<Record<string, string>>({});
+  const key = yield* readSwitchboardCredential(route.keyCommand, environment);
+  return Option.map(key, (value) => ({ authorization: `Bearer ${Redacted.value(value)}` }));
+});
+
 /** Resolve only credential availability; no credential or helper output leaves this probe. */
 export const probeSwitchboardCredential = Effect.fn("Switchboard.probeCredential")(function* (
-  keyCommand: SwitchboardConfiguration["keyCommand"],
+  keyCommand: SwitchboardKeyCommand,
   environment: NodeJS.ProcessEnv,
 ) {
   return Option.isSome(yield* readSwitchboardCredential(keyCommand, environment));
@@ -346,6 +440,12 @@ export const switchboardUsageController = (hubUrl: string): SwitchboardUsageSour
 /** Test hooks; the server sets these only from its own environment and settings. */
 export const setSwitchboardEnabled = (value: boolean) => {
   enabled = value;
+};
+
+/** The account hub this computer enrolled with, or undefined to route as configured. */
+export const setSwitchboardAccountRoute = (route: SwitchboardAccountRoute | undefined) => {
+  accountRoute = route;
+  launchRouting = undefined;
 };
 
 export const setSwitchboardEnvironment = (

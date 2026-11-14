@@ -27,6 +27,8 @@ export const VaultItemSummary = Schema.Struct({
 });
 export type VaultItemSummary = typeof VaultItemSummary.Type;
 export const VaultCoreStatus = Schema.Struct({
+  host: Schema.optionalKey(Schema.Struct({ environmentId: EnvironmentId, label: Schema.String })),
+  unlockUrl: Schema.optionalKey(Schema.String),
   accountEnvironmentId: Schema.optionalKey(EnvironmentId),
   backend: Schema.Literal("openbao"),
   state: Schema.Literals([

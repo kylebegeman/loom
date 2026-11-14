@@ -8,7 +8,7 @@ import * as Clipboard from "expo-clipboard";
 import { VaultGitHubSettingsSection } from "./GitHubSettingsSection";
 import { AppState, ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_VAULT_FEATURE,
   VaultFileContent,
@@ -92,8 +92,8 @@ function ComputerVaultSettings({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
-  const canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
-  const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environmentId, AuthVaultReadScope);
+  const canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-core"))
     return <VaultPasswordGeneratorSection />;
   return (

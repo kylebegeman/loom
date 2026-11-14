@@ -20,26 +20,40 @@ Choose **Start thread** on a connected computer. Select a project when it has
 several; with none, Loom uses its normal scratch workspace when available.
 Provider setup and status belong to that computer. Use **Set up agents** or
 **Check agents** if it has no ready provider. Provider accounts and **Route
-through Switchboard** are under that computer's **Settings → Providers**. The
-Switchboard hub and controller addresses come from the `LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_CONTROLLER_URL` environment
-of the server running there. On macOS, export these settings in `~/.zprofile`, then fully
-quit and reopen Loom. Loom also reads `LOOM_SWITCHBOARD_KEY_HELPER` when a custom
-credential helper is needed; otherwise it uses the personal `switchboard/client-api-key`
-item in Keychain. Install the provider CLI on each execution computer even when its
-subscriptions stay on the shared hub. Adding a usage-monitoring hub only adds usage
-readings; it does not configure the agent's route.
+through Switchboard** are under that computer's **Settings → Providers**. Install
+the provider CLI on each execution computer even when its subscriptions stay on
+the shared hub. Adding a usage-monitoring hub only adds usage readings; it does
+not configure the agent's route.
 
-A shared hub can use the host computer's public Loom address without a VPN. On the
-computer running Switchboard, export `LOOM_SWITCHBOARD_SHARE_GATEWAY=true` in
-`~/.zprofile`, then quit and reopen Loom. It forwards only inference and model
-requests to Switchboard's restricted local gateway on port 8321, authenticated
-with the personal client key. The dashboard and management APIs remain separate.
-On each execution computer, set `LOOM_SWITCHBOARD_URL` to the hub computer's HTTPS
-Loom address followed by `/api/loom/switchboard` and set
-`LOOM_SWITCHBOARD_CONTROLLER_URL` to an empty string when no controller route is
-available. Store the personal client key in that computer's Keychain using the
-Switchboard client setup. Provider subscriptions stay on the hub computer.
-Remove the sharing setting and reopen Loom to turn this route off.
+To share one Switchboard with every computer on your Loom account, export
+`LOOM_SWITCHBOARD_SHARE_GATEWAY=true` in `~/.zprofile` on the computer running
+Switchboard, then quit and reopen Loom. It forwards only inference, model and
+availability requests to Switchboard's restricted local gateway on port 8321.
+The dashboard and management APIs remain separate. Every other computer signed
+in to the same Loom account finds the hub within about a minute, gets its own
+credential and turns on **Route through Switchboard** the first time. Nothing
+needs to be copied between computers, and no VPN is needed. Your Library and the
+hub computer need a current Loom. The computer that hosts your Library does not
+use the account hub yet.
+
+The Switchboard row in **Settings → Providers** shows where the computer routes
+and whether the hub answered its last check. **Reconnect** asks the hub for a new
+credential; the current one keeps working until the new one arrives. A computer
+that already connected keeps routing while your Library is offline. On the hub,
+the same row lists each connected computer under the name Switchboard's request
+log shows. **Revoke** replaces that computer's credential, and it gets a new one
+at its next check while it stays on your account. To keep a computer out, remove
+it from your account; the hub drops its credential within about 15 minutes.
+Remove the sharing setting and reopen Loom to stop sharing.
+
+Environment settings on a computer's server still take precedence.
+`LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_KEY_HELPER` point that computer at a
+specific Switchboard, for example `http://127.0.0.1:8317` for one running on the
+same computer, and `LOOM_SWITCHBOARD_CONTROLLER_URL` names its controller.
+Without a helper, Loom reads the personal `switchboard/client-api-key` item in
+Keychain. A `LOOM_SWITCHBOARD_URL` that already names the account hub's address
+switches to the computer's own credential. Once its Switchboard row says it
+routes through the hub, you can remove that setting and the copied client key.
 
 ## Optional command jobs
 

@@ -1,5 +1,9 @@
+import * as OpenBaoStore from "./OpenBaoStore.ts";
+import * as Option from "effect/Option";
 import {
   ACCOUNT_PROVIDER_CREDENTIAL_ROUTE,
+  ACCOUNT_VAULT_STATUS_ROUTE,
+  VaultCoreStatus,
   ACCOUNT_PROFILE_RECORD_ROUTE,
   AccountProfileRecordRequest,
   AccountProfileRecordResponse,
@@ -7,20 +11,17 @@ import {
   AccountProviderResponse,
   VaultError,
 } from "@t3tools/contracts/fork";
-import { signRelayJwt } from "@t3tools/shared/relayJwt";
 import * as ByteSize from "effect/ByteSize";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClientRequest, HttpIncomingMessage } from "effect/http";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
+import { signMachineProof } from "../account-access/machineProof.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 
@@ -28,6 +29,8 @@ const encode = Schema.encodeEffect(Schema.fromJsonString(AccountProviderRequest)
 const decode = Schema.decodeUnknownEffect(AccountProviderResponse);
 const encodeProfile = Schema.encodeEffect(Schema.fromJsonString(AccountProfileRecordRequest));
 const decodeProfile = Schema.decodeUnknownEffect(AccountProfileRecordResponse);
+const decodeStatus = Schema.decodeUnknownEffect(VaultCoreStatus);
+const isVaultError = Schema.is(VaultError);
 const decodeError = Schema.decodeUnknownEffect(VaultError);
 const unavailable = () => new VaultError({ reason: "unavailable" });
 const denied = () => new VaultError({ reason: "denied" });
@@ -35,6 +38,7 @@ const denied = () => new VaultError({ reason: "denied" });
 export class AccountVaultMachineClient extends Context.Service<
   AccountVaultMachineClient,
   {
+    readonly status: Effect.Effect<VaultCoreStatus, VaultError>;
     readonly available: Effect.Effect<boolean, VaultError>;
     readonly provider: (
       input: AccountProviderRequest,
@@ -47,6 +51,7 @@ export class AccountVaultMachineClient extends Context.Service<
 
 const make = Effect.gen(function* () {
   const connection = yield* LibraryConnection.LibraryConnectionService;
+  const store = yield* Effect.serviceOption(OpenBaoStore.OpenBaoStore);
   const secrets = yield* ServerSecretStore;
   const identity = yield* ServerEnvironmentIdentity;
   const signature = yield* Signature.Signature;
@@ -62,31 +67,18 @@ const make = Effect.gen(function* () {
     const account = current.credential.account;
     const sourceId = yield* identity.getEnvironmentId;
     if (credential.sourceEnvironmentId !== sourceId) return yield* denied();
-    const keys = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
+    const proof = yield* signMachineProof(payload, {
+      sourceEnvironmentId: credential.sourceEnvironmentId,
+      libraryEnvironmentId: credential.libraryEnvironmentId,
+      sessionId: credential.sessionId,
+      account,
+    }).pipe(
       Effect.provideService(Signature.Signature, signature),
+      Effect.provideService(ServerSecretStore, secrets),
+      Effect.provideService(SecureRandom.SecureRandom, random),
+      Effect.provideService(Digest.Digest, digest),
       Effect.mapError(unavailable),
     );
-    const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
-    const proof = yield* signRelayJwt({
-      privateKey: keys.privateKey,
-      typ: "loom-account-workload+jwt",
-      payload: {
-        iss: sourceId,
-        sub: sourceId,
-        aud: credential.libraryEnvironmentId,
-        publisherSessionId: credential.sessionId,
-        authorityId: account.authorityId,
-        authorityEpoch: account.authorityEpoch,
-        nonce: Hex.encode(yield* random.randomBytes(16).pipe(Effect.mapError(unavailable))),
-        digest: Hex.encode(
-          yield* digest
-            .digest(Digest.sha256, new TextEncoder().encode(payload))
-            .pipe(Effect.mapError(unavailable)),
-        ),
-        iat: now,
-        exp: now + 30,
-      },
-    }).pipe(Effect.provideService(Signature.Signature, signature), Effect.mapError(unavailable));
     const request = yield* HttpClientRequest.bodyJson(HttpClientRequest.post(route), {
       payload,
       proof,
@@ -126,12 +118,21 @@ const make = Effect.gen(function* () {
     return result;
   });
   return AccountVaultMachineClient.of({
-    available: connection.current.pipe(
-      Effect.map(
-        (current) => current.kind === "remote" && current.credential?.account !== undefined,
-      ),
-      Effect.mapError(unavailable),
+    status: post('{"kind":"status"}', ACCOUNT_VAULT_STATUS_ROUTE).pipe(
+      Effect.flatMap(decodeStatus),
+      Effect.mapError((error) => (isVaultError(error) ? error : unavailable())),
     ),
+    available: Effect.gen(function* () {
+      if (
+        Option.isSome(store) &&
+        (typeof store.value.configured === "boolean"
+          ? store.value.configured
+          : (yield* store.value.status).state !== "unconfigured")
+      )
+        return false;
+      const current = yield* connection.current;
+      return current.kind === "remote" && current.credential?.account !== undefined;
+    }).pipe(Effect.mapError(unavailable)),
     provider: Effect.fn("AccountProviderClient.request")(function* (input) {
       const payload = yield* encode(input).pipe(
         Effect.mapError(() => new VaultError({ reason: "invalid-input" })),

@@ -76,6 +76,24 @@ describe("authorization grants", () => {
 
   it.each([
     {
+      label: "narrow Vault access without access administration",
+      session: { authenticated: true, permissions: ["loom:vault:write"] },
+      scope: "access:write",
+      expected: false,
+    },
+    {
+      label: "narrow Vault write",
+      session: { authenticated: true, permissions: ["loom:vault:write"] },
+      scope: "loom:vault:write",
+      expected: true,
+    },
+    {
+      label: "existing administrator Vault access",
+      session: { authenticated: true, permissions: ["access:write"] },
+      scope: "loom:vault:write",
+      expected: true,
+    },
+    {
       label: "exact permissions over the legacy presentation",
       session: {
         authenticated: true,

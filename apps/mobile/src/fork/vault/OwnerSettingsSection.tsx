@@ -1,6 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { Switch, View } from "react-native";
+import { Linking, Switch, View } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_VAULT_FEATURE,
@@ -62,6 +62,7 @@ export function VaultOwnerSettings({
 }) {
   const config = useEnvironmentServerConfig(environmentId);
   const registry = useContext(RegistryContext);
+  const backend = useEnvironmentQuery(connected ? core.status({ environmentId, input: {} }) : null);
   const account = supportsLoomFeature(config?.environment.capabilities, ACCOUNT_VAULT_FEATURE);
   const supported = supportsLoomFeature(config?.environment.capabilities, "vault-owner-trusted");
   const canChange = useAtomValue(access.setOwnerPolicy.permissionAtom(environmentId));
@@ -175,6 +176,24 @@ export function VaultOwnerSettings({
     setBusy(false);
   };
   const openRepair = useCallback((section: "broker" | "health") => setRepair(section), []);
+  if (backend.data?.state === "locked")
+    return (
+      <SettingsSection title="Vault locked">
+        <View className="gap-3 p-4">
+          <Text>{vaultStatusMessage(backend.data)}</Text>
+          {backend.data.unlockUrl ? (
+            <Button
+              label="Unlock Vault"
+              onPress={() => void Linking.openURL(backend.data!.unlockUrl!)}
+            />
+          ) : null}
+          <Button
+            label="Refresh status"
+            onPress={() => registry.refresh(core.status({ environmentId, input: {} }))}
+          />
+        </View>
+      </SettingsSection>
+    );
   return (
     <>
       {items}

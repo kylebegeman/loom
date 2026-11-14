@@ -477,6 +477,11 @@ it.effect(
         Effect.provide(Layer.fresh(VaultProfiles.layer)),
         Effect.provideService(MachineClient.AccountVaultMachineClient, {
           available: Effect.succeed(true),
+          status: Effect.succeed({
+            backend: "openbao" as const,
+            state: "ready" as const,
+            origin: "https://bao.test",
+          }),
           provider: () => Effect.die("Unexpected provider request"),
           profileRecord: (input) =>
             Effect.sync(() => {

@@ -1,7 +1,7 @@
 import { VaultQueryFeedback } from "./SettingsFeedback";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultTestAccountMutation,
   vaultTestAccountDestination,
@@ -61,7 +61,7 @@ const message = (error: unknown) =>
 export function VaultTestAccountSettingsSection() {
   const { environment } = useSettingsScope(),
     configs = useServerConfigs();
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope);
   if (
     !environment ||
     !supportsLoomFeature(

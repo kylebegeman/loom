@@ -2,7 +2,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: library-sig
 import { identitySessionPrefix } from "./identityPolicy.ts"; // fork: library-sign-in
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as DateTime from "effect/DateTime"; // fork: library-projects
@@ -91,18 +91,29 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.layer", (it) => {
   // fork: identity-renewal
-  it.effect("carries a socket over to its renewal and closes it once the renewal is revoked", () =>
+  it.effect.each([
+    { name: "unchanged scopes", follows: true },
+    { name: "narrower Vault scopes", follows: false },
+  ])("carries socket authority only into a compatible renewal: $name", ({ follows }) =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
       const renewable = { subject: "owner", method: "bearer-access-token" } as const;
-      const first = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+      const scopes = [AuthVaultReadScope, AuthVaultWriteScope];
+      const first = yield* sessions.issue({ ...renewable, scopes, ttl: Duration.hours(1) });
       yield* sessions.markConnected(first.sessionId);
       const held = yield* Ref.make(first.sessionId);
       const socket = yield* sessions
         .awaitSessionChain(held)
-        .pipe(Effect.forkScoped({ startImmediately: true }));
+        .pipe(
+          Effect.ensuring(sessions.markDisconnected(first.sessionId)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
       yield* TestClock.adjust(Duration.minutes(50));
-      const renewal = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+      const renewal = yield* sessions.issue({
+        ...renewable,
+        scopes: follows ? scopes : [AuthVaultReadScope],
+        ttl: Duration.hours(1),
+      });
       expect(
         yield* sessions.linkSuccessor({
           currentToken: first.token,
@@ -118,8 +129,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
       );
       yield* TestClock.adjust(Duration.minutes(10));
       yield* Fiber.join(firstReleased);
-      expect(socket.pollUnsafe()).toBeUndefined();
-      expect(yield* Ref.get(held)).toBe(renewal.sessionId);
+      const expectedSession = follows ? renewal.sessionId : first.sessionId;
+      expect(yield* Ref.get(held)).toBe(expectedSession);
+      if (follows) expect(socket.pollUnsafe()).toBeUndefined();
+      else yield* Fiber.join(socket);
       expect((yield* sessions.verify(first.token).pipe(Effect.flip))._tag).toBe(
         "SessionTokenExpiredError",
       );
@@ -128,11 +141,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
           sessionId,
           connected,
         })),
-      ).toEqual([{ sessionId: renewal.sessionId, connected: true }]);
-
+      ).toEqual([{ sessionId: renewal.sessionId, connected: follows }]);
+      expect(yield* sessions.renewalsOf(first.sessionId)).toEqual(
+        new Set([first.sessionId, renewal.sessionId]),
+      );
       yield* sessions.revoke(renewal.sessionId);
       yield* Fiber.join(socket);
-      expect(yield* Ref.get(held)).toBe(renewal.sessionId);
+      expect(yield* Ref.get(held)).toBe(expectedSession);
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
   );
 

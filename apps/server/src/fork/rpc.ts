@@ -1,3 +1,4 @@
+import { accountVaultHandlers } from "./vault/account-rpc.ts";
 import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "@t3tools/contracts/fork";
 import { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
 import { AccountJoin } from "./account-access/AccountJoin.ts";
@@ -132,6 +133,7 @@ import * as StorageCleanup from "../storageCleanup.ts";
 import { LOOM_SERVER_FEATURES } from "./features.ts";
 import { makeForkRpcAuth } from "./rpcAuthorization.ts";
 import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
+import { SwitchboardAccount } from "./switchboard/SwitchboardAccount.ts";
 
 // Separate handler inference keeps large RPC unions below TypeScript's recursion limit.
 const otherForkRpcGroup = ForkRpcGroup.omit(
@@ -233,36 +235,70 @@ export const makeForkRpcLayer = (
     ),
     VaultTestAccountRpcGroup.toLayer(
       withForkRuntime(
-        makeVaultTestAccountRpcHandlers(makeForkRpcAuth(session), `client:${session.sessionId}`),
+        makeVaultTestAccountRpcHandlers(
+          makeForkRpcAuth(session),
+          `client:${session.sessionId}`,
+        ).pipe(Effect.flatMap((handlers) => accountVaultHandlers(session, handlers))),
       ),
     ),
     VaultMigrationInventoryRpcGroup.toLayer(
       withForkRuntime(
-        makeVaultMigrationInventoryRpcHandlers(makeForkRpcAuth(session), session.subject),
+        makeVaultMigrationInventoryRpcHandlers(makeForkRpcAuth(session), session.subject).pipe(
+          Effect.flatMap((handlers) => accountVaultHandlers(session, handlers)),
+        ),
       ),
     ),
     VaultMigrationRpcGroup.toLayer(
-      withForkRuntime(makeVaultMigrationRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultMigrationRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultHealthRpcGroup.toLayer(
-      withForkRuntime(makeVaultHealthRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultHealthRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultBrokerRpcGroup.toLayer(
-      withForkRuntime(makeVaultBrokerRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultBrokerRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultAccessRpcGroup.toLayer(
       withForkRuntime(
         Effect.all([
-          makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session),
-          makeVaultOwnerLinkRpcHandlers(makeForkRpcAuth(session), session),
+          makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session).pipe(
+            Effect.flatMap((handlers) => accountVaultHandlers(session, handlers)),
+          ),
+          makeVaultOwnerLinkRpcHandlers(makeForkRpcAuth(session), session).pipe(
+            Effect.flatMap((handlers) => accountVaultHandlers(session, handlers)),
+          ),
         ]).pipe(Effect.map(([access, ownerLink]) => ({ ...access, ...ownerLink }))),
       ),
     ),
     VaultSecretRpcGroup.toLayer(
-      withForkRuntime(makeVaultSecretRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultSecretRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultCoreRpcGroup.toLayer(
-      withForkRuntime(makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     SkillRegistryRpcGroup.toLayer(
       withForkRuntime(makeSkillRegistryRpcHandlers(makeForkRpcAuth(session))),
@@ -277,13 +313,27 @@ export const makeForkRpcLayer = (
       withForkRuntime(makePreviewLinksRpcHandlers(makeForkRpcAuth(session), session)),
     ),
     VaultGitHubRpcGroup.toLayer(
-      withForkRuntime(makeVaultGitHubRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultGitHubRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultProfileRpcGroup.toLayer(
-      withForkRuntime(makeVaultProfileRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultProfileRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultReferenceRpcGroup.toLayer(
-      withForkRuntime(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session))),
+      withForkRuntime(
+        Effect.flatMap(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session)), (handlers) =>
+          accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     BotsRpcGroup.toLayer(withForkRuntime(makeBotsRpcHandlers(makeForkRpcAuth(session), session))),
     BotBatchesRpcGroup.toLayer(
@@ -303,7 +353,12 @@ export const makeForkRpcLayer = (
       withForkRuntime(makeBotsAnywhereRpcHandlers(makeForkRpcAuth(session))),
     ),
     VaultSshRpcGroup.toLayer(
-      withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     ReachRpcGroup.toLayer(
       withForkRuntime(
@@ -338,6 +393,7 @@ export const makeForkRpcLayer = (
         const naming = yield* withForkRuntime(ComputerNaming.ComputerNaming);
         const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
         const switchboard = yield* withForkRuntime(SwitchboardStatus.SwitchboardStatus);
+        const switchboardAccount = yield* withForkRuntime(SwitchboardAccount);
         return otherForkRpcGroup.of({
           [ENROLL.computers]: () => auth.effect(ENROLL.computers, enrollment.computers(session)),
           [ENROLL.removeComputer]: (input) =>
@@ -352,6 +408,9 @@ export const makeForkRpcLayer = (
             auth.effect(ENROLL.lookupJoin, join.lookup(input.code, session)),
           [ENROLL.decideJoin]: (input) =>
             auth.effect(ENROLL.decideJoin, join.decide(input, session)),
+          [ENROLL.joinPrompts]: () => auth.stream(ENROLL.joinPrompts, join.prompts(session)),
+          [ENROLL.respondJoin]: (input) =>
+            auth.effect(ENROLL.respondJoin, join.respond(input, session)),
           [S.saveSite]: (input) => auth.effect(S.saveSite, sites.saveSite(input)),
           [S.saveService]: (input) => auth.effect(S.saveService, sites.saveService(input)),
           [S.saveCheck]: (input) => auth.effect(S.saveCheck, sites.saveCheck(input)),
@@ -375,6 +434,15 @@ export const makeForkRpcLayer = (
             ),
           [FORK_WS_METHODS.limits]: () =>
             auth.effect(FORK_WS_METHODS.limits, switchboard.readLimits),
+          [FORK_WS_METHODS.route]: () =>
+            auth.effect(FORK_WS_METHODS.route, switchboardAccount.status),
+          [FORK_WS_METHODS.reconnect]: () =>
+            auth.effect(FORK_WS_METHODS.reconnect, switchboardAccount.reconnect),
+          [FORK_WS_METHODS.revokeComputer]: (input) =>
+            auth.effect(
+              FORK_WS_METHODS.revokeComputer,
+              switchboardAccount.revokeComputer(input.environmentId),
+            ),
           ...(yield* withForkRuntime(makeProjectLibraryRpcHandlers(auth, session))),
           ...(yield* withForkRuntime(makeProjectCheckoutRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),

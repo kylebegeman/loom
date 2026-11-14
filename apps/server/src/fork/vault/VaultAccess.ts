@@ -301,6 +301,7 @@ export class VaultAccess extends Context.Service<
       },
       authorize: Effect.Effect<void, VaultError>,
     ) => Effect.Effect<void, VaultError>;
+    readonly authorizeHuman: (actor: string) => Effect.Effect<void, VaultError>;
     readonly ownerLinkBinding: (
       actor: string,
       authorize: Effect.Effect<void, VaultError>,
@@ -2025,6 +2026,17 @@ const make = Effect.gen(function* () {
       };
     }).pipe(Effect.mapError(() => new VaultError({ reason: "unavailable" }))),
     snapshot: Effect.map(load(), ({ policy }) => snapshotView(policy)),
+    authorizeHuman: Effect.fn("VaultAccess.authorizeHuman")(function* (actor) {
+      const { policy } = yield* load();
+      const owner = policy.ownerPolicy;
+      const subject = identityOwnershipSubject(actor, environment);
+      if (
+        !owner ||
+        !subject.startsWith("identity-principal:v1:") ||
+        (owner.accountOwnerSubject ?? owner.ownerSubject) !== subject
+      )
+        return yield* new VaultError({ reason: "denied" });
+    }),
     ownerLinkBinding: Effect.fn("VaultAccess.ownerLinkBinding")(function* (actor, authorize) {
       yield* authorize;
       const { policy } = yield* load();

@@ -1,4 +1,8 @@
-import { AuthLibraryPublishScope, AuthStandardClientScopes } from "@t3tools/contracts";
+import {
+  AuthLibraryPublishScope,
+  AuthStandardClientScopes,
+  AuthVaultWriteScope,
+} from "@t3tools/contracts";
 import {
   VaultError,
   VaultOwnerLinkRequest,
@@ -107,9 +111,13 @@ const make = Effect.gen(function* () {
   const ownerSession = Effect.fn("VaultOwnerLink.ownerSession")(function* (
     session: AuthenticatedSession,
   ) {
-    if (!human(session) || !identityAccountFromSession(session.subject, environment))
+    const accountOwner = session.scopes.includes(AuthVaultWriteScope);
+    if (
+      (!human(session) && !accountOwner) ||
+      !identityAccountFromSession(session.subject, environment)
+    )
       return yield* denied();
-    yield* management.authorizeEnrollment(session).pipe(Effect.mapError(denied));
+    if (!accountOwner) yield* management.authorizeEnrollment(session).pipe(Effect.mapError(denied));
     const chain = yield* sessions.renewalsOf(session.sessionId);
     const active = yield* sessions.listActive().pipe(Effect.mapError(unavailable));
     const now = yield* Clock.currentTimeMillis;
@@ -118,9 +126,10 @@ const make = Effect.gen(function* () {
         chain.has(candidate.sessionId) &&
         candidate.subject === session.subject &&
         candidate.expiresAt.epochMilliseconds > now &&
-        AuthStandardClientScopes.every((scope) =>
-          (candidate.permissions ?? candidate.scopes).includes(scope),
-        ),
+        ((candidate.permissions ?? candidate.scopes).includes(AuthVaultWriteScope) ||
+          AuthStandardClientScopes.every((scope) =>
+            (candidate.permissions ?? candidate.scopes).includes(scope),
+          )),
     );
     if (!current || !identityAccountFromSession(current.subject, environment))
       return yield* denied();

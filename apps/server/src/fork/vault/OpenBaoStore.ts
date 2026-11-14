@@ -22,6 +22,7 @@ import { readOpenBaoSettings } from "./OpenBaoSettings.ts";
 export class OpenBaoStore extends Context.Service<
   OpenBaoStore,
   {
+    readonly configured?: boolean;
     readonly inventoryEnvironmentId?: EnvironmentId | undefined;
     readonly status: Effect.Effect<VaultCoreStatus>;
     readonly read: (key: string) => Effect.Effect<
@@ -230,6 +231,7 @@ const make = Effect.gen(function* () {
     );
   }
   return OpenBaoStore.of({
+    configured,
     inventoryEnvironmentId,
     status: Effect.gen(function* () {
       const state = (value: VaultCoreStatus["state"]): VaultCoreStatus => ({

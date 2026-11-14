@@ -1,6 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { accountJoinCode, squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
-import { ACCOUNT_JOIN_FEATURE, type AccountJoinReview } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_JOIN_FEATURE,
+  ACCOUNT_JOIN_PROMPTS_FEATURE,
+  type AccountJoinReview,
+} from "@t3tools/contracts/fork";
 import { useState } from "react";
 import { Keyboard, View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -57,8 +61,9 @@ export function ApproveComputer() {
     <SettingsSection title="Add computer">
       <View className="gap-3 p-4">
         <Text className="text-sm text-foreground-muted">
-          Enter the code shown on the computer you are adding. Review its name and matching code
-          before approving.
+          {authority.info.data.features.includes(ACCOUNT_JOIN_PROMPTS_FEATURE)
+            ? "Run loom join on the computer you are adding. It then shows up at the top of this screen to approve with one tap. No request showing? Enter the code from its terminal here."
+            : "Enter the code shown on the computer you are adding. Review its name and matching code before approving."}
         </Text>
         <TextInput
           accessibilityLabel="Computer code"

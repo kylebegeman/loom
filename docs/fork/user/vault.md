@@ -3,11 +3,11 @@
 Vault stores development credentials and secure records separately from your personal accounts.
 SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub for agents**; the generic item editor can only rename them. Revealed values can be copied and clear when you leave the app or after one minute.
 
-There are two kinds of Vault. The account Vault holds saved connections and secrets for your
-approved computers and is kept by your Library. Each computer also has its own existing Vault,
-whose records stay on that computer and are separate from the account Vault. Opening the
-account Vault does not copy or move existing items. Older Libraries and computers keep their
-existing Vault settings until updated.
+The account Vault holds saved connections and secrets for your approved computers and signed-in
+devices. Your Library routes requests to the computer that holds the existing OpenBao connection.
+That computer keeps the records; opening the account Vault does not copy or move them. A computer
+with its own configured backend continues to use it. Computers without one use the account Vault
+automatically. Older Libraries and computers keep their existing settings until updated.
 
 ## Open a Vault
 
@@ -16,14 +16,14 @@ manage. On mobile, **Settings > Vault** opens the account Vault, and a computer'
 is in that computer's settings, below the **Account Vault** card.
 
 - **Account Vault:** choose your Library. **Manage account Vault**, in **Settings > Computers >
-  Account** or on a computer's Vault page, opens the same place. Your Library must support
-  account Vault and have its OpenBao connection configured; your phone, browser and enrolled
-  execution computers do not need OpenBao credentials. This device's connection to your Library
-  also needs Vault access. When it lacks that access, the **Account Vault** card has no
-  **Manage account Vault** button and explains the repair: pair this device again with a link
-  that includes **View access** and **Manage access**, or, for an Identity sign-in, set
-  `LOOM_IDENTITY_ALLOW_ADMIN=true` on the Library (see [Reach](../operations/reach.md)),
-  restart it and sign in again. Until then, use a computer's existing Vault.
+  Account** or on a computer's Vault page, opens the same place. The Library and Vault computer
+  must both run a current Loom version. Your other computers and devices need no OpenBao
+  configuration. Sign in with the account owner's passkey; a single-owner Library with passkey
+  sign-in grants Vault access separately from device and relay administration. Access renews with
+  your existing sign-in under the account's normal session limit. Signing out or revoking
+  that device ends it; Vault adds no hourly passkey prompt.
+  The status identifies the Vault computer. If the backend is locked, choose **Unlock Vault** to
+  open its unlock screen. Unlock it once; all devices use that same backend.
 - **A computer's existing Vault:** choose the computer. When the account Vault can be managed
   from this device, the computer's own Vault is folded under **This computer’s existing Vault**
   below the **Account Vault** card. Expand it to reach **Vault items**, **Access**, **GitHub
@@ -35,9 +35,9 @@ is in that computer's settings, below the **Account Vault** card.
 
 To add an item to a computer's existing Vault, open its Vault as above and choose **Add item**
 in **Vault items**, or run **Add to Vault...** from the command palette in a thread on that
-computer. Items added this way stay on that computer. On an account computer, **Use saved
-item** and provider **Use Vault** choose from the account Vault, so they do not offer items saved
-only to the computer's existing Vault.
+computer. Items added this way stay in its selected backend. On computers without a local
+backend, **Use saved item** and provider **Use Vault** use the account Vault. Choosing the Library
+opens that same account inventory.
 
 The service token that connects the computer to OpenBao has to be renewed outside Loom. When it
 has less than three days left, the Vault status says so; renew or reissue it before it lapses.
@@ -50,7 +50,8 @@ signed-in account, then choose **Link Vault owner to Loom account**. Both owners
 a computer's publishing connection cannot approve the account identity by itself.
 
 The link keeps the local owner, saved items, versions, access rules and credential protection.
-It does not move the Vault to your Library. **Unlink Loom account** stops account use and keeps
+It does not move the Vault. The Library discovers the Vault computer and forwards account
+requests there. **Unlink Loom account** stops account use and keeps
 local ownership; **Turn off account access** stops new use without removing the link.
 
 ## Answer a private request with a saved item
@@ -84,20 +85,29 @@ deleting its item, or protecting it against ordinary use blocks new credential u
 running processes may retain values they received. Use **Refresh provider credentials** if
 a provider needs to retry after the Vault backend becomes available again.
 
+## Run longer terminal work
+
+`loom vault ssh-agent-exec` accepts `timeoutMs` from 100 to 86400000 (24 hours).
+The signing lease remains five minutes. An already authenticated SSH command can continue
+until its deadline; another authentication after the lease expires needs a new invocation.
+Use the selected connection's label or its pinned hostname in SSH arguments. Pinning by
+item ID and version accepts that item's label too.
+
 ## Choose personal or restricted access
 
 In the account Vault, confirm **This is my personal account** and choose **Enable account access**
 once to let agents on your approved computers use its saved SSH and GitHub connections. Each
 operation checks the computer's enrollment, active full-access/default run, selected item version
-and destination. SSH private keys and GitHub credentials stay at the Library; SSH and Git commands
-run on the execution computer. Structured GitHub actions run through the Library. If a write loses its reply, its returned
+and destination. SSH private keys stay on the Vault computer. SSH, Git and supported GitHub
+terminal commands run on the execution computer; GitHub terminal commands receive the selected
+credential for that operation without changing ordinary gh/Git configuration. Structured GitHub
+actions run on the Vault computer through the Library. If a write loses its reply, its returned
 operation ID can recover the retained receipt without repeating the action. An unknown outcome
-still requires inspecting GitHub before another write. Account GitHub
-terminal commands are not supported; use the structured tools or SSH for Git.
+still requires inspecting GitHub before another write.
 
 Choose **Turn off account access** to stop new account-authorized use while keeping saved items.
 An already authenticated remote connection or completed action cannot be recalled. A locked or
-unavailable Library Vault reports its state without selecting a computer-local credential.
+unavailable account Vault reports its state without selecting a computer-local credential.
 
 The following settings apply to a computer's existing Vault:
 
@@ -173,7 +183,7 @@ credentials into chat. Normal agent tools return metadata, not stored values. Th
 `loom vault status`, `loom vault list` and `loom vault change` commands provide the same metadata and
 lifecycle operations through an existing Loom connection.
 
-Account-enrolled computers use the Library's saved connections and account access policy without
+Account-enrolled computers use the account Vault's saved connections and access policy without
 a second broker enrollment. For a computer-local Vault, an administrator configures that computer's
 execution broker and access policy. Adding a key alone does not route ordinary terminal commands
 through Vault or remove their existing 1Password approvals.

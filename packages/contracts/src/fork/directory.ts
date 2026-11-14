@@ -95,6 +95,7 @@ export const LoomOsIdentityPayload = Schema.Struct({
 export type LoomOsIdentityPayload = typeof LoomOsIdentityPayload.Type;
 
 const DirectoryEnvironmentFields = {
+  vaultBackend: Schema.optionalKey(Schema.Boolean),
   environmentId: EnvironmentId,
   label: TrimmedNonEmptyString.check(Schema.isMaxLength(160)),
   serverVersion: TrimmedNonEmptyString.check(Schema.isMaxLength(160)),

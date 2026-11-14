@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  AuthVaultWriteScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
   EnvironmentId,
@@ -51,14 +52,14 @@ it.effect.each(["begin", "apply"] as const)(
         const command = createVaultBrokerAtoms(runtime)[method];
         const policy = createCommandPermissions(runtime, VAULT_BROKER_WS_METHODS[method]);
         registry.mount(command.permissionAtom(destination));
-        expect(policy.requiredScopes()).toEqual([AuthAccessWriteScope]);
+        expect(policy.requiredScopes()).toEqual([AuthVaultWriteScope]);
 
         registry.set(sessions(destination), AsyncResult.success(grant(false)));
         registry.set(sessions(other), AsyncResult.success(grant(true)));
         expect(registry.get(command.permissionAtom(destination))).toBe(false);
         expect(registry.get(command.permissionAtom(other))).toBe(true);
         expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
-          requiredPermission: AuthAccessWriteScope,
+          requiredPermission: AuthVaultWriteScope,
         });
 
         registry.set(sessions(destination), AsyncResult.success(grant(true)));
@@ -70,7 +71,7 @@ it.effect.each(["begin", "apply"] as const)(
         registry.set(sessions(destination), AsyncResult.success(grant(false)));
         expect(registry.get(command.permissionAtom(destination))).toBe(false);
         expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
-          requiredPermission: AuthAccessWriteScope,
+          requiredPermission: AuthVaultWriteScope,
         });
       }),
     ),

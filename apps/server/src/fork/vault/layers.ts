@@ -7,13 +7,19 @@ import * as VaultCore from "./VaultCore.ts";
 import * as VaultProviderCredentials from "./VaultProviderCredentials.ts";
 
 export const layerStore = OpenBaoStore.layer.pipe(Layer.provide(FetchHttpClient.layer));
-export const layerCore = VaultCore.layer.pipe(
+export const layerMachineClient = AccountVaultMachineClient.layer.pipe(
   Layer.provide(
-    Layer.merge(layerStore, LibraryConnection.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+    Layer.merge(LibraryConnection.layer.pipe(Layer.provide(FetchHttpClient.layer)), layerStore),
   ),
 );
-export const layerMachineClient = AccountVaultMachineClient.layer.pipe(
-  Layer.provide(LibraryConnection.layer),
+export const layerCore = VaultCore.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerStore,
+      layerMachineClient,
+      LibraryConnection.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+    ),
+  ),
 );
 export const layerProviderCredentials = VaultProviderCredentials.layer.pipe(
   Layer.provide(Layer.mergeAll(layerCore, layerStore, layerMachineClient)),

@@ -470,3 +470,34 @@ it.effect(
       }),
     ),
 );
+
+it.effect(
+  "binds forwarded work to one backend, payload and use, and rechecks computer revocation",
+  () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const proof = yield* f.source.prepare(PAYLOAD, THREAD);
+      const lease = yield* f.authority.accept(PAYLOAD, proof, publisher);
+      const grant = yield* f.authority.relay(lease, SOURCE, PAYLOAD);
+      expect(yield* f.authority.verifyRelay({ grant, payload: PAYLOAD }, publisher)).toEqual(lease);
+      expect(
+        (yield* f.authority.verifyRelay({ grant, payload: PAYLOAD }, publisher).pipe(Effect.result))
+          ._tag,
+      ).toBe("Failure");
+      expect(
+        (yield* f.authority
+          .verifyRelay({ grant, payload: "tampered" }, publisher)
+          .pipe(Effect.result))._tag,
+      ).toBe("Failure");
+      yield* f.authority.verifyRelay({ grant }, publisher);
+      f.state.membershipState = "removed";
+      expect((yield* f.authority.verifyRelay({ grant }, publisher).pipe(Effect.result))._tag).toBe(
+        "Failure",
+      );
+      f.state.membershipState = "active";
+      yield* f.authority.releaseRelay(grant);
+      expect((yield* f.authority.verifyRelay({ grant }, publisher).pipe(Effect.result))._tag).toBe(
+        "Failure",
+      );
+    }).pipe(Effect.provide(NodeCrypto.layer)),
+);

@@ -115,3 +115,7 @@ export * from "./account-access.ts";
 export * from "./account-links.ts";
 export * from "./account-vault.ts";
 export * from "./vault-profile-records.ts";
+
+export * from "./account-vault-relay.ts";
+
+export * from "./vault-scopes.ts";

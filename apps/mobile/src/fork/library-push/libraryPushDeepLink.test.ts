@@ -49,6 +49,10 @@ describe("away alert links", () => {
     expect(
       libraryPushDeepLink("/settings/scheduled-tasks?environmentId=computer%201&taskId=task%2F1"),
     ).toBe("/settings/scheduled-tasks?environmentId=computer%201&taskId=task%2F1");
+    // A join prompt carries no thread, so its link alone must open Account.
+    expect(tapOn({ environmentId: "library", requestId: "r1", deepLink: "/library/join/r1" })).toBe(
+      "/library/settings",
+    );
   });
   it("refuses foreign routes and extra query fields", () => {
     for (const value of [
@@ -57,6 +61,9 @@ describe("away alert links", () => {
       "/bots/a/inbox?x=1",
       "/settings/scheduled-tasks?environmentId=a",
       "/settings/scheduled-tasks?environmentId=a&taskId=b&next=https://example.test",
+      "/library/join/",
+      "/library/join/r1?next=https://example.test",
+      "/library/join/r1/approve",
     ])
       expect(libraryPushDeepLink(value)).toBeNull();
   });

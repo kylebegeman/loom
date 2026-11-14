@@ -1,3 +1,4 @@
+import { AuthVaultReadScope, AuthVaultWriteScope } from "./vault-scopes.ts";
 import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "./account-access.ts";
 import { ACCOUNT_LINK_WS_METHODS as LINKS } from "./account-links.ts";
 import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "./browser-dev-tools.ts";
@@ -19,7 +20,7 @@ import { VAULT_BROKER_WS_METHODS as VB } from "./vault-brokers.ts";
 import { VAULT_ACCESS_WS_METHODS as VA } from "./vault-access.ts";
 import { VAULT_SECRET_WS_METHODS as VSECRET } from "./vault-secret.ts";
 import { VAULT_CORE_WS_METHODS as V } from "./vault-core.ts";
-import { AuthAccessReadScope, AuthAccessWriteScope } from "../auth.ts";
+import { AuthAccessWriteScope } from "../auth.ts";
 import { SITES_WS_METHODS as S } from "./sites.ts";
 import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
 import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "./project-library-brief.ts";
@@ -46,6 +47,7 @@ import { REACH_WS_METHODS as REACH } from "./reach.ts";
 import { AuthRelayWriteScope } from "../auth.ts";
 import { LIBRARY_PUSH_WS_METHODS as PUSH } from "./library-push.ts";
 import { DATABASE_COMPACTION_WS_METHODS as DBC } from "./database-compaction.ts";
+import { SWITCHBOARD_WS_METHODS as SW } from "./switchboard.ts";
 import {
   BOTS_BATCH_WS_METHODS as BATCH,
   BOTS_DRAFT_WS_METHODS as BOT_DRAFT,
@@ -105,47 +107,47 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [PP.updateSettings]: AuthOrchestrationOperateScope,
   [PP.varlockValidate]: AuthTerminalOperateScope,
   [PP.varlockCommand]: AuthTerminalOperateScope,
-  [VT.apply]: AuthAccessWriteScope,
-  [VI.originalVerify]: AuthAccessWriteScope,
-  [VI.verify]: AuthAccessWriteScope,
-  [VI.prepare]: AuthAccessWriteScope,
-  [VI.review]: AuthAccessWriteScope,
-  [VI.cancel]: AuthAccessWriteScope,
-  [VM.typedPrepare]: AuthAccessWriteScope,
-  [VM.typedApply]: AuthAccessWriteScope,
-  [VM.typedCancel]: AuthAccessWriteScope,
-  [VM.typedArchive]: AuthAccessWriteScope,
-  [VM.prepare]: AuthAccessWriteScope,
-  [VM.apply]: AuthAccessWriteScope,
-  [VM.cancel]: AuthAccessWriteScope,
-  [VM.archive]: AuthAccessWriteScope,
-  [VH.apply]: AuthAccessWriteScope,
-  [VH.recheck]: AuthAccessWriteScope,
-  [VG.save]: AuthAccessWriteScope,
-  [VG.test]: AuthAccessWriteScope,
-  [VG.readiness]: AuthAccessWriteScope,
-  [VG.change]: AuthAccessWriteScope,
-  [VP.apply]: AuthAccessWriteScope,
-  [VP.retirePin]: AuthAccessWriteScope,
-  [VS.pinnedKeys]: AuthAccessReadScope,
-  [VS.generate]: AuthAccessWriteScope,
-  [VS.trust]: AuthAccessWriteScope,
-  [VS.probe]: AuthAccessWriteScope,
-  [VB.begin]: AuthAccessWriteScope,
-  [VB.apply]: AuthAccessWriteScope,
+  [VT.apply]: AuthVaultWriteScope,
+  [VI.originalVerify]: AuthVaultWriteScope,
+  [VI.verify]: AuthVaultWriteScope,
+  [VI.prepare]: AuthVaultWriteScope,
+  [VI.review]: AuthVaultWriteScope,
+  [VI.cancel]: AuthVaultWriteScope,
+  [VM.typedPrepare]: AuthVaultWriteScope,
+  [VM.typedApply]: AuthVaultWriteScope,
+  [VM.typedCancel]: AuthVaultWriteScope,
+  [VM.typedArchive]: AuthVaultWriteScope,
+  [VM.prepare]: AuthVaultWriteScope,
+  [VM.apply]: AuthVaultWriteScope,
+  [VM.cancel]: AuthVaultWriteScope,
+  [VM.archive]: AuthVaultWriteScope,
+  [VH.apply]: AuthVaultWriteScope,
+  [VH.recheck]: AuthVaultWriteScope,
+  [VG.save]: AuthVaultWriteScope,
+  [VG.test]: AuthVaultWriteScope,
+  [VG.readiness]: AuthVaultWriteScope,
+  [VG.change]: AuthVaultWriteScope,
+  [VP.apply]: AuthVaultWriteScope,
+  [VP.retirePin]: AuthVaultWriteScope,
+  [VS.pinnedKeys]: AuthVaultReadScope,
+  [VS.generate]: AuthVaultWriteScope,
+  [VS.trust]: AuthVaultWriteScope,
+  [VS.probe]: AuthVaultWriteScope,
+  [VB.begin]: AuthVaultWriteScope,
+  [VB.apply]: AuthVaultWriteScope,
   [VA.setOwnerPolicy]: AuthEnvironmentMaintainScope,
   [VA.ownerLinkPrepare]: AuthEnvironmentMaintainScope,
-  [VA.ownerLinkApprove]: AuthEnvironmentMaintainScope,
+  [VA.ownerLinkApprove]: AuthVaultWriteScope,
   [VA.ownerLinkApply]: AuthEnvironmentMaintainScope,
-  [VA.approvalCreate]: AuthAccessWriteScope,
-  [VA.approvalChange]: AuthAccessWriteScope,
-  [VA.apply]: AuthAccessWriteScope,
-  [VA.applyBatch]: AuthAccessWriteScope,
-  [VA.previewBatch]: AuthAccessReadScope,
-  [V.save]: AuthAccessWriteScope,
-  [V.change]: AuthAccessWriteScope,
-  [V.reveal]: AuthAccessWriteScope,
-  [VSECRET.answerFromItem]: AuthAccessWriteScope,
+  [VA.approvalCreate]: AuthVaultWriteScope,
+  [VA.approvalChange]: AuthVaultWriteScope,
+  [VA.apply]: AuthVaultWriteScope,
+  [VA.applyBatch]: AuthVaultWriteScope,
+  [VA.previewBatch]: AuthVaultReadScope,
+  [V.save]: AuthVaultWriteScope,
+  [V.change]: AuthVaultWriteScope,
+  [V.reveal]: AuthVaultWriteScope,
+  [VSECRET.answerFromItem]: AuthVaultWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,
@@ -165,6 +167,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [ENROLL.stepJoin]: AuthSettingsWriteScope,
   [ENROLL.lookupJoin]: AuthSettingsWriteScope,
   [ENROLL.decideJoin]: AuthSettingsWriteScope,
+  [ENROLL.respondJoin]: AuthSettingsWriteScope,
   [ENROLL.removeComputer]: AuthSettingsWriteScope,
   [LINKS.setPolicy]: AuthSettingsWriteScope,
   [LIB.installManagementDelegation]: AuthSettingsWriteScope,
@@ -365,4 +368,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [ANYWHERE.setRemoteSettings]: AuthOrchestrationOperateScope,
   // The desktop rewrites the database file at its next launch, a storage setting.
   [DBC.setRequest]: AuthSettingsWriteScope,
+  // Both change which credential routed launches use, like the routing switch beside them.
+  [SW.reconnect]: AuthSettingsWriteScope,
+  [SW.revokeComputer]: AuthSettingsWriteScope,
 } as const;

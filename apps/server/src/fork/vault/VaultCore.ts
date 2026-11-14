@@ -22,6 +22,8 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
+import * as AccountVaultMachineClient from "./AccountVaultMachineClient.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { decodePolicy, credentialUseRefusal, type Policy } from "./AccessPolicy.ts";
 
@@ -102,6 +104,8 @@ const summary = (item: StoredItem, version: number): VaultItemSummary => ({
 });
 const make = Effect.gen(function* () {
   const store = yield* OpenBaoStore.OpenBaoStore;
+  const machine = yield* Effect.serviceOption(AccountVaultMachineClient.AccountVaultMachineClient);
+  const descriptor = yield* Effect.serviceOption(ServerEnvironment);
   const library = yield* Effect.serviceOption(LibraryConnection.LibraryConnectionService);
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Digest.Digest;
@@ -150,13 +154,32 @@ const make = Effect.gen(function* () {
   return VaultCore.of({
     status: Effect.gen(function* () {
       const status = yield* store.status;
-      if (Option.isNone(library)) return status;
-      const current = yield* library.value.current.pipe(Effect.result);
-      return current._tag === "Success" &&
-        current.success.kind === "remote" &&
-        current.success.credential?.account
-        ? { ...status, accountEnvironmentId: current.success.credential.libraryEnvironmentId }
-        : status;
+      const label = Option.isSome(descriptor)
+        ? (yield* descriptor.value.getDescriptor).label
+        : "This computer";
+      const local = {
+        ...status,
+        host: { environmentId: hostEnvironmentId, label },
+        ...(status.origin
+          ? { unlockUrl: new URL("/ui/vault/unseal", status.origin).toString() }
+          : {}),
+      };
+      if (status.state !== "unconfigured" || Option.isNone(library)) return local;
+      const current = yield* library.value.current;
+      if (current.kind !== "remote" || !current.credential?.account) return local;
+      if (Option.isNone(machine))
+        return { ...local, accountEnvironmentId: current.credential.libraryEnvironmentId };
+      const remote = yield* machine.value.status.pipe(
+        Effect.catchTags({
+          VaultError: (error) =>
+            Effect.succeed({
+              backend: "openbao" as const,
+              state: error.reason === "denied" ? ("denied" as const) : ("unavailable" as const),
+              origin: null,
+            }),
+        }),
+      );
+      return { ...remote, accountEnvironmentId: current.credential.libraryEnvironmentId };
     }),
     inspect: Effect.fn("VaultCore.inspect")(function* (id) {
       if (!/^[a-f0-9]{32}$/.test(id)) return yield* new VaultError({ reason: "invalid-input" });

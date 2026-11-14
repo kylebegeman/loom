@@ -8,6 +8,7 @@ import {
   VaultSshError,
   VaultConnectionError,
   type VaultGitHubError,
+  type VaultGitHubResult,
 } from "@t3tools/contracts/fork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -52,7 +53,7 @@ export class AccountVaultAuthority extends Context.Service<
   {
     readonly execute: (
       envelope: AccountVaultEnvelope,
-      publisher: AuthenticatedSession,
+      publisher: AuthenticatedSession | undefined,
     ) => Effect.Effect<
       AccountVaultResponse,
       VaultError | VaultSshError | VaultGitHubError | VaultConnectionError
@@ -113,7 +114,7 @@ const make = Effect.gen(function* () {
       );
       const now = yield* Clock.currentTimeMillis;
       for (const [id, held] of sessions) if (held.session.expiresAt <= now) sessions.delete(id);
-      if (request.kind === "github") {
+      if (request.kind === "github" || request.kind === "github-terminal") {
         const input = request.input;
         const account = { lease, authorize: workloads.revalidate(lease) };
         const perform = Effect.gen(function* () {
@@ -134,27 +135,52 @@ const make = Effect.gen(function* () {
               choices: report.choices,
               repair: report.repair,
             });
+          if (request.kind === "github-terminal")
+            return {
+              kind: "github-terminal" as const,
+              pin: report.selected,
+              credential: yield* github.terminalForAccount(
+                {
+                  id: report.selected.item.id,
+                  expectedVersion: report.selected.item.version,
+                  repository: input.repository,
+                  command: request.input.command,
+                },
+                account,
+              ),
+            };
           return yield* github.runForAccount(
             {
               id: report.selected.item.id,
               expectedVersion: report.selected.item.version,
               repository: input.repository,
-              operation: input.operation,
+              operation: request.input.operation,
             },
             account,
           );
         });
+        if (request.kind === "github-terminal") {
+          const result = yield* perform;
+          if (!("kind" in result)) return yield* new VaultError({ reason: "invalid-response" });
+          return result;
+        }
+        const githubPerform = perform.pipe(
+          Effect.filterOrFail(
+            (result): result is VaultGitHubResult => !("kind" in result),
+            () => new VaultError({ reason: "invalid-response" }),
+          ),
+        );
         const tracked =
           request.mode === "recover" ||
-          ["pr-comment", "issue-comment", "issue-create"].includes(input.operation.action);
-        if (!tracked) return { kind: "github", result: yield* perform };
+          ["pr-comment", "issue-comment", "issue-create"].includes(request.input.operation.action);
+        if (!tracked) return { kind: "github", result: yield* githubPerform };
         if (!request.operationId || !request.mode)
           return yield* new VaultError({ reason: "invalid-input" });
         const result = yield* journal.run(
           {
             operationId: request.operationId,
             mode: request.mode,
-            proposal: input,
+            proposal: request.input,
             scope: {
               sourceEnvironmentId: lease.sourceEnvironmentId,
               keyFingerprint: lease.keyFingerprint,
@@ -168,7 +194,7 @@ const make = Effect.gen(function* () {
             { lease, itemId: null, expectedVersion: null, action: "inspect", destination: null },
             account.authorize,
           ),
-          perform,
+          githubPerform,
         );
         return { kind: "github", result };
       }
@@ -217,6 +243,7 @@ const make = Effect.gen(function* () {
         if (sessions.size >= MAX_SESSIONS) return yield* new VaultSshError({ reason: "capacity" });
         const session: VaultSshAgentSession = {
           sessionId,
+          label: pin.item.label,
           id: pin.item.id,
           version: pin.item.version,
           expiresAt: now + SESSION_MS,

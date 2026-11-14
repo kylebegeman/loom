@@ -3,6 +3,8 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthSessionId,
   EnvironmentId,
   type AuthClientMetadata,
@@ -835,6 +837,7 @@ it.effect("requires a passkey sign-in in the browser and natively when the host 
   Effect.gen(function* () {
     const test = yield* fixture;
     test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = "true";
+    test.env.LOOM_LIBRARY_AUTHORITY = "true";
     const accessToken = yield* test.access();
     const bound = yield* atHash(accessToken);
     const nativeIdToken = (amr?: ReadonlyArray<string>) =>
@@ -883,6 +886,14 @@ it.effect("requires a passkey sign-in in the browser and natively when the host 
       expect(test.issued).toHaveLength(0);
       yield* browserSignIn(["phr"]);
       yield* identity.createSession(native(yield* nativeIdToken(["otp", "phr"])), CLIENT);
+      for (const grant of test.issued) {
+        expect(grant.scopes).toContain(AuthVaultReadScope);
+        expect(grant.scopes).toContain(AuthVaultWriteScope);
+        expect(grant.scopes).not.toContain(AuthAccessWriteScope);
+      }
+      expect((yield* identity.verifyAccessToken(accessToken)).scopes).not.toContain(
+        AuthVaultWriteScope,
+      );
       expect(test.issued.map((grant) => grant.method)).toEqual([
         "browser-session-cookie",
         "bearer-access-token",
@@ -957,11 +968,19 @@ it.effect("refuses to enable Identity with a sign-in limit outside its range", (
 );
 
 it.effect(
-  "links a native renewal to the caller's live session and ends the whole chain on logout",
+  "renews Vault access from the original passkey sign-in and revokes the whole device chain",
   () =>
     Effect.gen(function* () {
       const test = yield* fixture;
+      test.env.LOOM_LIBRARY_AUTHORITY = "true";
+      test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = "true";
+      test.env.LOOM_IDENTITY_MAX_SESSION_AGE = "30d";
       const token = yield* test.access();
+      const idToken = yield* test.signed(
+        { at_hash: yield* atHash(token), amr: ["phr"], auth_time: test.seconds - 86_400 },
+        "loom-native",
+        "JWT",
+      );
       const sessions = SessionStore.layer.pipe(
         Layer.provide(SqlitePersistence.layerMemory),
         Layer.provide(ServerSecretStore.layer),
@@ -977,6 +996,7 @@ it.effect(
       const native = {
         type: "native" as const,
         accessToken: token,
+        idToken,
         environmentId: EnvironmentId.make("host-id"),
       };
       yield* Effect.gen(function* () {
@@ -989,6 +1009,12 @@ it.effect(
           undefined,
           first.access_token,
         );
+        for (const session of [first, renewal]) {
+          const granted = (yield* local.verify(session.access_token)).scopes;
+          expect(granted).toContain(AuthVaultReadScope);
+          expect(granted).toContain(AuthVaultWriteScope);
+          expect(granted).not.toContain(AuthAccessWriteScope);
+        }
         const unrelated = yield* identity.createSession(native, CLIENT, undefined, "not-a-session");
         const ordinary = yield* local.issue({
           subject: "browser",

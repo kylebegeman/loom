@@ -3,7 +3,7 @@ import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultTestAccountMutation,
   vaultTestAccountDestination,
@@ -45,7 +45,7 @@ export function VaultTestAccountSettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-test-accounts")) return null;
   return (
     <SettingsSection title="Vault test accounts">

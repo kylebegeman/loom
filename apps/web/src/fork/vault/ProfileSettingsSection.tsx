@@ -7,8 +7,8 @@ import { vaultProfileTarget } from "./profile-navigation";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  AuthAccessReadScope,
-  AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   ProjectId,
   ThreadId,
   type EnvironmentId,
@@ -74,8 +74,8 @@ export function VaultProfileSettingsSection() {
     (requested?.environmentId === environment?.environmentId && requested?.section === "profiles"
       ? (requested.projectId ?? null)
       : null);
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope),
-    canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope),
+    canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultWriteScope);
   if (
     !environment ||
     !supportsLoomFeature(

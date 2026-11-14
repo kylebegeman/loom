@@ -48,6 +48,8 @@ apps/web/src/components/settings/KeybindingsSettings.logic.ts	ext-keybindings	7
 apps/web/src/components/settings/KeybindingsSettings.logic.test.ts	ext-keybindings	7
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
+apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-auth-lock	1
+apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-auth-lock	1
 apps/server/src/provider/CodexProvider.ts	codex-login-email	2
 apps/server/src/auth/utils.ts	secure-session-cookies	4
 apps/server/src/auth/http.ts	secure-session-cookies	9
@@ -1826,6 +1828,12 @@ apps/web/src/fork/identity/LoomSignIn.tsx	connect-ui	1
 apps/web/src/routes/__root.tsx	connect-ui	1
 apps/web/src/routes/approve-agent.tsx	connect-ui	1
 packages/client-runtime/src/connection/routes.ts	connect-ui	1
+
+# Narrow Vault permissions for the single passkey-verified account owner.
+packages/contracts/src/auth.ts	account-vault	5
+apps/server/src/auth/PocketId.ts	account-vault	1
+
+# Account links between enrolled computers.
 apps/server/src/mcp/McpHttpServer.ts	account-links	7
 apps/server/src/mcp/McpHttpServer.test.ts	account-links	6
 apps/server/src/peer/PeerForwarding.ts	account-links	7

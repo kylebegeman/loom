@@ -1204,7 +1204,7 @@ const make = Effect.gen(function* () {
     return true;
   });
   // fork: identity-renewal
-  /** The session a socket should hold next: itself while live, else its newest live renewal. */
+  /** A socket keeps its captured permissions; only a renewal retaining every scope can extend it. */
   const nextInChain = Effect.fn("SessionStore.nextInChain")(function* (sessionId: AuthSessionId) {
     const lookup = (id: AuthSessionId) =>
       authSessions
@@ -1223,6 +1223,7 @@ const make = Effect.gen(function* () {
     for (const id of linkedSessionIds(yield* Ref.get(renewalLinksRef), sessionId, "renewals")) {
       const row = yield* lookup(id);
       if (Option.isNone(row) || row.value.revokedAt !== null) continue;
+      if (!current.value.scopes.every((scope) => row.value.scopes.includes(scope))) continue;
       const expiresAt = row.value.expiresAt.epochMilliseconds;
       if (expiresAt > now.epochMilliseconds && (next === undefined || expiresAt > next.expiresAt))
         next = { sessionId: id, expiresAt };

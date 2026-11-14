@@ -1,3 +1,5 @@
+import * as OpenBaoStore from "./OpenBaoStore.ts";
+import * as Option from "effect/Option";
 import type { ThreadId } from "@t3tools/contracts";
 import {
   ACCOUNT_VAULT_ROUTE,
@@ -8,6 +10,7 @@ import {
   type VaultSshError,
   type VaultGitHubRunInput,
   type VaultGitHubResult,
+  type VaultGitHubTerminalRunInput,
   VaultGitHubError,
   type VaultConnectionError,
 } from "@t3tools/contracts/fork";
@@ -30,9 +33,16 @@ export class AccountVaultClient extends Context.Service<
   {
     readonly available: Effect.Effect<boolean, VaultError>;
     readonly execute: (
-      request: Exclude<AccountVaultRequest, { readonly kind: "github" }>,
+      request: Exclude<AccountVaultRequest, { readonly kind: "github" | "github-terminal" }>,
       threadId: ThreadId,
     ) => Effect.Effect<AccountVaultResponse, VaultError | VaultSshError>;
+    readonly terminalCredential: (
+      input: VaultGitHubTerminalRunInput,
+      threadId: ThreadId,
+    ) => Effect.Effect<
+      Extract<AccountVaultResponse, { kind: "github-terminal" }>,
+      VaultError | VaultGitHubError | VaultConnectionError
+    >;
     readonly github: (
       input: VaultGitHubRunInput,
       threadId: ThreadId,
@@ -41,6 +51,7 @@ export class AccountVaultClient extends Context.Service<
 >()("t3/fork/vault/AccountVaultClient") {}
 const make = Effect.gen(function* () {
   const connection = yield* LibraryConnection.LibraryConnectionService;
+  const store = yield* Effect.serviceOption(OpenBaoStore.OpenBaoStore);
   const workloads = yield* AccountWorkloads.AccountWorkloads;
   const random = yield* SecureRandom.SecureRandom;
   const post = Effect.fn("AccountVaultClient.post")(function* (
@@ -48,10 +59,12 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
   ) {
     const transportFailure = () =>
-      request.kind === "github"
+      request.kind === "github" || request.kind === "github-terminal"
         ? new VaultGitHubError({
             reason: "failed",
-            ...(request.operationId ? { operationId: request.operationId } : {}),
+            ...("operationId" in request && request.operationId
+              ? { operationId: request.operationId }
+              : {}),
           })
         : unavailable();
     const current = yield* connection.current.pipe(Effect.mapError(unavailable));
@@ -84,7 +97,9 @@ const make = Effect.gen(function* () {
     const body = response.json.pipe(
       Effect.provideService(
         HttpIncomingMessage.MaxBodySize,
-        ByteSize.kibibytes(request.kind === "github" ? 512 : 96),
+        ByteSize.kibibytes(
+          request.kind === "github" || request.kind === "github-terminal" ? 512 : 96,
+        ),
       ),
       Effect.timeout("15 seconds"),
     );
@@ -107,12 +122,17 @@ const make = Effect.gen(function* () {
     return decoded;
   });
   return AccountVaultClient.of({
-    available: connection.current.pipe(
-      Effect.map(
-        (current) => current.kind === "remote" && current.credential?.account !== undefined,
-      ),
-      Effect.mapError(unavailable),
-    ),
+    available: Effect.gen(function* () {
+      if (
+        Option.isSome(store) &&
+        (typeof store.value.configured === "boolean"
+          ? store.value.configured
+          : (yield* store.value.status).state !== "unconfigured")
+      )
+        return false;
+      const current = yield* connection.current;
+      return current.kind === "remote" && current.credential?.account !== undefined;
+    }).pipe(Effect.mapError(unavailable)),
     execute: Effect.fn("AccountVaultClient.execute")(function* (request, threadId) {
       return yield* post(request, threadId).pipe(
         Effect.catchTags({
@@ -121,6 +141,15 @@ const make = Effect.gen(function* () {
         }),
       );
     }),
+    terminalCredential: Effect.fn("AccountVaultClient.terminalCredential")(
+      function* (input, threadId) {
+        const result = yield* post({ kind: "github-terminal", input }, threadId).pipe(
+          Effect.catchTags({ VaultSshError: () => Effect.fail(unavailable()) }),
+        );
+        if (result.kind !== "github-terminal") return yield* unavailable();
+        return result;
+      },
+    ),
     github: Effect.fn("AccountVaultClient.github")(function* (input, threadId) {
       const tracked =
         input.operationId !== undefined ||

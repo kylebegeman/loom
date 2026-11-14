@@ -4,6 +4,7 @@ import {
   ACCOUNT_ENROLLMENT_FEATURE,
   ACCOUNT_JOIN_FEATURE,
   ACCOUNT_COMPUTERS_FEATURE,
+  ACCOUNT_JOIN_PROMPTS_FEATURE,
   ACCOUNT_VAULT_FEATURE,
 } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
@@ -41,6 +42,7 @@ import {
   CHECKOUT_RELEASE_FEATURE,
   CHECKOUT_RESTORE_FEATURE,
   VAULT_ITEM_SEARCH_FEATURE,
+  SWITCHBOARD_HUB_FEATURE,
 } from "@t3tools/contracts/fork";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
@@ -129,6 +131,8 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "landed-worktree-cleanup",
   "switchboard",
   "switchboard-shared-gateway",
+  // Only the computer sharing its Switchboard, which the account's other computers route through.
+  ...(process.env.LOOM_SWITCHBOARD_SHARE_GATEWAY === "true" ? [SWITCHBOARD_HUB_FEATURE] : []),
   "model-preview-3d",
   "model-ortho-camera",
   "model-bed-fit",
@@ -207,6 +211,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
         ACCOUNT_LINKS_LIBRARY_FEATURE,
         ACCOUNT_GATEWAY_FEATURE,
         ACCOUNT_JOIN_FEATURE,
+        ACCOUNT_JOIN_PROMPTS_FEATURE,
         ACCOUNT_COMPUTERS_FEATURE,
         ACCOUNT_VAULT_FEATURE,
       ]

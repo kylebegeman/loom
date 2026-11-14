@@ -1,8 +1,8 @@
 import { useVaultEnvironment } from "./useVaultEnvironment";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  AuthAccessReadScope,
-  AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthProvidersManageScope,
   ProviderInstanceEnvironmentVariableName,
   ProviderInstanceId,
@@ -123,8 +123,8 @@ function ProviderCredentialEditor({
   const config = useEnvironmentServerConfig(environmentId);
   const instance = config?.settings.providerInstances[instanceId];
   const canManage = useEnvironmentScope(environmentId, AuthProvidersManageScope);
-  const canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
-  const canRead = useEnvironmentScope(vaultEnvironmentId, AuthAccessReadScope);
+  const canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
+  const canRead = useEnvironmentScope(vaultEnvironmentId, AuthVaultReadScope);
   const canUpdate = useAtomValue(
     serverEnvironment.updateSettings.permissionAtom(environmentId, {
       patch: {},
