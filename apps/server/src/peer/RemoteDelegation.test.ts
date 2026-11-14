@@ -2521,13 +2521,7 @@ it.effect("does not delegate a fork to a vanilla checkout sharing its upstream k
         ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
       >([]);
       const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
-      const a = yield* makeLaptop(
-        database,
-        offers,
-        undefined,
-        Effect.void,
-        "github.com/acme/loom",
-      );
+      const a = yield* makeLaptop(database, offers, undefined, Effect.void, "github.com/acme/loom");
       yield* seedParent(a);
       yield* linkTo(a.links, b, "full-access");
       const result = yield* a.call("delegate_task", {
