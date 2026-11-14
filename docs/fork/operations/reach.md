@@ -375,10 +375,10 @@ including one whose first setup failed. Retire it first.
 
 When the Library refuses a setup because it is not set up for reach or needs a Loom update, the
 computer stops any connector still running from an earlier setup and shows the Library's reason.
-After a refused turn-on the switch is off and the status says to turn it on again once the
-Library is ready; after a refusal at startup reach stays on and the status says to turn it off
-and on again. Neither needs a restart. A refusal reason the computer's build does not know
-counts as an unusable answer, and the computer keeps retrying.
+Reach stays on and the computer asks again every 15 minutes, so a computer that joined before the
+Library had Loomhost turns it on with no restart or manual step. Turning reach on again asks at
+once; turning it off stops asking. A refusal reason the computer's build does not know counts as
+an unusable answer, and the computer keeps retrying.
 
 ### Leftovers
 

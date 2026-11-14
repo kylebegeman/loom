@@ -60,7 +60,10 @@ import { runReachTunnel } from "./tunnel.ts";
 
 const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 10 * 60_000;
-/** A refused sign-in or key changes only on the Library's side, so it is asked again this rarely. */
+/**
+ * A refused sign-in or key, or a Library without Loomhost, changes only on the Library's side, so
+ * it is asked again this rarely.
+ */
 const STOPPED_RETRY_MS = 15 * 60_000;
 
 const MESSAGES = {
@@ -612,17 +615,19 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
           }
           const block = learnedFrom(outcome);
           if (block !== null) {
-            // A refusal right after turning reach on means it cannot be on. At start the intent
-            // stays, and turning reach on again asks the Library again. Stored before the block
-            // shows, so no status reads blocked yet still on.
-            if (tentative) yield* persistOrRemember((current) => ({ ...current, enabled: false }));
+            // A Library that is not set up for reach or is outdated can still gain it, so the
+            // intent stays and reach turns on once it does. Only "is-library" rules reach out;
+            // right after turning on that is stored before the block shows.
+            const waits = block !== "is-library";
+            if (tentative && !waits)
+              yield* persistOrRemember((current) => ({ ...current, enabled: false }));
             learned = block;
             failure = null;
             // Turning reach on again while its connector was down asks first, so that connector
             // still runs here. It must not outlive an intent the Library just refused.
             yield* stopConnector;
             yield* publish;
-            return null;
+            return waits ? STOPPED_RETRY_MS : null;
           }
           const retry = retryFor(outcome, failures);
           if (failure === null) {
@@ -719,9 +724,11 @@ export const makeReachService = Effect.fn("ReachService.make")(function* (
     connection = yield* libraryConnection.current;
     if (connection.kind !== "remote") return yield* new ReachError({ reason: "unavailable" });
     decided = true;
+    // A Library that refused may be ready now, so turning on again asks it at once.
     const settled =
-      (connector !== null && connector.status.state !== "error") ||
-      (failure === null && Option.isSome(FiberHandle.getUnsafe(provisioning)));
+      learned === null &&
+      ((connector !== null && connector.status.state !== "error") ||
+        (failure === null && Option.isSome(FiberHandle.getUnsafe(provisioning))));
     if (saved.enabled && settled) return view();
     if (!saved.enabled)
       yield* persist((current) => ({ ...withoutRetired(current), enabled: true }));

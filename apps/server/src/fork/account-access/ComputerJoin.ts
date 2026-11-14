@@ -89,8 +89,9 @@ const remoteNoteFor = (remote: ReachStatus): string | null => {
     return "off. Turn on Loomhost in this computer's details once your Library has Loomhost set up.";
   if (remote.state !== "unavailable") return null;
   if (remote.blocked === "library-not-ready")
-    return "off until your Library has Loomhost set up. Devices on the same network or Tailscale can still connect.";
-  if (remote.blocked === "library-outdated") return "off until Loom on your Library is updated.";
+    return "off until your Library has Loomhost set up, then it turns on by itself. Devices on the same network or Tailscale can still connect.";
+  if (remote.blocked === "library-outdated")
+    return "off until Loom on your Library is updated, then it turns on by itself.";
   return null;
 };
 

@@ -535,10 +535,16 @@ describe("ReachService", () => {
           h.answers.push(refusal(409, "not-configured"));
           yield* h.adjust(30_000);
           yield* expectEvent(h, { kind: "request", action: "ensure" });
-          yield* expectEvent(h, { kind: "stop", token: "token-1", enabledOnDisk: false });
+          // The connector stops in the background while the ensure loop starts its wait.
+          expect([yield* h.next, yield* h.next]).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ kind: "stop", token: "token-1", enabledOnDisk: true }),
+              expect.objectContaining({ kind: "sleep", millis: 15 * MINUTE }),
+            ]),
+          );
           expect(yield* h.service.status).toMatchObject({
             state: "unavailable",
-            enabled: false,
+            enabled: true,
             blocked: "library-not-ready",
           });
           expect(h.service.guardState().serving).toBe(false);
@@ -644,35 +650,53 @@ describe("ReachService", () => {
     ),
   );
 
-  it.effect(
-    "turns back off when the Library is not set up for reach, and asks again on request",
-    () =>
-      withReach({ answers: [refusal(409, "not-configured")] }, (h) =>
-        Effect.gen(function* () {
-          yield* h.service.setEnabled(true);
-          yield* expectEvent(h, { kind: "request" });
-          const refused = yield* h.waitFor((status) => status.state === "unavailable");
-          expect(refused).toMatchObject({ enabled: false, blocked: "library-not-ready" });
-          expect(yield* h.sidecar).toMatchObject({ enabled: false });
-          expect(h.service.guardState().serving).toBe(false);
-
-          yield* h.service.setEnabled(true);
-          yield* expectEvent(h, { kind: "request" });
-          yield* expectEvent(h, { kind: "start" });
-          expect(yield* h.service.status).toMatchObject({ state: "connected", blocked: null });
-        }),
-      ),
-  );
-
-  it.effect("reports a Library without reach routes as outdated", () =>
-    withReach({ answers: [page(404)] }, (h) =>
+  it.effect("stays on while the Library is not set up for reach, and turns on once it is", () =>
+    withReach({ answers: [refusal(409, "not-configured"), refusal(409, "not-configured")] }, (h) =>
       Effect.gen(function* () {
         yield* h.service.setEnabled(true);
         yield* expectEvent(h, { kind: "request" });
-        expect(yield* h.waitFor((status) => status.state === "unavailable")).toMatchObject({
-          enabled: false,
+        yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
+        expect(yield* h.service.status).toMatchObject({
+          state: "unavailable",
+          enabled: true,
+          blocked: "library-not-ready",
+        });
+        expect(yield* h.sidecar).toMatchObject({ enabled: true });
+        expect(h.service.guardState().serving).toBe(false);
+
+        yield* h.adjust(15 * MINUTE);
+        yield* expectEvent(h, { kind: "request" });
+        yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
+        // The owner sets up Loomhost; the next ask turns reach on with no one touching it.
+        yield* h.adjust(15 * MINUTE);
+        yield* expectEvent(h, { kind: "request" });
+        yield* expectEvent(h, { kind: "start" });
+        expect(yield* h.service.status).toMatchObject({ state: "connected", blocked: null });
+      }),
+    ),
+  );
+
+  it.effect("asks a refusing Library again at once on turn on, and never after turn off", () =>
+    withReach({ answers: [page(404), refusal(409, "not-configured")] }, (h) =>
+      Effect.gen(function* () {
+        yield* h.service.setEnabled(true);
+        yield* expectEvent(h, { kind: "request" });
+        yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
+        expect(yield* h.service.status).toMatchObject({
+          state: "unavailable",
+          enabled: true,
           blocked: "library-outdated",
         });
+
+        yield* h.service.setEnabled(true);
+        yield* expectEvent(h, { kind: "request" });
+        yield* expectEvent(h, { kind: "sleep", millis: 15 * MINUTE });
+        expect((yield* h.service.status).blocked).toBe("library-not-ready");
+
+        yield* h.service.setEnabled(false);
+        yield* h.adjust(15 * MINUTE);
+        expect(yield* h.settled).toBe(true);
+        expect(yield* h.sidecar).toMatchObject({ enabled: false });
       }),
     ),
   );

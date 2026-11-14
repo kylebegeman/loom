@@ -200,15 +200,15 @@ describe("reachView", () => {
         disabledReason: REACH_BLOCKED_TEXT[blocked],
       });
     }
-    // A refused turn on leaves reach off; turning it on again asks the Library again.
+    // Turned off while refused, turning it on again asks the Library again.
     for (const blocked of ["library-not-ready", "library-outdated"] as const) {
       const view = reachView(input(status({ state: "unavailable", enabled: false, blocked })));
       expect(view.switch).toEqual({ checked: false, disabled: false, disabledReason: null });
       expect(view.status.text).toMatch(/turn this on again/iu);
-      // A refusal at start keeps reach on, so the way back starts with turning it off.
+      // Left on, reach waits for the Library and turns on by itself.
       const on = reachView(input(status({ state: "unavailable", enabled: true, blocked })));
       expect(on.switch).toEqual({ checked: true, disabled: false, disabledReason: null });
-      expect(on.status.text).toMatch(/turn Loomhost off and on again/iu);
+      expect(on.status.text).toMatch(/turns on here by itself/iu);
     }
   });
 

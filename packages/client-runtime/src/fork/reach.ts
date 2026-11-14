@@ -137,14 +137,15 @@ export const REACH_BLOCKED_TEXT: Readonly<Record<ReachBlocked, string>> = {
 type RetryableBlock = Extract<ReachBlocked, "library-not-ready" | "library-outdated">;
 
 /**
- * Blocks a refused ensure taught the computer. Turning reach on asks the Library again, so the
- * switch stays usable; the other blocks come from the reloaded Library connection. A
- * refusal at start keeps reach on, so then the way back is turning it off and on.
+ * Blocks a refused ensure taught the computer, so the switch stays usable; the other blocks come
+ * from the reloaded Library connection. Reach that stays on asks the Library again every 15
+ * minutes and turns on once it can.
  */
 const BLOCKED_WHILE_ON_TEXT: Readonly<Record<RetryableBlock, string>> = {
   "library-not-ready":
-    "Your Library is not set up for Loomhost yet. It needs a Loomhost zone and a Cloudflare token file. Turn Loomhost off and on again once it has them.",
-  "library-outdated": "Update Loom on your Library, then turn Loomhost off and on again.",
+    "Your Library is not set up for Loomhost yet. It needs a Loomhost zone and a Cloudflare token file. Loomhost turns on here by itself once it has them.",
+  "library-outdated":
+    "Update Loom on your Library. Loomhost turns on here by itself once it is updated.",
 };
 
 const isRetryable = (blocked: ReachBlocked): blocked is RetryableBlock =>
