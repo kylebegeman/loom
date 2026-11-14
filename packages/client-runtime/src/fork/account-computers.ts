@@ -15,7 +15,7 @@ import {
 } from "../connection/catalog.ts";
 import { BearerConnectionTarget } from "../connection/model.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
-import { connectionRoutes } from "../connection/routes.ts";
+import { connectionRouteId, connectionRoutes } from "../connection/routes.ts";
 
 export function accountComputerEnrollmentReady(input: {
   readonly libraryEnvironmentId: EnvironmentId | null;
@@ -88,14 +88,22 @@ export const syncAccountComputers = Effect.fn("AccountComputers.sync")(function*
   const library = entries.get(libraryEnvironmentId);
   if (library === undefined || !library.enabled) return;
   for (const computer of listing.environments) {
-    // Existing connections include local recovery routes and deliberate disabled states.
+    const existing = entries.get(computer.environmentId);
     if (
-      entries.has(computer.environmentId) ||
+      existing?.enabled === false ||
+      existing?.target._tag === "PrimaryConnectionTarget" ||
       !computer.loomFeatures.includes(ACCOUNT_ACCESS_FEATURE)
     )
       continue;
     const registration = accountComputerRegistration(library, computer);
-    if (registration === null) continue;
+    if (
+      registration === null ||
+      (existing !== undefined &&
+        connectionRoutes(existing).some(
+          (route) => connectionRouteId(route.target) === registration.target.connectionId,
+        ))
+    )
+      continue;
     yield* registry.register(registration).pipe(
       Effect.catch(() =>
         Effect.logWarning("Loom could not save a discovered account computer connection.", {

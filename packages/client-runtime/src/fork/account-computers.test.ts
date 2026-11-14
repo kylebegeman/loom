@@ -109,7 +109,7 @@ const fixture = Effect.gen(function* () {
 });
 
 it.effect(
-  "discovers compatible account computers once and preserves existing and disabled connections",
+  "discovers account routes for new and saved computers while preserving disabled connections",
   () =>
     Effect.gen(function* () {
       const f = yield* fixture;
@@ -130,14 +130,48 @@ it.effect(
         reported(STUDIO),
       ];
       yield* f.sync(computers);
-      yield* f.sync(computers);
-      expect(f.writes).toHaveLength(1);
+      const connectionId = "studio-lan";
+      yield* SubscriptionRef.update(f.entries, (current) =>
+        new Map(current).set(STUDIO, {
+          target: new BearerConnectionTarget({
+            environmentId: STUDIO,
+            label: "Studio",
+            connectionId,
+          }),
+          profile: Option.some(
+            new BearerConnectionProfile({
+              environmentId: STUDIO,
+              label: "Studio",
+              connectionId,
+              httpBaseUrl: "http://192.168.1.20:3773/",
+              wsBaseUrl: "ws://192.168.1.20:3773/ws",
+            }),
+          ),
+          enabled: true,
+        }),
+      );
+      const updated = computers.map((computer) =>
+        computer.environmentId === STUDIO
+          ? { ...computer, loomFeatures: [ACCOUNT_ACCESS_FEATURE] }
+          : computer,
+      );
+      yield* f.sync(updated);
+      yield* f.sync(updated);
+      expect(f.writes).toHaveLength(2);
       expect(f.writes[0]).toMatchObject({
         _tag: "AccountConnectionRegistration",
         target: { environmentId: BOOK },
         profile: { account: { libraryEnvironmentId: LIBRARY, connectionId: "library-login" } },
       });
       expect(f.writes[0]).not.toHaveProperty("credential");
+      expect(f.writes[1]).toMatchObject({
+        _tag: "AccountConnectionRegistration",
+        target: { environmentId: STUDIO },
+        profile: {
+          httpBaseUrl: "https://library.example.test/api/loom/account/computers/studio/",
+          account: { libraryEnvironmentId: LIBRARY, connectionId: "library-login" },
+        },
+      });
       expect((yield* SubscriptionRef.get(f.entries)).get(DESK)).toEqual(disabled);
     }),
 );

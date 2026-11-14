@@ -281,7 +281,10 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
     expect(reachAllowsRequest("GET", "/ws?wsTicket=abc%2Fdef")).toBe(true);
     expect(reachAllowsRequest("POST", "/api/auth/clients/revoke")).toBe(true);
     for (const [method, path] of [
+      ["POST", "/api/auth/websocket-ticket/rpc"],
+      ["POST", "/api/auth/websocket-ticket/media"],
       ["GET", "/api/loom/switchboard/v1/models"],
+      ["GET", "/api/loom/switchboard/codex/models"],
       ["GET", "/api/loom/switchboard/v1/responses"],
       ["POST", "/api/loom/switchboard/v1/responses"],
       ["POST", "/api/loom/switchboard/v1/chat/completions"],
@@ -314,6 +317,8 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       "/api/auth/pairing-token",
       "/api/auth/pairing-links",
       "/api/auth/browser-session",
+      "/api/auth/websocket-ticket/admin",
+      "/api/auth/websocket-ticket/rpc/other",
       "/api/observability/v1/traces",
       "/api/connect/link-state",
       "/api/projectsx",
@@ -322,6 +327,7 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       "/api/loom/switchboard",
       "/api/loom/switchboard/v0/management",
       "/api/loom/switchboard/v1/models/",
+      "/api/loom/switchboard/codex/models/",
       "/api/loom/switchboard/v1/responses/other",
     ]) {
       expect(reachAllowsRequest("GET", path)).toBe(false);

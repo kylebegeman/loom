@@ -1,9 +1,12 @@
 import { expect, it } from "@effect/vitest";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Context from "effect/Context";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -19,6 +22,8 @@ import {
 } from "effect/http";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { upstreamWebSocketConstructor } from "../../device/DeviceHubProxy.ts";
+import { ProviderInstanceId } from "@t3tools/contracts";
+import * as ServerSettings from "../../serverSettings.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { SwitchboardGatewayRoutes } from "./gateway-http.ts";
 import * as Gateway from "./SwitchboardGateway.ts";
@@ -32,11 +37,25 @@ const fixture = Effect.gen(function* () {
     socketConstructor: undefined as Socket.WebSocketConstructor["Service"] | undefined,
   };
   const environment: NodeJS.ProcessEnv = { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" };
+  const fs = yield* FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer));
+  const home = yield* fs.makeTempDirectoryScoped();
+  const instanceHome = yield* fs.makeTempDirectoryScoped();
   const requests: Array<{ url: string; headers: Readonly<Record<string, string>>; body: string }> =
     [];
   const dependencies = Layer.mergeAll(
     Layer.succeed(HostProcess.Environment, environment),
     Layer.succeed(HostProcess.Platform, "darwin"),
+    Layer.succeed(HostProcess.HomeDirectory, home),
+    NodeFileSystem.layer,
+    NodePath.layer,
+    ServerSettings.layerTest({
+      providerInstances: {
+        [ProviderInstanceId.make("codex_2")]: {
+          driver: "codex",
+          config: { homePath: instanceHome },
+        },
+      },
+    }),
     Layer.succeed(Socket.WebSocketConstructor, (url, options) => {
       if (!state.socketConstructor) throw new Error("Unexpected WebSocket");
       return state.socketConstructor(url, options);
@@ -116,7 +135,7 @@ const fixture = Effect.gen(function* () {
       ),
       path,
     );
-  return { state, environment, requests, gateway, send };
+  return { state, environment, requests, gateway, send, fs, home, instanceHome };
 });
 
 it.effect("streams personal inference through only the restricted local gateway", () =>
@@ -311,5 +330,34 @@ it.effect("carries Responses text and binary WebSocket frames through the public
     expect(frames).toEqual(["ready", [0, 255, 3]]);
     client.close(1000);
     yield* Effect.promise(() => Promise.all([closed.promise, targetClosed.promise]));
+  }),
+);
+
+it.effect("serves the newest routed Codex catalog to holders of the client credential", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const sol = { slug: "gpt-6.1-sol", service_tiers: [] };
+    const astra = { slug: "gpt-6-astra", service_tiers: [] };
+    yield* f.fs.makeDirectory(`${f.home}/.codex`);
+    yield* f.fs.writeFileString(
+      `${f.home}/.codex/models_cache.json`,
+      JSON.stringify({ fetched_at: "2026-07-10T20:02:39.132177Z", models: [astra] }),
+    );
+    yield* f.fs.writeFileString(
+      `${f.instanceHome}/models_cache.json`,
+      JSON.stringify({ fetched_at: "2026-11-13T20:00:00Z", etag: "private", models: [sol, astra] }),
+    );
+    expect((yield* f.send("/codex/models", "GET", "b".repeat(64)).pipe(Effect.flip)).reason).toBe(
+      "authentication",
+    );
+    expect((yield* f.send("/codex/models", "POST").pipe(Effect.flip)).reason).toBe("path");
+    const response = yield* f.send("/codex/models");
+    expect(response.headers["cache-control"]).toBe("no-store, no-transform");
+    expect(yield* Effect.promise(() => HttpServerResponse.toWeb(response).json())).toEqual({
+      models: [sol, astra],
+    });
+    expect(f.requests).toHaveLength(0);
+    yield* f.fs.remove(`${f.instanceHome}/models_cache.json`);
+    expect((yield* f.send("/codex/models").pipe(Effect.flip)).reason).toBe("unavailable");
   }),
 );

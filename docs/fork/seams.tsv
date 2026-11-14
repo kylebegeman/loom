@@ -61,7 +61,7 @@ apps/server/src/provider/Drivers/ClaudeDriver.ts	switchboard	14
 apps/server/src/provider/Drivers/CodexDriver.ts	switchboard	8
 apps/server/src/provider/Drivers/CodexManagedProvider.ts	switchboard	2
 apps/server/src/usage/cliproxyApi.ts	switchboard	10
-apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	switchboard	36
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	switchboard	37
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	switchboard	11
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	9
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
