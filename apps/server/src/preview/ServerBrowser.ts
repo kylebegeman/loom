@@ -918,7 +918,8 @@ const make = Effect.gen(function* () {
     closeSession: boolean,
     reopening = false,
     preserveContext = false, // fork: browser-timeout-recovery
-  ) => {    const key = tabKey(tab.threadId, tab.tabId);
+  ) => {
+    const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
     tabs.delete(key);
     tab.closing = true;
@@ -929,7 +930,8 @@ const make = Effect.gen(function* () {
     const end =
       (tab.desktop || reopening || preserveContext) && !closeSession && sessionOpen(tab)
         ? "reconnect"
-        : "gone";    for (const viewer of tab.viewers) viewer.push({ _tag: end });
+        : "gone";
+    for (const viewer of tab.viewers) viewer.push({ _tag: end });
     void tab.control.close().catch(constVoid);
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
     else {

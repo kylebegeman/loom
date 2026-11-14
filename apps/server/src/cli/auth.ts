@@ -328,5 +328,10 @@ const sessionCommand = Command.make("session").pipe(
 
 export const authCommand = Command.make("auth").pipe(
   Command.withDescription("Manage the local auth control plane for headless deployments."),
-  Command.withSubcommands([pairingCommand, sessionCommand, connectDeviceCommand, libraryPublisherCommand]), // fork: library-projects
+  Command.withSubcommands([
+    pairingCommand,
+    sessionCommand,
+    connectDeviceCommand,
+    libraryPublisherCommand, // fork: library-projects
+  ]),
 );
