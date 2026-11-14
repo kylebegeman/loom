@@ -88,9 +88,9 @@ const make = Effect.gen(function* () {
   const closeGitHub = (id: string) =>
     Effect.suspend(() => {
       const held = githubSessions.get(id);
-      githubSessions.delete(id);
       return held
         ? Scope.close(held.scope, Exit.void).pipe(
+            Effect.tap(() => Effect.sync(() => githubSessions.delete(id))),
             Effect.andThen(Deferred.succeed(held.done, undefined)),
             Effect.asVoid,
           )

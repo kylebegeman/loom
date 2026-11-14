@@ -2,6 +2,8 @@ import { vaultRun } from "./VaultActiveRun.testkit.ts";
 import * as ApprovalNotifications from "./ApprovalNotifications.ts";
 import * as GitHubTerminal from "./GitHubTerminal.ts";
 import * as VaultGitHub from "./VaultGitHub.ts";
+import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
+import * as Option from "effect/Option";
 import * as GitHubTransport from "./GitHubTransport.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -49,7 +51,21 @@ export const sshFixture = (
     SshCrypto.SshCrypto | SecureRandom.SecureRandom
   > = SshTransport.layer,
   githubAdapters = Layer.mergeAll(
-    GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
+    GitHubTransport.layer.pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(
+        Layer.suspend(() => {
+          const records = new Map<string, Uint8Array>();
+          return Layer.mock(ServerSecretStore)({
+            get: (name) => Effect.sync(() => Option.fromUndefinedOr(records.get(name))),
+            set: (name, value) =>
+              Effect.sync(() => {
+                records.set(name, value);
+              }),
+          });
+        }),
+      ),
+    ),
     GitHubCli.layer,
   ),
 ) =>

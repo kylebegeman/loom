@@ -101,8 +101,9 @@ once to let agents on your approved computers use its saved SSH and GitHub conne
 operation checks the computer's enrollment, active full-access/default run, selected item version
 and destination. SSH private keys stay on the Vault computer. SSH, Git and supported GitHub
 terminal commands run on the execution computer. Remote GitHub terminal commands require a
-GitHub App connection and receive a repository-limited installation token, revoked when the command
-ends or its bounded activation expires. Reusable tokens stay on the Vault computer; use
+GitHub App connection and receive a repository-limited installation token. When the command ends
+or its bounded activation expires, Loom revokes the token. If GitHub is unavailable, cleanup stays
+pending across restarts and retries until revocation succeeds or the token expires. Reusable tokens stay on the Vault computer; use
 `loom_vault_github` for backend-mediated operations with those connections. Structured GitHub
 actions run on the Vault computer through the Library. If a write loses its reply, its returned
 operation ID can recover the retained receipt without repeating the action. An unknown outcome
