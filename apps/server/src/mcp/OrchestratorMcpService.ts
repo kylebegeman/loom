@@ -2226,9 +2226,11 @@ const make = Effect.gen(function* () {
       }
       const modelSelection =
         parent?.thread.modelSelection ?? (yield* projectDefaultModelSelection(project));
-      const derivedTitle = input.prompt.split("\n")[0]?.trim() ?? "";
-      const title =
-        input.title ?? (derivedTitle.length > 0 ? derivedTitle.slice(0, 80) : "Scheduled task");
+      // Never end on a lone high surrogate, which renders as a broken character.
+      const derivedTitle = (input.prompt.split("\n")[0]?.trim() ?? "")
+        .slice(0, 80)
+        .replace(/[\uD800-\uDBFF]$/, "");
+      const title = input.title ?? (derivedTitle.length > 0 ? derivedTitle : "Scheduled task");
       const upsertInput: ScheduledTaskUpsertInput = {
         title,
         prompt: input.prompt,
@@ -3132,8 +3134,21 @@ const make = Effect.gen(function* () {
                 title: request.title,
                 index,
               });
-              // fork: library-projects -- use the durable create/bind path before dispatching a prompt.
-              if (libraryBinding !== null) {
+              const initialMessage =
+                request.prompt === undefined
+                  ? undefined
+                  : {
+                      senderThreadId: scope.thread.threadId,
+                      messageId: stableMessageId({
+                        scope,
+                        requestKey: key,
+                        index,
+                      }),
+                      text: request.prompt,
+                      attachments: [],
+                    };
+              // fork: library-projects -- use the durable create/bind path, which dispatches the prompt.
+              if (libraryBinding !== null)
                 yield* threadLaunch
                   .launch({
                     commandId,
@@ -3148,16 +3163,7 @@ const make = Effect.gen(function* () {
                     ...(parent.thread.linkOrigin === undefined
                       ? {}
                       : { linkOrigin: parent.thread.linkOrigin }),
-                    ...(request.prompt === undefined
-                      ? {}
-                      : {
-                          initialMessage: {
-                            messageId: stableMessageId({ scope, requestKey: key, index }),
-                            senderThreadId: scope.thread.threadId,
-                            text: request.prompt,
-                            attachments: [],
-                          },
-                        }),
+                    ...(initialMessage === undefined ? {} : { initialMessage }),
                     createdBy: "agent",
                     creationSource: "mcp",
                   })
@@ -3171,43 +3177,49 @@ const make = Effect.gen(function* () {
                       ),
                     ),
                   );
-              } else
-                // fork: library-projects
-                yield* threadManagement
-                  .dispatch({
-                    type: "thread.create",
-                    createdBy: "agent",
-                    creationSource: "mcp",
-                    commandId,
-                    threadId,
-                    projectId: parent.thread.projectId,
-                    title,
-                    modelSelection: target.modelSelection,
-                    runtimeMode,
-                    interactionMode,
-                    branch: parent.thread.branch,
-                    worktreePath: parent.thread.worktreePath,
-                    ...(parent.thread.linkOrigin === undefined
-                      ? {}
-                      : { linkOrigin: parent.thread.linkOrigin }),
-                  })
-                  .pipe(
-                    Effect.mapError((error) =>
-                      failure(
-                        "orchestration_error",
-                        `Unable to create thread ${index + 1}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
-                      ),
-                    ),
-                  );
+              const created =
+                libraryBinding !== null // fork: library-projects
+                  ? null
+                  : yield* threadManagement
+                      .dispatch({
+                        type: "thread.create",
+                        createdBy: "agent",
+                        creationSource: "mcp",
+                        commandId,
+                        threadId,
+                        projectId: parent.thread.projectId,
+                        title,
+                        modelSelection: target.modelSelection,
+                        runtimeMode,
+                        interactionMode,
+                        branch: parent.thread.branch,
+                        worktreePath: parent.thread.worktreePath,
+                        ...(parent.thread.linkOrigin === undefined
+                          ? {}
+                          : { linkOrigin: parent.thread.linkOrigin }),
+                        ...(initialMessage === undefined ? {} : { initialMessage }),
+                      })
+                      .pipe(
+                        Effect.mapError((error) =>
+                          failure(
+                            "orchestration_error",
+                            `Unable to create thread ${index + 1}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
+                          ),
+                        ),
+                      );
               // A receipt can appear after target resolution; use the committed thread's selection.
               const resolvedModelSelection = (yield* threadManagement
                 .getThreadRecords(threadId, [])
                 .pipe(Effect.mapError(threadManagementFailure))).thread.modelSelection;
-              if (request.prompt !== undefined && libraryBinding === null) {
-                // fork: library-projects
-
+              // A replayed creation that carried no prompt has no run yet.
+              if (
+                initialMessage !== undefined &&
+                created !== null && // fork: library-projects
+                !created.storedEvents.some(({ event }) => event.type === "run.created")
+              ) {
                 yield* threadManagement
                   .dispatch({
+                    ...initialMessage,
                     type: "message.dispatch",
                     createdBy: "agent",
                     creationSource: "mcp",
@@ -3218,14 +3230,6 @@ const make = Effect.gen(function* () {
                       index,
                     }),
                     threadId,
-                    senderThreadId: scope.thread.threadId,
-                    messageId: stableMessageId({
-                      scope,
-                      requestKey: key,
-                      index,
-                    }),
-                    text: request.prompt,
-                    attachments: [],
                     modelSelection: resolvedModelSelection,
                     dispatchMode: { type: "start_immediately" },
                   })

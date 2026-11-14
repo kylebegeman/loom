@@ -48,6 +48,7 @@ import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecuto
 import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as ServerConfig from "../config.ts"; // fork: file-placement
 import * as ServerSettings from "../serverSettings.ts";
+import { deletedProjectOverridePatch } from "../provider/ProjectSettingsOverrideSweep.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 // fork: file-placement
 import {
@@ -699,7 +700,14 @@ export const make = Effect.gen(function* () {
 
   // Best-effort cleanup releases disabled instances kept alive by overrides; crashes have no replay to revisit deletion.
   const clearProjectSettingsOverrides = (projectId: ProjectId) =>
-    serverSettings.updateSettings({ projectSettingsOverrides: { [projectId]: null } }).pipe(
+    serverSettings.getSettings.pipe(
+      Effect.flatMap(({ projectSettingsOverrides }) =>
+        serverSettings.updateSettings({
+          projectSettingsOverrides: {
+            [projectId]: deletedProjectOverridePatch(projectSettingsOverrides[projectId]),
+          },
+        }),
+      ),
       Effect.asVoid,
       Effect.catchCause((cause) =>
         Effect.logWarning(

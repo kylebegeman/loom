@@ -393,6 +393,7 @@ const layerEffectExecutorProvided = EffectWorker.layerExecutor.pipe(
       layerRuntimeRequestServiceProvided,
       layerThreadTitleRegenerationProvided,
       layerThreadManagementProvided,
+      ProjectionStore.layer,
     ),
   ),
   holdLibraryAttachments, // fork: deleted-history

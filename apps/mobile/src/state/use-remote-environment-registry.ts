@@ -10,6 +10,7 @@ import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 
 import { hasCloudPublicConfig } from "../features/cloud/publicConfig";
 import { useConnectionController } from "../features/connection/useConnectionController";
+import { useRetryEnvironment } from "../features/connection/useRetryEnvironment";
 import { forgetPushThen } from "../fork/library-push/libraryPushSync"; // fork: library-push
 import { environmentPresentations } from "./presentation";
 import { useWorkspaceConnectionState, useWorkspaceEnvironments } from "./workspace";
@@ -168,8 +169,7 @@ export function useRemoteConnections() {
   const onConnectPress = (pairingUrl?: string, expectedEnvironmentId?: EnvironmentId) =>
     pairEnvironment(pairingUrl ?? connectionPairingUrl, expectedEnvironmentId);
 
-  const onReconnectEnvironment = (environmentId: EnvironmentId) =>
-    controller.retryEnvironment(environmentId);
+  const onReconnectEnvironment = useRetryEnvironment();
   const onSetEnvironmentEnabled = (environmentId: EnvironmentId, enabled: boolean) =>
     controller.setEnvironmentEnabled(environmentId, enabled);
   const onUpdateEnvironment = (

@@ -159,6 +159,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   // fork: runtime-owner: the operating system owns this runtime's updates. Not a serverSelfUpdate literal: that set is closed, so older clients would reject it.
   serverRuntimeOwner: ForwardCompatibleOptional(Schema.Literals(["operating-system"])), // fork: runtime-owner
   serverSelfUpdateProgress: Schema.optionalKey(Schema.Boolean),
+  serverUpdateStaging: Schema.optionalKey(Schema.Boolean),
   serverUpdateThreadContinuation: Schema.optionalKey(Schema.Boolean),
   /** Only explicit false skips Live Activity seeding; older servers may still publish. */
   agentActivityPublishing: Schema.optionalKey(Schema.Boolean),

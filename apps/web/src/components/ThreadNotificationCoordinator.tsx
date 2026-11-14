@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
-import { threadKey } from "@t3tools/client-runtime/state/entities";
+import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
 import { isBotRunThreadId } from "@t3tools/contracts/fork"; // fork: bots
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
@@ -45,6 +45,7 @@ import { resolveBackgroundThreadRequest } from "./backgroundThreadAnnouncement";
 import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";
 import {
   createThreadNotificationGate,
+  isSnoozedForNotification,
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
@@ -121,7 +122,7 @@ export function startThreadNotifications(
   // fork: scheduled-task-alerts - a task alert has no thread, so its tag stands in for one
   trackForkNotification = (environmentId, notification) =>
     trackNotification(environmentId, notification.tag as ThreadId, notification);
-  // Toast ids by thread key, so hiding or opening a thread can close its open toasts.
+  // Toast ids by thread key, so hiding or opening a thread, or removing its environment, closes them.
   const openToasts = new Map<string, Array<ToastId>>();
   const forgetToast = (key: string, toastId: ToastId) => {
     const remaining = (openToasts.get(key) ?? []).filter((id) => id !== toastId);
@@ -426,6 +427,7 @@ export function startThreadNotifications(
             (resyncing &&
               state.completedAt !== null &&
               now - state.completedAt > RESYNC_COMPLETION_WINDOW_MS),
+          snoozed: isSnoozedForNotification(state.thread, state.completedAt, now),
         },
       );
     }
@@ -503,6 +505,7 @@ export function startThreadNotifications(
 
   const pruneRemovedEnvironments = () => {
     const activeIds = new Set(registry.get(environmentSummaries.environmentIdsAtom));
+    closeToasts((key) => !activeIds.has(parseThreadKey(key).environmentId));
     // fork: respectful-notifications
     for (const [tag, entry] of pending) {
       if (activeIds.has(entry.environmentId)) continue;
