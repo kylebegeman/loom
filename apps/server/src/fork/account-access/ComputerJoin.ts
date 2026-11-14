@@ -12,6 +12,7 @@ import {
   type ComputerJoinReadiness,
   LibraryError,
   LibraryInfo,
+  type ReachStatus,
 } from "@t3tools/contracts/fork";
 import { decodeEd25519PublicKey, keyFingerprint } from "@t3tools/shared/fork/directory";
 import * as Clock from "effect/Clock";
@@ -82,6 +83,17 @@ const validUrl = (value: string) =>
     catch: refused,
   });
 
+/** Remote access that waits on the owner, not on time, so `loom join` stops waiting for it. */
+const remoteNoteFor = (remote: ReachStatus): string | null => {
+  if (remote.state === "off")
+    return "off. Turn on Loomhost in this computer's details once your Library has Loomhost set up.";
+  if (remote.state !== "unavailable") return null;
+  if (remote.blocked === "library-not-ready")
+    return "off until your Library has Loomhost set up. Devices on the same network or Tailscale can still connect.";
+  if (remote.blocked === "library-outdated") return "off until Loom on your Library is updated.";
+  return null;
+};
+
 /** The first missing piece, in the words `loom join` prints while it waits. */
 const computerJoinWaitingFor = (
   readiness: Omit<ComputerJoinReadiness, "waitingFor">,
@@ -91,7 +103,7 @@ const computerJoinWaitingFor = (
   if (readiness.history !== "ready" && readiness.history !== "expiring")
     return "this computer's Library sign-in, which publishes its history";
   if (readiness.directory !== "reporting") return "its entry in your computer list";
-  if (readiness.remote !== "connected")
+  if (readiness.remote !== "connected" && readiness.remoteNote === null)
     return remoteMessage === null ? "its remote access route" : `remote access: ${remoteMessage}`;
   return null;
 };
@@ -292,6 +304,7 @@ const make = Effect.gen(function* () {
       directory: (yield* reporter.status).state,
       remote: remote.state,
       url: remote.url,
+      remoteNote: remoteNoteFor(remote),
     };
     return { ...found, waitingFor: computerJoinWaitingFor(found, remote.message) };
   }).pipe(Effect.withSpan("ComputerJoin.readiness"));

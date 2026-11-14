@@ -46,7 +46,11 @@ const fixture = Effect.gen(function* () {
     wrongLibrary = false,
     revoked = false,
     reporting: "off" | "reporting" = "off",
-    remote: { state: "starting" | "connected" | "error"; message: string | null } = {
+    remote: {
+      state: "starting" | "connected" | "error" | "unavailable" | "off";
+      message: string | null;
+      blocked?: "library-not-ready";
+    } = {
       state: "starting",
       message: null,
     };
@@ -63,9 +67,9 @@ const fixture = Effect.gen(function* () {
               guardState: () => ({ hostname: null, serving: false }),
               ownPorts: () => [],
               status: Effect.sync(() => ({
+                blocked: null,
                 ...remote,
                 enabled: true,
-                blocked: null,
                 url: remote.state === "connected" ? "https://new-server-loom.example.test/" : null,
                 warnings: [],
                 prepared: null,
@@ -336,6 +340,16 @@ it.effect("reports what a joined computer still needs until it is ready for agen
       expect((yield* service.readiness).waitingFor).toBe(
         "remote access: cloudflared is not installed.",
       );
+      f.setRemote({ state: "unavailable", message: null, blocked: "library-not-ready" });
+      expect(yield* service.readiness).toMatchObject({
+        remoteNote: expect.stringContaining("until your Library has Loomhost set up"),
+        waitingFor: null,
+      });
+      f.setRemote({ state: "off", message: null });
+      expect(yield* service.readiness).toMatchObject({
+        remoteNote: expect.stringContaining("Turn on Loomhost"),
+        waitingFor: null,
+      });
       f.setRemote({ state: "connected", message: null });
       expect(yield* service.readiness).toEqual({
         joined: true,
@@ -343,6 +357,7 @@ it.effect("reports what a joined computer still needs until it is ready for agen
         directory: "reporting",
         remote: "connected",
         url: "https://new-server-loom.example.test/",
+        remoteNote: null,
         waitingFor: null,
       });
     }),

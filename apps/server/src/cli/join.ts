@@ -166,7 +166,11 @@ const join = Effect.fn("cli.joinComputer")(function* (input: {
     [
       "This computer is ready.",
       `History: publishing to ${prompt.libraryUrl}`,
-      ...(status.url === null ? [] : [`Remote access: ${status.url}`]),
+      ...(status.remoteNote !== null
+        ? [`Remote access: ${status.remoteNote}`]
+        : status.url === null
+          ? []
+          : [`Remote access: ${status.url}`]),
       "It now appears on every device signed in to your account.",
     ].join("\n"),
   );
@@ -191,6 +195,16 @@ export const joinCommand = Command.make("join", {
       const config = yield* resolveCliAuthConfig(flags, logLevel);
       return yield* join(flags).pipe(
         Effect.scoped,
+        // Expected outcomes, such as a declined request, print one line instead of a stack trace.
+        Effect.catchIf(isLibraryError, (error) =>
+          Console.error(error.message).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                process.exitCode = 1;
+              }),
+            ),
+          ),
+        ),
         Effect.provide(
           Layer.mergeAll(
             EnvironmentAuth.layerRuntime.pipe(

@@ -56,7 +56,8 @@ A Linux or LoomOS machine needs:
 - An outbound HTTPS connection to your Library. No open ports are needed.
 - Loomhost set up on your Library, for remote access from other networks. Loom
   installs and updates Cloudflare's connector on the computer itself. Without
-  Loomhost, `loom join` finishes and says remote access is still waiting.
+  it, `loom join` finishes and says remote access is off. After your Library
+  has Loomhost, turn on **Loomhost** in the computer's details.
 
 ### One row per computer
 

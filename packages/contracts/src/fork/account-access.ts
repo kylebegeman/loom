@@ -164,6 +164,8 @@ export const ComputerJoinReadiness = Schema.Struct({
   directory: DirectoryReporting.fields.state,
   remote: ReachState,
   url: Schema.NullOr(Schema.String),
+  /** Why remote access will not start without a change elsewhere, or null. */
+  remoteNote: Schema.NullOr(Schema.String),
   /** The first thing still missing, in words, or null once everything is ready. */
   waitingFor: Schema.NullOr(Schema.String),
 });
