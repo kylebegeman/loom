@@ -412,7 +412,7 @@ export const layer = HttpApiBuilder.group(
                       ...(args.payload.client_os ? { os: args.payload.client_os } : {}),
                     },
                   }),
-                  ...(proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint }),
+                  ...(proof === undefined ? {} : { proofKeyThumbprint: proof.thumbprint }),
                 })
                 .pipe(
                   Effect.catchTags({

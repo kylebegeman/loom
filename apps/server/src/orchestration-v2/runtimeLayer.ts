@@ -332,6 +332,7 @@ const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
   Layer.provide(layerLibraryFolderGuardProvided), // fork: library-projects
   Layer.provide(
     Layer.mergeAll(
+      // @effect-diagnostics-next-line layerMergeAllWithDependencies:off - the runtime layer provides the runner the fork's restore needs. // fork: project-lifecycle
       layerProjectSetupScriptRunner,
       layerManagedProjectFoldersProvided,
       layerThreadManagementProvided,

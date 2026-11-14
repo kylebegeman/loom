@@ -3246,7 +3246,14 @@ const make = Effect.gen(function* () {
       yield* withWorkspaceLease(
         cwd,
         Effect.gen(function* () {
-          yield* reportOrphanWorktrees(managed, yield* projectStore.listShells(), entries);
+          yield* reportOrphanWorktrees(
+            managed,
+            yield* projectStore.listShells(),
+            entries,
+            yield* fs
+              .realPath(scratchFolderRoot(config.baseDir, path))
+              .pipe(Effect.orElseSucceed(() => null)),
+          );
           const reviewed = entries.find((candidate) => candidate.path === cwd);
           if (!reviewed) return;
           entry = reviewed;

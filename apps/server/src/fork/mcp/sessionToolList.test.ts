@@ -16,6 +16,7 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as DeviceService from "../../device/DeviceService.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as EnvironmentTheme from "../../environmentTheme.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
 import type { McpCapability, McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
@@ -88,6 +89,7 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
   Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+  Layer.mock(EnvironmentTheme.EnvironmentThemeService)({}),
   McpProviderSessions.layer,
 );
 
