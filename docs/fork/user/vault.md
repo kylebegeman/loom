@@ -97,15 +97,16 @@ item ID and version accepts that item's label too.
 In the account Vault, confirm **This is my personal account** and choose **Enable account access**
 once to let agents on your approved computers use its saved SSH and GitHub connections. Each
 operation checks the computer's enrollment, active full-access/default run, selected item version
-and destination. SSH private keys and GitHub credentials stay at the Library; SSH and Git commands
-run on the execution computer. Structured GitHub actions run through the Library. If a write loses its reply, its returned
+and destination. SSH private keys stay on the Vault computer. SSH, Git and supported GitHub
+terminal commands run on the execution computer; GitHub terminal commands receive the selected
+credential for that operation without changing ordinary gh/Git configuration. Structured GitHub
+actions run on the Vault computer through the Library. If a write loses its reply, its returned
 operation ID can recover the retained receipt without repeating the action. An unknown outcome
-still requires inspecting GitHub before another write. Account GitHub
-terminal commands are not supported; use the structured tools or SSH for Git.
+still requires inspecting GitHub before another write.
 
 Choose **Turn off account access** to stop new account-authorized use while keeping saved items.
 An already authenticated remote connection or completed action cannot be recalled. A locked or
-unavailable Library Vault reports its state without selecting a computer-local credential.
+unavailable account Vault reports its state without selecting a computer-local credential.
 
 The following settings apply to a computer's existing Vault:
 
@@ -181,7 +182,7 @@ credentials into chat. Normal agent tools return metadata, not stored values. Th
 `loom vault status`, `loom vault list` and `loom vault change` commands provide the same metadata and
 lifecycle operations through an existing Loom connection.
 
-Account-enrolled computers use the Library's saved connections and account access policy without
+Account-enrolled computers use the account Vault's saved connections and access policy without
 a second broker enrollment. For a computer-local Vault, an administrator configures that computer's
 execution broker and access policy. Adding a key alone does not route ordinary terminal commands
 through Vault or remove their existing 1Password approvals.
