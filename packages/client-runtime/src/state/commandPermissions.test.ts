@@ -641,19 +641,19 @@ it.effect("requires the destination's provider and Vault grants when saving a Va
         sessions(other),
         AsyncResult.success({
           ...grant(false),
-          scopes: [AuthProvidersManageScope, AuthAccessWriteScope],
-          permissions: [AuthProvidersManageScope, AuthAccessWriteScope],
+          scopes: [AuthProvidersManageScope, AuthVaultWriteScope],
+          permissions: [AuthProvidersManageScope, AuthVaultWriteScope],
         }),
       );
       setScopes([AuthProvidersManageScope]);
       expect(registry.get(policy.permissionAtom(env, input))).toBe(false);
       expect(yield* policy.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
-        requiredPermission: AuthAccessWriteScope,
+        requiredPermission: AuthVaultWriteScope,
       });
-      setScopes([AuthProvidersManageScope, AuthAccessWriteScope]);
+      setScopes([AuthProvidersManageScope, AuthVaultWriteScope]);
       expect(registry.get(policy.permissionAtom(env, input))).toBe(true);
       yield* policy.authorize(registry, env, input);
-      setScopes([AuthAccessWriteScope]);
+      setScopes([AuthVaultWriteScope]);
       expect(registry.get(policy.permissionAtom(env, input))).toBe(false);
       expect(yield* policy.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
         requiredPermission: AuthProvidersManageScope,

@@ -1,5 +1,7 @@
 import {
   AuthLibraryPublishScope,
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
   WsRpcGroup,
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -593,5 +595,20 @@ it.effect("each reach handler checks its own grant before the service runs", () 
       requiredScope: AuthRelayWriteScope,
     });
     expect(unrelated.calls).toEqual([]);
+  }),
+);
+
+it.effect("does not infer Vault permissions from explicit access administration", () =>
+  Effect.gen(function* () {
+    const auth = makeForkRpcAuth({
+      sessionId: AuthSessionId.make("admin-without-vault"),
+      subject: "owner",
+      method: "bearer-access-token",
+      scopes: [AuthAccessReadScope, AuthAccessWriteScope],
+    });
+    for (const method of ["loom.vault-core.list", "loom.vault-core.reveal"] as const) {
+      const result = yield* auth.effect(method, Effect.succeed("allowed")).pipe(Effect.result);
+      expect(result._tag).toBe("Failure");
+    }
   }),
 );

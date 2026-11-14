@@ -34,7 +34,7 @@ const grant = (write: boolean): AuthSessionState => ({
     sessionCookieName: "test",
   },
   scopes: write ? [AuthAccessWriteScope] : [AuthAccessReadScope],
-  permissions: write ? [AuthAccessWriteScope] : [AuthAccessReadScope],
+  permissions: write ? [AuthVaultWriteScope] : [AuthVaultReadScope],
 });
 const runtime = Atom.runtime(
   Layer.succeed(EnvironmentRegistry, {

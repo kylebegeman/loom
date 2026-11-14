@@ -37,10 +37,12 @@ const fixture = Effect.gen(function* () {
               environmentId: source,
               ownerPolicy: {
                 environmentId: source,
-                ownerSubject: "owner",
+                ownerSubject: "local-owner",
+                accountOwnerSubject:
+                  "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 ownerId: "a".repeat(32),
                 mode: "owner-trusted",
-                updatedBy: "owner",
+                updatedBy: "local-owner",
                 updatedAt: 0,
               },
               ownerReceipts: [],
@@ -92,7 +94,12 @@ const fixture = Effect.gen(function* () {
                       ? Effect.fail(new VaultError({ reason: "unavailable" }))
                       : input.kind === "preview"
                         ? Effect.die("Unexpected preview")
-                        : authority.forAccount(input, source, "owner", Effect.void),
+                        : authority.forAccount(
+                            input,
+                            source,
+                            "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            Effect.void,
+                          ),
                   ),
               }),
             ),
@@ -110,7 +117,14 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const f = yield* fixture;
-      expect(yield* f.authority.forAccount(write, source, "owner", Effect.void)).toEqual({
+      expect(
+        yield* f.authority.forAccount(
+          write,
+          source,
+          "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          Effect.void,
+        ),
+      ).toEqual({
         kind: "write",
         version: 1,
       });
@@ -132,7 +146,7 @@ it.effect(
         createdAt: null,
         retiredAt: "2026-11-12T00:00:00Z",
         operationId: "b".repeat(32),
-        actor: "owner",
+        actor: "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       };
       expect(yield* f.client.write(projectId, `runs/${pin}`, Redacted.make(retired), 0)).toBe(1);
       expect(yield* f.client.keys(projectId)).toEqual([pin]);
@@ -143,7 +157,7 @@ it.effect(
         yield* f.authority.forAccount(
           { kind: "read", projectId, key: "registry" },
           EnvironmentId.make("another-computer"),
-          "owner",
+          "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           Effect.void,
         ),
       ).toEqual({ kind: "read", record: null });
@@ -161,12 +175,22 @@ it.effect("refuses another owner, ended enrollment, namespace paths and forged r
     ).toBe("denied");
     expect(
       (yield* f.authority
-        .forAccount(write, source, "owner", Effect.fail(new VaultError({ reason: "denied" })))
+        .forAccount(
+          write,
+          source,
+          "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          Effect.fail(new VaultError({ reason: "denied" })),
+        )
         .pipe(Effect.flip)).reason,
     ).toBe("denied");
     expect(
       (yield* f.authority
-        .forAccount({ ...write, key: "../items/key" }, source, "owner", Effect.void)
+        .forAccount(
+          { ...write, key: "../items/key" },
+          source,
+          "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          Effect.void,
+        )
         .pipe(Effect.flip)).reason,
     ).toBe("invalid-input");
     const value = {
@@ -178,14 +202,14 @@ it.effect("refuses another owner, ended enrollment, namespace paths and forged r
       createdAt: null,
       retiredAt: "now",
       operationId: "a".repeat(32),
-      actor: "owner",
+      actor: "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     };
     expect(
       (yield* f.authority
         .forAccount(
           { ...write, key: `runs/${"a".repeat(64)}`, value },
           source,
-          "owner",
+          "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           Effect.void,
         )
         .pipe(Effect.flip)).reason,
@@ -195,7 +219,7 @@ it.effect("refuses another owner, ended enrollment, namespace paths and forged r
         .forAccount(
           { ...write, key: `runs/${"a".repeat(64)}`, value: { ...value, environmentId: source } },
           source,
-          "owner",
+          "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           Effect.void,
         )
         .pipe(Effect.flip)).reason,

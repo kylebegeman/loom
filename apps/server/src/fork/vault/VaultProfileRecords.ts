@@ -150,7 +150,8 @@ const make = Effect.gen(function* () {
           if (
             Option.isNone(policy) ||
             policy.value.ownerPolicy?.environmentId !== inventoryId ||
-            policy.value.ownerPolicy?.ownerSubject !== ownerSubject ||
+            (policy.value.ownerPolicy?.accountOwnerSubject ??
+              policy.value.ownerPolicy?.ownerSubject) !== ownerSubject ||
             policy.value.ownerPolicy.mode !== "owner-trusted"
           )
             return yield* failed("denied");

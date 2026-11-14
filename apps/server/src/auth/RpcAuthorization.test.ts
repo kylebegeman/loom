@@ -3,7 +3,7 @@ import {
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
-  AuthAccessWriteScope, // fork: vault-provider-credentials
+  AuthVaultWriteScope, // fork: vault-provider-credentials
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
@@ -277,7 +277,7 @@ describe("settings mutation authorization", () => {
       ]) {
         expect(
           yield* client[WS_METHODS.serverUpdateSettings](update).pipe(Effect.flip),
-        ).toMatchObject({ requiredPermission: AuthAccessWriteScope });
+        ).toMatchObject({ requiredPermission: AuthVaultWriteScope });
       }
       expect(handled).toBe(2);
       expect(

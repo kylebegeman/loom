@@ -2,6 +2,8 @@ import { accountIdentityVaultScopes } from "../fork/vault/identity-scopes.ts"; /
 import {
   AuthAccessReadScope,
   AuthAccessTokenType,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthAccessWriteScope,
   AuthRelayWriteScope,
   AuthStandardClientScopes,
@@ -45,6 +47,8 @@ const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthRelayWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
 ]);
 
 /**

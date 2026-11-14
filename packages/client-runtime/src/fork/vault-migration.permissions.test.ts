@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  AuthVaultReadScope,
   AuthVaultWriteScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -32,7 +33,7 @@ const grant = (write: boolean): AuthSessionState => ({
     sessionCookieName: "test",
   },
   scopes: write ? [AuthAccessWriteScope] : [AuthAccessReadScope],
-  permissions: write ? [AuthAccessWriteScope] : [AuthAccessReadScope],
+  permissions: write ? [AuthVaultWriteScope] : [AuthVaultReadScope],
 });
 const runtime = Atom.runtime(
   Layer.succeed(EnvironmentRegistry, {

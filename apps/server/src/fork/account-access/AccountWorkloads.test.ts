@@ -18,6 +18,7 @@ import {
   vaultProviderReference,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
+import * as Deferred from "effect/Deferred";
 import { HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as AccountVaultMachineClient from "../vault/AccountVaultMachineClient.ts";
 import { signRelayJwt } from "@t3tools/shared/relayJwt";
@@ -500,4 +501,46 @@ it.effect(
         "Failure",
       );
     }).pipe(Effect.provide(NodeCrypto.layer)),
+);
+
+it.effect("consumes a relay grant atomically across concurrent payload hashing", () =>
+  Effect.gen(function* () {
+    const digest = yield* Digest.Digest;
+    const ready = yield* Deferred.make<void>();
+    let hashing = false;
+    let arrivals = 0;
+    const f = yield* fixture.pipe(
+      Effect.provideService(
+        Digest.Digest,
+        Digest.Digest.of({
+          ...digest,
+          digest: (algorithm, data) =>
+            Effect.gen(function* () {
+              if (hashing) {
+                arrivals++;
+                if (arrivals === 2) yield* Deferred.succeed(ready, undefined);
+                yield* Deferred.await(ready);
+              }
+              return yield* digest.digest(algorithm, data);
+            }),
+        }),
+      ),
+    );
+    const lease = yield* f.authority.accept(
+      PAYLOAD,
+      yield* f.source.prepare(PAYLOAD, THREAD),
+      publisher,
+    );
+    const grant = yield* f.authority.relay(lease, SOURCE, PAYLOAD);
+    hashing = true;
+    const results = yield* Effect.all(
+      [
+        f.authority.verifyRelay({ grant, payload: PAYLOAD }, publisher).pipe(Effect.result),
+        f.authority.verifyRelay({ grant, payload: PAYLOAD }, publisher).pipe(Effect.result),
+      ],
+      { concurrency: "unbounded" },
+    );
+    expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+    expect(results.filter((result) => result._tag === "Failure")).toHaveLength(1);
+  }).pipe(Effect.provide(NodeCrypto.layer)),
 );

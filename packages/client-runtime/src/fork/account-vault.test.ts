@@ -1,4 +1,4 @@
-import { AuthAccessReadScope, AuthStandardClientScopes } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthStandardClientScopes } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   accountVaultState,
@@ -26,7 +26,7 @@ describe("accountVaultState", () => {
   });
 
   it("does not offer the account Vault to a Library session without Vault inspection", () => {
-    const permissions = AuthStandardClientScopes.filter((scope) => scope !== AuthAccessReadScope);
+    const permissions = AuthStandardClientScopes.filter((scope) => scope !== AuthVaultReadScope);
     expect(
       accountVaultState({ ...signedIn, session: { authenticated: true, permissions } }),
     ).toEqual({ kind: "no-access", identity: true });

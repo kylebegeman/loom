@@ -66,16 +66,16 @@ it("requires both provider and Vault authority for mutation and patch binding pa
       instance,
     },
   };
-  expect(vaultProviderSettingsScopes(input)).toEqual(["providers:manage", "access:write"]);
+  expect(vaultProviderSettingsScopes(input)).toEqual(["providers:manage", "loom:vault:write"]);
   expect(clientRpcRequiredScopes(WS_METHODS.serverUpdateSettings, input)).toEqual([
     "providers:manage",
-    "access:write",
+    "loom:vault:write",
   ]);
   expect(
     vaultProviderSettingsScopes({
       patch: { providerInstances: { [ProviderInstanceId.make("codex_work")]: instance } },
     }),
-  ).toEqual(["providers:manage", "access:write"]);
+  ).toEqual(["providers:manage", "loom:vault:write"]);
   expect(
     vaultProviderSettingsScopes({
       patch: {},

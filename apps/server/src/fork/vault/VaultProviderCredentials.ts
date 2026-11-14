@@ -125,7 +125,8 @@ const make = Effect.gen(function* () {
     if (
       ownerSubject !== undefined &&
       (policy.ownerPolicy?.mode !== "owner-trusted" ||
-        policy.ownerPolicy.ownerSubject !== ownerSubject)
+        (policy.ownerPolicy.accountOwnerSubject ?? policy.ownerPolicy.ownerSubject) !==
+          ownerSubject)
     )
       return yield* new VaultError({ reason: "denied" });
     if (credentialUseRefusal(policy, binding.itemId))

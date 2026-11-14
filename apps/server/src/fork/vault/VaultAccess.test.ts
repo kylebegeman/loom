@@ -6,7 +6,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
-  AuthAccessWriteScope,
+  AuthVaultWriteScope,
   AuthSessionId,
   EnvironmentId,
   ProjectId,
@@ -317,7 +317,7 @@ it.effect("audits human RPC reveal with its authenticated actor before returning
           sessionId: AuthSessionId.make("human-reveal"),
           subject: actor,
           method: "bearer-access-token",
-          scopes: [AuthAccessWriteScope],
+          scopes: [AuthVaultWriteScope],
         }),
         actor,
       ).pipe(

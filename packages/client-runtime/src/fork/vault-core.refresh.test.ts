@@ -1,7 +1,7 @@
 import { createVaultReferenceAtoms } from "./vault-profiles.ts";
 import { expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
-import { AuthAccessWriteScope, EnvironmentId, type AuthSessionState } from "@t3tools/contracts";
+import { AuthVaultWriteScope, EnvironmentId, type AuthSessionState } from "@t3tools/contracts";
 import {
   VAULT_REFERENCE_WS_METHODS as R,
   VAULT_CORE_WS_METHODS as V,
@@ -34,8 +34,8 @@ const sessionState = Atom.make(
       sessionMethods: [],
       sessionCookieName: "test",
     },
-    permissions: [AuthAccessWriteScope],
-    scopes: [AuthAccessWriteScope],
+    permissions: [AuthVaultWriteScope],
+    scopes: [AuthVaultWriteScope],
   } satisfies AuthSessionState),
 );
 

@@ -88,8 +88,14 @@ describe("authorization grants", () => {
       expected: true,
     },
     {
-      label: "existing administrator Vault access",
+      label: "explicit administrator permissions do not imply Vault access",
       session: { authenticated: true, permissions: ["access:write"] },
+      scope: "loom:vault:write",
+      expected: false,
+    },
+    {
+      label: "legacy scope-only administrator Vault access",
+      session: { authenticated: true, scopes: ["access:write"] },
       scope: "loom:vault:write",
       expected: true,
     },

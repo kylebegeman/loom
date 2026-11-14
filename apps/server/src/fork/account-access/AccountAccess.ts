@@ -4,7 +4,6 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import {
   AuthAccessWriteScope,
   AuthVaultReadScope,
-  AuthVaultWriteScope,
   AuthLibraryPublishScope,
   AuthOrchestrationOperateScope,
   AuthStandardClientScopes,
@@ -211,9 +210,7 @@ const make = Effect.gen(function* () {
           account: target.account,
           sessionId: caller.sessionId,
           principal,
-          scopes: [...AuthStandardClientScopes, AuthVaultReadScope, AuthVaultWriteScope].filter(
-            (scope) => caller.scopes.includes(scope),
-          ),
+          scopes: AuthStandardClientScopes.filter((scope) => caller.scopes.includes(scope)),
           expiresAt: caller.expiresAt?.epochMilliseconds ?? now + GRANT_LIFETIME_MS,
         },
       });

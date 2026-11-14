@@ -384,11 +384,17 @@ const make = Effect.gen(function* () {
         target.epoch !== held.targetEpoch
       )
         return yield* denied();
-      if (input.payload !== undefined) {
-        if (held.accepted || (yield* hash(input.payload)) !== held.digest) return yield* denied();
-        held.accepted = true;
-      } else if (!held.accepted) return yield* denied();
-      return held.lease;
+      const digest = input.payload === undefined ? undefined : yield* hash(input.payload);
+      const now = yield* Clock.currentTimeMillis;
+      return yield* Effect.suspend(() => {
+        if (held.lease.expiresAt <= now || relays.get(input.grant) !== held)
+          return Effect.fail(denied());
+        if (digest !== undefined) {
+          if (held.accepted || digest !== held.digest) return Effect.fail(denied());
+          held.accepted = true;
+        } else if (!held.accepted) return Effect.fail(denied());
+        return Effect.succeed(held.lease);
+      });
     }),
     accept: Effect.fn("AccountWorkloads.acceptWorkload")(function* (payload, proof, publisher) {
       const lease = yield* accept(payload, proof, publisher);

@@ -159,8 +159,8 @@ export function sessionGrantsScope(
       : scope === AuthVaultWriteScope
         ? AuthAccessWriteScope
         : undefined;
-  if (parent && (session.permissions ?? session.scopes)?.includes(parent)) return true;
   if (session.permissions !== undefined) return session.permissions.includes(scope);
+  if (parent && session.scopes?.includes(parent)) return true;
   if (session.scopes?.includes(scope)) return true;
   if (session.auth?.serverUpdateScope !== undefined) return false;
   const legacyParent = legacyParents[scope];
@@ -194,6 +194,8 @@ export const AuthStandardClientScopes = [
   AuthRelayReadScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthRelayWriteScope,
 ] as const;
 

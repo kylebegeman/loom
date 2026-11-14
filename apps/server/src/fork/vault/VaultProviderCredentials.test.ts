@@ -477,15 +477,22 @@ it.effect(
           receipts: [],
           intents: [],
           credentialModes: [
-            { itemId, mode: "ordinary", revision: 1, updatedBy: "human-owner", updatedAt: 0 },
+            {
+              itemId,
+              mode: "ordinary",
+              revision: 1,
+              updatedBy: "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              updatedAt: 0,
+            },
           ],
         };
         const ownerPolicy = {
           environmentId,
           ownerId: "d".repeat(32),
-          ownerSubject: "human-owner",
+          ownerSubject: "local-owner",
+          accountOwnerSubject: "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           mode: "owner-trusted",
-          updatedBy: "human-owner",
+          updatedBy: "local-owner",
           updatedAt: 0,
         };
         f.records.set(policyPath, {
@@ -509,18 +516,28 @@ it.effect(
                 ...input,
                 reference: vaultProviderReference({ environmentId, itemId, expectedVersion: 2 }),
               },
-              "human-owner",
+              "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               Effect.void,
             )
             .pipe(Effect.flip)).reason,
         ).toBe("conflict");
         expect(
-          Redacted.value((yield* service.forAccount(input, "human-owner", Effect.void)).value!),
+          Redacted.value(
+            (yield* service.forAccount(
+              input,
+              "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              Effect.void,
+            )).value!,
+          ),
         ).toBe(privateValue);
         expect(f.state.policyWrites).toBe(1);
         expect(
           (yield* service
-            .forAccount(input, "human-owner", Effect.fail(new VaultError({ reason: "denied" })))
+            .forAccount(
+              input,
+              "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              Effect.fail(new VaultError({ reason: "denied" })),
+            )
             .pipe(Effect.flip)).reason,
         ).toBe("denied");
         const current = decodePolicy(Redacted.value(f.records.get(policyPath)!.value));
@@ -534,14 +551,26 @@ it.effect(
             policy: {
               ...policy,
               credentialModes: [
-                { itemId, mode: "one-time", revision: 2, updatedBy: "human-owner", updatedAt: 0 },
+                {
+                  itemId,
+                  mode: "one-time",
+                  revision: 2,
+                  updatedBy: "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  updatedAt: 0,
+                },
               ],
             },
           }),
           version: 3,
         });
         expect(
-          (yield* service.forAccount(input, "human-owner", Effect.void).pipe(Effect.flip)).reason,
+          (yield* service
+            .forAccount(
+              input,
+              "identity-principal:v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              Effect.void,
+            )
+            .pipe(Effect.flip)).reason,
         ).toBe("denied");
         expect(f.state.policyWrites).toBe(1);
       }),

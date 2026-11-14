@@ -3,7 +3,7 @@ import { EnvironmentId, PositiveInt } from "../baseSchemas.ts";
 import { SecretProviderId, type SecretReference } from "../secretReference.ts";
 import type { ProviderInstanceMutation } from "../providerInstance.ts";
 import type { ServerSettingsPatch } from "../settings.ts";
-import { AuthAccessWriteScope, AuthProvidersManageScope } from "../auth.ts";
+import { AuthVaultWriteScope, AuthProvidersManageScope } from "../auth.ts";
 import { VaultItemId } from "./vault-core.ts";
 
 export const VAULT_PROVIDER_CREDENTIALS_FEATURE = "vault-provider-credentials";
@@ -54,6 +54,6 @@ export const vaultProviderSettingsScopes = (input: {
   return instances.some((instance) =>
     instance?.environment?.some((variable) => isVaultProviderReference(variable.value)),
   )
-    ? [AuthProvidersManageScope, AuthAccessWriteScope]
+    ? [AuthProvidersManageScope, AuthVaultWriteScope]
     : [];
 };
