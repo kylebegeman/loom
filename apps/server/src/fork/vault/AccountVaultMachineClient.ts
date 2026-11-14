@@ -11,20 +11,17 @@ import {
   AccountProviderResponse,
   VaultError,
 } from "@t3tools/contracts/fork";
-import { signRelayJwt } from "@t3tools/shared/relayJwt";
 import * as ByteSize from "effect/ByteSize";
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClientRequest, HttpIncomingMessage } from "effect/http";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
+import { signMachineProof } from "../account-access/machineProof.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 
@@ -70,31 +67,18 @@ const make = Effect.gen(function* () {
     const account = current.credential.account;
     const sourceId = yield* identity.getEnvironmentId;
     if (credential.sourceEnvironmentId !== sourceId) return yield* denied();
-    const keys = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets).pipe(
+    const proof = yield* signMachineProof(payload, {
+      sourceEnvironmentId: credential.sourceEnvironmentId,
+      libraryEnvironmentId: credential.libraryEnvironmentId,
+      sessionId: credential.sessionId,
+      account,
+    }).pipe(
       Effect.provideService(Signature.Signature, signature),
+      Effect.provideService(ServerSecretStore, secrets),
+      Effect.provideService(SecureRandom.SecureRandom, random),
+      Effect.provideService(Digest.Digest, digest),
       Effect.mapError(unavailable),
     );
-    const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
-    const proof = yield* signRelayJwt({
-      privateKey: keys.privateKey,
-      typ: "loom-account-workload+jwt",
-      payload: {
-        iss: sourceId,
-        sub: sourceId,
-        aud: credential.libraryEnvironmentId,
-        publisherSessionId: credential.sessionId,
-        authorityId: account.authorityId,
-        authorityEpoch: account.authorityEpoch,
-        nonce: Hex.encode(yield* random.randomBytes(16).pipe(Effect.mapError(unavailable))),
-        digest: Hex.encode(
-          yield* digest
-            .digest(Digest.sha256, new TextEncoder().encode(payload))
-            .pipe(Effect.mapError(unavailable)),
-        ),
-        iat: now,
-        exp: now + 30,
-      },
-    }).pipe(Effect.provideService(Signature.Signature, signature), Effect.mapError(unavailable));
     const request = yield* HttpClientRequest.bodyJson(HttpClientRequest.post(route), {
       payload,
       proof,
