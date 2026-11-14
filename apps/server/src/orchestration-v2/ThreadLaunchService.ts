@@ -1534,7 +1534,11 @@ const make = Effect.gen(function* () {
           // A new thread's claim carries its first message. A reused thread, or a replayed
           // claim that carried none, takes it in a command of its own.
           let accepted = claimed;
-          if (!claimed.storedEvents.some((stored) => stored.event.type === "run.created")) {
+          // fork: library-projects -- a Library launch's claim is null and carries no message.
+          if (
+            accepted === null ||
+            !accepted.storedEvents.some((stored) => stored.event.type === "run.created")
+          ) {
             const messageCommandId = CommandId.make(`${input.commandId}:initial-message`);
             const messageReceipt = yield* readReceipt(input, messageCommandId);
             messageWasAlreadyAccepted = Option.isSome(messageReceipt);
