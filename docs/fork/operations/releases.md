@@ -21,3 +21,31 @@ the archive bytes and public build configuration. It resumes an active exact-sou
 workflow and recognizes an already uploaded matching Mac archive. A source or
 checksum mismatch stops publication; it never repairs an already published release.
 Older integration tags retain their original hosted-Mac workflow.
+
+## Library distribution
+
+A private repository's release URLs answer `404` without a GitHub credential, so
+releases can also be served by the Library. Once
+`~/Library/Application Support/Loom Updates/release-mirror.json` exists (mode
+`0600`, holding a B2 key limited to `releases/`), every publication is copied to
+the Library's B2 and new desktop builds embed the generic feed
+`https://loom.begam.in/api/loom/releases`. Without the file the publisher keeps
+the GitHub feed. The Library serves releases only with `LOOM_RELEASES_BACKEND=b2`;
+otherwise it answers `404 not-hosted` and clients keep their GitHub source.
+
+- `node scripts/fork/updates.ts mirror <version>` copies one published release.
+  A marker in `mirrored/` makes it run once, a failed copy retries on the next
+  scheduled run, and a channel feed never moves back to an older version.
+- The desktop app sends this computer's enrolled Library credential only to the
+  feed's own origin, and downloads full zips while it does.
+- Servers and `t3 update` on an enrolled computer download through the Library. A
+  managed mirror or `T3CODE_RELEASE_BASE_URL` wins, except a base naming Loom's own
+  GitHub releases, which follows the Library.
+- A computer that was never enrolled has no Library credential. Copy its first
+  runtime from an owner Mac (`gh release download`) and install it from a loopback
+  mirror. SSH remote installs have the same limit.
+- While the Library is down, `scripts/fork/loom.sh install` still installs this
+  Mac's own build. Other Macs wait, or install a zip from `gh release download`.
+
+The cutover and repository switch are in loom-platform's
+`ops/runbooks/private-distribution-migration.md`.
