@@ -56,7 +56,9 @@ const perEnvironment = vi.hoisted(
 );
 vi.mock("~/state/server", () => ({
   environmentUpdateStatesAtom: (key: string) => Atom.make(perEnvironment({ status: "idle" })(key)),
+  serverEnvironment: { stageServerUpdate: null },
 }));
+vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("~/state/session", () => ({
   environmentSessionStatesAtom: (key: string) => Atom.make(perEnvironment(null)(key)),
 }));
