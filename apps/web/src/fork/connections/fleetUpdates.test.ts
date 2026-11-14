@@ -12,6 +12,9 @@ const current = {
 describe("fleet update snapshot", () => {
   it("does not report offline or unknown computers as up to date", () => {
     expect(describeFleetUpdateStatus({ ...current, connected: false })).toContain("Offline");
+    expect(
+      describeFleetUpdateStatus({ ...current, connected: false, switchedOff: true }),
+    ).toContain("Switched off on this device");
     expect(describeFleetUpdateStatus({ ...current, currentVersion: null })).toBe(
       "Waiting for version",
     );

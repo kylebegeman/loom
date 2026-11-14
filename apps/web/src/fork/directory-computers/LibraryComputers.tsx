@@ -4,6 +4,7 @@ import {
   directoryComputersView,
   directoryCatalogRows,
   directoryOldMachines,
+  libraryListRows,
   supportsLoomFeature,
   libraryProjectColor,
   type DirectoryCatalogRow,
@@ -142,8 +143,9 @@ function LibraryComputersSection({
   const listing = view.listing.listing;
   const old = listing ? directoryOldMachines(listing, now) : { environments: [], machines: [] };
   const oldIds = new Set(old.environments.map((row) => row.environmentId));
-  const rows = directoryCatalogRows({ listing, saved, connected, reconnectable, now }).filter(
-    (row) => row.report !== null && row.environmentId !== libraryId,
+  const rows = libraryListRows(
+    directoryCatalogRows({ listing, saved, connected, reconnectable, now }),
+    { libraryEnvironmentId: libraryId, oldIds },
   );
 
   const recentRows = rows.filter((row) => !oldIds.has(row.environmentId));
@@ -427,6 +429,10 @@ function LibraryComputersSection({
         ) : view.status === "empty" && rows.length === 0 && old.machines.length === 0 ? (
           <LibraryEmpty icon={HardDriveIcon} title="No other computers yet">
             Computers connected to your Library will appear here when they report in.
+          </LibraryEmpty>
+        ) : view.status === "listed" && rows.length === 0 && old.machines.length === 0 ? (
+          <LibraryEmpty icon={HardDriveIcon} title="Every computer is on this device">
+            Each computer in your Library is already saved here. New ones appear when they join.
           </LibraryEmpty>
         ) : null}
         {oldRows.length > 0 || old.machines.length > 0 ? (

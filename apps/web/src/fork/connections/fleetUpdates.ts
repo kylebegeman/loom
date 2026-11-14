@@ -5,6 +5,8 @@ export const OS_MANAGED_RUNTIME_STATUS = "Runtime managed by its operating syste
 /** Unknown or stale hosts must never look verified as current. */
 export function describeFleetUpdateStatus(input: {
   readonly connected: boolean;
+  /** The user switched this computer off on this device, which is not the same as offline. */
+  readonly switchedOff?: boolean;
   readonly currentVersion: string | null;
   readonly targetVersion: string;
   readonly providerCount: number;
@@ -13,7 +15,10 @@ export function describeFleetUpdateStatus(input: {
   /** The operating system ships this runtime, so no client version is "available" to it. */
   readonly osManaged?: boolean;
 }): string {
-  if (!input.connected) return "Offline · reconnect to check updates";
+  if (!input.connected)
+    return input.switchedOff === true
+      ? "Switched off on this device · switch it on to check updates"
+      : "Offline · reconnect to check updates";
   if (input.currentVersion === null) return "Waiting for version";
   const behind = resolveVersionMismatch(input.currentVersion, input.targetVersion) !== null;
   const available = [
