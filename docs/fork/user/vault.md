@@ -3,15 +3,40 @@
 Vault stores development credentials and secure records separately from your personal accounts.
 SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub for agents**; the generic item editor can only rename them. Revealed values can be copied and clear when you leave the app or after one minute.
 
-Open **Account → Manage account Vault** to manage saved connections and secrets for your
-approved computers. **Settings → Vault** also leads to the account Vault. Your Library must
-support account Vault and have its OpenBao connection configured; your phone, browser and
-enrolled execution computers do not need OpenBao credentials.
+There are two kinds of Vault. The account Vault holds saved connections and secrets for your
+approved computers and is kept by your Library. Each computer also has its own existing Vault,
+whose records stay on that computer and are separate from the account Vault. Opening the
+account Vault does not copy or move existing items. Older Libraries and computers keep their
+existing Vault settings until updated.
 
-Existing computer Vaults remain under **This computer’s existing Vault** in that computer's
-Vault settings. Their records are separate from the account Vault. Opening the account Vault
-does not copy or move existing items. Less frequent tools are under **Advanced**. Older Libraries
-and computers retain their existing Vault settings until updated.
+## Open a Vault
+
+Open **Settings > Vault** and use **Settings on** to choose whose Vault to manage.
+
+- **Account Vault:** choose your Library. **Manage account Vault**, in **Settings > Computers >
+  Account** or on a computer's Vault page, opens the same place. Your Library must support
+  account Vault and have its OpenBao connection configured; your phone, browser and enrolled
+  execution computers do not need OpenBao credentials. This device's connection to your Library
+  also needs Vault access. When it lacks that access, the **Account Vault** card has no
+  **Manage account Vault** button and explains the repair: pair this device again with a link
+  that includes **View access** and **Manage access**, or, for an Identity sign-in, have the
+  Library allow admin access for Identity sessions (see
+  [Reach](../operations/reach.md)) and sign in again. Until then, use a computer's existing
+  Vault.
+- **A computer's existing Vault:** choose the computer. When the account Vault can be managed
+  from this device, the computer's own Vault is folded under **This computer’s existing Vault**
+  below the **Account Vault** card. Expand it to reach **Vault items**, **Access**, **GitHub
+  for agents** and that computer's other Vault settings. The sections this guide places under
+  **Advanced**, such as **Imports** and **Credential brokers**, appear in the same fold. When
+  the account Vault cannot be managed from here (no Vault access, or the Library needs
+  reconnecting), there is no fold: the sections appear directly on the page and less frequent
+  tools are under **Advanced**.
+
+To add an item to a computer's existing Vault, open its Vault as above and choose **Add item**
+in **Vault items**, or run **Add to Vault...** from the command palette in a thread on that
+computer. Items added this way stay on that computer. On an account computer, **Use saved
+item** and provider **Use Vault** choose from the account Vault, so they do not offer items saved
+only to the computer's existing Vault.
 
 The service token that connects the computer to OpenBao has to be renewed outside Loom. When it
 has less than three days left, the Vault status says so; renew or reissue it before it lapses.
@@ -34,9 +59,10 @@ match is offered directly; **Choose another** searches other active items. The v
 the computer running the agent. A saved file can answer only a request that allows file
 delivery. Use the SSH and GitHub tools for those managed connections.
 
-If you paste a new value and also save it to Vault, a matching name replaces the existing
-item. Choose **Save as new** to create a separate item. If an item changes while the card is
-open, refresh the matching item and retry.
+If you paste a new value and also save it to Vault under an existing item's name, **Update
+existing item** saves it as a new version of that item. Choose **Create new item** to keep the
+existing item unchanged. If an item changes while the card is open, choose **Refresh matching
+item** and retry.
 
 ## Supply a provider API key
 
@@ -108,19 +134,24 @@ Items are shown by name. Search a name, kind, item ID or reference, or choose a 
 the list. Search checks metadata only, never saved values. Choose **Recently updated** to
 start with the latest changes. Older computers retain their original paged list until updated.
 
-Choose **Add item**, or **Add to Vault...** in the command palette, and enter a name and value.
-The dialog opens over your current view. If a credential picker has no matching item, choose
-**Add** there to create it and fill the picker without leaving the form. SSH keys and GitHub
-connections open their dedicated creation dialogs.
-To save a file, choose **Choose file** beside the value or drop one onto the Vault page on web/desktop.
-Loom selects Secure file and uses the filename as the initial name. Secret values are hidden by
-default. Multiline entry is explicitly visible, for keys and notes. File imports support files
-up to 512 KB. Choose **Edit** to rename an item; enable **Replace value** only when changing its
+Choose **Add item**, or **Add to Vault...** in the command palette. Enter a name, choose a kind
+(Secret, Account, Secure note or Secure file), enter the value or choose a file, then choose
+**Save item**. An item has only a name, a kind and its value; there is no separate description,
+so put identifying details in the name. The dialog opens over your current view and saves to
+the Vault you opened it from. From the command palette outside a thread, choose the computer
+first. If a credential picker has no matching item, choose its add option, such as **Add
+secret**, to create one and fill the picker without leaving the form. **Create SSH key** and
+**Connect GitHub** in the dialog switch to their dedicated setup.
+To save a file, choose **Choose file** in the dialog or drop one onto the Vault page on
+web/desktop. Loom selects Secure file and, when the name is empty, uses the filename. Files can
+be up to 512 KB. Secret values are hidden by default; switch to visible multiline entry for keys
+and notes. Choose **Edit** to rename an item; enable **Replace value** only when changing its
 contents. Values appear only after **Reveal value**, **Download** or **Share file**. Downloads
 and shared copies leave Vault's protection once saved to another application.
 
-Archive hides an item from the normal list. Open **Archived** below it and choose **Restore**
-to bring an item back. Archived results use the same search and kind filter; use **More archived
+On web and desktop, Archive and Delete are under **Item details and maintenance** on each item. Archive hides an
+item from the normal list. Open **Archived** below it and choose **Restore** to bring an item
+back. Archived results use the same search and kind filter; use **More archived
 items** when another page is available.
 Delete removes its current value; encrypted previous versions and backups follow your backend's
 retention policy. Delete does not revoke credentials at GitHub or another service. If an item
@@ -128,9 +159,9 @@ changes while you edit it, refresh before retrying instead of overwriting the ne
 
 Inspection requires access to read this computer's credentials; changes and reveal require
 write access. A locked, unavailable or misconfigured backend reports its state and can be
-checked again with **Refresh**. Vault does not fall back to your personal password manager.
+checked again with **Refresh records** (**Refresh** on mobile). Vault does not fall back to your personal password manager.
 
-When answering a private secret request, you can select **Also save to Vault as** and enter a name.
+When answering a private secret request, you can select **Also save a copy to Vault** and enter a name.
 This saves a separate Vault item using your own write access before answering the request.
 If the save fails, retry or turn the option off to answer without a Vault copy. Account computers
 save to the account Vault. **Use saved item** selects from that same Vault and delivers the
@@ -953,8 +984,8 @@ saved preparation digest. Cancelled preparation needs a new request and operatio
 resumes an operation, changes a reservation or grants access. Journal errors leave ordinary
 approval review available.
 
-The inbox starts with pending requests. Choose **Show all requests** to review retained decisions
-or revoke an active or expired approval, then **Show pending requests** to return. Counts and
+The inbox starts with pending requests. Choose **Show request history** to review retained
+decisions or revoke an active or expired approval, then **Hide request history** to return. Counts and
 visible pending work update at expiry; server-side checks remain authoritative.
 
 Approval cards show current record, thread and project names alongside the IDs and version
