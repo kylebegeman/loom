@@ -171,15 +171,15 @@ export function resolveSwitchboardConfiguration(
  * The controller origin whose cached `/api/v1/*` reads describe the routed hub, and the helper
  * whose key they need. An account hub's controller is read through its gateway, unless
  * `LOOM_SWITCHBOARD_CONTROLLER_URL` names another; otherwise as `resolveSwitchboardController`.
+ * An empty value means "no controller route", which an account hub's gateway always provides.
  */
 export function resolveSwitchboardControllerRoute(
   environment: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ): { readonly url: string; readonly keyCommand?: SwitchboardKeyCommand } | null {
   const configured = environment.LOOM_SWITCHBOARD_CONTROLLER_URL;
-  if (configured === "") return null;
   const routed = resolveSwitchboardConfiguration(environment, platform);
-  if (routed.source === "account" && configured === undefined)
+  if (routed.source === "account" && !configured)
     return { url: `${routed.url}${SWITCHBOARD_CONTROLLER_PATH}`, keyCommand: routed.keyCommand };
   const url = resolveSwitchboardController(environment);
   return url === null ? null : { url };

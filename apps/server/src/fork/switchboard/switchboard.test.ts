@@ -478,19 +478,27 @@ describe("Switchboard environment configuration", () => {
       hubOrigins: ["https://dorothy.example.test"],
     });
     try {
-      expect(resolveSwitchboardControllerRoute({}, "darwin")).toEqual({
+      const gateway = {
         url: "https://dorothy.example.test/api/loom/switchboard/controller",
         keyCommand: { command: "/bin/cat", args: ["/secrets/credential.bin"] },
-      });
+      };
+      expect(resolveSwitchboardControllerRoute({}, "darwin")).toEqual(gateway);
+      // A computer set up by hand for the shared gateway had no controller route, so it set "".
+      expect(
+        resolveSwitchboardControllerRoute(
+          {
+            LOOM_SWITCHBOARD_URL: "https://dorothy.example.test/api/loom/switchboard",
+            LOOM_SWITCHBOARD_CONTROLLER_URL: "",
+          },
+          "darwin",
+        ),
+      ).toEqual(gateway);
       expect(
         resolveSwitchboardControllerRoute(
           { LOOM_SWITCHBOARD_CONTROLLER_URL: "https://controller.example.test" },
           "darwin",
         ),
       ).toEqual({ url: "https://controller.example.test" });
-      expect(
-        resolveSwitchboardControllerRoute({ LOOM_SWITCHBOARD_CONTROLLER_URL: "" }, "darwin"),
-      ).toBeNull();
     } finally {
       setSwitchboardAccountRoute(undefined);
     }
