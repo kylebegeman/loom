@@ -32,6 +32,7 @@ import { library, useLibraryAuthority } from "./libraryState";
 import { LibrarySignInSection } from "./LibrarySignInStatus";
 import { DevicesWithAccessSection } from "../connections/DevicesWithAccessSection";
 import { AccountComputers } from "../connections/AccountComputers";
+import { AccountLinksPolicy } from "../connections/AccountLinksPolicy";
 import { ApproveComputer } from "../connections/ApproveComputer";
 import { AccountVaultEntry } from "../vault/AccountVaultEntry";
 import { LibraryAccessBlock } from "./LibraryAccessBlock";
@@ -157,6 +158,7 @@ export function LibraryAuthorityScreen() {
       <AccountVaultEntry />
       <ApproveComputer />
       <AccountComputers />
+      <AccountLinksPolicy />
       {authority.environmentId ? (
         <DevicesWithAccessSection
           environmentId={authority.environmentId}

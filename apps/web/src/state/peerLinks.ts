@@ -10,6 +10,7 @@ import { Atom } from "effect/reactivity";
 import { useEffect, useEffectEvent } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { useListsLinkedEnvironments } from "../fork/connections/accountLinksState"; // fork: account-links
 import { useEnvironmentIdentities, useEnvironments } from "./environments";
 import { environmentPresentations } from "./presentation";
 import { relayEnvironmentDiscovery } from "./relay";
@@ -53,11 +54,9 @@ export function useLinkedEnvironments(
 
 export function usePeerLinkHosts() {
   const { environments } = useEnvironments();
-  const supported = environments.filter(
-    (environment) =>
-      environment.connection.phase === "connected" &&
-      offersLinkedEnvironments(environment.serverConfig),
-  );
+  const connected = environments.filter(({ connection }) => connection.phase === "connected"); // fork: account-links
+  const listsLinks = useListsLinkedEnvironments(connected); // fork: account-links
+  const supported = connected.filter(listsLinks); // fork: account-links
   const readable = useEnvironmentsWithScope(supported, AuthAccessReadScope);
   return supported.filter((environment) => readable.has(environment.environmentId));
 }

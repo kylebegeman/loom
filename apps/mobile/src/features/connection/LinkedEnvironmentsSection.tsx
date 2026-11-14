@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { AppState, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { useAccountLinksView } from "../../fork/connections/accountLinksState"; // fork: account-links
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { peerLinkEnvironment } from "../../state/peerLinks";
 import { useEnvironmentQuery } from "../../state/query";
@@ -19,12 +20,17 @@ export function LinkedEnvironmentsSection(props: {
 }) {
   const config = useEnvironmentServerConfig(props.environmentId);
   const canRead = useEnvironmentScope(props.environmentId, AuthAccessReadScope);
-  const supported = canRead && offersLinkedEnvironments(config);
+  const account = useAccountLinksView(props.environmentId); // fork: account-links
+  const supported = canRead && (offersLinkedEnvironments(config) || account.linksAccount); // fork: account-links
   const links = useEnvironmentQuery(
     supported ? peerLinkEnvironment.list({ environmentId: props.environmentId, input: {} }) : null,
   );
   const [nowMs, setNowMs] = useState(Date.now);
-  const hasLinks = supported && (links.data?.links.length ?? 0) > 0;
+  // fork: account-links -- with the beta off, only the links Loom keeps for the account are listed.
+  const listed = (links.data?.links ?? []).filter(
+    (link) => account.offers || account.managed.has(link.environmentId),
+  );
+  const hasLinks = supported && listed.length > 0; // fork: account-links
   useFocusEffect(
     useCallback(() => {
       if (!hasLinks) return;
@@ -40,29 +46,35 @@ export function LinkedEnvironmentsSection(props: {
       };
     }, [hasLinks]),
   );
-  if (!supported || links.error || !links.data || links.data.links.length === 0) return null;
+  if (!supported || links.error || listed.length === 0) return null; // fork: account-links
   const now = DateTime.makeUnsafe(nowMs);
   return (
     <View className="mt-5 gap-3">
       <SettingsSection title={`Linked from ${props.environmentLabel}`}>
-        {links.data.links.map((link) => {
+        {listed.map((link) => {
           const health = peerLinkHealth(link, now);
+          // fork: account-links -- an account link renews by itself, so its expiry is not news.
+          const managed = account.managed.has(link.environmentId);
           const status =
-            health.kind === "expired"
-              ? "Expired. Link it again with a new pairing code."
-              : health.kind === "unreachable"
-                ? (health.detail ?? "Not answering right now.")
-                : health.kind === "failing"
-                  ? health.detail
-                  : health.expiresInDays !== null
-                    ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}`
-                    : "Reachable";
+            managed && health.kind === "reachable"
+              ? "Managed by your account"
+              : health.kind === "expired"
+                ? managed
+                  ? "Expired. Loom renews it on its next check."
+                  : "Expired. Link it again with a new pairing code."
+                : health.kind === "unreachable"
+                  ? (health.detail ?? "Not answering right now.")
+                  : health.kind === "failing"
+                    ? health.detail
+                    : health.expiresInDays !== null
+                      ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}`
+                      : "Reachable";
           return (
             <View key={link.environmentId} className="gap-0.5 p-4">
               <Text className="text-base font-t3-bold text-foreground">{link.label}</Text>
               <Text
                 className={
-                  health.kind === "reachable" && health.expiresInDays === null
+                  health.kind === "reachable" && (health.expiresInDays === null || managed) // fork: account-links
                     ? "text-xs text-foreground-muted"
                     : "text-xs text-danger-foreground"
                 }

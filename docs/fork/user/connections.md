@@ -41,6 +41,29 @@ Older computers continue to use their own Identity sign-in or a pairing code.
 Update Loom on both your Library and the computer to use account access. Direct
 Tailscale and pairing connections remain available for local access and recovery.
 
+## Let agents work across your computers
+
+Agents on one of your computers can start, message and wait on threads on your
+other computers. Loom links every pair of computers enrolled with your Library
+when a computer joins, when your computer list changes, and every few minutes
+after that. It renews each link before it expires. These links work without the
+Linked environments beta.
+
+To turn this off or choose what agents may do, open **Account > Agents across your
+computers** on iPhone, or **Settings > Computers > Account** on web and desktop.
+It starts on with full access. **Read only** lets agents read projects and threads
+without starting or changing anything. Only your Library's owner can change it.
+Turning it off, or removing a computer from your account, removes its links within
+a few minutes.
+
+The links appear under **Linked environments** in **Settings > Computers**, and
+under **Linked from** on iPhone, as **Managed by your account**. They have no
+**Forget** button because Loom would link them again; turn the setting off instead.
+A link uses the other computer's Loomhost address first, then its Tailscale
+address. Each link has its own credential from your Library, and your own sign-in
+never leaves your devices. To link a computer outside your account, pair it by
+hand from **Linked environments** with the beta on.
+
 ## Remove a computer from your account
 
 Open **Account > Account computers** on iPhone, or **Settings > Computers > Account**

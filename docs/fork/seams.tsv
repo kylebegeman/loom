@@ -1832,3 +1832,7 @@ apps/server/src/peer/PeerForwarding.ts	account-links	5
 apps/server/src/peer/PeerLinks.ts	account-links	4
 apps/server/src/peer/PeerLinks.test.ts	account-links	1
 apps/server/src/orchestration-v2/ProviderSessionManager.ts	account-links	3
+apps/web/src/state/peerLinks.ts	account-links	4
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	account-links	8
+apps/mobile/src/features/connection/LinkedEnvironmentsSection.tsx	account-links	8
+docs/internals/remote.md	account-links	3
