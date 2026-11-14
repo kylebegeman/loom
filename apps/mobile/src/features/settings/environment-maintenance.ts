@@ -5,12 +5,14 @@ import {
   type ExecutionEnvironmentCapabilities,
   type ServerProvider,
 } from "@t3tools/contracts";
+import type { MirroredReleaseIndex } from "@t3tools/contracts/fork"; // fork: private-releases
 import {
   CLI_RELEASES_PAGE_URL,
   cliReleaseChannelOf,
   cliReleaseIndexPageUrl,
   newestCliReleaseVersion,
 } from "@t3tools/shared/cliRelease";
+import { newestChannelRelease } from "@t3tools/shared/fork/release-mirror"; // fork: private-releases
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
@@ -59,8 +61,21 @@ async function fetchReleases(url: string, accept: string, signal: AbortSignal) {
   return response;
 }
 
-export async function findEnvironmentUpdate(currentVersion: string, signal: AbortSignal) {
+export async function findEnvironmentUpdate(
+  currentVersion: string,
+  signal: AbortSignal,
+  // fork: private-releases - The environment's Library mirror; `null` where it has none.
+  libraryReleases?: (signal: AbortSignal) => Promise<MirroredReleaseIndex | null>,
+) {
   const channel = cliReleaseChannelOf(currentVersion);
+  // fork: private-releases
+  const mirrored = await libraryReleases?.(signal);
+  // fork: private-releases
+  if (mirrored) {
+    const version = newestChannelRelease(mirrored, channel)?.version;
+    if (version === undefined) throw new Error(`No ${channel} release was found.`);
+    return compareSemverVersions(version, currentVersion) > 0 ? version : null;
+  }
   // Public release pages avoid the anonymous API quota shared by devices on the same network.
   const response = await fetchReleases(
     channel === "stable" ? `${CLI_RELEASES_PAGE_URL}/latest` : `${CLI_RELEASES_PAGE_URL}.atom`,

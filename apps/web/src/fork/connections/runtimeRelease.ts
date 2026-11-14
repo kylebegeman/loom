@@ -1,17 +1,21 @@
 import { useAtomValue } from "@effect/atom-react";
+import { createReleaseIndexAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import type { DesktopUpdateChannel, ExecutionEnvironmentPlatform } from "@t3tools/contracts";
+import { type MirroredReleaseIndex, RELEASE_INDEX_FEATURE } from "@t3tools/contracts/fork";
 import {
   cliArchiveFileName,
   cliArchivePlatformKey,
   cliReleaseIndexPageUrl,
   CLI_RELEASE_CHECKSUMS_FILE,
-  newestCliReleaseVersion,
-  loomReleaseDatabaseMigration,
 } from "@t3tools/shared/cliRelease";
+import { newestChannelRelease, releaseAssetNames } from "@t3tools/shared/fork/release-mirror";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { connectionAtomRuntime } from "~/connection/runtime";
+import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
+import { serverEnvironment } from "~/state/server";
 
 const Release = Schema.Struct({
   draft: Schema.Boolean,
@@ -19,8 +23,22 @@ const Release = Schema.Struct({
 });
 const decodeRelease = Schema.decodeUnknownEffect(Release);
 
-/** Background services install platform archives, independently of npm publication. */
-export const runtimeReleaseAssetsAtom = Atom.family((version: string) =>
+const releaseIndex = createReleaseIndexAtoms(connectionAtomRuntime);
+const READ_GITHUB = AsyncResult.success<MirroredReleaseIndex | null>(null);
+const DESCRIBING = AsyncResult.initial<MirroredReleaseIndex | null>(true);
+
+/** The primary environment's Library releases; `null` reads GitHub, which older servers need. */
+const primaryReleaseIndexAtom = Atom.make((get) => {
+  const environmentId = get(primaryEnvironmentIdAtom);
+  if (environmentId === null) return READ_GITHUB;
+  const config = get(serverEnvironment.configValueAtom(environmentId));
+  if (config === null) return DESCRIBING;
+  return supportsLoomFeature(config.environment.capabilities, RELEASE_INDEX_FEATURE)
+    ? get(releaseIndex({ environmentId, input: {} }))
+    : READ_GITHUB;
+}).pipe(Atom.withLabel("loom-primary-release-index"));
+
+const githubReleaseAssetsAtom = Atom.family((version: string) =>
   Atom.make(
     Effect.gen(function* () {
       const url = new URL(cliReleaseIndexPageUrl(1));
@@ -44,6 +62,16 @@ export const runtimeReleaseAssetsAtom = Atom.family((version: string) =>
   ),
 );
 
+/** Background services install platform archives, independently of npm publication. */
+export const runtimeReleaseAssetsAtom = Atom.family((version: string) =>
+  Atom.make((get) => {
+    const mirrored = get(primaryReleaseIndexAtom);
+    return AsyncResult.isSuccess(mirrored) && mirrored.value === null
+      ? get(githubReleaseAssetsAtom(version))
+      : AsyncResult.map(mirrored, (releases) => releaseAssetNames(releases ?? [], version));
+  }).pipe(Atom.withLabel(`runtime-release-source:${version}`)),
+);
+
 const ReleaseIndex = Schema.Array(
   Schema.Struct({
     tag_name: Schema.String,
@@ -52,9 +80,10 @@ const ReleaseIndex = Schema.Array(
   }),
 );
 const decodeReleaseIndex = Schema.decodeUnknownEffect(ReleaseIndex);
+const trackChannel = (channel: DesktopUpdateChannel) =>
+  channel === "nightly" ? ("nightly" as const) : ("stable" as const);
 
-/** Loom's publisher records migration compatibility in its own release body, independently of npm. */
-export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
+const githubTrackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
   Atom.make(
     Effect.gen(function* () {
       for (let page = 1; ; page++) {
@@ -63,18 +92,8 @@ export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
           Effect.flatMap((ok) => ok.json),
           Effect.flatMap(decodeReleaseIndex),
         );
-        const version = newestCliReleaseVersion(
-          releases,
-          channel === "nightly" ? "nightly" : "stable",
-        );
-        if (version !== undefined)
-          return {
-            version,
-            databaseMigration: loomReleaseDatabaseMigration(
-              releases.find((release) => release.tag_name === version)?.body,
-              version,
-            ),
-          };
+        const release = newestChannelRelease(releases, trackChannel(channel));
+        if (release !== null) return release;
         if (releases.length < 100) return null;
       }
     }).pipe(
@@ -82,6 +101,18 @@ export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
       Effect.provide(FetchHttpClient.layer),
     ),
   ).pipe(Atom.withRefresh("5 minutes"), Atom.withLabel(`loom-track-release:${channel}`)),
+);
+
+/** Loom's publisher records migration compatibility in its own release body, independently of npm. */
+export const trackReleaseAtom = Atom.family((channel: DesktopUpdateChannel) =>
+  Atom.make((get) => {
+    const mirrored = get(primaryReleaseIndexAtom);
+    return AsyncResult.isSuccess(mirrored) && mirrored.value === null
+      ? get(githubTrackReleaseAtom(channel))
+      : AsyncResult.map(mirrored, (releases) =>
+          newestChannelRelease(releases ?? [], trackChannel(channel)),
+        );
+  }).pipe(Atom.withLabel(`loom-track-release-source:${channel}`)),
 );
 
 const NO_RELEASE = Atom.make(AsyncResult.success<ReadonlyArray<string>>([]));

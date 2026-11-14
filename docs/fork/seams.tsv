@@ -1833,3 +1833,6 @@ scripts/build-desktop-artifact.ts	private-releases	2
 apps/desktop/src/electron/ElectronUpdater.ts	private-releases	2
 apps/desktop/src/updates/DesktopUpdates.ts	private-releases	6
 apps/desktop/src/updates/updatesTestHarness.ts	private-releases	1
+apps/mobile/src/features/settings/environment-maintenance.ts	private-releases	5
+apps/mobile/src/features/settings/environmentUpdateCheck.ts	private-releases	2
+apps/mobile/src/features/settings/environmentUpdateCheck.test.ts	private-releases	1

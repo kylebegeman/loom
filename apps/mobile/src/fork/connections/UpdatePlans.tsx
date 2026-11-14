@@ -19,14 +19,17 @@ import { ListActionRow } from "../../components/ui/ListActionRow";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { findEnvironmentUpdate } from "../../features/settings/environment-maintenance";
+import { readEnvironmentReleaseIndex } from "./releaseIndex";
 import { environmentPresentations } from "../../state/presentation";
 import { useAtomCommand } from "../../state/use-atom-command";
 
-async function latestVersion(currentVersion: string) {
+async function latestVersion(environmentId: EnvironmentId, currentVersion: string) {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 20_000);
   try {
-    return await findEnvironmentUpdate(currentVersion, abort.signal);
+    return await findEnvironmentUpdate(currentVersion, abort.signal, (signal) =>
+      readEnvironmentReleaseIndex(environmentId, signal),
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -64,7 +67,7 @@ function ComputerUpdatePlan({
     setMessage(null);
     const change = updatePlanCanCancel(status)
       ? cancel({ environmentId, input: { id: status!.plan!.id } })
-      : latestVersion(currentVersion).then((targetVersion) => {
+      : latestVersion(environmentId, currentVersion).then((targetVersion) => {
           if (targetVersion === null) {
             setMessage("Already up to date");
             return null;
@@ -169,7 +172,7 @@ export function FleetUpdatePlans() {
           );
           const current = eligibility[index]?.status?.currentVersion;
           if (!current) throw new Error("Reconnect this computer to check its version.");
-          return latestVersion(current);
+          return latestVersion(target.environmentId, current);
         },
         async (target, targetVersion) => {
           const response = await arm({
