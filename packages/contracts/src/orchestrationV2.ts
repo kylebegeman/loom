@@ -119,6 +119,8 @@ export const OrchestrationV2LinkOrigin = Schema.Struct({
   sessionId: TrimmedNonEmptyString,
   label: Schema.String,
   access: Schema.optional(AuthMcpClientAccess),
+  /** An account link's computer, which outlasts the sessions it renews. */
+  sourceEnvironmentId: Schema.optional(EnvironmentId), // fork: account-links
 });
 export type OrchestrationV2LinkOrigin = typeof OrchestrationV2LinkOrigin.Type;
 

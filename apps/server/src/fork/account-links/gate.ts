@@ -27,6 +27,16 @@ export const accountLinkGate = Effect.gen(function* () {
   return {
     holdsAny: ask((service) => service.holdsAny),
     holds: (environmentId: EnvironmentId) => ask((service) => service.holds(environmentId)),
-    admits: (sessionId: string) => ask((service) => service.admits(AuthSessionId.make(sessionId))),
+    /** The computer an account link session was issued to, or undefined for any other session. */
+    admittedFrom: (sessionId: string) =>
+      links.pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.succeed(Option.none<EnvironmentId>()),
+            onSome: (service) => service.admittedFrom(AuthSessionId.make(sessionId)),
+          }),
+        ),
+        Effect.map(Option.getOrUndefined),
+      ),
   };
 });

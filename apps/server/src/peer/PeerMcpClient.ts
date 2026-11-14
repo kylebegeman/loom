@@ -88,6 +88,10 @@ const fromLinkError = (error: PeerLinkError) =>
   });
 
 // fork: account-links -- a dropped wait goes out again, and the link says why it dropped.
+/** A link's error once the peer refuses its token, the one error a new link fixes. */
+export const LINK_NO_LONGER_ACCEPTED =
+  "The linked environment no longer accepts this link. It may have been revoked there; link it again.";
+
 /** How many more times a repeatable call goes out after its route dropped it. */
 export const DROPPED_ROUTE_RETRIES = 2;
 
@@ -168,7 +172,7 @@ const make = Effect.gen(function* () {
         code: initialized.status === 401 ? "capability_denied" : "orchestration_error",
         message:
           initialized.status === 401
-            ? "The linked environment no longer accepts this link. It may have been revoked there; link it again."
+            ? LINK_NO_LONGER_ACCEPTED // fork: account-links
             : `The linked environment refused to start an MCP session (HTTP ${initialized.status}).`,
       });
     }
@@ -236,8 +240,7 @@ const make = Effect.gen(function* () {
       if (response.status === 401) {
         return yield* new OrchestratorMcpFailure({
           code: "capability_denied",
-          message:
-            "The linked environment no longer accepts this link. It may have been revoked there; link it again.",
+          message: LINK_NO_LONGER_ACCEPTED, // fork: account-links
         });
       }
       if (response.status === 403) return yield* linkedEnvironmentsOffThere;

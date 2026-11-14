@@ -16,10 +16,12 @@ import {
   type AccountLinkVerification,
   type AccountLinkVerifyRequest,
 } from "@t3tools/contracts/fork";
+import { verifyAccountLinkProof } from "@t3tools/shared/fork/directory";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Signature from "effect/crypto/Signature";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
@@ -62,8 +64,8 @@ interface PendingGrant {
 /**
  * On the Library: the owner's account link policy, the roster each computer of the account links
  * to, and the one-use grants that let one computer admit another. A grant names both computers and
- * the access, and only the target's own Library session can redeem it, so it is useless anywhere
- * else.
+ * the access, only the target's own Library session can redeem it, and only with the source's
+ * signature for that target, so it is useless anywhere else or without the source's key.
  */
 export class AccountLinkAuthority extends Context.Service<
   AccountLinkAuthority,
@@ -93,6 +95,7 @@ const make = Effect.gen(function* () {
   const enabled = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(Config.withDefault(false));
   const sql = yield* SqlClient.SqlClient;
   const random = yield* SecureRandom.SecureRandom;
+  const signature = yield* Signature.Signature;
   const sessions = yield* SessionStore.SessionStore;
   const directory = yield* Directory.DirectoryService;
   const reach = yield* ReachStore.ReachStore;
@@ -248,7 +251,22 @@ const make = Effect.gen(function* () {
       entry.targetFingerprint !== request.keyFingerprint
     )
       return yield* fail("denied");
-    // Removed before any I/O, so two presentations can never admit the same grant twice.
+    const sourcePin = yield* directory
+      .pinned(entry.source)
+      .pipe(Effect.mapError(() => fail("unavailable")));
+    const proven =
+      sourcePin !== null &&
+      (yield* verifyAccountLinkProof({
+        publicKey: sourcePin.publicKey,
+        token: request.proof,
+        source: entry.source,
+        target: self,
+        grant: request.grant,
+        nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
+      }).pipe(Effect.provideService(Signature.Signature, signature)));
+    // A refusal leaves the grant for the real presentation; another may have spent it meanwhile.
+    if (!proven || pending.get(request.grant) !== entry) return yield* fail("denied");
+    // Removed before any further I/O, so two presentations can never admit the same grant twice.
     pending.delete(request.grant);
     if (entry.deadline <= (yield* Clock.currentTimeMillis)) return yield* fail("denied");
     const live = yield* sessions.listActive().pipe(Effect.mapError(() => fail("unavailable")));

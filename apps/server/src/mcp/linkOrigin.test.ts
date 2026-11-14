@@ -382,6 +382,15 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       assert.equal((yield* projections.getThreadShell(users))?.title, "The user's own");
       // An ordinary outside agent is not fenced.
       assert.equal((yield* rename(claudeCode, users)).isError, false);
+      // fork: account-links -- an account link renews its session, so it is known by its computer.
+      const accountLink = (sessionId: string, computer: string) => ({
+        ...laptop,
+        client: { ...laptop.client!, sessionId, sourceEnvironmentId: EnvironmentId.make(computer) },
+      });
+      const fromLaptop = yield* launch(accountLink("laptop-1", "laptop"), "The laptop's account");
+      assert.equal((yield* rename(accountLink("laptop-2", "laptop"), fromLaptop)).isError, false);
+      for (const other of [accountLink("desk-1", "desk"), laptop])
+        assert.equal(failureCode(yield* rename(other, fromLaptop)), "capability_denied");
       // Naming this environment's own id is still this environment's thread.
       for (const [name, args] of [
         ["t3_thread_send", { message: "From the laptop." }],

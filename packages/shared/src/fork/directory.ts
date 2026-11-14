@@ -212,6 +212,63 @@ export function verifyDirectoryReport(input: {
   });
 }
 
+/** Distinct from every other typ, so no other signed token passes as a link presentation. */
+const ACCOUNT_LINK_PROOF_TYP = "loom-account-link+jwt";
+/** A grant lives 60 s; verification adds 60 s of clock tolerance. */
+const ACCOUNT_LINK_PROOF_LIFETIME_SECONDS = 60;
+
+/**
+ * Signed by the computer presenting an account link grant, over the grant and the computer it
+ * presents to, with its directory key (PKCS#8 PEM). The Library admits a grant only with this, so
+ * a grant without its computer's key admits nothing.
+ */
+export const signAccountLinkProof = Effect.fn("AccountLinkProof.sign")(function* (input: {
+  readonly privateKey: string;
+  readonly source: string;
+  readonly target: string;
+  readonly grant: string;
+  readonly nowEpochSeconds: number;
+}): Effect.fn.Return<string, RelayJwtError, Signature.Signature> {
+  const iat = Math.floor(input.nowEpochSeconds);
+  return yield* signRelayJwt({
+    privateKey: input.privateKey,
+    typ: ACCOUNT_LINK_PROOF_TYP,
+    payload: {
+      iss: directoryIssuer(input.source),
+      sub: input.source,
+      aud: directoryIssuer(input.target),
+      iat,
+      exp: iat + ACCOUNT_LINK_PROOF_LIFETIME_SECONDS,
+      grant: input.grant,
+    },
+  });
+});
+
+/** Whether `token` is `source`'s proof, by its pinned key (base64 DER), that it presents `grant` to `target`. */
+export function verifyAccountLinkProof(input: {
+  readonly publicKey: string;
+  readonly token: string;
+  readonly source: string;
+  readonly target: string;
+  readonly grant: string;
+  readonly nowEpochSeconds: number;
+}): Effect.Effect<boolean, never, Signature.Signature> {
+  const publicKey = publicKeyPem(input.publicKey);
+  if (publicKey === null) return Effect.succeed(false);
+  return verifyRelayJwt({
+    publicKey,
+    token: input.token,
+    typ: ACCOUNT_LINK_PROOF_TYP,
+    issuer: directoryIssuer(input.source),
+    audience: directoryIssuer(input.target),
+    nowEpochSeconds: input.nowEpochSeconds,
+    maxTokenAge: ACCOUNT_LINK_PROOF_LIFETIME_SECONDS,
+  }).pipe(
+    Effect.map((claims) => claims.sub === input.source && claims.grant === input.grant),
+    Effect.orElseSucceed(() => false),
+  );
+}
+
 /** Carries no cause: payload decode errors echo the machine's hostname. */
 export class LoomOsIdentityError extends Schema.TaggedError<LoomOsIdentityError>()(
   "LoomOsIdentityError",

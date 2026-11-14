@@ -19,18 +19,21 @@ import {
   type AccountLinkPolicy,
   type AccountLinkStatus,
 } from "@t3tools/contracts/fork";
-import { isTailnetHost } from "@t3tools/shared/hostClassification";
 import {
   decodeEd25519PublicKey,
   directoryPublicKeyFromPem,
+  isDirectoryRouteUrl,
   keyFingerprint,
+  signAccountLinkProof,
 } from "@t3tools/shared/fork/directory";
+import * as Clock from "effect/Clock";
 import * as Signature from "effect/crypto/Signature";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
@@ -40,12 +43,15 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import type * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../../cloud/environmentKeys.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { LINK_NO_LONGER_ACCEPTED } from "../../peer/PeerMcpClient.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import { AccountLinkError, AccountLinks } from "./AccountLinks.ts";
@@ -58,7 +64,45 @@ const RETRY_INTERVAL = Duration.minutes(1);
 /** A link is renewed once less than this is left of its session. */
 const RENEW_BEFORE = Duration.days(7);
 const LIBRARY_TIMEOUT = Duration.seconds(10);
-const PEER_TIMEOUT = Duration.seconds(15);
+export const PEER_TIMEOUT = Duration.seconds(15);
+/**
+ * Without a roster for this long, links stop until the Library answers: meanwhile the owner may
+ * have removed a computer or lowered its access.
+ */
+export const ROSTER_STALE_AFTER = Duration.hours(1);
+/** Library verifications the public admit route runs at once; more are turned away. */
+export const MAX_CONCURRENT_VERIFIES = 4;
+/** How often computers the roster does not list yet may make this one look again. */
+const UNLISTED_RECHECK = Duration.seconds(30);
+
+/** Socket codes that mean no connection opened, so the request reached no one. */
+const NOT_CONNECTED = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EHOSTDOWN",
+  "ENETDOWN",
+  "EADDRNOTAVAIL",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+const socketCodes = (error: unknown): ReadonlyArray<string> =>
+  error instanceof AggregateError
+    ? error.errors.flatMap(socketCodes)
+    : Predicate.hasProperty(error, "code")
+      ? [String(error.code)]
+      : [];
+/** Fetch hides the socket's error behind "fetch failed"; a timeout is never this. */
+const neverConnected = (error: unknown) => {
+  if (!HttpClientError.isHttpClientError(error) || error.reason._tag !== "TransportError")
+    return false;
+  const fetchError = error.reason.cause;
+  const codes = socketCodes(
+    Predicate.hasProperty(fetchError, "cause") ? fetchError.cause : fetchError,
+  );
+  return codes.length > 0 && codes.every((code) => NOT_CONNECTED.has(code));
+};
 
 const decodeRoster = Schema.decodeUnknownEffect(AccountLinkRoster);
 const decodeGrant = Schema.decodeUnknownEffect(AccountLinkGrant);
@@ -76,6 +120,13 @@ interface InboundRow {
   readonly access: string;
   readonly expires_at: string;
   readonly issued_at: string;
+}
+
+/** The last roster the Library answered, which admission trusts while it is fresh. */
+interface LastRoster {
+  readonly at: number;
+  readonly members: ReadonlySet<EnvironmentId>;
+  readonly enabled: boolean;
 }
 
 interface Snapshot {
@@ -103,8 +154,8 @@ const sameBinding = (left: AccountComputerBinding, right: AccountComputerBinding
 
 /**
  * The addresses a grant and then the link's token may travel to: the public Loomhost route first,
- * then tailnet ones. Plain http only on a tailnet, which already encrypts; never loopback, which
- * names whichever machine opens it.
+ * then tailnet ones. Only https DNS names, the route rule the directory keeps, so never plain
+ * http, an IP address or loopback.
  */
 export const linkOrigins = (member: AccountLinkMember): ReadonlyArray<string> => {
   const origins: Array<string> = [];
@@ -113,14 +164,28 @@ export const linkOrigins = (member: AccountLinkMember): ReadonlyArray<string> =>
     ...member.routes.filter((route) => route.kind !== "public"),
   ];
   for (const route of ordered) {
-    const url = URL.parse(route.url);
-    if (url === null) continue;
-    const allowed =
-      url.protocol === "https:" || (url.protocol === "http:" && isTailnetHost(url.hostname));
-    if (allowed && !origins.includes(url.origin)) origins.push(url.origin);
+    if (!isDirectoryRouteUrl(route.url)) continue;
+    const origin = new URL(route.url).origin;
+    if (!origins.includes(origin)) origins.push(origin);
   }
   return origins;
 };
+
+const signedOutBody = (body: unknown) =>
+  Predicate.hasProperty(body, "reason") && body.reason === "disabled";
+
+/** Why a computer refused a grant, in the owner's terms. */
+const refusal = (member: AccountLinkMember, response: HttpClientResponse.HttpClientResponse) =>
+  response.status !== 404
+    ? Effect.succeed(`${member.label} refused the link (HTTP ${response.status}).`)
+    : response.json.pipe(
+        Effect.orElseSucceed(() => undefined),
+        Effect.map((body) =>
+          signedOutBody(body)
+            ? `${member.label} is signed out of your Library. Loom links it once it signs in again.`
+            : `${member.label} runs a Loom version without account links. Update it.`,
+        ),
+      );
 
 const make = Effect.gen(function* () {
   const connection = yield* LibraryConnection.LibraryConnectionService;
@@ -141,8 +206,13 @@ const make = Effect.gen(function* () {
   // Short and separate from the reconcile, so two computers linking to each other at once
   // never wait on each other's reconcile.
   const inboundLock = yield* Semaphore.make(1);
+  const verifySlots = yield* Semaphore.make(MAX_CONCURRENT_VERIFIES);
   const wakes = yield* Queue.sliding<void>(1);
   const snapshot = yield* Ref.make<Snapshot>(OFF);
+  // In memory, so a restart starts the hour again.
+  const lastRoster = yield* Ref.make<LastRoster | null>(null);
+  const startedAt = yield* Clock.currentTimeMillis;
+  const lastUnlistedWake = yield* Ref.make(Number.NEGATIVE_INFINITY);
 
   const readOutbound = sql<{ readonly environment_id: string; readonly linked_at: string }>`
     SELECT environment_id, linked_at FROM fork_account_links_outbound
@@ -153,13 +223,53 @@ const make = Effect.gen(function* () {
       (yield* readOutbound.pipe(Effect.orElseSucceed(() => []))).map((row) => row.environment_id),
     ),
   );
-  const inboundSessions = yield* Ref.make<ReadonlySet<string>>(
-    new Set((yield* readInbound.pipe(Effect.orElseSucceed(() => []))).map((row) => row.session_id)),
+  /** Sessions whose revoke failed: no longer account links, though their rows stay to retry. */
+  const unrevoked = yield* Ref.make<ReadonlySet<string>>(new Set());
+  const admittedSessions = (rows: ReadonlyArray<InboundRow>, skip: ReadonlySet<string>) =>
+    new Map(
+      rows
+        .filter((row) => !skip.has(row.session_id))
+        .map((row) => [row.session_id, EnvironmentId.make(row.environment_id)] as const),
+    );
+  const inboundSessions = yield* Ref.make<ReadonlyMap<string, EnvironmentId>>(
+    admittedSessions(yield* readInbound.pipe(Effect.orElseSucceed(() => [])), new Set()),
   );
   const refreshSets = Effect.gen(function* () {
     yield* Ref.set(outboundIds, new Set((yield* readOutbound).map((row) => row.environment_id)));
-    yield* Ref.set(inboundSessions, new Set((yield* readInbound).map((row) => row.session_id)));
+    yield* Ref.set(
+      inboundSessions,
+      admittedSessions(yield* readInbound, yield* Ref.get(unrevoked)),
+    );
   });
+  const forgetSession = (sessionId: string, revoked: boolean) =>
+    Effect.all([
+      Ref.update(inboundSessions, (ids) => {
+        const next = new Map(ids);
+        next.delete(sessionId);
+        return next;
+      }),
+      Ref.update(unrevoked, (ids) => {
+        const next = new Set(ids);
+        if (revoked) next.delete(sessionId);
+        else next.add(sessionId);
+        return next;
+      }),
+    ]);
+
+  const proofFor = Effect.fn("AccountLinks.proofFor")(
+    function* (grant: string, target: EnvironmentId) {
+      const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
+      return yield* signAccountLinkProof({
+        privateKey: keyPair.privateKey,
+        source: ownId,
+        target,
+        grant,
+        nowEpochSeconds: (yield* Clock.currentTimeMillis) / 1000,
+      });
+    },
+    Effect.provideService(Signature.Signature, signature),
+    Effect.mapError(() => "This computer could not sign its link grant. Loom retries."),
+  );
 
   const fingerprint = Effect.gen(function* () {
     const keyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
@@ -173,8 +283,7 @@ const make = Effect.gen(function* () {
 
   /**
    * `left` has no account sign-in at all, so whatever it held goes. `unavailable` may be a
-   * credential that is mid-renewal, so links stay; if the computer really left, the other
-   * computers stop admitting it.
+   * credential that is mid-renewal, so links stay for up to `ROSTER_STALE_AFTER`.
    */
   const currentLibrary = connection.current.pipe(
     Effect.map(
@@ -220,11 +329,16 @@ const make = Effect.gen(function* () {
     yield* sql`DELETE FROM fork_account_links_outbound WHERE environment_id = ${environmentId}`;
   });
 
+  /** A row goes only once its session is revoked, so no session stays valid untracked. */
   const revokeInbound = Effect.fn("AccountLinks.revokeInbound")(function* (row: InboundRow) {
-    yield* sessions
-      .revoke(AuthSessionId.make(row.session_id))
-      .pipe(Effect.ignoreCause({ log: true }));
-    yield* sql`DELETE FROM fork_account_links_inbound WHERE session_id = ${row.session_id}`;
+    const revoked = yield* sessions.revoke(AuthSessionId.make(row.session_id)).pipe(Effect.result);
+    if (Result.isSuccess(revoked))
+      yield* sql`DELETE FROM fork_account_links_inbound WHERE session_id = ${row.session_id}`;
+    else
+      yield* Effect.logWarning("An account link session could not be revoked. Loom retries.", {
+        cause: revoked.failure,
+      });
+    yield* forgetSession(row.session_id, Result.isSuccess(revoked));
   });
 
   /** Inbound sessions the roster no longer covers: a computer that left, or another access. */
@@ -268,27 +382,24 @@ const make = Effect.gen(function* () {
       Effect.flatMap(decodeGrant),
       Effect.mapError(() => "Your Library answered the link grant in an unexpected shape."),
     );
-    let lastFailure = `${member.label} did not answer.`;
+    const proof = yield* proofFor(grant.grant, member.environmentId);
     for (const origin of origins) {
       const answered = yield* peerClient
         .execute(
           HttpClientRequest.post(`${origin}${ACCOUNT_LINKS_ADMIT}`).pipe(
-            HttpClientRequest.bodyJsonUnsafe({ grant: grant.grant, environmentId: ownId }),
+            HttpClientRequest.bodyJsonUnsafe({ grant: grant.grant, proof, environmentId: ownId }),
           ),
         )
         .pipe(Effect.timeout(PEER_TIMEOUT), Effect.result);
-      // Nothing reached the peer, so the grant is unspent and the next address may use it.
       if (Result.isFailure(answered)) {
-        lastFailure = `${member.label} did not answer at ${origin}.`;
-        continue;
+        // Only a connection that never opened leaves the grant unseen for the next address.
+        if (neverConnected(answered.failure)) continue;
+        return yield* Effect.fail(
+          `${member.label} did not answer at ${origin}. Loom tries again with a new grant.`,
+        );
       }
       const response = answered.success;
-      if (response.status !== 200)
-        return yield* Effect.fail(
-          response.status === 404
-            ? `${member.label} runs a Loom version without account links. Update it.`
-            : `${member.label} refused the link (HTTP ${response.status}).`,
-        );
+      if (response.status !== 200) return yield* Effect.fail(yield* refusal(member, response));
       const admission = yield* response.json.pipe(
         Effect.flatMap(decodeAdmission),
         Effect.mapError(() => `${member.label} answered in an unexpected shape.`),
@@ -297,7 +408,7 @@ const make = Effect.gen(function* () {
         return yield* Effect.fail(`${origin} answered as another computer.`);
       return { admission, origins };
     }
-    return yield* Effect.fail(lastFailure);
+    return yield* Effect.fail(`${member.label} did not answer at any of its addresses.`);
   });
 
   const link = Effect.fn("AccountLinks.link")(function* (
@@ -336,7 +447,8 @@ const make = Effect.gen(function* () {
   ) =>
     Option.isNone(held) ||
     held.value.access !== access ||
-    held.value.lastError !== null ||
+    // Any other error passes, and a new session would only cut off what this link started.
+    held.value.lastError === LINK_NO_LONGER_ACCEPTED ||
     DateTime.isLessThan(held.value.expiresAt, DateTime.addDuration(now, RENEW_BEFORE));
 
   const record = (next: Omit<Snapshot, "checkedAt">) =>
@@ -344,54 +456,59 @@ const make = Effect.gen(function* () {
       Effect.flatMap((now) => Ref.set(snapshot, { ...next, checkedAt: DateTime.formatIso(now) })),
     );
 
+  /**
+   * The Library could not say. Links stay, since most of this passes within minutes, but not past
+   * `ROSTER_STALE_AFTER`: the roster is what tells a removed computer or a lowered access apart.
+   */
+  const unsure = Effect.fn("AccountLinks.unsure")(function* (lastError: string) {
+    const previous = yield* Ref.get(snapshot);
+    const since = (yield* Ref.get(lastRoster))?.at ?? startedAt;
+    if ((yield* Clock.currentTimeMillis) - since < Duration.toMillis(ROSTER_STALE_AFTER))
+      return yield* record({ ...previous, state: "retrying", lastError });
+    yield* dropAll;
+    return yield* record({
+      ...previous,
+      state: "retrying",
+      lastError: `${lastError} Account links are paused until it answers.`,
+    });
+  });
+
+  const leave = (lastError: string | null) =>
+    Ref.set(lastRoster, null).pipe(
+      Effect.andThen(dropAll),
+      Effect.andThen(record({ ...OFF, lastError })),
+    );
+
   const reconcileOnce = Effect.gen(function* () {
     const current = yield* currentLibrary;
     if (current.kind === "unavailable")
-      return yield* record({
-        ...(yield* Ref.get(snapshot)),
-        state: "retrying",
-        lastError: "This computer's Library sign-in is unavailable. Its links stay meanwhile.",
-      });
-    if (current.kind !== "member") {
-      yield* dropAll;
-      return yield* record(OFF);
-    }
+      return yield* unsure("This computer's Library sign-in is unavailable.");
+    if (current.kind !== "member") return yield* leave(null);
     const { library, account } = current;
     const asked = yield* askLibrary(
       library,
       HttpClientRequest.get(library.endpoint(ACCOUNT_LINKS_ROSTER)),
     );
-    const previous = yield* Ref.get(snapshot);
     if (Result.isFailure(asked) || asked.success.status >= 500)
-      return yield* record({
-        ...previous,
-        state: "retrying",
-        lastError: "Loom could not reach your Library to check account links.",
-      });
+      return yield* unsure("Loom could not reach your Library to check account links.");
     const response = asked.success;
-    if (response.status === 401 || response.status === 403) {
-      yield* dropAll;
-      return yield* record({
-        ...OFF,
-        lastError: "Your Library no longer lists this computer in your account.",
-      });
-    }
+    if (response.status === 401 || response.status === 403)
+      return yield* leave("Your Library no longer lists this computer in your account.");
     if (response.status !== 200)
-      return yield* record({
-        ...OFF,
-        lastError:
-          response.status === 404
-            ? "Your Library runs a Loom version without account links. Update Loom on your Library."
-            : `Your Library answered HTTP ${response.status}.`,
-      });
+      return yield* unsure(
+        response.status === 404
+          ? "Your Library runs a Loom version without account links. Update Loom on your Library."
+          : `Your Library answered HTTP ${response.status}.`,
+      );
     const roster = yield* response.json.pipe(Effect.flatMap(decodeRoster), Effect.option);
     if (Option.isNone(roster) || !sameBinding(roster.value.account, account))
-      return yield* record({
-        ...previous,
-        state: "retrying",
-        lastError: "Your Library answered account links in an unexpected shape.",
-      });
+      return yield* unsure("Your Library answered account links in an unexpected shape.");
     const { policy, members } = roster.value;
+    yield* Ref.set(lastRoster, {
+      at: yield* Clock.currentTimeMillis,
+      members: new Set(members.map((member) => member.environmentId)),
+      enabled: policy.enabled,
+    });
     if (!policy.enabled) {
       yield* dropAll;
       return yield* record({ ...OFF, policy, members });
@@ -488,6 +605,27 @@ const make = Effect.gen(function* () {
 
   const fail = (reason: AccountLinkError["reason"]) => new AccountLinkError({ reason });
 
+  /** Whether the last roster, while fresh and with links on, lists `environmentId`. */
+  const lists = Effect.fn("AccountLinks.lists")(function* (environmentId: EnvironmentId) {
+    const roster = yield* Ref.get(lastRoster);
+    const age = (yield* Clock.currentTimeMillis) - (roster?.at ?? 0);
+    return (
+      roster !== null &&
+      roster.enabled &&
+      age < Duration.toMillis(ROSTER_STALE_AFTER) &&
+      roster.members.has(environmentId)
+    );
+  });
+
+  /** A computer the roster does not list may have just joined, so look again, now and then. */
+  const wakeForUnlisted = Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const due = yield* Ref.modify(lastUnlistedWake, (last) =>
+      now - last >= Duration.toMillis(UNLISTED_RECHECK) ? [true, now] : [false, last],
+    );
+    if (due) yield* Queue.offer(wakes, undefined);
+  });
+
   const admit: AccountLinks["Service"]["admit"] = Effect.fn("AccountLinks.admit")(
     function* (request) {
       const current = yield* currentLibrary;
@@ -495,18 +633,26 @@ const make = Effect.gen(function* () {
         return yield* fail(current.kind === "unavailable" ? "unavailable" : "disabled");
       const { library, account } = current;
       if (request.environmentId === ownId) return yield* fail("denied");
+      // Anyone can reach this route, so only the account's own computers cost a Library call.
+      if (!(yield* lists(request.environmentId))) {
+        yield* wakeForUnlisted;
+        return yield* fail("denied");
+      }
       const ownFingerprint = yield* fingerprint;
       if (ownFingerprint === null) return yield* fail("unavailable");
-      const asked = yield* askLibrary(
+      const verified = yield* askLibrary(
         library,
         HttpClientRequest.post(library.endpoint(ACCOUNT_LINKS_VERIFY)).pipe(
           HttpClientRequest.bodyJsonUnsafe({
             grant: request.grant,
+            proof: request.proof,
             source: request.environmentId,
             keyFingerprint: ownFingerprint,
           }),
         ),
-      );
+      ).pipe(verifySlots.withPermitsIfAvailable(1));
+      if (Option.isNone(verified)) return yield* fail("capacity");
+      const asked = verified.value;
       if (Result.isFailure(asked) || asked.success.status >= 500) return yield* fail("unavailable");
       if (asked.success.status !== 200) return yield* fail("denied");
       const verification = yield* asked.success.json.pipe(
@@ -522,49 +668,39 @@ const make = Effect.gen(function* () {
         !sameBinding(latest.account, account)
       )
         return yield* fail("denied");
-      const issued = yield* auth
-        .issueMcpClientSession({
-          label: `${verification.label} · account link`,
-          access: verification.access,
-          peerLink: true,
-          client: { deviceType: "bot" },
-        })
-        .pipe(Effect.mapError(() => fail("unavailable")));
-      const issuedAt = DateTime.formatIso(yield* DateTime.now);
-      const expiresAt = DateTime.formatIso(issued.expiresAt);
-      const isNew = yield* inboundLock
+      const { issued, expiresAt, isNew } = yield* inboundLock
         .withPermit(
           Effect.gen(function* () {
             const previous = (yield* readInbound).filter(
               (row) => row.environment_id === request.environmentId,
             );
+            // Before the new session exists, so a failed revoke leaves the old one tracked.
+            for (const row of previous) yield* sessions.revoke(AuthSessionId.make(row.session_id));
+            const issued = yield* auth.issueMcpClientSession({
+              label: `${verification.label} · account link`,
+              access: verification.access,
+              peerLink: true,
+              client: { deviceType: "bot" },
+            });
+            const issuedAt = DateTime.formatIso(yield* DateTime.now);
+            const expiresAt = DateTime.formatIso(issued.expiresAt);
             yield* sql`
-            INSERT INTO fork_account_links_inbound
-              (environment_id, session_id, label, access, expires_at, issued_at)
-            VALUES (${request.environmentId}, ${issued.sessionId}, ${verification.label},
-              ${verification.access}, ${expiresAt}, ${issuedAt})
-            ON CONFLICT (environment_id) DO UPDATE SET
-              session_id = excluded.session_id, label = excluded.label, access = excluded.access,
-              expires_at = excluded.expires_at, issued_at = excluded.issued_at
-          `;
-            yield* Ref.update(inboundSessions, (ids) => new Set(ids).add(issued.sessionId));
-            for (const row of previous) {
-              yield* sessions
-                .revoke(AuthSessionId.make(row.session_id))
-                .pipe(Effect.ignoreCause({ log: true }));
-              yield* Ref.update(inboundSessions, (ids) => {
-                const next = new Set(ids);
-                next.delete(row.session_id);
-                return next;
-              });
-            }
-            return previous.length === 0;
+              INSERT INTO fork_account_links_inbound
+                (environment_id, session_id, label, access, expires_at, issued_at)
+              VALUES (${request.environmentId}, ${issued.sessionId}, ${verification.label},
+                ${verification.access}, ${expiresAt}, ${issuedAt})
+              ON CONFLICT (environment_id) DO UPDATE SET
+                session_id = excluded.session_id, label = excluded.label, access = excluded.access,
+                expires_at = excluded.expires_at, issued_at = excluded.issued_at
+            `.pipe(Effect.tapError(() => sessions.revoke(issued.sessionId).pipe(Effect.ignore)));
+            for (const row of previous) yield* forgetSession(row.session_id, true);
+            yield* Ref.update(inboundSessions, (ids) =>
+              new Map(ids).set(issued.sessionId, request.environmentId),
+            );
+            return { issued, expiresAt, isNew: previous.length === 0 };
           }),
         )
-        .pipe(
-          Effect.tapError(() => sessions.revoke(issued.sessionId).pipe(Effect.ignore)),
-          Effect.mapError(() => fail("unavailable")),
-        );
+        .pipe(Effect.mapError(() => fail("unavailable")));
       // A computer that just joined links back right away instead of at the next check.
       if (isNew) yield* Queue.offer(wakes, undefined);
       yield* Effect.logInfo("Admitted an account link.", {
@@ -585,6 +721,8 @@ const make = Effect.gen(function* () {
     Ref.get(outboundIds).pipe(Effect.map((ids) => ids.has(environmentId)));
   const admits = (sessionId: AuthSessionId) =>
     Ref.get(inboundSessions).pipe(Effect.map((ids) => ids.has(sessionId)));
+  const admittedFrom = (sessionId: AuthSessionId) =>
+    Ref.get(inboundSessions).pipe(Effect.map((ids) => Option.fromNullishOr(ids.get(sessionId))));
   const admitsToken = (token: string) =>
     sessions.verify(token).pipe(
       Effect.flatMap((verified) =>
@@ -616,6 +754,7 @@ const make = Effect.gen(function* () {
       holdsAny,
       holds,
       admits,
+      admittedFrom,
       admitsToken,
     }),
     run,
@@ -627,7 +766,10 @@ export const layer = Layer.effect(
   Effect.map(make, ({ service }) => service),
 );
 
-/** The service, plus its loop: now, then on a schedule and whenever a new computer links here. */
+/**
+ * The service, plus its loop: now, then on a schedule, whenever a new computer links here, and
+ * when one the roster does not list yet presents a grant.
+ */
 export const layerWithReconciler = Layer.effect(
   AccountLinks,
   Effect.gen(function* () {

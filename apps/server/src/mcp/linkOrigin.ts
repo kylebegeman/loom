@@ -25,6 +25,10 @@ export const callerLinkOrigin = (
         sessionId: caller.scope.client.sessionId,
         label: caller.scope.client.label,
         access: caller.scope.client.access,
+        // fork: account-links
+        ...(caller.scope.client.sourceEnvironmentId === undefined
+          ? {}
+          : { sourceEnvironmentId: caller.scope.client.sourceEnvironmentId }),
       }
     : undefined);
 
@@ -40,13 +44,23 @@ const outsideLink = (origin: OrchestrationV2LinkOrigin, message: string) =>
     message: `This work was started from ${origin.label} through a linked environment, so ${message} A link paired with full access is not limited this way.`,
   });
 
+/** Whether `target` came through the link `origin` names. */
+const sameLink = (
+  origin: OrchestrationV2LinkOrigin,
+  target: OrchestrationV2LinkOrigin | undefined,
+) =>
+  target?.sessionId === origin.sessionId ||
+  // fork: account-links -- an account link renews its session but stays its computer's.
+  (origin.sourceEnvironmentId !== undefined &&
+    target?.sourceEnvironmentId === origin.sourceEnvironmentId);
+
 /** A thread a fenced caller may change: one its own link started. */
 export const assertSameLink = (
   caller: Pick<Caller, "scope" | "caller">,
   target: Pick<OrchestrationV2ThreadShell, "id" | "linkOrigin">,
 ) => {
   const origin = fencingLinkOrigin(caller);
-  return origin === undefined || target.linkOrigin?.sessionId === origin.sessionId
+  return origin === undefined || sameLink(origin, target.linkOrigin)
     ? Effect.void
     : Effect.fail(outsideLink(origin, `it may change only threads that link started.`));
 };

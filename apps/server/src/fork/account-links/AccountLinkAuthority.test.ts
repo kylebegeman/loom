@@ -1,3 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no Ed25519 key generation.
+import * as NodeCrypto from "node:crypto";
+import * as PlatformCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import {
   type AuthClientSession,
@@ -11,8 +14,11 @@ import {
   type DirectoryListing,
   LibraryError,
 } from "@t3tools/contracts/fork";
+import { directoryPublicKeyFromPem, signAccountLinkProof } from "@t3tools/shared/fork/directory";
+import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
@@ -34,6 +40,13 @@ const OLD = EnvironmentId.make("computer-old");
 const STRANGER = EnvironmentId.make("computer-stranger");
 const LEFT = EnvironmentId.make("computer-left");
 const KEY_B = "b".repeat(64);
+const keyPair = () =>
+  NodeCrypto.generateKeyPairSync("ed25519", {
+    publicKeyEncoding: { format: "pem", type: "spki" },
+    privateKeyEncoding: { format: "pem", type: "pkcs8" },
+  });
+const KEY_A = keyPair();
+const OTHER_KEY = keyPair();
 
 const owner: EnvironmentAuth.AuthenticatedSession = {
   sessionId: AuthSessionId.make("owner-device"),
@@ -108,6 +121,7 @@ const fixture = (authority = true) =>
                 ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: String(authority) } }),
               ),
               SecureRandom.layerWebCrypto,
+              PlatformCrypto.layer,
               Layer.mock(LibraryStore.LibraryStore)({
                 authority: Effect.succeed('{"id":"library-authority","epoch":1}'),
               }),
@@ -143,7 +157,9 @@ const fixture = (authority = true) =>
                   Effect.succeed(
                     members.has(environmentId)
                       ? {
-                          publicKey: "unused",
+                          publicKey: directoryPublicKeyFromPem(
+                            (environmentId === A ? KEY_A : OTHER_KEY).publicKey,
+                          )!,
                           keyFingerprint: environmentId === B ? KEY_B : "f".repeat(64),
                           label: null,
                         }
@@ -191,10 +207,32 @@ const fixture = (authority = true) =>
       );
     const grantFor = (target: EnvironmentId) =>
       service.grant(publisherOf(A), { environmentId: target }).pipe(Effect.map((g) => g.grant));
-    const redeem = (grant: string, by = B, keyFingerprint = KEY_B, source = A) =>
-      service.verify(publisherOf(by), { grant, source, keyFingerprint });
-    return { service, members, active, reason, grantFor, redeem };
+    const signature = yield* Signature.Signature;
+    /** What `source` signs when it presents `grant` to `target`. */
+    const proofFor = (
+      grant: string,
+      { privateKey = KEY_A.privateKey, source = A, target = B } = {},
+    ) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) =>
+          signAccountLinkProof({ privateKey, source, target, grant, nowEpochSeconds: now / 1000 }),
+        ),
+        Effect.provideService(Signature.Signature, signature),
+        Effect.orDie,
+      );
+    const redeem = (grant: string, by = B, keyFingerprint = KEY_B, source = A, proof?: string) =>
+      Effect.gen(function* () {
+        return yield* service.verify(publisherOf(by), {
+          grant,
+          source,
+          keyFingerprint,
+          proof: proof ?? (yield* proofFor(grant)),
+        });
+      });
+    return { service, members, active, reason, grantFor, proofFor, redeem };
   });
+
+const layers = Layer.mergeAll(SqlitePersistenceMemory, PlatformCrypto.layer);
 
 it.effect("lists a computer its owner's other active computers and admits each link once", () =>
   Effect.gen(function* () {
@@ -217,7 +255,7 @@ it.effect("lists a computer its owner's other active computers and admits each l
       account: roster.account,
     });
     expect(yield* f.reason(f.redeem(grant))).toBe("denied");
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(layers)),
 );
 
 it.effect("redeems a grant only for its target, while fresh, current and still a member", () =>
@@ -250,7 +288,7 @@ it.effect("redeems a grant only for its target, while fresh, current and still a
 
     f.members.set(A, { ...f.members.get(A)!, authorityEpoch: 2 });
     expect(yield* f.reason(f.service.roster(publisherOf(A)))).toBe("denied");
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(layers)),
 );
 
 it.effect("keeps the policy for the owner, and gives nothing to other sessions", () =>
@@ -271,5 +309,22 @@ it.effect("keeps the policy for the owner, and gives nothing to other sessions",
     ).toBe("denied");
     const off = yield* fixture(false);
     expect(yield* f.reason(off.service.roster(publisherOf(A)))).toBe("disabled");
-  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  }).pipe(Effect.provide(layers)),
+);
+
+it.effect("redeems a grant only with its source's own proof for the computer redeeming it", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture();
+    const grant = yield* f.grantFor(B);
+    // Each refusal leaves the grant for the real presentation.
+    for (const proof of [
+      yield* f.proofFor(grant, { privateKey: OTHER_KEY.privateKey }),
+      yield* f.proofFor(grant, { target: OLD }),
+      yield* f.proofFor(grant, { source: OLD }),
+      yield* f.proofFor("0".repeat(64)),
+      "not-a-proof",
+    ])
+      expect(yield* f.reason(f.redeem(grant, B, KEY_B, A, proof))).toBe("denied");
+    expect((yield* f.redeem(grant)).source).toBe(A);
+  }).pipe(Effect.provide(layers)),
 );

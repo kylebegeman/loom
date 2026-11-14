@@ -81,9 +81,9 @@ Tailscale and pairing connections remain available for local access and recovery
 
 Agents on one of your computers can start, message and wait on threads on your
 other computers. Loom links every pair of computers enrolled with your Library
-when a computer joins, when your computer list changes, and every few minutes
-after that. It renews each link before it expires. These links work without the
-Linked environments beta, and typing `@` in the composer offers those computers and
+within a few minutes of a computer joining, and checks every few minutes after
+that. It renews each link before it expires. These links work without the Linked
+environments beta, and typing `@` in the composer offers those computers and
 their threads.
 
 To turn this off or choose what agents may do, open **Account > Agents across your
@@ -91,7 +91,8 @@ computers** on iPhone, or **Settings > Computers > Account** on web and desktop.
 It starts on with full access. **Read only** lets agents read projects and threads
 without starting or changing anything. Only your Library's owner can change it.
 Turning it off, or removing a computer from your account, removes its links within
-a few minutes.
+a few minutes. A computer that cannot reach your Library for an hour pauses its
+account links until it can, so a change you made meanwhile still applies.
 
 The links appear under **Linked environments** in **Settings > Computers**, and
 under **Linked from** on iPhone, as **Managed by your account**. They have no
