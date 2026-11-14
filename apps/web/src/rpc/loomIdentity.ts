@@ -7,10 +7,16 @@ import {
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
   LoomIdentitySessionResult,
+  type LoomDesktopApprovalRequest,
+  type LoomDesktopApprovalResult,
+  type LoomDesktopSignInRequest,
+  type LoomDesktopSignInResult,
+  type LoomIdentityAccount,
 } from "@t3tools/contracts/fork";
 import {
   IDENTITY_FRESH_SIGN_IN_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
+  identityApprovalRefusalText,
   identityResourceRefusal,
 } from "@t3tools/shared/fork/identity-grant";
 import * as Schema from "effect/Schema";
@@ -117,12 +123,102 @@ export function cancelLoomBrowserSignIn(baseUrl: string) {
   activeBrowserSignIns.get(new URL(baseUrl).origin)?.abort();
 }
 
-/** Only a PKCE code crosses windows. The host session is returned directly over HTTPS. */
-export async function signInToLoomBrowser(
-  input: import("@t3tools/contracts/fork").LoomDesktopSignInRequest,
+const base64Url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+
+/**
+ * Sends `popup` to the computer's login and waits for the code its callback page posts back. The
+ * code is spent only with `verifier`, which never leaves this window.
+ */
+async function browserIdentityCode(input: {
+  readonly origin: string;
+  readonly metadata: LoomIdentityMetadata;
+  readonly popup: Window;
+  readonly signal: AbortSignal;
+  readonly expectedIdentity?: LoomIdentityAccount | undefined;
+  readonly purpose?: "approve";
+  readonly refusalText: (code: unknown) => string;
+}): Promise<{ readonly code: string; readonly verifier: string }> {
+  const { origin, metadata, popup, signal } = input;
+  const state = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = base64Url(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
+  );
+  let dispose = () => {};
+  try {
+    const code = new Promise<string>((resolve, reject) => {
+      const listener = (event: MessageEvent<unknown>) => {
+        if (
+          event.origin !== origin ||
+          event.source !== popup ||
+          !event.data ||
+          typeof event.data !== "object"
+        )
+          return;
+        const data = event.data;
+        if (!("type" in data) || !("state" in data) || data.state !== state) return;
+        // The computer's callback page reports a refused sign-in so this window can say why.
+        if (data.type === "loom:identity:failed") {
+          reject(new Error(input.refusalText("error" in data ? data.error : null)));
+          return;
+        }
+        if (data.type !== "loom:identity:complete") return;
+        if (
+          !("environmentId" in data) ||
+          data.environmentId !== metadata.environmentId ||
+          !("code" in data) ||
+          typeof data.code !== "string" ||
+          !/^[A-Za-z0-9_-]{43}$/.test(data.code)
+        ) {
+          reject(new Error("The sign-in response does not belong to this computer."));
+          return;
+        }
+        resolve(data.code);
+      };
+      const cancelled = () => reject(new Error("Sign-in cancelled or expired. Try again."));
+      window.addEventListener("message", listener);
+      signal.addEventListener("abort", cancelled, { once: true });
+      const closed = window.setInterval(() => {
+        if (popup.closed) cancelled();
+      }, 500);
+      dispose = () => {
+        window.removeEventListener("message", listener);
+        signal.removeEventListener("abort", cancelled);
+        window.clearInterval(closed);
+      };
+      if (signal.aborted) cancelled();
+    });
+    const login = new URL(LOOM_IDENTITY_LOGIN_PATH, origin);
+    for (const [key, value] of Object.entries({
+      origin: window.location.origin,
+      state,
+      challenge,
+      environmentId: metadata.environmentId,
+      ...(input.purpose ? { purpose: input.purpose } : {}),
+    }))
+      login.searchParams.set(key, value);
+    if (input.expectedIdentity) {
+      login.searchParams.set("issuer", input.expectedIdentity.issuer);
+      login.searchParams.set("subject", input.expectedIdentity.subject);
+    }
+    popup.location.replace(login.href);
+    return { code: await code, verifier };
+  } finally {
+    dispose();
+  }
+}
+
+/** Runs one browser sign-in per computer, closing its window however it ends. */
+async function withBrowserSignIn<A>(
+  httpBaseUrl: string,
   popup: Window,
-): Promise<import("@t3tools/contracts/fork").LoomDesktopSignInResult> {
-  const origin = new URL(input.httpBaseUrl).origin;
+  run: (origin: string, signal: AbortSignal) => Promise<A>,
+): Promise<A> {
+  const origin = new URL(httpBaseUrl).origin;
   if (activeBrowserSignIns.has(origin)) {
     popup.close();
     throw new Error("Sign-in is already open for this computer.");
@@ -130,9 +226,22 @@ export async function signInToLoomBrowser(
   const abort = new AbortController();
   activeBrowserSignIns.set(origin, abort);
   const timeout = window.setTimeout(() => abort.abort(), 300_000);
-  let dispose = () => {};
   try {
-    const metadata = await readLoomIdentity(origin, abort.signal, true);
+    return await run(origin, abort.signal);
+  } finally {
+    window.clearTimeout(timeout);
+    activeBrowserSignIns.delete(origin);
+    popup.close();
+  }
+}
+
+/** Only a PKCE code crosses windows. The host session is returned directly over HTTPS. */
+export async function signInToLoomBrowser(
+  input: LoomDesktopSignInRequest,
+  popup: Window,
+): Promise<LoomDesktopSignInResult> {
+  return withBrowserSignIn(input.httpBaseUrl, popup, async (origin, signal) => {
+    const metadata = await readLoomIdentity(origin, signal, true);
     if (
       !metadata?.enabled ||
       !metadata.browserLoginEnabled ||
@@ -154,88 +263,23 @@ export async function signInToLoomBrowser(
       throw new Error("This computer uses a different sign-in provider than your Library.");
     const resourceRefusal = identityResourceRefusal(metadata);
     if (resourceRefusal !== null) throw new Error(resourceRefusal);
-    const random = () => {
-      const bytes = crypto.getRandomValues(new Uint8Array(32));
-      return btoa(String.fromCharCode(...bytes))
-        .replaceAll("+", "-")
-        .replaceAll("/", "_")
-        .replace(/=+$/, "");
-    };
-    const state = random();
-    const verifier = random();
-    const digest = new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)),
-    );
-    const challenge = btoa(String.fromCharCode(...digest))
-      .replaceAll("+", "-")
-      .replaceAll("/", "_")
-      .replace(/=+$/, "");
-    const code = new Promise<string>((resolve, reject) => {
-      const listener = (event: MessageEvent<unknown>) => {
-        if (
-          event.origin !== origin ||
-          event.source !== popup ||
-          !event.data ||
-          typeof event.data !== "object"
-        )
-          return;
-        const data = event.data;
-        if (!("type" in data) || !("state" in data) || data.state !== state) return;
-        // The computer's callback page reports a refused sign-in so this window can say why.
-        if (data.type === "loom:identity:failed") {
-          reject(new Error(signInRefusalText("error" in data ? data.error : null)));
-          return;
-        }
-        if (data.type !== "loom:identity:complete") return;
-        if (
-          !("environmentId" in data) ||
-          data.environmentId !== metadata.environmentId ||
-          !("code" in data) ||
-          typeof data.code !== "string" ||
-          !/^[A-Za-z0-9_-]{43}$/.test(data.code)
-        ) {
-          reject(new Error("The sign-in response does not belong to this computer."));
-          return;
-        }
-        resolve(data.code);
-      };
-      const cancelled = () => reject(new Error("Sign-in cancelled or expired. Try again."));
-      window.addEventListener("message", listener);
-      abort.signal.addEventListener("abort", cancelled, { once: true });
-      const closed = window.setInterval(() => {
-        if (popup.closed) cancelled();
-      }, 500);
-      dispose = () => {
-        window.removeEventListener("message", listener);
-        abort.signal.removeEventListener("abort", cancelled);
-        window.clearInterval(closed);
-      };
-      if (abort.signal.aborted) cancelled();
+    const { code, verifier } = await browserIdentityCode({
+      origin,
+      metadata,
+      popup,
+      signal,
+      expectedIdentity: input.expectedIdentity,
+      refusalText: signInRefusalText,
     });
-    const login = new URL(LOOM_IDENTITY_LOGIN_PATH, origin);
-    for (const [key, value] of Object.entries({
-      origin: window.location.origin,
-      state,
-      challenge,
-      environmentId: metadata.environmentId,
-    }))
-      login.searchParams.set(key, value);
-    if (input.expectedIdentity) {
-      login.searchParams.set("issuer", input.expectedIdentity.issuer);
-      login.searchParams.set("subject", input.expectedIdentity.subject);
-    }
-    popup.location.replace(login.href);
-    const authorizationCode = await code;
-    dispose();
     const response = await fetch(new URL(LOOM_IDENTITY_SESSION_PATH, origin), {
       method: "POST",
       credentials: "omit",
       redirect: "error",
-      signal: abort.signal,
+      signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         type: "browser",
-        code: authorizationCode,
+        code,
         verifier,
         environmentId: metadata.environmentId,
         ...(input.expectedIdentity ? { expectedIdentity: input.expectedIdentity } : {}),
@@ -263,12 +307,45 @@ export async function signInToLoomBrowser(
       identity: session.identity,
       expiresAt: Date.now() + session.expires_in * 1000,
     };
-  } finally {
-    dispose();
-    window.clearTimeout(timeout);
-    activeBrowserSignIns.delete(origin);
-    popup.close();
-  }
+  });
+}
+
+/**
+ * A passkey check in `popup` made only to approve a computer. The Library's callback hands back a
+ * single-use grant instead of a session, so this window gains no sign-in from it.
+ */
+export async function confirmLoomApprovalBrowser(
+  input: LoomDesktopApprovalRequest,
+  popup: Window,
+): Promise<LoomDesktopApprovalResult> {
+  return withBrowserSignIn(input.httpBaseUrl, popup, async (origin, signal) => {
+    const metadata = await readLoomIdentity(origin, signal, true);
+    // The Library's own app approves from a window even when its origin is not listed.
+    if (
+      !metadata?.enabled ||
+      !metadata.browserLoginEnabled ||
+      !(
+        origin === window.location.origin ||
+        metadata.browserOrigins?.includes(window.location.origin)
+      )
+    )
+      throw new Error(
+        "Your Library cannot check your passkey from this app. Approve from Loom on your iPhone or desktop, or from your Library's own address.",
+      );
+    if (metadata.environmentId !== input.expectedEnvironmentId)
+      throw new Error("This address reaches another computer. Review your Library connection.");
+    if (input.expectedIdentity && metadata.issuer !== input.expectedIdentity.issuer)
+      throw new Error("Your Library's Identity provider changed. Sign in to your Library again.");
+    return browserIdentityCode({
+      origin,
+      metadata,
+      popup,
+      signal,
+      expectedIdentity: input.expectedIdentity,
+      purpose: "approve",
+      refusalText: (code) => identityApprovalRefusalText(typeof code === "string" ? code : null),
+    });
+  });
 }
 
 /** Cookie logout is same-origin only; the server also checks Origin before revoking it. */

@@ -393,7 +393,7 @@ it.effect("on a Library with Loom Identity, approves only with fresh passkey or 
             owner,
           ),
         ),
-      ).toBe(ACCOUNT_JOIN_APPROVAL_REQUIRED);
+      ).toContain("expired or was already used");
       f.grants.set("b".repeat(43), { subject: "someone-else" });
       expect(
         yield* refusal(

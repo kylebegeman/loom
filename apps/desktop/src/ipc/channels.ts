@@ -144,5 +144,6 @@ export const COMPLETE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:complete-legacy-lo
 
 export const LOOM_SIGN_IN_CHANNEL = "desktop:loom-sign-in";
 export const LOOM_CANCEL_SIGN_IN_CHANNEL = "desktop:loom-cancel-sign-in";
+export const LOOM_CONFIRM_APPROVAL_CHANNEL = "desktop:loom-confirm-approval"; // fork: account-join-approval
 export const LOOM_IDENTITY_RENEW_CHANNEL = "loom:identity-renewal:renew"; // fork: identity-renewal
 export const LOOM_IDENTITY_FORGET_CHANNEL = "loom:identity-renewal:forget"; // fork: identity-renewal

@@ -1,9 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ACCOUNT_JOIN_PROMPTS_FEATURE, type AccountJoinPrompt } from "@t3tools/contracts/fork";
+import {
+  ACCOUNT_JOIN_PROMPTS_FEATURE,
+  type AccountJoinApproval,
+  type AccountJoinPrompt,
+} from "@t3tools/contracts/fork";
 import { Atom, AsyncResult } from "effect/reactivity";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -17,8 +21,15 @@ import {
 } from "~/components/ui/dialog";
 import { toastManager } from "~/components/ui/toast";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryAuthority } from "../project-library/state";
+import {
+  cancelJoinApproval,
+  joinPasskey,
+  startJoinApproval,
+  type JoinPasskey,
+} from "./joinApproval";
 
 // Requests put off with Later this session; Account lists them to reopen.
 const laterAtom = Atom.make<ReadonlyArray<string>>([]).pipe(
@@ -37,6 +48,7 @@ const setLater = (requestId: string, later: boolean) => {
  */
 export function AccountJoinPromptHost() {
   const authority = useLibraryAuthority();
+  const primaryId = usePrimaryEnvironmentId();
   const allowed = useAtomValue(projectLibrary.respondJoin.permissionAtom(authority.authorityId));
   if (
     authority.authorityId === null ||
@@ -45,10 +57,27 @@ export function AccountJoinPromptHost() {
     !authority.info.data?.features?.includes(ACCOUNT_JOIN_PROMPTS_FEATURE)
   )
     return null;
-  return <JoinPrompts key={authority.authorityId} authorityId={authority.authorityId} />;
+  return (
+    <JoinPrompts
+      key={authority.authorityId}
+      authorityId={authority.authorityId}
+      passkey={joinPasskey({
+        authorityId: authority.authorityId,
+        features: authority.info.data.features,
+        entry: authority.environment?.entry,
+        isPrimary: authority.authorityId === primaryId,
+      })}
+    />
+  );
 }
 
-function JoinPrompts({ authorityId }: { readonly authorityId: EnvironmentId }) {
+function JoinPrompts({
+  authorityId,
+  passkey,
+}: {
+  readonly authorityId: EnvironmentId;
+  readonly passkey: JoinPasskey;
+}) {
   const prompts = AsyncResult.getOrElse(
     useAtomValue(projectLibrary.joinPrompts({ environmentId: authorityId, input: {} })),
     () => [],
@@ -60,6 +89,7 @@ function JoinPrompts({ authorityId }: { readonly authorityId: EnvironmentId }) {
     <JoinPromptDialog
       key={prompt.requestId}
       authorityId={authorityId}
+      passkey={passkey}
       prompt={prompt}
       onLater={() => setLater(prompt.requestId, true)}
     />
@@ -100,25 +130,51 @@ export function PendingJoinRequests({ authorityId }: { readonly authorityId: Env
 
 function JoinPromptDialog({
   authorityId,
+  passkey,
   prompt,
   onLater,
 }: {
   readonly authorityId: EnvironmentId;
+  readonly passkey: JoinPasskey;
   readonly prompt: AccountJoinPrompt;
   readonly onLater: () => void;
 }) {
   const respond = useAtomCommand(projectLibrary.respondJoin, { reportFailure: false });
   const [sending, setSending] = useState<string | "decline" | null>(null);
+  // While the passkey check that approves runs, Later cancels it instead.
+  const [confirming, setConfirming] = useState(false);
+  const cancelled = useRef(false);
   const expires = new Date(prompt.expiresAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
   const answer = async (code: string | null) => {
     if (sending !== null) return;
+    // Any code may be the terminal's, so each one asks for the passkey before it is sent.
+    const proof = code === null || passkey === null ? null : startJoinApproval(passkey);
     setSending(code ?? "decline");
+    let approval: AccountJoinApproval | undefined;
+    if (proof !== null) {
+      cancelled.current = false;
+      setConfirming(true);
+      try {
+        approval = await proof;
+      } catch (cause) {
+        setConfirming(false);
+        setSending(null);
+        if (!cancelled.current)
+          toastManager.add({
+            type: "error",
+            title: `Could not approve ${prompt.label}`,
+            description: cause instanceof Error ? cause.message : "Approve it again.",
+          });
+        return;
+      }
+      setConfirming(false);
+    }
     const result = await respond({
       environmentId: authorityId,
-      input: { requestId: prompt.requestId, code },
+      input: { requestId: prompt.requestId, code, ...(approval ? { approval } : {}) },
     });
     setSending(null);
     if (result._tag === "Failure") {
@@ -173,7 +229,11 @@ function JoinPromptDialog({
                   onClick={() => void answer(code)}
                 >
                   <span className="font-mono tracking-wider">
-                    {sending === code ? "Approving..." : code}
+                    {sending !== code
+                      ? code
+                      : confirming
+                        ? "Confirm with your passkey..."
+                        : "Approving..."}
                   </span>
                 </Button>
               ))}
@@ -184,6 +244,7 @@ function JoinPromptDialog({
                 <span className="font-mono break-all">{prompt.keyFingerprint}</span>
               </p>
               <p>The request expires at {expires}. Picking a code it did not show declines it.</p>
+              {passkey !== null ? <p>Approving asks for your passkey.</p> : null}
             </div>
           </div>
         </DialogPanel>
@@ -196,9 +257,21 @@ function JoinPromptDialog({
             {sending === "decline" ? "Declining..." : "Decline"}
           </Button>
           {/* Focus starts here: the prompt can open mid-typing, and Enter on a code could approve. */}
-          <DialogAction variant="outline" disabled={sending !== null} onClick={onLater}>
-            Later
-          </DialogAction>
+          {confirming && passkey !== null ? (
+            <DialogAction
+              variant="outline"
+              onClick={() => {
+                cancelled.current = true;
+                cancelJoinApproval(passkey);
+              }}
+            >
+              Cancel
+            </DialogAction>
+          ) : (
+            <DialogAction variant="outline" disabled={sending !== null} onClick={onLater}>
+              Later
+            </DialogAction>
+          )}
         </DialogFooter>
       </DialogPopup>
     </Dialog>

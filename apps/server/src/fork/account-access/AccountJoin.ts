@@ -233,7 +233,7 @@ const make = Effect.gen(function* () {
           : approvalRefused(
               approval._tag === "device"
                 ? ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED
-                : ACCOUNT_JOIN_APPROVAL_REQUIRED,
+                : "That passkey check expired or was already used. Approve the computer again.",
             );
     yield* (
       approval._tag === "passkey"

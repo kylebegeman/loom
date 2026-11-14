@@ -3,18 +3,22 @@ import { accountJoinCode, squashLibraryCommandFailure } from "@t3tools/client-ru
 import {
   ACCOUNT_JOIN_FEATURE,
   ACCOUNT_JOIN_PROMPTS_FEATURE,
+  type AccountJoinApproval,
   type AccountJoinReview,
 } from "@t3tools/contracts/fork";
 import { useId, useState } from "react";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryAuthority } from "../project-library/state";
 import { PendingJoinRequests } from "./AccountJoinPromptHost";
+import { joinPasskey, startJoinApproval } from "./joinApproval";
 
 export function ApproveComputer() {
   const authority = useLibraryAuthority();
+  const primaryId = usePrimaryEnvironmentId();
   const canDecide = useAtomValue(projectLibrary.decideJoin.permissionAtom(authority.authorityId));
   const lookup = useAtomCommand(projectLibrary.lookupJoin, { reportFailure: false });
   const decide = useAtomCommand(projectLibrary.decideJoin, { reportFailure: false });
@@ -34,6 +38,15 @@ export function ApproveComputer() {
     reviewed.review.code === accountJoinCode(code)
       ? reviewed.review
       : null;
+  const passkey =
+    authority.authorityId === null
+      ? null
+      : joinPasskey({
+          authorityId: authority.authorityId,
+          features: authority.info.data.features,
+          entry: authority.environment?.entry,
+          isPrimary: authority.authorityId === primaryId,
+        });
   const run = async (approve?: boolean) => {
     const environmentId = authority.authorityId;
     if (busy || !canDecide || !environmentId) return;
@@ -42,12 +55,33 @@ export function ApproveComputer() {
       setError("Enter the code shown on the computer you are adding.");
       return;
     }
+    // Started from the tap, before any wait, so a browser lets the passkey window open.
+    const proof =
+      approve === true && review?.state === "pending" && passkey !== null
+        ? startJoinApproval(passkey)
+        : null;
     setBusy(true);
     setError(null);
+    let approval: AccountJoinApproval | undefined;
+    if (proof !== null)
+      try {
+        approval = await proof;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Approve the computer again.");
+        setBusy(false);
+        return;
+      }
     const result =
       approve === undefined
         ? await lookup({ environmentId, input: { code: normalized } })
-        : await decide({ environmentId, input: { code: normalized, approve } });
+        : await decide({
+            environmentId,
+            input: {
+              code: normalized,
+              approve,
+              ...(approval ? { approval } : {}),
+            },
+          });
     if (result._tag === "Success")
       setReviewed({ authorityId: environmentId, review: result.value });
     else {

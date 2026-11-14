@@ -5,6 +5,7 @@ import {
   ACCOUNT_JOIN_FEATURE,
   ACCOUNT_COMPUTERS_FEATURE,
   ACCOUNT_JOIN_PROMPTS_FEATURE,
+  ACCOUNT_JOIN_PASSKEY_FEATURE,
   ACCOUNT_VAULT_FEATURE,
 } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
@@ -42,6 +43,7 @@ import {
   CHECKOUT_RESTORE_FEATURE,
   VAULT_ITEM_SEARCH_FEATURE,
 } from "@t3tools/contracts/fork";
+import { identityConfigured } from "../auth/identityPolicy.ts";
 import { directoryAdvertised } from "./directory/advertised.ts";
 import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
 import { libraryPushActivityAdvertised, libraryPushEffective } from "./library-push/config.ts";
@@ -209,6 +211,10 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
         ACCOUNT_COMPUTERS_FEATURE,
         ACCOUNT_VAULT_FEATURE,
       ]
+    : []),
+  // Only that Library with Loom Identity, which then needs a passkey to approve (AccountJoin).
+  ...(directoryAdvertised(process.env) && identityConfigured(process.env)
+    ? [ACCOUNT_JOIN_PASSKEY_FEATURE]
     : []),
   REACH_FEATURE,
   REACH_FORGET_FEATURE,

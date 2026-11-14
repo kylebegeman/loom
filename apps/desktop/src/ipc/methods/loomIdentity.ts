@@ -3,13 +3,19 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import {
+  LoomDesktopApprovalRequest,
+  LoomDesktopApprovalResult,
   LoomDesktopForgetRequest,
   LoomDesktopRenewRequest,
   LoomDesktopRenewResult,
   LoomDesktopSignInRequest,
   LoomDesktopSignInResult,
 } from "@t3tools/contracts/fork";
-import { signInToLoom as enroll, cancelLoomSignIn as cancel } from "../../app/LoomIdentity.ts";
+import {
+  signInToLoom as enroll,
+  cancelLoomSignIn as cancel,
+  confirmLoomApproval as confirmApproval,
+} from "../../app/LoomIdentity.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as DesktopIdentityRenewal from "../../fork/identity-renewal/DesktopIdentityRenewal.ts";
@@ -60,6 +66,33 @@ export const signInToLoom = DesktopIpc.makeIpcMethod({
     const window = yield* windows.currentMainOrFirst;
     if (Option.isSome(window)) yield* windows.reveal(window.value);
     return signedIn.session;
+  }),
+});
+/** The passkey check itself approves, so the provider opens and Loom comes back in front after. */
+export const confirmLoomApproval = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.LOOM_CONFIRM_APPROVAL_CHANNEL,
+  payload: LoomDesktopApprovalRequest,
+  result: LoomDesktopApprovalResult,
+  handler: Effect.fn("desktop.ipc.loomIdentity.confirmApproval")(function* (input) {
+    const shell = yield* ElectronShell.ElectronShell;
+    const windows = yield* ElectronWindow.ElectronWindow;
+    const access = yield* DesktopCloudflareAccess.DesktopCloudflareAccess;
+    const context = yield* Effect.context<ElectronShell.ElectronShell>();
+    const runPromise = Effect.runPromiseWith(context);
+    const approval = yield* Effect.tryPromise({
+      try: (signal) =>
+        confirmApproval(input, (url) => runPromise(shell.openExternal(url)), signal, access.fetch),
+      catch: (cause) =>
+        new LoomIdentityError({
+          detail:
+            cause instanceof Error
+              ? cause.message
+              : "Loom could not confirm your passkey. Approve the computer again.",
+        }),
+    });
+    const window = yield* windows.currentMainOrFirst;
+    if (Option.isSome(window)) yield* windows.reveal(window.value);
+    return approval;
   }),
 });
 export const cancelLoomSignIn = DesktopIpc.makeIpcMethod({

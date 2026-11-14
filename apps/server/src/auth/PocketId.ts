@@ -36,7 +36,10 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Jose from "jose";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { IDENTITY_PASSKEY_REQUIRED_TEXT } from "@t3tools/shared/fork/identity-grant";
+import {
+  IDENTITY_APPROVAL_STALE_TEXT,
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+} from "@t3tools/shared/fork/identity-grant";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { timingSafeEqualBase64Url } from "./utils.ts";
@@ -168,7 +171,7 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
       case "passkey":
         return IDENTITY_PASSKEY_REQUIRED_TEXT;
       case "stale":
-        return "Loom Identity did not ask for your passkey just now. Approve the computer again.";
+        return IDENTITY_APPROVAL_STALE_TEXT;
       default:
         return "Loom could not complete sign-in. Try again.";
     }

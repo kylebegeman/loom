@@ -5,6 +5,7 @@ import {
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
+  LOOM_IDENTITY_SIGN_IN_STALE,
   type LoomDesktopSignInResult,
   type LoomIdentityAccount,
   type LoomIdentityDirectoryAddresses,
@@ -126,6 +127,18 @@ export const IDENTITY_PASSKEY_REQUIRED_TEXT =
 /** A provider that ignores `max_age` hands back its old browser sign-in, past the computer's cap. */
 export const IDENTITY_FRESH_SIGN_IN_TEXT =
   "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.";
+
+/** An approval's sign-in was not just made, typically because the provider skipped the passkey. */
+export const IDENTITY_APPROVAL_STALE_TEXT =
+  "Loom Identity did not ask for your passkey just now, so the computer was not approved. Approve it again.";
+
+/** Why a passkey check for approving a computer failed, from the refusal the Library named. */
+export function identityApprovalRefusalText(code: string | null | undefined): string {
+  if (code === LOOM_IDENTITY_PASSKEY_REQUIRED)
+    return "Approve with your passkey. Loom Identity confirmed you another way, so the computer was not approved.";
+  if (code === LOOM_IDENTITY_SIGN_IN_STALE) return IDENTITY_APPROVAL_STALE_TEXT;
+  return "Loom could not confirm your passkey, so the computer was not approved. Approve it again.";
+}
 
 /**
  * Reach resources are the likeliest cause: values copied from another computer's Reach section,

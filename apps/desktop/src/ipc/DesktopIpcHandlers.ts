@@ -1,4 +1,5 @@
 import { signInToLoom, cancelLoomSignIn } from "./methods/loomIdentity.ts";
+import { confirmLoomApproval } from "./methods/loomIdentity.ts"; // fork: account-join-approval
 import { renewLoomIdentity, forgetLoomIdentity } from "./methods/loomIdentity.ts"; // fork: identity-renewal
 import { installOpenAtLoginIpc } from "../fork/open-at-login/OpenAtLoginIpc.ts"; // fork: open-at-login
 import * as Effect from "effect/Effect";
@@ -156,6 +157,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(openExternal);
   yield* ipc.handle(signInToLoom);
   yield* ipc.handle(cancelLoomSignIn);
+  yield* ipc.handle(confirmLoomApproval); // fork: account-join-approval
   yield* ipc.handle(renewLoomIdentity); // fork: identity-renewal
   yield* ipc.handle(forgetLoomIdentity); // fork: identity-renewal
   yield* ipc.handle(readMedia);

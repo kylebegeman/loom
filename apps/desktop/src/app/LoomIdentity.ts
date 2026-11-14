@@ -14,6 +14,10 @@ import {
   type LoomDesktopSignInResult,
   type LoomDesktopSignInRequest,
   LoomIdentitySessionResult,
+  LoomIdentityApprovalResult,
+  LOOM_IDENTITY_APPROVAL_PATH,
+  type LoomDesktopApprovalRequest,
+  type LoomDesktopApprovalResult,
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SESSION_PATH,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
@@ -24,6 +28,7 @@ import {
   IDENTITY_PASSKEY_REQUIRED_TEXT,
   type IdentityGrant,
   identityAddressRefusal,
+  identityApprovalRefusalText,
   identityResourceRefusal,
   identitySignInMaxAge,
 } from "@t3tools/shared/fork/identity-grant";
@@ -31,6 +36,7 @@ import {
 const decodeMetadata = Schema.decodeUnknownSync(LoomIdentityMetadata);
 const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
 const decodeSession = Schema.decodeUnknownSync(AuthAccessTokenResult);
+const decodeApprovalResult = Schema.decodeUnknownSync(LoomIdentityApprovalResult);
 const decodeDiscovery = Schema.decodeUnknownSync(
   Schema.Struct({
     issuer: Schema.String,
@@ -87,12 +93,14 @@ export function loomNativeAuthorization(input: {
   resource?: string;
   /** The computer's published sign-in age limit. */
   maxSessionAgeSeconds?: number;
+  /** Approving a computer: the provider asks for the passkey now, whatever sign-in it holds. */
+  freshPasskey?: boolean;
 }) {
   const url = new URL(input.authorizationEndpoint);
   url.search = "";
   // Only a computer that caps sign-in age makes a refresh grant end, so only there does this
   // device ask for one; the metadata's scope list never adds it.
-  const renewable = input.maxSessionAgeSeconds !== undefined;
+  const renewable = !input.freshPasskey && input.maxSessionAgeSeconds !== undefined;
   const parameters = {
     client_id: input.clientId,
     response_type: "code",
@@ -109,9 +117,11 @@ export function loomNativeAuthorization(input: {
     code_challenge: NodeCrypto.createHash("sha256").update(input.verifier).digest("base64url"),
     code_challenge_method: "S256",
     ...(input.resource ? { resource: input.resource } : {}),
-    ...(input.maxSessionAgeSeconds === undefined
-      ? {}
-      : { max_age: identitySignInMaxAge(input.maxSessionAgeSeconds) }),
+    ...(input.freshPasskey
+      ? { max_age: "0" }
+      : input.maxSessionAgeSeconds === undefined
+        ? {}
+        : { max_age: identitySignInMaxAge(input.maxSessionAgeSeconds) }),
   };
   for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
   return url.href;
@@ -210,20 +220,47 @@ export interface LoomSignIn {
   readonly grant: IdentityGrant | null;
 }
 
-/** Credentials stay in the main process until the host verifies the account and issues its own session. */
-export async function signInToLoom(
-  httpBaseUrl: string,
-  openBrowser: (url: string) => Promise<boolean>,
-  signal?: AbortSignal,
-  expected?: Pick<
-    LoomDesktopSignInRequest,
-    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer" | "directory"
-  >,
-  request: (url: string, init: RequestInit) => Promise<Response> = fetch,
-): Promise<LoomSignIn> {
+type NativeMetadata = LoomIdentityMetadata & {
+  readonly issuer: string;
+  readonly nativeClientId: string;
+  readonly authorizationEndpoint: string;
+  readonly tokenEndpoint: string;
+};
+
+interface NativeAuthorization {
+  readonly origin: string;
+  readonly metadata: NativeMetadata;
+  readonly discovery: ReturnType<typeof decodeDiscovery>;
+  readonly tokens: ReturnType<typeof decodeTokens>;
+  readonly subject: string;
+  readonly accessExpiresAt: number;
+  readonly jsonRequest: (url: string, init: RequestInit) => Promise<unknown>;
+}
+
+/**
+ * Runs the provider sign-in for one computer and hands the verified tokens to `finish` while this
+ * attempt still owns the loopback listener. `approve` asks for the passkey now, with no refresh grant.
+ */
+async function withNativeAuthorization<A>(
+  input: {
+    readonly httpBaseUrl: string;
+    readonly openBrowser: (url: string) => Promise<boolean>;
+    readonly signal: AbortSignal | undefined;
+    readonly expected:
+      | Pick<
+          LoomDesktopSignInRequest,
+          "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer" | "directory"
+        >
+      | undefined;
+    readonly request: (url: string, init: RequestInit) => Promise<Response>;
+    readonly approve: boolean;
+  },
+  finish: (authorization: NativeAuthorization) => Promise<A>,
+): Promise<A> {
+  const { openBrowser, signal, expected } = input;
   const jsonRequest = (url: string, init: RequestInit, signal: AbortSignal) =>
-    nativeJsonRequest(url, init, signal, request);
-  const origin = loomHostOrigin(httpBaseUrl);
+    nativeJsonRequest(url, init, signal, input.request);
+  const origin = loomHostOrigin(input.httpBaseUrl);
   if (activeSignIns.has(origin)) throw new Error("Loom sign-in is already open for this computer.");
   const abort = new AbortController();
   const interrupted = () => abort.abort();
@@ -245,6 +282,13 @@ export async function signInToLoom(
       !metadata.tokenEndpoint
     )
       throw new Error("This computer has not enabled native Loom account sign-in.");
+    const native: NativeMetadata = {
+      ...metadata,
+      issuer: metadata.issuer,
+      nativeClientId: metadata.nativeClientId,
+      authorizationEndpoint: metadata.authorizationEndpoint,
+      tokenEndpoint: metadata.tokenEndpoint,
+    };
     if (
       expected?.expectedEnvironmentId &&
       expected.expectedEnvironmentId !== metadata.environmentId
@@ -307,7 +351,9 @@ export async function signInToLoom(
         response
           .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
           .end(
-            "Return to Loom. Your sign-in response was received and the connection is being verified. You can close this tab.",
+            input.approve
+              ? "Return to Loom to finish approving. You can close this tab."
+              : "Return to Loom. Your sign-in response was received and the connection is being verified. You can close this tab.",
           );
         callback.resolve(code);
       } catch (cause) {
@@ -346,9 +392,11 @@ export async function signInToLoom(
         verifier,
         scopes: metadata.scopes,
         ...(metadata.resource ? { resource: metadata.resource } : {}),
-        ...(metadata.maxSessionAgeSeconds === undefined
-          ? {}
-          : { maxSessionAgeSeconds: metadata.maxSessionAgeSeconds }),
+        ...(input.approve
+          ? { freshPasskey: true }
+          : metadata.maxSessionAgeSeconds === undefined
+            ? {}
+            : { maxSessionAgeSeconds: metadata.maxSessionAgeSeconds }),
       });
       if (!(await openBrowser(authorizationUrl)))
         throw new Error("Could not open the sign-in browser.");
@@ -406,45 +454,74 @@ export async function signInToLoom(
         current.sessionExchangeEnabled !== metadata.sessionExchangeEnabled
       )
         throw new Error("The computer's Identity configuration changed. Retry sign-in.");
+      return await finish({
+        origin,
+        metadata: native,
+        discovery,
+        tokens,
+        subject,
+        accessExpiresAt: accessClaims.exp * 1000,
+        jsonRequest: (url, init) => jsonRequest(url, init, abort.signal),
+      });
+    } finally {
+      abort.signal.removeEventListener("abort", cancelled);
+    }
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", interrupted);
+    activeSignIns.delete(origin);
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+    }
+  }
+}
+
+/** Credentials stay in the main process until the host verifies the account and issues its own session. */
+export async function signInToLoom(
+  httpBaseUrl: string,
+  openBrowser: (url: string) => Promise<boolean>,
+  signal?: AbortSignal,
+  expected?: Pick<
+    LoomDesktopSignInRequest,
+    "expectedEnvironmentId" | "expectedIdentity" | "expectedIssuer" | "directory"
+  >,
+  request: (url: string, init: RequestInit) => Promise<Response> = fetch,
+): Promise<LoomSignIn> {
+  return withNativeAuthorization(
+    { httpBaseUrl, openBrowser, signal, expected, request, approve: false },
+    async ({ origin, metadata, discovery, tokens, subject, accessExpiresAt, jsonRequest }) => {
       let session: ReturnType<typeof decodeSession>;
       try {
         session = metadata.sessionExchangeEnabled
           ? decodeIdentitySession(
-              await jsonRequest(
-                `${origin}${LOOM_IDENTITY_SESSION_PATH}`,
-                {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    type: "native",
-                    accessToken: tokens.access_token,
-                    idToken: tokens.id_token,
-                    environmentId: metadata.environmentId,
-                    ...(expected?.expectedIdentity
-                      ? { expectedIdentity: expected.expectedIdentity }
-                      : {}),
-                  }),
-                },
-                abort.signal,
-              ),
+              await jsonRequest(`${origin}${LOOM_IDENTITY_SESSION_PATH}`, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  type: "native",
+                  accessToken: tokens.access_token,
+                  idToken: tokens.id_token,
+                  environmentId: metadata.environmentId,
+                  ...(expected?.expectedIdentity
+                    ? { expectedIdentity: expected.expectedIdentity }
+                    : {}),
+                }),
+              }),
             )
           : decodeSession(
-              await jsonRequest(
-                `${origin}/oauth/token`,
-                {
-                  method: "POST",
-                  headers: { "content-type": "application/x-www-form-urlencoded" },
-                  body: new URLSearchParams({
-                    grant_type: AuthTokenExchangeGrantType,
-                    subject_token: tokens.access_token,
-                    subject_token_type: AuthAccessTokenType,
-                    requested_token_type: AuthAccessTokenType,
-                    client_label: "Loom Desktop",
-                    client_device_type: "desktop",
-                  }).toString(),
-                },
-                abort.signal,
-              ),
+              await jsonRequest(`${origin}/oauth/token`, {
+                method: "POST",
+                headers: { "content-type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({
+                  grant_type: AuthTokenExchangeGrantType,
+                  subject_token: tokens.access_token,
+                  subject_token_type: AuthAccessTokenType,
+                  requested_token_type: AuthAccessTokenType,
+                  client_label: "Loom Desktop",
+                  client_device_type: "desktop",
+                }).toString(),
+              }),
             );
       } catch (error) {
         // A provider that ignores max_age hands back its old browser sign-in, which is past the cap.
@@ -481,7 +558,7 @@ export async function signInToLoom(
               : loomIdentityAccount(enrolled.identity),
           expiresAt: Math.min(
             signedInAt + Math.min(session.expires_in, 3600) * 1000,
-            (accessClaims.exp ?? 0) * 1000,
+            accessExpiresAt,
           ),
         },
         // Renewal exchanges at the native session endpoint, which older computers lack, and only a
@@ -509,16 +586,54 @@ export async function signInToLoom(
               }
             : null,
       };
-    } finally {
-      abort.signal.removeEventListener("abort", cancelled);
-    }
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", interrupted);
-    activeSignIns.delete(origin);
-    if (server) {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server!.close(() => resolve()));
-    }
-  }
+    },
+  );
+}
+
+/**
+ * A passkey check made only to approve a computer joining the account. The Library trades the
+ * new sign-in for a single-use grant; nothing is saved here and no session is issued.
+ */
+export async function confirmLoomApproval(
+  input: LoomDesktopApprovalRequest,
+  openBrowser: (url: string) => Promise<boolean>,
+  signal?: AbortSignal,
+  request: (url: string, init: RequestInit) => Promise<Response> = fetch,
+): Promise<LoomDesktopApprovalResult> {
+  return withNativeAuthorization(
+    {
+      httpBaseUrl: input.httpBaseUrl,
+      openBrowser,
+      signal,
+      expected: {
+        expectedEnvironmentId: input.expectedEnvironmentId,
+        ...(input.expectedIdentity ? { expectedIdentity: input.expectedIdentity } : {}),
+      },
+      request,
+      approve: true,
+    },
+    async ({ origin, metadata, tokens, jsonRequest }) => {
+      const verifier = NodeCrypto.randomBytes(32).toString("base64url");
+      try {
+        const granted = decodeApprovalResult(
+          await jsonRequest(`${origin}${LOOM_IDENTITY_APPROVAL_PATH}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              accessToken: tokens.access_token,
+              idToken: tokens.id_token,
+              environmentId: metadata.environmentId,
+              challenge: NodeCrypto.createHash("sha256").update(verifier).digest("base64url"),
+            }),
+          }),
+        );
+        return { code: granted.code, verifier };
+      } catch (error) {
+        throw new Error(
+          identityApprovalRefusalText(isLoomRequestRejectedValue(error) ? error.code : undefined),
+          { cause: error },
+        );
+      }
+    },
+  );
 }

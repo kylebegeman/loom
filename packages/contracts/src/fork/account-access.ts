@@ -135,6 +135,8 @@ export const ComputerJoinProgress = Schema.Literals(["pending", "denied", "compl
 
 /** Owner devices hear about joining computers and answer with the code the terminal shows. */
 export const ACCOUNT_JOIN_PROMPTS_FEATURE = "account-join-prompts";
+/** The Library refuses an approval without `AccountJoinApproval`, so clients ask before sending. */
+export const ACCOUNT_JOIN_PASSKEY_FEATURE = "account-join-passkey";
 export const ACCOUNT_JOIN_PROMPT_CHOICES = 3;
 /**
  * A computer waiting to join, as an owner device shows it. The terminal's code is one of
@@ -166,7 +168,7 @@ export const AccountJoinApproval = Schema.Union([
 export type AccountJoinApproval = typeof AccountJoinApproval.Type;
 /** The refusal detail for an approval sent without fresh proof, so clients can ask for one. */
 export const ACCOUNT_JOIN_APPROVAL_REQUIRED =
-  "Confirm with your passkey to approve this computer. Approve it again to try.";
+  "Approving a computer needs your passkey. Approve it again, or update Loom on this device if it does not ask for one.";
 /** The refusal detail for an expired or replaced phone approval token. */
 export const ACCOUNT_JOIN_DEVICE_APPROVAL_ENDED =
   "This phone needs your passkey again before it can approve computers. Approve it again to confirm.";

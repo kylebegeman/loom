@@ -1,5 +1,7 @@
 // fork: library-sign-in
 import type { LoomDesktopSignInRequest, LoomDesktopSignInResult } from "./fork/identity.ts";
+// fork: account-join-approval
+import type { LoomDesktopApprovalRequest, LoomDesktopApprovalResult } from "./fork/identity.ts";
 // fork: identity-renewal
 import type {
   LoomDesktopForgetRequest,
@@ -1096,6 +1098,8 @@ export interface DesktopBridge {
   // fork: library-sign-in
   cancelLoomSignIn?: (input: LoomDesktopSignInRequest) => Promise<void>;
   signInToLoom?: (input: LoomDesktopSignInRequest) => Promise<LoomDesktopSignInResult>;
+  // fork: account-join-approval: cancel it with `cancelLoomSignIn` for the same address.
+  confirmLoomApproval?: (input: LoomDesktopApprovalRequest) => Promise<LoomDesktopApprovalResult>;
   // fork: identity-renewal: a rejected promise is a transient failure, so the caller retries.
   renewLoomIdentity?: (input: LoomDesktopRenewRequest) => Promise<LoomDesktopRenewResult>;
   forgetLoomIdentity?: (input: LoomDesktopForgetRequest) => Promise<void>; // fork: identity-renewal

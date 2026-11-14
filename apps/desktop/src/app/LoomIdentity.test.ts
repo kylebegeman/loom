@@ -4,14 +4,19 @@ import * as NodeHttp from "node:http";
 import * as NodeCrypto from "node:crypto";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { EnvironmentId, AuthAccessTokenType } from "@t3tools/contracts";
-import { LOOM_IDENTITY_PASSKEY_REQUIRED } from "@t3tools/contracts/fork";
 import {
+  LOOM_IDENTITY_PASSKEY_REQUIRED,
+  LOOM_IDENTITY_SIGN_IN_STALE,
+} from "@t3tools/contracts/fork";
+import {
+  IDENTITY_APPROVAL_STALE_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
   IDENTITY_RESOURCE_MISMATCH_TEXT,
 } from "@t3tools/shared/fork/identity-grant";
 import {
   signInToLoom,
   cancelLoomSignIn,
+  confirmLoomApproval,
   loomHostOrigin,
   loomLoopbackRedirect,
   loomNativeAuthorization,
@@ -80,6 +85,22 @@ describe("Loom native OAuth enrollment", () => {
     );
     expect(url.searchParams.get("scope")).toBe("openid profile offline_access");
     expect(url.searchParams.get("max_age")).toBe(String(7 * 86_400 - 3600));
+    // Approving asks for the passkey now and keeps no grant, whatever the computer's limit.
+    const approval = new URL(
+      loomNativeAuthorization({
+        authorizationEndpoint: "https://id.example/authorize",
+        clientId: "native",
+        redirectUri: "http://127.0.0.1:5001/loom/callback",
+        state: "state",
+        nonce: "nonce",
+        verifier: "verifier",
+        scopes: ["profile", "offline_access"],
+        maxSessionAgeSeconds: 7 * 86_400,
+        freshPasskey: true,
+      }),
+    );
+    expect(approval.searchParams.get("scope")).toBe("openid profile");
+    expect(approval.searchParams.get("max_age")).toBe("0");
   });
   it("rejects foreign and repeated callback parameters", () => {
     const redirect = "http://127.0.0.1:5001/loom/callback";
@@ -316,6 +337,101 @@ describe("Loom native OAuth enrollment", () => {
       await expect(fetch(redirect)).rejects.toThrow();
     },
   );
+  it.each([null, LOOM_IDENTITY_SIGN_IN_STALE])(
+    "confirms a passkey to approve a computer and hands back only the grant (refusal: %s)",
+    async (refusal) => {
+      const { publicKey, privateKey } = await generateKeyPair("RS256");
+      const jwk = { ...(await exportJWK(publicKey)), kid: "test", alg: "RS256" };
+      let nonce = "";
+      let approvalBody: Record<string, unknown> | null = null;
+      let sessions = 0;
+      let origin = "";
+      const sign = (claims: Record<string, unknown>, audience: string) =>
+        new SignJWT(claims)
+          .setProtectedHeader({ alg: "RS256", kid: "test" })
+          .setIssuer(`${origin}/idp`)
+          .setAudience(audience)
+          .setSubject("user")
+          .setIssuedAt()
+          .setExpirationTime("5m")
+          .sign(privateKey);
+      origin = await serve((request, response) => {
+        void (async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const json = (status: number, body: unknown) =>
+            response
+              .writeHead(status, { "content-type": "application/json" })
+              .end(JSON.stringify(body));
+          if (request.url === "/api/loom/identity")
+            return json(200, {
+              enabled: true,
+              sessionExchangeEnabled: true,
+              browserLoginEnabled: false,
+              issuer: `${origin}/idp`,
+              clientId: null,
+              nativeClientId: "native",
+              authorizationEndpoint: `${origin}/authorize`,
+              tokenEndpoint: `${origin}/idp/token`,
+              scopes: ["openid"],
+              audience: "loom",
+              environmentId: "library",
+              maxSessionAgeSeconds: 7 * 86_400,
+            });
+          if (request.url === "/idp/.well-known/openid-configuration")
+            return json(200, {
+              issuer: `${origin}/idp`,
+              authorization_endpoint: `${origin}/authorize`,
+              token_endpoint: `${origin}/idp/token`,
+              jwks_uri: `${origin}/idp/jwks`,
+            });
+          if (request.url === "/idp/jwks") return json(200, { keys: [jwk] });
+          if (request.url === "/idp/token")
+            return json(200, {
+              id_token: await sign({ nonce }, "native"),
+              access_token: await sign({}, "loom"),
+              token_type: "Bearer",
+            });
+          if (request.url === "/api/loom/identity/approval") {
+            approvalBody = JSON.parse(Buffer.concat(chunks).toString());
+            return refusal === null
+              ? json(200, { code: "g".repeat(43) })
+              : json(401, { error: refusal });
+          }
+          if (request.url === "/api/loom/identity/session") sessions += 1;
+          response.writeHead(404).end();
+        })().catch(() => response.writeHead(500).end());
+      });
+      const pending = confirmLoomApproval(
+        { httpBaseUrl: origin, expectedEnvironmentId: EnvironmentId.make("library") },
+        async (authorizationUrl) => {
+          const url = new URL(authorizationUrl);
+          nonce = url.searchParams.get("nonce")!;
+          expect(url.searchParams.get("max_age")).toBe("0");
+          const callback = new URL(url.searchParams.get("redirect_uri")!);
+          callback.search = new URLSearchParams({
+            state: url.searchParams.get("state")!,
+            code: "valid",
+          }).toString();
+          expect((await fetch(callback)).status).toBe(200);
+          return true;
+        },
+      );
+      if (refusal !== null) {
+        await expect(pending).rejects.toThrow(IDENTITY_APPROVAL_STALE_TEXT);
+        return;
+      }
+      const { code, verifier } = await pending;
+      expect(code).toBe("g".repeat(43));
+      expect(approvalBody).toMatchObject({ environmentId: "library", idToken: expect.any(String) });
+      expect(approvalBody!.challenge).toBe(
+        NodeCrypto.createHash("sha256").update(verifier).digest("base64url"),
+      );
+      // An approval issues no session for this device.
+      expect(sessions).toBe(0);
+    },
+  );
+
   it("rejects saved environment, issuer and resource changes before opening the provider", async () => {
     let origin = "";
     let resource: string | undefined;
