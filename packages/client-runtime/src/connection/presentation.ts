@@ -22,6 +22,11 @@ export interface EnvironmentConnectionPresentation {
   readonly phase: EnvironmentConnectionPhase;
   readonly error: string | null;
   readonly traceId: string | null;
+  /**
+   * Set while reconnecting because the host has not approved this device yet. `error` then
+   * says where to approve it and shows the code, and is not a failure.
+   */
+  readonly awaitingApproval?: true;
   // fork: fleet-connections - see `connectionStallAt` in fork/connection-health.ts.
   /** Why an "error" connection is blocked. "authentication" means signing in again fixes it. */
   readonly blockedReason?: ConnectionBlockedReason;
@@ -49,6 +54,17 @@ export interface EnvironmentPresentation {
 export function presentConnectionState(
   state: SupervisorConnectionState,
 ): EnvironmentConnectionPresentation {
+  if (
+    (state.phase === "connecting" || state.phase === "backoff") &&
+    state.lastFailure?.reason === "approval-pending"
+  ) {
+    return {
+      phase: "reconnecting",
+      error: state.lastFailure.message,
+      traceId: state.lastFailure.traceId ?? null,
+      awaitingApproval: true,
+    };
+  }
   switch (state.phase) {
     case "available":
       return { phase: "available", error: null, traceId: null };
@@ -92,6 +108,9 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
     case "connecting":
       return "Connecting...";
     case "reconnecting":
+      if (connection.awaitingApproval) {
+        return connection.error ?? "Waiting for approval on the host";
+      }
       return connection.error
         ? `Failed to connect. Reconnecting... Reason: ${connection.error}`
         : "Reconnecting...";
@@ -107,6 +126,9 @@ export function connectionStatusText(connection: EnvironmentConnectionPresentati
 }
 
 export function connectionStatusTitle(connection: EnvironmentConnectionPresentation): string {
+  if (connection.awaitingApproval) {
+    return "Waiting for approval";
+  }
   if (connection.phase === "reconnecting" && connection.error) {
     return "Failed to connect. Reconnecting...";
   }

@@ -60,7 +60,11 @@ import { requestThreadMessageJump } from "./threadMessageJump";
 import { useThreadListSearchMatches } from "./useThreadListSearchMatches";
 import { useHomeListOptions } from "../home/home-list-options";
 import { buildHomeListFilterMenuItems } from "../home/home-list-filter-menu";
-import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "../home/homeThreadList";
+import {
+  buildHomeProjectScopes,
+  resolveHomeProjectFilterScope,
+  sortHomeProjectScopes,
+} from "../home/homeThreadList";
 // fork: library - The sidebar shares Home's project filter, Library projects included.
 import {
   isLibraryProjectScopeKey,
@@ -231,7 +235,15 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     ? options.selectedProjectKey
     : (selectedProjectScope?.key ?? null);
   const projectFilter = useLibraryProjectFilter(
-    pickableProjectGroups(projectScopes), // fork: library
+    // fork: library
+    pickableProjectGroups(
+      sortHomeProjectScopes({
+        scopes: projectScopes,
+        threads,
+        pendingTasks: [],
+        projectSortOrder: "updated_at",
+      }),
+    ),
     resolvedProjectKey, // fork: library
   ); // fork: library
   const projectFilterOptions = projectFilter.options; // fork: library

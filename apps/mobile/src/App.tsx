@@ -75,6 +75,7 @@ import {
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { installUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
+import { ConnectDeviceApprovalCoordinator } from "./features/connection/ConnectDeviceApprovalCoordinator";
 import { LibraryManagementSync } from "./fork/library/LibraryManagementSync";
 import { LibraryPushCoordinator } from "./fork/library-push/LibraryPushCoordinator"; // fork: library-push
 import { installSubscriptionUsageRefresh } from "./widgets/useSubscriptionUsage";
@@ -287,6 +288,7 @@ function AppContent() {
     <>
       <SplashScreenCoordinator />
       <SubscriptionUsageCoordinator />
+      <ConnectDeviceApprovalCoordinator />
       {/* fork: library-push */}
       <LibraryPushCoordinator />
       <LibraryManagementSync />

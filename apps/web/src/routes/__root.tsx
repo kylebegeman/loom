@@ -39,6 +39,7 @@ import {
   rememberLoomSignInDestination,
 } from "~/fork/identity/returnTo";
 import { ForkRoot } from "../fork/ForkRoot"; // fork: ext-web-root
+import { ConnectDeviceApprovalCoordinator } from "../components/ConnectDeviceApprovalCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -205,6 +206,7 @@ function RootRouteBranch() {
       <CustomSnoozeDialogHost />
       <GuestShareDialogHost />
       <ProjectCloneToastCoordinator />
+      <ConnectDeviceApprovalCoordinator />
       <AddProjectToMachineDialogHost />
       <UseInAnotherAppDialogHost />
       {/* fork: ext-web-root */}

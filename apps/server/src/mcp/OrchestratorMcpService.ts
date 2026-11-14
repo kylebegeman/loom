@@ -108,8 +108,9 @@ import type {
   ProjectionRecordField,
   ProjectionRecordFilter,
 } from "../orchestration-v2/ProjectionStore.ts";
+import type { ActiveThreadListEntry } from "../orchestration-v2/ProjectionStore.ts"; // fork: attention-status
 import {
-  delegatedTaskAwaitsSubagents,
+  delegatedTaskAwaitsWork,
   delegatedTaskResultRun,
   delegatedTaskRuns,
   runOutcome,
@@ -1704,7 +1705,7 @@ const make = Effect.gen(function* () {
         ? progress.state
         : !isTerminalTaskStatus(taskStatusForRun(taskResultRun))
           ? "working"
-          : delegatedTaskAwaitsSubagents(followupRuns, childControls.subagents)
+          : delegatedTaskAwaitsWork(followupRuns, childControls)
             ? "waiting_for_children"
             : "result_available";
     const resultRunIds = [
@@ -3288,79 +3289,132 @@ const make = Effect.gen(function* () {
         yield* requireProject(input.projectId);
       }
       const archived = input.archived ?? "exclude"; // fork: attention-status
-      const allThreads = yield* Effect.gen(function* () {
-        if (archived === "exclude") {
-          return yield* threadManagement.listProjectThreads({
-            projectId: projectId ?? undefined,
-            includeSubagents: true,
-          });
-        }
-        const locations: ReadonlyArray<"active" | "archive"> =
-          archived === "include"
-            ? ["active", "archive"]
-            : [archived === "only" ? "archive" : "active"];
-        const snapshots = yield* Effect.forEach(locations, (location) =>
-          threadManagement.getShellSnapshot({ location }),
-        );
-        // fork: attention-status
-        return snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]);
-      }).pipe(
-        Effect.mapError((error) =>
-          failure("orchestration_error", `Unable to list threads: ${errorMessage(error)}`),
-        ),
-      );
+      const listFailure = (error: unknown) =>
+        failure("orchestration_error", `Unable to list threads: ${errorMessage(error)}`);
+      // fork: attention-status
+      // Attention and archive lookups classify every shell; the plain list builds shells per page.
+      const allShells =
+        input.attention || archived !== "exclude"
+          ? yield* Effect.forEach(
+              archived === "include"
+                ? (["active", "archive"] as const)
+                : ([archived === "only" ? "archive" : "active"] as const),
+              (location) => threadManagement.getShellSnapshot({ location }),
+            ).pipe(
+              Effect.map((snapshots) =>
+                snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]),
+              ),
+              Effect.mapError(listFailure),
+            )
+          : null;
       const nowMs = yield* Clock.currentTimeMillis;
       // fork: attention-status
-      const projectThreads = (
-        input.attention
-          ? selectAttentionThreadShells(allThreads, nowMs)
-          : archived === "exclude"
-            ? allThreads
-            : allThreads.toSorted(
+      const allThreads: ReadonlyArray<ActiveThreadListEntry> =
+        allShells === null
+          ? yield* threadManagement
+              .listProjectThreads({ projectId: projectId ?? undefined, includeSubagents: true })
+              .pipe(Effect.mapError(listFailure))
+          : input.attention
+            ? selectAttentionThreadShells(allShells, nowMs)
+            : allShells.toSorted(
                 (left, right) =>
                   DateTime.toEpochMillis(right.updatedAt) -
                     DateTime.toEpochMillis(left.updatedAt) || right.id.localeCompare(left.id),
-              )
-      ).filter(
+              );
+      // fork: attention-status
+      const projectThreads = allThreads.filter(
         (thread) =>
           (projectId === null || thread.projectId === projectId) &&
+          thread.lineage.sideChat !== true &&
           (input.includeSubagents === true || thread.lineage.relationshipToParent !== "subagent"),
       );
       // fork: attention-status
-      const childRequests = pendingSubagentAttentionRequests(allThreads);
+      const childRequests: ReturnType<typeof pendingSubagentAttentionRequests> =
+        allShells === null ? new Map() : pendingSubagentAttentionRequests(allShells);
+      const shellPool = new Map((allShells ?? []).map((shell) => [shell.id, shell]));
+      const subagentChildren = new Map<ThreadId, Array<ThreadId>>();
+      for (const thread of allThreads) {
+        const parentId = thread.lineage.parentThreadId;
+        if (thread.lineage.relationshipToParent !== "subagent" || parentId === null) continue;
+        subagentChildren.set(parentId, [...(subagentChildren.get(parentId) ?? []), thread.id]);
+      }
+      const withSubagentDescendants = (threadIds: ReadonlyArray<ThreadId>) => {
+        const ids = new Set(threadIds);
+        for (const id of ids) for (const child of subagentChildren.get(id) ?? []) ids.add(child);
+        return [...ids];
+      };
       // An empty list is no filter: clients that fill every optional field send `[]`.
       const statuses =
         input.statuses === undefined || input.statuses.length === 0
           ? null
           : new Set(input.statuses);
       const titleContains = input.titleContains?.toLocaleLowerCase();
-      const filtered = projectThreads
-        .filter((thread) => statuses === null || statuses.has(listedThreadStatus(thread)))
+      const candidates = projectThreads
         .filter(
           (thread) =>
             input.settled === undefined || threadSettlement(thread).settled === input.settled,
         )
         .filter(
-          // fork: attention-status
-          (thread) =>
-            input.snoozed === undefined ||
-            isSnoozed(
-              {
-                ...thread,
-                pendingRuntimeRequest:
-                  thread.pendingRuntimeRequest ?? childRequests.get(thread.id) ?? null,
-              },
-              nowMs,
-            ) === input.snoozed,
-        )
-        .filter(
           (thread) =>
             titleContains === undefined || thread.title.toLocaleLowerCase().includes(titleContains),
+        )
+        // Only a snooze that ends later can hold, so the rest skip building a shell.
+        .filter(
+          (thread) =>
+            input.snoozed !== true ||
+            (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs),
         );
+      // Shells are the costly part, so build them only for the threads the page needs.
+      const shellsOf = (threads: ReadonlyArray<{ readonly id: ThreadId }>) =>
+        threads.length === 0
+          ? Effect.succeed([])
+          : // fork: attention-status
+            allShells !== null
+            ? Effect.succeed(threads.flatMap(({ id }) => shellPool.get(id) ?? []))
+            : threadManagement
+                .getShellSnapshot({
+                  location: "active",
+                  // fork: attention-status
+                  threadIds: withSubagentDescendants(threads.map(({ id }) => id)),
+                })
+                .pipe(
+                  Effect.map((snapshot) => {
+                    const shellsById = new Map(snapshot.threads.map((shell) => [shell.id, shell]));
+                    // fork: attention-status
+                    for (const [id, request] of pendingSubagentAttentionRequests(snapshot.threads))
+                      childRequests.set(id, request);
+                    return threads.flatMap(({ id }) => shellsById.get(id) ?? []);
+                  }),
+                  Effect.mapError(listFailure),
+                );
       const cursor = input.cursor ?? 0;
       const limit = input.limit ?? DEFAULT_THREAD_LIST_LIMIT;
-      const page = filtered.slice(cursor, cursor + limit);
-      const nextCursor = cursor + page.length < filtered.length ? cursor + page.length : null;
+      let page: ReadonlyArray<OrchestrationV2ThreadShell>;
+      let total: number;
+      if (statuses === null && input.snoozed === undefined) {
+        total = candidates.length;
+        page = yield* shellsOf(candidates.slice(cursor, cursor + limit));
+      } else {
+        // Status and snooze state are derived from the shell.
+        const filtered = (yield* shellsOf(candidates))
+          .filter((thread) => statuses === null || statuses.has(listedThreadStatus(thread)))
+          .filter(
+            // fork: attention-status
+            (thread) =>
+              input.snoozed === undefined ||
+              isSnoozed(
+                {
+                  ...thread,
+                  pendingRuntimeRequest:
+                    thread.pendingRuntimeRequest ?? childRequests.get(thread.id) ?? null,
+                },
+                nowMs,
+              ) === input.snoozed,
+          );
+        total = filtered.length;
+        page = filtered.slice(cursor, cursor + limit);
+      }
+      const nextCursor = cursor + limit < total ? cursor + limit : null;
       return {
         projectId,
         currentThreadId: parent?.thread.id ?? null,
@@ -3374,7 +3428,7 @@ const make = Effect.gen(function* () {
           ),
         ),
         nextCursor,
-        total: filtered.length,
+        total,
       } satisfies OrchestratorMcpThreadListResult;
     }),
     readThread: Effect.fn("OrchestratorMcpService.readThread")(function* (scope, input) {

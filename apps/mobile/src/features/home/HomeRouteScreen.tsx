@@ -37,7 +37,11 @@ import {
   useAtomValueWhileVisible,
   useHomeRouteVisible,
 } from "./home-route-visibility";
-import { buildHomeProjectScopes, resolveHomeProjectFilterScope } from "./homeThreadList";
+import {
+  buildHomeProjectScopes,
+  resolveHomeProjectFilterScope,
+  sortHomeProjectScopes,
+} from "./homeThreadList";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
@@ -145,12 +149,24 @@ export function HomeRouteScreen() {
       }),
     [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
   );
+  const projectFilterGroups = useMemo(
+    () =>
+      pickableProjectGroups(
+        sortHomeProjectScopes({
+          scopes: projectScopes,
+          threads,
+          pendingTasks: [],
+          projectSortOrder: "updated_at",
+        }),
+      ),
+    [projectScopes, threads],
+  );
   // fork: library -- a Library project key passes through; local keys resolve as upstream's do
   const selectedProjectKey = isLibraryProjectScopeKey(listOptions.selectedProjectKey)
     ? listOptions.selectedProjectKey // fork: library
     : (resolveHomeProjectFilterScope(projectScopes, projects, listOptions)?.key ?? null);
   const projectFilter = useLibraryProjectFilter(
-    pickableProjectGroups(projectScopes), // fork: library
+    projectFilterGroups, // fork: library
     selectedProjectKey, // fork: library
   ); // fork: library
   const projectFilterOptions = projectFilter.options; // fork: library

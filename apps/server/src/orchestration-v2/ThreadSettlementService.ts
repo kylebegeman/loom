@@ -40,6 +40,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { makeNoPullRequestRechecks } from "./noPullRequestRechecks.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import { insideRepository } from "./ThreadPullRequestService.ts"; // fork: server-weight
@@ -64,6 +65,17 @@ function latestMillis(values: ReadonlyArray<number | null>): number | null {
     if (latest === null || value > latest) latest = value;
   }
   return latest;
+}
+
+function threadActivityAtMs(thread: ProjectionStore.ProjectionSettlementCandidate): number {
+  return (
+    latestMillis([
+      toMillis(thread.latestUserMessageAt),
+      toMillis(thread.latestRunRequestedAt),
+      toMillis(thread.latestRunStartedAt),
+      toMillis(thread.latestRunCompletedAt),
+    ]) ?? DateTime.toEpochMillis(thread.createdAt)
+  );
 }
 
 function pullRequestMatchesProject(
@@ -211,13 +223,7 @@ export function resolveAutoSettlementAt(input: {
           };
   }
   if (!isAutoSettlementCandidate(thread, input.nowMs)) return null;
-  const activityAtMs =
-    latestMillis([
-      toMillis(thread.latestUserMessageAt),
-      toMillis(thread.latestRunRequestedAt),
-      toMillis(thread.latestRunStartedAt),
-      toMillis(thread.latestRunCompletedAt),
-    ]) ?? DateTime.toEpochMillis(thread.createdAt);
+  const activityAtMs = threadActivityAtMs(thread);
   if (pullRequest !== null && pullRequestSettles(thread, pullRequest, input.autoSettleOnMerge)) {
     return DateTime.makeUnsafe(activityAtMs);
   }
@@ -306,6 +312,7 @@ export const make = Effect.gen(function* () {
   // Repeated thread.settled retains settledAt; run the action only once per settlement.
   // fork: project-lifecycle
   const settleActionResults = new Map<ThreadId, { readonly at: number; readonly ready: boolean }>();
+  const noPullRequestRechecks = makeNoPullRequestRechecks();
   // fork: server-weight -- every settings read materializes secrets, so a sweep reuses its own
   // read until a change arrives, and decisions made after a change still read it fresh.
   let settingsGeneration = 0;
@@ -557,16 +564,33 @@ export const make = Effect.gen(function* () {
         return yield* Effect.die(new Error("thread project not found"));
       }
       const refresh = group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
+      const key = lookupKey(thread);
+      if (scheduledLookups !== null && !refresh && !scheduledLookups.has(key)) return undefined;
       // Remembered git state is enough to rule a thread out; only an answer
       // that would settle it is confirmed against fresh git state.
       const remembered = yield* git.branchPullRequest(
         { cwd, branch: thread.branch },
         { refresh, confirmTerminal: false },
       );
+      noPullRequestRechecks.record(key, nowMs, remembered !== null);
       if (refresh || remembered === null || remembered.state === "open") return remembered;
       if (!(yield* wouldSettle(group, remembered))) return undefined;
       return yield* git.branchPullRequest({ cwd, branch: thread.branch }, { freshGitState: true });
     });
+
+    // A merge, a shell close and a thread's own events read at once; only scheduled sweeps wait.
+    const scheduledLookups =
+      mergedPullRequest !== null || threadId !== undefined
+        ? null
+        : noPullRequestRechecks.select(
+            nowMs,
+            [...groups]
+              .filter(([key]) => key.startsWith('["branch",'))
+              .map(([key, group]) => ({
+                key,
+                activityAtMs: Math.max(...group.map(threadActivityAtMs)),
+              })),
+          );
 
     yield* Effect.forEach(
       groups.values(),
@@ -589,6 +613,7 @@ export const make = Effect.gen(function* () {
         ),
       { concurrency: 8, discard: true },
     );
+    if (threadId === undefined) noPullRequestRechecks.retain(groups);
     // fork: server-weight
     yield* Effect.annotateCurrentSpan({ settled: settledCount });
   });

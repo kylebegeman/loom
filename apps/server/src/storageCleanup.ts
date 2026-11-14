@@ -48,6 +48,7 @@ import { ServerEnvironmentIdentity } from "./environment/ServerEnvironment.ts"; 
 import { makeLibraryCheckoutOwners } from "./project/libraryCheckoutOwnership.ts"; // fork: library-projects
 import * as GitManager from "./git/GitManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import { scratchFolderRoot } from "./project/ManagedProjectFolders.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
@@ -643,7 +644,7 @@ const make = Effect.gen(function* () {
   const measureWorktree = Effect.fn("storageCleanup.measureWorktree")(
     function* (
       worktreePath: string,
-      inspectRepositories = false,
+      inspectRepositories: boolean | "plain-folder" = false,
       deleteDevHome = false, // fork: project-lifecycle
     ) {
       const root = yield* fs.realPath(worktreePath);
@@ -651,9 +652,10 @@ const make = Effect.gen(function* () {
       // fork: project-lifecycle -- the landed rule deletes the worktree's own .t3/ dev home whole.
       const devHome = !deleteDevHome ? null : pathKey(path.join(root, ".t3"));
       const incomplete = { bytes: null, reason: "worktree could not be fully inspected" };
-      const repositories = new Set([pathKey(root)]);
+      // A plain folder is not a checkout, so a repository at its root counts like one below it.
+      const repositories = new Set(inspectRepositories === "plain-folder" ? [] : [pathKey(root)]);
       const moduleStores: string[] = [];
-      if (inspectRepositories && (yield* fs.exists(path.join(root, ".gitmodules")))) {
+      if (inspectRepositories === true && (yield* fs.exists(path.join(root, ".gitmodules")))) {
         const submodules = yield* git.execute({
           operation: "StorageCleanup.nestedRepositories",
           cwd: root,
@@ -921,6 +923,7 @@ const make = Effect.gen(function* () {
     roots: ReadonlyArray<string>,
     projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
     entries: StorageCleanupReportEntry[],
+    scratchRoot: string | null,
   ) {
     const rows = yield* sql<{ worktreePath: string }>`
       SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
@@ -959,12 +962,14 @@ const make = Effect.gen(function* () {
         (root) =>
           !inside(root, managedRoot) && (pathKey(root) === pathKey(target) || inside(root, target)),
       );
-    const directories = Effect.fnUntraced(function* (parent: string, managedRoot: string) {
-      if (inProject(parent, managedRoot)) return [];
+    // The scratch root is itself a project, so its folders skip the project check.
+    const directories = Effect.fnUntraced(function* (parent: string, managedRoot: string | null) {
+      const skipped = (target: string) => managedRoot !== null && inProject(target, managedRoot);
+      if (skipped(parent)) return [];
       const result: string[] = [];
       for (const name of yield* fs.readDirectory(parent).pipe(Effect.orElseSucceed(() => []))) {
         const target = path.join(parent, name);
-        if (!inside(parent, target) || inProject(target, managedRoot)) continue;
+        if (!inside(parent, target) || skipped(target)) continue;
         const directory = yield* Effect.gen(function* () {
           if (pathKey(yield* fs.realPath(target)) !== pathKey(target)) return false;
           return (yield* fs.stat(target)).type === "Directory";
@@ -979,7 +984,7 @@ const make = Effect.gen(function* () {
     let firstMeasurement = true;
     const reported = new Set<string>();
     const report = Effect.fnUntraced(
-      function* (worktreePath: string) {
+      function* (worktreePath: string, scratch = false) {
         const key = pathKey(worktreePath);
         if (
           reported.has(key) ||
@@ -1011,7 +1016,9 @@ const make = Effect.gen(function* () {
           outcome: "kept",
           reason: linked
             ? "No thread uses this worktree"
-            : "No thread uses this folder, and it isn't a git worktree",
+            : scratch
+              ? "No thread uses this folder"
+              : "No thread uses this folder, and it isn't a git worktree",
           path: worktreePath,
           projectPath: null,
           threadId: null,
@@ -1061,6 +1068,8 @@ const make = Effect.gen(function* () {
         }).pipe(Effect.orElseSucceed(() => undefined));
       }
     }
+    if (scratchRoot !== null)
+      for (const folder of yield* directories(scratchRoot, null)) yield* report(folder, true);
     for (const key of orphanSizes.keys()) {
       if (!reported.has(key)) orphanSizes.delete(key);
     }
@@ -1640,6 +1649,32 @@ const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
+    const scratchRoot = yield* fs
+      .realPath(scratchFolderRoot(config.baseDir, path))
+      .pipe(Effect.orElseSucceed(() => null));
+    // Nothing can bring a scratch folder's files back, so these hold whatever the retention says.
+    const scratchKeepReason = Effect.fn("StorageCleanup.scratchKeepReason")(function* (
+      folder: string,
+      threadIds: ReadonlyArray<string>,
+      rules: WorktreeCleanupRules,
+    ) {
+      const realParent = yield* fs.realPath(path.dirname(folder));
+      if ((yield* fs.realPath(folder)) !== path.join(realParent, path.basename(folder)))
+        return "folder is a symbolic link";
+      // Every file here is untracked, and only "tracked-changes" lets cleanup delete those.
+      if (rules.worktreeKeepWhen !== "tracked-changes") {
+        const file = (yield* fs.readDirectory(folder)).find((name) => name !== "node_modules");
+        if (file !== undefined) return `has local files (${file})`;
+      }
+      // Each run of a scheduled task works on what its earlier runs left in the folder.
+      const scheduled = yield* sql<{ threadId: string }>`
+        SELECT thread_id AS "threadId" FROM scheduled_tasks
+        WHERE enabled = 1 AND thread_id IS NOT NULL
+      `.pipe(NodeSqliteClient.readOnly);
+      if (scheduled.some((task) => threadIds.includes(task.threadId)))
+        return "thread has a scheduled task";
+      return null;
+    });
     const worktreePathReason = Effect.fn("StorageCleanup.worktreePathReason")(function* (
       worktreePath: string,
     ) {
@@ -1869,6 +1904,11 @@ const make = Effect.gen(function* () {
       const worktreeKey = yield* canonical(worktreePath);
       const worktreePaths = [worktreePath, worktreeKey];
       const group = groups.get(worktreeKey) ?? [];
+      // No project threads have no branch; their folders sit directly in the scratch root.
+      const scratch =
+        thread.branch === null &&
+        scratchRoot !== null &&
+        pathKey(path.dirname(worktreeKey)) === pathKey(scratchRoot);
       const activityAt = Math.max(...group.map(storageCleanupActivityAt));
       const deleted = "workspaceRoot" in thread;
       const settlementChain = deleted
@@ -1954,7 +1994,7 @@ const make = Effect.gen(function* () {
           return keep("workspace preparation is pending");
         if (project === undefined) return keep("project is unavailable");
         if (
-          thread.branch === null ||
+          (thread.branch === null && !scratch) ||
           !group.every((member) => storageCleanupThreadIdle(member, now, serverSettings))
         )
           return keep(waitForStop("thread is running or has pending work"));
@@ -2004,6 +2044,22 @@ const make = Effect.gen(function* () {
                     : settings.worktreeOnLand // fork: project-lifecycle
                       ? unfinishedReason // fork: project-lifecycle
                       : "no rules apply";
+        // fork: project-lifecycle -- landing and the settled release read Git, so they join below.
+        let eligible = (deleted && settings.worktreeOnDelete) || old || settledElapsed;
+        let removalReason = deleted
+          ? "thread was deleted"
+          : old
+            ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} days`
+            : `settled for ${settledDays} days`;
+        // fork: project-lifecycle -- a release frees only landed work, which a scratch folder lacks.
+        if (scratch && releasing) return keep("no rules apply");
+        // The merge and unchanged rules read Git, which a scratch folder does not have.
+        if (scratch && !eligible)
+          return keep(
+            settings.worktreeAfterDays !== null || settings.worktreeSettledAfterDays !== null
+              ? notDueReason
+              : "no rules apply",
+          );
         // Only Git-based rules can make a not-yet-due worktree eligible, so skip Git otherwise.
         if (
           !((deleted && settings.worktreeOnDelete) || old || settled || settledElapsed) && // fork: project-lifecycle
@@ -2012,131 +2068,9 @@ const make = Effect.gen(function* () {
           !settings.worktreeOnMerge
         )
           return keep(notDueReason);
-        const pathReason = yield* worktreePathReason(worktreePath);
-        if (pathReason !== null) return keep(pathReason);
-        // fork: mini-native-retention
-        const realPath = yield* fs.realPath(worktreePath);
-        const owner = yield* HostProcess.UserId;
-        if (owner !== undefined && Option.getOrNull((yield* fs.stat(realPath)).uid) !== owner)
-          return keep("worktree is owned by another user");
-        yield* assertScratchUnmounted(realPath);
-        if (yield* containsProjectRoot(worktreePaths, [project, ...snapshot.projects]))
-          return keep("contains a project checkout");
-        if (yield* branchChanged(worktreePath, thread.branch))
-          return keep("repository or branch changed");
-        // fork: project-lifecycle -- landing is checked first: its branch deletion wins over rules
-        // that keep the branch, a landed head is already published on the default branch, and the
-        // landing rule's own file protection depends on it.
-        const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
+        // fork: project-lifecycle -- declared here because the checks below read them.
         let landedOn: string | null = null;
         let landingReason: string | null = null;
-        if (landing) {
-          const checked = yield* Effect.result(
-            landedOnDefaultBranch(
-              path.resolve(project.workspaceRoot),
-              worktreePath,
-              head.commitSha,
-            ),
-          );
-          if (checked._tag === "Failure")
-            landingReason = `could not check whether it landed (${cleanupFailureReason(checked.failure)})`;
-          else if (checked.success === null) landingReason = "default branch is unknown locally";
-          else if (checked.success.landed) landedOn = checked.success.branch;
-          else landingReason = `has commits not on ${checked.success.branch}`;
-        }
-        // fork: project-lifecycle -- otherwise only the deletion rule handles deleted threads, and
-        // only landed work is released.
-        if (((deleted && !settings.worktreeOnDelete) || releasing) && landedOn === null)
-          return keep(landingReason ?? "no rules apply");
-        // Settlement never discards local data, even if older cleanup rules allow it.
-        const fileRules = settled
-          ? { ...settings, worktreeKeepWhen: "any-local-files" as const }
-          : landedOn !== null && settings.worktreeKeepWhen !== "any-local-files" // fork: project-lifecycle
-            ? { worktreeKeepWhen: "landed" as const, devHomeRoot: worktreePath } // fork: project-lifecycle
-            : settings;
-        const changes = yield* localChangesReason(worktreePath, fileRules);
-        if (changes !== null) return keep(changes);
-        // fork: project-lifecycle -- a settled release requires the branch head to be published.
-        if (settled && landedOn === null) {
-          const upstream = yield* git.execute({
-            operation: "StorageCleanup.publishedBranch",
-            cwd: worktreePath,
-            args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            allowNonZeroExit: true,
-          });
-          if (upstream.exitCode !== 0) return keep("branch has no published upstream");
-          const remote = yield* git.execute({
-            operation: "StorageCleanup.upstreamRemote",
-            cwd: worktreePath,
-            args: ["config", "--get", `branch.${thread.branch}.remote`],
-            allowNonZeroExit: true,
-          });
-          const remoteName = remote.stdout.trim();
-          if (remote.exitCode !== 0 || remoteName === "" || remoteName === ".")
-            return keep("branch has no published upstream");
-          yield* cleanupGit(worktreePath, ["fetch", "--prune", "--", remoteName], "git fetch");
-          const published = yield* git.execute({
-            operation: "StorageCleanup.publishedHead",
-            cwd: worktreePath,
-            args: ["merge-base", "--is-ancestor", head.commitSha, "@{upstream}"],
-            allowNonZeroExit: true,
-          });
-          if (published.exitCode !== 0) return keep("branch has unpublished commits");
-        }
-        let eligible =
-          landedOn !== null ||
-          (deleted && settings.worktreeOnDelete) ||
-          old ||
-          settled ||
-          settledElapsed; // fork: project-lifecycle
-        let removalReason =
-          landedOn !== null // fork: project-lifecycle
-            ? `${releasing ? "checkout released; " : ""}landed on ${landedOn}` // fork: project-lifecycle
-            : deleted
-              ? "thread was deleted"
-              : settled // fork: project-lifecycle
-                ? "all threads settled; branch is published"
-                : old
-                  ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} days`
-                  : `settled for ${settledDays} days`;
-        // fork: project-lifecycle -- the landing rule also passes the not-due skip above.
-        if (!eligible && (unchangedApplies || settings.worktreeOnMerge)) {
-          // fork: project-lifecycle -- refreshed, unlike the landing check's local-only result.
-          const integration = yield* defaultBranchIntegration(
-            path.resolve(project.workspaceRoot),
-            worktreePath,
-            head.commitSha,
-            unchangedApplies
-              ? null
-              : settings.worktreeUnchanged
-                ? notDueReason
-                : "no remote is configured for merged-worktree cleanup",
-          );
-          if (typeof integration === "string") return keep(integration);
-          const { remote, branch, integrated } = integration; // fork: project-lifecycle
-          eligible = integrated && unchangedApplies;
-          if (eligible)
-            removalReason =
-              remote === null
-                ? "no commits beyond the project branch"
-                : "no commits beyond the default branch";
-          if (!eligible && remote !== null && settings.worktreeOnMerge && thread.branch !== null) {
-            const pullRequest = yield* gitManager.branchPullRequest(
-              { cwd: worktreePath, branch: thread.branch },
-              { refresh: true },
-            );
-            eligible = storageCleanupPullRequestMerged(pullRequest, {
-              branch: thread.branch,
-              defaultBranch: branch,
-              headSha: head.commitSha,
-              integrated,
-            });
-            if (eligible) removalReason = "pull request was merged";
-          }
-          if (!eligible && remote === null)
-            return keep(integrated ? notDueReason : "has commits beyond the project branch");
-        }
-        if (!eligible) return keep(landingReason ?? notDueReason); // fork: project-lifecycle
         // Re-read this path's threads and sessions so new activity cancels removal; full per-worktree snapshots take seconds.
         const blockedSinceCheck = Effect.fnUntraced(function* () {
           // fork: library-projects
@@ -2255,6 +2189,184 @@ const make = Effect.gen(function* () {
           }
           return null;
         });
+        const settingsChangedSinceCheck = Effect.gen(function* () {
+          const currentSettings = yield* settingsService.getSettings;
+          const current = resolveWorktreeCleanup(currentSettings, thread.projectId);
+          return (
+            currentSettings.autoResumeLimitedThreads !== serverSettings.autoResumeLimitedThreads ||
+            currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
+            Object.keys(settings).some(
+              (key) =>
+                current[key as keyof typeof settings] !== settings[key as keyof typeof settings],
+            )
+          );
+        });
+        if (scratch) {
+          const threadIds = group.map((member) => member.id);
+          const blocked =
+            (yield* scratchKeepReason(worktreePath, threadIds, settings)) ??
+            (yield* blockedSinceCheck());
+          if (blocked !== null) return keep(blocked);
+          // fork: mini-native-retention
+          const folderOwner = yield* HostProcess.UserId;
+          if (
+            folderOwner !== undefined &&
+            Option.getOrNull((yield* fs.stat(worktreePath)).uid) !== folderOwner
+          )
+            return keep("folder is owned by another user");
+          const inspection = yield* measureWorktree(worktreePath, "plain-folder");
+          if (inspection.reason !== null) return keep(inspection.reason);
+          return yield* withWorkspaceLease(
+            worktreePath,
+            Effect.gen(function* () {
+              // Walked again under the lease: a repository deleted with the folder is gone for good.
+              const finalInspection = yield* measureWorktree(worktreePath, "plain-folder");
+              if (finalInspection.reason !== null) return keep(finalInspection.reason);
+              // The walk takes time, so the cheap checks run last, right before removal.
+              const blockedWhileMeasuring =
+                (yield* scratchKeepReason(worktreePath, threadIds, settings)) ??
+                (yield* blockedSinceCheck());
+              if (blockedWhileMeasuring !== null) return keep(blockedWhileMeasuring);
+              if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
+              // fork: mini-native-retention
+              yield* assertScratchUnmounted(yield* fs.realPath(worktreePath));
+              yield* fs.remove(worktreePath, { recursive: true });
+              entries.push({
+                ...entry,
+                outcome: "removed",
+                reason: sentence(removalReason),
+                bytes: inspection.bytes,
+              });
+              // The stored path stays so the next turn recreates the folder, empty.
+              yield* Effect.logInfo("storage cleanup removed scratch folder", {
+                threadId: thread.id,
+              });
+            }),
+          );
+        }
+        const pathReason = yield* worktreePathReason(worktreePath);
+        if (pathReason !== null) return keep(pathReason);
+        // fork: mini-native-retention
+        const realPath = yield* fs.realPath(worktreePath);
+        const owner = yield* HostProcess.UserId;
+        if (owner !== undefined && Option.getOrNull((yield* fs.stat(realPath)).uid) !== owner)
+          return keep("worktree is owned by another user");
+        yield* assertScratchUnmounted(realPath);
+        if (yield* containsProjectRoot(worktreePaths, [project, ...snapshot.projects]))
+          return keep("contains a project checkout");
+        if (yield* branchChanged(worktreePath, thread.branch))
+          return keep("repository or branch changed");
+        // fork: project-lifecycle -- landing is checked first: its branch deletion wins over rules
+        // that keep the branch, a landed head is already published on the default branch, and the
+        // landing rule's own file protection depends on it.
+        const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
+        if (landing) {
+          const checked = yield* Effect.result(
+            landedOnDefaultBranch(
+              path.resolve(project.workspaceRoot),
+              worktreePath,
+              head.commitSha,
+            ),
+          );
+          if (checked._tag === "Failure")
+            landingReason = `could not check whether it landed (${cleanupFailureReason(checked.failure)})`;
+          else if (checked.success === null) landingReason = "default branch is unknown locally";
+          else if (checked.success.landed) landedOn = checked.success.branch;
+          else landingReason = `has commits not on ${checked.success.branch}`;
+        }
+        // fork: project-lifecycle -- otherwise only the deletion rule handles deleted threads, and
+        // only landed work is released.
+        if (((deleted && !settings.worktreeOnDelete) || releasing) && landedOn === null)
+          return keep(landingReason ?? "no rules apply");
+        // Settlement never discards local data, even if older cleanup rules allow it.
+        const fileRules = settled
+          ? { ...settings, worktreeKeepWhen: "any-local-files" as const }
+          : landedOn !== null && settings.worktreeKeepWhen !== "any-local-files" // fork: project-lifecycle
+            ? { worktreeKeepWhen: "landed" as const, devHomeRoot: worktreePath } // fork: project-lifecycle
+            : settings;
+        const changes = yield* localChangesReason(worktreePath, fileRules);
+        if (changes !== null) return keep(changes);
+        // fork: project-lifecycle -- a settled release requires the branch head to be published.
+        if (settled && landedOn === null) {
+          const upstream = yield* git.execute({
+            operation: "StorageCleanup.publishedBranch",
+            cwd: worktreePath,
+            args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+            allowNonZeroExit: true,
+          });
+          if (upstream.exitCode !== 0) return keep("branch has no published upstream");
+          const remote = yield* git.execute({
+            operation: "StorageCleanup.upstreamRemote",
+            cwd: worktreePath,
+            args: ["config", "--get", `branch.${thread.branch}.remote`],
+            allowNonZeroExit: true,
+          });
+          const remoteName = remote.stdout.trim();
+          if (remote.exitCode !== 0 || remoteName === "" || remoteName === ".")
+            return keep("branch has no published upstream");
+          yield* cleanupGit(worktreePath, ["fetch", "--prune", "--", remoteName], "git fetch");
+          const published = yield* git.execute({
+            operation: "StorageCleanup.publishedHead",
+            cwd: worktreePath,
+            args: ["merge-base", "--is-ancestor", head.commitSha, "@{upstream}"],
+            allowNonZeroExit: true,
+          });
+          if (published.exitCode !== 0) return keep("branch has unpublished commits");
+        }
+        eligible =
+          landedOn !== null ||
+          (deleted && settings.worktreeOnDelete) ||
+          old ||
+          settled ||
+          settledElapsed; // fork: project-lifecycle
+        removalReason =
+          landedOn !== null // fork: project-lifecycle
+            ? `${releasing ? "checkout released; " : ""}landed on ${landedOn}` // fork: project-lifecycle
+            : deleted
+              ? "thread was deleted"
+              : settled // fork: project-lifecycle
+                ? "all threads settled; branch is published"
+                : old
+                  ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} days`
+                  : `settled for ${settledDays} days`;
+        // fork: project-lifecycle -- the landing rule also passes the not-due skip above.
+        if (!eligible && (unchangedApplies || settings.worktreeOnMerge)) {
+          // fork: project-lifecycle -- refreshed, unlike the landing check's local-only result.
+          const integration = yield* defaultBranchIntegration(
+            path.resolve(project.workspaceRoot),
+            worktreePath,
+            head.commitSha,
+            unchangedApplies
+              ? null
+              : settings.worktreeUnchanged
+                ? notDueReason
+                : "no remote is configured for merged-worktree cleanup",
+          );
+          if (typeof integration === "string") return keep(integration);
+          const { remote, branch, integrated } = integration; // fork: project-lifecycle
+          eligible = integrated && unchangedApplies;
+          if (eligible)
+            removalReason =
+              remote === null
+                ? "no commits beyond the project branch"
+                : "no commits beyond the default branch";
+          if (!eligible && remote !== null && settings.worktreeOnMerge && thread.branch !== null) {
+            const pullRequest = yield* gitManager.branchPullRequest(
+              { cwd: worktreePath, branch: thread.branch },
+              { refresh: true },
+            );
+            eligible = storageCleanupPullRequestMerged(pullRequest, {
+              branch: thread.branch,
+              defaultBranch: branch,
+              headSha: head.commitSha,
+              integrated,
+            });
+            if (eligible) removalReason = "pull request was merged";
+          }
+          if (!eligible && remote === null)
+            return keep(integrated ? notDueReason : "has commits beyond the project branch");
+        }
+        if (!eligible) return keep(landingReason ?? notDueReason); // fork: project-lifecycle
         // fork: project-lifecycle
         if (releasing) {
           const busy = yield* releaseIdleSessions(worktreePath, now);
@@ -2286,18 +2398,7 @@ const make = Effect.gen(function* () {
               return keep("commit changed since check");
             const finalChanges = yield* localChangesReason(worktreePath, fileRules); // fork: project-lifecycle
             if (finalChanges !== null) return keep(finalChanges);
-            const currentSettings = yield* settingsService.getSettings;
-            const current = resolveWorktreeCleanup(currentSettings, thread.projectId);
-            if (
-              currentSettings.autoResumeLimitedThreads !==
-                serverSettings.autoResumeLimitedThreads ||
-              currentSettings.snoozeLimitedThreads !== serverSettings.snoozeLimitedThreads ||
-              Object.keys(settings).some(
-                (key) =>
-                  current[key as keyof typeof settings] !== settings[key as keyof typeof settings],
-              )
-            )
-              return keep("settings changed since check");
+            if (yield* settingsChangedSinceCheck) return keep("settings changed since check");
             // Clean only untracked files. Ordinary worktrees retain Git's final tracked-edit check.
             if (fileRules.worktreeKeepWhen === "tracked-changes")
               // fork: project-lifecycle
@@ -2372,6 +2473,7 @@ const make = Effect.gen(function* () {
       roots,
       yield* projectStore.list({ includeDeleted: true }),
       entries,
+      scratchRoot,
     );
     return { waiting, kept };
   });
