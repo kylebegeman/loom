@@ -1833,3 +1833,4 @@ scripts/build-desktop-artifact.ts	private-releases	2
 apps/desktop/src/electron/ElectronUpdater.ts	private-releases	2
 apps/desktop/src/updates/DesktopUpdates.ts	private-releases	6
 apps/desktop/src/updates/updatesTestHarness.ts	private-releases	1
+apps/server/src/cli/update.ts	private-releases	9

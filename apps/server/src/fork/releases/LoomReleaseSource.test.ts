@@ -1,13 +1,24 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as ServerConfig from "../../config.ts";
 import {
   type LibraryConnection,
   LibraryConnectionService,
 } from "../project-library/LibraryConnection.ts";
-import { LoomReleaseSource, layer, libraryReleaseClient } from "./LoomReleaseSource.ts";
+import {
+  LoomReleaseSource,
+  layer,
+  libraryReleaseClient,
+  libraryReleasesForHome,
+  newestLibraryRelease,
+} from "./LoomReleaseSource.ts";
 
 const ORIGIN = "https://library.example.test";
 const SIGNED = "https://s3.example.test/bucket/releases/v1.2.3/SHA256SUMS?X-Amz-Signature=abc";
@@ -154,6 +165,98 @@ describe("loom release source", () => {
         httpClient: f.directClient,
       });
       expect(source.releaseBaseUrl).toBe(`${ORIGIN}/api/loom/releases`);
+    }),
+  );
+});
+
+describe("t3 update on an enrolled computer", () => {
+  const INDEX = "https://s3.example.test/bucket/releases/index.json?X-Amz-Signature=abc";
+  const forHome = (input: {
+    readonly environmentId?: string;
+    readonly credentialFor?: string;
+    readonly index: () => Response;
+  }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const config = yield* ServerConfig.ServerConfig;
+      yield* fs.makeDirectory(config.secretsDir, { recursive: true });
+      if (input.environmentId !== undefined)
+        yield* fs.writeFileString(config.environmentIdPath, `${input.environmentId}\n`);
+      yield* fs.writeFileString(
+        `${config.secretsDir}/library-publisher.json`,
+        JSON.stringify({
+          version: 1,
+          sourceEnvironmentId: input.credentialFor ?? "studio",
+          libraryEnvironmentId: "library",
+          libraryUrl: ORIGIN,
+          sessionId: "session",
+          accessToken: "publisher-secret",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        }),
+        { mode: 0o600 },
+      );
+      const requests: HttpClientRequest.HttpClientRequest[] = [];
+      const http = HttpClient.make((request) =>
+        Effect.sync(() => {
+          requests.push(request);
+          return HttpClientResponse.fromWeb(
+            request,
+            request.url === INDEX
+              ? Response.json([
+                  { tag_name: "0.0.210-nightly.20261114.4700", draft: true },
+                  { tag_name: "0.0.209-nightly.20261113.4650" },
+                  { tag_name: "0.0.208" },
+                ])
+              : input.index(),
+          );
+        }),
+      );
+      const releases = yield* libraryReleasesForHome(config).pipe(
+        Effect.provideService(HttpClient.HttpClient, http),
+        Effect.provideService(HostProcess.HomeDirectory, config.baseDir),
+        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env: {} })),
+      );
+      return { releases, requests };
+    }).pipe(
+      Effect.provide(
+        ServerConfig.layerTest(process.cwd(), { prefix: "release-source-" }).pipe(
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    );
+
+  it.effect("lists and downloads with this computer's sign-in, never sending it on", () =>
+    Effect.gen(function* () {
+      const { releases, requests } = yield* forHome({
+        environmentId: "studio",
+        index: () => new Response(null, { status: 302, headers: { location: INDEX } }),
+      });
+      expect(releases?.releaseBaseUrl).toBe(`${ORIGIN}/api/loom/releases`);
+      expect(yield* newestLibraryRelease(releases!, "nightly")).toBe(
+        "0.0.209-nightly.20261113.4650",
+      );
+      expect(yield* newestLibraryRelease(releases!, "stable")).toBe("0.0.208");
+      const preview = yield* newestLibraryRelease(releases!, "preview").pipe(Effect.flip);
+      expect(preview.reason).toBe("Your Library has no published preview release.");
+      for (const request of requests)
+        expect(request.headers["authorization"]).toBe(
+          request.url === INDEX ? undefined : "Bearer publisher-secret",
+        );
+      expect(requests.map((request) => request.url)).toContain(INDEX);
+    }),
+  );
+
+  it.effect("keeps the public source unless this home is enrolled in a Library with releases", () =>
+    Effect.gen(function* () {
+      const notHosted = () => Response.json({ reason: "not-hosted" }, { status: 404 });
+      const hosted = () => new Response(null, { status: 302, headers: { location: INDEX } });
+      for (const input of [
+        { index: hosted },
+        { environmentId: "studio", credentialFor: "laptop", index: hosted },
+        { environmentId: "studio", index: notHosted },
+      ]) {
+        expect((yield* forHome(input)).releases).toBeUndefined();
+      }
     }),
   );
 });

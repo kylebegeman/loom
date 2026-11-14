@@ -22,6 +22,11 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
+import type * as ServerConfig from "../config.ts"; // fork: private-releases
+import {
+  libraryReleasesForHome,
+  newestLibraryRelease,
+} from "../fork/releases/LoomReleaseSource.ts"; // fork: private-releases
 import {
   OS_MANAGED_RUNTIME_REASON,
   serverSelfUpdateEnabled,
@@ -293,6 +298,7 @@ export const updateCommand = Command.make("update", {
         requestedVersion: Option.getOrUndefined(flags.version),
         allowDowngrade: flags.allowDowngrade,
         assumeYes: flags.yes,
+        serverConfig: config, // fork: private-releases
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -358,6 +364,8 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   readonly requestedVersion: string | undefined;
   readonly allowDowngrade: boolean;
   readonly assumeYes: boolean;
+  /** This home's server config, to find an enrolled computer's Library. */
+  readonly serverConfig?: ServerConfig.ServerConfig["Service"]; // fork: private-releases
 }) {
   // An agent running under an operating system's service inherits the switch and would
   // otherwise replace the runtime that system ships.
@@ -374,6 +382,13 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   const service = yield* BootService.BootService;
   const policy = yield* ManagedPolicy.ManagedPolicy;
   const mirror = managedUpdateMirror(policy.document);
+  // fork: private-releases: a policy mirror or an explicit base wins over the Library, as on the server.
+  const library =
+    mirror === undefined &&
+    !environment[CLI_RELEASE_BASE_URL_ENV]?.trim() &&
+    input.serverConfig !== undefined
+      ? yield* libraryReleasesForHome(input.serverConfig)
+      : undefined;
 
   const currentVersion = packageJson.version;
   const channel = input.channel ?? cliReleaseChannelOf(currentVersion);
@@ -395,7 +410,11 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     input.requestedVersion !== undefined
       ? Effect.succeed(input.requestedVersion)
       : mirror === undefined
-        ? resolveNewestVersion(channel)
+        ? library === undefined // fork: private-releases
+          ? resolveNewestVersion(channel)
+          : newestLibraryRelease(library, channel).pipe(
+              Effect.mapError((error) => new CliUpdateError({ reason: error.reason })), // fork: private-releases
+            )
         : resolveMirrorVersion(mirror, channel)
   ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);
@@ -509,10 +528,13 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     fs,
     path,
     runner,
-    httpClient,
+    httpClient: library?.httpClient ?? httpClient, // fork: private-releases
     platform,
     arch,
-    releaseBaseUrl: mirror?.feedUrl ?? (environment[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined),
+    releaseBaseUrl:
+      mirror?.feedUrl ??
+      library?.releaseBaseUrl ?? // fork: private-releases
+      (environment[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined),
     requirePublishedRelease: mirror !== undefined,
     validate: (paths) =>
       runner
