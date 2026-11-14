@@ -168,6 +168,7 @@ import * as PreviewPages from "./preview-pages/PreviewPagesService.ts";
 import * as Directory from "./directory/DirectoryService.ts";
 import * as DirectoryReporter from "./directory/DirectoryReporter.ts";
 import { DirectoryHttpRoutes } from "./directory/http.ts";
+import { ReleaseHttpRoutes } from "./releases/http.ts";
 import { CloudflaredExtraPorts } from "./cloudflared/connector.ts";
 import * as ReachService from "./reach/ReachService.ts";
 import { ReachGuardLayer } from "./reach/guard.ts";
@@ -898,6 +899,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PreviewAccessHttpRoutes,
   PageLibraryHttpRoutes,
   DirectoryHttpRoutes,
+  ReleaseHttpRoutes,
   AccountAccessRoutes,
   BotLibraryHttpRoutes,
   ReachHttpRoutes,

@@ -559,6 +559,10 @@
       "types": "./src/fork/directory.ts",
       "import": "./src/fork/directory.ts"
     },
+    "./fork/release-mirror": {
+      "types": "./src/fork/release-mirror.ts",
+      "import": "./src/fork/release-mirror.ts"
+    },
     "./fork/identity-grant": {
       "types": "./src/fork/identityGrant.ts",
       "import": "./src/fork/identityGrant.ts"

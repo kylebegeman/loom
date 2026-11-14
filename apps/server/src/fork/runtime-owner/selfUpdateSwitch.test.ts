@@ -12,6 +12,7 @@ import { HttpClient } from "effect/http";
 import packageJson from "../../../package.json" with { type: "json" };
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerSelfUpdate from "../../cloud/selfUpdate.ts";
+import * as LoomReleaseSource from "../releases/LoomReleaseSource.ts";
 import * as ServiceLauncherClient from "../../cloud/serviceLauncherClient.ts";
 import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
@@ -52,6 +53,7 @@ const makeSelfUpdate = Effect.fn("test.make_switched_self_update")(function* (op
     Effect.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
   );
   const selfUpdate = yield* ServerSelfUpdate.make().pipe(
+    Effect.provideService(LoomReleaseSource.LoomReleaseSource, LoomReleaseSource.configuredOnly),
     Effect.provideService(
       ProcessRunner.ProcessRunner,
       ProcessRunner.ProcessRunner.of({

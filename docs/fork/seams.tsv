@@ -1826,3 +1826,6 @@ apps/web/src/fork/identity/LoomSignIn.tsx	connect-ui	1
 apps/web/src/routes/__root.tsx	connect-ui	1
 apps/web/src/routes/approve-agent.tsx	connect-ui	1
 packages/client-runtime/src/connection/routes.ts	connect-ui	1
+apps/server/src/cloud/selfUpdate.ts	private-releases	5
+apps/server/src/server.ts	private-releases	3
+apps/server/src/cloud/selfUpdate.test.ts	private-releases	2

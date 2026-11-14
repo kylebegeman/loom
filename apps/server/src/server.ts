@@ -195,6 +195,8 @@ import {
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
+import * as LoomReleaseSource from "./fork/releases/LoomReleaseSource.ts"; // fork: private-releases
+import * as LibraryConnection from "./fork/project-library/LibraryConnection.ts"; // fork: private-releases
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -305,7 +307,10 @@ const layerDesktopAppUpdate = DesktopAppUpdate.layer.pipe(
 );
 
 // fork: machine-updates
-const layerSelfUpdate = ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate));
+const layerSelfUpdate = ServerSelfUpdate.layer.pipe(
+  Layer.provide(layerDesktopAppUpdate),
+  Layer.provide(LoomReleaseSource.layer.pipe(Layer.provide(LibraryConnection.layer))), // fork: private-releases
+);
 
 const layerBackground = BackgroundPolicy.layer.pipe(
   Layer.provide(layerHostPowerMonitor),

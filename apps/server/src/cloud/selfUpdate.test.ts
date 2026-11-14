@@ -22,6 +22,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 import * as ServerSelfUpdate from "./selfUpdate.ts";
+import * as LoomReleaseSource from "../fork/releases/LoomReleaseSource.ts"; // fork: private-releases
 
 interface HarnessOptions {
   readonly mode?: "web" | "desktop";
@@ -152,6 +153,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   );
   const selfUpdate = yield* ServerSelfUpdate.make().pipe(
     Effect.provideService(ProcessRunner.ProcessRunner, runner),
+    Effect.provideService(LoomReleaseSource.LoomReleaseSource, LoomReleaseSource.configuredOnly), // fork: private-releases
     Effect.provideService(ServiceLauncherClient.ServiceLauncherClient, launcher),
     Effect.provideService(
       DesktopAppUpdate.DesktopAppUpdate,

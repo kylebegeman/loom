@@ -50,6 +50,7 @@ import { bootServiceProgramOf, bootServiceUnitPath } from "./bootService.ts";
 import { decodeServicePreflightResult } from "./servicePreflight.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
 import { isExactServiceVersion } from "./serviceProtocol.ts";
+import * as LoomReleaseSource from "../fork/releases/LoomReleaseSource.ts"; // fork: private-releases
 
 // A staged runtime's cold start can take over a minute on a loaded, swapping host.
 const PREFLIGHT_TIMEOUT = Duration.minutes(3);
@@ -160,6 +161,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     Option.getOrUndefined(yield* Config.String(CLI_RELEASE_BASE_URL_ENV).pipe(Config.option));
   const inFlight = yield* Ref.make(false);
   const selfUpdateEnabled = yield* serverSelfUpdateEnabled; // fork: runtime-owner
+  const releaseSource = yield* LoomReleaseSource.LoomReleaseSource; // fork: private-releases
 
   yield* pruneRuntimesOnStart({ baseDir: serverConfig.baseDir, managed: launcher.managed }).pipe(
     Effect.forkScoped,
@@ -238,16 +240,17 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
 
     return yield* Effect.gen(function* () {
       yield* reportProgress("downloading");
+      const source = yield* releaseSource.resolve({ releaseBaseUrl, httpClient }); // fork: private-releases
       const paths = yield* ensurePinnedRuntimeInstalled({
         baseDir: serverConfig.baseDir,
         version: targetVersion,
         fs,
         path,
         runner,
-        httpClient,
+        httpClient: source.httpClient, // fork: private-releases
         platform,
         arch,
-        releaseBaseUrl,
+        releaseBaseUrl: source.releaseBaseUrl, // fork: private-releases
         requirePublishedRelease: mirror !== undefined,
         validate: (runtime) =>
           runner
