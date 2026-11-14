@@ -41,6 +41,9 @@ otherwise it answers `404 not-hosted` and clients keep their GitHub source.
 - Servers and `t3 update` on an enrolled computer download through the Library. A
   managed mirror or `T3CODE_RELEASE_BASE_URL` wins, except a base naming Loom's own
   GitHub releases, which follows the Library.
+- Web and mobile read release lists from their environment's Library through
+  `loom.releases.index`, and read GitHub only when that server predates it or has
+  no Library releases.
 - A computer that was never enrolled has no Library credential. Copy its first
   runtime from an owner Mac (`gh release download`) and install it from a loopback
   mirror. SSH remote installs have the same limit.
