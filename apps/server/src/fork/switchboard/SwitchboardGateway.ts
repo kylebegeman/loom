@@ -169,7 +169,9 @@ const make = Effect.gen(function* () {
         return yield* new SwitchboardGatewayError({ reason: "unavailable" });
       const hubKey = Redacted.value(current.value);
       // An account computer's own credential, or the shared key computers set up by hand still use.
-      const computer = yield* clients.authenticate(key);
+      const computer = yield* clients
+        .authenticate(key)
+        .pipe(Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })));
       if (
         Option.isNone(computer) &&
         !NodeCrypto.timingSafeEqual(Buffer.from(key), Buffer.from(hubKey))

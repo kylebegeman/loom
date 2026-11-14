@@ -460,8 +460,13 @@ ledger name. A credential is bound to account membership (key fingerprint, appro
 epoch, owner, authority), not to a publisher session, because the Library renews sessions
 only in memory and a restart would otherwise revoke every computer. Every 15 minutes the
 hub asks the Library which memberships are still active, drops the rest and renews each
-confirmed one's 24-hour lease. A 401 or 403 for that check refuses the hub itself and drops
-every credential; an unreachable Library drops each only when its lease runs out. The computer
+confirmed one's 24-hour lease. A 401 or 403 for that check refuses the hub itself: it drops
+every credential, including any issued while the check was in flight, and an enrollment the
+Library redeemed before the refusal does not commit. An unreachable Library drops each
+credential only when its lease runs out. Changes apply in memory, ending open sockets, before
+the secret store write, which retries at each check. After a restart the hub answers a saved
+credential `unavailable` until the Library confirms it, so a computer keeps its credential
+through the wait. The computer
 keeps the credential and route in its server secret store, and `/bin/cat` on that file is the
 key command, so a Library outage changes nothing until the hub refuses the credential
 (`x-loom-switchboard: authentication` or `disabled`, a header only the gateway sets). Revoking on the hub is a

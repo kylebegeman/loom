@@ -39,7 +39,8 @@ use the account hub yet.
 The Switchboard row in **Settings → Providers** shows where the computer routes
 and whether the hub answered its last check. **Reconnect** asks the hub for a new
 credential; the current one keeps working until the new one arrives. A computer
-that already connected keeps routing for up to a day while your Library is offline. On the hub,
+that already connected keeps routing for up to a day while your Library is offline.
+After the hub restarts, its computers route again once your Library confirms them. On the hub,
 the same row lists each connected computer under the name Switchboard's request
 log shows. **Revoke** replaces that computer's credential, and it gets a new one
 at its next check while it stays on your account. To keep a computer out, remove
