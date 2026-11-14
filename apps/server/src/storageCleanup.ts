@@ -2686,6 +2686,7 @@ const make = Effect.gen(function* () {
     entries: StorageCleanupReportEntry[],
   ) {
     if (retention === null) return;
+    const scratchNotDue = "Scratch retention has not elapsed";
     const roots = new Set([
       path.resolve(config.baseDir, "scratch"),
       path.resolve(config.managedProjectsRoot ?? config.baseDir, "scratch"),
@@ -2755,7 +2756,7 @@ const make = Effect.gen(function* () {
             if (
               latest.some((holder) => storageCleanupActivityAt(holder) >= now - retention * DAY_MS)
             )
-              return "Scratch retention has not elapsed";
+              return scratchNotDue;
             if (yield* containsProjectRoot([cwd], current.projects))
               return "contains a project checkout";
             for (const holder of latest) {
@@ -2781,6 +2782,12 @@ const make = Effect.gen(function* () {
           if (holders.length > 1) return keep(`shared by ${holders.length} threads`);
           if (yield* SetupMarker.exists(cwd)) return keep("workspace preparation is pending");
           const before = yield* blocked();
+          // fork: mini-native-retention -- the worktree sweep's row already explains a folder that is not due
+          if (
+            before === scratchNotDue &&
+            entries.some((row) => row.path !== null && path.resolve(row.path) === cwd)
+          )
+            return;
           if (before !== null) return keep(before);
           const names = yield* fs.readDirectory(cwd);
           if (names.length > 0 && !names.includes(".git"))

@@ -554,6 +554,7 @@ apps/server/src/cli/acpMcpBridge.ts	brand	2
 apps/server/src/cli/app.ts	brand	4
 apps/server/src/cli/app.ts	project-lifecycle	2
 apps/server/src/cli/browser.ts	brand	13
+apps/server/src/cli/browser.test.ts	brand	1
 apps/server/src/cli/config.test.ts	brand	1
 apps/server/src/cli/config.ts	brand	2
 apps/server/src/cli/doctor.ts	brand	2

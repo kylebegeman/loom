@@ -212,9 +212,9 @@ it.effect("lists each session only the tools its credential can call", () =>
  * output schema. Raise a budget only on purpose, after cutting what new text repeats.
  */
 const AGENT_VISIBLE_BUDGET_BYTES = 420_000;
-// The 375-tool response measures 1,109,208 bytes; 33,451 are the safe-integer bounds Effect 4.1
-// adds to every `Schema.Int`, so the headroom for new text matches the earlier 1,100,000 budget.
-const FULL_CATALOG_BUDGET_BYTES = 1_135_000;
+// 33,451 bytes are the safe-integer bounds Effect 4.1 adds to every `Schema.Int`, and 3,759 are
+// upstream's t3_theme_read, t3_theme_set and send_to_user, so fork text keeps the 1,100,000 headroom.
+const FULL_CATALOG_BUDGET_BYTES = 1_139_000;
 const TOOL_BUDGET_BYTES = 32 * 1024;
 
 it.effect("keeps the full tool catalog within its byte budgets", () =>

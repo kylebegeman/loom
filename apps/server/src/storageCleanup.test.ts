@@ -4090,10 +4090,6 @@ describe("native Scratch and pin retention", () => {
             shell({ worktreePath: f.cwd, status: "running" }),
             "Thread is running or has pending work",
           ],
-          [
-            shell({ worktreePath: f.cwd, latestRunCompletedAt: yield* DateTime.now }),
-            "Scratch retention has not elapsed",
-          ],
         ] as const;
         for (const [thread, reason] of reasons) {
           f.setThreads([thread]);
@@ -4101,6 +4097,13 @@ describe("native Scratch and pin retention", () => {
             (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
           ).toBe(reason);
         }
+        // fork: mini-native-retention -- a folder that is not due keeps only the worktree sweep's row
+        f.setThreads([shell({ worktreePath: f.cwd, latestRunCompletedAt: yield* DateTime.now })]);
+        expect(
+          (yield* f.service.runNow).entries
+            .filter((entry) => entry.path === f.cwd)
+            .map(({ kind, outcome }) => ({ kind, outcome })),
+        ).toEqual([{ kind: "worktree", outcome: "kept" }]);
         f.setThreads([shell({ worktreePath: f.cwd })]);
         f.setPendingEffects(true);
         expect(

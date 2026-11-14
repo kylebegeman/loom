@@ -2043,7 +2043,8 @@ describe("ThreadSettlementServiceV2 worker", () => {
         yield* service.drain;
 
         expect(yield* Ref.get(fixture.settingsReadCount)).toBe(1);
-        expect(yield* Ref.get(fixture.branchCalls)).toHaveLength(4);
+        // fork: server-weight -- only startup reads both branches; rechecks of branches without a PR wait
+        expect(yield* Ref.get(fixture.branchCalls)).toHaveLength(2);
         expect(yield* Ref.get(fixture.commands)).toEqual([]);
       }).pipe(Effect.provide(fixture.layer));
     }),
