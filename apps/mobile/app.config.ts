@@ -327,6 +327,11 @@ const config: ExpoConfig = {
       },
     ],
     "expo-secure-store",
+    // fork: account-join-approval
+    [
+      "expo-local-authentication",
+      { faceIDPermission: "Allow Loom to use Face ID to approve computers joining your account." },
+    ],
     "expo-sqlite",
     ...(isIosPersonalTeamBuild
       ? [sharingPlugin]

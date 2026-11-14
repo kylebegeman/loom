@@ -385,6 +385,12 @@ describe("renewable native sign-in", () => {
     expect(nativeIdentityAuthorizationParameters(unlimited)).toEqual({
       resource: "https://computer.test",
     });
+    // An approval forces a new passkey and never asks for a grant that outlives it.
+    expect(nativeIdentityScopes(modern, "approve")).toEqual(["openid", "profile"]);
+    expect(nativeIdentityAuthorizationParameters(modern, "approve")).toEqual({
+      resource: "https://computer.test",
+      max_age: "0",
+    });
   });
 
   it("keeps a secure end-session endpoint from discovery and drops an insecure one", async () => {

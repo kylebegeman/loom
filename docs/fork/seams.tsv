@@ -1826,3 +1826,9 @@ apps/web/src/fork/identity/LoomSignIn.tsx	connect-ui	1
 apps/web/src/routes/__root.tsx	connect-ui	1
 apps/web/src/routes/approve-agent.tsx	connect-ui	1
 packages/client-runtime/src/connection/routes.ts	connect-ui	1
+packages/contracts/src/ipc.ts	account-join-approval	2
+apps/desktop/src/ipc/DesktopIpcHandlers.ts	account-join-approval	2
+apps/desktop/src/ipc/channels.ts	account-join-approval	1
+apps/desktop/src/preload.ts	account-join-approval	1
+apps/mobile/app.config.ts	account-join-approval	1
+apps/mobile/package.json	-	"expo-local-authentication"

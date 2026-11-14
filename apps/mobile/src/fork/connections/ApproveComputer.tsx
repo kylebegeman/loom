@@ -1,8 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
-import { accountJoinCode, squashLibraryCommandFailure } from "@t3tools/client-runtime/fork";
+import {
+  accountJoinCode,
+  joinPasskey,
+  squashLibraryCommandFailure,
+} from "@t3tools/client-runtime/fork";
 import {
   ACCOUNT_JOIN_FEATURE,
   ACCOUNT_JOIN_PROMPTS_FEATURE,
+  type AccountJoinApproval,
   type AccountJoinReview,
 } from "@t3tools/contracts/fork";
 import { useState } from "react";
@@ -12,6 +17,7 @@ import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { library, useLibraryAuthority } from "../library/libraryState";
+import { approvalRefused, approveJoin, JOIN_APPROVAL_TEXT } from "./joinApproval";
 
 export function ApproveComputer() {
   const authority = useLibraryAuthority();
@@ -32,6 +38,15 @@ export function ApproveComputer() {
     reviewed.review.code === accountJoinCode(code)
       ? reviewed.review
       : null;
+  const passkey =
+    authority.environmentId === null
+      ? null
+      : joinPasskey({
+          authorityId: authority.environmentId,
+          features: authority.info.data.features,
+          entry: authority.entry,
+          surface: "native",
+        });
   const run = async (approve?: boolean) => {
     const environmentId = authority.environmentId;
     if (busy || !canDecide || !environmentId) return;
@@ -43,13 +58,30 @@ export function ApproveComputer() {
     Keyboard.dismiss();
     setBusy(true);
     setError(null);
+    // An approved request stays approved without a new check, so only a pending one asks.
+    let approval: AccountJoinApproval | null = null;
+    if (approve === true && review?.state === "pending" && passkey !== null) {
+      try {
+        approval = await approveJoin({ passkey, authorityId: environmentId, label: review.label });
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "The computer was not approved.");
+      }
+      if (approval === null) {
+        setBusy(false);
+        return;
+      }
+    }
     const result =
       approve === undefined
         ? await lookup({ environmentId, input: { code: normalized } })
-        : await decide({ environmentId, input: { code: normalized, approve } });
+        : await decide({
+            environmentId,
+            input: { code: normalized, approve, ...(approval ? { approval } : {}) },
+          });
     if (result._tag === "Success")
       setReviewed({ authorityId: environmentId, review: result.value });
     else {
+      if (approval) approvalRefused(environmentId, approval);
       const cause = squashLibraryCommandFailure(result);
       setError(
         cause instanceof Error ? cause.message : "The request could not be checked. Try again.",
@@ -103,6 +135,7 @@ export function ApproveComputer() {
             <Text className="text-sm text-foreground-muted">
               Approve only if both match the computer’s terminal. Loom will save its conversations
               and connect it to your other devices.
+              {passkey !== null && review.state === "pending" ? ` ${JOIN_APPROVAL_TEXT}` : ""}
             </Text>
             <Text selectable className="text-xs text-foreground-muted">
               Computer identity: {review.keyFingerprint}

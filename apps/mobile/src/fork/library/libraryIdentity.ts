@@ -11,10 +11,13 @@ import {
   type EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  LOOM_IDENTITY_APPROVAL_PATH,
   LOOM_IDENTITY_METADATA_PATH,
   LOOM_IDENTITY_SESSION_PATH,
+  LoomIdentityApprovalResult,
   LoomIdentityMetadata,
   LoomIdentitySessionResult,
+  type LoomIdentityApprovalRequest,
   type LoomIdentityAccount,
   type LoomIdentityDirectoryAddresses,
   LOOM_IDENTITY_PASSKEY_REQUIRED,
@@ -27,6 +30,7 @@ import {
   type IdentityGrant,
   identityAddressOrigin,
   identityAddressRefusal,
+  identityApprovalRefusalText,
   identityGrantKey,
   identityResourceRefusal,
   identitySignInMaxAge,
@@ -36,6 +40,7 @@ import * as Schema from "effect/Schema";
 const decodeMetadata = Schema.decodeUnknownSync(LoomIdentityMetadata);
 const decodeToken = Schema.decodeUnknownSync(AuthAccessTokenResult);
 const decodeIdentitySession = Schema.decodeUnknownSync(LoomIdentitySessionResult);
+const decodeApprovalResult = Schema.decodeUnknownSync(LoomIdentityApprovalResult);
 const decodeDiscovery = Schema.decodeUnknownSync(
   Schema.Struct({
     issuer: Schema.String,
@@ -115,12 +120,18 @@ export function nativeIdentityRenewable(metadata: LoomIdentityMetadata): boolean
   return metadata.sessionExchangeEnabled === true && metadata.maxSessionAgeSeconds !== undefined;
 }
 
-export function nativeIdentityScopes(metadata: LoomIdentityMetadata): ReadonlyArray<string> {
+/** `approve` asks for a passkey check that approves one computer, so it never renews. */
+export type NativeIdentityPurpose = "sign-in" | "approve";
+
+export function nativeIdentityScopes(
+  metadata: LoomIdentityMetadata,
+  purpose: NativeIdentityPurpose = "sign-in",
+): ReadonlyArray<string> {
   return [
     ...new Set([
       "openid",
       ...metadata.scopes.filter((scope) => scope !== "offline_access"),
-      ...(nativeIdentityRenewable(metadata) ? ["offline_access"] : []),
+      ...(purpose === "sign-in" && nativeIdentityRenewable(metadata) ? ["offline_access"] : []),
     ]),
   ];
 }
@@ -128,12 +139,16 @@ export function nativeIdentityScopes(metadata: LoomIdentityMetadata): ReadonlyAr
 /** The authorization request's extra parameters; the code exchange takes only the resource. */
 export function nativeIdentityAuthorizationParameters(
   metadata: LoomIdentityMetadata,
+  purpose: NativeIdentityPurpose = "sign-in",
 ): Record<string, string> {
   return {
     ...libraryIdentityResourceParameters(metadata),
-    ...(metadata.maxSessionAgeSeconds === undefined
-      ? {}
-      : { max_age: identitySignInMaxAge(metadata.maxSessionAgeSeconds) }),
+    // An approval needs a passkey used just now, so the provider must not reuse its session.
+    ...(purpose === "approve"
+      ? { max_age: "0" }
+      : metadata.maxSessionAgeSeconds === undefined
+        ? {}
+        : { max_age: identitySignInMaxAge(metadata.maxSessionAgeSeconds) }),
   };
 }
 
@@ -334,6 +349,38 @@ export async function exchangeLibraryIdentityToken(
       "This session belongs to another computer or Identity account. Sign in with the saved account.",
     );
   return token;
+}
+
+/** Trades a passkey sign-in made moments ago for a single-use code that approves one computer. */
+export async function requestLibraryApproval(
+  httpBaseUrl: string,
+  input: LoomIdentityApprovalRequest,
+  request: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<LoomIdentityApprovalResult> {
+  const response = await request(new URL(LOOM_IDENTITY_APPROVAL_PATH, httpBaseUrl), {
+    method: "POST",
+    redirect: "error",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    ...(signal ? { signal } : {}),
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const failure: unknown = await response.json().catch(() => null);
+    const code =
+      typeof failure === "object" &&
+      failure !== null &&
+      "error" in failure &&
+      typeof failure.error === "string"
+        ? failure.error
+        : null;
+    throw new Error(identityApprovalRefusalText(code));
+  }
+  try {
+    return decodeApprovalResult(await response.json());
+  } catch {
+    throw new Error(identityApprovalRefusalText(null));
+  }
 }
 
 /** What expo-auth-session returns from the authorization code exchange. */

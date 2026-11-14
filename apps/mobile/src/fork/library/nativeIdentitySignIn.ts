@@ -9,11 +9,22 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import Constants from "expo-constants";
-import { AuthRequest, exchangeCodeAsync, makeRedirectUri, ResponseType } from "expo-auth-session";
+import type { LoomDesktopApprovalRequest } from "@t3tools/contracts/fork";
+import { identityApprovalRefusalText } from "@t3tools/shared/fork/identity-grant";
+import * as Base64Url from "effect/encoding/Base64Url";
+import {
+  AuthRequest,
+  exchangeCodeAsync,
+  makeRedirectUri,
+  ResponseType,
+  type TokenResponse,
+} from "expo-auth-session";
+import { CryptoDigestAlgorithm, digest, getRandomValues } from "expo-crypto";
 import { dismissAuthSession } from "expo-web-browser";
 
 import { identityGrantStore } from "../identity-renewal/mobileIdentityRenewal";
 import {
+  assertNativeIdentityUnchanged,
   completeNativeIdentitySignIn,
   libraryIdentityAddress,
   libraryIdentityResourceParameters,
@@ -21,7 +32,9 @@ import {
   loadNativeIdentityDiscovery,
   nativeIdentityAuthorizationParameters,
   nativeIdentityScopes,
+  requestLibraryApproval,
   type IdentityOptions,
+  type NativeIdentityPurpose,
 } from "./libraryIdentity";
 
 /** Long enough for a passkey, bounded if the provider sheet hangs. */
@@ -55,21 +68,29 @@ function dismissSignInSheet() {
   }
 }
 
+type IdentitySheet = {
+  readonly destination: ReturnType<typeof libraryIdentityAddress>;
+  readonly metadata: Awaited<ReturnType<typeof loadLibraryIdentity>>;
+  readonly discovery: Awaited<ReturnType<typeof loadNativeIdentityDiscovery>>;
+  readonly tokens: TokenResponse;
+  readonly options: IdentityOptions;
+};
+
 /**
- * Signs in to one computer with Loom Identity in the provider's sheet and exchanges the account
- * tokens there. Nothing is saved: the caller checks the result, then calls
- * `saveNativeIdentitySignIn`. Null when the user closes the sheet or `signal` aborts.
+ * Runs Loom Identity in the provider's sheet for one computer, then hands the account tokens to
+ * `finish`. Null when the user closes the sheet or `signal` aborts.
  */
-export async function signInWithNativeIdentity(input: {
-  readonly httpBaseUrl: string;
-  /** Refuses an address that reaches another computer. Absent when adding a new one. */
-  readonly expectedEnvironmentId?: EnvironmentId | undefined;
-  readonly options: Omit<IdentityOptions, "signal">;
-  /** The saved connection's name. Defaults to the address's host name. */
-  readonly label?: string | undefined;
-  readonly signal: AbortSignal;
-  readonly onProgress: (stage: NativeIdentitySignInStage) => void;
-}): Promise<NativeIdentitySignIn | null> {
+async function withIdentitySheet<A>(
+  input: {
+    readonly httpBaseUrl: string;
+    readonly expectedEnvironmentId?: EnvironmentId | undefined;
+    readonly options: Omit<IdentityOptions, "signal">;
+    readonly purpose: NativeIdentityPurpose;
+    readonly signal: AbortSignal;
+    readonly onProgress: (stage: NativeIdentitySignInStage) => void;
+  },
+  finish: (sheet: IdentitySheet) => Promise<A>,
+): Promise<A | null> {
   if (input.signal.aborted) return null;
   const abort = new AbortController();
   let expired = false;
@@ -131,8 +152,8 @@ export async function signInWithNativeIdentity(input: {
       redirectUri,
       responseType: ResponseType.Code,
       usePKCE: true,
-      scopes: [...nativeIdentityScopes(metadata)],
-      extraParams: nativeIdentityAuthorizationParameters(metadata),
+      scopes: [...nativeIdentityScopes(metadata, input.purpose)],
+      extraParams: nativeIdentityAuthorizationParameters(metadata, input.purpose),
     });
     input.onProgress("signing-in");
     const result = await auth.promptAsync(discovery);
@@ -141,7 +162,7 @@ export async function signInWithNativeIdentity(input: {
     if (result.type !== "success" || !result.params.code || !auth.codeVerifier)
       throw new Error("Account sign-in did not complete. Try again.");
     input.onProgress("verifying");
-    const account = await exchangeCodeAsync(
+    const tokens = await exchangeCodeAsync(
       {
         clientId: metadata.nativeClientId,
         code: result.params.code,
@@ -154,18 +175,9 @@ export async function signInWithNativeIdentity(input: {
       discovery,
     );
     if (abort.signal.aborted) throw new Error("Sign-in cancelled.");
-    const signedIn = await completeNativeIdentitySignIn({
-      destination,
-      metadata,
-      discovery,
-      tokens: account,
-      label: input.label ?? new URL(destination.httpBaseUrl).hostname,
-      options,
-      request: mobileAccess.fetch,
-      now: Date.now,
-    });
+    const finished = await finish({ destination, metadata, discovery, tokens, options });
     completed = true;
-    return signedIn;
+    return finished;
   } catch (cause) {
     if (expired) throw NativeIdentitySignInExpired.new({ cause });
     if (abort.signal.aborted) return null;
@@ -179,6 +191,95 @@ export async function signInWithNativeIdentity(input: {
     clearTimeout(timer);
     input.signal.removeEventListener("abort", stop);
   }
+}
+
+/**
+ * Signs in to one computer with Loom Identity in the provider's sheet and exchanges the account
+ * tokens there. Nothing is saved: the caller checks the result, then calls
+ * `saveNativeIdentitySignIn`. Null when the user closes the sheet or `signal` aborts.
+ */
+export function signInWithNativeIdentity(input: {
+  readonly httpBaseUrl: string;
+  /** Refuses an address that reaches another computer. Absent when adding a new one. */
+  readonly expectedEnvironmentId?: EnvironmentId | undefined;
+  readonly options: Omit<IdentityOptions, "signal">;
+  /** The saved connection's name. Defaults to the address's host name. */
+  readonly label?: string | undefined;
+  readonly signal: AbortSignal;
+  readonly onProgress: (stage: NativeIdentitySignInStage) => void;
+}): Promise<NativeIdentitySignIn | null> {
+  return withIdentitySheet({ ...input, purpose: "sign-in" }, (sheet) =>
+    completeNativeIdentitySignIn({
+      ...sheet,
+      label: input.label ?? new URL(sheet.destination.httpBaseUrl).hostname,
+      request: mobileAccess.fetch,
+      now: Date.now,
+    }),
+  );
+}
+
+export type NativeIdentityApproval = {
+  readonly code: string;
+  readonly verifier: string;
+  /** Approves later computers after Face ID or the passcode, until it expires. */
+  readonly device?: { readonly token: string; readonly expiresAt: number } | undefined;
+};
+
+/**
+ * A new passkey sign-in to the Library, made only to approve one computer joining the account.
+ * The Library trades it for a single-use code bound to `verifier`; no session is saved. Null when
+ * the user closes the sheet.
+ */
+export function confirmApprovalWithNativeIdentity(input: {
+  readonly target: LoomDesktopApprovalRequest;
+  /** Also asks for a token this phone approves with after Face ID or its passcode. */
+  readonly device: boolean;
+  readonly signal?: AbortSignal | undefined;
+}): Promise<NativeIdentityApproval | null> {
+  return withIdentitySheet(
+    {
+      httpBaseUrl: input.target.httpBaseUrl,
+      expectedEnvironmentId: input.target.expectedEnvironmentId,
+      options: input.target.expectedIdentity
+        ? { expectedIdentity: input.target.expectedIdentity }
+        : {},
+      purpose: "approve",
+      signal: input.signal ?? new AbortController().signal,
+      onProgress: () => undefined,
+    },
+    async ({ destination, metadata, tokens, options }) => {
+      if (tokens.tokenType.toLowerCase() !== "bearer" || !tokens.idToken)
+        throw new Error(identityApprovalRefusalText(null));
+      assertNativeIdentityUnchanged(
+        metadata,
+        await loadLibraryIdentity(
+          destination.httpBaseUrl,
+          metadata.environmentId,
+          mobileAccess.fetch,
+          options,
+        ),
+      );
+      const verifier = Base64Url.encode(getRandomValues(new Uint8Array(32)));
+      const challenge = Base64Url.encode(
+        new Uint8Array(
+          await digest(CryptoDigestAlgorithm.SHA256, new TextEncoder().encode(verifier)),
+        ),
+      );
+      const granted = await requestLibraryApproval(
+        destination.httpBaseUrl,
+        {
+          accessToken: tokens.accessToken,
+          idToken: tokens.idToken,
+          environmentId: metadata.environmentId,
+          challenge,
+          ...(input.device ? { device: true } : {}),
+        },
+        mobileAccess.fetch,
+        options.signal,
+      );
+      return { code: granted.code, verifier, device: granted.device };
+    },
+  );
 }
 
 /**

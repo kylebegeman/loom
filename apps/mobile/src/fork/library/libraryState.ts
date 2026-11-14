@@ -144,6 +144,7 @@ export function useLibraryAuthority() {
       environments.find((environment) => environment.environmentId === environmentId)?.label ??
       "Library server",
     info,
+    entry: presentation?.entry,
     computers: info.data?.computers ?? [],
     destination: reports.data?.find((report) => report.destination)?.destination,
     select,
