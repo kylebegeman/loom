@@ -7,6 +7,24 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { decodeJwt } from "jose";
 import * as Transport from "./GitHubTransport.ts";
+import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
+import * as Layer from "effect/Layer";
+import * as Context from "effect/Context";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
+import * as Exit from "effect/Exit";
+import * as Deferred from "effect/Deferred";
+import * as TestClock from "effect/testing/TestClock";
+
+const memorySecrets = (values = new Map<string, Uint8Array>()) =>
+  Layer.mock(ServerSecretStore)({
+    get: (name) => Effect.sync(() => Option.fromUndefinedOr(values.get(name))),
+    set: (name, value) =>
+      Effect.sync(() => {
+        values.set(name, value);
+      }),
+  });
+const layer = Transport.layer.pipe(Layer.provide(Layer.suspend(() => memorySecrets())));
 it.effect("mints repository-limited App tokens using native GitHub RSA PEM and bounded JWTs", () =>
   Effect.gen(function* () {
     const key = NodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
@@ -52,7 +70,7 @@ it.effect("mints repository-limited App tokens using native GitHub RSA PEM and b
       return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ id: 1 })));
     });
     const service = yield* Transport.GitHubTransport.pipe(
-      Effect.provide(Transport.layer),
+      Effect.provide(layer),
       Effect.provideService(HttpClient.HttpClient, client),
     );
     const credential = {
@@ -93,7 +111,7 @@ it.effect.each([401, 403, 404, 500])(
         ),
       );
       const service = yield* Transport.GitHubTransport.pipe(
-        Effect.provide(Transport.layer),
+        Effect.provide(layer),
         Effect.provideService(HttpClient.HttpClient, client),
       );
       const error = yield* service
@@ -119,7 +137,7 @@ it.effect("rejects invalid credential structure and malformed identity responses
       );
     });
     const service = yield* Transport.GitHubTransport.pipe(
-      Effect.provide(Transport.layer),
+      Effect.provide(layer),
       Effect.provideService(HttpClient.HttpClient, client),
     );
     expect(
@@ -171,7 +189,7 @@ it.effect.each(["lost-body", "invalid-body"] as const)(
         return Effect.succeed(HttpClientResponse.fromWeb(request, response));
       });
       const service = yield* Transport.GitHubTransport.pipe(
-        Effect.provide(Transport.layer),
+        Effect.provide(layer),
         Effect.provideService(HttpClient.HttpClient, client),
       );
       const credential = {
@@ -220,7 +238,7 @@ it.effect.each([
         );
       });
       const service = yield* Transport.GitHubTransport.pipe(
-        Effect.provide(Transport.layer),
+        Effect.provide(layer),
         Effect.provideService(HttpClient.HttpClient, client),
       );
       const session = yield* service.session(
@@ -230,5 +248,92 @@ it.effect.each([
       expect(session.expiresAt).toBe(expected);
       yield* service.release(session);
       expect(requests).toEqual(["https://api.github.com/user"]);
+    }).pipe(Effect.scoped),
+);
+
+it.effect.each(["live-retry", "restart-retry", "expiry"] as const)(
+  "retains failed App-token cleanup until %s",
+  (ending) =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(0);
+      const key = NodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 })
+        .privateKey.export({ type: "pkcs1", format: "pem" })
+        .toString();
+      const values = new Map<string, Uint8Array>();
+      const persisted = () =>
+        [...values.values()].map((bytes) => new TextDecoder().decode(bytes)).join("");
+      const revoked = yield* Deferred.make<void>();
+      const removed = yield* Deferred.make<void>();
+      let deletes = 0;
+      const token = "synthetic-retry-installation-token";
+      const http = HttpClient.make((request) => {
+        if (request.method === "DELETE") {
+          deletes++;
+          return (deletes === 1 ? Effect.void : Deferred.succeed(revoked, undefined)).pipe(
+            Effect.as(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(null, { status: deletes === 1 ? 503 : 204 }),
+              ),
+            ),
+          );
+        }
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              request.url.endsWith("/access_tokens")
+                ? { token, expires_at: "1970-01-01T01:00:00.000Z" }
+                : { app_id: 7, account: { login: "loom-org" } },
+            ),
+          ),
+        );
+      });
+      const secrets = Layer.mock(ServerSecretStore)({
+        get: (name) => Effect.sync(() => Option.fromUndefinedOr(values.get(name))),
+        set: (name, value) =>
+          Effect.sync(() => {
+            values.set(name, value);
+          }).pipe(
+            Effect.andThen(
+              Effect.suspend(() =>
+                deletes > 0 && !persisted().includes(token)
+                  ? Deferred.succeed(removed, undefined).pipe(Effect.asVoid)
+                  : Effect.void,
+              ),
+            ),
+          ),
+      });
+      const serviceLayer = Transport.layer.pipe(
+        Layer.provide(secrets),
+        Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
+      );
+      const firstScope = yield* Scope.make();
+      const first = yield* Layer.buildWithScope(serviceLayer, firstScope).pipe(
+        Effect.map((context) => Context.get(context, Transport.GitHubTransport)),
+      );
+      const session = yield* first.session(
+        { type: "app", appId: "7", installationId: "42", privateKey: Redacted.make(key) },
+        ["loom-org/repo"],
+      );
+      expect((yield* first.release(session).pipe(Effect.result))._tag).toBe("Failure");
+      expect(deletes).toBe(1);
+      expect(persisted()).toContain(token);
+      if (ending === "live-retry") {
+        yield* TestClock.adjust("30 seconds");
+      } else {
+        yield* Scope.close(firstScope, Exit.void);
+        const secondScope = yield* Scope.make();
+        if (ending === "expiry") yield* TestClock.adjust("1 hour");
+        yield* Layer.buildWithScope(serviceLayer, secondScope);
+        if (ending === "restart-retry") yield* TestClock.adjust("30 seconds");
+        yield* Deferred.await(removed);
+        yield* Scope.close(secondScope, Exit.void);
+      }
+      if (ending !== "expiry") yield* Deferred.await(revoked);
+      yield* Deferred.await(removed);
+      expect(deletes).toBe(ending === "expiry" ? 1 : 2);
+      expect(persisted()).not.toContain(token);
+      yield* Scope.close(firstScope, Exit.void);
     }).pipe(Effect.scoped),
 );

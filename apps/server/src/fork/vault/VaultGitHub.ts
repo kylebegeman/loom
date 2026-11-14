@@ -267,14 +267,18 @@ const make = Effect.gen(function* () {
       });
     return record;
   });
-  const acquireSession = (credential: VaultGitHubCredential, repositories: ReadonlyArray<string>) =>
-    Effect.acquireRelease(transport.session(credential, repositories), (session) =>
+  const acquireSession = (
+    credential: VaultGitHubCredential,
+    repositories: ReadonlyArray<string>,
+    revokeAfterMs?: number,
+  ) =>
+    Effect.acquireRelease(transport.session(credential, repositories, revokeAfterMs), (session) =>
       transport
         .release(session)
         .pipe(
           Effect.catch(() =>
             Effect.logWarning(
-              "GitHub installation token cleanup failed; it may remain valid until expiry.",
+              "GitHub installation token revocation is pending; cleanup will retry until revoked or expired.",
             ),
           ),
         ),
@@ -282,8 +286,13 @@ const make = Effect.gen(function* () {
   const session = Effect.fnUntraced(function* (
     record: Effect.Success<ReturnType<typeof load>>,
     repository: string,
+    revokeAfterMs?: number,
   ) {
-    const session = yield* acquireSession(record.stored.credential, [repository.toLowerCase()]);
+    const session = yield* acquireSession(
+      record.stored.credential,
+      [repository.toLowerCase()],
+      revokeAfterMs,
+    );
     if (session.account.toLowerCase() !== record.stored.account.toLowerCase())
       return yield* fail("conflict");
     yield* observeExpiry(record.info, session);
@@ -650,7 +659,7 @@ const make = Effect.gen(function* () {
           const record = yield* check(input);
           if (record.stored.credential.type !== "app")
             return yield* new VaultGitHubError({ reason: "account-terminal-unavailable" });
-          const current = yield* session(record, input.repository);
+          const current = yield* session(record, input.repository, 3 * 60_000);
           yield* authorize;
           return { account: current.account, token: current.token };
         }),
