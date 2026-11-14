@@ -8,6 +8,7 @@ import {
   ACCOUNT_VAULT_FEATURE,
 } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
+import { ACCOUNT_LINKS_FEATURE, ACCOUNT_LINKS_LIBRARY_FEATURE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
 import {
   AGENT_TOOL_FAMILIES_FEATURE,
@@ -204,8 +205,10 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   DIRECTORY_REPORTING_FEATURE,
   ACCOUNT_ACCESS_FEATURE,
   ACCOUNT_ENROLLMENT_FEATURE,
+  ACCOUNT_LINKS_FEATURE,
   ...(directoryAdvertised(process.env)
     ? [
+        ACCOUNT_LINKS_LIBRARY_FEATURE,
         ACCOUNT_GATEWAY_FEATURE,
         ACCOUNT_JOIN_FEATURE,
         ACCOUNT_JOIN_PROMPTS_FEATURE,

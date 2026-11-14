@@ -1832,3 +1832,15 @@ packages/client-runtime/src/connection/routes.ts	connect-ui	1
 # Narrow Vault permissions for the single passkey-verified account owner.
 packages/contracts/src/auth.ts	account-vault	5
 apps/server/src/auth/PocketId.ts	account-vault	1
+
+# Account links between enrolled computers.
+apps/server/src/mcp/McpHttpServer.ts	account-links	7
+apps/server/src/mcp/McpHttpServer.test.ts	account-links	6
+apps/server/src/peer/PeerForwarding.ts	account-links	5
+apps/server/src/peer/PeerLinks.ts	account-links	4
+apps/server/src/peer/PeerLinks.test.ts	account-links	1
+apps/server/src/orchestration-v2/ProviderSessionManager.ts	account-links	3
+apps/web/src/state/peerLinks.ts	account-links	4
+apps/web/src/components/settings/LinkedEnvironmentsSettings.tsx	account-links	8
+apps/mobile/src/features/connection/LinkedEnvironmentsSection.tsx	account-links	8
+docs/internals/remote.md	account-links	3

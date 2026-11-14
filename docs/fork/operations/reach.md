@@ -201,10 +201,11 @@ Run these from a machine off your network, with `H` set to the computer's addres
 
 ```sh
 H=https://studio-loom.reach.example
-for p in / /mcp /oauth/mcp/authorize /api/hooks/x /api/loom/identity/login; do
+for p in / /oauth/mcp/authorize /api/hooks/x /api/loom/identity/login; do
   curl -s -o /dev/null -w "%{http_code} $p\n" "$H$p"
 done
 curl -s -o /dev/null -w "%{http_code}\n" "$H/api/assets/..%2fmcp"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer x" "$H/mcp"
 for p in /.well-known/t3/environment /api/auth/session /api/loom/identity; do
   curl -s -D - -o /dev/null "$H$p" | grep -i '^set-cookie' || echo "no cookie $p"
 done
@@ -213,6 +214,8 @@ curl -s "$H/api/loom/identity"
 
 - The first loop prints 403 for each path. That answer comes from the Cloudflare allowlist rule.
 - The encoded traversal prints 400 from the computer's guard. It must never print 200.
+- `/mcp` prints 404 from the computer's guard. The edge lets it through for the account's other
+  computers, and the guard admits only the tokens of their account links.
 - The cookie loop prints `no cookie` for each path. The computer strips every `Set-Cookie` header
   on its reach address.
 - `/api/loom/identity` names the Library's issuer and, once the computer adopted the prepared

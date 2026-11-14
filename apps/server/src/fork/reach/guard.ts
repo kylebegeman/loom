@@ -1,5 +1,9 @@
 import { AuthEnvironmentBootstrapTokenType } from "@t3tools/contracts";
-import { isUnsafeReachPath, reachAllowsRequest } from "@t3tools/shared/fork/reach";
+import {
+  isUnsafeReachPath,
+  REACH_ACCOUNT_LINK_MCP_PATH,
+  reachAllowsRequest,
+} from "@t3tools/shared/fork/reach";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -14,7 +18,10 @@ import {
   UrlParams,
 } from "effect/http";
 import { failEnvironmentAuthInvalid } from "../../auth/http.ts";
+import { ForkRuntime } from "../ForkRuntime.ts";
+import { AccountLinks } from "../account-links/AccountLinks.ts";
 import { installedReachService, type ReachGuardState } from "./ReachService.ts";
+import * as Context from "effect/Context";
 
 const TOKEN_PATH = "/oauth/token";
 /** A token exchange is a few hundred bytes. This bounds what the guard reads ahead of the handler. */
@@ -44,6 +51,11 @@ export const requestHostname = (header: string | undefined): string | null => {
 };
 
 const pathOf = (target: string) => target.split(/[?#]/u, 1)[0] ?? "";
+const bearerOf = (header: string | undefined) => header?.match(/^Bearer ([^\s]+)$/iu)?.[1];
+
+/** Whether a bearer token is a session this computer issued to another computer of the account. */
+export type ReachMcpAdmission = (token: string) => Effect.Effect<boolean>;
+const admitsNoMcp: ReachMcpAdmission = () => Effect.succeed(false);
 
 /**
  * Reads the form body through the request's own cache, so the token handler decodes the same
@@ -81,7 +93,7 @@ const withoutCookies: HttpEffect.PreResponseHandler = (_request, response) =>
  * hostname. Every other request passes untouched: one header read and one compare.
  */
 export const makeReachGuard =
-  (state: () => ReachGuardState) =>
+  (state: () => ReachGuardState, admitsMcp: ReachMcpAdmission = admitsNoMcp) =>
   <E, R>(
     app: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
   ): Effect.Effect<
@@ -98,6 +110,14 @@ export const makeReachGuard =
       if (request.headers["x-forwarded-host"] !== undefined) return Effect.succeed(badRequest);
       if (!reachAllowsRequest(request.method, request.url)) return Effect.succeed(notFound);
       const served = app.pipe(Effect.ensuring(HttpEffect.appendPreResponseHandler(withoutCookies)));
+      // Any other MCP client looks for `/mcp` here in vain.
+      if (pathOf(request.url) === REACH_ACCOUNT_LINK_MCP_PATH) {
+        const token = bearerOf(request.headers.authorization);
+        if (token === undefined) return Effect.succeed(notFound);
+        return Effect.flatMap(admitsMcp(token), (admitted) =>
+          admitted ? served : Effect.succeed(notFound),
+        );
+      }
       if (request.method !== "POST" || pathOf(request.url) !== TOKEN_PATH) return served;
       return Effect.flatMap(refusesTokenExchange(request), (refused) =>
         refused
@@ -110,10 +130,16 @@ export const makeReachGuard =
 
 /** Global, so it also sees requests no route matches. Installed by ForkLayer's routes. */
 export const ReachGuardLayer = HttpRouter.middleware(
-  Effect.map(installedReachService, (reach) =>
-    Option.isNone(reach)
-      ? <E, R>(app: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) => app
-      : makeReachGuard(reach.value.guardState),
-  ),
+  Effect.gen(function* () {
+    const reach = yield* installedReachService;
+    if (Option.isNone(reach))
+      return <E, R>(app: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>) => app;
+    const runtime = yield* ForkRuntime;
+    const links = runtime === undefined ? Option.none() : Context.getOption(runtime, AccountLinks);
+    return makeReachGuard(
+      reach.value.guardState,
+      Option.isSome(links) ? links.value.admitsToken : admitsNoMcp,
+    );
+  }),
   { global: true },
 );

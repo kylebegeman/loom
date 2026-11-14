@@ -510,6 +510,7 @@ const reachHandlers = (scopes: readonly AuthEnvironmentScope[]) => {
           computers: [],
         }),
         retire: () => record("libraryRetire", RETIRED),
+        reconcileEdge: Effect.succeed("off"),
       }),
     ),
   );

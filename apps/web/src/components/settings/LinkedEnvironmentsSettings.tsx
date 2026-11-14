@@ -18,6 +18,7 @@ import { PlusIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
+import { useAccountLinksView } from "~/fork/connections/accountLinksState"; // fork: account-links
 import { mintPairingCodeOn } from "~/state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
@@ -61,28 +62,37 @@ export function LinkedEnvironmentsSettings({
   const links = useEnvironmentQuery(peerLinkEnvironment.list({ environmentId, input: {} }));
   const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(environmentId));
   const search = searchableSetting("linked-environments");
+  // fork: account-links -- with the beta off, only the links Loom keeps for the account are listed.
+  const { offers, managed } = useAccountLinksView(environmentId);
+  const listed = links.data?.links.filter((link) => offers || managed.has(link.environmentId));
+  if (!offers && (listed === undefined || listed.length === 0)) return null;
   return (
     <SettingsSection
       {...(isSearchTarget ? { id: search.id } : {})}
       title={environmentLabel === null ? search.title : `${search.title} · ${environmentLabel}`}
-      headerAction={canLink ? <LinkEnvironmentAction environmentId={environmentId} /> : null}
+      headerAction={
+        canLink && offers /* fork: account-links */ ? (
+          <LinkEnvironmentAction environmentId={environmentId} />
+        ) : null
+      }
     >
       {links.error ? (
         <SettingsRow title="Could not load linked environments" description={links.error} />
-      ) : !links.data ? (
+      ) : !listed ? (
         <SettingsRow title="Loading linked environments…" role="status" />
-      ) : links.data.links.length === 0 ? (
+      ) : listed.length === 0 ? (
         <SettingsRow
           title="No linked environments"
           // fork: brand
           description="Link another machine running Loom, such as a VPS, so agents here can launch and drive threads there."
         />
       ) : (
-        links.data.links.map((link) => (
+        listed.map((link) => (
           <LinkedEnvironmentRow
             key={link.environmentId}
             environmentId={environmentId}
             link={link}
+            managed={managed.has(link.environmentId)} // fork: account-links
           />
         ))
       )}
@@ -93,9 +103,12 @@ export function LinkedEnvironmentsSettings({
 function LinkedEnvironmentRow({
   environmentId,
   link,
+  managed,
 }: {
   readonly environmentId: EnvironmentId;
   readonly link: PeerLinkSummary;
+  /** Loom keeps and renews this link for the account, so it is not the user's to forget. */
+  readonly managed: boolean; // fork: account-links
 }) {
   const nowMinute = useNowMinute();
   const health = peerLinkHealth(link, DateTime.makeUnsafe(nowMinute));
@@ -115,16 +128,21 @@ function LinkedEnvironmentRow({
       failureToast("Could not forget the link", String(squashAtomCommandFailure(result)));
     }
   };
+  // fork: account-links -- an account link renews by itself, so its expiry is not news.
   const status =
-    health.kind === "expired"
-      ? "Expired. Link it again with a new pairing code."
-      : health.kind === "unreachable"
-        ? (health.detail ?? "Not answering right now.")
-        : health.kind === "failing"
-          ? health.detail
-          : health.expiresInDays !== null
-            ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}. Link it again to renew.`
-            : "Reachable";
+    managed && health.kind === "reachable"
+      ? "Managed by your account"
+      : health.kind === "expired"
+        ? managed
+          ? "Expired. Loom renews it on its next check."
+          : "Expired. Link it again with a new pairing code."
+        : health.kind === "unreachable"
+          ? (health.detail ?? "Not answering right now.")
+          : health.kind === "failing"
+            ? health.detail
+            : health.expiresInDays !== null
+              ? `Expires in ${health.expiresInDays} ${health.expiresInDays === 1 ? "day" : "days"}. Link it again to renew.`
+              : "Reachable";
   return (
     <div className={ITEM_ROW_CLASSNAME}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
@@ -134,7 +152,7 @@ function LinkedEnvironmentRow({
               tooltipText={status}
               dotClassName={
                 health.kind === "reachable"
-                  ? health.expiresInDays === null
+                  ? health.expiresInDays === null || managed // fork: account-links
                     ? "bg-success"
                     : "bg-warning"
                   : health.kind === "expired" || health.kind === "failing"
@@ -150,7 +168,7 @@ function LinkedEnvironmentRow({
           </p>
           <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
         </div>
-        {canUnlink ? (
+        {canUnlink && !managed /* fork: account-links */ ? (
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
             <Button
               size="xs"

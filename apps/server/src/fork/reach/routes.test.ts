@@ -8,6 +8,7 @@ import { McpProtocol, McpServer } from "effect/ai";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 
 import { EnvironmentAuth } from "../../auth/EnvironmentAuth.ts";
+import { AccountHost } from "../account-access/AccountHost.ts";
 import { ForkRoutesLayer } from "../ForkLayer.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { ReachService } from "./ReachService.ts";
@@ -39,7 +40,9 @@ it.effect("the fork routes keep /mcp off the reach host and leave /ws and other 
       guardState: () => ({ hostname: REACH_HOST, serving: true }),
       ownPorts: () => [],
     });
-    const runtime = Context.make(ReachService, reach) as unknown as Context.Context<ForkServices>;
+    const runtime = Context.make(ReachService, reach).pipe(
+      Context.add(AccountHost, AccountHost.of({ admit: () => Effect.die("unused") })),
+    ) as unknown as Context.Context<ForkServices>;
     const app = Layer.mergeAll(
       ForkRoutesLayer,
       McpServer.layerHttp({

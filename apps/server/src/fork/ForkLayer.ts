@@ -23,6 +23,10 @@ import * as AccountAccess from "./account-access/AccountAccess.ts";
 import * as AccountHost from "./account-access/AccountHost.ts";
 import * as AccountGateway from "./account-access/AccountGateway.ts";
 import { AccountAccessRoutes } from "./account-access/http.ts";
+import * as AccountLinkAuthority from "./account-links/AccountLinkAuthority.ts";
+import * as AccountLinksLive from "./account-links/AccountLinksLive.ts";
+import { AccountLinkRoutes } from "./account-links/http.ts";
+import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as DevApiCredentials from "./browser-dev-tools/DevApiCredentials.ts";
 import * as DevApiLibrary from "./browser-dev-tools/DevApiLibrary.ts";
 import * as DevApi from "./browser-dev-tools/DevApiService.ts";
@@ -480,6 +484,19 @@ const layerLibraryManagement = LibraryManagement.layer.pipe(
   Layer.provide(RuntimeLayer.layerThreadManagementProvided),
 );
 
+// Links among the account's computers. PeerLinks keeps no state of its own, so this
+// instance shares the links the route layer's one reads and writes.
+const layerAccountLinks = AccountLinksLive.layerWithReconciler.pipe(
+  Layer.provide(PeerLinks.layer),
+  Layer.provide(LibraryConnection.layer),
+  Layer.provide(FetchHttpClient.layer),
+);
+const layerAccountLinkAuthority = AccountLinkAuthority.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer, layerLibraryManagement),
+  ),
+);
+
 const layerMiniOffload = MiniOffload.layer.pipe(
   Layer.provide(
     Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
@@ -869,6 +886,7 @@ const ForkServicesLive = Layer.mergeAll(
     ),
   ),
   layerReachLibrary,
+  ReachProvisioner.ReachEdgeReconcilerLive.pipe(Layer.provide(layerReachLibrary)),
   layerAccountGateway,
   layerSwitchboardClients,
   SwitchboardGateway.layer.pipe(
@@ -886,6 +904,8 @@ const ForkServicesLive = Layer.mergeAll(
     Layer.provide(FetchHttpClient.layer),
   ),
   layerAccountHost,
+  layerAccountLinks,
+  layerAccountLinkAuthority,
   // The same instance the preview port check reads, so RPC, MCP and the guard see one connector.
   ReachService.layer,
   // On the Library, alerts for its own threads go straight to this one push service instance.
@@ -937,6 +957,7 @@ export const ForkRoutesLayer = Layer.mergeAll(
   PageLibraryHttpRoutes,
   DirectoryHttpRoutes,
   AccountAccessRoutes,
+  AccountLinkRoutes,
   BotLibraryHttpRoutes,
   ReachHttpRoutes,
   LibraryPushHttpRoutes,

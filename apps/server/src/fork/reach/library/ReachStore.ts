@@ -121,6 +121,10 @@ const ReachStoredEdge = Schema.Struct({
   rateLimitRuleId: Schema.NullOr(Id),
   allowlist: ReachAllowlistState,
   rateLimit: ReachRateLimitState,
+  /** Why the last check left the allowlist short of ready; the Library retries until it lands. */
+  lastError: Schema.NullOr(ReachFailureReason).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
   checkedAt: Schema.String,
 });
 export type ReachStoredEdge = typeof ReachStoredEdge.Type;

@@ -51,6 +51,7 @@ it.effect("lists reach to read-only agents and retires only with full access", (
       prepareIdentity: () => Effect.die(new Error("Agents never prepare Loom sign-in.")),
       list: Effect.succeed(LISTING),
       computers: Effect.succeed(LISTING),
+      reconcileEdge: Effect.succeed("off"),
       retire: (input) =>
         input.environmentId === "environment-unknown"
           ? Effect.fail(new ReachLibraryError({ reason: "not-found" }))

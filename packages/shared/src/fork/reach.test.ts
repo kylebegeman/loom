@@ -304,7 +304,9 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
     for (const path of [
       "/",
       "/index.html",
-      "/mcp",
+      "/mcp/x",
+      "/oauth/register",
+      "/oauth/authorize",
       "/oauth/mcp/authorize",
       "/.well-known/oauth-authorization-server",
       "/.well-known/oauth-protected-resource/mcp",

@@ -92,6 +92,7 @@ import { makeCodeGraphRpcHandlers } from "./code-graph/rpc.ts";
 import { makeAgentReceiptsRpcHandlers } from "./agent-receipts/rpc.ts";
 import { makePreviewLinksRpcHandlers } from "./preview-links/rpc.ts";
 import { makeDirectoryRpcHandlers } from "./directory/rpc.ts";
+import { makeAccountLinksRpcHandlers } from "./account-links/rpc.ts";
 import { makeReachRpcHandlers } from "./reach/rpc.ts";
 import { makeReachLibraryRpcHandlers } from "./reach/library/rpc.ts";
 import { makeLibraryPushRpcHandlers } from "./library-push/rpc.ts";
@@ -451,6 +452,7 @@ export const makeForkRpcLayer = (
           ...(yield* withForkRuntime(makeDeviceQaRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeCodeGraphRpcHandlers(auth))),
           ...(yield* withForkRuntime(makeDirectoryRpcHandlers(auth))),
+          ...(yield* withForkRuntime(makeAccountLinksRpcHandlers(auth, session))),
         });
       }),
     ),

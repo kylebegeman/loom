@@ -612,19 +612,23 @@ function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
   if (edge === null) {
     lines.push({
       tone: "neutral",
-      text: "Edge rules are checked when the first computer turns Loomhost on.",
+      text: "Your Library checks the edge rules when it starts.",
     });
     return lines;
   }
   if (edge.allowlist === "ready" && edge.rateLimit === "ready")
     lines.push({ tone: "success", text: "Edge rules are in place." });
+  const cause = edge.lastError === undefined ? "" : ` ${EDGE_FAILURE_TEXT[edge.lastError] ?? ""}`;
   if (edge.allowlist === "stale")
     lines.push({
       tone: "warning",
-      text: "The edge allowlist could not be updated, so the previous rule stays in place.",
+      text: `The edge allowlist could not be updated, so the previous rule stays in place.${cause} Your Library keeps retrying.`,
     });
   if (edge.allowlist === "failed")
-    lines.push({ tone: "danger", text: "The edge allowlist could not be applied." });
+    lines.push({
+      tone: "danger",
+      text: `The edge allowlist could not be applied.${cause} Your Library keeps retrying.`,
+    });
   if (edge.rateLimit === "occupied")
     lines.push({
       tone: "warning",
@@ -634,6 +638,15 @@ function setupLines(setup: ReachLibrarySetup): readonly ReachLine[] {
     lines.push({ tone: "warning", text: "The rate-limit rule could not be applied." });
   return lines;
 }
+
+const EDGE_FAILURE_TEXT: Partial<Record<ReachFailureReason, string>> = {
+  "cloudflare-denied":
+    "Cloudflare refused the change. Check that the token can edit the zone's WAF.",
+  "cloudflare-limited": "Cloudflare is limiting requests.",
+  "cloudflare-unavailable": "Cloudflare did not answer.",
+  "edge-failed": "Cloudflare rejected the rule.",
+  "not-configured": "The Cloudflare token is missing.",
+};
 
 const FAILURE_TEXT: Partial<Record<ReachFailureReason, string>> = {
   "key-changed": "This computer now signs with a different key. Retire it to start over.",

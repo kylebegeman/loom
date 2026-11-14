@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope"; // fork: account-links
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
@@ -89,6 +90,8 @@ import {
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
+import { accountLinkGate } from "../fork/account-links/gate.ts"; // fork: account-links
+import { keepLinkAlive } from "../fork/account-links/linkKeepAlive.ts"; // fork: account-links
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   requestUrl(request).pipe(
@@ -143,12 +146,10 @@ type AuthenticatedHttpEffect = Effect.Effect<
   McpInvocationContext.McpInvocationContext
 >;
 
-type McpAuthMiddleware = (
-  httpEffect: AuthenticatedHttpEffect,
-) => Effect.Effect<
+type McpAuthMiddleware = (httpEffect: AuthenticatedHttpEffect) => Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   Types.unhandled,
-  HttpServerRequest.HttpServerRequest
+  HttpServerRequest.HttpServerRequest | Scope.Scope // fork: account-links -- the request's scope
 >;
 
 const normalizeMcpHttpResponse = (
@@ -241,6 +242,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     Effect.map((settings) => settings.linkedEnvironmentsEnabled),
     Effect.orElseSucceed(() => false),
   );
+  const accountLinks = yield* accountLinkGate; // fork: account-links
   const authenticateRequest = Effect.fn("McpHttpServer.authenticateRequest")(function* (
     request: HttpServerRequest.HttpServerRequest,
   ) {
@@ -279,18 +281,26 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     if (asked === undefined) return invalidModeLimit;
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
     const linkedEnvironments = yield* linksEnabled;
-    if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
-    return { ...limited, linkedEnvironments };
+    // fork: account-links -- links among the account's computers do not wait for Labs.
+    if (
+      limited.client?.linked === true &&
+      !linkedEnvironments &&
+      !(yield* accountLinks.admits(limited.client.sessionId))
+    )
+      return linkedEnvironmentsOff;
+    return { ...limited, linkedEnvironments: linkedEnvironments || (yield* accountLinks.holdsAny) };
   });
   // Untraced: a span here would wrap the tool call; the HTTP server span already covers it.
   return Effect.fnUntraced(function* (httpEffect) {
     const admitted = yield* authenticateRequest(yield* HttpServerRequest.HttpServerRequest);
     if (HttpServerResponse.isHttpServerResponse(admitted)) return admitted;
-    return yield* httpEffect.pipe(
+    const answer = httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, admitted),
       Effect.map(normalizeMcpHttpResponse),
       Effect.map((response) => hideUnusableTools(response, admitted)), // fork: agent-catalog
     );
+    // fork: account-links -- a link's long call, such as a wait, never goes silent on its route.
+    return yield* admitted.client?.linked === true ? keepLinkAlive(answer) : answer;
   }) satisfies McpAuthMiddleware;
 }).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
 

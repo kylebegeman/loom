@@ -29,6 +29,7 @@ import {
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -46,7 +47,7 @@ import {
   type CloudflareDnsRecord,
   type CloudflareTunnel,
   ReachCloudflare,
-  type ReachCloudflareError,
+  ReachCloudflareError,
   isTunnelConnected,
   reachDnsComment,
   reachTunnelName,
@@ -125,6 +126,11 @@ export class ReachProvisioner extends Context.Service<
     readonly retire: (
       input: ReachRetireInput,
     ) => Effect.Effect<ReachLibraryComputer, ReachLibraryError>;
+    /**
+     * Checks the zone's edge rules against this version's allowlist and repairs them. `off` on a
+     * Library without reach, `retry` while the allowlist is not ready. Failures are logged.
+     */
+    readonly reconcileEdge: Effect.Effect<"off" | "ready" | "retry">;
   }
 >()("t3/fork/reach/library/ReachProvisioner") {}
 
@@ -220,7 +226,11 @@ const heldIn = (record: ReachStoredComputer, zone: ReachStoredZone): ReachStored
 const outOfReach = (error: ReachCloudflareError) =>
   error.reason === "denied" || error.reason === "not-found";
 
-const failedEdge = (zoneId: string, checkedAt: string): ReachStoredEdge => ({
+const failedEdge = (
+  zoneId: string,
+  checkedAt: string,
+  lastError: ReachFailureReason,
+): ReachStoredEdge => ({
   zoneId,
   rulesetId: null,
   allowlistRuleId: null,
@@ -228,8 +238,15 @@ const failedEdge = (zoneId: string, checkedAt: string): ReachStoredEdge => ({
   rateLimitRuleId: null,
   allowlist: "failed",
   rateLimit: "failed",
+  lastError,
   checkedAt,
 });
+
+/** How often a ready edge is checked again, so a rule edited at Cloudflare comes back. */
+export const EDGE_RECHECK_INTERVAL = Duration.hours(6);
+/** Retries of an edge that is not ready back off from one minute to an hour. */
+export const edgeRetryDelay = (failures: number) =>
+  Duration.min(Duration.times(Duration.minutes(1), 2 ** Math.min(failures, 6)), Duration.hours(1));
 
 interface Admitted {
   readonly claims: ReachRequestClaims;
@@ -436,13 +453,17 @@ const make = Effect.gen(function* () {
     return zone;
   });
 
-  /** Once per process, and again after any check that was not fully ready. */
-  const ensureEdge = Effect.fnUntraced(function* (zone: {
-    readonly name: string;
-    readonly zoneId: string;
-  }) {
+  /** Once per process, again after any check that was not fully ready, and on every `recheck`. */
+  const ensureEdge = Effect.fnUntraced(function* (
+    zone: {
+      readonly name: string;
+      readonly zoneId: string;
+    },
+    options: { readonly recheck?: boolean } = {},
+  ) {
     const known = (yield* read).edge;
     if (
+      options.recheck !== true &&
       (yield* Ref.get(edgeChecked)) &&
       known !== null &&
       known.zoneId === zone.zoneId &&
@@ -452,18 +473,36 @@ const make = Effect.gen(function* () {
       return known;
     }
     const checkedAt = yield* nowIso;
-    const rules = yield* cloudflare
-      .ensureEdgeRules({ zoneId: zone.zoneId, zone: zone.name })
-      .pipe(
-        Effect.tapError(() =>
-          store
-            .update((state) => ({ ...state, edge: failedEdge(zone.zoneId, checkedAt) }))
-            .pipe(Effect.ignore),
-        ),
-      );
-    const edge: ReachStoredEdge = { zoneId: zone.zoneId, ...rules, checkedAt };
+    const rules = yield* cloudflare.ensureEdgeRules({ zoneId: zone.zoneId, zone: zone.name }).pipe(
+      Effect.tapError((error) =>
+        store
+          .update((state) => ({
+            ...state,
+            edge: failedEdge(zone.zoneId, checkedAt, cloudflareFailure(error).reason),
+          }))
+          .pipe(Effect.ignore),
+      ),
+    );
+    const { allowlistError, ...stored } = rules;
+    const edge: ReachStoredEdge = {
+      zoneId: zone.zoneId,
+      ...stored,
+      lastError:
+        allowlistError === null
+          ? null
+          : cloudflareFailure(
+              new ReachCloudflareError({ stage: "allowlist", reason: allowlistError }),
+            ).reason,
+      checkedAt,
+    };
     yield* store.update((state) => ({ ...state, edge }));
     yield* Ref.set(edgeChecked, true);
+    if (edge.allowlist === "stale") {
+      yield* Effect.logWarning("The reach allowlist lags this version; the Library retries it.", {
+        stage: "allowlist",
+        reason: edge.lastError,
+      });
+    }
     if (edge.allowlist === "failed") {
       yield* Effect.logWarning("Reach provisioning failed.", {
         stage: "allowlist",
@@ -1218,6 +1257,7 @@ const make = Effect.gen(function* () {
                 allowlist: state.edge.allowlist,
                 rateLimit: state.edge.rateLimit,
                 checkedAt: state.edge.checkedAt,
+                ...(state.edge.lastError === null ? {} : { lastError: state.edge.lastError }),
               },
       },
       computers,
@@ -1306,6 +1346,22 @@ const make = Effect.gen(function* () {
       .pipe(Effect.annotateLogs({ environmentId: input.environmentId }));
   });
 
+  const reconcileEdge = Effect.gen(function* () {
+    if (config.audience === null || !configured) return "off" as const;
+    return yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        const edge = yield* ensureEdge(yield* resolveZone, { recheck: true });
+        return edge.allowlist === "ready" && edge.rateLimit !== "failed"
+          ? ("ready" as const)
+          : ("retry" as const);
+      }),
+    );
+  }).pipe(
+    Effect.catch((error) => normalize(error).pipe(Effect.as("retry" as const))),
+    Effect.annotateLogs({ operation: "edge-reconcile" }),
+    Effect.withSpan("ReachProvisioner.reconcileEdge"),
+  );
+
   return ReachProvisioner.of({
     ensure,
     remove,
@@ -1313,7 +1369,29 @@ const make = Effect.gen(function* () {
     list,
     retire,
     computers: config.audience === null ? directory.reachComputers : list,
+    reconcileEdge,
   });
 });
 
 export const layer = Layer.effect(ReachProvisioner, make);
+
+/**
+ * The Library applies its allowlist at startup and keeps it applied, so a release that changes
+ * the allowlist reaches Cloudflare without any computer ensuring first.
+ */
+export const ReachEdgeReconcilerLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const provisioner = yield* ReachProvisioner;
+    const run = (failures: number): Effect.Effect<void> =>
+      Effect.flatMap(provisioner.reconcileEdge, (outcome) =>
+        outcome === "off"
+          ? Effect.void
+          : Effect.sleep(
+              outcome === "ready" ? EDGE_RECHECK_INTERVAL : edgeRetryDelay(failures),
+            ).pipe(
+              Effect.andThen(Effect.suspend(() => run(outcome === "ready" ? 0 : failures + 1))),
+            ),
+      );
+    yield* Effect.forkScoped(run(0));
+  }),
+);

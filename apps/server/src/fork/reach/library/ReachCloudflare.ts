@@ -13,6 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Base64 from "effect/encoding/Base64";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -94,6 +95,8 @@ export interface ReachEdgeRules {
   readonly rulesetId: string | null;
   readonly allowlistRuleId: string | null;
   readonly allowlist: ReachAllowlistState;
+  /** Why the allowlist is not ready: Cloudflare's answer to the call that did not land. */
+  readonly allowlistError: ReachCloudflareError["reason"] | null;
   readonly rateLimitRulesetId: string | null;
   readonly rateLimitRuleId: string | null;
   readonly rateLimit: ReachRateLimitState;
@@ -489,18 +492,20 @@ const make = Effect.gen(function* () {
     zone: string,
   ) {
     const desired = reachWafRule(zone);
-    if (desired === null) return { rulesetId: null, ruleId: null, state: "failed" as const };
+    if (desired === null)
+      return { rulesetId: null, ruleId: null, state: "failed" as const, error: "invalid" as const };
     const ruleset = yield* getEntrypoint("allowlist.get", zoneId, WAF_PHASE);
     if (ruleset === null) {
       const created = yield* refusedAsNull(
         putEntrypoint("allowlist.put", zoneId, WAF_PHASE, desired),
       );
       return created === null
-        ? { rulesetId: null, ruleId: null, state: "failed" as const }
+        ? { rulesetId: null, ruleId: null, state: "failed" as const, error: "invalid" as const }
         : {
             rulesetId: created.id,
             ruleId: ruleIdIn(created, ALLOWLIST_RULE_PREFIX),
             state: "ready" as const,
+            error: null,
           };
     }
     const ours = ownRule(ruleset, ALLOWLIST_RULE_PREFIX);
@@ -512,10 +517,11 @@ const make = Effect.gen(function* () {
         rulesetId: ruleset.id,
         ruleId: created === null ? null : ruleIdIn(created, ALLOWLIST_RULE_PREFIX),
         state: created === null ? ("failed" as const) : ("ready" as const),
+        error: created === null ? ("invalid" as const) : null,
       };
     }
     if (sameRule(ours.rule, desired)) {
-      return { rulesetId: ruleset.id, ruleId: ours.id, state: "ready" as const };
+      return { rulesetId: ruleset.id, ruleId: ours.id, state: "ready" as const, error: null };
     }
     const updated = yield* updateRule(
       "allowlist.update",
@@ -523,12 +529,21 @@ const make = Effect.gen(function* () {
       ruleset.id,
       ours.id,
       desired,
-    ).pipe(Effect.option);
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.logWarning("The reach allowlist kept its older rule.", {
+          stage: error.stage,
+          reason: error.reason,
+        }),
+      ),
+      Effect.result,
+    );
     return {
       rulesetId: ruleset.id,
       ruleId: ours.id,
       // The older rule still blocks; it only lags the guard's list until a PATCH lands.
-      state: Option.isSome(updated) ? ("ready" as const) : ("stale" as const),
+      state: Result.isSuccess(updated) ? ("ready" as const) : ("stale" as const),
+      error: Result.isSuccess(updated) ? null : updated.failure.reason,
     };
   });
 
@@ -587,6 +602,7 @@ const make = Effect.gen(function* () {
       rulesetId: allowlist.rulesetId,
       allowlistRuleId: allowlist.ruleId,
       allowlist: allowlist.state,
+      allowlistError: allowlist.error,
       rateLimitRulesetId: rateLimit.rulesetId,
       rateLimitRuleId: rateLimit.ruleId,
       rateLimit: rateLimit.state,

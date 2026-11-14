@@ -23,6 +23,7 @@ import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import { readCaller, unavailable } from "../mcp/threadAccess.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as PeerLinks from "./PeerLinks.ts";
+import { accountLinkGate } from "../fork/account-links/gate.ts"; // fork: account-links
 import * as PeerMcpClient from "./PeerMcpClient.ts";
 
 /**
@@ -30,7 +31,8 @@ import * as PeerMcpClient from "./PeerMcpClient.ts";
  * anything, and T3 Connect's edge drops a request idle for about 100 s, so a
  * forwarded wait goes out in pieces no longer than this.
  */
-export const FORWARDED_WAIT_CHUNK_MS = 50_000;
+// fork: account-links -- tailnet paths dropped silent waits at 30 to 50 s; peers here also keep links alive.
+export const FORWARDED_WAIT_CHUNK_MS = 20_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
 
@@ -225,6 +227,16 @@ const make = Effect.gen(function* () {
   const requireEnabled = links.enabled.pipe(
     Effect.flatMap((enabled) => (enabled ? Effect.void : Effect.fail(linkedEnvironmentsOff))),
   );
+  // fork: account-links -- the account's own links run while the beta is off.
+  const accountLinks = yield* accountLinkGate;
+  const requireEnabledFor = (environmentId: EnvironmentId) =>
+    requireEnabled.pipe(
+      Effect.catch((off) =>
+        accountLinks
+          .holds(environmentId)
+          .pipe(Effect.flatMap((held) => (held ? Effect.void : Effect.fail(off)))),
+      ),
+    );
 
   const call: PeerForwarding["Service"]["call"] = (scope, tool, environmentId, params) => {
     const forwarded: Effect.Effect<
@@ -237,7 +249,7 @@ const make = Effect.gen(function* () {
           params as OrchestratorMcpThreadWaitInput,
         ) as Effect.Effect<Tool.Success<typeof tool>, OrchestratorMcpFailure>)
       : forward(scope, tool.name, tool.parametersSchema, tool.successSchema, environmentId, params);
-    return Effect.andThen(requireEnabled, forwarded);
+    return Effect.andThen(requireEnabledFor(environmentId), forwarded); // fork: account-links
   };
 
   /**
@@ -250,13 +262,18 @@ const make = Effect.gen(function* () {
   const listLinks: PeerForwarding["Service"]["links"] = Effect.fn("PeerForwarding.listLinks")(
     function* (scope) {
       yield* forwardingCaller(scope);
-      yield* requireEnabled;
-      const listed = yield* links.list.pipe(
+      // fork: account-links -- while the beta is off, only the account's own links are listed.
+      const enabled = yield* links.enabled;
+      if (!enabled && !(yield* accountLinks.holdsAny)) yield* requireEnabled;
+      const all = yield* links.list.pipe(
         Effect.mapError(
           (error) =>
             new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
         ),
       );
+      const listed = enabled
+        ? all
+        : yield* Effect.filter(all, (link) => accountLinks.holds(link.environmentId));
       return {
         environmentId: scope.environmentId,
         links: listed.map((link) => ({

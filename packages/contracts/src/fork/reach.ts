@@ -312,12 +312,14 @@ export const ReachLibrarySetup = Schema.Struct({
   cloudflare: ReachCredentialState,
   /** The Pocket ID admin key. `missing` is a normal state: the key can be supplied on demand. */
   identity: ReachCredentialState,
-  /** Null until the first ensure checked the edge rules. */
+  /** Null until the Library first checked the edge rules. */
   edge: Schema.NullOr(
     Schema.Struct({
       allowlist: ReachAllowlistState,
       rateLimit: ReachRateLimitState,
       checkedAt: IsoDateTime,
+      /** Why the allowlist is not ready. The Library keeps retrying until it is. */
+      lastError: Schema.optionalKey(ReachFailureReason),
     }),
   ),
 });

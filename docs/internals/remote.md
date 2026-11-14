@@ -116,9 +116,28 @@ Unlinking on the linking side only forgets the token.
 - **All callers on one side share the link's single session on the other**,
   so idempotency keys are hashed with the caller's namespace before they
   leave. Without that, two agents reusing a key would collide on the far side.
-- **A forwarded wait is split into calls of at most 50 s**, because the
-  receiving `/mcp` sends nothing while a wait is open and T3 Connect's edge
-  drops idle requests after about 100 s.
+- **A forwarded wait is split into calls of at most 20 s**, because a receiving
+  `/mcp` that sends nothing while a wait is open loses the request: T3 Connect's
+  and Cloudflare's edges drop idle requests after about 100 s, and some tailnet
+  paths after 30 to 50 s. A Loom receiver also streams a keep-alive comment every
+  10 s once a linked call outlasts that
+  ([`linkKeepAlive`](../../apps/server/src/fork/account-links/linkKeepAlive.ts));
+  the short pieces keep older receivers working. <!-- fork: account-links -->
+
+<!-- fork: account-links -->
+
+**Computers on one Library account link to each other by themselves.**
+[`AccountLinksLive`](../../apps/server/src/fork/account-links/AccountLinksLive.ts)
+reconciles a computer's links with the Library's list of the owner's computers on
+enrollment, when the list changes, and every 3 minutes. The other computer admits
+a link by redeeming a one-use grant over its own Library connection, so no
+person's Library credentials reach a computer, and then issues an ordinary
+peer-link session. Account links ignore the Linked environments beta on both
+sides; links made with a pairing code still follow it. Their tokens go only to
+https or tailnet addresses, Loomhost first. On a Loomhost route the reach guard
+opens `/mcp` only to account-link sessions, and MCP's OAuth stays closed there.
+
+<!-- fork: account-links -->
 
 **Work a link paired below full access starts stays within that link.** The
 receiving environment knows a session is a peer link because the linking side
