@@ -46,6 +46,7 @@ import * as DeviceService from "../device/DeviceService.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { AccountLinks } from "../fork/account-links/AccountLinks.ts"; // fork: account-links
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
@@ -1303,6 +1304,68 @@ it.effect("accepts case-insensitive MCP bearer schemes and diagnoses rejected cr
     ),
   );
 });
+
+// fork: account-links -- real link sessions, issued here as another computer's would be.
+const layerLinkAuth = Layer.mergeAll(EnvironmentAuth.layer, McpSessionRegistry.layer).pipe(
+  Layer.provideMerge(
+    Layer.mock(ServerEnvironment.ServerEnvironment)({
+      getEnvironmentId: Effect.succeed(environmentId),
+    }),
+  ),
+  Layer.provideMerge(Sqlite.layerMemory),
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provide(ManagedPolicy.layerTest()),
+  Layer.provideMerge(ServerEnvironment.layerIdentity),
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-account-link-" })),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  Layer.provideMerge(NodeHttpServer.layerTest),
+);
+
+it.effect("admits only the account's own links while the Linked environments beta is off", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const auth = yield* EnvironmentAuth.EnvironmentAuth;
+      const issue = (label: string) =>
+        auth.issueMcpClientSession({
+          label,
+          access: "auto",
+          peerLink: true,
+          client: { deviceType: "bot" },
+        });
+      const manual = yield* issue("T3 Code · Laptop");
+      const account = yield* issue("Laptop · account link");
+      yield* HttpRouter.serve(
+        McpHttpServer.layerMcpTransport(Layer.empty).pipe(
+          Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(
+            Layer.mock(AccountLinks)({
+              admits: (sessionId) => Effect.succeed(sessionId === account.sessionId),
+              holdsAny: Effect.succeed(false),
+            }),
+          ),
+        ),
+        { disableListenLog: true, disableLogger: true },
+      ).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+      const initialize = (token: string) =>
+        httpClient
+          .post("/mcp", {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: `Bearer ${token}`,
+            },
+            body: HttpBody.text(
+              `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"account-link-test","version":"1.0.0"}}}`,
+              "application/json",
+            ),
+          })
+          .pipe(Effect.map((response) => response.status));
+      expect(yield* initialize(manual.token)).toBe(403);
+      expect(yield* initialize(account.token)).toBe(200);
+    }),
+  ).pipe(Effect.provide(layerLinkAuth)),
+);
 
 it.effect("hides tools for links and refuses another environment while the beta is off", () =>
   Effect.scoped(

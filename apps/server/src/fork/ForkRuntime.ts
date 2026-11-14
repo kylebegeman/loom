@@ -102,12 +102,16 @@ import * as Effect from "effect/Effect";
 import type { AccountAccess } from "./account-access/AccountAccess.ts";
 import type { AccountHost } from "./account-access/AccountHost.ts";
 import type { AccountGateway } from "./account-access/AccountGateway.ts";
+import type { AccountLinkAuthority } from "./account-links/AccountLinkAuthority.ts";
+import type { AccountLinks } from "./account-links/AccountLinks.ts";
 
 export type ForkServices =
   | AccountAccess
   | SwitchboardGateway
   | AccountHost
   | AccountGateway
+  | AccountLinks
+  | AccountLinkAuthority
   | ClaudeWorktreeService
   | DevApiLibrary
   | DevApiService

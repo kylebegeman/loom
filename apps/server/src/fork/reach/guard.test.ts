@@ -11,6 +11,7 @@ import {
   HttpServerResponse,
   UrlParams,
 } from "effect/http";
+import { AccountLinks } from "../account-links/AccountLinks.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { makeReachGuard, ReachGuardLayer, requestHostname } from "./guard.ts";
 import { type ReachGuardState, ReachService } from "./ReachService.ts";
@@ -18,6 +19,8 @@ import { type ReachGuardState, ReachService } from "./ReachService.ts";
 const REACH_HOST = "studio-loom.example.com";
 const OTHER_HOST = "studio.tail1234.ts.net";
 const PAIRING_CODE = "ABCDEFGHJKLM";
+const ACCOUNT_LINK_TOKEN = "account-link-token";
+const accountLink = { authorization: `Bearer ${ACCOUNT_LINK_TOKEN}` };
 
 // Every path answers and sets cookies three ways, so the guard alone decides what is refused and
 // what a reach host may send back.
@@ -61,8 +64,19 @@ const withGuard = <A, E>(
       guardState: () => state.current,
       ownPorts: () => [],
     });
+    const links = AccountLinks.of({
+      reconcile: Effect.die("unused"),
+      status: Effect.die("unused"),
+      admit: () => Effect.die("unused"),
+      holdsAny: Effect.succeed(false),
+      holds: () => Effect.succeed(false),
+      admits: () => Effect.succeed(false),
+      admitsToken: (token) => Effect.succeed(token === ACCOUNT_LINK_TOKEN),
+    });
     const runtime = installed
-      ? (Context.make(ReachService, reach) as unknown as Context.Context<ForkServices>)
+      ? (Context.make(ReachService, reach).pipe(
+          Context.add(AccountLinks, links),
+        ) as unknown as Context.Context<ForkServices>)
       : undefined;
     const app = Layer.mergeAll(
       HttpRouter.add("*", "/*", echo),
@@ -129,6 +143,28 @@ describe("ReachGuardLayer", () => {
     ),
   );
 
+  it.effect("serves /mcp on the reach host to account-link tokens only", () =>
+    withGuard(true, (h) =>
+      Effect.gen(function* () {
+        expect((yield* h.send(REACH_HOST, "/mcp", { headers: accountLink })).status).toBe(200);
+        const post = { method: "POST", body: "{}", headers: accountLink };
+        expect((yield* h.send(REACH_HOST, "/mcp", post)).status).toBe(200);
+        for (const authorization of [undefined, "Bearer other-client", "Basic x", "Bearer "]) {
+          const headers = authorization === undefined ? {} : { authorization };
+          expect((yield* h.send(REACH_HOST, "/mcp", { headers })).status).toBe(404);
+          expect((yield* h.send(OTHER_HOST, "/mcp", { headers })).status).toBe(200);
+        }
+        // Its OAuth stays off the reach host even with the token.
+        for (const target of [
+          "/oauth/register",
+          "/oauth/authorize",
+          "/.well-known/oauth-protected-resource/mcp",
+        ])
+          expect((yield* h.send(REACH_HOST, target, { headers: accountLink })).status).toBe(404);
+      }),
+    ),
+  );
+
   // A WHATWG Request resolves dot segments before the guard sees them, so these keep the raw
   // target the way Node hands it over.
   it.effect("refuses traversal in the raw target and a forwarded host", () =>
@@ -188,7 +224,7 @@ describe("ReachGuardLayer", () => {
       Effect.gen(function* () {
         const targets = [...REACH_ALLOWED_PATHS, ...REACH_ALLOWED_PREFIXES.map((p) => `${p}x`)];
         for (const target of targets) {
-          const response = yield* h.send(REACH_HOST, target);
+          const response = yield* h.send(REACH_HOST, target, { headers: accountLink });
           expect(response.status).toBe(200);
           expect(response.headers.getSetCookie()).toEqual([]);
         }

@@ -95,6 +95,12 @@ export class PeerLinks extends Context.Service<
     /** Whether the Linked environments beta (Settings → Labs) is on here. */
     readonly enabled: Effect.Effect<boolean>;
     readonly link: (input: PeerLinkCreateInput) => Effect.Effect<PeerLink, PeerLinkError>;
+    // fork: account-links
+    /**
+     * Saves a link whose token the peer issued some other way, replacing any link to it. Only
+     * https, loopback and Tailscale addresses are kept.
+     */
+    readonly store: (link: PeerLink, token: string) => Effect.Effect<PeerLink, PeerLinkError>;
     readonly list: Effect.Effect<ReadonlyArray<PeerLinkSummary>, PeerLinkError>;
     /** The stored link, without asking the peer whether it answers. */
     readonly get: (
@@ -513,26 +519,32 @@ const make = Effect.gen(function* () {
     }
     const issued = yield* signIn(primary, input, `T3 Code · ${self.label}`);
     const now = yield* DateTime.now;
-    const linked: PeerLink = {
-      environmentId: peer.environmentId,
-      label: peer.label,
-      urls: origins,
-      access: input.access,
-      linkedAt: now,
-      expiresAt: DateTime.add(now, { seconds: issued.expires_in }),
-      lastReachedAt: now,
-      lastError: null,
-    };
+    return yield* save(
+      {
+        environmentId: peer.environmentId,
+        label: peer.label,
+        urls: origins,
+        access: input.access,
+        linkedAt: now,
+        expiresAt: DateTime.add(now, { seconds: issued.expires_in }),
+        lastReachedAt: now,
+        lastError: null,
+      },
+      issued.access_token,
+    );
+  });
+
+  // fork: account-links -- `link` and `store` save through one path.
+  const save = Effect.fn("PeerLinks.save")(function* (linked: PeerLink, token: string) {
+    const now = linked.linkedAt;
     // The token goes under a name of its own before the row points at it,
     // so the row and its token are replaced together.
     const secretName = yield* newSecretName;
-    yield* secrets
-      .set(secretName, new TextEncoder().encode(issued.access_token))
-      .pipe(Effect.catch(failStorage));
+    yield* secrets.set(secretName, new TextEncoder().encode(token)).pipe(Effect.catch(failStorage));
     // A token no row names could never be removed.
     const previous = yield* Effect.gen(function* () {
-      const urlsJson = yield* encodeUrls(origins).pipe(Effect.catch(failStorage));
-      const previous = yield* readRow(peer.environmentId);
+      const urlsJson = yield* encodeUrls(linked.urls).pipe(Effect.catch(failStorage));
+      const previous = yield* readRow(linked.environmentId);
       yield* sql`
         INSERT INTO peer_environment_links (
           environment_id, secret_name, label, urls_json, access, linked_at, expires_at,
@@ -562,6 +574,24 @@ const make = Effect.gen(function* () {
     }
     return linked;
   });
+
+  // fork: account-links
+  const store: PeerLinks["Service"]["store"] = Effect.fn("PeerLinks.store")(
+    function* (link, token) {
+      const urls: Array<string> = [];
+      for (const url of link.urls) {
+        const origin = yield* peerOrigin(url).pipe(Effect.option);
+        if (Option.isSome(origin) && !urls.includes(origin.value)) urls.push(origin.value);
+      }
+      if (urls.length === 0) {
+        return yield* new PeerLinkError({
+          reason: "unreachable",
+          message: `${link.label} has no https or Tailscale address to link through.`,
+        });
+      }
+      return yield* save({ ...link, urls }, token);
+    },
+  );
 
   /** A peer's label follows its machine name, so the link takes the one its own address answers with. */
   const withLabel = (link: PeerLink, label: string) =>
@@ -700,6 +730,7 @@ const make = Effect.gen(function* () {
   return PeerLinks.of({
     enabled,
     link,
+    store, // fork: account-links
     list,
     get,
     unlink,

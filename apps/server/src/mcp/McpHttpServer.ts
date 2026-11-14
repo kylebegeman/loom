@@ -89,6 +89,7 @@ import {
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
 import { requestUrl } from "../requestUrl.ts";
+import { accountLinkGate } from "../fork/account-links/gate.ts"; // fork: account-links
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   requestUrl(request).pipe(
@@ -241,6 +242,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     Effect.map((settings) => settings.linkedEnvironmentsEnabled),
     Effect.orElseSucceed(() => false),
   );
+  const accountLinks = yield* accountLinkGate; // fork: account-links
   const authenticateRequest = Effect.fn("McpHttpServer.authenticateRequest")(function* (
     request: HttpServerRequest.HttpServerRequest,
   ) {
@@ -279,8 +281,14 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     if (asked === undefined) return invalidModeLimit;
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
     const linkedEnvironments = yield* linksEnabled;
-    if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
-    return { ...limited, linkedEnvironments };
+    // fork: account-links -- links among the account's computers do not wait for Labs.
+    if (
+      limited.client?.linked === true &&
+      !linkedEnvironments &&
+      !(yield* accountLinks.admits(limited.client.sessionId))
+    )
+      return linkedEnvironmentsOff;
+    return { ...limited, linkedEnvironments: linkedEnvironments || (yield* accountLinks.holdsAny) };
   });
   // Untraced: a span here would wrap the tool call; the HTTP server span already covers it.
   return Effect.fnUntraced(function* (httpEffect) {

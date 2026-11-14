@@ -6,6 +6,7 @@ import { NodeHttpServer } from "@effect/platform-node";
 import { type ExecutionEnvironmentDescriptor, OrchestratorMcpFailure } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -525,6 +526,42 @@ it.live("one dropped descriptor request does not list a live peer as unreachable
 
       yield* Ref.set(dropNext, true);
       expect((yield* a.links.list).map((link) => link.status)).toEqual(["reachable"]);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+// fork: account-links
+it.effect("stores a link the peer issued another way, at its secure addresses only", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const b = yield* serveB(box);
+      const a = yield* makeA(laptop);
+      const issued = yield* b.auth.issueMcpClientSession({
+        label: "Laptop · account link",
+        access: "auto",
+        peerLink: true,
+        client: { deviceType: "bot" },
+      });
+      const now = yield* DateTime.now;
+      const link = {
+        environmentId: box.environmentId,
+        label: "Box",
+        urls: ["http://192.168.1.20:3773", `${b.url}/`, b.url],
+        access: "auto" as const,
+        linkedAt: now,
+        expiresAt: DateTime.toUtc(issued.expiresAt),
+        lastReachedAt: now,
+        lastError: null,
+      };
+
+      const refused = yield* a.links
+        .store({ ...link, urls: ["http://192.168.1.20:3773", "ftp://box"] }, issued.token)
+        .pipe(Effect.flip);
+      expect(refused.reason).toBe("unreachable");
+      expect(Option.isNone(yield* a.links.get(box.environmentId))).toBe(true);
+
+      expect((yield* a.links.store(link, issued.token)).urls).toEqual([b.url]);
+      expect(yield* probe(a)).toEqual({ caller: "Laptop · account link", modes: "auto/default" });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

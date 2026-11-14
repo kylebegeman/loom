@@ -1826,3 +1826,9 @@ apps/web/src/fork/identity/LoomSignIn.tsx	connect-ui	1
 apps/web/src/routes/__root.tsx	connect-ui	1
 apps/web/src/routes/approve-agent.tsx	connect-ui	1
 packages/client-runtime/src/connection/routes.ts	connect-ui	1
+apps/server/src/mcp/McpHttpServer.ts	account-links	3
+apps/server/src/mcp/McpHttpServer.test.ts	account-links	2
+apps/server/src/peer/PeerForwarding.ts	account-links	4
+apps/server/src/peer/PeerLinks.ts	account-links	4
+apps/server/src/peer/PeerLinks.test.ts	account-links	1
+apps/server/src/orchestration-v2/ProviderSessionManager.ts	account-links	3

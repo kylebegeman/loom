@@ -58,6 +58,7 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import { SessionToolPolicy } from "../fork/mcp/SessionToolPolicy.ts"; // fork: ext-mcp
+import { accountLinkGate } from "../fork/account-links/gate.ts"; // fork: account-links
 import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -481,10 +482,13 @@ export const layerWithOptions = (
       );
       // fork: server-weight
       const providerProcesses = yield* ProviderProcesses;
+      const accountLinks = yield* accountLinkGate; // fork: account-links
       const readLinkedEnvironments = Effect.gen(function* () {
         if (options.configureMcp === false || Option.isNone(serverSettings)) return undefined;
         return yield* serverSettings.value.getSettings.pipe(
           Effect.map((settings) => settings.linkedEnvironmentsEnabled),
+          // fork: account-links -- the account's own links bring the link tools without Labs.
+          Effect.flatMap((enabled) => (enabled ? Effect.succeed(true) : accountLinks.holdsAny)),
           Effect.orElseSucceed(() => null),
         );
       });

@@ -1,4 +1,5 @@
 import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "@t3tools/contracts/fork";
+import { ACCOUNT_LINK_WS_METHODS as LINKS } from "@t3tools/contracts/fork";
 import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "@t3tools/contracts/fork";
 import { UPSTREAM_WS_METHODS as UPSTREAM } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_WS_METHODS as STORAGE } from "@t3tools/contracts/fork";
@@ -243,6 +244,9 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [ENROLL.decideJoin]: AuthSettingsWriteScope,
   [ENROLL.computers]: AuthOrchestrationReadScope,
   [ENROLL.removeComputer]: AuthSettingsWriteScope,
+  [LINKS.policy]: AuthOrchestrationReadScope,
+  [LINKS.setPolicy]: AuthSettingsWriteScope,
+  [LINKS.status]: AuthOrchestrationReadScope,
   [LIB.installManagementDelegation]: AuthSettingsWriteScope,
   [LIB.info]: AuthOrchestrationReadScope,
   [LIB.projects]: AuthOrchestrationReadScope,

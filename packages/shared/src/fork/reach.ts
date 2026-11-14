@@ -1,4 +1,4 @@
-import { type ReachAction, ReachRequestClaims } from "@t3tools/contracts/fork";
+import { ACCOUNT_LINKS_ADMIT, type ReachAction, ReachRequestClaims } from "@t3tools/contracts/fork";
 import type * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import { verifyRelayJwt } from "./relayJwt.ts";
@@ -156,10 +156,14 @@ export function verifyReachRequest(input: {
 /** OPTIONS is here because hosted web clients preflight `Authorization`. */
 export const REACH_ALLOWED_METHODS = ["GET", "HEAD", "POST", "OPTIONS"] as const;
 
+/** Open on a reach host only to the account's other computers, with their account-link token. */
+export const REACH_ACCOUNT_LINK_MCP_PATH = "/mcp";
+
 /**
  * What a remote client needs from a computer, matched exactly. Pairing administration other than
- * revoking devices, MCP and its OAuth, browser Identity login, webhooks, Connect, observability,
- * Library-only routes and the web app stay unreachable on a reach host.
+ * revoking devices, MCP's OAuth, browser Identity login, webhooks, Connect, observability,
+ * Library-only routes and the web app stay unreachable on a reach host. `/mcp` is here for account
+ * links only: the computer's guard refuses every other token there.
  */
 export const REACH_ALLOWED_PATHS = [
   "/ws",
@@ -187,6 +191,9 @@ export const REACH_ALLOWED_PATHS = [
   "/api/projects",
   "/api/projects/mutate",
   "/api/pull-requests/diff",
+  // Another computer of the account presents its Library grant here, then calls `/mcp`.
+  ACCOUNT_LINKS_ADMIT,
+  REACH_ACCOUNT_LINK_MCP_PATH,
 ] as const;
 
 /** Families whose handlers authenticate each request or check a signed URL. */
@@ -408,6 +415,7 @@ export const REACH_RATE_LIMITED_PATHS = [
   "/api/auth/websocket-ticket/media",
   "/api/auth/session",
   "/api/loom/identity/session",
+  ACCOUNT_LINKS_ADMIT,
 ] as const;
 
 /**

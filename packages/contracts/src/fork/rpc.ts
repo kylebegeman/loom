@@ -1,4 +1,5 @@
 import { AccountEnrollmentRpcGroup } from "./account-access.ts";
+import { AccountLinksRpcGroup } from "./account-links.ts";
 import { DevApiLibraryRpcGroup } from "./api-library.ts";
 import { DevEnvironmentRpcGroup, DEV_ENVIRONMENT_WS_METHODS } from "./browser-dev-tools.ts";
 import { UpstreamSupervisorRpcGroup } from "./upstream-supervisor.ts";
@@ -114,6 +115,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   SitesRpcGroup,
   ProjectLibraryRpcGroup,
   AccountEnrollmentRpcGroup,
+  AccountLinksRpcGroup,
   ProjectLibraryHealthRpcGroup,
   LibrarySearchRpcGroup,
   LibraryDecisionsRpcGroup,
