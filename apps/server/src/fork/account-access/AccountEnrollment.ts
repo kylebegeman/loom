@@ -37,6 +37,7 @@ import { DirectoryService } from "../directory/DirectoryService.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
+import { LibraryService } from "../project-library/LibraryService.ts";
 import { libraryComputerDirectory, writeLibraryCredential } from "../project-library/enrollment.ts";
 import {
   ReachStore,
@@ -123,6 +124,8 @@ const make = Effect.gen(function* () {
   const management = yield* LibraryManagement;
   const connection = yield* LibraryConnectionService;
   const publisher = yield* LibraryPublisher;
+  // Clients reread account computers on Library refreshes, so membership changes announce one.
+  const library = yield* LibraryService;
   const reach = yield* ReachService;
   const store = yield* ReachStore;
   const provisioner = yield* ReachProvisioner;
@@ -263,6 +266,7 @@ const make = Effect.gen(function* () {
         },
       }))
       .pipe(Effect.mapError(unavailable));
+    yield* library.announceRefresh;
     return {
       requestId,
       credential: {
@@ -431,12 +435,15 @@ const make = Effect.gen(function* () {
         detail: null,
       }));
     }).pipe(Effect.result);
-    if (result._tag === "Success") return computerStatus(input.environmentId, result.success);
-    const failed = yield* updateMembership(input.environmentId, (account) => ({
-      ...account,
-      detail: result.failure.message,
-    }));
-    return computerStatus(input.environmentId, failed);
+    const settled =
+      result._tag === "Success"
+        ? result.success
+        : yield* updateMembership(input.environmentId, (account) => ({
+            ...account,
+            detail: result.failure.message,
+          }));
+    yield* library.announceRefresh;
+    return computerStatus(input.environmentId, settled);
   }, membershipLock.withPermit);
   const install = Effect.fn("AccountEnrollment.install")(
     function* (input: AccountComputerEnrollment) {

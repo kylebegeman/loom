@@ -35,6 +35,7 @@ import { DirectoryService } from "../directory/DirectoryService.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
+import { LibraryService } from "../project-library/LibraryService.ts";
 import * as Enrollment from "./AccountEnrollment.ts";
 
 const NOW = Date.parse("2026-11-12T12:00:00Z");
@@ -255,6 +256,11 @@ const fixture = Effect.fnUntraced(function* (authority = false) {
                   ),
                 ),
             }),
+            Layer.mock(LibraryService)({
+              announceRefresh: Effect.sync(() => {
+                events.push("library-changed");
+              }),
+            }),
             Layer.mock(LibraryPublisher)({
               enabled: false,
               copyRegistrations: Stream.empty,
@@ -421,7 +427,7 @@ it.effect(
           authorityId: "authority",
           authorityEpoch: 1,
         });
-        expect(f.events).toEqual(["owner", "pin", "issue"]);
+        expect(f.events).toEqual(["owner", "pin", "issue", "library-changed"]);
         f.endEnrollment();
         expect((yield* f.service.approve(proof, owner).pipe(Effect.flip)).reason).toBe(
           "request-conflict",
@@ -459,6 +465,7 @@ it.effect(
         expect((yield* f.store.read).computers[SOURCE]?.account?.approvedAt).toBe(NOW);
 
         const epoch = yield* f.service.epoch(SOURCE);
+        f.events.length = 0;
         for (const missing of ["settings:write", "access:write", "relay:write"]) {
           expect(
             (yield* f.service
@@ -469,12 +476,14 @@ it.effect(
               .pipe(Effect.result))._tag,
           ).toBe("Failure");
         }
+        expect(f.events).not.toContain("library-changed");
         const removal = { environmentId: SOURCE, requestId: "remove", membershipRevision: NOW };
         expect(yield* f.service.remove(removal, owner)).toMatchObject({
           state: "removing",
           publishingEnded: true,
           routeRemoved: false,
         });
+        expect(f.events.at(-1)).toBe("library-changed");
         expect(ReachStore.accountAllowsAccess((yield* f.store.read).computers[SOURCE])).toBe(false);
         const restarted = yield* f.open;
         expect((yield* restarted.computers(owner))[0]?.state).toBe("removing");

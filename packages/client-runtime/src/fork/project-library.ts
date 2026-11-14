@@ -192,6 +192,8 @@ export function createProjectLibraryAtoms<R, E>(
     accountComputers: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:account:computers",
       tag: ENROLL.computers,
+      // The Library announces a refresh when it adds or removes an account computer.
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
     removeAccountComputer: createEnvironmentRpcCommand(runtime, {
       label: "loom:account:remove-computer",
