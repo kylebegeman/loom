@@ -1089,7 +1089,6 @@ apps/web/src/components/chat/useComposerSend.ts	fleet-connections	15
 apps/web/src/components/chat/useSystemComposerBanners.tsx	fleet-connections	8
 apps/web/src/components/settings/AddEnvironmentDialog.browser.test.tsx	fleet-connections	5
 apps/web/src/components/settings/AddEnvironmentDialog.tsx	fleet-connections	9
-apps/web/src/components/settings/AuthorizedClientsSettings.tsx	fleet-connections	1
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	fleet-connections	32
 apps/web/src/components/settings/SavedEnvironmentRows.tsx	identity-renewal	3
 apps/server/src/mcp/McpHttpServer.ts	agent-catalog	2
