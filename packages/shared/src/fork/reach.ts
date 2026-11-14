@@ -177,6 +177,8 @@ export const REACH_ALLOWED_PATHS = [
   "/api/loom/identity/session",
   "/api/loom/identity/logout",
   "/api/loom/switchboard/v1/models",
+  // The account computer's Codex catalog, for computers whose own Codex has no login.
+  "/api/loom/switchboard/codex/models",
   "/api/loom/switchboard/v1/responses",
   "/api/loom/switchboard/v1/chat/completions",
   "/api/loom/switchboard/v1/messages",

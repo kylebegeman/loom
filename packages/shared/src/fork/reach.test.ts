@@ -284,6 +284,7 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       ["POST", "/api/auth/websocket-ticket/rpc"],
       ["POST", "/api/auth/websocket-ticket/media"],
       ["GET", "/api/loom/switchboard/v1/models"],
+      ["GET", "/api/loom/switchboard/codex/models"],
       ["GET", "/api/loom/switchboard/v1/responses"],
       ["POST", "/api/loom/switchboard/v1/responses"],
       ["POST", "/api/loom/switchboard/v1/chat/completions"],
@@ -326,6 +327,7 @@ it.layer(PlatformCrypto.layer)("reach allowlist", (it) => {
       "/api/loom/switchboard",
       "/api/loom/switchboard/v0/management",
       "/api/loom/switchboard/v1/models/",
+      "/api/loom/switchboard/codex/models/",
       "/api/loom/switchboard/v1/responses/other",
     ]) {
       expect(reachAllowsRequest("GET", path)).toBe(false);
