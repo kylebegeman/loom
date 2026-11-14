@@ -25,6 +25,7 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../../config.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as CodexAdapterV2 from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import * as PortScanner from "../../preview/PortScanner.ts";
 import * as CodexInstallation from "../../provider/CodexInstallation.ts";
 import * as CodexManagedTokenBroker from "../../provider/CodexManagedTokenBroker.ts";
 import { CodexDriver } from "../../provider/Drivers/CodexDriver.ts";
@@ -76,6 +77,7 @@ const layerTest = ServerConfig.layerTest(process.cwd(), {
     ),
   ),
   Layer.provideMerge(ProviderLatestVersions.layer),
+  Layer.provideMerge(PortScanner.layerTest),
   Layer.provideMerge(
     Layer.succeed(
       HttpClient.HttpClient,
