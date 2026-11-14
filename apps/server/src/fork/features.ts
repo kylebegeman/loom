@@ -5,6 +5,7 @@ import {
   ACCOUNT_JOIN_FEATURE,
   ACCOUNT_COMPUTERS_FEATURE,
   ACCOUNT_VAULT_FEATURE,
+  ACCOUNT_VAULT_SIGN_IN_FEATURE,
 } from "@t3tools/contracts/fork";
 import { PROJECT_STORAGE_FEATURE } from "@t3tools/contracts/fork";
 import { UPDATE_PLAN_FEATURE } from "@t3tools/contracts/fork";
@@ -46,6 +47,11 @@ import { reachLibraryAdvertised } from "./reach/library/advertised.ts";
 import { libraryPushActivityAdvertised, libraryPushEffective } from "./library-push/config.ts";
 import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
 import { isLibraryAuthorityEnv } from "./project-library/authority.ts";
+import {
+  identityConfigured,
+  vaultSignInEnabled,
+  vaultSignInMisconfigured,
+} from "../auth/identityPolicy.ts";
 
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
@@ -206,6 +212,12 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
         ACCOUNT_JOIN_FEATURE,
         ACCOUNT_COMPUTERS_FEATURE,
         ACCOUNT_VAULT_FEATURE,
+        // A device can sign in again for Vault access, unless LOOM_IDENTITY_VAULT_SIGN_IN=off.
+        ...(identityConfigured(process.env) &&
+        vaultSignInEnabled(process.env) &&
+        !vaultSignInMisconfigured(process.env)
+          ? [ACCOUNT_VAULT_SIGN_IN_FEATURE]
+          : []),
       ]
     : []),
   REACH_FEATURE,

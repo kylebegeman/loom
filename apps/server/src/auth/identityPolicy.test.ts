@@ -6,10 +6,14 @@ import {
   identityOwnershipSubject,
   identityAccountFromSession,
   isCurrentIdentitySession,
+  isIdentitySessionSubject,
   identityResource,
   identitySessionPrefix,
+  mayDelegateManagement,
   parseMaxSessionAge,
   passkeyRequired,
+  vaultSignInEnabled,
+  vaultSignInMisconfigured,
 } from "./identityPolicy.ts";
 
 const ENVIRONMENT = {
@@ -111,6 +115,48 @@ describe("identitySessionPrefix", () => {
     expect(
       identitySessionPrefix({ ...ENVIRONMENT, LOOM_IDENTITY_REQUIRE_PASSKEY: "true" }),
     ).not.toBe(identitySessionPrefix(ENVIRONMENT));
+  });
+});
+
+// fork: vault-sign-in
+describe("Vault sign-in setting", () => {
+  it("keeps every Identity session while the setting is unset and changes the prefix once it is off", () => {
+    const previous = earlierPrefix(ENVIRONMENT, ORIGINAL_KEYS);
+    for (const value of [undefined, "", " "])
+      expect(
+        identitySessionPrefix(
+          value === undefined
+            ? ENVIRONMENT
+            : { ...ENVIRONMENT, LOOM_IDENTITY_VAULT_SIGN_IN: value },
+        ),
+      ).toBe(previous);
+    expect(identitySessionPrefix({ ...ENVIRONMENT, LOOM_IDENTITY_VAULT_SIGN_IN: "off" })).not.toBe(
+      previous,
+    );
+  });
+
+  it("is on unless set to off, and any other value is a misconfiguration", () => {
+    for (const value of [undefined, "", " "]) {
+      expect(vaultSignInEnabled({ LOOM_IDENTITY_VAULT_SIGN_IN: value })).toBe(true);
+      expect(vaultSignInMisconfigured({ LOOM_IDENTITY_VAULT_SIGN_IN: value })).toBe(false);
+    }
+    expect(vaultSignInEnabled({ LOOM_IDENTITY_VAULT_SIGN_IN: " off " })).toBe(false);
+    expect(vaultSignInMisconfigured({ LOOM_IDENTITY_VAULT_SIGN_IN: "off" })).toBe(false);
+    for (const value of ["on", "false", "OFF", "0"])
+      expect(vaultSignInMisconfigured({ LOOM_IDENTITY_VAULT_SIGN_IN: value })).toBe(true);
+  });
+
+  it("lets only owner and pairing sessions, or Identity on an admin host, delegate management", () => {
+    for (const subject of ["identity:abc:owner", "pocket-id:owner"]) {
+      expect(isIdentitySessionSubject(subject)).toBe(true);
+      expect(mayDelegateManagement(subject, {})).toBe(false);
+      expect(mayDelegateManagement(subject, { LOOM_IDENTITY_ALLOW_ADMIN: "false" })).toBe(false);
+      expect(mayDelegateManagement(subject, { LOOM_IDENTITY_ALLOW_ADMIN: " true " })).toBe(true);
+    }
+    for (const subject of ["owner", "manual-pairing", "cloud-connect"]) {
+      expect(isIdentitySessionSubject(subject)).toBe(false);
+      expect(mayDelegateManagement(subject, {})).toBe(true);
+    }
   });
 });
 

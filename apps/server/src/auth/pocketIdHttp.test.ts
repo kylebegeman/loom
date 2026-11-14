@@ -55,11 +55,13 @@ const metadata = {
   audience: "host",
   environmentId: EnvironmentId.make("host"),
 };
+const beginLoginCalls: Array<Parameters<PocketId.PocketId["Service"]["beginLogin"]>> = [];
 const pocket = Layer.mock(PocketId.PocketId)({
   cookieName: "identity-state",
   metadata: Effect.succeed(metadata),
-  beginLogin: () =>
+  beginLogin: (...args) =>
     DateTime.now.pipe(
+      Effect.tap(() => Effect.sync(() => beginLoginCalls.push(args))),
       Effect.map((now) => ({
         authorizationUrl: "https://id.example.test/authorize?state=verified",
         cookieValue: "signed-state",
@@ -89,7 +91,9 @@ const pocket = Layer.mock(PocketId.PocketId)({
                       ? "configuration"
                       : input.accessToken === "one-time-code-sign-in"
                         ? "passkey"
-                        : "token",
+                        : input.accessToken === "stale-vault-sign-in"
+                          ? "vault-sign-in"
+                          : "token",
             }),
           )
       : origin === "https://app.example.test" && input.type === "browser"
@@ -114,9 +118,9 @@ const pocket = Layer.mock(PocketId.PocketId)({
         return yield* new PocketId.PocketIdError({ reason: "state" });
       if (input.code === "one-time-code-sign-in")
         return yield* new PocketId.PocketIdError({ reason: "passkey" });
-      if (input.code === "popup-sign-in")
+      if (input.code === "popup-sign-in" || input.code === "vault-popup-sign-in")
         return yield* new PocketId.PocketIdError({
-          reason: "passkey",
+          reason: input.code === "popup-sign-in" ? "passkey" : "vault-sign-in",
           handoff: { origin: "https://app.example.test", state: "s".repeat(43) },
         });
       return {
@@ -557,6 +561,123 @@ it.layer(Layer.mergeAll(NodeServices.layer, PlatformCrypto.layer))("PocketId HTT
                 );
                 expect(bearer.status).toBe(200);
                 expect(bearer.headers.getSetCookie()).toEqual([]);
+              },
+              catch: (cause) => new PocketIdHttpFixtureError({ cause }),
+            }),
+          (web) => Effect.promise(() => web.dispose()),
+        );
+      }),
+  );
+  // fork: vault-sign-in
+  it.effect(
+    "takes exactly one access=vault on login and names a refused Vault sign-in to every caller",
+    () =>
+      Effect.gen(function* () {
+        const crypto = yield* Digest.Digest;
+        const context = Context.make(Digest.Digest, crypto);
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => HttpRouter.toWebHandler(layerBrowser, { disableLogger: true })),
+          (web) =>
+            Effect.tryPromise({
+              try: async () => {
+                const login = (query: string) =>
+                  web.handler(
+                    new Request(`https://host.example.test/api/loom/identity/login?${query}`),
+                    context,
+                  );
+                beginLoginCalls.length = 0;
+                for (const query of [
+                  "access=admin",
+                  "access=vault&access=vault",
+                  "access=",
+                  "access=VAULT",
+                ])
+                  expect((await login(query)).status).toBe(400);
+                expect(beginLoginCalls).toEqual([]);
+
+                const sameOrigin = await login("access=vault&returnTo=/settings/vault");
+                expect(sameOrigin.status).toBe(302);
+                expect(beginLoginCalls.at(-1)).toEqual(["/settings/vault", undefined, "vault"]);
+
+                const popup = new URLSearchParams({
+                  origin: "https://app.example.test",
+                  state: "s".repeat(43),
+                  challenge: "c".repeat(43),
+                  environmentId: "host",
+                  access: "vault",
+                });
+                expect((await login(popup.toString())).status).toBe(302);
+                // An app window's intent travels in its request, which the callback hands back.
+                expect(beginLoginCalls.at(-1)).toEqual([
+                  "/",
+                  {
+                    origin: "https://app.example.test",
+                    state: "s".repeat(43),
+                    challenge: "c".repeat(43),
+                    environmentId: "host",
+                    access: "vault",
+                  },
+                  undefined,
+                ]);
+                expect((await login("returnTo=/sites")).status).toBe(302);
+                expect(beginLoginCalls.at(-1)).toEqual(["/sites", undefined, undefined]);
+
+                const text = new PocketId.PocketIdError({ reason: "vault-sign-in" }).message;
+                expect(text).toContain("fresh passkey sign-in");
+                expect(text).not.toContain("—");
+                const exchange = await web.handler(
+                  new Request("https://host.example.test/api/loom/identity/session", {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                      authorization: "Bearer current-host-bearer",
+                    },
+                    body: encodeJson({
+                      type: "native",
+                      accessToken: "stale-vault-sign-in",
+                      idToken: "id-token",
+                      environmentId: "host",
+                      expectedIdentity: { issuer: metadata.issuer, subject: "owner-id" },
+                      access: "vault",
+                    }),
+                  }),
+                  context,
+                );
+                // Not retryable: only a new sign-in with a passkey fixes it.
+                expect(exchange.status).toBe(401);
+                expect(await exchange.json()).toEqual({
+                  error: "vault_sign_in_required",
+                  message: text,
+                });
+
+                const page = await web.handler(
+                  new Request(
+                    "https://host.example.test/api/loom/identity/callback?state=verified&code=vault-popup-sign-in",
+                    { headers: { cookie: "identity-state=signed-state" } },
+                  ),
+                  context,
+                );
+                expect(page.status).toBe(401);
+                const html = await page.text();
+                expect(html).toContain(text.replaceAll("'", "&#39;"));
+                const script = /<script>(.*)<\/script>/u.exec(html)?.[1] ?? "";
+                const posted: Array<unknown> = [];
+                NodeVM.runInNewContext(script, {
+                  window: {
+                    opener: { postMessage: (...args: Array<unknown>) => posted.push(args) },
+                    close: () => posted.push("closed"),
+                  },
+                });
+                expect(posted).toEqual([
+                  [
+                    {
+                      type: "loom:identity:failed",
+                      state: "s".repeat(43),
+                      error: "vault_sign_in_required",
+                    },
+                    "https://app.example.test",
+                  ],
+                ]);
               },
               catch: (cause) => new PocketIdHttpFixtureError({ cause }),
             }),

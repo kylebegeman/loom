@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  ACCOUNT_VAULT_FEATURE,
+  ACCOUNT_VAULT_SIGN_IN_FEATURE,
   LIBRARY_PUSH_ACTIVITY_FEATURE,
   LIBRARY_PUSH_FEATURE,
   REACH_FEATURE,
@@ -34,7 +36,10 @@ const LIBRARY_PUSH_ACTIVITY = {
   LOOM_LIBRARY_PUSH_ACTIVITY: "true",
   LOOM_LIBRARY_PUSH_RECIPIENTS: "",
 };
-const GATING_KEYS = Object.keys({ ...REACH_LIBRARY, ...LIBRARY_PUSH_ACTIVITY });
+const GATING_KEYS = [
+  ...Object.keys({ ...REACH_LIBRARY, ...LIBRARY_PUSH_ACTIVITY }),
+  "LOOM_IDENTITY_VAULT_SIGN_IN",
+];
 
 /** The list is computed when the module loads, so each env needs a fresh copy. */
 const featuresWith = async (env: Readonly<Record<string, string>>) => {
@@ -80,6 +85,26 @@ describe("LOOM_SERVER_FEATURES", () => {
 
     const withoutPush = { ...LIBRARY_PUSH_ACTIVITY, LOOM_LIBRARY_PUSH_ENABLED: "false" };
     expect(await featuresWith(withoutPush)).not.toContain(LIBRARY_PUSH_ACTIVITY_FEATURE);
+  });
+
+  // fork: vault-sign-in
+  it("advertises Vault sign-in on a Library with Identity unless it is turned off", async () => {
+    const identity = {
+      ...LIBRARY,
+      LOOM_IDENTITY_ISSUER: "https://id.example.test",
+      LOOM_IDENTITY_AUDIENCE: "loom-library",
+      LOOM_IDENTITY_ALLOWED_SUBJECTS: "alice",
+    };
+    const library = await featuresWith(identity);
+    expect(library).toContain(ACCOUNT_VAULT_FEATURE);
+    expect(library).toContain(ACCOUNT_VAULT_SIGN_IN_FEATURE);
+    for (const value of ["off", "on"])
+      expect(await featuresWith({ ...identity, LOOM_IDENTITY_VAULT_SIGN_IN: value })).not.toContain(
+        ACCOUNT_VAULT_SIGN_IN_FEATURE,
+      );
+    // Without Identity there is nothing to sign in again with; a plain computer has no Library.
+    expect(await featuresWith(LIBRARY)).not.toContain(ACCOUNT_VAULT_SIGN_IN_FEATURE);
+    expect(await featuresWith({})).not.toContain(ACCOUNT_VAULT_SIGN_IN_FEATURE);
   });
 });
 

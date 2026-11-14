@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import {
   LOOM_IDENTITY_CALLBACK_PATH,
+  type LoomIdentityAccessIntent,
   type LoomIdentityMetadata,
   type LoomIdentityAccount,
   type LoomIdentityBrowserRequest,
@@ -33,12 +34,21 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Jose from "jose";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { IDENTITY_PASSKEY_REQUIRED_TEXT } from "@t3tools/shared/fork/identity-grant";
+import {
+  IDENTITY_PASSKEY_REQUIRED_TEXT,
+  IDENTITY_VAULT_SIGN_IN_TEXT,
+} from "@t3tools/shared/fork/identity-grant";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { timingSafeEqualBase64Url } from "./utils.ts";
 import * as PayloadSigner from "./PayloadSigner.ts";
-import { identitySessionPrefix, parseMaxSessionAge, passkeyRequired } from "./identityPolicy.ts";
+import {
+  identitySessionPrefix,
+  parseMaxSessionAge,
+  passkeyRequired,
+  vaultSignInEnabled,
+  vaultSignInMisconfigured,
+} from "./identityPolicy.ts";
 
 const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
   AuthAccessReadScope,
@@ -54,6 +64,17 @@ const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
 export const PocketIdStandardScopes = AuthStandardClientScopes.filter(
   (scope) => !ManagementScopes.has(scope),
 );
+
+/**
+ * What a Vault sign-in adds for that one session. Relay management stays behind
+ * LOOM_IDENTITY_ALLOW_ADMIN, and so does passing either scope on (`mayDelegateManagement`).
+ */
+export const VaultAccessScopes: ReadonlyArray<AuthEnvironmentScope> = [
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+];
+/** How recent a Vault sign-in's passkey must be, counted from the ID token's `auth_time`. */
+const VAULT_SIGN_IN_FRESH_SECONDS = 300;
 
 const LOGIN_TTL_MS = 5 * 60 * 1000;
 const HOST_SESSION_TTL = Duration.hours(1);
@@ -134,6 +155,7 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
     "expired",
     "revoked",
     "passkey",
+    "vault-sign-in",
   ]),
   cause: Schema.optional(Schema.Defect()),
   /**
@@ -152,6 +174,8 @@ export class PocketIdError extends Schema.TaggedError<PocketIdError>()("PocketId
         return "Your Loom sign-in reached this computer's time limit. Sign in again.";
       case "passkey":
         return IDENTITY_PASSKEY_REQUIRED_TEXT;
+      case "vault-sign-in":
+        return IDENTITY_VAULT_SIGN_IN_TEXT;
       default:
         return "Loom could not complete sign-in. Try again.";
     }
@@ -170,6 +194,8 @@ interface PendingLogin {
   readonly nonce: string;
   readonly expiresAt: number;
   readonly browser?: LoomIdentityBrowserRequest;
+  /** A Vault sign-in, from the app window's request or the same-origin login. */
+  readonly access?: LoomIdentityAccessIntent;
 }
 
 /** Verifies identity; the allowlist and grants remain local to this execution host. */
@@ -178,9 +204,11 @@ export class PocketId extends Context.Service<
   {
     readonly metadata: Effect.Effect<LoomIdentityMetadata, PocketIdError>;
     readonly cookieName: string;
+    /** `access` asks a same-origin sign-in for Vault access; an app window puts it in `browser`. */
     readonly beginLogin: (
       returnTo?: string,
       browser?: LoomIdentityBrowserRequest,
+      access?: LoomIdentityAccessIntent,
     ) => Effect.Effect<
       {
         readonly authorizationUrl: string;
@@ -268,6 +296,8 @@ const make = Effect.gen(function* () {
     maxSessionAgeSetting === null ? null : parseMaxSessionAge(maxSessionAgeSetting);
   const requirePasskeySetting = optional("LOOM_IDENTITY_REQUIRE_PASSKEY");
   const requirePasskey = passkeyRequired(environment);
+  const vaultSignIn = vaultSignInEnabled(environment);
+  const vaultSignInSettingInvalid = vaultSignInMisconfigured(environment);
   const audiences = csv("LOOM_IDENTITY_AUDIENCE");
   if (audiences.length === 0) audiences.push(environmentId);
   const grantedScopes =
@@ -328,6 +358,7 @@ const make = Effect.gen(function* () {
       return yield* new PocketIdError({ reason: "configuration" });
     if (requirePasskeySetting !== null && !requirePasskey)
       return yield* new PocketIdError({ reason: "configuration" });
+    if (vaultSignInSettingInvalid) return yield* new PocketIdError({ reason: "configuration" });
     for (const origin of browserOrigins) {
       const url = yield* secureUrl(origin);
       if (url.origin !== origin) return yield* new PocketIdError({ reason: "configuration" });
@@ -568,6 +599,41 @@ const make = Effect.gen(function* () {
     requirePasskey && !amr?.includes(PASSKEY_AUTH_METHOD)
       ? Effect.fail(new PocketIdError({ reason: "passkey" }))
       : Effect.void;
+  /**
+   * Adds Vault access for a Vault sign-in: a passkey whatever LOOM_IDENTITY_REQUIRE_PASSKEY says,
+   * confirmed in the last few minutes. `issue` keeps the session to an hour and the token's life,
+   * and renewals never ask, so the access ends with this one session.
+   */
+  const elevate = Effect.fnUntraced(function* (
+    identity: VerifiedIdentity,
+    proof: {
+      readonly authTime: number | undefined;
+      readonly amr: ReadonlyArray<string> | undefined;
+    },
+    access: LoomIdentityAccessIntent | undefined,
+  ) {
+    if (access === undefined) return identity;
+    if (VaultAccessScopes.every((scope) => identity.scopes.includes(scope))) return identity;
+    if (!vaultSignIn) return yield* new PocketIdError({ reason: "vault-sign-in" });
+    if (!proof.amr?.includes(PASSKEY_AUTH_METHOD) || proof.authTime === undefined)
+      return yield* new PocketIdError({ reason: "vault-sign-in" });
+    const now = yield* DateTime.now;
+    const authenticatedAt = proof.authTime * 1000;
+    if (
+      authenticatedAt > now.epochMilliseconds ||
+      now.epochMilliseconds - authenticatedAt > VAULT_SIGN_IN_FRESH_SECONDS * 1000
+    )
+      return yield* new PocketIdError({ reason: "vault-sign-in" });
+    return {
+      ...identity,
+      scopes: [...new Set([...identity.scopes, ...VaultAccessScopes])],
+    } satisfies VerifiedIdentity;
+  });
+  /** Names the session so the device list shows which one holds Vault access. */
+  const vaultAccessClient = (client: AuthClientMetadata): AuthClientMetadata => ({
+    ...client,
+    label: client.label === undefined ? "Vault access" : `${client.label} (Vault access)`,
+  });
   const issue = Effect.fnUntraced(function* (
     identity: VerifiedIdentity,
     input: {
@@ -626,6 +692,7 @@ const make = Effect.gen(function* () {
   const beginLogin = Effect.fn("PocketId.beginLogin")(function* (
     requestedReturnTo = "/",
     browser?: LoomIdentityBrowserRequest,
+    requestedAccess?: LoomIdentityAccessIntent,
   ) {
     // Keep the destination in single-use server state, never in callback parameters.
     const returnTo =
@@ -659,6 +726,7 @@ const make = Effect.gen(function* () {
     const challenge = Base64Url.encode(
       yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)).pipe(Effect.orDie),
     );
+    const access = browser?.access ?? requestedAccess;
     const accepted = yield* Ref.modify(pending, (current) => {
       const next = new Map(
         [...current].filter(([, entry]) => entry.expiresAt > now.epochMilliseconds),
@@ -669,6 +737,7 @@ const make = Effect.gen(function* () {
         nonce,
         returnTo,
         ...(browser ? { browser } : {}),
+        ...(access === undefined ? {} : { access }),
         expiresAt: now.epochMilliseconds + LOGIN_TTL_MS,
       });
       return [true, next] as const;
@@ -688,8 +757,10 @@ const make = Effect.gen(function* () {
       authorization.searchParams.set(name, value);
     if (resource !== null) authorization.searchParams.set("resource", resource);
     // An older Pocket ID sign-in would be refused at the callback, so ask for one that still
-    // leaves a full host session before the limit.
-    if (maxSessionAgeSeconds !== null)
+    // leaves a full host session before the limit. A Vault sign-in needs a passkey confirmed just
+    // now, which Pocket ID 2.18 asks for on max_age=0 even with a browser session.
+    if (access !== undefined) authorization.searchParams.set("max_age", "0");
+    else if (maxSessionAgeSeconds !== null)
       authorization.searchParams.set(
         "max_age",
         String(maxSessionAgeSeconds - HOST_SESSION_SECONDS),
@@ -774,7 +845,7 @@ const make = Effect.gen(function* () {
           return yield* new PocketIdError({ reason: "subject" });
         const expiration = DateTime.make(claims.exp * 1000);
         if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
-        const acceptedIdentity = yield* capSignInAge(
+        const signedIn = yield* capSignInAge(
           {
             ...identity,
             account: { ...identity.account, ...claims.profile },
@@ -786,8 +857,14 @@ const make = Effect.gen(function* () {
           },
           claims.auth_time,
         );
+        // The handoff below stores this identity, so an app window's session gets the same scopes.
+        const acceptedIdentity = yield* elevate(
+          signedIn,
+          { authTime: claims.auth_time, amr: claims.amr },
+          entry.access,
+        );
         const session = yield* issue(acceptedIdentity, {
-          client: input.client,
+          client: entry.access === undefined ? input.client : vaultAccessClient(input.client),
           method: "browser-session-cookie",
         });
         if (!entry.browser) return { ...session, returnTo: entry.returnTo };
@@ -858,7 +935,18 @@ const make = Effect.gen(function* () {
         if (input.environmentId !== environmentId)
           return yield* new PocketIdError({ reason: "state" });
         let identity: VerifiedIdentity;
+        let access: LoomIdentityAccessIntent | undefined;
         if (input.type === "native") {
+          access = input.access;
+          // A Vault sign-in proves its passkey with the ID token and is pinned to the account the
+          // device already holds, so a token from some other sign-in cannot raise it.
+          if (
+            access !== undefined &&
+            (input.idToken === undefined ||
+              nativeClientId === null ||
+              input.expectedIdentity === undefined)
+          )
+            return yield* new PocketIdError({ reason: "vault-sign-in" });
           identity = yield* verifyAccessToken(input.accessToken);
           if (
             input.expectedIdentity &&
@@ -866,6 +954,10 @@ const make = Effect.gen(function* () {
               input.expectedIdentity.subject !== identity.account.subject)
           )
             return yield* new PocketIdError({ reason: "subject" });
+          let proof: {
+            readonly authTime: number | undefined;
+            readonly amr: ReadonlyArray<string> | undefined;
+          } = { authTime: undefined, amr: undefined };
           // A refresh grant renews access tokens indefinitely; its ID token's `auth_time` is what
           // bounds the sign-in and its `amr` is what proves a passkey, so a host with a limit or a
           // passkey requirement cannot accept a native session without one.
@@ -885,7 +977,9 @@ const make = Effect.gen(function* () {
               { ...identity, account: { ...identity.account, ...claims.profile } },
               claims.auth_time,
             );
+            proof = { authTime: claims.auth_time, amr: claims.amr };
           }
+          identity = yield* elevate(identity, proof, access);
         } else {
           const now = yield* DateTime.now;
           const entry = yield* Ref.get(handoffs).pipe(
@@ -911,7 +1005,9 @@ const make = Effect.gen(function* () {
             return [found, next] as const;
           });
           if (!consumed) return yield* new PocketIdError({ reason: "state" });
+          // completeLogin already raised this identity for a Vault sign-in.
           identity = entry.identity;
+          access = entry.browser.access;
         }
         if (
           input.expectedIdentity &&
@@ -928,7 +1024,10 @@ const make = Effect.gen(function* () {
             .pipe(Effect.mapError((cause) => new PocketIdError({ reason: "session", cause }))))
         )
           return yield* new PocketIdError({ reason: "revoked" });
-        const session = yield* issue(identity, { client, method: "bearer-access-token" });
+        const session = yield* issue(identity, {
+          client: access === undefined ? client : vaultAccessClient(client),
+          method: "bearer-access-token",
+        });
         if (input.type === "native" && currentToken !== undefined)
           yield* sessions.linkSuccessor({
             currentToken,

@@ -52,6 +52,11 @@ export const LOOM_IDENTITY_SIGN_IN_EXPIRED = "sign_in_expired";
  * `amr` lacks one. Signing in again only helps after signing out of Loom Identity in the browser.
  */
 export const LOOM_IDENTITY_PASSKEY_REQUIRED = "passkey_required";
+/**
+ * The 401 `error` (session endpoint, and the callback's opener message) when a Vault sign-in did
+ * not prove a fresh passkey: `amr` lacks one, or `auth_time` is older than a few minutes.
+ */
+export const LOOM_IDENTITY_VAULT_SIGN_IN_REQUIRED = "vault_sign_in_required";
 
 export const LoomIdentityAccount = Schema.Struct({
   issuer: Schema.String,
@@ -77,12 +82,19 @@ export const LoomIdentitySessionResult = Schema.Struct({
   identity: LoomIdentityAccount,
 });
 export type LoomIdentitySessionResult = typeof LoomIdentitySessionResult.Type;
+/**
+ * Asks one sign-in for this device's Vault access. The computer grants it only for a fresh passkey
+ * sign-in, and only to that session: renewals never carry it, so it ends with the session.
+ */
+export const LoomIdentityAccessIntent = Schema.Literal("vault");
+export type LoomIdentityAccessIntent = typeof LoomIdentityAccessIntent.Type;
 export const LoomIdentityBrowserRequest = Schema.Struct({
   origin: Schema.String,
   state: Schema.String,
   challenge: Schema.String,
   environmentId: EnvironmentId,
   expectedIdentity: Schema.optional(LoomIdentityAccount),
+  access: Schema.optional(LoomIdentityAccessIntent),
 });
 export type LoomIdentityBrowserRequest = typeof LoomIdentityBrowserRequest.Type;
 export const LoomIdentitySessionRequest = Schema.Union([
@@ -100,6 +112,8 @@ export const LoomIdentitySessionRequest = Schema.Union([
     idToken: Schema.optional(Schema.String),
     environmentId: EnvironmentId,
     expectedIdentity: Schema.optional(LoomIdentityAccount),
+    /** Requires `idToken` and `expectedIdentity`; renewals never send it. */
+    access: Schema.optional(LoomIdentityAccessIntent),
   }),
 ]);
 export type LoomIdentitySessionRequest = typeof LoomIdentitySessionRequest.Type;
@@ -135,6 +149,10 @@ export const LoomDesktopSignInRequest = Schema.Struct({
   expectedIssuer: Schema.optional(Schema.String),
   /** Set only for an address the user typed; saved and directory addresses are already pinned. */
   directory: Schema.optional(LoomIdentityDirectoryAddresses),
+  /** A Vault sign-in: a fresh passkey sign-in whose session also carries Vault access. */
+  access: Schema.optional(LoomIdentityAccessIntent),
+  /** The device's live session on that computer, sent with a Vault sign-in. */
+  currentToken: Schema.optional(Schema.String),
 });
 export type LoomDesktopSignInRequest = typeof LoomDesktopSignInRequest.Type;
 export const LoomDesktopSignInResult = Schema.Struct({

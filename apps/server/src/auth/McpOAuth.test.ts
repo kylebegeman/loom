@@ -2,6 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthMcpClientAccess,
+  AuthSessionId,
   AuthStandardClientScopes,
   type AuthCreatePairingCredentialInput,
   type EnvironmentCloudLinkStateResult,
@@ -10,6 +11,7 @@ import {
   mcpClientScopes,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -815,3 +817,69 @@ it("matches loopback redirects on everything but the port, and https redirects e
   expect(matches("https://bot.example/cb", "https://bot.example/cb?x=1")).toBe(false);
   expect(matches("https://bot.example/cb", "https://evil.example/cb")).toBe(false);
 });
+
+// fork: vault-sign-in
+it.effect("never lets a Vault sign-in approve an app unless the host lets Identity manage it", () =>
+  Effect.gen(function* () {
+    const authorization: McpOAuth.AuthorizationRequest = {
+      client: {
+        clientId: "client",
+        name: "Claude Code",
+        redirectUris: [REDIRECT],
+        peerLink: false,
+      },
+      redirectUri: REDIRECT,
+      codeChallenge: challenge,
+      state: undefined,
+      resource: `${ORIGIN}/mcp`,
+      issuer: ORIGIN,
+    };
+    const approving = (subject: string, environment: NodeJS.ProcessEnv) =>
+      McpOAuth.McpOAuth.pipe(
+        Effect.flatMap((oauth) =>
+          oauth.approvingSession(
+            HttpServerRequest.fromWeb(at("/oauth/mcp/authorize")),
+            authorization,
+          ),
+        ),
+        Effect.provide(
+          McpOAuth.layer.pipe(
+            Layer.provide(
+              Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+                authenticateHttpRequest: () =>
+                  Effect.succeed({
+                    sessionId: AuthSessionId.make("elevated-session"),
+                    subject,
+                    method: "bearer-access-token",
+                    scopes: AuthStandardClientScopes,
+                  }),
+              }),
+            ),
+            Layer.provide(
+              Layer.succeed(
+                ServerSecretStore.ServerSecretStore,
+                ServerSecretStore.ServerSecretStore.of({
+                  get: () => Effect.succeedNone,
+                  set: () => Effect.void,
+                  create: () => Effect.void,
+                  getOrCreateRandom: (_name, bytes) =>
+                    Effect.succeed(new Uint8Array(bytes).fill(7)),
+                  remove: () => Effect.void,
+                }),
+              ),
+            ),
+            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(Layer.succeed(HostProcess.Environment, environment)),
+          ),
+        ),
+      );
+
+    for (const subject of ["pocket-id:owner", "identity:owner"]) {
+      expect(yield* approving(subject, {})).toBeUndefined();
+      expect(yield* approving(subject, { LOOM_IDENTITY_ALLOW_ADMIN: "true" })).toMatchObject({
+        csrfToken: expect.any(String),
+      });
+    }
+    expect(yield* approving("owner", {})).toMatchObject({ csrfToken: expect.any(String) });
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

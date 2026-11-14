@@ -6,12 +6,14 @@ import {
   LOOM_IDENTITY_LOGOUT_PATH,
   LOOM_IDENTITY_PASSKEY_REQUIRED,
   LOOM_IDENTITY_SIGN_IN_EXPIRED,
+  LOOM_IDENTITY_VAULT_SIGN_IN_REQUIRED,
   LoomIdentityBrowserRequest,
   LoomIdentitySessionRequest,
 } from "@t3tools/contracts/fork";
 import {
   IDENTITY_FRESH_SIGN_IN_TEXT,
   IDENTITY_PASSKEY_REQUIRED_TEXT,
+  IDENTITY_VAULT_SIGN_IN_TEXT,
 } from "@t3tools/shared/fork/identity-grant";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -48,6 +50,7 @@ const failed = (status: number) =>
 const SIGN_IN_REFUSALS: Partial<Record<PocketId.PocketIdError["reason"], string>> = {
   expired: LOOM_IDENTITY_SIGN_IN_EXPIRED,
   passkey: LOOM_IDENTITY_PASSKEY_REQUIRED,
+  "vault-sign-in": LOOM_IDENTITY_VAULT_SIGN_IN_REQUIRED,
 };
 const signInRefused = (error: PocketId.PocketIdError) => {
   const code = SIGN_IN_REFUSALS[error.reason];
@@ -75,6 +78,7 @@ const sessionFailed = (error: unknown) => {
 const CALLBACK_REFUSAL_TEXT: Partial<Record<PocketId.PocketIdError["reason"], string>> = {
   expired: IDENTITY_FRESH_SIGN_IN_TEXT,
   passkey: IDENTITY_PASSKEY_REQUIRED_TEXT,
+  "vault-sign-in": IDENTITY_VAULT_SIGN_IN_TEXT,
 };
 /**
  * The callback's failure page. A window opened by another Loom app hears the refusal's code so
@@ -129,6 +133,11 @@ export const layer = Layer.unwrap(
     const login = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const query = new URL(request.url, "https://localhost").searchParams;
+      // Exactly one `access=vault`, or none: anything else is a request this host cannot honor.
+      const accessValues = query.getAll("access");
+      if (accessValues.length > 1 || (accessValues.length === 1 && accessValues[0] !== "vault"))
+        return failed(400);
+      const access = accessValues.length === 1 ? ("vault" as const) : undefined;
       let browser: LoomIdentityBrowserRequest | undefined;
       if (query.has("origin")) {
         if (
@@ -145,9 +154,14 @@ export const layer = Layer.unwrap(
           ...(query.has("issuer") || query.has("subject")
             ? { expectedIdentity: { issuer: query.get("issuer"), subject: query.get("subject") } }
             : {}),
+          ...(access === undefined ? {} : { access }),
         });
       }
-      const pending = yield* identity.beginLogin(query.get("returnTo") ?? "/", browser);
+      const pending = yield* identity.beginLogin(
+        query.get("returnTo") ?? "/",
+        browser,
+        browser === undefined ? access : undefined,
+      );
       return yield* setCookie(
         HttpServerResponse.redirect(pending.authorizationUrl, { headers: HEADERS }),
         identity.cookieName,

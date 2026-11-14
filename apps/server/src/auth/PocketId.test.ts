@@ -2,7 +2,10 @@ import { it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  AuthAccessReadScope,
   AuthAccessWriteScope,
+  AuthRelayWriteScope,
+  AuthStandardClientScopes,
   AuthSessionId,
   EnvironmentId,
   type AuthClientMetadata,
@@ -1043,4 +1046,300 @@ it.effect("refuses to renew a session the host revoked, along with its earlier r
         ).toBe("revoked");
     }).pipe(Effect.provide(layer));
   }),
+);
+
+// fork: vault-sign-in
+const OWNER = { issuer: ISSUER, subject: "owner-id" };
+const vaultScopes = [...PocketId.PocketIdStandardScopes, ...PocketId.VaultAccessScopes];
+const realSessions = (prefix: string) =>
+  SessionStore.layer.pipe(
+    Layer.provide(SqlitePersistence.layerMemory),
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix })),
+  );
+
+it.effect(
+  "adds Vault access to a native sign-in only for a fresh passkey pinned to the saved account",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      const accessToken = yield* test.access();
+      const bound = yield* atHash(accessToken);
+      const idToken = (payload: Jose.JWTPayload = {}) =>
+        test.signed(
+          { at_hash: bound, auth_time: test.seconds - 30, amr: ["phr"], ...payload },
+          "loom-native",
+          "JWT",
+        );
+      const vault = (token: string | undefined) => ({
+        type: "native" as const,
+        accessToken,
+        environmentId: EnvironmentId.make("host-id"),
+        expectedIdentity: OWNER,
+        access: "vault" as const,
+        ...(token === undefined ? {} : { idToken: token }),
+      });
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const granted = yield* identity.createSession(vault(yield* idToken()), CLIENT);
+        expect(granted.scope.split(" ")).toEqual(vaultScopes);
+        expect(test.issued[0]?.scopes).toEqual(vaultScopes);
+        expect(test.issued[0]?.scopes).not.toContain(AuthRelayWriteScope);
+        expect(test.issued[0]?.client?.label).toBe("My phone (Vault access)");
+        // `issue` still caps it at the token's life, inside the one-hour host session.
+        expect(granted.expires_in).toBe(120);
+
+        const { expectedIdentity: _unpinned, ...unpinned } = vault(yield* idToken());
+        for (const refused of [
+          vault(yield* idToken({ auth_time: test.seconds - 301 })),
+          vault(yield* idToken({ auth_time: test.seconds + 5 })),
+          vault(yield* idToken({ auth_time: undefined })),
+          // Pocket ID copies `amr` from the browser session, so an email-code session stays "otp".
+          vault(yield* idToken({ amr: ["otp"] })),
+          vault(yield* idToken({ amr: undefined })),
+          vault(undefined),
+          unpinned,
+        ])
+          expect(yield* reasonOf(identity.createSession(refused, CLIENT))).toBe("vault-sign-in");
+        expect(test.issued).toHaveLength(1);
+
+        // Without the intent the same fresh passkey changes nothing.
+        const { access: _access, ...standard } = vault(yield* idToken());
+        const plain = yield* identity.createSession(standard, CLIENT);
+        expect(plain.scope.split(" ")).toEqual([...PocketId.PocketIdStandardScopes]);
+        expect(test.issued[1]?.client?.label).toBe("My phone");
+        // Token exchange has no ID token and no intent, so it never adds Vault access.
+        const exchanged = yield* identity.exchangeAccessToken({
+          token: accessToken,
+          client: CLIENT,
+        });
+        expect(exchanged.scope.split(" ")).not.toContain(AuthAccessReadScope);
+      }).pipe(Effect.provide(test.layer));
+    }),
+);
+
+it.effect("leaves an Allow admin host's sessions as they are and honors the off switch", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const accessToken = yield* test.access();
+    const bound = yield* atHash(accessToken);
+    const stale = yield* test.signed(
+      { at_hash: bound, auth_time: test.seconds - 3000, amr: ["otp"] },
+      "loom-native",
+      "JWT",
+    );
+    const fresh = yield* test.signed(
+      { at_hash: bound, auth_time: test.seconds - 10, amr: ["phr"] },
+      "loom-native",
+      "JWT",
+    );
+    const vault = (idToken: string) => ({
+      type: "native" as const,
+      accessToken,
+      idToken,
+      environmentId: EnvironmentId.make("host-id"),
+      expectedIdentity: OWNER,
+      access: "vault" as const,
+    });
+    test.env.LOOM_IDENTITY_ALLOW_ADMIN = "true";
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const session = yield* identity.createSession(vault(stale), CLIENT);
+      expect(session.scope.split(" ")).toEqual([...AuthStandardClientScopes]);
+    }).pipe(Effect.provide(test.layer));
+    delete test.env.LOOM_IDENTITY_ALLOW_ADMIN;
+
+    test.env.LOOM_IDENTITY_VAULT_SIGN_IN = "off";
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      expect(yield* reasonOf(identity.createSession(vault(fresh), CLIENT))).toBe("vault-sign-in");
+      const { access: _access, ...standard } = vault(fresh);
+      yield* identity.createSession(standard, CLIENT);
+    }).pipe(Effect.provide(test.layer));
+
+    // Any other value is a mistake, so Identity refuses to start rather than guess.
+    for (const value of ["on", "false", "OFF"]) {
+      test.env.LOOM_IDENTITY_VAULT_SIGN_IN = value;
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        expect(yield* reasonOf(identity.metadata)).toBe("configuration");
+      }).pipe(Effect.provide(test.layer));
+    }
+  }),
+);
+
+it.effect("renews an elevated native session back to the standard scopes and still links it", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const accessToken = yield* test.access();
+    const bound = yield* atHash(accessToken);
+    const idToken = yield* test.signed(
+      { at_hash: bound, auth_time: test.seconds - 10, amr: ["phr"] },
+      "loom-native",
+      "JWT",
+    );
+    const layer = PocketId.layer.pipe(
+      Layer.provideMerge(realSessions("loom-identity-vault-renewal-test-")),
+      Layer.provideMerge(test.dependencies),
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    );
+    const native = {
+      type: "native" as const,
+      accessToken,
+      idToken,
+      environmentId: EnvironmentId.make("host-id"),
+      expectedIdentity: OWNER,
+    };
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const local = yield* SessionStore.SessionStore;
+      const elevated = yield* identity.createSession({ ...native, access: "vault" }, CLIENT);
+      expect(elevated.scope.split(" ")).toEqual(vaultScopes);
+      yield* TestClock.adjust(Duration.seconds(30));
+      // The renewal worker sends no intent; a refreshed grant keeps the old auth_time.
+      const renewal = yield* identity.createSession(
+        native,
+        CLIENT,
+        undefined,
+        elevated.access_token,
+      );
+      expect(renewal.scope.split(" ")).toEqual([...PocketId.PocketIdStandardScopes]);
+      const elevatedId = (yield* local.verify(elevated.access_token)).sessionId;
+      const renewalId = (yield* local.verify(renewal.access_token)).sessionId;
+      expect(yield* local.renewalsOf(elevatedId)).toEqual(new Set([elevatedId, renewalId]));
+      // Asking again on renewal needs a fresh passkey, which a refreshed grant never has: its
+      // ID token keeps the original auth_time.
+      const refreshed = yield* test.signed(
+        { at_hash: bound, auth_time: test.seconds - 400, amr: ["phr"] },
+        "loom-native",
+        "JWT",
+      );
+      expect(
+        yield* reasonOf(
+          identity.createSession(
+            { ...native, idToken: refreshed, access: "vault" },
+            CLIENT,
+            undefined,
+            renewal.access_token,
+          ),
+        ),
+      ).toBe("vault-sign-in");
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect(
+  "asks Pocket ID for a fresh sign-in for a Vault login and carries the access through the handoff",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      test.env.LOOM_IDENTITY_BROWSER_ORIGINS = browserRequest.origin;
+      test.env.LOOM_IDENTITY_MAX_SESSION_AGE = "2h";
+      const crypto = yield* Digest.Digest.pipe(
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      );
+      const verifier = "v".repeat(43);
+      const browser = {
+        ...browserRequest,
+        expectedIdentity: OWNER,
+        access: "vault" as const,
+        challenge: Base64Url.encode(
+          yield* crypto.digest(Digest.sha256, new TextEncoder().encode(verifier)),
+        ),
+      };
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const searchOf = (login: { readonly authorizationUrl: string }) =>
+          new URL(login.authorizationUrl).searchParams;
+        const standard = yield* identity.beginLogin();
+        expect(searchOf(standard).get("max_age")).toBe("3600");
+        const sameOrigin = yield* identity.beginLogin("/settings/vault", undefined, "vault");
+        expect(searchOf(sameOrigin).get("max_age")).toBe("0");
+        // Only max_age changes; state, nonce and the PKCE challenge are made as before.
+        expect([...searchOf(sameOrigin).keys()].toSorted()).toEqual(
+          [...searchOf(standard).keys()].toSorted(),
+        );
+        for (const name of [
+          "response_type",
+          "client_id",
+          "redirect_uri",
+          "scope",
+          "code_challenge_method",
+        ])
+          expect(searchOf(sameOrigin).get(name)).toBe(searchOf(standard).get(name));
+        for (const name of ["state", "nonce", "code_challenge"])
+          expect(searchOf(sameOrigin).get(name)).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+        const complete = (
+          login: { readonly authorizationUrl: string; readonly cookieValue: string },
+          claims: Jose.JWTPayload,
+        ) =>
+          Effect.gen(function* () {
+            test.tokenReply.access = yield* test.access().pipe(Effect.orDie);
+            test.tokenReply.id = yield* test
+              .signed({ nonce: searchOf(login).get("nonce")!, ...claims }, CLIENT_ID, "JWT")
+              .pipe(Effect.orDie);
+            return yield* identity.completeLogin({
+              state: searchOf(login).get("state")!,
+              code: "idp-code",
+              cookieValue: login.cookieValue,
+              client: CLIENT,
+            });
+          });
+        const fresh = { auth_time: test.seconds - 20, amr: ["phr"] };
+
+        // A tampered state cookie still fails on the state check.
+        const tampered = yield* identity.beginLogin("/", undefined, "vault");
+        expect(
+          yield* reasonOf(
+            complete(
+              { ...tampered, cookieValue: `${searchOf(tampered).get("state")}.forged-signature` },
+              fresh,
+            ),
+          ),
+        ).toBe("state");
+
+        const cookie = yield* complete(sameOrigin, fresh);
+        expect(cookie.scopes).toEqual(vaultScopes);
+        expect(cookie.returnTo).toBe("/settings/vault");
+        expect(test.issued.at(-1)?.client?.label).toBe("My phone (Vault access)");
+        expect(
+          yield* reasonOf(
+            complete(yield* identity.beginLogin("/", undefined, "vault"), {
+              ...fresh,
+              amr: ["otp"],
+            }),
+          ),
+        ).toBe("vault-sign-in");
+
+        const stale = yield* complete(yield* identity.beginLogin("/", browser), {
+          ...fresh,
+          auth_time: test.seconds - 400,
+        }).pipe(Effect.flip);
+        expect(stale.reason).toBe("vault-sign-in");
+        // The window that asked hears why.
+        expect(stale.handoff).toEqual({ origin: browser.origin, state: browser.state });
+
+        const login = yield* identity.beginLogin("/", browser);
+        expect(searchOf(login).get("max_age")).toBe("0");
+        const completed = yield* complete(login, fresh);
+        const session = yield* identity.createSession(
+          {
+            type: "browser",
+            code: completed.handoff!.code,
+            verifier,
+            environmentId: browser.environmentId,
+          },
+          CLIENT,
+          browser.origin,
+        );
+        expect(session.scope.split(" ")).toEqual(vaultScopes);
+        expect(test.issued.at(-1)?.client?.label).toBe("My phone (Vault access)");
+
+        // An ordinary app-window sign-in on the same host keeps the standard scopes.
+        const { access: _access, ...ordinary } = browser;
+        const plain = yield* complete(yield* identity.beginLogin("/", ordinary), fresh);
+        expect(plain.scopes).toEqual([...PocketId.PocketIdStandardScopes]);
+      }).pipe(Effect.provide(test.layer));
+    }),
 );

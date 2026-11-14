@@ -123,6 +123,13 @@ export function identitySignInMaxAge(maxSessionAgeSeconds: number): string {
 export const IDENTITY_PASSKEY_REQUIRED_TEXT =
   "This computer accepts passkey sign-ins only. Sign out of Loom Identity in your browser, then sign in with your passkey.";
 
+/**
+ * A Vault sign-in that did not prove a fresh passkey. Pocket ID takes `amr` from the browser's own
+ * Identity session, so one that began with an email code keeps failing until that session ends.
+ */
+export const IDENTITY_VAULT_SIGN_IN_TEXT =
+  "Vault access needs a fresh passkey sign-in. Try again and confirm with your passkey. If it still fails, sign out of Loom Identity in your browser, then sign in again with your passkey.";
+
 /** A provider that ignores `max_age` hands back its old browser sign-in, past the computer's cap. */
 export const IDENTITY_FRESH_SIGN_IN_TEXT =
   "This computer needs a fresh Loom sign-in. Sign out of Loom Identity in your browser, then sign in again.";
@@ -387,6 +394,7 @@ async function exchangeNativeIdentitySession(input: {
         accept: "application/json",
         ...(input.currentToken ? { authorization: `Bearer ${input.currentToken}` } : {}),
       },
+      // No `access` intent, ever: see renewIdentityGrant.
       body: encodeSessionRequest({
         type: "native",
         accessToken: input.accessToken,
@@ -447,7 +455,11 @@ async function exchangeNativeIdentitySession(input: {
   };
 }
 
-/** Refreshes the grant, persists the rotation, then exchanges the new tokens at the computer. */
+/**
+ * Refreshes the grant, persists the rotation, then exchanges the new tokens at the computer. It
+ * must never send an `access` intent: a renewed session always has the standard scopes, so Vault
+ * access from a Vault sign-in ends when that session does.
+ */
 export async function renewIdentityGrant(
   grant: IdentityGrant,
   options: {

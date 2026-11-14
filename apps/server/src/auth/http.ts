@@ -1,7 +1,9 @@
 import {
   authScopeRequiredResponse,
   AuthAccessTokenType, // fork: library-sign-in
+  AuthAccessReadScope, // fork: vault-sign-in
   AuthAccessWriteScope,
+  AuthRelayWriteScope, // fork: vault-sign-in
   AuthStandardClientScopes,
   AuthGrantScope,
   EnvironmentAuthInvalidError,
@@ -37,10 +39,19 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as PocketId from "./PocketId.ts"; // fork: library-sign-in
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: vault-sign-in
+import { mayDelegateManagement } from "./identityPolicy.ts"; // fork: vault-sign-in
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
 import { deriveAuthClientMetadata, isHttpsRequest, sessionCookieOptions } from "./utils.ts"; // fork: secure-session-cookies
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { requestUrl } from "../requestUrl.ts";
+
+// fork: vault-sign-in
+const UNDELEGATED_IDENTITY_SCOPES: ReadonlySet<AuthEnvironmentScope> = new Set([
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
+]);
 
 const CREDENTIAL_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -274,6 +285,7 @@ export const layer = HttpApiBuilder.group(
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const sessions = yield* SessionStore.SessionStore;
     const pocketId = yield* Effect.serviceOption(PocketId.PocketId); // fork: library-sign-in
+    const identityEnvironment = yield* HostProcess.Environment; // fork: vault-sign-in
 
     return handlers
       .handle(
@@ -496,8 +508,14 @@ export const layer = HttpApiBuilder.group(
             ) {
               return yield* failEnvironmentInvalidRequest("invalid_scope");
             }
+            // fork: vault-sign-in -- a Vault sign-in's access lasts one session, so an Identity
+            // session must not mint a pairing link (a 30-day session) that keeps it.
+            const delegatesManagement = mayDelegateManagement(session.subject, identityEnvironment);
             for (const delegatedScope of delegatedScopes) {
-              if (!session.scopes.has(delegatedScope)) {
+              if (
+                !session.scopes.has(delegatedScope) ||
+                (!delegatesManagement && UNDELEGATED_IDENTITY_SCOPES.has(delegatedScope))
+              ) {
                 return yield* failEnvironmentScopeRequired(delegatedScope);
               }
             }

@@ -1,13 +1,20 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
+  AuthSessionId,
+  AuthStandardClientScopes,
   AuthTokenExchangeGrantType,
   AuthEnvironmentBootstrapTokenType,
   AuthAccessTokenType,
   EnvironmentHttpApi,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,6 +31,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+import * as SessionStore from "./SessionStore.ts";
 import * as AuthHttp from "./http.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 
@@ -281,4 +289,123 @@ it.effect("marks browser session cookies Secure only behind an HTTPS proxy", () 
       (environment) => Effect.promise(() => environment.dispose()),
     );
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+// fork: vault-sign-in
+const layerDelegationRoutes = (
+  session: EnvironmentAuth.AuthenticatedSession,
+  environment: NodeJS.ProcessEnv,
+  issued: Array<unknown>,
+) =>
+  HttpApiBuilder.layer(AuthTestApi).pipe(
+    Layer.provide(AuthHttp.layer),
+    Layer.provide(AuthHttp.layerAuthenticatedAuth),
+    Layer.provide(
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+        authenticateHttpRequest: () => Effect.succeed(session),
+        issuePairingCredential: (input) =>
+          Effect.sync(() => {
+            issued.push(input);
+            return {
+              id: "pairing-link",
+              credential: "pairing-credential",
+              expiresAt: DateTime.makeUnsafe("2026-12-14T00:00:00Z"),
+            };
+          }),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(SessionStore.SessionStore)({
+        cookieName: "t3_session_test",
+        legacyCookieName: "t3_session_legacy_test",
+      }),
+    ),
+    Layer.provide(Layer.succeed(HostProcess.Environment, environment)),
+    Layer.provide(layerConfig),
+    Layer.provideMerge(
+      HttpPlatform.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        Layer.provideMerge(Etag.layerWeak),
+      ),
+    ),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
+
+// fork: vault-sign-in
+it.effect(
+  "keeps a Vault sign-in's access out of pairing links unless the host lets Identity manage it",
+  () =>
+    Effect.gen(function* () {
+      const random = yield* SecureRandom.SecureRandom;
+      const requestContext = Context.make(SecureRandom.SecureRandom, random).pipe(
+        Context.add(
+          ServerSecretStore.ServerSecretStore,
+          ServerSecretStore.ServerSecretStore.of({
+            get: () => Effect.succeedNone,
+            set: () => Effect.void,
+            create: () => Effect.void,
+            getOrCreateRandom: () => Effect.die("Not used by these routes."),
+            remove: () => Effect.void,
+          }),
+        ),
+      );
+      const elevated = (subject: string): EnvironmentAuth.AuthenticatedSession => ({
+        sessionId: AuthSessionId.make("elevated-session"),
+        subject,
+        method: "bearer-access-token",
+        scopes: AuthStandardClientScopes,
+      });
+      const standard = AuthStandardClientScopes.filter(
+        (scope) =>
+          scope !== AuthAccessReadScope &&
+          scope !== AuthAccessWriteScope &&
+          scope !== AuthRelayWriteScope,
+      );
+      const delegate = (
+        subject: string,
+        environment: NodeJS.ProcessEnv,
+        scopes: ReadonlyArray<string>,
+      ) => {
+        const issued: Array<unknown> = [];
+        return Effect.acquireUseRelease(
+          Effect.sync(() =>
+            HttpRouter.toWebHandler(layerDelegationRoutes(elevated(subject), environment, issued), {
+              disableLogger: true,
+            }),
+          ),
+          (routes) =>
+            Effect.promise(async () => {
+              const response = await routes.handler(
+                postJson("/api/auth/pairing-token", { scopes }, { authorization: "Bearer x" }),
+                requestContext,
+              );
+              return { status: response.status, issued: issued.length };
+            }),
+          (routes) => Effect.promise(() => routes.dispose()),
+        );
+      };
+
+      for (const subject of ["pocket-id:owner", "identity:owner"]) {
+        for (const scope of [AuthAccessReadScope, AuthAccessWriteScope, AuthRelayWriteScope])
+          expect(yield* delegate(subject, {}, [...standard, scope])).toEqual({
+            status: 403,
+            issued: 0,
+          });
+        // The default full set includes Vault access, so it is refused too.
+        expect(yield* delegate(subject, {}, AuthStandardClientScopes)).toEqual({
+          status: 403,
+          issued: 0,
+        });
+        expect(yield* delegate(subject, {}, standard)).toEqual({ status: 200, issued: 1 });
+        // A host that lets Identity manage access keeps today's behavior.
+        expect(
+          yield* delegate(subject, { LOOM_IDENTITY_ALLOW_ADMIN: "true" }, AuthStandardClientScopes),
+        ).toEqual({ status: 200, issued: 1 });
+      }
+      // Owner and pairing sessions still delegate what they hold.
+      expect(yield* delegate("owner", {}, AuthStandardClientScopes)).toEqual({
+        status: 200,
+        issued: 1,
+      });
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

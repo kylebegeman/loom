@@ -22,6 +22,8 @@ import { VaultGitHubRunInput, VaultGitHubResult, VaultGitHubError } from "./vaul
 
 export const ACCOUNT_VAULT_ROUTE = "/api/loom/account/vault";
 export const ACCOUNT_VAULT_FEATURE = "account-vault";
+/** The Library grants Vault access to a device that signs in again with a fresh passkey. */
+export const ACCOUNT_VAULT_SIGN_IN_FEATURE = "account-vault-sign-in";
 export const ACCOUNT_PROVIDER_CREDENTIAL_ROUTE = "/api/loom/account/provider-credential";
 export const AccountProviderConsumer = Schema.Struct({
   instanceId: ProviderInstanceId,

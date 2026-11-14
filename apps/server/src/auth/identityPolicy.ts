@@ -18,7 +18,12 @@ const ADDED_POLICY_KEYS = [
   "LOOM_IDENTITY_REQUIRE_PASSKEY",
   "LOOM_ACCESS_TEAM_DOMAIN",
   "LOOM_ACCESS_AUDIENCE",
+  // Never in POLICY_KEYS: that would sign out every Identity device on upgrade.
+  "LOOM_IDENTITY_VAULT_SIGN_IN",
 ] as const;
+
+/** The only value LOOM_IDENTITY_VAULT_SIGN_IN accepts; PocketId refuses to start on any other. */
+const VAULT_SIGN_IN_OFF = "off";
 
 const MIN_SESSION_AGE_SECONDS = 60 * 60;
 const MAX_SESSION_AGE_SECONDS = 365 * 24 * 60 * 60;
@@ -52,6 +57,36 @@ export function identityConfigured(environment: NodeJS.ProcessEnv) {
 /** Only the exact value `true` turns it on; PocketId refuses to start Identity on any other. */
 export function passkeyRequired(environment: NodeJS.ProcessEnv) {
   return environment.LOOM_IDENTITY_REQUIRE_PASSKEY?.trim() === "true";
+}
+
+/**
+ * Vault sign-in is on unless LOOM_IDENTITY_VAULT_SIGN_IN=off. It still needs a fresh passkey for
+ * each sign-in, so being on grants nothing by itself.
+ */
+export function vaultSignInEnabled(environment: NodeJS.ProcessEnv) {
+  return environment.LOOM_IDENTITY_VAULT_SIGN_IN?.trim() !== VAULT_SIGN_IN_OFF;
+}
+
+/** Whether LOOM_IDENTITY_VAULT_SIGN_IN holds a value other than `off`, which PocketId refuses. */
+export function vaultSignInMisconfigured(environment: NodeJS.ProcessEnv) {
+  const value = environment.LOOM_IDENTITY_VAULT_SIGN_IN?.trim();
+  return Boolean(value) && value !== VAULT_SIGN_IN_OFF;
+}
+
+/** Sessions issued from an Identity sign-in, current or from an earlier policy. */
+export function isIdentitySessionSubject(subject: string) {
+  return subject.startsWith("identity:") || subject.startsWith("pocket-id:");
+}
+
+/**
+ * Whether a session may pass access and relay management on: to a pairing link, or by approving
+ * an MCP client. An Identity session holds them without LOOM_IDENTITY_ALLOW_ADMIN only after a
+ * Vault sign-in, for at most an hour, and must not turn that into a longer-lived credential.
+ */
+export function mayDelegateManagement(subject: string, environment: NodeJS.ProcessEnv) {
+  return (
+    !isIdentitySessionSubject(subject) || environment.LOOM_IDENTITY_ALLOW_ADMIN?.trim() === "true"
+  );
 }
 
 /** What a sign-in to this computer is issued for: the resource indicator, else the first audience. */

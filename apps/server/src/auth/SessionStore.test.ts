@@ -2,7 +2,12 @@ import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: library-sig
 import { identitySessionPrefix } from "./identityPolicy.ts"; // fork: library-sign-in
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId } from "@t3tools/contracts";
+import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthStandardClientScopes,
+  EnvironmentId,
+} from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as DateTime from "effect/DateTime"; // fork: library-projects
@@ -134,6 +139,78 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
       yield* Fiber.join(socket);
       expect(yield* Ref.get(held)).toBe(renewal.sessionId);
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  // fork: vault-sign-in
+  it.effect(
+    "closes a socket at its session's expiry when the renewal grants fewer scopes, keeping the link",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const renewable = { subject: "owner", method: "bearer-access-token" } as const;
+        const standard = AuthStandardClientScopes.filter(
+          (scope) => scope !== AuthAccessReadScope && scope !== AuthAccessWriteScope,
+        );
+        // A Vault sign-in: the standard scopes plus Vault access, for this session only.
+        const elevated = yield* sessions.issue({
+          ...renewable,
+          scopes: AuthStandardClientScopes,
+          ttl: Duration.hours(1),
+        });
+        yield* sessions.markConnected(elevated.sessionId);
+        const held = yield* Ref.make(elevated.sessionId);
+        const socket = yield* sessions
+          .awaitSessionChain(held)
+          .pipe(Effect.forkScoped({ startImmediately: true }));
+        yield* TestClock.adjust(Duration.minutes(50));
+        const renewal = yield* sessions.issue({
+          ...renewable,
+          scopes: standard,
+          ttl: Duration.hours(1),
+        });
+        expect(
+          yield* sessions.linkSuccessor({
+            currentToken: elevated.token,
+            successor: { ...renewal, subject: renewable.subject },
+          }),
+        ).toBe(true);
+        yield* TestClock.adjust(Duration.minutes(10));
+        yield* Fiber.join(socket);
+        expect(yield* Ref.get(held)).toBe(elevated.sessionId);
+        // The renewal itself stays usable, and revoking it still ends the session it renewed.
+        yield* sessions.verify(renewal.token);
+        expect(yield* sessions.renewalsOf(elevated.sessionId)).toEqual(
+          new Set([elevated.sessionId, renewal.sessionId]),
+        );
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  // fork: vault-sign-in
+  it.effect("revokes both sessions of a narrower renewal from either end", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const renewable = { subject: "owner", method: "bearer-access-token" } as const;
+      const standard = AuthStandardClientScopes.filter(
+        (scope) => scope !== AuthAccessReadScope && scope !== AuthAccessWriteScope,
+      );
+      for (const end of ["elevated", "renewal"] as const) {
+        const elevated = yield* sessions.issue({ ...renewable, ttl: Duration.hours(1) });
+        const renewal = yield* sessions.issue({
+          ...renewable,
+          scopes: standard,
+          ttl: Duration.hours(1),
+        });
+        yield* sessions.linkSuccessor({
+          currentToken: elevated.token,
+          successor: { ...renewal, subject: renewable.subject },
+        });
+        yield* sessions.revoke((end === "elevated" ? elevated : renewal).sessionId);
+        for (const session of [elevated, renewal])
+          expect((yield* sessions.verify(session.token).pipe(Effect.flip))._tag).toBe(
+            "SessionTokenRevokedError",
+          );
+      }
+    }).pipe(Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
   );
 
   // fork: identity-renewal

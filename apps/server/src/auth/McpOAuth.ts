@@ -40,6 +40,8 @@ import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as PayloadSigner from "./PayloadSigner.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess"; // fork: vault-sign-in
+import { mayDelegateManagement } from "./identityPolicy.ts"; // fork: vault-sign-in
 import {
   base64UrlDecodeUtf8,
   base64UrlEncode,
@@ -255,6 +257,7 @@ export const redirectForError = (error: McpOAuthRedirectError, issuer: string) =
 
 const make = Effect.gen(function* () {
   const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const identityEnvironment = yield* HostProcess.Environment; // fork: vault-sign-in
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const random = yield* SecureRandom.SecureRandom;
   const digester = yield* Digest.Digest;
@@ -410,9 +413,12 @@ const make = Effect.gen(function* () {
   const approvingSession: McpOAuth["Service"]["approvingSession"] = (request, authorization) =>
     environmentAuth.authenticateHttpRequest(request).pipe(
       Effect.flatMap((session) =>
-        // Approving manages access, and a session may only hand out scopes it holds.
+        // Approving manages access, and a session may only hand out scopes it holds. An Identity
+        // session holds access:write without LOOM_IDENTITY_ALLOW_ADMIN only for one Vault sign-in,
+        // so it never approves an app that would keep a credential past it.
         session.scopes.includes(AuthAccessWriteScope) &&
-        session.scopes.includes(AuthOrchestrationReadScope)
+        session.scopes.includes(AuthOrchestrationReadScope) &&
+        mayDelegateManagement(session.subject, identityEnvironment)
           ? // The hosted app may get a fresh credential per call, all bound to one browser key.
             csrfToken(
               session.proofKeyThumbprint === undefined
