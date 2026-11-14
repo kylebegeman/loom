@@ -23,7 +23,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
-import { libraryComputerDirectory } from "./enrollment.ts";
+import { libraryComputerDirectory } from "@t3tools/shared/fork/library-computer";
 import * as BackgroundChecks from "../background-checks/BackgroundChecks.ts";
 
 const LibraryHostCredential = Schema.Struct({

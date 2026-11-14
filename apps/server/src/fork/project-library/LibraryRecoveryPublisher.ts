@@ -28,7 +28,7 @@ import * as LibraryRecoveryStore from "./assets/LibraryRecoveryStore.ts";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { isLibraryAuthorityEnv } from "./authority.ts";
-import { libraryComputerDirectory } from "./enrollment.ts";
+import { libraryComputerDirectory } from "@t3tools/shared/fork/library-computer";
 import { readLibraryConnection } from "./LibraryConnection.ts";
 import * as SessionStore from "../../auth/SessionStore.ts";
 import {

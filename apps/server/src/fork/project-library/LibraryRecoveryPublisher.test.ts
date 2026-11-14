@@ -16,7 +16,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import * as Publisher from "./LibraryRecoveryPublisher.ts";
 import * as ServerConfig from "../../config.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
-import { libraryComputerDirectory } from "./enrollment.ts";
+import { libraryComputerDirectory } from "@t3tools/shared/fork/library-computer";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
 import { recoveryDescriptorDigest } from "./recoveryGrant.ts";
 

@@ -15,7 +15,7 @@ import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { libraryComputerDirectory } from "./enrollment.ts";
+import { libraryComputerDirectory } from "@t3tools/shared/fork/library-computer";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";

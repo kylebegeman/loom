@@ -94,6 +94,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         fullChangelog = value;
       }),
     setDisableDifferentialDownload: () => options.setDisableDifferentialDownload ?? Effect.void,
+    setRequestHeaders: () => Effect.void, // fork: private-releases
     checkForUpdates: Effect.sync(() => {
       checkCount += 1;
       checkAllowedDowngrade.push(allowDowngrade);

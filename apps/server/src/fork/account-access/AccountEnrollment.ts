@@ -37,7 +37,8 @@ import { DirectoryService } from "../directory/DirectoryService.ts";
 import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
 import { LibraryManagement } from "../project-library/LibraryManagement.ts";
 import { LibraryPublisher } from "../project-library/LibraryPublisher.ts";
-import { libraryComputerDirectory, writeLibraryCredential } from "../project-library/enrollment.ts";
+import { writeLibraryCredential } from "../project-library/enrollment.ts";
+import { libraryComputerDirectory } from "@t3tools/shared/fork/library-computer";
 import {
   ReachStore,
   freshComputer,

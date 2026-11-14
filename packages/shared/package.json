@@ -563,6 +563,10 @@
       "types": "./src/fork/release-mirror.ts",
       "import": "./src/fork/release-mirror.ts"
     },
+    "./fork/library-computer": {
+      "types": "./src/fork/library-computer.ts",
+      "import": "./src/fork/library-computer.ts"
+    },
     "./fork/identity-grant": {
       "types": "./src/fork/identityGrant.ts",
       "import": "./src/fork/identityGrant.ts"

@@ -1830,3 +1830,6 @@ apps/server/src/cloud/selfUpdate.ts	private-releases	5
 apps/server/src/server.ts	private-releases	3
 apps/server/src/cloud/selfUpdate.test.ts	private-releases	2
 scripts/build-desktop-artifact.ts	private-releases	2
+apps/desktop/src/electron/ElectronUpdater.ts	private-releases	2
+apps/desktop/src/updates/DesktopUpdates.ts	private-releases	6
+apps/desktop/src/updates/updatesTestHarness.ts	private-releases	1

@@ -41,6 +41,10 @@ import { makeSaveBeforeUpdate } from "../fork/rollback-snapshot/RollbackSnapshot
 // fork: machine-updates
 import { makeDesktopIdleInstall } from "../fork/machine-updates/DesktopIdleInstall.ts";
 import {
+  libraryReleaseFeedUrl,
+  makeLibraryFeedHeaders,
+} from "../fork/private-releases/LibraryFeedCredential.ts"; // fork: private-releases
+import {
   normalizeDesktopUpdateReleaseNotes,
   releaseNotesOfOfferedVersion,
 } from "./releaseNotes.ts";
@@ -397,6 +401,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const saveRollbackSnapshot = yield* makeSaveBeforeUpdate; // fork: rollback-snapshot
+  const libraryFeedHeaders = yield* makeLibraryFeedHeaders; // fork: private-releases
   const policy = yield* DesktopUpdatePolicy.DesktopUpdatePolicy;
   // Any user can set the mock flag, so it never replaces an administrator's update source.
   const mockUpdates = config.mockUpdates && policy.message === null;
@@ -561,6 +566,20 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  // fork: private-releases
+  const authorizeLibraryFeed = Effect.gen(function* () {
+    const feedUrl = libraryReleaseFeedUrl({
+      mockUpdates,
+      policyFeedUrl: policy.feedUrl,
+      appUpdateYml: yield* Ref.get(appUpdateYmlConfigRef),
+    });
+    const headers = yield* libraryFeedHeaders(feedUrl);
+    if (feedUrl !== undefined && headers === null)
+      yield* logUpdaterWarning("this computer has no usable Library sign-in for its update feed");
+    yield* electronUpdater.setRequestHeaders(headers);
+    return headers;
+  });
+
   const checkForUpdates = Effect.fn("desktop.updates.checkForUpdates")(function* (
     reason: string,
     actionReservation: "acquire" | "held" = "acquire",
@@ -589,6 +608,7 @@ export const make = Effect.gen(function* () {
       yield* logUpdaterInfo("checking for updates", { reason });
 
       // The flag is shared updater state, so it flips only while this check holds the reservation.
+      yield* authorizeLibraryFeed; // fork: private-releases
       const restoreDowngrade = yield* electronUpdater.allowDowngrade;
       if (allowDowngrade) yield* electronUpdater.setAllowDowngrade(true);
       return yield* electronUpdater.checkForUpdates.pipe(
@@ -633,8 +653,10 @@ export const make = Effect.gen(function* () {
 
     return yield* Effect.gen(function* () {
       yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
+      const libraryHeaders = yield* authorizeLibraryFeed; // fork: private-releases
       yield* electronUpdater.setDisableDifferentialDownload(
-        isArm64HostRunningIntelBuild(environment.runtimeInfo),
+        // fork: private-releases: ranged downloads resend every header after a redirect.
+        libraryHeaders !== null || isArm64HostRunningIntelBuild(environment.runtimeInfo),
       );
       yield* logUpdaterInfo("downloading update");
       yield* electronUpdater.downloadUpdate;
