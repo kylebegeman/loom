@@ -1165,7 +1165,7 @@ apps/mobile/src/features/settings/OutdatedServerUpdateSection.tsx	brand	4
 apps/server/src/cli/managedChatGptToken.ts	brand	1
 apps/server/src/cli/thread.ts	brand	4
 apps/server/src/orchestration-v2/Orchestrator.ts	brand	1
-apps/web/src/components/chat/TimelineAssistantRows.tsx	brand	1
+apps/web/src/components/chat/TimelineAssistantRows.tsx	brand	2
 apps/web/src/components/chat/TimelineUserMessageRow.tsx	brand	1
 apps/web/src/components/pullRequest/PullRequestsPage.tsx	brand	1
 apps/web/src/connection/platform.ts	brand	1
@@ -1798,6 +1798,9 @@ apps/mobile/deps/README.md	native-tab-bar	1
 apps/web/src/components/chat/turnDetailAnnouncement.ts	brand	1
 apps/web/src/components/chat/turnDetailAnnouncement.test.ts	brand	4
 apps/web/src/components/chat/ThreadActivityAnnouncer.browser.test.tsx	brand	4
+apps/server/src/cloud/RelayClientLedger.ts	brand	1
+apps/server/src/mcp/toolkits/theme/tools.ts	brand	2
+packages/shared/src/themeCss.ts	brand	1
 # Not a seam: upstream's comment "// fork: a child forked..." matches the marker pattern.
 packages/provider-opencode/src/server/OpenCodeServerLedger.test.ts	a	1
 apps/desktop/src/shell/DesktopShellEnvironment.ts	switchboard	3
