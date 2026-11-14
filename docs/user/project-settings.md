@@ -797,7 +797,3 @@ credentials set in that server's environment. Set `LOOM_IDENTITY_ISSUER`,
 addresses must be HTTPS origins. To manage sites from Loom, also set
 `LOOM_SITES_MANAGER_CLIENT_ID` and `LOOM_SITES_MANAGER_CLIENT_SECRET` for a
 separate client. Restart the server after changing them.
-
-The personal API catalog at `https://api.begam.in/v1/public/catalog` lists
-capabilities available to other projects. Public reads work across origins;
-private data and administration keep their own access requirements.

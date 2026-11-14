@@ -183,8 +183,9 @@ weekly. Desktop and iPhone builds without sign-in renewal cannot sign in once a 
 6. Turn it on for more computers. Move Identity computers that use reach to the resource the
    Library prepared.
 
-`LOOM_IDENTITY_ALLOW_ADMIN=true` gives Identity sessions `relay:write`, which is enough to turn
-reach on or off and to remove an address. The scopes gate the buttons only: a device with
+`LOOM_IDENTITY_ALLOW_ADMIN=true` gives Identity sessions `access:read`, `access:write` and
+`relay:write`. That is enough to manage the account Vault and access, to turn reach on or off
+and to remove an address. The scopes gate the buttons only: a device with
 terminal or full-access agent rights on a computer can change its reach anyway.
 
 [pid-webauthn]: https://github.com/pocket-id/pocket-id/blob/40cb14f89309286dcafaa62dac82a88a4b5ac583/backend/internal/webauthn/service.go#L314

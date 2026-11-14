@@ -138,7 +138,6 @@ const MAX_ATTENTION_ITEMS = 3;
 const MAX_HEADER_TICKS = 60;
 const MAX_CARD_PROJECTS = 1;
 const MAX_ROW_PROJECTS = 2;
-const CATALOG_URL = "https://api.begam.in/v1/public/catalog";
 /** The project filter's entry for sites that serve no project yet. */
 export const UNLINKED_PROJECT = "unlinked";
 const OFFLINE_NOTICE = "Saved check results and traffic below may be out of date.";
@@ -975,20 +974,10 @@ function NotConfigured({
       icon={PlugZapIcon}
       title="Connect the personal API"
       action={
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button shape="pill" variant="outline" disabled={pending} onClick={onCheck}>
-            <RefreshCwIcon />
-            Check again
-          </Button>
-          <Button
-            shape="pill"
-            variant="ghost"
-            render={<a href={CATALOG_URL} target="_blank" rel="noreferrer" />}
-          >
-            Explore the personal API catalog
-            <ArrowUpRightIcon />
-          </Button>
-        </div>
+        <Button shape="pill" variant="outline" disabled={pending} onClick={onCheck}>
+          <RefreshCwIcon />
+          Check again
+        </Button>
       }
     >
       Sites reads your sites, checks and traffic through the personal API. Whoever runs {label}{" "}
