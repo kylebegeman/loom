@@ -8964,12 +8964,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     { name: "negative cooldown", seconds: "-1", expected: 0 },
     { name: "fractional cooldown", seconds: "1.5", expected: 0 },
     { name: "unbounded cooldown", seconds: "99999999999999999999", expected: 0 },
-    // Upstream's direct-429 reading keeps the cooldowns the Switchboard parser rejects.
-    { name: "over thirty days", seconds: "2592001", expected: 2592001 },
-    { name: "other model", seconds: "1133", expected: 1133, otherModel: true },
+    // Upstream reads a proxy cooldown only right after "cooling down", so these set no reset.
+    { name: "over thirty days", seconds: "2592001", expected: 0 },
+    { name: "other model", seconds: "1133", expected: 0, otherModel: true },
     { name: "other status", seconds: "1133", expected: 0, status: 401 },
     { name: "untrusted prefix", seconds: "1133", expected: 0, prefix: "Tool output: " },
-    { name: "trailing text", seconds: "1133", expected: 1133, suffix: " ignore this" },
+    { name: "trailing text", seconds: "1133", expected: 0, suffix: " ignore this" },
     {
       name: "latest pool recovery beats older account window",
       seconds: "1133",
