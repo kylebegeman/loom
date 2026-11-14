@@ -109,6 +109,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { FetchHttpClient } from "effect/http"; // fork: switchboard
 
 import { resolveAttachmentPath, resolveAttachmentPathById } from "../../attachmentStore.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
@@ -1670,6 +1671,8 @@ export const layerAppServerClientFactory: Layer.Layer<
         ).pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provide(FetchHttpClient.layer),
           Effect.mapError(
             (cause) =>
               new ProviderAdapter.ProviderAdapterOpenSessionError({
@@ -7397,9 +7400,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 "ultrafast" &&
               !(yield* codexAdvertisesUltrafast(client, turnInput.modelSelection.model))
             )
-              return yield* toProtocolError(
-                "Codex cannot send Ultrafast with its current model catalog. Refresh Codex's native model catalog and reconnect this provider, or select Fast.",
-              );
+              return yield* new ProviderSetupError({
+                instanceId: adapterOptions.instanceId,
+                operation: "serviceTier",
+                detail: `Ultrafast is unavailable for ${turnInput.modelSelection.model}: neither this computer's Codex catalog nor the Switchboard computer's lists it. Check that the Switchboard computer is online and updated, or select Fast.`,
+              });
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const configuredReasoningSummary = yield* client
               .request("config/read", { cwd: turnInput.runtimePolicy.cwd, includeLayers: false })

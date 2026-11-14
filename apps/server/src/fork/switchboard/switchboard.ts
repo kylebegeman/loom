@@ -134,6 +134,7 @@ const hubKey = (value: string): string | null => {
 };
 
 type SwitchboardConfiguration = ReturnType<typeof resolveSwitchboardConfiguration>;
+export type SwitchboardKeyCommand = SwitchboardConfiguration["keyCommand"];
 const tomlString = (value: string) => JSON.stringify(value);
 const shellArgument = (value: string) =>
   /^[a-zA-Z0-9_./:-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
@@ -142,6 +143,7 @@ const shellArgument = (value: string) =>
 const routing = (config: SwitchboardConfiguration, providerId: string) => ({
   providerId,
   url: config.url,
+  keyCommand: config.keyCommand,
   codexArgs: [
     "-c",
     `model_providers.${providerId}={${[
@@ -239,6 +241,15 @@ const currentRouting = () =>
 
 export const switchboardCodexArgs = (): ReadonlyArray<string> =>
   enabled ? currentRouting().codexArgs : [];
+
+/** The routed hub and its key helper, or undefined when routing is off. */
+export const switchboardCatalogSource = ():
+  | { readonly url: string; readonly keyCommand: SwitchboardKeyCommand }
+  | undefined => {
+  if (!enabled) return undefined;
+  const { url, keyCommand } = currentRouting();
+  return { url, keyCommand };
+};
 
 /** A resume must override the old process's persisted provider key when hub routing is enabled. */
 export const switchboardCodexThreadOptions = (): { modelProvider?: string } =>

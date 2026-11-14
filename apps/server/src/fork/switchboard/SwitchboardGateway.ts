@@ -2,9 +2,13 @@
 import * as NodeCrypto from "node:crypto";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
+import type { ServerSettings } from "@t3tools/contracts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -12,6 +16,8 @@ import * as Socket from "effect/socket/Socket";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { ServerSettingsService } from "../../serverSettings.ts";
+import { readSharedCodexCatalog, SWITCHBOARD_CODEX_CATALOG_PATH } from "./serviceTier.ts";
 import { readSwitchboardCredential, resolveSwitchboardConfiguration } from "./switchboard.ts";
 
 export const SWITCHBOARD_GATEWAY_PREFIX = "/api/loom/switchboard";
@@ -64,6 +70,24 @@ export class SwitchboardGateway extends Context.Service<
   }
 >()("t3/fork/switchboard/SwitchboardGateway") {}
 
+/** Every Codex home this computer's instances use; the default one first. */
+const codexHomes = (
+  instances: ServerSettings["providerInstances"],
+  environment: NodeJS.ProcessEnv,
+  home: string,
+  paths: Path.Path,
+) => {
+  const homes = [environment.CODEX_HOME || paths.join(home, ".codex")];
+  for (const instance of Object.values(instances)) {
+    if (instance.driver !== "codex" || typeof instance.config !== "object" || !instance.config)
+      continue;
+    const config = instance.config as Record<string, unknown>;
+    for (const value of [config.homePath, config.shadowHomePath])
+      if (typeof value === "string" && value.trim()) homes.push(expandHomePath(value.trim(), home));
+  }
+  return homes;
+};
+
 const pump = Effect.fnUntraced(function* (source: Socket.Reader, sink: Socket.Writer) {
   // Per-frame tracing would add overhead to the opaque stream.
   while (true) yield* sink.writeAll(yield* source.pull);
@@ -74,6 +98,10 @@ const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const socketConstructor = yield* Socket.WebSocketConstructor;
   const http = HttpClient.withScope(yield* HttpClient.HttpClient);
+  const fileSystem = yield* FileSystem.FileSystem;
+  const paths = yield* Path.Path;
+  const settings = yield* ServerSettingsService;
+  const home = yield* HostProcess.HomeDirectory;
   return SwitchboardGateway.of({
     forward: Effect.fn("SwitchboardGateway.forward")(function* (request, path) {
       if (environment.LOOM_SWITCHBOARD_SHARE_GATEWAY !== "true")
@@ -89,7 +117,9 @@ const make = Effect.gen(function* () {
         (upgrade
           ? request.method !== "GET" || pathname !== "/v1/responses" || query !== undefined
           : !(
-              (request.method === "GET" && pathname === "/v1/models" && query === undefined) ||
+              (request.method === "GET" &&
+                (pathname === "/v1/models" || pathname === SWITCHBOARD_CODEX_CATALOG_PATH) &&
+                query === undefined) ||
               (request.method === "POST" && POST_PATHS.has(pathname))
             ))
       )
@@ -117,6 +147,20 @@ const make = Effect.gen(function* () {
         return yield* new SwitchboardGatewayError({ reason: "unavailable" });
       if (!NodeCrypto.timingSafeEqual(Buffer.from(key), Buffer.from(Redacted.value(current.value))))
         return yield* new SwitchboardGatewayError({ reason: "authentication" });
+      if (pathname === SWITCHBOARD_CODEX_CATALOG_PATH) {
+        const { providerInstances } = yield* settings.getSettings.pipe(
+          Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })),
+        );
+        const catalog = yield* readSharedCodexCatalog(
+          codexHomes(providerInstances, environment, home, paths),
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, paths),
+        );
+        if (catalog === undefined)
+          return yield* new SwitchboardGatewayError({ reason: "unavailable" });
+        return HttpServerResponse.jsonUnsafe(catalog, { headers: NO_STORE });
+      }
       const upstream = GATEWAY_ORIGIN + path;
       const headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(request.headers)) {
