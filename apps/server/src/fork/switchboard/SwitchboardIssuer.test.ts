@@ -72,7 +72,7 @@ const fixture = Effect.gen(function* () {
             NodeCrypto.layer,
             Layer.mock(AccountWorkloads)({
               acceptProvider: (_payload, _proof, session) =>
-                state.accepted
+                state.accepted && session !== undefined
                   ? Effect.succeed({
                       sourceEnvironmentId: EnvironmentId.make(
                         session.subject.slice("loom-host:".length),
