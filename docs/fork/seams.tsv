@@ -1014,8 +1014,8 @@ apps/server/src/ws.ts	source-control-cockpit	1
 apps/web/src/components/CommandPalette.tsx	source-control-cockpit	3
 apps/web/src/components/CommandPalette.tsx	bots	1
 apps/web/src/components/GitActionsControl.logic.test.ts	source-control-cockpit	2
-apps/web/src/components/GitActionsControl.logic.ts	source-control-cockpit	8
-apps/web/src/components/GitActionsControl.tsx	source-control-cockpit	22
+apps/web/src/components/GitActionsControl.logic.ts	source-control-cockpit	9
+apps/web/src/components/GitActionsControl.tsx	source-control-cockpit	21
 apps/web/src/components/GitActionsControl.tsx	checkpoint-capable	5
 apps/web/src/components/chat/ThreadRelationshipsControl.tsx	source-control-cockpit	4
 packages/client-runtime/src/state/commandPermissions.test.ts	source-control-cockpit	1
