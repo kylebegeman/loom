@@ -122,7 +122,9 @@ Unlinking on the linking side only forgets the token.
   paths after 30 to 50 s. A Loom receiver also streams a keep-alive comment every
   10 s once a linked call outlasts that
   ([`linkKeepAlive`](../../apps/server/src/fork/account-links/linkKeepAlive.ts));
-  the short pieces keep older receivers working. <!-- fork: account-links -->
+  the short pieces keep older receivers working. A wait or read piece whose
+  connection drops anyway goes out again, up to twice, before the agent hears of
+  it. <!-- fork: account-links -->
 
 <!-- fork: account-links -->
 

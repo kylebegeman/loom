@@ -15,7 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -196,6 +196,38 @@ it.effect("keeps a link healthy when the peer refuses a call", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+const stubPeer = descriptorOf("environment-box", "Box");
+
+/** A client whose one link goes to `http`, recording each call's outcome for the link. */
+const clientOver = (http: HttpClient.HttpClient, outcomes: Array<string | null>) =>
+  Layer.build(
+    PeerMcpClient.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(HttpClient.HttpClient, http),
+          Layer.mock(PeerLinks.PeerLinks)({
+            resolve: () =>
+              Effect.succeed({
+                link: {
+                  environmentId: stubPeer.environmentId,
+                  label: stubPeer.label,
+                  urls: ["https://peer.example"],
+                  access: "auto",
+                  linkedAt: DateTime.makeUnsafe(0),
+                  expiresAt: DateTime.makeUnsafe(1),
+                  lastReachedAt: null,
+                  lastError: null,
+                },
+                url: "https://peer.example",
+                token: "fixture",
+              }),
+            recordOutcome: (_, outcome) => Effect.sync(() => outcomes.push(outcome.error)),
+          }),
+        ),
+      ),
+    ),
+  ).pipe(Effect.map((context) => Context.get(context, PeerMcpClient.PeerMcpClient)));
+
 it.effect("renews a missing peer session once and reuses its replacement", () =>
   Effect.gen(function* () {
     const sessionHeaders: Array<string | undefined> = [];
@@ -232,39 +264,11 @@ it.effect("renews a missing peer session once and reuses its replacement", () =>
         );
       }),
     );
-    const box = descriptorOf("environment-box", "Box");
-    const context = yield* Layer.build(
-      PeerMcpClient.layer.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HttpClient.HttpClient, http),
-            Layer.mock(PeerLinks.PeerLinks)({
-              resolve: () =>
-                Effect.succeed({
-                  link: {
-                    environmentId: box.environmentId,
-                    label: box.label,
-                    urls: ["https://peer.example"],
-                    access: "auto",
-                    linkedAt: DateTime.makeUnsafe(0),
-                    expiresAt: DateTime.makeUnsafe(1),
-                    lastReachedAt: null,
-                    lastError: null,
-                  },
-                  url: "https://peer.example",
-                  token: "fixture",
-                }),
-              recordOutcome: (_, outcome) => Effect.sync(() => outcomes.push(outcome.error)),
-            }),
-          ),
-        ),
-      ),
-    );
-    const client = Context.get(context, PeerMcpClient.PeerMcpClient);
+    const client = yield* clientOver(http, outcomes);
     for (let call = 0; call < 2; call++) {
       expect(
         yield* client.call({
-          environmentId: box.environmentId,
+          environmentId: stubPeer.environmentId,
           tool: "probe",
           arguments: {},
           limits: { runtimeMode: "approval-required", interactionMode: "plan" },
@@ -275,7 +279,7 @@ it.effect("renews a missing peer session once and reuses its replacement", () =>
     // An answer with neither a result nor an error is the link's problem, not the call's.
     const empty = yield* client
       .call({
-        environmentId: box.environmentId,
+        environmentId: stubPeer.environmentId,
         tool: "probe",
         arguments: {},
         limits: { runtimeMode: "approval-required", interactionMode: "plan" },
@@ -293,5 +297,62 @@ it.effect("renews a missing peer session once and reuses its replacement", () =>
       "renewed",
       "renewed",
     ]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("sends a wait or read again when its route drops it, and nothing else", () =>
+  Effect.gen(function* () {
+    // Each tool call in turn: dropped by the route, or answered.
+    const plan = ["drop", "answer", "drop", "drop", "drop", "drop"];
+    let toolCalls = 0;
+    const outcomes: Array<string | null> = [];
+    const socket = Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" });
+    const http = HttpClient.make((request) => {
+      const body = request.body._tag === "Uint8Array" ? request.body.body : new Uint8Array();
+      const method = JSON.parse(new TextDecoder().decode(body)).method;
+      if (method !== "tools/call") {
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response("", { status: 200, headers: { "mcp-session-id": "session" } }),
+          ),
+        );
+      }
+      if (plan[toolCalls++] === "drop") {
+        const cause = new TypeError("fetch failed", { cause: socket });
+        return Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({ request, cause }),
+          }),
+        );
+      }
+      const result = { content: [{ type: "text", text: '{"modes":"auto/default"}' }] };
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, new Response(JSON.stringify({ result }))),
+      );
+    });
+    const client = yield* clientOver(http, outcomes);
+    const call = (repeatable: boolean) =>
+      client.call({
+        environmentId: stubPeer.environmentId,
+        tool: "probe",
+        arguments: {},
+        limits: { runtimeMode: "auto", interactionMode: "default" },
+        repeatable,
+        success: Result,
+      });
+
+    expect(yield* call(true)).toEqual({ modes: "auto/default" });
+    const once = yield* call(false).pipe(Effect.flip);
+    const gaveUp = yield* call(true).pipe(Effect.flip);
+
+    expect(once.message).toBe("The linked environment stopped answering.");
+    expect(gaveUp.message).toBe("The linked environment stopped answering.");
+    // Dropped and sent again; dropped once; then every try a repeatable call gets.
+    expect(toolCalls).toBe(2 + 1 + (1 + PeerMcpClient.DROPPED_ROUTE_RETRIES));
+    // A drop sent again and answered leaves the link healthy; the others say what the socket said.
+    const dropped =
+      "Transport error (POST https://peer.example/mcp): other side closed (UND_ERR_SOCKET)";
+    expect(outcomes).toEqual([null, dropped, dropped]);
   }).pipe(Effect.scoped),
 );
