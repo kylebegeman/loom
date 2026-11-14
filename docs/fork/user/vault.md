@@ -3,8 +3,8 @@
 Vault stores development credentials and secure records separately from your personal accounts.
 SSH keys and GitHub connections are managed from **Manage SSH key** and **GitHub for agents**; the generic item editor can only rename them. Revealed values can be copied and clear when you leave the app or after one minute.
 
-There are two kinds of Vault. The account Vault holds saved connections and secrets for your
-approved computers and is kept by your Library. Each computer also has its own existing Vault,
+The account Vault holds saved connections and secrets for your approved computers and signed-in
+devices. Your Library routes requests to the computer that holds its existing OpenBao connection. Each computer also has its own existing Vault,
 whose records stay on that computer and are separate from the account Vault. Opening the
 account Vault does not copy or move existing items. Older Libraries and computers keep their
 existing Vault settings until updated.
@@ -16,14 +16,13 @@ manage. On mobile, **Settings > Vault** opens the account Vault, and a computer'
 is in that computer's settings, below the **Account Vault** card.
 
 - **Account Vault:** choose your Library. **Manage account Vault**, in **Settings > Computers >
-  Account** or on a computer's Vault page, opens the same place. Your Library must support
-  account Vault and have its OpenBao connection configured; your phone, browser and enrolled
-  execution computers do not need OpenBao credentials. This device's connection to your Library
-  also needs Vault access. When it lacks that access, the **Account Vault** card has no
-  **Manage account Vault** button and explains the repair: pair this device again with a link
-  that includes **View access** and **Manage access**, or, for an Identity sign-in, set
-  `LOOM_IDENTITY_ALLOW_ADMIN=true` on the Library (see [Reach](../operations/reach.md)),
-  restart it and sign in again. Until then, use a computer's existing Vault.
+  Account** or on a computer's Vault page, opens the same place. The Library and Vault computer
+  must both run a current Loom version. Your other computers and devices need no OpenBao
+  configuration. Sign in with the account owner's passkey; a single-owner Library with passkey
+  sign-in grants Vault access separately from device and relay administration. Access renews with
+  your existing sign-in, and signing out or revoking that device ends it.
+  The status identifies the Vault computer. If the backend is locked, choose **Unlock Vault** to
+  open its unlock screen. Unlock it once; all devices use that same backend.
 - **A computer's existing Vault:** choose the computer. When the account Vault can be managed
   from this device, the computer's own Vault is folded under **This computer’s existing Vault**
   below the **Account Vault** card. Expand it to reach **Vault items**, **Access**, **GitHub
@@ -50,7 +49,8 @@ signed-in account, then choose **Link Vault owner to Loom account**. Both owners
 a computer's publishing connection cannot approve the account identity by itself.
 
 The link keeps the local owner, saved items, versions, access rules and credential protection.
-It does not move the Vault to your Library. **Unlink Loom account** stops account use and keeps
+It does not move the Vault. The Library discovers the Vault computer and forwards account
+requests there. **Unlink Loom account** stops account use and keeps
 local ownership; **Turn off account access** stops new use without removing the link.
 
 ## Answer a private request with a saved item
@@ -83,6 +83,14 @@ Changing the item requires selecting its new version again. Removing a binding, 
 deleting its item, or protecting it against ordinary use blocks new credential use. Already
 running processes may retain values they received. Use **Refresh provider credentials** if
 a provider needs to retry after the Vault backend becomes available again.
+
+## Run longer terminal work
+
+`loom vault ssh-agent-exec` accepts `timeoutMs` from 100 to 86400000 (24 hours).
+The signing lease remains five minutes. An already authenticated SSH command can continue
+until its deadline; another authentication after the lease expires needs a new invocation.
+Use the selected connection's label or its pinned hostname in SSH arguments. Pinning by
+item ID and version accepts that item's label too.
 
 ## Choose personal or restricted access
 

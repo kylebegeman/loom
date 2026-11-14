@@ -1,3 +1,4 @@
+import { readOpenBaoSettings } from "../vault/OpenBaoSettings.ts";
 import * as Signature from "effect/crypto/Signature";
 import * as LibraryConnection from "../project-library/LibraryConnection.ts";
 import type { ServerProvider } from "@t3tools/contracts";
@@ -120,6 +121,10 @@ const providerStatuses = (snapshot: ReadonlyArray<ServerProvider>) =>
     .map((provider) => ({ id: provider.instanceId, status: provider.status }));
 
 const make = Effect.gen(function* () {
+  const vaultBackend = yield* readOpenBaoSettings().pipe(
+    Effect.map((settings) => settings.invalid || Boolean(settings.url || settings.tokenFile)),
+    Effect.orElseSucceed(() => false),
+  );
   const signature = yield* Signature.Signature;
   const signDirectoryReport = (...args: Parameters<typeof signDirectoryReportEffect>) =>
     signDirectoryReportEffect(...args).pipe(Effect.provideService(Signature.Signature, signature));
@@ -160,6 +165,7 @@ const make = Effect.gen(function* () {
       serverVersion: descriptor.serverVersion.slice(0, 160).trim(),
       platform: { os: descriptor.platform.os, arch: descriptor.platform.arch },
       supportsExecution: executes,
+      vaultBackend,
       loomFeatures: descriptor.capabilities.loomFeatures ?? [],
       routes,
       providers: executes ? providerStatuses(yield* providers.getProviders) : [],

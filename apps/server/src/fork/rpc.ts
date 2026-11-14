@@ -1,3 +1,4 @@
+import { accountVaultHandlers } from "./vault/account-rpc.ts";
 import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "@t3tools/contracts/fork";
 import { AccountEnrollment } from "./account-access/AccountEnrollment.ts";
 import { AccountJoin } from "./account-access/AccountJoin.ts";
@@ -232,36 +233,70 @@ export const makeForkRpcLayer = (
     ),
     VaultTestAccountRpcGroup.toLayer(
       withForkRuntime(
-        makeVaultTestAccountRpcHandlers(makeForkRpcAuth(session), `client:${session.sessionId}`),
+        makeVaultTestAccountRpcHandlers(
+          makeForkRpcAuth(session),
+          `client:${session.sessionId}`,
+        ).pipe(Effect.flatMap((handlers) => accountVaultHandlers(session, handlers))),
       ),
     ),
     VaultMigrationInventoryRpcGroup.toLayer(
       withForkRuntime(
-        makeVaultMigrationInventoryRpcHandlers(makeForkRpcAuth(session), session.subject),
+        makeVaultMigrationInventoryRpcHandlers(makeForkRpcAuth(session), session.subject).pipe(
+          Effect.flatMap((handlers) => accountVaultHandlers(session, handlers)),
+        ),
       ),
     ),
     VaultMigrationRpcGroup.toLayer(
-      withForkRuntime(makeVaultMigrationRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultMigrationRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultHealthRpcGroup.toLayer(
-      withForkRuntime(makeVaultHealthRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultHealthRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultBrokerRpcGroup.toLayer(
-      withForkRuntime(makeVaultBrokerRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultBrokerRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultAccessRpcGroup.toLayer(
       withForkRuntime(
         Effect.all([
-          makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session),
-          makeVaultOwnerLinkRpcHandlers(makeForkRpcAuth(session), session),
+          makeVaultAccessRpcHandlers(makeForkRpcAuth(session), session.subject, session).pipe(
+            Effect.flatMap((handlers) => accountVaultHandlers(session, handlers)),
+          ),
+          makeVaultOwnerLinkRpcHandlers(makeForkRpcAuth(session), session).pipe(
+            Effect.flatMap((handlers) => accountVaultHandlers(session, handlers)),
+          ),
         ]).pipe(Effect.map(([access, ownerLink]) => ({ ...access, ...ownerLink }))),
       ),
     ),
     VaultSecretRpcGroup.toLayer(
-      withForkRuntime(makeVaultSecretRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultSecretRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultCoreRpcGroup.toLayer(
-      withForkRuntime(makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultCoreRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     SkillRegistryRpcGroup.toLayer(
       withForkRuntime(makeSkillRegistryRpcHandlers(makeForkRpcAuth(session))),
@@ -276,13 +311,27 @@ export const makeForkRpcLayer = (
       withForkRuntime(makePreviewLinksRpcHandlers(makeForkRpcAuth(session), session)),
     ),
     VaultGitHubRpcGroup.toLayer(
-      withForkRuntime(makeVaultGitHubRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultGitHubRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultProfileRpcGroup.toLayer(
-      withForkRuntime(makeVaultProfileRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultProfileRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     VaultReferenceRpcGroup.toLayer(
-      withForkRuntime(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session))),
+      withForkRuntime(
+        Effect.flatMap(makeVaultReferenceRpcHandlers(makeForkRpcAuth(session)), (handlers) =>
+          accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     BotsRpcGroup.toLayer(withForkRuntime(makeBotsRpcHandlers(makeForkRpcAuth(session), session))),
     BotBatchesRpcGroup.toLayer(
@@ -302,7 +351,12 @@ export const makeForkRpcLayer = (
       withForkRuntime(makeBotsAnywhereRpcHandlers(makeForkRpcAuth(session))),
     ),
     VaultSshRpcGroup.toLayer(
-      withForkRuntime(makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject)),
+      withForkRuntime(
+        Effect.flatMap(
+          makeVaultSshRpcHandlers(makeForkRpcAuth(session), session.subject),
+          (handlers) => accountVaultHandlers(session, handlers),
+        ),
+      ),
     ),
     ReachRpcGroup.toLayer(
       withForkRuntime(

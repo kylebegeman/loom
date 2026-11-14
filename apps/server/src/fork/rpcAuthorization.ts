@@ -1,3 +1,4 @@
+import { AuthVaultReadScope, AuthVaultWriteScope } from "@t3tools/contracts/fork";
 import { ACCOUNT_ENROLLMENT_WS_METHODS as ENROLL } from "@t3tools/contracts/fork";
 import { DEV_ENVIRONMENT_WS_METHODS as DEV } from "@t3tools/contracts/fork";
 import { UPSTREAM_WS_METHODS as UPSTREAM } from "@t3tools/contracts/fork";
@@ -23,7 +24,12 @@ import { VAULT_BROKER_WS_METHODS as VB } from "@t3tools/contracts/fork";
 import { VAULT_ACCESS_WS_METHODS as VA } from "@t3tools/contracts/fork";
 import { VAULT_SECRET_WS_METHODS as VSECRET } from "@t3tools/contracts/fork";
 import { VAULT_CORE_WS_METHODS as V } from "@t3tools/contracts/fork";
-import { AuthAccessReadScope, AuthAccessWriteScope } from "@t3tools/contracts";
+import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  sessionGrantsScope,
+  authScopeRequiredResponse,
+} from "@t3tools/contracts";
 import { SITES_WS_METHODS as S } from "@t3tools/contracts/fork";
 import { LIBRARY_WS_METHODS as LIB } from "@t3tools/contracts/fork";
 import { LIBRARY_HEALTH_WS_METHODS as LH } from "@t3tools/contracts/fork";
@@ -146,79 +152,79 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [PP.getSettings]: AuthOrchestrationReadScope,
   [PP.envReport]: AuthOrchestrationReadScope,
   [PP.budgetStatus]: AuthOrchestrationReadScope,
-  [VT.apply]: AuthAccessWriteScope,
-  [VT.snapshot]: AuthAccessReadScope,
-  [VI.originalVerify]: AuthAccessWriteScope,
-  [VI.originalVerification]: AuthAccessReadScope,
-  [VI.recoveryPreview]: AuthAccessReadScope,
-  [VI.preview]: AuthAccessReadScope,
-  [VI.verify]: AuthAccessWriteScope,
-  [VI.verification]: AuthAccessReadScope,
-  [VI.prepare]: AuthAccessWriteScope,
-  [VI.review]: AuthAccessWriteScope,
-  [VI.cancel]: AuthAccessWriteScope,
-  [VI.inventory]: AuthAccessReadScope,
-  [VI.inspect]: AuthAccessReadScope,
-  [VI.list]: AuthAccessReadScope,
-  [VM.list]: AuthAccessReadScope,
-  [VM.inspect]: AuthAccessReadScope,
-  [VM.typedPrepare]: AuthAccessWriteScope,
-  [VM.typedApply]: AuthAccessWriteScope,
-  [VM.typedCancel]: AuthAccessWriteScope,
-  [VM.typedArchive]: AuthAccessWriteScope,
-  [VM.typedInspect]: AuthAccessReadScope,
-  [VM.typedList]: AuthAccessReadScope,
-  [VM.prepare]: AuthAccessWriteScope,
-  [VM.apply]: AuthAccessWriteScope,
-  [VM.cancel]: AuthAccessWriteScope,
-  [VM.archive]: AuthAccessWriteScope,
-  [VH.snapshot]: AuthAccessReadScope,
-  [VH.context]: AuthAccessReadScope,
-  [VH.retained]: AuthAccessReadScope,
-  [VH.apply]: AuthAccessWriteScope,
-  [VH.recheck]: AuthAccessWriteScope,
-  [VP.list]: AuthAccessReadScope,
-  [VP.preview]: AuthAccessReadScope,
-  [VG.save]: AuthAccessWriteScope,
-  [VG.test]: AuthAccessWriteScope,
-  [VG.readiness]: AuthAccessWriteScope,
-  [VG.change]: AuthAccessWriteScope,
-  [VG.info]: AuthAccessReadScope,
-  [VG.list]: AuthAccessReadScope,
-  [VP.apply]: AuthAccessWriteScope,
-  [VP.pins]: AuthAccessReadScope,
-  [VP.retirePin]: AuthAccessWriteScope,
-  [VR.search]: AuthAccessReadScope,
-  [VR.describe]: AuthAccessReadScope,
-  [VS.pinnedKeys]: AuthAccessReadScope,
-  [VS.info]: AuthAccessReadScope,
-  [VB.snapshot]: AuthAccessReadScope,
-  [VS.generate]: AuthAccessWriteScope,
-  [VS.trust]: AuthAccessWriteScope,
-  [VS.probe]: AuthAccessWriteScope,
-  [VB.begin]: AuthAccessWriteScope,
-  [VB.apply]: AuthAccessWriteScope,
+  [VT.apply]: AuthVaultWriteScope,
+  [VT.snapshot]: AuthVaultReadScope,
+  [VI.originalVerify]: AuthVaultWriteScope,
+  [VI.originalVerification]: AuthVaultReadScope,
+  [VI.recoveryPreview]: AuthVaultReadScope,
+  [VI.preview]: AuthVaultReadScope,
+  [VI.verify]: AuthVaultWriteScope,
+  [VI.verification]: AuthVaultReadScope,
+  [VI.prepare]: AuthVaultWriteScope,
+  [VI.review]: AuthVaultWriteScope,
+  [VI.cancel]: AuthVaultWriteScope,
+  [VI.inventory]: AuthVaultReadScope,
+  [VI.inspect]: AuthVaultReadScope,
+  [VI.list]: AuthVaultReadScope,
+  [VM.list]: AuthVaultReadScope,
+  [VM.inspect]: AuthVaultReadScope,
+  [VM.typedPrepare]: AuthVaultWriteScope,
+  [VM.typedApply]: AuthVaultWriteScope,
+  [VM.typedCancel]: AuthVaultWriteScope,
+  [VM.typedArchive]: AuthVaultWriteScope,
+  [VM.typedInspect]: AuthVaultReadScope,
+  [VM.typedList]: AuthVaultReadScope,
+  [VM.prepare]: AuthVaultWriteScope,
+  [VM.apply]: AuthVaultWriteScope,
+  [VM.cancel]: AuthVaultWriteScope,
+  [VM.archive]: AuthVaultWriteScope,
+  [VH.snapshot]: AuthVaultReadScope,
+  [VH.context]: AuthVaultReadScope,
+  [VH.retained]: AuthVaultReadScope,
+  [VH.apply]: AuthVaultWriteScope,
+  [VH.recheck]: AuthVaultWriteScope,
+  [VP.list]: AuthVaultReadScope,
+  [VP.preview]: AuthVaultReadScope,
+  [VG.save]: AuthVaultWriteScope,
+  [VG.test]: AuthVaultWriteScope,
+  [VG.readiness]: AuthVaultWriteScope,
+  [VG.change]: AuthVaultWriteScope,
+  [VG.info]: AuthVaultReadScope,
+  [VG.list]: AuthVaultReadScope,
+  [VP.apply]: AuthVaultWriteScope,
+  [VP.pins]: AuthVaultReadScope,
+  [VP.retirePin]: AuthVaultWriteScope,
+  [VR.search]: AuthVaultReadScope,
+  [VR.describe]: AuthVaultReadScope,
+  [VS.pinnedKeys]: AuthVaultReadScope,
+  [VS.info]: AuthVaultReadScope,
+  [VB.snapshot]: AuthVaultReadScope,
+  [VS.generate]: AuthVaultWriteScope,
+  [VS.trust]: AuthVaultWriteScope,
+  [VS.probe]: AuthVaultWriteScope,
+  [VB.begin]: AuthVaultWriteScope,
+  [VB.apply]: AuthVaultWriteScope,
   [VA.setOwnerPolicy]: AuthEnvironmentMaintainScope,
   [VA.ownerLinkPrepare]: AuthEnvironmentMaintainScope,
-  [VA.ownerLinkApprove]: AuthEnvironmentMaintainScope,
+  [VA.ownerLinkApprove]: AuthVaultWriteScope,
   [VA.ownerLinkApply]: AuthEnvironmentMaintainScope,
-  [VA.approvalInbox]: AuthAccessReadScope,
-  [VA.catalog]: AuthAccessReadScope,
-  [VA.snapshot]: AuthAccessReadScope,
-  [VA.approvalCreate]: AuthAccessWriteScope,
-  [VA.approvalChange]: AuthAccessWriteScope,
-  [VA.apply]: AuthAccessWriteScope,
-  [VA.applyBatch]: AuthAccessWriteScope,
-  [VA.previewBatch]: AuthAccessReadScope,
-  [VA.preview]: AuthAccessReadScope,
-  [VA.explain]: AuthAccessReadScope,
-  [VA.readiness]: AuthAccessReadScope,
-  [V.status]: AuthAccessReadScope,
-  [V.list]: AuthAccessReadScope,
-  [V.save]: AuthAccessWriteScope,
-  [V.change]: AuthAccessWriteScope,
-  [V.reveal]: AuthAccessWriteScope,
-  [VSECRET.answerFromItem]: AuthAccessWriteScope,
+  [VA.approvalInbox]: AuthVaultReadScope,
+  [VA.catalog]: AuthVaultReadScope,
+  [VA.snapshot]: AuthVaultReadScope,
+  [VA.approvalCreate]: AuthVaultWriteScope,
+  [VA.approvalChange]: AuthVaultWriteScope,
+  [VA.apply]: AuthVaultWriteScope,
+  [VA.applyBatch]: AuthVaultWriteScope,
+  [VA.previewBatch]: AuthVaultReadScope,
+  [VA.preview]: AuthVaultReadScope,
+  [VA.explain]: AuthVaultReadScope,
+  [VA.readiness]: AuthVaultReadScope,
+  [V.status]: AuthVaultReadScope,
+  [V.list]: AuthVaultReadScope,
+  [V.save]: AuthVaultWriteScope,
+  [V.change]: AuthVaultWriteScope,
+  [V.reveal]: AuthVaultWriteScope,
+  [VSECRET.answerFromItem]: AuthVaultWriteScope,
   [S.saveSite]: AuthSettingsWriteScope,
   [S.saveService]: AuthSettingsWriteScope,
   [S.saveCheck]: AuthSettingsWriteScope,
@@ -595,26 +601,33 @@ export const FORK_RPC_REQUIRED_SCOPES = {
 const denied = (scope: AuthEnvironmentScope) =>
   new EnvironmentAuthorizationError({
     message: `The authenticated token is missing required scope: ${scope}.`,
-    requiredScope: scope,
+    ...(scope === AuthVaultReadScope || scope === AuthVaultWriteScope
+      ? authScopeRequiredResponse(scope)
+      : { requiredScope: scope }),
   });
 
 /** Authorization for fork handlers, bound to one connection. The server group instruments calls. */
 export const makeForkRpcAuth = (session: AuthenticatedSession) => ({
   /** For handlers that show more to a session holding `scope`. */
-  has: (scope: AuthEnvironmentScope) => session.scopes.includes(scope),
+  has: (scope: AuthEnvironmentScope) =>
+    sessionGrantsScope({ authenticated: true, permissions: session.scopes }, scope),
   effect: <A, E, R>(
     method: ForkRpcMethod,
     effect: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
-    return session.scopes.includes(scope) ? effect : Effect.fail(denied(scope));
+    return sessionGrantsScope({ authenticated: true, permissions: session.scopes }, scope)
+      ? effect
+      : Effect.fail(denied(scope));
   },
   stream: <A, E, R>(
     method: ForkRpcMethod,
     stream: Stream.Stream<A, E, R>,
   ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
-    return session.scopes.includes(scope) ? stream : Stream.fail(denied(scope));
+    return sessionGrantsScope({ authenticated: true, permissions: session.scopes }, scope)
+      ? stream
+      : Stream.fail(denied(scope));
   },
 });
 export type ForkRpcAuth = ReturnType<typeof makeForkRpcAuth>;

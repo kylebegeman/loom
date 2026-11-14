@@ -9,6 +9,8 @@ import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as OpenBaoStore from "./OpenBaoStore.ts";
+import { LibraryConnectionService } from "../project-library/LibraryConnection.ts";
+import { AccountVaultMachineClient } from "./AccountVaultMachineClient.ts";
 import * as VaultCore from "./VaultCore.ts";
 
 const id = "a".repeat(32);
@@ -421,4 +423,64 @@ it.effect("namespaces the same item ID by the server environment identity", () =
       );
     }),
   ),
+);
+
+it.effect(
+  "reports the account backend host and lock state without treating an outage as a local setup",
+  () =>
+    Effect.gen(function* () {
+      const f = fixture();
+      const remote = {
+        backend: "openbao" as const,
+        state: "locked" as const,
+        origin: "https://bao.example.test",
+        host: { environmentId: EnvironmentId.make("vault-host"), label: "Vault computer" },
+        unlockUrl: "https://bao.example.test/ui/vault/unseal",
+      };
+      let offline = false;
+      const core = yield* VaultCore.VaultCore.pipe(
+        Effect.provide(
+          VaultCore.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(OpenBaoStore.OpenBaoStore, {
+                  ...f.backend,
+                  status: Effect.succeed({
+                    backend: "openbao" as const,
+                    state: "unconfigured" as const,
+                    origin: null,
+                  }),
+                }),
+                Layer.mock(LibraryConnectionService)({
+                  current: Effect.succeed({
+                    kind: "remote",
+                    credential: {
+                      account: { authorityId: "account", authorityEpoch: 1 },
+                      libraryEnvironmentId: EnvironmentId.make("library"),
+                    },
+                  } as never),
+                }),
+                Layer.mock(AccountVaultMachineClient)({
+                  status: Effect.suspend(() =>
+                    offline
+                      ? Effect.fail(new VaultError({ reason: "unavailable" }))
+                      : Effect.succeed(remote),
+                  ),
+                }),
+                Layer.succeed(ServerEnvironmentIdentity, {
+                  getEnvironmentId: Effect.succeed(EnvironmentId.make("source")),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(yield* core.status).toEqual({ ...remote, accountEnvironmentId: "library" });
+      offline = true;
+      expect(yield* core.status).toMatchObject({
+        state: "unavailable",
+        accountEnvironmentId: "library",
+      });
+      expect(f.records.size).toBe(0);
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

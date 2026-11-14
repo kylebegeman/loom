@@ -12,7 +12,7 @@ import { migrationInventory as atoms } from "./migrationState";
 import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import type {
   VaultMigrationDependency,
   VaultMigrationInventoryPage,
@@ -40,7 +40,7 @@ type Choice = { projectId: ProjectId; title: string; dependency: VaultMigrationD
 export function VaultMigrationInventorySettingsSection() {
   const { environment } = useSettingsScope(),
     configs = useServerConfigs();
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope);
   if (
     !environment ||
     !supportsLoomFeature(

@@ -53,6 +53,8 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
   const configs = useServerConfigs();
   const capabilities = configs.get(environmentId)?.environment.capabilities;
   const account = supportsLoomFeature(capabilities, ACCOUNT_VAULT_FEATURE);
+  const backendResult = useAtomValue(vault.status({ environmentId, input: {} }));
+  const backend = backendResult._tag === "Success" ? backendResult.value : null;
   const snapshotAtom = access.snapshot({ environmentId, input: {} });
   const result = useAtomValue(snapshotAtom);
   const [fresh, setFresh] = useState(false);
@@ -160,6 +162,28 @@ function OwnerSettings({ environmentId }: { environmentId: EnvironmentId }) {
     setPersonal(false);
     setBusy(false);
   };
+  if (backend?.state === "locked")
+    return (
+      <LoomSettingsPanel title="Vault locked" description={vaultStatusMessage(backend)}>
+        <div className="flex flex-wrap gap-2">
+          {backend.unlockUrl ? (
+            <Button
+              size="sm"
+              render={<a href={backend.unlockUrl} target="_blank" rel="noopener noreferrer" />}
+            >
+              Unlock Vault
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => appAtomRegistry.refresh(vault.status({ environmentId, input: {} }))}
+          >
+            Refresh status
+          </Button>
+        </div>
+      </LoomSettingsPanel>
+    );
   return (
     <LoomSettingsPanel
       title={account ? "Account access" : "Owner access"}

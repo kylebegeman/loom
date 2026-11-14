@@ -1,3 +1,5 @@
+import * as AccountVaultHuman from "./vault/AccountVaultHuman.ts";
+import * as AccountVaultRouting from "./vault/AccountVaultRouting.ts";
 import * as SwitchboardGateway from "./switchboard/SwitchboardGateway.ts";
 import { SwitchboardGatewayRoutes } from "./switchboard/gateway-http.ts";
 import { upstreamWebSocketConstructor } from "../device/DeviceHubProxy.ts";
@@ -271,13 +273,13 @@ const layerVaultGitHub = VaultGitHub.layer.pipe(
       layerVaultAccess,
       layerVaultConnections,
       GitHubTransport.layer.pipe(Layer.provide(FetchHttpClient.layer)),
-      FetchHttpClient.layer,
       GitHubCli.layer,
       GitHubTerminal.layer,
       GitHubRepositoryTransport.layer,
       ProjectStore.layer,
     ),
   ),
+  Layer.provide(FetchHttpClient.layer),
 );
 
 const layerVaultProfileRecords = VaultProfileRecords.layer.pipe(
@@ -392,6 +394,13 @@ const layerAccountWorkloads = AccountWorkloads.layer.pipe(
 const layerAccountAccess = AccountAccess.layer.pipe(
   Layer.provide(Layer.mergeAll(layerDirectory, layerReachStore, LibraryStore.layer)),
 );
+const layerAccountVaultRouting = AccountVaultRouting.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerVaultStore, layerDirectory, layerAccountWorkloads)),
+  Layer.provide(FetchHttpClient.layer),
+);
+const layerAccountVaultHuman = AccountVaultHuman.layer.pipe(
+  Layer.provide(Layer.mergeAll(layerAccountVaultRouting, layerAccountAccess, layerVaultAccess)),
+);
 const layerAccountVaultMachineAuthority = AccountVaultMachineAuthority.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -416,7 +425,7 @@ const layerAccountVaultAuthority = AccountVaultAuthority.layer.pipe(
   ),
 );
 const layerAccountVaultClient = AccountVaultClient.layer.pipe(
-  Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer)),
+  Layer.provide(Layer.mergeAll(layerAccountWorkloads, LibraryConnection.layer, layerVaultStore)),
   Layer.provide(FetchHttpClient.layer),
 );
 const layerAccountVaultSsh = AccountVaultSsh.layer.pipe(
@@ -630,6 +639,8 @@ const ForkServicesLive = Layer.mergeAll(
   layerAccountEnrollment,
   layerAccountWorkloads,
   layerAccountVaultAuthority,
+  layerAccountVaultRouting,
+  layerAccountVaultHuman,
   layerAccountVaultMachineAuthority,
   layerAccountVaultClient,
   layerAccountVaultSsh,

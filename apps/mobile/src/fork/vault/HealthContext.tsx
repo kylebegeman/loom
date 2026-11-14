@@ -1,7 +1,7 @@
 import { VaultHealthRetained } from "./HealthRetained";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { AuthAccessWriteScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
+import { AuthVaultWriteScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import {
   createVaultHealthAtoms,
   supportsLoomFeature,
@@ -47,7 +47,7 @@ function ContextPage({
     connected ? atoms.context({ environmentId, input: { itemId, cursor } }) : null,
   );
   const page = result.data,
-    canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+    canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   return (
     <View className="gap-3">
       <Text>

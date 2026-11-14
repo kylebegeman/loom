@@ -3,8 +3,8 @@ import { useVaultTime } from "./useVaultTime";
 import { useContext, useEffect, useState } from "react";
 import { ScrollView, Switch, View } from "react-native";
 import {
-  AuthAccessReadScope,
-  AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   ThreadId,
   type EnvironmentId,
 } from "@t3tools/contracts";
@@ -57,8 +57,8 @@ export function VaultAccessSettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId);
-  const canRead = useEnvironmentScope(environmentId, AuthAccessReadScope),
-    canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environmentId, AuthVaultReadScope),
+    canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-grants")) return null;
   return (
     <SettingsSection title="Vault access">

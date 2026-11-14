@@ -173,6 +173,7 @@ export const REACH_ALLOWED_PATHS = [
   "/api/auth/clients",
   "/api/auth/clients/revoke",
   "/api/auth/clients/revoke-others",
+  "/api/loom/account/vault/relay",
   "/api/loom/identity",
   "/api/loom/identity/session",
   "/api/loom/identity/logout",

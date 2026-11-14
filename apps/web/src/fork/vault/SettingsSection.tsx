@@ -20,7 +20,7 @@ import { Link } from "@tanstack/react-router";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { forkSettingsTarget } from "../settings/navigation";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   ACCOUNT_VAULT_FEATURE,
   VaultFileContent,
@@ -87,8 +87,8 @@ export function VaultSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
   const profileTarget = useAtomValue(vaultProfileTarget);
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
-  const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope);
+  const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultWriteScope);
   if (
     !environment ||
     !loomFeaturesOf(configs.get(environment.environmentId)?.environment.capabilities).includes(

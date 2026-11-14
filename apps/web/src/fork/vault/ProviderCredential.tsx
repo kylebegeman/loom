@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import {
-  AuthAccessReadScope,
+  AuthVaultReadScope,
   AuthProvidersManageScope,
   type EnvironmentId,
   type SecretReference,
@@ -61,7 +61,7 @@ export function VaultProviderCredential({
     VAULT_PROVIDER_CREDENTIALS_FEATURE,
   );
   const canManage = useEnvironmentScope(environmentId, AuthProvidersManageScope);
-  const canInspect = useEnvironmentScope(vaultEnvironmentId, AuthAccessReadScope);
+  const canInspect = useEnvironmentScope(vaultEnvironmentId, AuthVaultReadScope);
   const canWrite = useAtomValue(vault.save.permissionAtom(environmentId));
   const [open, setOpen] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);

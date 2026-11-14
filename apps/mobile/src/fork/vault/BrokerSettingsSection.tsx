@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ScrollView, Share, Switch, View } from "react-native";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   VaultBrokerInvitation,
   VaultBrokerPublicKey,
@@ -40,7 +40,7 @@ export function VaultBrokerSettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-brokers")) return null;
   return (
     <SettingsSection title="Vault brokers">

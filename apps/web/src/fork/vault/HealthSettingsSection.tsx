@@ -12,7 +12,7 @@ import { openVaultAccess } from "./access-navigation";
 import { useVaultTime } from "./useVaultTime";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { type VaultHealthMutation, type VaultHealthIssue } from "@t3tools/contracts/fork";
 import {
   createVaultHealthAtoms,
@@ -46,8 +46,8 @@ const atoms = createVaultHealthAtoms(connectionAtomRuntime),
 export function VaultHealthSettingsSection() {
   const { environment } = useSettingsScope(),
     configs = useServerConfigs();
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope),
-    canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope),
+    canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultWriteScope);
   if (
     !environment ||
     !supportsLoomFeature(

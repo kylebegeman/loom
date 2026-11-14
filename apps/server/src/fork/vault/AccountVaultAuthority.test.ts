@@ -28,6 +28,7 @@ import * as Authority from "./AccountVaultAuthority.ts";
 import * as SshTransport from "./SshTransport.ts";
 import { launchFixture, memoryVault } from "./VaultLaunch.testkit.ts";
 import { AccountVaultHttpRoutes } from "./account-http.ts";
+import * as AccountVaultRouting from "./AccountVaultRouting.ts";
 import * as AccountVaultClient from "./AccountVaultClient.ts";
 import * as AccountVaultSsh from "./AccountVaultSsh.ts";
 
@@ -202,9 +203,11 @@ it.effect(
       const f = yield* fixture;
       const runtime = Layer.succeed(
         ForkRuntime,
-        Context.make(
-          Authority.AccountVaultAuthority,
-          f.authority,
+        Context.make(Authority.AccountVaultAuthority, f.authority).pipe(
+          Context.add(AccountVaultRouting.AccountVaultRouting, {
+            backend: Effect.succeedNone,
+            forward: () => Effect.succeedNone,
+          }),
         ) as unknown as Context.Context<ForkServices>,
       );
       const web = HttpRouter.toWebHandler(

@@ -1,3 +1,4 @@
+import { readOpenBaoSettings } from "../vault/OpenBaoSettings.ts";
 import { ACCOUNT_ACCESS_FEATURE } from "@t3tools/contracts/fork";
 import * as Signature from "effect/crypto/Signature";
 import { REACH_LIST_ROUTE, ReachLibraryListing, ReachLibraryError } from "@t3tools/contracts/fork";
@@ -139,6 +140,10 @@ const withReach = (
 };
 
 const make = Effect.gen(function* () {
+  const vaultBackend = yield* readOpenBaoSettings().pipe(
+    Effect.map((settings) => settings.invalid || Boolean(settings.url || settings.tokenFile)),
+    Effect.orElseSucceed(() => false),
+  );
   const signature = yield* Signature.Signature;
   const verifyDirectoryReport = (...args: Parameters<typeof verifyDirectoryReportEffect>) =>
     verifyDirectoryReportEffect(...args).pipe(
@@ -248,6 +253,9 @@ const make = Effect.gen(function* () {
               // An IP route reaches one network only and names a machine to anyone who reads it.
               routes: verified.routes.filter((route) => isDirectoryRouteUrl(route.url)),
               providers: verified.providers,
+              ...(verified.vaultBackend === undefined
+                ? {}
+                : { vaultBackend: verified.vaultBackend }),
               sequence: verified.sequence,
               reportedAt: verified.reportedAt,
               keyFingerprint: fingerprint,
@@ -313,6 +321,7 @@ const make = Effect.gen(function* () {
       serverVersion: descriptor.serverVersion.slice(0, 160).trim(),
       platform: { os: descriptor.platform.os, arch: descriptor.platform.arch },
       supportsExecution: executes,
+      vaultBackend,
       loomFeatures: descriptor.capabilities.loomFeatures ?? [],
       routes:
         audience !== null && isDirectoryRouteUrl(audience)

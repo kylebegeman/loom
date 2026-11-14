@@ -422,6 +422,7 @@ it.effect(
     let unavailable = false;
     const f = fixture({
       available: Effect.succeed(true),
+      status: Effect.succeed({ backend: "openbao", state: "ready", origin: "https://bao.test" }),
       profileRecord: () => Effect.die("Unexpected profile request"),
       provider: (input) =>
         Effect.suspend(() => {

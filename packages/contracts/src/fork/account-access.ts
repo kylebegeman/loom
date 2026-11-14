@@ -6,6 +6,8 @@ import { EnvironmentId, AuthSessionId, IsoDateTime } from "../baseSchemas.ts";
 import {
   EnvironmentAuthorizationError,
   AuthStandardClientScopes,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthSettingsWriteScope,
   AuthAccessWriteScope,
   AuthRelayWriteScope,
@@ -28,7 +30,9 @@ export const AccountAdmission = Schema.Struct({
   account: Schema.optionalKey(AccountComputerBinding),
   sessionId: Schema.String.check(Schema.isMaxLength(256)),
   principal: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(1024)),
-  scopes: Schema.Array(Schema.Literals(AuthStandardClientScopes)),
+  scopes: Schema.Array(
+    Schema.Literals([...AuthStandardClientScopes, AuthVaultReadScope, AuthVaultWriteScope]),
+  ),
   expiresAt: Schema.Number,
 });
 export type AccountAdmission = typeof AccountAdmission.Type;

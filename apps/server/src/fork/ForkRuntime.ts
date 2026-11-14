@@ -1,3 +1,5 @@
+import type { AccountVaultHuman } from "./vault/AccountVaultHuman.ts";
+import type { AccountVaultRouting } from "./vault/AccountVaultRouting.ts";
 import type { SwitchboardGateway } from "./switchboard/SwitchboardGateway.ts";
 import type { VaultOwnerLink } from "./vault/VaultOwnerLink.ts";
 import type { AccountWorkloads } from "./account-access/AccountWorkloads.ts";
@@ -156,6 +158,8 @@ export type ForkServices =
   | LibraryManagement
   | AccountEnrollment
   | AccountWorkloads
+  | AccountVaultHuman
+  | AccountVaultRouting
   | AccountVaultAuthority
   | AccountVaultMachineAuthority
   | AccountVaultClient

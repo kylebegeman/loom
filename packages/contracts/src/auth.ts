@@ -1,3 +1,5 @@
+import { AuthVaultReadScope, AuthVaultWriteScope } from "./fork/vault-scopes.ts"; // fork: account-vault
+export { AuthVaultReadScope, AuthVaultWriteScope } from "./fork/vault-scopes.ts"; // fork: account-vault
 import * as Schema from "effect/Schema";
 import * as HttpApiSchema from "effect/http-api/HttpApiSchema";
 
@@ -69,6 +71,8 @@ export const AuthEnvironmentScope = Schema.Literals([
   AuthAccessWriteScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  AuthVaultReadScope, // fork: account-vault
+  AuthVaultWriteScope, // fork: account-vault
   AuthLibraryPublishScope, // fork: library-projects
   AuthLibraryRecoveryReadScope, // fork: library-projects
 ]);
@@ -119,6 +123,8 @@ const legacyParents: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>>
 // fork: library-projects
 // Denial-only stand-ins: an old operate or read grant never implies these, so they stay out of legacyParents.
 const libraryDenialScopes: Partial<Record<AuthEnvironmentScope, AuthEnvironmentScope>> = {
+  [AuthVaultReadScope]: AuthAccessReadScope, // fork: account-vault
+  [AuthVaultWriteScope]: AuthAccessWriteScope, // fork: account-vault
   [AuthLibraryPublishScope]: AuthOrchestrationOperateScope,
   [AuthLibraryRecoveryReadScope]: AuthOrchestrationReadScope,
 };
@@ -146,11 +152,19 @@ export function sessionGrantsScope(
   scope: AuthEnvironmentScope,
 ): boolean {
   if (!session.authenticated) return false;
+  // fork: account-vault -- existing full-access devices retain Vault access.
+  const parent =
+    scope === AuthVaultReadScope
+      ? AuthAccessReadScope
+      : scope === AuthVaultWriteScope
+        ? AuthAccessWriteScope
+        : undefined;
+  if (parent && (session.permissions ?? session.scopes)?.includes(parent)) return true;
   if (session.permissions !== undefined) return session.permissions.includes(scope);
   if (session.scopes?.includes(scope)) return true;
   if (session.auth?.serverUpdateScope !== undefined) return false;
-  const parent = legacyParents[scope];
-  return parent !== undefined && session.scopes?.includes(parent) === true;
+  const legacyParent = legacyParents[scope];
+  return legacyParent !== undefined && session.scopes?.includes(legacyParent) === true;
 }
 
 export function sessionHasLegacyPermissions(session: SessionGrantInput): boolean {

@@ -1826,3 +1826,7 @@ apps/web/src/fork/identity/LoomSignIn.tsx	connect-ui	1
 apps/web/src/routes/__root.tsx	connect-ui	1
 apps/web/src/routes/approve-agent.tsx	connect-ui	1
 packages/client-runtime/src/connection/routes.ts	connect-ui	1
+
+# Narrow Vault permissions for the single passkey-verified account owner.
+packages/contracts/src/auth.ts	account-vault	5
+apps/server/src/auth/PocketId.ts	account-vault	1

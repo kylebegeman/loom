@@ -1,6 +1,8 @@
 import { expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthAccessReadScope,
   AuthAccessWriteScope,
   EnvironmentId,
@@ -51,14 +53,14 @@ it.effect.each(["generate", "trust", "probe"] as const)(
         const command = createVaultSshAtoms(runtime)[method];
         const policy = createCommandPermissions(runtime, VAULT_SSH_WS_METHODS[method]);
         registry.mount(command.permissionAtom(destination));
-        expect(policy.requiredScopes()).toEqual([AuthAccessWriteScope]);
+        expect(policy.requiredScopes()).toEqual([AuthVaultWriteScope]);
 
         registry.set(sessions(destination), AsyncResult.success(grant(false)));
         registry.set(sessions(other), AsyncResult.success(grant(true)));
         expect(registry.get(command.permissionAtom(destination))).toBe(false);
         expect(registry.get(command.permissionAtom(other))).toBe(true);
         expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
-          requiredPermission: AuthAccessWriteScope,
+          requiredPermission: AuthVaultWriteScope,
         });
 
         registry.set(sessions(destination), AsyncResult.success(grant(true)));
@@ -70,7 +72,7 @@ it.effect.each(["generate", "trust", "probe"] as const)(
         registry.set(sessions(destination), AsyncResult.success(grant(false)));
         expect(registry.get(command.permissionAtom(destination))).toBe(false);
         expect(yield* policy.authorize(registry, destination).pipe(Effect.flip)).toMatchObject({
-          requiredPermission: AuthAccessWriteScope,
+          requiredPermission: AuthVaultWriteScope,
         });
       }),
     ),
@@ -81,7 +83,7 @@ it.effect("pinned host key lookup requires read access to the destination", () =
     const registry = AtomRegistry.make();
     yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
     const policy = createCommandPermissions(runtime, VAULT_SSH_WS_METHODS.pinnedKeys);
-    expect(policy.requiredScopes()).toEqual([AuthAccessReadScope]);
+    expect(policy.requiredScopes()).toEqual([AuthVaultReadScope]);
     registry.mount(sessions(destination));
     registry.set(sessions(destination), AsyncResult.success(grant(false)));
     yield* policy.authorize(registry, destination);
@@ -91,6 +93,6 @@ it.effect("pinned host key lookup requires read access to the destination", () =
     );
     expect(
       (yield* policy.authorize(registry, destination).pipe(Effect.flip)).requiredPermission,
-    ).toBe(AuthAccessReadScope);
+    ).toBe(AuthVaultReadScope);
   }),
 );

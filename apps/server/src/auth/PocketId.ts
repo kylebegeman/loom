@@ -1,3 +1,4 @@
+import { accountIdentityVaultScopes } from "../fork/vault/identity-scopes.ts"; // fork: account-vault
 import {
   AuthAccessReadScope,
   AuthAccessTokenType,
@@ -777,6 +778,7 @@ const make = Effect.gen(function* () {
         const acceptedIdentity = yield* capSignInAge(
           {
             ...identity,
+            scopes: accountIdentityVaultScopes(identity.scopes, environment),
             account: { ...identity.account, ...claims.profile },
             expiresAt: DateTime.toUtc(
               expiration.value.epochMilliseconds < identity.expiresAt.epochMilliseconds
@@ -882,7 +884,11 @@ const make = Effect.gen(function* () {
               return yield* new PocketIdError({ reason: "subject" });
             yield* checkPasskey(claims.amr);
             identity = yield* capSignInAge(
-              { ...identity, account: { ...identity.account, ...claims.profile } },
+              {
+                ...identity,
+                scopes: accountIdentityVaultScopes(identity.scopes, environment),
+                account: { ...identity.account, ...claims.profile },
+              },
               claims.auth_time,
             );
           }

@@ -3,6 +3,8 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthSessionId,
   EnvironmentId,
   type AuthClientMetadata,
@@ -835,6 +837,7 @@ it.effect("requires a passkey sign-in in the browser and natively when the host 
   Effect.gen(function* () {
     const test = yield* fixture;
     test.env.LOOM_IDENTITY_REQUIRE_PASSKEY = "true";
+    test.env.LOOM_LIBRARY_AUTHORITY = "true";
     const accessToken = yield* test.access();
     const bound = yield* atHash(accessToken);
     const nativeIdToken = (amr?: ReadonlyArray<string>) =>
@@ -883,6 +886,14 @@ it.effect("requires a passkey sign-in in the browser and natively when the host 
       expect(test.issued).toHaveLength(0);
       yield* browserSignIn(["phr"]);
       yield* identity.createSession(native(yield* nativeIdToken(["otp", "phr"])), CLIENT);
+      for (const grant of test.issued) {
+        expect(grant.scopes).toContain(AuthVaultReadScope);
+        expect(grant.scopes).toContain(AuthVaultWriteScope);
+        expect(grant.scopes).not.toContain(AuthAccessWriteScope);
+      }
+      expect((yield* identity.verifyAccessToken(accessToken)).scopes).not.toContain(
+        AuthVaultWriteScope,
+      );
       expect(test.issued.map((grant) => grant.method)).toEqual([
         "browser-session-cookie",
         "bearer-access-token",

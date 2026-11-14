@@ -16,8 +16,8 @@ import { useEffect, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
 import {
-  AuthAccessReadScope,
-  AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   type EnvironmentId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -83,8 +83,8 @@ const failure = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
 export function VaultAccessSettingsSection() {
   const { environment } = useSettingsScope();
   const configs = useServerConfigs();
-  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessReadScope);
-  const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthAccessWriteScope);
+  const canRead = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultReadScope);
+  const canWrite = useEnvironmentScope(environment?.environmentId ?? null, AuthVaultWriteScope);
   if (
     !environment ||
     !supportsLoomFeature(

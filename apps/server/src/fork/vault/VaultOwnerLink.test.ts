@@ -10,6 +10,7 @@ import { VaultOwnerLinkHttpRoutes } from "./owner-link-http.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   AuthLibraryPublishScope,
+  AuthVaultWriteScope,
   AuthSessionId,
   AuthStandardClientScopes,
   EnvironmentId,
@@ -265,6 +266,14 @@ it.effect("links only the existing computer owner to the current verified Librar
     const { state, authority, source } = yield* fixture;
     const prepared = yield* source.prepare(request.operationId, local, Effect.void);
     expect(prepared).toEqual(request);
+    state.permissions = [AuthVaultWriteScope];
+    const narrow = { ...owner, scopes: [AuthVaultWriteScope] };
+    const narrowApproval = yield* authority.approve(prepared, narrow);
+    expect((yield* authority.verify(narrowApproval, publisher)).ownerSubject).toBe(
+      identityOwnershipSubject(owner.subject, environment),
+    );
+    state.permissions = AuthStandardClientScopes;
+
     const approval = yield* authority.approve(prepared, owner);
     expect(approval.expiresAt).toBe(NOW + 300_000);
     expect((yield* authority.verify(approval, publisher)).ownerSubject).toBe(

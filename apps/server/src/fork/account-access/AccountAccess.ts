@@ -3,6 +3,8 @@ import { identityOwnershipSubject } from "../../auth/identityPolicy.ts";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import {
   AuthAccessWriteScope,
+  AuthVaultReadScope,
+  AuthVaultWriteScope,
   AuthLibraryPublishScope,
   AuthOrchestrationOperateScope,
   AuthStandardClientScopes,
@@ -156,7 +158,8 @@ const make = Effect.gen(function* () {
       caller.subject === "mcp-client" ||
       caller.subject.startsWith("loom-host:") ||
       !caller.scopes.includes(AuthOrchestrationOperateScope) ||
-      !caller.scopes.includes(AuthAccessWriteScope) ||
+      (!caller.scopes.includes(AuthAccessWriteScope) &&
+        !caller.scopes.includes(AuthVaultReadScope)) ||
       caller.proofKeyThumbprint !== undefined
     )
       return yield* fail("denied");
@@ -208,7 +211,9 @@ const make = Effect.gen(function* () {
           account: target.account,
           sessionId: caller.sessionId,
           principal,
-          scopes: AuthStandardClientScopes.filter((scope) => caller.scopes.includes(scope)),
+          scopes: [...AuthStandardClientScopes, AuthVaultReadScope, AuthVaultWriteScope].filter(
+            (scope) => caller.scopes.includes(scope),
+          ),
           expiresAt: caller.expiresAt?.epochMilliseconds ?? now + GRANT_LIFETIME_MS,
         },
       });

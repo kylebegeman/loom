@@ -4,7 +4,7 @@ import { ReplacementVerification } from "./ReplacementVerification";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Switch, View } from "react-native";
-import { AuthAccessReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import type {
   VaultMigrationDependency,
   VaultMigrationInventoryPage,
@@ -41,7 +41,7 @@ export function VaultMigrationInventorySettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-migration-inventory"))
     return null;
   return (

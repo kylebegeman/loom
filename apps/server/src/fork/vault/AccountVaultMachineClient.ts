@@ -1,5 +1,9 @@
+import * as OpenBaoStore from "./OpenBaoStore.ts";
+import * as Option from "effect/Option";
 import {
   ACCOUNT_PROVIDER_CREDENTIAL_ROUTE,
+  ACCOUNT_VAULT_STATUS_ROUTE,
+  VaultCoreStatus,
   ACCOUNT_PROFILE_RECORD_ROUTE,
   AccountProfileRecordRequest,
   AccountProfileRecordResponse,
@@ -28,6 +32,8 @@ const encode = Schema.encodeEffect(Schema.fromJsonString(AccountProviderRequest)
 const decode = Schema.decodeUnknownEffect(AccountProviderResponse);
 const encodeProfile = Schema.encodeEffect(Schema.fromJsonString(AccountProfileRecordRequest));
 const decodeProfile = Schema.decodeUnknownEffect(AccountProfileRecordResponse);
+const decodeStatus = Schema.decodeUnknownEffect(VaultCoreStatus);
+const isVaultError = Schema.is(VaultError);
 const decodeError = Schema.decodeUnknownEffect(VaultError);
 const unavailable = () => new VaultError({ reason: "unavailable" });
 const denied = () => new VaultError({ reason: "denied" });
@@ -35,6 +41,7 @@ const denied = () => new VaultError({ reason: "denied" });
 export class AccountVaultMachineClient extends Context.Service<
   AccountVaultMachineClient,
   {
+    readonly status: Effect.Effect<VaultCoreStatus, VaultError>;
     readonly available: Effect.Effect<boolean, VaultError>;
     readonly provider: (
       input: AccountProviderRequest,
@@ -47,6 +54,7 @@ export class AccountVaultMachineClient extends Context.Service<
 
 const make = Effect.gen(function* () {
   const connection = yield* LibraryConnection.LibraryConnectionService;
+  const store = yield* Effect.serviceOption(OpenBaoStore.OpenBaoStore);
   const secrets = yield* ServerSecretStore;
   const identity = yield* ServerEnvironmentIdentity;
   const signature = yield* Signature.Signature;
@@ -126,12 +134,21 @@ const make = Effect.gen(function* () {
     return result;
   });
   return AccountVaultMachineClient.of({
-    available: connection.current.pipe(
-      Effect.map(
-        (current) => current.kind === "remote" && current.credential?.account !== undefined,
-      ),
-      Effect.mapError(unavailable),
+    status: post('{"kind":"status"}', ACCOUNT_VAULT_STATUS_ROUTE).pipe(
+      Effect.flatMap(decodeStatus),
+      Effect.mapError((error) => (isVaultError(error) ? error : unavailable())),
     ),
+    available: Effect.gen(function* () {
+      if (
+        Option.isSome(store) &&
+        (typeof store.value.configured === "boolean"
+          ? store.value.configured
+          : (yield* store.value.status).state !== "unconfigured")
+      )
+        return false;
+      const current = yield* connection.current;
+      return current.kind === "remote" && current.credential?.account !== undefined;
+    }).pipe(Effect.mapError(unavailable)),
     provider: Effect.fn("AccountProviderClient.request")(function* (input) {
       const payload = yield* encode(input).pipe(
         Effect.mapError(() => new VaultError({ reason: "invalid-input" })),

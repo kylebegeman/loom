@@ -4,7 +4,7 @@ import { useVaultTime } from "./useVaultTime";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { ScrollView, Switch, View } from "react-native";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, AuthVaultWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { type VaultHealthMutation, type VaultHealthIssue } from "@t3tools/contracts/fork";
 import {
   createVaultHealthAtoms,
@@ -37,8 +37,8 @@ export function VaultHealthSettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope),
-    canWrite = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope),
+    canWrite = useEnvironmentScope(environmentId, AuthVaultWriteScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-health")) return null;
   return (
     <SettingsSection title="Vault maintenance">

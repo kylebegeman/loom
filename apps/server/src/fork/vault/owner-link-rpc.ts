@@ -1,5 +1,6 @@
 import {
   VAULT_ACCESS_WS_METHODS as V,
+  VaultError,
   type VaultOwnerLinkRequest,
   type VaultOwnerLinkApproval,
 } from "@t3tools/contracts/fork";
@@ -16,7 +17,12 @@ export const makeVaultOwnerLinkRpcHandlers = Effect.fn("VaultOwnerLink.makeRpcHa
   const link = yield* VaultOwnerLink;
   const authorize = (
     method: typeof V.ownerLinkPrepare | typeof V.ownerLinkApprove | typeof V.ownerLinkApply,
-  ) => authorizeVaultOwner(auth, session.subject, session, method);
+  ) =>
+    method === V.ownerLinkApprove
+      ? auth
+          .effect(method, Effect.void)
+          .pipe(Effect.mapError(() => new VaultError({ reason: "denied" })))
+      : authorizeVaultOwner(auth, session.subject, session, method);
   return {
     [V.ownerLinkPrepare]: (input: { readonly operationId: string }) =>
       auth.effect(

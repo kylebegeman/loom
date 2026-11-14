@@ -2,7 +2,7 @@ import { TypedImports } from "./TypedImports";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { Switch, View } from "react-native";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthVaultReadScope, type EnvironmentId } from "@t3tools/contracts";
 import type { VaultMigrationResult } from "@t3tools/contracts/fork";
 import { createVaultMigrationAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import {
@@ -34,7 +34,7 @@ export function VaultMigrationSettingsSection({
   connected: boolean;
 }) {
   const config = useEnvironmentServerConfig(environmentId),
-    canRead = useEnvironmentScope(environmentId, AuthAccessReadScope);
+    canRead = useEnvironmentScope(environmentId, AuthVaultReadScope);
   if (!supportsLoomFeature(config?.environment.capabilities, "vault-migration-imports"))
     return null;
   return (
