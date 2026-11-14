@@ -1,9 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Compare fixed-length personal credentials without timing-dependent string comparison.
 import * as NodeCrypto from "node:crypto";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import type { ServerSettings } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -11,6 +13,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import type * as Scope from "effect/Scope";
 import * as Socket from "effect/socket/Socket";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -64,8 +67,8 @@ const DROP_RESPONSE = new Set([
   "access-control-allow-credentials",
 ]);
 const NO_STORE = { "cache-control": "no-store, no-transform" };
-// Bounds how long a socket outlives its credential check, as when the hub key rotates.
-const SOCKET_LIFETIME = "1 hour";
+// Bounds a request, response or socket past its credential check, as when the hub key rotates.
+const LIFETIME_MS = Duration.toMillis(Duration.hours(1));
 export class SwitchboardGatewayError extends Schema.TaggedError<SwitchboardGatewayError>()(
   "SwitchboardGatewayError",
   {
@@ -169,12 +172,23 @@ const make = Effect.gen(function* () {
         return yield* new SwitchboardGatewayError({ reason: "unavailable" });
       const hubKey = Redacted.value(current.value);
       // An account computer's own credential, or the shared key computers set up by hand still use.
-      const computer = yield* clients.authenticate(key);
+      const computer = yield* clients
+        .authenticate(key)
+        .pipe(Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })));
       if (
         Option.isNone(computer) &&
         !NodeCrypto.timingSafeEqual(Buffer.from(key), Buffer.from(hubKey))
       )
         return yield* new SwitchboardGatewayError({ reason: "authentication" });
+      const admittedAt = yield* Clock.currentTimeMillis;
+      /** Fails once the credential stops working or the request outlives its lifetime. */
+      const cutoff = Effect.gen(function* () {
+        const left = admittedAt + LIFETIME_MS - (yield* Clock.currentTimeMillis);
+        yield* (Option.isSome(computer) ? computer.value.ended : Effect.never).pipe(
+          Effect.timeoutOption(Duration.millis(left)),
+        );
+        return yield* new SwitchboardGatewayError({ reason: "unavailable" });
+      });
       if (pathname === SWITCHBOARD_CODEX_CATALOG_PATH) {
         const { providerInstances } = yield* settings.getSettings.pipe(
           Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })),
@@ -232,16 +246,7 @@ const make = Effect.gen(function* () {
             yield* Effect.raceFirst(
               pump(clientReader, serverWriter),
               pump(serverReader, clientWriter),
-            ).pipe(
-              Effect.raceFirst(
-                Option.match(computer, {
-                  onNone: () => Effect.never,
-                  onSome: (entry) => entry.ended,
-                }),
-              ),
-              Effect.timeout(SOCKET_LIFETIME),
-              Effect.ignore,
-            );
+            ).pipe(Effect.raceFirst(cutoff), Effect.ignore);
             return HttpServerResponse.empty();
           }),
         ).pipe(Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })));
@@ -258,6 +263,7 @@ const make = Effect.gen(function* () {
       const response = yield* http.execute(outgoing).pipe(
         Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
         Effect.mapError(() => new SwitchboardGatewayError({ reason: "unavailable" })),
+        Effect.raceFirst(cutoff),
       );
       if (response.status >= 300 && response.status < 400)
         return yield* new SwitchboardGatewayError({ reason: "unavailable" });
@@ -271,7 +277,8 @@ const make = Effect.gen(function* () {
         )
           responseHeaders[name] = value;
       }
-      return HttpServerResponse.stream(response.stream, {
+      // Fails rather than ends, so a client cannot take a cut stream for a finished one.
+      return HttpServerResponse.stream(response.stream.pipe(Stream.interruptWhen(cutoff)), {
         status: response.status,
         headers: responseHeaders,
         ...(response.headers["content-type"]

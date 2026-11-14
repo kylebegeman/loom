@@ -78,10 +78,10 @@ export const switchboardDevice = (label: string, environmentId: string) => {
 };
 
 /**
- * On the hub: the credential issued to each account computer. Only a SHA-256 of each is kept, in
- * the server secret store. A computer's new enrollment replaces its old credential, and one whose
- * membership the Library no longer confirms loses it. A Library that refuses the hub ends every
- * credential, and one that stays unreachable ends each a day after its last confirmation.
+ * On the hub: the SHA-256 of each account computer's credential. A new enrollment replaces the
+ * old credential, and one the Library stops confirming ends. A refusal of the hub ends them all,
+ * an unreachable Library ends each a day after its last confirmation, and a credential saved
+ * before a restart waits for the Library.
  */
 export class SwitchboardClients extends Context.Service<
   SwitchboardClients,
@@ -91,12 +91,14 @@ export class SwitchboardClients extends Context.Service<
     ) => Effect.Effect<Redacted.Redacted<string>, SwitchboardAccountError>;
     /**
      * The computer a gateway credential belongs to, if any. `ended` completes once the credential
-     * stops working: revoked, replaced, dropped by the Library or past its lease.
+     * stops working: revoked, replaced, dropped by the Library or past its lease. Fails
+     * `unavailable` for a saved credential the Library has not confirmed since a restart.
      */
     readonly authenticate: (
       credential: string,
     ) => Effect.Effect<
-      Option.Option<{ readonly device: string; readonly ended: Effect.Effect<void> }>
+      Option.Option<{ readonly device: string; readonly ended: Effect.Effect<void> }>,
+      SwitchboardAccountError
     >;
     readonly list: Effect.Effect<ReadonlyArray<SwitchboardComputer>>;
     readonly revoke: (environmentId: EnvironmentId) => Effect.Effect<void, SwitchboardAccountError>;
@@ -131,22 +133,42 @@ const make = Effect.gen(function* () {
   let byHash = new Map(stored.map((entry) => [entry.credentialHash, entry]));
   /** Completes, and is replaced, on every change to the computers. */
   let changed = Deferred.makeUnsafe<void>();
+  /** Saved credentials the Library has not confirmed since this server started. */
+  const unconfirmed = new Set(stored.map((entry) => entry.credentialHash));
+  /** Counts the Library's refusals of this hub; an enrollment redeemed before one cannot commit. */
+  let refusals = 0;
+  let unsaved = false;
 
   const hash = (value: string) =>
     digest
       .digest(Digest.sha256, new TextEncoder().encode(value))
       .pipe(Effect.map(Hex.encode), Effect.orDie);
+  /** Writes the computers as they are now. Callers hold the lock; a failure retries at each check. */
+  const persist = Effect.gen(function* () {
+    const text = yield* encodeStored({ version: 1, computers: [...computers.values()] });
+    yield* secrets.set(STORE, new TextEncoder().encode(text));
+    unsaved = false;
+  }).pipe(
+    Effect.catch(() =>
+      Effect.sync(() => {
+        unsaved = true;
+      }).pipe(
+        Effect.andThen(Effect.logWarning("Switchboard account computers could not be saved.")),
+      ),
+    ),
+    Effect.withSpan("SwitchboardClients.persist"),
+  );
+  /** Applies in memory and ends open sockets first, so a failed write cannot keep a credential. */
   const save = Effect.fn("SwitchboardClients.save")(function* (
     next: ReadonlyMap<EnvironmentId, StoredComputer>,
   ) {
-    const text = yield* encodeStored({ version: 1, computers: [...next.values()] });
-    yield* secrets.set(STORE, new TextEncoder().encode(text));
     computers = new Map(next);
     byHash = new Map([...next.values()].map((entry) => [entry.credentialHash, entry]));
     const previous = changed;
     changed = Deferred.makeUnsafe();
     yield* Deferred.succeed(previous, undefined);
-  }, Effect.mapError(unavailable));
+    yield* persist;
+  });
 
   const ended = Effect.fn("SwitchboardClients.ended")(function* (credentialHash: string) {
     for (;;) {
@@ -186,6 +208,7 @@ const make = Effect.gen(function* () {
 
   const enroll = Effect.fn("SwitchboardClients.enroll")(function* (ticket: string) {
     if (!sharing) return yield* new SwitchboardAccountError({ reason: "disabled" });
+    const generation = refusals;
     const redemption = yield* post(SWITCHBOARD_REDEEM_ROUTE, { ticket }).pipe(
       Effect.flatMap((body) => decodeRedemption(body).pipe(Effect.mapError(unavailable))),
     );
@@ -204,7 +227,10 @@ const make = Effect.gen(function* () {
     yield* lock.withPermit(
       Effect.suspend(() => {
         // The membership check sends every computer at once, and the Library refuses more than this.
-        if (!computers.has(environmentId) && computers.size >= SWITCHBOARD_MAX_COMPUTERS)
+        if (
+          refusals !== generation ||
+          (!computers.has(environmentId) && computers.size >= SWITCHBOARD_MAX_COMPUTERS)
+        )
           return Effect.fail(new SwitchboardAccountError({ reason: "denied" }));
         return save(new Map([...computers, [environmentId, entry]]));
       }),
@@ -213,33 +239,41 @@ const make = Effect.gen(function* () {
   });
 
   const check = Effect.gen(function* () {
-    if (!sharing || computers.size === 0) return;
-    const asked = [...computers.values()];
+    if (!sharing) return;
+    yield* lock.withPermit(Effect.suspend(() => (unsaved ? persist : Effect.void)));
+    if (computers.size === 0) return;
+    const snapshot = [...computers.values()];
+    const asked = new Set(snapshot.map((entry) => entry.credentialHash));
     const checkedAt = yield* Clock.currentTimeMillis;
     const answer = yield* post(SWITCHBOARD_MEMBERS_ROUTE, {
-      memberships: asked.map((entry) => entry.membership),
+      memberships: snapshot.map((entry) => entry.membership),
     }).pipe(
       Effect.flatMap((body) => decodeMembers(body).pipe(Effect.mapError(unavailable))),
       Effect.result,
     );
+    const refused = Result.isFailure(answer) && answer.failure.reason === "denied";
     const active = new Set(Result.isSuccess(answer) ? answer.success.active : []);
+    const confirms = (entry: StoredComputer) =>
+      asked.has(entry.credentialHash) && active.has(entry.membership.environmentId);
+    // A refusal ends every credential, including any issued while it was in flight.
     const ends = (entry: StoredComputer) =>
       Result.isSuccess(answer)
-        ? !active.has(entry.membership.environmentId)
-        : answer.failure.reason === "denied" || checkedAt >= leaseEnd(entry);
+        ? asked.has(entry.credentialHash) && !confirms(entry)
+        : refused || checkedAt >= leaseEnd(entry);
     const ended = yield* lock.withPermit(
       Effect.suspend(() => {
+        if (refused) refusals++;
         const next = new Map(computers);
         const removed: Array<EnvironmentId> = [];
-        for (const entry of asked) {
-          const environmentId = entry.membership.environmentId;
-          const current = next.get(environmentId);
-          if (current?.credentialHash !== entry.credentialHash) continue;
+        for (const [environmentId, current] of computers) {
           if (ends(current)) {
             next.delete(environmentId);
             removed.push(environmentId);
-          } else if (active.has(environmentId) && current.confirmedAt < checkedAt)
-            next.set(environmentId, { ...current, confirmedAt: checkedAt });
+          } else if (confirms(current)) {
+            unconfirmed.delete(current.credentialHash);
+            if (current.confirmedAt < checkedAt)
+              next.set(environmentId, { ...current, confirmedAt: checkedAt });
+          }
         }
         const changed = removed.length > 0 || Result.isSuccess(answer);
         return (changed ? save(next) : Effect.void).pipe(Effect.as(removed));
@@ -265,6 +299,7 @@ const make = Effect.gen(function* () {
       const entry = byHash.get(yield* hash(credential));
       const now = yield* Clock.currentTimeMillis;
       if (entry === undefined || now >= leaseEnd(entry)) return Option.none();
+      if (unconfirmed.has(entry.credentialHash)) return yield* unavailable();
       lastUsed.set(entry.membership.environmentId, now);
       return Option.some({ device: entry.device, ended: ended(entry.credentialHash) });
     }),

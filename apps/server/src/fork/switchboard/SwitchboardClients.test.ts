@@ -4,6 +4,7 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId } from "@t3tools/contracts";
 import { SWITCHBOARD_MEMBERS_ROUTE, SWITCHBOARD_REDEEM_ROUTE } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -42,6 +43,11 @@ const fixture = Effect.gen(function* () {
     active: [AIR] as ReadonlyArray<EnvironmentId>,
     library: "up" as "up" | "down" | 401 | 403,
     environment: { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" } as NodeJS.ProcessEnv,
+    saving: "works" as "works" | "fails",
+    /** Holds the Library's next answer on `route`, decided as it is asked, until `release`. */
+    pause: undefined as
+      | { route: string; reached: Deferred.Deferred<void>; release: Deferred.Deferred<void> }
+      | undefined,
   };
   const connection = Layer.mock(LibraryConnectionService)({
     current: Effect.succeed({
@@ -63,13 +69,19 @@ const fixture = Effect.gen(function* () {
           : request.url.endsWith(SWITCHBOARD_MEMBERS_ROUTE)
             ? { active: state.active }
             : null;
-        return Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            typeof state.library === "number"
-              ? new Response(null, { status: state.library })
-              : Response.json(body, { status: body === null ? 404 : 200 }),
-          ),
+        const response = HttpClientResponse.fromWeb(
+          request,
+          typeof state.library === "number"
+            ? new Response(null, { status: state.library })
+            : Response.json(body, { status: body === null ? 404 : 200 }),
+        );
+        const pause = state.pause;
+        if (pause === undefined || !request.url.endsWith(pause.route))
+          return Effect.succeed(response);
+        state.pause = undefined;
+        return Deferred.succeed(pause.reached, undefined).pipe(
+          Effect.andThen(Deferred.await(pause.release)),
+          Effect.as(response),
         );
       },
     }),
@@ -78,7 +90,30 @@ const fixture = Effect.gen(function* () {
     Layer.provide(
       Layer.mergeAll(
         connection,
-        ServerSecretStore.layer.pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir))),
+        Layer.effect(
+          ServerSecretStore.ServerSecretStore,
+          Effect.gen(function* () {
+            const store = yield* ServerSecretStore.ServerSecretStore;
+            return {
+              ...store,
+              set: (name: string, value: Uint8Array) =>
+                state.saving === "fails"
+                  ? Effect.fail(
+                      new ServerSecretStore.SecretStorePersistError({
+                        resource: `secret ${name}`,
+                        cause: new Error("disk full"),
+                      }),
+                    )
+                  : store.set(name, value),
+            };
+          }),
+        ).pipe(
+          Layer.provide(
+            ServerSecretStore.layer.pipe(
+              Layer.provide(ServerConfig.layerTest(process.cwd(), baseDir)),
+            ),
+          ),
+        ),
         Layer.succeed(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(HUB) }),
         Layer.effect(
           HostProcess.Environment,
@@ -88,7 +123,17 @@ const fixture = Effect.gen(function* () {
     ),
   );
   const secretsDir = `${baseDir}/userdata/secrets`;
-  return { state, layer, fs, secretsDir };
+  const pause = (route: string) =>
+    Effect.gen(function* () {
+      const held = {
+        route,
+        reached: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+      state.pause = held;
+      return held;
+    });
+  return { state, layer, fs, secretsDir, pause };
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clients", (it) => {
@@ -117,7 +162,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         );
         expect(stored).not.toContain(second);
         const restarted = yield* Clients.SwitchboardClients.pipe(
-          Effect.flatMap((clients) => clients.authenticate(second)),
+          Effect.flatMap((clients) =>
+            clients.check.pipe(Effect.andThen(clients.authenticate(second))),
+          ),
           Effect.provide(f.layer),
         );
         expect(Option.map(restarted, (c) => c.device)).toEqual(Option.some("kyle-s-macbook-air"));
@@ -169,7 +216,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         expect(yield* clients.list).toHaveLength(1);
         yield* TestClock.adjust("1 hour");
         expect(yield* clients.authenticate(credential)).toEqual(Option.none());
-        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
+        // The hub's own check may already have dropped it while the clock moved.
+        yield* Effect.ignore(clients.check);
         expect(yield* clients.list).toEqual([]);
       }).pipe(Effect.provide(f.layer));
     }),
@@ -202,6 +250,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         }).pipe(Effect.provide(f.layer));
         const restarted = yield* Effect.gen(function* () {
           const clients = yield* Clients.SwitchboardClients;
+          yield* clients.check;
           return {
             listed: (yield* clients.list).map((entry) => entry.environmentId),
             air: Option.isSome(yield* clients.authenticate(Redacted.value(air))),
@@ -238,6 +287,88 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         f.state.library = "down";
         yield* TestClock.adjust("1 day");
         yield* Fiber.join(replaced);
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect("keeps no credential the Library issued around a refusal of the hub", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.tickets = { ["m".repeat(64)]: MINI };
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        yield* clients.enroll("m".repeat(64));
+        // Redeemed before the refusal, committed after it.
+        const redeem = yield* f.pause(SWITCHBOARD_REDEEM_ROUTE);
+        const late = yield* clients.enroll("t".repeat(64)).pipe(Effect.forkChild);
+        yield* Deferred.await(redeem.reached);
+        f.state.library = 403;
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
+        yield* Deferred.succeed(redeem.release, undefined);
+        expect((yield* Fiber.join(late).pipe(Effect.flip)).reason).toBe("denied");
+        expect(yield* clients.list).toEqual([]);
+        // Committed while the refused check was in flight.
+        f.state.library = "up";
+        yield* clients.enroll("m".repeat(64));
+        f.state.library = 403;
+        const members = yield* f.pause(SWITCHBOARD_MEMBERS_ROUTE);
+        const refused = yield* clients.check.pipe(Effect.flip, Effect.forkChild);
+        yield* Deferred.await(members.reached);
+        f.state.library = "up";
+        const air = Redacted.value(yield* clients.enroll("t".repeat(64)));
+        yield* Deferred.succeed(members.release, undefined);
+        expect((yield* Fiber.join(refused)).reason).toBe("denied");
+        expect(yield* clients.authenticate(air)).toEqual(Option.none());
+        expect(yield* clients.list).toEqual([]);
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect("ends credentials in memory when saving fails, and saves at the next check", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        const credential = Redacted.value(yield* clients.enroll("t".repeat(64)));
+        const computer = yield* clients.authenticate(credential);
+        if (Option.isNone(computer)) throw new Error("Credential refused");
+        const ended = yield* Effect.forkChild(computer.value.ended);
+        f.state.saving = "fails";
+        f.state.library = 403;
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
+        expect(yield* clients.authenticate(credential)).toEqual(Option.none());
+        yield* Fiber.join(ended);
+        f.state.saving = "works";
+        f.state.library = "up";
+        yield* clients.check;
+      }).pipe(Effect.provide(f.layer));
+      f.state.library = "down";
+      const listed = yield* Clients.SwitchboardClients.pipe(
+        Effect.flatMap((clients) => clients.list),
+        Effect.provide(f.layer),
+      );
+      expect(listed).toEqual([]);
+    }),
+  );
+
+  it.effect("waits for the Library to confirm stored credentials after a restart", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const credential = yield* Clients.SwitchboardClients.pipe(
+        Effect.flatMap((clients) => clients.enroll("t".repeat(64))),
+        Effect.map(Redacted.value),
+        Effect.provide(f.layer),
+      );
+      f.state.library = "down";
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        // Unavailable rather than refused, so the computer keeps its credential meanwhile.
+        expect((yield* clients.authenticate(credential).pipe(Effect.flip)).reason).toBe(
+          "unavailable",
+        );
+        f.state.library = "up";
+        yield* clients.check;
+        expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
       }).pipe(Effect.provide(f.layer));
     }),
   );
