@@ -13,12 +13,14 @@ import * as ByteSize from "effect/ByteSize";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
+import * as Duration from "effect/Duration";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -30,6 +32,8 @@ import { SwitchboardAccountError } from "./SwitchboardAccountError.ts";
 
 const STORE = "switchboard-account-computers";
 const CHECK_INTERVAL = "15 minutes";
+/** How long the hub honors a credential the Library has not confirmed, as through an outage. */
+const LEASE_MS = Duration.toMillis(Duration.hours(24));
 const Stored = Schema.fromJsonString(
   Schema.Struct({
     version: Schema.Literal(1),
@@ -40,11 +44,14 @@ const Stored = Schema.fromJsonString(
         credentialHash: Schema.String,
         membership: SwitchboardMembership,
         issuedAt: Schema.Number,
+        /** When the Library last confirmed this computer's membership. */
+        confirmedAt: Schema.Number,
       }),
     ),
   }),
 );
 type StoredComputer = (typeof Stored.Type)["computers"][number];
+const leaseEnd = (entry: StoredComputer) => entry.confirmedAt + LEASE_MS;
 const decodeStored = Schema.decodeUnknownEffect(Stored);
 const encodeStored = Schema.encodeEffect(Stored);
 const decodeRedemption = Schema.decodeUnknownEffect(SwitchboardRedemption);
@@ -72,7 +79,8 @@ export const switchboardDevice = (label: string, environmentId: string) => {
 /**
  * On the hub: the credential issued to each account computer. Only a SHA-256 of each is kept, in
  * the server secret store. A computer's new enrollment replaces its old credential, and one whose
- * membership the Library no longer confirms loses it. An unreachable Library changes nothing.
+ * membership the Library no longer confirms loses it. A Library that refuses the hub ends every
+ * credential, and one that stays unreachable ends each a day after its last confirmation.
  */
 export class SwitchboardClients extends Context.Service<
   SwitchboardClients,
@@ -86,7 +94,7 @@ export class SwitchboardClients extends Context.Service<
     ) => Effect.Effect<Option.Option<{ readonly device: string }>>;
     readonly list: Effect.Effect<ReadonlyArray<SwitchboardComputer>>;
     readonly revoke: (environmentId: EnvironmentId) => Effect.Effect<void, SwitchboardAccountError>;
-    /** Drops computers the Library no longer confirms as members. */
+    /** Drops computers the Library no longer confirms as members, and renews the rest. */
     readonly check: Effect.Effect<void, SwitchboardAccountError>;
   }
 >()("t3/fork/switchboard/SwitchboardClients") {}
@@ -143,7 +151,8 @@ const make = Effect.gen(function* () {
     const response = yield* current
       .send(request)
       .pipe(Effect.timeout("15 seconds"), Effect.mapError(unavailable));
-    if (response.status === 403) return yield* new SwitchboardAccountError({ reason: "denied" });
+    if (response.status === 401 || response.status === 403)
+      return yield* new SwitchboardAccountError({ reason: "denied" });
     if (response.status !== 200) return yield* unavailable();
     return yield* response.json.pipe(
       Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(256)),
@@ -160,12 +169,14 @@ const make = Effect.gen(function* () {
     const environmentId = redemption.membership.environmentId;
     if (environmentId === ownId) return yield* new SwitchboardAccountError({ reason: "denied" });
     const credential = Hex.encode(yield* random.randomBytes(32).pipe(Effect.mapError(unavailable)));
+    const issuedAt = yield* Clock.currentTimeMillis;
     const entry: StoredComputer = {
       label: redemption.label,
       device: switchboardDevice(redemption.label, environmentId),
       credentialHash: yield* hash(credential),
       membership: redemption.membership,
-      issuedAt: yield* Clock.currentTimeMillis,
+      issuedAt,
+      confirmedAt: issuedAt,
     };
     yield* lock.withPermit(
       Effect.suspend(() => {
@@ -181,28 +192,41 @@ const make = Effect.gen(function* () {
   const check = Effect.gen(function* () {
     if (!sharing || computers.size === 0) return;
     const asked = [...computers.values()];
-    const { active } = yield* post(SWITCHBOARD_MEMBERS_ROUTE, {
+    const checkedAt = yield* Clock.currentTimeMillis;
+    const answer = yield* post(SWITCHBOARD_MEMBERS_ROUTE, {
       memberships: asked.map((entry) => entry.membership),
-    }).pipe(Effect.flatMap((body) => decodeMembers(body).pipe(Effect.mapError(unavailable))));
-    const keep = new Set(active);
-    const ended = asked.filter(
-      (entry) =>
-        !keep.has(entry.membership.environmentId) &&
-        computers.get(entry.membership.environmentId) === entry,
+    }).pipe(
+      Effect.flatMap((body) => decodeMembers(body).pipe(Effect.mapError(unavailable))),
+      Effect.result,
     );
-    if (ended.length === 0) return;
-    yield* lock.withPermit(
+    const active = new Set(Result.isSuccess(answer) ? answer.success.active : []);
+    const ends = (entry: StoredComputer) =>
+      Result.isSuccess(answer)
+        ? !active.has(entry.membership.environmentId)
+        : answer.failure.reason === "denied" || checkedAt >= leaseEnd(entry);
+    const ended = yield* lock.withPermit(
       Effect.suspend(() => {
         const next = new Map(computers);
-        for (const entry of ended)
-          if (next.get(entry.membership.environmentId) === entry)
-            next.delete(entry.membership.environmentId);
-        return save(next);
+        const removed: Array<EnvironmentId> = [];
+        for (const entry of asked) {
+          const environmentId = entry.membership.environmentId;
+          const current = next.get(environmentId);
+          if (current?.credentialHash !== entry.credentialHash) continue;
+          if (ends(current)) {
+            next.delete(environmentId);
+            removed.push(environmentId);
+          } else if (active.has(environmentId) && current.confirmedAt < checkedAt)
+            next.set(environmentId, { ...current, confirmedAt: checkedAt });
+        }
+        const changed = removed.length > 0 || Result.isSuccess(answer);
+        return (changed ? save(next) : Effect.void).pipe(Effect.as(removed));
       }),
     );
-    yield* Effect.logInfo("Revoked Switchboard credentials for computers that left the account.", {
-      computers: ended.map((entry) => entry.membership.environmentId),
-    });
+    if (ended.length > 0)
+      yield* Effect.logInfo("Revoked Switchboard credentials the Library no longer confirms.", {
+        computers: ended,
+      });
+    if (Result.isFailure(answer)) return yield* answer.failure;
   }).pipe(Effect.withSpan("SwitchboardClients.check"));
 
   if (sharing)
@@ -216,8 +240,9 @@ const make = Effect.gen(function* () {
     enroll,
     authenticate: Effect.fn("SwitchboardClients.authenticate")(function* (credential) {
       const entry = byHash.get(yield* hash(credential));
-      if (entry === undefined) return Option.none();
-      lastUsed.set(entry.membership.environmentId, yield* Clock.currentTimeMillis);
+      const now = yield* Clock.currentTimeMillis;
+      if (entry === undefined || now >= leaseEnd(entry)) return Option.none();
+      lastUsed.set(entry.membership.environmentId, now);
       return Option.some({ device: entry.device });
     }),
     list: Effect.sync(() =>

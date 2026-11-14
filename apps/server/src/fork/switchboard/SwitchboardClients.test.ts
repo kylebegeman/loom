@@ -9,6 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClientResponse } from "effect/http";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -38,7 +39,7 @@ const fixture = Effect.gen(function* () {
     /** Tickets that redeem for another computer than `redeemFor`. */
     tickets: {} as Record<string, EnvironmentId>,
     active: [AIR] as ReadonlyArray<EnvironmentId>,
-    library: "up" as "up" | "down" | "refusing",
+    library: "up" as "up" | "down" | 401 | 403,
     environment: { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" } as NodeJS.ProcessEnv,
   };
   const connection = Layer.mock(LibraryConnectionService)({
@@ -64,8 +65,8 @@ const fixture = Effect.gen(function* () {
         return Effect.succeed(
           HttpClientResponse.fromWeb(
             request,
-            state.library === "refusing"
-              ? new Response(null, { status: 403 })
+            typeof state.library === "number"
+              ? new Response(null, { status: state.library })
               : Response.json(body, { status: body === null ? 404 : 200 }),
           ),
         );
@@ -122,7 +123,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
       }),
   );
 
-  it.effect("drops computers the Library stops confirming, and none while it is unreachable", () =>
+  it.effect("drops computers the Library stops confirming or refuses to check", () =>
     Effect.gen(function* () {
       const f = yield* fixture;
       yield* Effect.gen(function* () {
@@ -130,8 +131,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         const credential = Redacted.value(yield* clients.enroll("t".repeat(64)));
         f.state.library = "down";
         expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
-        f.state.library = "refusing";
-        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
         expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
         f.state.library = "up";
         yield* clients.check;
@@ -139,6 +138,37 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         f.state.active = [];
         yield* clients.check;
         expect(yield* clients.authenticate(credential)).toEqual(Option.none());
+        expect(yield* clients.list).toEqual([]);
+        // Refusing the hub's sign-in or its place on the account ends every credential it issued.
+        f.state.active = [AIR];
+        for (const status of [401, 403] as const) {
+          f.state.library = "up";
+          const issued = Redacted.value(yield* clients.enroll("t".repeat(64)));
+          f.state.library = status;
+          expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
+          expect(yield* clients.authenticate(issued)).toEqual(Option.none());
+          expect(yield* clients.list).toEqual([]);
+        }
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect("stops honoring a credential a day after the Library last confirmed it", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        const credential = Redacted.value(yield* clients.enroll("t".repeat(64)));
+        yield* TestClock.adjust("20 hours");
+        yield* clients.check;
+        f.state.library = "down";
+        yield* TestClock.adjust("23 hours");
+        expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
+        expect(yield* clients.list).toHaveLength(1);
+        yield* TestClock.adjust("1 hour");
+        expect(yield* clients.authenticate(credential)).toEqual(Option.none());
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
         expect(yield* clients.list).toEqual([]);
       }).pipe(Effect.provide(f.layer));
     }),
