@@ -20,6 +20,7 @@ export * from "./vault-core.ts";
 export * from "./vault-item-actions.ts";
 export * from "./vault-secret.ts";
 export * from "./apple-build-tooling.ts";
+export * from "./account-vault.ts";
 export * from "./capabilities.ts";
 export * from "./model-preview-3d.ts";
 export * from "./pcb-preview.ts";

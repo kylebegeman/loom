@@ -1,27 +1,32 @@
 import { useNavigation } from "@react-navigation/native";
-import { ACCOUNT_VAULT_FEATURE } from "@t3tools/contracts/fork";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { accountVaultDetail } from "@t3tools/client-runtime/fork";
 import { View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
-import { useLibraryAuthority } from "../library/libraryState";
-import { useEnvironmentServerConfig } from "../../state/entities";
+import { useAccountVault } from "./useAccountVault";
 
 export function AccountVaultEntry() {
-  const authority = useLibraryAuthority();
-  const config = useEnvironmentServerConfig(authority.environmentId);
+  const { authority, state } = useAccountVault();
   const navigation = useNavigation();
-  if (
-    !authority.environmentId ||
-    !supportsLoomFeature(config?.environment.capabilities, ACCOUNT_VAULT_FEATURE)
-  )
-    return null;
+  if (state.kind === "none") return null;
   return (
     <SettingsSection title="Account Vault">
       <View className="gap-3 p-4">
         <Text>Saved connections and secrets for your approved computers.</Text>
-        <Button label="Manage account Vault" onPress={() => navigation.navigate("AccountVault")} />
+        {state.kind === "open" ? null : (
+          <Text className="text-sm text-foreground-muted">
+            {accountVaultDetail(state, authority.label)}
+          </Text>
+        )}
+        {state.kind === "no-access" ? null : (
+          <Button
+            label="Manage account Vault"
+            // The screen offers sign-in when the account needs reconnecting.
+            disabled={state.kind === "checking"}
+            onPress={() => navigation.navigate("AccountVault")}
+          />
+        )}
       </View>
     </SettingsSection>
   );

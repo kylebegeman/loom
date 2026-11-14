@@ -1,12 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { ACCOUNT_VAULT_FEATURE } from "@t3tools/contracts/fork";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  accountVaultDetail,
+  accountVaultState,
+  connectsWithIdentity,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { useEnvironmentSessionState } from "~/state/session";
-import { identityProfile } from "../identity/identityProfile";
 import { useLibraryAuthority } from "../project-library/state";
-import { accountVaultState, type AccountVaultState } from "./account-vault";
 
 export function useAccountVault() {
   const authority = useLibraryAuthority();
@@ -18,7 +21,7 @@ export function useAccountVault() {
       ACCOUNT_VAULT_FEATURE,
     ),
     connected: authority.connected,
-    identity: identityProfile(authority.environment?.entry) !== undefined,
+    identity: connectsWithIdentity(authority.environment?.entry),
     session: session.data,
     sessionFailed: session.hasError,
   });
@@ -55,19 +58,4 @@ export function AccountVault() {
       </div>
     </SettingsSection>
   );
-}
-
-function accountVaultDetail(state: Exclude<AccountVaultState, { kind: "none" }>, library: string) {
-  switch (state.kind) {
-    case "checking":
-      return `Checking this device's access to ${library}...`;
-    case "open":
-      return `Managed by ${library}.`;
-    case "reconnect":
-      return "Reconnect your account to manage saved connections.";
-    case "no-access":
-      return state.identity
-        ? `Your sign-in to ${library} does not include Vault access, so the account Vault cannot be managed from this device. To allow it, set LOOM_IDENTITY_ALLOW_ADMIN=true on ${library}, restart it and sign in again. Until then, use each computer's own Vault.`
-        : `This device's pairing with ${library} does not include Vault access, so the account Vault cannot be managed from this device. Pair it again with a link that includes View access and Manage access. Until then, use each computer's own Vault.`;
-  }
 }

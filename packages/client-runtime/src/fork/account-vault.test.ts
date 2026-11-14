@@ -1,6 +1,6 @@
 import { AuthAccessReadScope, AuthStandardClientScopes } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { accountVaultState, type AccountVaultInput } from "./account-vault";
+import { accountVaultState, type AccountVaultInput } from "./account-vault.ts";
 
 const signedIn: AccountVaultInput = {
   authorityId: "library",
