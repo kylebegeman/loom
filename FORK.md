@@ -430,8 +430,8 @@ these cookies itself.
 The `switchboard` seams add Switchboard mode (`apps/server/src/fork/switchboard`,
 `apps/web/src/fork/switchboard`): one `switchboardEnabled` server setting, shown with
 the usage hubs in Settings. While it is on, every Claude and Codex launch is pointed at
-the CLIProxyAPI hub the owning server's `LOOM_SWITCHBOARD_URL` names, the local one by
-default (`provider/codexLaunchArgs.ts`, `ClaudeAdapterV2.ts`, `CodexAdapterV2.ts`,
+the CLIProxyAPI hub the owning server's `LOOM_SWITCHBOARD_URL` names, else the account's
+shared hub, else the local one (`provider/codexLaunchArgs.ts`, `ClaudeAdapterV2.ts`, `CodexAdapterV2.ts`,
 `ClaudeTextGeneration.ts`). A Codex thread resumed after the setting changes takes the
 current route instead of the provider it was persisted with. The model picker shows one
 Claude and one Codex (`ProviderModelPicker.tsx`), and provider status follows the route:
@@ -448,9 +448,37 @@ launches fail with a configuration error naming the setting. An invalid
 `LOOM_SWITCHBOARD_URL` or helper path fails the same way rather than falling back to an
 unrouted account.
 
+A hub started with `LOOM_SWITCHBOARD_SHARE_GATEWAY=true` advertises
+`SWITCHBOARD_HUB_FEATURE` in the Library directory. Every other computer with an account
+Library connection (`SwitchboardAccount.ts`) picks the hub it already uses, else the
+longest-listed one with a public HTTPS route. It signs a machine proof for a one-use,
+60-second ticket naming that hub (`SwitchboardIssuer.ts`) and trades it at the hub's
+`/api/loom/switchboard/enroll`. The hub redeems the ticket over its own publisher session,
+issues a random credential and keeps only its SHA-256 (`SwitchboardClients.ts`). The
+gateway sends that computer's requests with the hub key and an `x-switchboard-device`
+ledger name. A credential is bound to account membership (key fingerprint, approval time,
+epoch, owner, authority), not to a publisher session, because the Library renews sessions
+only in memory and a restart would otherwise revoke every computer. Every 15 minutes the
+hub asks the Library which memberships are still active and drops the rest, and it drops
+none while the Library is unreachable. The computer keeps the credential and route in its
+server secret store, and `/bin/cat` on that file is the key command, so a Library outage
+changes nothing until the hub refuses the credential (`x-loom-switchboard:
+authentication` or `disabled`, a header only the gateway sets). Revoking on the hub is a
+rotation, because a member enrolls again at its next check. Removal from the account is
+what keeps a computer out.
+
+Environment settings outrank the account hub, except that a `LOOM_SWITCHBOARD_URL` naming
+the hub by any of its directory routes uses the computer's own credential. Computers set
+up by hand therefore migrate without edits, and an empty `LOOM_SWITCHBOARD_CONTROLLER_URL`
+still reads the controller through the gateway on that route. Enrollment turns
+`switchboardEnabled` on once and records that, so a later switch-off sticks. The Library
+authority computer and Windows do not enroll yet.
+
 Model availability comes from the Switchboard controller's cached `GET
 /api/v1/availability`, read by the `loom.switchboard.limits` RPC. The local hub implies
-the controller on `127.0.0.1:8318`; a remote hub needs `LOOM_SWITCHBOARD_CONTROLLER_URL`.
+the controller on `127.0.0.1:8318`, and an account hub's gateway forwards its
+`/controller/api/v1/availability` and `service-tier` reads there without the hub key.
+Another remote hub needs `LOOM_SWITCHBOARD_CONTROLLER_URL`.
 Only a model the controller reports `unavailable` is disabled, with the controller's
 reason. A provider is limited as a whole only when every model listed for it is
 unavailable or credit-only, and that limit also disables the provider's models the
