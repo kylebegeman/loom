@@ -20,7 +20,8 @@ is in that computer's settings, below the **Account Vault** card.
   must both run a current Loom version. Your other computers and devices need no OpenBao
   configuration. Sign in with the account owner's passkey; a single-owner Library with passkey
   sign-in grants Vault access separately from device and relay administration. Access renews with
-  your existing sign-in, and signing out or revoking that device ends it.
+  your existing sign-in under the account's normal session limit. Signing out or revoking
+  that device ends it; Vault adds no hourly passkey prompt.
   The status identifies the Vault computer. If the backend is locked, choose **Unlock Vault** to
   open its unlock screen. Unlock it once; all devices use that same backend.
 - **A computer's existing Vault:** choose the computer. When the account Vault can be managed
