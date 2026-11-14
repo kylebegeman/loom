@@ -118,3 +118,65 @@ export function tailnetOnlyConnectionHint(
     ? "Turn on Tailscale on this device."
     : null;
 }
+
+/** Why a saved computer is not connecting and what fixes it, shown wherever its row is. */
+export interface ComputerConnectionNextStep {
+  readonly text: string;
+  readonly action: "pair" | "sign-in" | "reconnect";
+}
+
+const savedProfiles = (entry: ConnectionCatalogEntry) =>
+  connectionRoutes(entry).flatMap((route) => {
+    const profile = Option.getOrNull(route.profile);
+    return profile?._tag === "BearerConnectionProfile" ? [profile] : [];
+  });
+
+/**
+ * Null while the connection is healthy, starting for the first time, offline or switched off.
+ * An account route reaches the computer only through its remote access, so a Library that lists
+ * no address for it, or has no report from it yet, means pairing or turning that on, not waiting.
+ */
+export function computerConnectionNextStep(input: {
+  readonly label: string;
+  readonly entry: ConnectionCatalogEntry;
+  readonly connection: Pick<
+    EnvironmentConnectionPresentation,
+    "phase" | "failingSince" | "blockedReason"
+  > & { readonly error?: string | null };
+  readonly listing: DirectoryListing | null;
+}): ComputerConnectionNextStep | null {
+  const { label, entry, connection } = input;
+  const failing =
+    connection.phase === "error" ||
+    connection.phase === "unsupported" ||
+    connection.phase === "reconnecting" ||
+    (connection.phase === "connecting" && connection.failingSince !== undefined);
+  if (!entry.enabled || !failing) return null;
+  const profiles = savedProfiles(entry);
+  if (connection.blockedReason === "authentication")
+    return profiles.some((profile) => profile.identity !== undefined)
+      ? { action: "sign-in", text: `Your sign-in to ${label} expired. Sign in again.` }
+      : {
+          action: "pair",
+          text: connection.error ?? `${label} no longer accepts this device. Pair again.`,
+        };
+  if (connection.phase === "unsupported")
+    return {
+      action: "reconnect",
+      text:
+        connection.error ??
+        `${label} and this device run Loom versions that cannot connect. Update Loom, then reconnect.`,
+    };
+  const listedRoutes =
+    input.listing === null
+      ? null
+      : (directoryEnvironments(input.listing).find(
+          (environment) => environment.environmentId === entry.target.environmentId,
+        )?.routes.length ?? 0);
+  if (listedRoutes === 0 && profiles.some((profile) => profile.account !== undefined))
+    return {
+      action: "pair",
+      text: `Turn on Tailscale HTTPS or Loomhost on ${label}, or pair instead.`,
+    };
+  return { action: "reconnect", text: connection.error ?? `Loom can't reach ${label}.` };
+}

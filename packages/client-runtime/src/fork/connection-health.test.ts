@@ -6,12 +6,22 @@ import { BearerConnectionTarget, RelayConnectionTarget } from "../connection/mod
 
 import {
   CONNECTION_STALL_MS,
+  computerConnectionNextStep,
   computerDirectoryHealth,
   connectionStallAt,
   isConnectionStalled,
   tailnetOnlyConnectionHint,
 } from "./connection-health.ts";
-import { BOOK, DESK, MINUTES, NOW, ago, listing, reported } from "./directory-test-fixtures.ts";
+import {
+  BOOK,
+  DESK,
+  LIBRARY,
+  MINUTES,
+  NOW,
+  ago,
+  listing,
+  reported,
+} from "./directory-test-fixtures.ts";
 
 describe("connection stall", () => {
   it("stalls a reconnect only after it has failed for the stall window", () => {
@@ -156,5 +166,85 @@ describe("tailnet-only connection advice", () => {
     expect(
       tailnetOnlyConnectionHint(entry, { phase: "connecting", failingSince: NOW }),
     ).not.toBeNull();
+  });
+});
+
+describe("computer connection next step", () => {
+  const saved = (
+    connectionId: string,
+    extra: Partial<ConstructorParameters<typeof BearerConnectionProfile>[0]> = {},
+  ): ConnectionCatalogEntry => ({
+    target: new BearerConnectionTarget({ environmentId: BOOK, label: "Book", connectionId }),
+    profile: Option.some(
+      new BearerConnectionProfile({
+        environmentId: BOOK,
+        label: "Book",
+        connectionId,
+        httpBaseUrl: "https://library.example.com/api/loom/account/computers/book/",
+        wsBaseUrl: "wss://library.example.com/api/loom/account/computers/book/",
+        ...extra,
+      }),
+    ),
+    enabled: true,
+  });
+  const account = saved("account", {
+    account: { libraryEnvironmentId: LIBRARY, connectionId: null },
+  });
+  const failed = { phase: "reconnecting", error: "HTTP 503" } as const;
+  const step = (
+    entry: ConnectionCatalogEntry,
+    connection: Parameters<typeof computerConnectionNextStep>[0]["connection"],
+    directory: Parameters<typeof computerConnectionNextStep>[0]["listing"] = null,
+  ) => computerConnectionNextStep({ label: "Book", entry, connection, listing: directory });
+
+  it("asks for remote access or pairing when the Library lists no address for an account computer", () => {
+    const pair = {
+      action: "pair",
+      text: "Turn on Tailscale HTTPS or Loomhost on Book, or pair instead.",
+    };
+    expect(step(account, failed, listing([reported(BOOK, { routes: [] })]))).toEqual(pair);
+    // A computer that just joined has not reported yet.
+    expect(step(account, failed, listing([reported(DESK)]))).toEqual(pair);
+    expect(step(account, failed, listing([reported(BOOK)]))).toEqual({
+      action: "reconnect",
+      text: "HTTP 503",
+    });
+    // Without a listing, the Library itself may be what is unreachable.
+    expect(step(account, failed)).toEqual({ action: "reconnect", text: "HTTP 503" });
+    expect(step(saved("lan"), failed, listing([reported(BOOK, { routes: [] })]))).toEqual({
+      action: "reconnect",
+      text: "HTTP 503",
+    });
+  });
+
+  it("gives every failing connection a reason and a way forward", () => {
+    for (const connection of [
+      { phase: "reconnecting" },
+      { phase: "error" },
+      { phase: "connecting", failingSince: NOW },
+    ] as const)
+      expect(step(account, connection)).toEqual({
+        action: "reconnect",
+        text: "Loom can't reach Book.",
+      });
+    expect(step(account, { phase: "unsupported" })).toEqual({
+      action: "reconnect",
+      text: "Book and this device run Loom versions that cannot connect. Update Loom, then reconnect.",
+    });
+    expect(
+      step(saved("identity", { identity: { issuer: "https://id.example", subject: "me" } }), {
+        phase: "error",
+        blockedReason: "authentication",
+      }),
+    ).toEqual({ action: "sign-in", text: "Your sign-in to Book expired. Sign in again." });
+    expect(
+      step(saved("paired"), { phase: "error", blockedReason: "authentication", error: "Revoked" }),
+    ).toEqual({ action: "pair", text: "Revoked" });
+  });
+
+  it("stays quiet while the connection is healthy, starting, offline or switched off", () => {
+    for (const phase of ["connected", "available", "offline", "connecting"] as const)
+      expect(step(account, { phase })).toBeNull();
+    expect(step({ ...account, enabled: false }, failed)).toBeNull();
   });
 });

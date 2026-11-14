@@ -51,6 +51,7 @@ export function ComputerConnectionsHome({
   routing,
   appSettings,
   isReady,
+  onPair,
 }: {
   readonly primaryEnvironment: EnvironmentPresentation | null;
   readonly environments: readonly EnvironmentPresentation[];
@@ -59,6 +60,8 @@ export function ComputerConnectionsHome({
   readonly routing?: ReactNode;
   readonly appSettings?: ReactNode;
   readonly isReady: boolean;
+  /** Opens pairing for a computer whose saved route cannot reach it. */
+  readonly onPair: PairLibraryComputer;
 }) {
   const [layout, setLayout] = useLocalStorage(LAYOUT_KEY, "cards", ComputersLayout);
   const repairComputer = useOptionalSettingsScope()?.search.machine;
@@ -137,7 +140,7 @@ export function ComputerConnectionsHome({
               </div>
             </div>
           </header>
-          <ComputerWorkActions environment={selected} />
+          <ComputerWorkActions environment={selected} onPair={onPair} />
           <section
             className="space-y-3 border-t border-border/60 pt-6"
             aria-label="Connection settings"
@@ -209,6 +212,7 @@ export function ComputerConnectionsHome({
                     primary={environment.environmentId === primaryEnvironment?.environmentId}
                     returnFocus={returnFocusId === environment.environmentId}
                     onOpen={() => setSelectedId(environment.environmentId)}
+                    onPair={onPair}
                   />
                 ))}
               </ul>
@@ -255,12 +259,14 @@ function ComputerItem({
   primary,
   returnFocus,
   onOpen,
+  onPair,
 }: {
   readonly environment: EnvironmentPresentation;
   readonly layout: LibraryLayout;
   readonly primary: boolean;
   readonly returnFocus: boolean;
   readonly onOpen: () => void;
+  readonly onPair: PairLibraryComputer;
 }) {
   return (
     <li
@@ -320,6 +326,7 @@ function ComputerItem({
       <ComputerWorkActions
         environment={environment}
         presentation={layout === "cards" ? "card" : "row"}
+        onPair={onPair}
       />
     </li>
   );
