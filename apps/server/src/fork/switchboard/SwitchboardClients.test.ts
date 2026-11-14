@@ -5,10 +5,12 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { SWITCHBOARD_MEMBERS_ROUTE, SWITCHBOARD_REDEEM_ROUTE } from "@t3tools/contracts/fork";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClientResponse } from "effect/http";
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -19,6 +21,7 @@ import * as Clients from "./SwitchboardClients.ts";
 
 const HUB = EnvironmentId.make("dorothy");
 const AIR = EnvironmentId.make("air");
+const MINI = EnvironmentId.make("mini");
 const membership = (environmentId: EnvironmentId) => ({
   environmentId,
   keyFingerprint: "f".repeat(64),
@@ -34,8 +37,10 @@ const fixture = Effect.gen(function* () {
   const baseDir = yield* fs.makeTempDirectoryScoped();
   const state = {
     redeemFor: AIR,
+    /** Tickets that redeem for another computer than `redeemFor`. */
+    tickets: {} as Record<string, EnvironmentId>,
     active: [AIR] as ReadonlyArray<EnvironmentId>,
-    library: "up" as "up" | "down" | "refusing",
+    library: "up" as "up" | "down" | 401 | 403,
     environment: { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" } as NodeJS.ProcessEnv,
   };
   const connection = Layer.mock(LibraryConnectionService)({
@@ -46,16 +51,23 @@ const fixture = Effect.gen(function* () {
       endpoint: (path) => `https://library.example.test${path}`,
       send: (request) => {
         if (state.library === "down") return Effect.fail(new LibraryError({ reason: "io" }));
+        const ticket =
+          request.body._tag === "Uint8Array"
+            ? String(JSON.parse(new TextDecoder().decode(request.body.body)).ticket)
+            : "";
         const body = request.url.endsWith(SWITCHBOARD_REDEEM_ROUTE)
-          ? { label: "Kyle’s MacBook Air", membership: membership(state.redeemFor) }
+          ? {
+              label: "Kyle’s MacBook Air",
+              membership: membership(state.tickets[ticket] ?? state.redeemFor),
+            }
           : request.url.endsWith(SWITCHBOARD_MEMBERS_ROUTE)
             ? { active: state.active }
             : null;
         return Effect.succeed(
           HttpClientResponse.fromWeb(
             request,
-            state.library === "refusing"
-              ? new Response(null, { status: 403 })
+            typeof state.library === "number"
+              ? new Response(null, { status: state.library })
               : Response.json(body, { status: body === null ? 404 : 200 }),
           ),
         );
@@ -88,8 +100,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         const second = yield* Effect.gen(function* () {
           const clients = yield* Clients.SwitchboardClients;
           const first = Redacted.value(yield* clients.enroll("t".repeat(64)));
-          expect(yield* clients.authenticate(first)).toEqual(
-            Option.some({ device: "kyle-s-macbook-air" }),
+          expect(Option.map(yield* clients.authenticate(first), (c) => c.device)).toEqual(
+            Option.some("kyle-s-macbook-air"),
           );
           const [listed] = yield* clients.list;
           expect(listed).toMatchObject({ environmentId: AIR, label: "Kyle’s MacBook Air" });
@@ -108,11 +120,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
           Effect.flatMap((clients) => clients.authenticate(second)),
           Effect.provide(f.layer),
         );
-        expect(restarted).toEqual(Option.some({ device: "kyle-s-macbook-air" }));
+        expect(Option.map(restarted, (c) => c.device)).toEqual(Option.some("kyle-s-macbook-air"));
       }),
   );
 
-  it.effect("drops computers the Library stops confirming, and none while it is unreachable", () =>
+  it.effect("drops computers the Library stops confirming or refuses to check", () =>
     Effect.gen(function* () {
       const f = yield* fixture;
       yield* Effect.gen(function* () {
@@ -120,8 +132,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         const credential = Redacted.value(yield* clients.enroll("t".repeat(64)));
         f.state.library = "down";
         expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
-        f.state.library = "refusing";
-        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
         expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
         f.state.library = "up";
         yield* clients.check;
@@ -130,6 +140,104 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Switchboard clie
         yield* clients.check;
         expect(yield* clients.authenticate(credential)).toEqual(Option.none());
         expect(yield* clients.list).toEqual([]);
+        // Refusing the hub's sign-in or its place on the account ends every credential it issued.
+        f.state.active = [AIR];
+        for (const status of [401, 403] as const) {
+          f.state.library = "up";
+          const issued = Redacted.value(yield* clients.enroll("t".repeat(64)));
+          f.state.library = status;
+          expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("denied");
+          expect(yield* clients.authenticate(issued)).toEqual(Option.none());
+          expect(yield* clients.list).toEqual([]);
+        }
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect("stops honoring a credential a day after the Library last confirmed it", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        const credential = Redacted.value(yield* clients.enroll("t".repeat(64)));
+        yield* TestClock.adjust("20 hours");
+        yield* clients.check;
+        f.state.library = "down";
+        yield* TestClock.adjust("23 hours");
+        expect(Option.isSome(yield* clients.authenticate(credential))).toBe(true);
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
+        expect(yield* clients.list).toHaveLength(1);
+        yield* TestClock.adjust("1 hour");
+        expect(yield* clients.authenticate(credential)).toEqual(Option.none());
+        expect((yield* clients.check.pipe(Effect.flip)).reason).toBe("unavailable");
+        expect(yield* clients.list).toEqual([]);
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect(
+    "keeps every computer's newest credential when enrollments and revocations overlap",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        f.state.tickets = { ["m".repeat(64)]: MINI };
+        const air = yield* Effect.gen(function* () {
+          const clients = yield* Clients.SwitchboardClients;
+          const [, mini] = yield* Effect.all(
+            [clients.enroll("t".repeat(64)), clients.enroll("m".repeat(64))],
+            { concurrency: "unbounded" },
+          );
+          expect((yield* clients.list).map((entry) => entry.environmentId).toSorted()).toEqual([
+            AIR,
+            MINI,
+          ]);
+          const [, air] = yield* Effect.all(
+            [clients.revoke(MINI), clients.enroll("t".repeat(64))],
+            {
+              concurrency: "unbounded",
+            },
+          );
+          expect(yield* clients.authenticate(Redacted.value(mini))).toEqual(Option.none());
+          return air;
+        }).pipe(Effect.provide(f.layer));
+        const restarted = yield* Effect.gen(function* () {
+          const clients = yield* Clients.SwitchboardClients;
+          return {
+            listed: (yield* clients.list).map((entry) => entry.environmentId),
+            air: Option.isSome(yield* clients.authenticate(Redacted.value(air))),
+          };
+        }).pipe(Effect.provide(f.layer));
+        expect(restarted).toEqual({ listed: [AIR], air: true });
+      }),
+  );
+
+  it.effect("signals when a credential stops working, and not when the Library renews it", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      f.state.tickets = { ["m".repeat(64)]: MINI };
+      f.state.active = [AIR, MINI];
+      yield* Effect.gen(function* () {
+        const clients = yield* Clients.SwitchboardClients;
+        const watch = (credential: Redacted.Redacted<string>) =>
+          clients.authenticate(Redacted.value(credential)).pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.die(new Error("Credential refused")),
+                onSome: (computer) => Effect.forkChild(computer.ended),
+              }),
+            ),
+          );
+        const air = yield* watch(yield* clients.enroll("t".repeat(64)));
+        const mini = yield* watch(yield* clients.enroll("m".repeat(64)));
+        yield* clients.check;
+        yield* clients.revoke(MINI);
+        yield* Fiber.join(mini);
+        expect(air.pollUnsafe()).toBeUndefined();
+        const replaced = yield* watch(yield* clients.enroll("t".repeat(64)));
+        yield* Fiber.join(air);
+        f.state.library = "down";
+        yield* TestClock.adjust("1 day");
+        yield* Fiber.join(replaced);
       }).pipe(Effect.provide(f.layer));
     }),
   );

@@ -4,6 +4,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -12,6 +13,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/socket/Socket";
 import {
   FetchHttpClient,
@@ -44,6 +46,8 @@ const fixture = Effect.gen(function* () {
     status: 200,
     helperReads: 0,
     socketConstructor: undefined as Socket.WebSocketConstructor["Service"] | undefined,
+    /** Completes when the account computer's credential stops working. */
+    ended: Deferred.makeUnsafe<void>(),
   };
   const environment: NodeJS.ProcessEnv = { LOOM_SWITCHBOARD_SHARE_GATEWAY: "true" };
   const fs = yield* FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer));
@@ -57,7 +61,9 @@ const fixture = Effect.gen(function* () {
     Layer.mock(SwitchboardClients)({
       authenticate: (credential) =>
         Effect.succeed(
-          credential === COMPUTER ? Option.some({ device: "kyle-s-macbook-air" }) : Option.none(),
+          credential === COMPUTER
+            ? Option.some({ device: "kyle-s-macbook-air", ended: Deferred.await(state.ended) })
+            : Option.none(),
         ),
     }),
     Layer.succeed(HostProcess.HomeDirectory, home),
@@ -288,9 +294,9 @@ it.effect("refuses opt-out, foreign credentials, protected routes, and redirecte
   }),
 );
 
-it.effect("carries Responses text and binary WebSocket frames through the public HTTP route", () =>
+/** Serves the gateway's HTTP routes in front of a Responses WebSocket that greets and echoes. */
+const serveSockets = (f: Effect.Success<typeof fixture>) =>
   Effect.gen(function* () {
-    const f = yield* fixture;
     const headers = Promise.withResolvers<Record<string, string | string[] | undefined>>();
     const targetClosed = Promise.withResolvers<void>();
     const target = yield* Effect.acquireRelease(
@@ -342,6 +348,33 @@ it.effect("carries Responses text and binary WebSocket frames through the public
     const origin = HttpServer.formatAddress(
       Context.get(services, HttpServer.HttpServer).address,
     ).replace(/^http/u, "ws");
+    return { origin, makeSocket, headers: headers.promise, targetClosed: targetClosed.promise };
+  });
+
+/** Opens a gateway Responses socket and waits for the target's greeting. */
+const openSocket = (bridge: Effect.Success<ReturnType<typeof serveSockets>>, credential: string) =>
+  Effect.gen(function* () {
+    const socket = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        bridge.makeSocket(`${bridge.origin}${SWITCHBOARD_GATEWAY_PREFIX}/v1/responses`, {
+          headers: { authorization: "Bearer " + credential },
+        }),
+      ),
+      (socket) => Effect.sync(() => socket.close(1000)),
+    );
+    const greeted = Promise.withResolvers<void>();
+    const closed = Promise.withResolvers<void>();
+    socket.addEventListener("message", () => greeted.resolve());
+    socket.addEventListener("error", () => greeted.reject(new Error("Gateway connection failed")));
+    socket.addEventListener("close", () => closed.resolve());
+    yield* Effect.promise(() => greeted.promise);
+    return { closed: closed.promise };
+  });
+
+it.effect("carries Responses text and binary WebSocket frames through the public HTTP route", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const { origin, makeSocket, headers, targetClosed } = yield* serveSockets(f);
     const http = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
     for (const [path, key, expected] of [
       ["/v1/models", "wrong", 401],
@@ -399,13 +432,33 @@ it.effect("carries Responses text and binary WebSocket frames through the public
       else received.resolve();
     });
     yield* Effect.promise(() => received.promise);
-    const upstream = yield* Effect.promise(() => headers.promise);
+    const upstream = yield* Effect.promise(() => headers);
     expect(upstream.authorization).toBe("Bearer " + KEY);
     expect(upstream.cookie).toBeUndefined();
     expect(upstream["cf-access-jwt-assertion"]).toBeUndefined();
     expect(frames).toEqual(["ready", [0, 255, 3]]);
     client.close(1000);
-    yield* Effect.promise(() => Promise.all([closed.promise, targetClosed.promise]));
+    yield* Effect.promise(() => Promise.all([closed.promise, targetClosed]));
+  }),
+);
+
+it.effect("ends an account computer's socket once its credential stops working", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const bridge = yield* serveSockets(f);
+    const socket = yield* openSocket(bridge, COMPUTER);
+    yield* Deferred.succeed(f.state.ended, undefined);
+    yield* Effect.promise(() => Promise.all([socket.closed, bridge.targetClosed]));
+  }),
+);
+
+it.effect("ends every gateway socket after an hour", () =>
+  Effect.gen(function* () {
+    const f = yield* fixture;
+    const bridge = yield* serveSockets(f);
+    const socket = yield* openSocket(bridge, KEY);
+    yield* TestClock.adjust("1 hour");
+    yield* Effect.promise(() => Promise.all([socket.closed, bridge.targetClosed]));
   }),
 );
 

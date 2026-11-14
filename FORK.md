@@ -459,13 +459,15 @@ gateway sends that computer's requests with the hub key and an `x-switchboard-de
 ledger name. A credential is bound to account membership (key fingerprint, approval time,
 epoch, owner, authority), not to a publisher session, because the Library renews sessions
 only in memory and a restart would otherwise revoke every computer. Every 15 minutes the
-hub asks the Library which memberships are still active and drops the rest, and it drops
-none while the Library is unreachable. The computer keeps the credential and route in its
-server secret store, and `/bin/cat` on that file is the key command, so a Library outage
-changes nothing until the hub refuses the credential (`x-loom-switchboard:
-authentication` or `disabled`, a header only the gateway sets). Revoking on the hub is a
+hub asks the Library which memberships are still active, drops the rest and renews each
+confirmed one's 24-hour lease. A 401 or 403 for that check refuses the hub itself and drops
+every credential; an unreachable Library drops each only when its lease runs out. The computer
+keeps the credential and route in its server secret store, and `/bin/cat` on that file is the
+key command, so a Library outage changes nothing until the hub refuses the credential
+(`x-loom-switchboard: authentication` or `disabled`, a header only the gateway sets). Revoking on the hub is a
 rotation, because a member enrolls again at its next check. Removal from the account is
-what keeps a computer out.
+what keeps a computer out. An open Responses WebSocket ends as soon as its credential stops
+working, and every gateway socket ends after an hour, so none outlives its authentication.
 
 Environment settings outrank the account hub, except that a `LOOM_SWITCHBOARD_URL` naming
 the hub by any of its directory routes uses the computer's own credential. Computers set
