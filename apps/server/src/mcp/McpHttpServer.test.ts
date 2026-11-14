@@ -20,11 +20,13 @@ import {
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber"; // fork: account-links
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock"; // fork: account-links
 import * as Tracer from "effect/Tracer";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
 import { HttpBody, HttpClient, HttpClientRequest, HttpRouter } from "effect/http";
@@ -47,6 +49,7 @@ import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReview
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { AccountLinks } from "../fork/account-links/AccountLinks.ts"; // fork: account-links
+import { LINK_KEEP_ALIVE_INTERVAL } from "../fork/account-links/linkKeepAlive.ts"; // fork: account-links
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
@@ -1365,6 +1368,111 @@ it.effect("admits only the account's own links while the Linked environments bet
       expect(yield* initialize(account.token)).toBe(200);
     }),
   ).pipe(Effect.provide(layerLinkAuth)),
+);
+
+// fork: account-links
+it.effect(
+  "keeps a link's slow call sending until it answers, and answers a quick one as JSON",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const HoldToolkit = Toolkit.make(
+          Tool.make("hold", {
+            description: "Answers once released.",
+            parameters: Schema.Struct({ wait: Schema.Boolean }),
+            success: Schema.Struct({ held: Schema.Boolean }),
+            failure: OrchestratorMcpFailure,
+            failureMode: "return",
+          }),
+        );
+        const link = yield* (yield* EnvironmentAuth.EnvironmentAuth).issueMcpClientSession({
+          label: "Laptop · account link",
+          access: "auto",
+          peerLink: true,
+          client: { deviceType: "bot" },
+        });
+        yield* HttpRouter.serve(
+          McpHttpServer.layerMcpTransport(
+            McpHttpServer.toolkitRegistration(
+              HoldToolkit,
+              McpToolAccess.toLayer(HoldToolkit, {
+                hold: McpToolAccess.reads(({ wait }) =>
+                  (wait
+                    ? Deferred.succeed(started, undefined).pipe(
+                        Effect.andThen(Deferred.await(release)),
+                      )
+                    : Effect.void
+                  ).pipe(Effect.as({ held: wait })),
+                ),
+              }),
+            ),
+          ).pipe(
+            Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+            Layer.provide(ServerSettings.layerTest()),
+            Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+            Layer.provide(
+              Layer.mock(AccountLinks)({
+                admits: () => Effect.succeed(true),
+                holdsAny: Effect.succeed(true),
+              }),
+            ),
+          ),
+          { disableListenLog: true, disableLogger: true },
+        ).pipe(Layer.build);
+        // Without a keep-alive the held call never answers, and the server would wait on it to close.
+        yield* Effect.addFinalizer(() => Deferred.succeed(release, undefined));
+        const httpClient = yield* HttpClient.HttpClient;
+        const post = (body: object, session?: string) =>
+          httpClient.post("/mcp", {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: `Bearer ${link.token}`,
+              ...(session === undefined
+                ? {}
+                : { "mcp-session-id": session, "mcp-protocol-version": "2025-06-18" }),
+            },
+            body: HttpBody.text(JSON.stringify({ jsonrpc: "2.0", ...body }), "application/json"),
+          });
+        const initialized = yield* post({
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "account-link-test", version: "1.0.0" },
+          },
+        });
+        const hold = (id: number, wait: boolean) =>
+          post(
+            { id, method: "tools/call", params: { name: "hold", arguments: { wait } } },
+            initialized.headers["mcp-session-id"],
+          );
+
+        const quick = yield* hold(2, false);
+        expect(quick.headers["content-type"]).toContain("application/json");
+        expect(yield* quick.json).toMatchObject({
+          id: 2,
+          result: { structuredContent: { held: false } },
+        });
+
+        const slow = yield* Effect.forkChild(hold(3, true));
+        yield* Deferred.await(started);
+        yield* TestClock.adjust(LINK_KEEP_ALIVE_INTERVAL);
+        const streamed = yield* Fiber.join(slow);
+        expect(streamed.status).toBe(200);
+        expect(streamed.headers["content-type"]).toContain("text/event-stream");
+        yield* Deferred.succeed(release, undefined);
+        const text = yield* streamed.text;
+        // A link reads only the `data:` lines, so the comments before them cost it nothing.
+        expect(text).toMatch(/^(: keepalive\n\n)+data: [^\n]+\n\n$/);
+        expect(decodeJsonText(text.slice(text.indexOf("data: ") + "data: ".length))).toMatchObject({
+          id: 3,
+          result: { structuredContent: { held: true } },
+        });
+      }),
+    ).pipe(Effect.provide(layerLinkAuth)),
 );
 
 it.effect("hides tools for links and refuses another environment while the beta is off", () =>
