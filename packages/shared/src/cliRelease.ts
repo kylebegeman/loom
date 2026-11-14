@@ -7,6 +7,7 @@ import { compareSemverVersions } from "./semver.ts";
 import {
   LOOM_CLI_RELEASE_REPOSITORY as CLI_RELEASE_REPOSITORY,
   loomCliReleaseDownloadUrl,
+  loomCliReleaseVersionSegment,
   loomCliReleaseVersion,
 } from "./fork/cli-release.ts";
 export { loomReleaseDatabaseMigration } from "./fork/cli-release.ts"; // fork: fleet-connect
@@ -71,7 +72,9 @@ export function cliReleaseAssetUrl(
   fileName: string,
   baseUrl: string | undefined = CLI_RELEASE_DEFAULT_BASE_URL,
 ): string {
-  return releaseAssetUrl(baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL, `v${version}`, fileName);
+  const base = baseUrl?.trim() || CLI_RELEASE_DEFAULT_BASE_URL;
+  // fork: fleet-connect
+  return releaseAssetUrl(base, loomCliReleaseVersionSegment(version, base), fileName);
 }
 
 export function parseChecksums(text: string): ReadonlyMap<string, string> {

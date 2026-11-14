@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  cliReleaseAssetUrl,
   cliReleaseDownloadBaseUrl,
   cliReleaseIndexPageUrl,
   newestCliReleaseVersion,
@@ -14,6 +15,9 @@ describe("Loom runtime release source", () => {
     expect(cliReleaseDownloadBaseUrl(version)).toBe(
       `https://github.com/kylebegeman/loom/releases/download/${version}`,
     );
+    expect(cliReleaseAssetUrl(version, "SHA256SUMS")).toBe(
+      `https://github.com/kylebegeman/loom/releases/download/${version}/SHA256SUMS`,
+    );
     expect(cliReleaseIndexPageUrl(1)).toBe(
       "https://api.github.com/repos/kylebegeman/loom/releases?per_page=100&page=1",
     );
@@ -23,6 +27,9 @@ describe("Loom runtime release source", () => {
     expect(cliReleaseDownloadBaseUrl(version, "https://mirror.example/runtime/")).toBe(
       `https://mirror.example/runtime/v${version}`,
     );
+    expect(
+      cliReleaseAssetUrl(version, "SHA256SUMS", "https://mirror.example/runtime/?token=abc"),
+    ).toBe(`https://mirror.example/runtime/v${version}/SHA256SUMS?token=abc`);
   });
 
   it("accepts Loom publications and skips integration and upstream tags", () => {
