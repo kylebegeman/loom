@@ -22,6 +22,9 @@ on narrow upstream integrations, so this packet can conflict during an upstream 
   Restored setup must finish before provider execution and remain retryable after failure.
 - Storage cleanup verifies fresh publication and protects busy work, local files, pins,
   pending actions, nested projects, linked worktrees and retained recovery folders.
+- Upstream's idle No project sweep deletes Scratch folders without an archive. Provider start
+  restores a Scratch archive first and only then recreates a missing folder empty; sends do not
+  recreate it, because an empty folder would hide an archive from that restore.
 - Setup and settlement script terminals accept an internal held lease; clients cannot supply
   that bypass through RPC.
 - Settings decoding supplies disabled defaults for older hosts, and client controls respect

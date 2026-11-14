@@ -118,7 +118,7 @@ const DESKTOP_ATTACH_TIMEOUT = "10 seconds";
 // A viewer still is best-effort; a capture Chromium never answers must not hold the capture lock.
 const VIEWER_STILL_TIMEOUT_MS = 2_000;
 const VIEWER_OUTPUT_LIMIT = 64;
-const SCREENCAST_COORDINATION_TIMEOUT_MS = 1000;
+const SCREENCAST_COORDINATION_TIMEOUT_MS = 1000; // fork: browser-text-snapshot
 const RECORDING_SCREENCAST = { format: "jpeg", quality: 90, everyNthFrame: 1 } as const;
 const RECORDING_BINARY_EXPORT_MIN_BYTES = 8 * 1024 * 1024;
 const RECORDING_DOWNLOAD_TIMEOUT_MS = 5_000;
@@ -1047,6 +1047,7 @@ const make = Effect.gen(function* () {
     }
   };
 
+  // fork: browser-text-snapshot
   const recoverTab = (tab: ServerTab) => {
     if (tab.closing) return;
     if (!tab.desktop)
@@ -2376,6 +2377,7 @@ const make = Effect.gen(function* () {
     return started;
   };
 
+  // fork: browser-text-snapshot -- a stalled stream pause or resume releases the tab.
   const coordinateScreencasts = async (
     tab: ServerTab,
     agentSessionId: string,
@@ -2396,6 +2398,7 @@ const make = Effect.gen(function* () {
     });
   };
 
+  // fork: browser-text-snapshot
   const withScreencastsPaused = <A>(
     tab: ServerTab,
     capture: () => Promise<A>,
@@ -2405,16 +2408,18 @@ const make = Effect.gen(function* () {
       tab.capturing += 1;
       const recording = tab.recording;
       try {
+        // fork: browser-text-snapshot
         await coordinateScreencasts(tab, agentSessionId, () =>
           Promise.all([
             ...[...tab.viewers].map((viewer) => viewer.pause()),
             recording?.session.send("Page.stopScreencast").catch(constVoid),
           ]),
         );
-        if (tab.closing) throw new Error("The preview tab closed.");
+        if (tab.closing) throw new Error("The preview tab closed."); // fork: browser-text-snapshot
         return await capture();
       } finally {
         tab.capturing -= 1;
+        // fork: browser-text-snapshot
         if (!tab.closing)
           await coordinateScreencasts(tab, agentSessionId, () =>
             Promise.all([
@@ -2962,7 +2967,9 @@ const make = Effect.gen(function* () {
         return { tabId: tab.tabId, colorScheme };
       }
       case "snapshot": {
+        // fork: browser-text-snapshot -- a text-only snapshot leaves the screencasts running.
         const preferences = input as PreviewAutomationSnapshotInput;
+        // fork: browser-text-snapshot
         const capture = () =>
           ServerBrowserPage.snapshot({
             ...tab,
@@ -2970,6 +2977,7 @@ const make = Effect.gen(function* () {
             includeImage: preferences.includeImage,
             fullScreenshot: preferences.fullScreenshot,
           });
+        // fork: browser-text-snapshot
         const snapshot = await (preferences.includeImage === false &&
         preferences.fullScreenshot !== true
           ? capture()
@@ -3379,9 +3387,9 @@ const make = Effect.gen(function* () {
     const startScreencast = (scale: number) => {
       screencastScale = scale;
       screencastParams = screencastParams.then(async () => {
-        if (tab.capturing > 0 || tab.closing) return;
+        if (tab.capturing > 0 || tab.closing) return; // fork: browser-text-snapshot
         await session.send("Page.stopScreencast").catch(constVoid);
-        if (tab.capturing > 0 || tab.closing) return;
+        if (tab.capturing > 0 || tab.closing) return; // fork: browser-text-snapshot
         await session
           .send("Page.startScreencast", {
             format: "jpeg",

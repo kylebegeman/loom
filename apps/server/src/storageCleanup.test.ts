@@ -2967,6 +2967,35 @@ describe("storage cleanup reports and local file policies", () => {
       }),
     ),
   );
+  // fork: mini-managed-projects
+  it.effect("removes an idle Scratch folder under the managed projects root", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        const scratchRoot = `${fixture.config.managedProjectsRoot}/scratch`;
+        const folder = `${scratchRoot}/quiet-otter`;
+        yield* fixture.fs.makeDirectory(folder, { recursive: true });
+        yield* fixture.fs.writeFileString(`${folder}/notes.md`, "scratch\n");
+        fixture.setProjectRoots([scratchRoot]);
+        fixture.setStoredWorktreePaths([]);
+        fixture.setPolicy("tracked-changes");
+        fixture.setThreads([
+          shell({ worktreePath: folder, settledAt: at(-20 * DAY_MS), status: "completed" }),
+        ]);
+        const report = yield* fixture.service.runNow;
+        expect(report.entries).toEqual([
+          expect.objectContaining({ path: folder, outcome: "removed" }),
+        ]);
+        expect(yield* fixture.fs.exists(folder)).toBe(false);
+      }).pipe(
+        Effect.updateService(ServerConfig.ServerConfig, (config) => ({
+          ...config,
+          managedProjectsRoot: `${config.baseDir}/managed`,
+        })),
+      ),
+    ),
+  );
   it.effect.each([
     {
       name: "a Git repository in a subfolder",

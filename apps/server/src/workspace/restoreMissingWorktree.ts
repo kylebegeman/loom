@@ -64,7 +64,11 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
       const project = Option.getOrUndefined(yield* projects.getById(thread.projectId));
       if (project === undefined || path.dirname(folder) !== path.resolve(project.workspaceRoot))
         return;
-      const root = scratchFolderRoot(serverConfig.baseDir, path);
+      // fork: mini-managed-projects
+      const root = scratchFolderRoot(
+        serverConfig.managedProjectsRoot ?? serverConfig.baseDir,
+        path,
+      );
       const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
       if (path.dirname(folder) !== root && path.dirname(folder) !== realRoot) return;
       yield* Effect.logWarning("recreating missing scratch folder", {

@@ -569,6 +569,7 @@ const parameterValidationMessage = (error: unknown) =>
 const isPreviewAutomationError = Schema.is(PreviewAutomationError);
 const isPreviewScreenshotSaveError = Schema.is(PreviewScreenshotSaveError);
 
+// fork: browser-text-snapshot
 class PreviewSnapshotImageMissingError extends Schema.TaggedError<
   PreviewSnapshotImageMissingError,
   { readonly brand: unique symbol }
@@ -578,6 +579,7 @@ class PreviewSnapshotImageMissingError extends Schema.TaggedError<
   }
 }
 
+// fork: browser-text-snapshot
 const isPreviewSnapshotImageMissingError = Schema.is(PreviewSnapshotImageMissingError);
 
 const previewSnapshotFailure = Effect.fn("previewSnapshotFailure")(function <E>(
@@ -599,7 +601,7 @@ const previewSnapshotFailure = Effect.fn("previewSnapshotFailure")(function <E>(
   const message =
     isPreviewAutomationError(firstFailure) ||
     isPreviewScreenshotSaveError(firstFailure) ||
-    isPreviewSnapshotImageMissingError(firstFailure)
+    isPreviewSnapshotImageMissingError(firstFailure) // fork: browser-text-snapshot
       ? firstFailure.message
       : parameterValidationMessage(firstFailure);
   const result = new McpSchema.CallToolResult({
@@ -665,6 +667,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
             Effect.gen(function* () {
               const snapshot = encodedResult as SnapshotMetadata & {
                 readonly url: string;
+                // fork: browser-text-snapshot
                 readonly screenshot?: {
                   readonly mimeType: "image/png";
                   readonly data: string;
@@ -674,14 +677,16 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
                 readonly fullScreenshot?: { readonly data: string };
               };
               const { screenshot, fullScreenshot, ...page } = snapshot;
+              // fork: browser-text-snapshot
               if ((payload?.includeImage === true || payload?.save === true) && !screenshot) {
                 return yield* new PreviewSnapshotImageMissingError({});
               }
+              // fork: browser-text-snapshot
               const png = screenshot
                 ? new Uint8Array(Buffer.from(screenshot.data, "base64"))
                 : undefined;
               const screenshotPath =
-                payload?.save === true && png
+                payload?.save === true && png // fork: browser-text-snapshot
                   ? yield* saveScreenshot(
                       snapshot.url,
                       fullScreenshot
@@ -704,6 +709,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
               }
               const metadata = {
                 ...page,
+                // fork: browser-text-snapshot
                 ...(screenshot
                   ? {
                       screenshot: {
@@ -738,6 +744,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
                           text: `Snapshot text was bounded. Omitted: ${bounded.omitted.join("; ")}.`,
                         },
                       ]),
+                  // fork: browser-text-snapshot
                   ...(includeImage && png && screenshot
                     ? [{ type: "image" as const, data: png, mimeType: screenshot.mimeType }]
                     : []),

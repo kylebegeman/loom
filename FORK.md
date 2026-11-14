@@ -792,6 +792,17 @@ watch comes forward so they can take control and finish the sign-in. `ServerBrow
 (3) fills the agent budget and the headroom with counts that must track `AGENT_TAB_LIMIT` and
 `AGENT_POPUP_HEADROOM`.
 
+The `browser-text-snapshot` seams let an agent take a Browser snapshot without an image.
+`packages/contracts/src/previewAutomation.ts` (2 marker lines) adds `includeImage` to the
+snapshot input and makes the screenshot optional, and the MCP `handlers.ts` (2) passes the
+agent's choice through. `ServerBrowserPage.ts` (12) skips the metrics read and the screenshot
+for a text-only snapshot, and takes an image only after the page text has settled.
+`ServerBrowser.ts` (12) leaves the screencasts running for a text-only snapshot. When pausing or
+resuming them stalls, it releases the agent's tab instead of holding the capture lock.
+`McpHttpServer.ts` (9) reports a missing screenshot that was asked for or saved as an error.
+Upstream's 10-second snapshot deadline covers image snapshots too, since its deadline tests
+take an image.
+
 The `preview-status-guard` seams stop one malformed server browser status from ending every
 preview event stream. Server browser statuses come from Playwright rather than a decoded RPC
 payload, so a popup's blank `Loading` URL once reached the `subscribePreviewEvents` encoder,

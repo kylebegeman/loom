@@ -564,6 +564,7 @@ export const PreviewAutomationSnapshot = Schema.Struct({
   consoleEntries: Schema.Array(PreviewAutomationConsoleEntry),
   networkEntries: Schema.Array(PreviewAutomationNetworkEntry),
   actionTimeline: Schema.Array(PreviewAutomationActionEvent),
+  // fork: browser-text-snapshot -- a text-only snapshot has no screenshot.
   screenshot: Schema.optional(
     Schema.Struct({
       mimeType: Schema.Literal("image/png"),
@@ -580,7 +581,7 @@ export const PreviewAutomationSnapshot = Schema.Struct({
 export type PreviewAutomationSnapshot = typeof PreviewAutomationSnapshot.Type;
 
 export const PreviewAutomationSnapshotInput = Schema.Struct({
-  includeImage: Schema.optional(Schema.Boolean),
+  includeImage: Schema.optional(Schema.Boolean), // fork: browser-text-snapshot
   fullScreenshot: Schema.optional(Schema.Boolean),
 });
 export type PreviewAutomationSnapshotInput = typeof PreviewAutomationSnapshotInput.Type;

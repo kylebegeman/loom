@@ -97,12 +97,19 @@ const normalize = (target: string) => {
   return `/${parts.join("/")}`;
 };
 // fork: project-lifecycle
-const layerWorktreeLocation = (worktreesDir = managedWorktreesDir, stateDir = "/t3-state") =>
+// fork: project-lifecycle
+const layerWorktreeLocation = (
+  worktreesDir = managedWorktreesDir,
+  stateDir = "/t3-state",
+  baseDir?: string,
+) =>
   Layer.mergeAll(
     Path.layer,
     Layer.mock(ServerConfig.ServerConfig)({
       worktreesDir,
       stateDir, // fork: project-lifecycle
+      // fork: mini-managed-projects
+      ...(baseDir === undefined ? {} : { baseDir, managedProjectsRoot: baseDir }),
     } as ServerConfig.ServerConfig["Service"]),
     ServerSettings.layerTest(),
   );
@@ -550,6 +557,7 @@ it.each([
             Layer.mock(ServerConfig.ServerConfig)({
               baseDir: "/tmp/t3-home",
               worktreesDir: managedWorktreesDir,
+              managedProjectsRoot: "/tmp/t3-home", // fork: mini-managed-projects
             } as ServerConfig.ServerConfig["Service"]),
             ServerSettings.layerTest(),
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
@@ -600,6 +608,7 @@ function makeLocalCommandHarness(input: {
   // fork: mobile-surface-hint
   readonly creationSource?: OrchestrationV2ThreadProjection["messages"][number]["creationSource"];
   readonly promptCommandHandled?: boolean;
+  readonly unsentResumeText?: string; // fork: library-projects -- with sideChat.unsentResume.
   // fork: project-lifecycle
   /** T3 home for setup markers and ownership receipts when the harness uses a real filesystem. */
   readonly stateDir?: string;
@@ -612,6 +621,7 @@ function makeLocalCommandHarness(input: {
     readonly beforeOpen: Effect.Effect<void>;
     readonly primary?: boolean; // fork: project-lifecycle
     readonly fresh?: boolean; // fork: project-lifecycle
+    readonly baseDir?: string; // fork: project-lifecycle
     // fork: project-lifecycle
     readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   };
@@ -1061,6 +1071,16 @@ function makeLocalCommandHarness(input: {
         { ...message, id: originalMessageId, text: "Original request" },
         ...projection.messages,
       ],
+    };
+  }
+  // fork: library-projects
+  if (input.unsentResumeText !== undefined) {
+    const text = input.unsentResumeText;
+    projection = {
+      ...projection,
+      messages: projection.messages.map((m) =>
+        m.id === "original-unsent-message" ? { ...m, text } : m,
+      ),
     };
   }
   if (input.sideChat?.repeatedResume) {
@@ -1545,7 +1565,8 @@ function makeLocalCommandHarness(input: {
         }),
         IdAllocator.layer,
         Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
-        layerWorktreeLocation(input.worktreesDir, input.stateDir), // fork: project-lifecycle
+        // fork: project-lifecycle
+        layerWorktreeLocation(input.worktreesDir, input.stateDir, input.restoredWorkspace?.baseDir),
         // fork: mini-native-retention
         input.restoredWorkspace
           ? Layer.succeed(FileSystem.FileSystem, input.restoredWorkspace.fs)
@@ -3044,6 +3065,39 @@ effectIt.effect(
 );
 
 // fork: project-lifecycle
+effectIt.effect("recreates a pruned Scratch folder empty when it has no archive", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const git = yield* GitVcsDriver.GitVcsDriver;
+    const { stateDir } = yield* ServerConfig.ServerConfig;
+    const baseDir = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+    const scratchRoot = `${baseDir}/scratch`;
+    const cwd = `${scratchRoot}/pruned`;
+    yield* fs.makeDirectory(scratchRoot);
+    const beforeOpen = fs.readDirectory(cwd).pipe(
+      Effect.map((entries) => expect(entries).toEqual([])),
+      Effect.orDie,
+    );
+    const harness = makeLocalCommandHarness({
+      text: "Continue in the folder",
+      stateDir,
+      restoredWorkspace: { cwd, scratchRoot, fs, git, fresh: true, baseDir, beforeOpen },
+    });
+    yield* harness.start;
+    expect(harness.open).toHaveBeenCalledOnce();
+    expect(harness.startRootRun).toHaveBeenCalledOnce();
+  }).pipe(
+    Effect.provide(
+      GitVcsDriver.layer.pipe(
+        Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "scratch-pruned-" })),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+    Effect.scoped,
+  ),
+);
+
+// fork: project-lifecycle
 for (const checkout of ["Scratch", "primary project", "fresh Library clone"] as const) {
   const primary = checkout !== "Scratch";
   const fresh = checkout === "fresh Library clone";
@@ -3289,61 +3343,81 @@ effectIt.effect("tells a bound conversation's agent once that it can propose bri
 
 // fork: library-projects
 effectIt.effect.each([
-  ["/goal Ship the release", undefined, false],
-  ["/compact", "/goal Ship the release", false],
-  ["Implement the next step", "/goal Ship the release", true],
-  ["Implement the next step", "Plan the work", false],
-] as const)("a bound turn %j after %j carries project context: %s", ([text, prompt, carried]) =>
-  Effect.gen(function* () {
-    const harness = makeLocalCommandHarness({
-      text,
-      libraryProject: {
-        id: "aspectavy",
-        title: "AspectAvy",
-        brief: "Coordinate the app and server contract.",
-        revision: 2,
-        resources: [],
-        archived: false,
-        createdAt: "2026-10-15T00:00:00.000Z",
-        updatedAt: "2026-10-15T00:00:00.000Z",
-      },
-      promptCommandHandled: false,
-      failReadsAfterRunning: true,
-      ...(prompt === undefined
-        ? {}
-        : { previousTurn: { runStatus: "completed", turnStatus: "completed", prompt } }),
-    });
-    yield* harness.start;
-    const sent = harness.startRootRun.mock.calls[0]?.[0].message.text ?? "";
-    if (carried) {
-      expect(sent).toContain("Project: AspectAvy");
-      expect(sent).toContain(`User message:\n${text}`);
-    } else {
-      expect(sent).toBe(text);
-    }
-  }),
+  ["/goal Ship the release", undefined, false, false],
+  ["/compact", "/goal Ship the release", false, false],
+  ["Implement the next step", "/goal Ship the release", true, false],
+  ["Implement the next step", "Plan the work", false, false],
+  ["/goal Ship the release", undefined, false, true],
+] as const)(
+  "a bound turn %j after %j carries project context: %s (resumed unsent: %s)",
+  ([text, prompt, carried, resumed]) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        ...(resumed
+          ? {
+              text: "",
+              manualContinuation: true,
+              sideChat: { contextRun: "delivered", unsentResume: true },
+              unsentResumeText: text,
+            }
+          : { text }),
+        libraryProject: {
+          id: "aspectavy",
+          title: "AspectAvy",
+          brief: "Coordinate the app and server contract.",
+          revision: 2,
+          resources: [],
+          archived: false,
+          createdAt: "2026-10-15T00:00:00.000Z",
+          updatedAt: "2026-10-15T00:00:00.000Z",
+        },
+        promptCommandHandled: false,
+        failReadsAfterRunning: !resumed,
+        ...(prompt === undefined
+          ? {}
+          : { previousTurn: { runStatus: "completed", turnStatus: "completed", prompt } }),
+      });
+      yield* harness.start;
+      const sent = harness.startRootRun.mock.calls[0]?.[0].message.text ?? "";
+      if (carried) {
+        expect(sent).toContain("Project: AspectAvy");
+        expect(sent).toContain(`User message:\n${text}`);
+      } else {
+        expect(sent).toBe(text);
+      }
+    }),
 );
 
 // fork: mobile-surface-hint
 effectIt.effect.each([
-  ["mobile", "Show me the new settings screen", true],
-  ["web", "Show me the new settings screen", false],
-  ["mobile", "/review", false],
-  ["mobile", "/Users/kyle/app/main.ts crashes on launch", true],
-] as const)("a %s message %j carries the phone note: %s", ([creationSource, text, noted]) =>
-  Effect.gen(function* () {
-    const harness = makeLocalCommandHarness({
-      text,
-      creationSource,
-      promptCommandHandled: false,
-      failReadsAfterRunning: true,
-    });
-    yield* harness.start;
-    expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toBe(
-      noted ? `${ProviderTurnStart.PHONE_VIEWER_NOTE}\n\n${text}` : text,
-    );
-    expect(harness.projection().messages.find((entry) => entry.role === "user")?.text).toBe(text);
-  }),
+  ["mobile", "Show me the new settings screen", true, false],
+  ["web", "Show me the new settings screen", false, false],
+  ["mobile", "/review", false, false],
+  ["mobile", "/Users/kyle/app/main.ts crashes on launch", true, false],
+  ["mobile", "/goal Ship the release", false, true],
+] as const)(
+  "a %s message %j carries the phone note: %s (resumed unsent: %s)",
+  ([creationSource, text, noted, resumed]) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        ...(resumed
+          ? {
+              text: "",
+              manualContinuation: true,
+              sideChat: { contextRun: "delivered", unsentResume: true },
+              unsentResumeText: text,
+            }
+          : { text }),
+        creationSource,
+        promptCommandHandled: false,
+        failReadsAfterRunning: !resumed,
+      });
+      yield* harness.start;
+      expect(harness.startRootRun.mock.calls[0]?.[0].message.text).toBe(
+        noted ? `${ProviderTurnStart.PHONE_VIEWER_NOTE}\n\n${text}` : text,
+      );
+      expect(harness.projection().messages.find((entry) => entry.role === "user")?.text).toBe(text);
+    }),
 );
 
 // fork: ext-vault-preflight

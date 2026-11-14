@@ -1649,8 +1649,9 @@ const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
+    // fork: mini-managed-projects
     const scratchRoot = yield* fs
-      .realPath(scratchFolderRoot(config.baseDir, path))
+      .realPath(scratchFolderRoot(config.managedProjectsRoot ?? config.baseDir, path))
       .pipe(Effect.orElseSucceed(() => null));
     // Nothing can bring a scratch folder's files back, so these hold whatever the retention says.
     const scratchKeepReason = Effect.fn("StorageCleanup.scratchKeepReason")(function* (
@@ -3255,8 +3256,9 @@ const make = Effect.gen(function* () {
             managed,
             yield* projectStore.listShells(),
             entries,
+            // fork: mini-managed-projects
             yield* fs
-              .realPath(scratchFolderRoot(config.baseDir, path))
+              .realPath(scratchFolderRoot(config.managedProjectsRoot ?? config.baseDir, path))
               .pipe(Effect.orElseSucceed(() => null)),
           );
           const reviewed = entries.find((candidate) => candidate.path === cwd);

@@ -55,6 +55,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { makeRestoreMissingWorktree } from "../workspace/restoreMissingWorktree.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts"; // fork: project-lifecycle
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
@@ -199,12 +200,13 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     // fork: mini-native-retention -- fileSystem moved above for workspace restoration.
     const path = yield* Path.Path;
-    // fork: project-lifecycle -- restoreWorktree replaced restoreMissingWorktree; projects moved up.
+    // fork: project-lifecycle -- projects moved up.
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
     const libraryWorkspace = yield* Effect.serviceOption(LibraryWorkspace.LibraryWorkspace); // fork: library-launch-files
@@ -737,6 +739,8 @@ export const layer: Layer.Layer<
                 worktreePath,
                 workspaceLeaseHeld: true,
               });
+              // fork: project-lifecycle -- storage cleanup prunes idle folders; one comes back empty.
+              if (!restored) yield* restoreMissingWorktree(projection.thread);
               // fork: mini-native-retention
               if (restored || (yield* SetupMarker.exists(worktreePath))) {
                 const setup = yield* setupScripts.runForThread({
@@ -1844,7 +1848,7 @@ export const layer: Layer.Layer<
         const resolved = yield* libraryTurnContextBinding({
           projection,
           providerThread: runningProviderThread,
-          prompt: message,
+          prompt: providerMessage,
           getBinding: libraryWorkspaces.value.getBinding(projection.thread.id),
           readPrompt: (messageId) =>
             projectionStore
@@ -1884,7 +1888,7 @@ export const layer: Layer.Layer<
         }
       }
       // fork: mobile-surface-hint -- a native slash command must stay at the start of the text.
-      if (message.creationSource === "mobile" && !isSlashCommand(message))
+      if (message.creationSource === "mobile" && !isSlashCommand(providerMessage))
         userText = `${PHONE_VIEWER_NOTE}\n\n${userText}`;
       const persistHandoff = Effect.fn("ProviderTurnStartService.persist")(function* (
         handoff: OrchestrationV2ContextHandoff,

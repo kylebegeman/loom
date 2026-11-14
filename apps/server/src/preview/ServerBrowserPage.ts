@@ -608,7 +608,7 @@ type SnapshotInput = {
   readonly cdp: CDPSession;
   /** Headless pages render at the scale the server set; a desktop page at its display's. */
   readonly renderScale: number | "display";
-  readonly includeImage?: boolean | undefined;
+  readonly includeImage?: boolean | undefined; // fork: browser-text-snapshot
   readonly fullScreenshot?: boolean | undefined;
   readonly consoleEntries: ReadonlyArray<PreviewAutomationConsoleEntry>;
   readonly networkEntries: ReadonlyArray<PreviewAutomationNetworkEntry>;
@@ -665,6 +665,7 @@ const capture = async (
   const { readers, read } = await track("frames", () => openReaders(input.page, input.cdp));
   const before = await track("frames", () => read());
   // Bracket the tree with value reads to detect changes; await tree completion before retrying failed captures.
+  // fork: browser-text-snapshot -- the screenshot waits until the page text has settled.
   const pageState = track(
     "page state",
     () =>
@@ -675,7 +676,7 @@ const capture = async (
         >
       >,
   );
-  void pageState.catch(constVoid);
+  void pageState.catch(constVoid); // fork: browser-text-snapshot
   // Leaves time for the second read; a frame that never loads holds the tree until then.
   const tree = await track("accessibility tree", () =>
     input.page.ariaSnapshot({
@@ -701,7 +702,7 @@ const capture = async (
     void iframe.dispose().catch(constVoid);
     if (frame && unread.includes(frame)) throw frameUnanswered();
   }
-  const page = await pageState;
+  const page = await pageState; // fork: browser-text-snapshot
   if (state.generation !== generation) throw pageChanged();
   const mask = (text: string) => (dotted ? text.replace(dotted, MASKED_VALUE) : text);
   // Redacted before the cut, so a payload crossing it can't leave its start showing, and before
@@ -714,7 +715,8 @@ const capture = async (
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;
     });
-  let screenshot: PreviewAutomationSnapshot["screenshot"];
+  let screenshot: PreviewAutomationSnapshot["screenshot"]; // fork: browser-text-snapshot
+  // fork: browser-text-snapshot
   let fullScreenshot: PreviewAutomationSnapshot["fullScreenshot"];
   // fork: browser-text-snapshot
   if (rendering) {
@@ -729,7 +731,7 @@ const capture = async (
     screenshot = { mimeType: "image/png", data, ...pngSize(data) };
     if (input.fullScreenshot && scale < 1) fullScreenshot = { data: full, ...pngSize(full) };
   }
-  if (state.generation !== generation) throw pageChanged();
+  if (state.generation !== generation) throw pageChanged(); // fork: browser-text-snapshot
   return {
     ...page,
     url: withoutDataPayload(page.url),
@@ -739,8 +741,8 @@ const capture = async (
     consoleEntries: [...input.consoleEntries],
     networkEntries: [...input.networkEntries],
     actionTimeline: [...input.actionTimeline],
-    ...(screenshot === undefined ? {} : { screenshot }),
-    ...(fullScreenshot === undefined ? {} : { fullScreenshot }),
+    ...(screenshot === undefined ? {} : { screenshot }), // fork: browser-text-snapshot
+    ...(fullScreenshot === undefined ? {} : { fullScreenshot }), // fork: browser-text-snapshot
   };
 };
 

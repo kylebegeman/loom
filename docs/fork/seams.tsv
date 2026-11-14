@@ -105,6 +105,10 @@ apps/server/src/cli/config.ts	mini-managed-projects	4
 apps/server/src/project/ManagedProjectFolders.ts	mini-managed-projects	3
 apps/server/src/cli/config.test.ts	mini-managed-projects	2
 apps/server/src/project/ManagedProjectFolders.test.ts	mini-managed-projects	3
+apps/server/src/storageCleanup.ts	mini-managed-projects	2
+apps/server/src/storageCleanup.test.ts	mini-managed-projects	1
+apps/server/src/workspace/restoreMissingWorktree.ts	mini-managed-projects	1
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-managed-projects	2
 apps/server/src/storageCleanup.ts	mini-native-retention	6
 apps/server/src/storageCleanup.test.ts	mini-native-retention	5
 apps/server/src/workspace/ScratchCheckout.ts	mini-native-retention	1
@@ -164,9 +168,9 @@ apps/mobile/package.json	-	--scheme loom-dev
 apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
 apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
 apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	35
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	38
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-projects	5
-apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	16
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-projects	18
 apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	12
 apps/server/src/terminal/Manager.test.ts	project-lifecycle	5
 apps/server/src/storageCleanup.test.ts	project-lifecycle	40
@@ -241,7 +245,11 @@ apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	library
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	3
 apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	3
 apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	31
-apps/server/src/preview/ServerBrowserPage.ts	browser-text-snapshot	3
+apps/server/src/preview/ServerBrowserPage.ts	browser-text-snapshot	12
+apps/server/src/preview/ServerBrowser.ts	browser-text-snapshot	12
+apps/server/src/mcp/McpHttpServer.ts	browser-text-snapshot	9
+apps/server/src/mcp/toolkits/preview/handlers.ts	browser-text-snapshot	2
+packages/contracts/src/previewAutomation.ts	browser-text-snapshot	2
 apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	5
 apps/mobile/src/features/home/home-list-filter-menu.ts	fleet-connections	2
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
@@ -1114,7 +1122,7 @@ apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mobile-surface
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	library-launch-files	5
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mobile-surface-hint	2
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	library-launch-files	7
-apps/server/src/orchestration-v2/ProviderTurnStartService.ts	project-lifecycle	16
+apps/server/src/orchestration-v2/ProviderTurnStartService.ts	project-lifecycle	17
 apps/server/src/preview/Manager.test.ts	preview-status-guard	1
 apps/server/src/preview/Manager.ts	preview-status-guard	4
 apps/server/src/preview/ServerBrowser.test.ts	preview-popups	3
